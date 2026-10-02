@@ -198,11 +198,11 @@ export async function validateGitPrerequisite(worktree: string): Promise<string 
  * baseline frozen at hydrate, the repository effect of some authorized host
  * mutation cannot be part of the implementation subject — recording fails
  * closed instead of certifying uncovered control-plane mutations as bound
- * evidence. Legacy baselines without a marker skip the check.
+ * evidence. An unavailable baseline marker also blocks recording.
  */
 export async function validateControlPlaneBinding(input: ImplementRuntime): Promise<string | null> {
-  const baselineMarker = input.state.implementationBaseline?.controlPlaneMarker;
-  if (!baselineMarker) return null;
+  const baselineMarker = input.state.implementationBaseline.controlPlaneMarker;
+  if (baselineMarker === null) return formatBlocked('MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE');
   let currentMarker: string;
   try {
     currentMarker = await computeGitControlPlaneMarker(input.worktree);

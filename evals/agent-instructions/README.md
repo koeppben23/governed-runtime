@@ -61,7 +61,7 @@ instruction entries are preserved rather than overwritten. Runner arguments may 
 ### Automated deterministic suite
 
 ```sh
-npx vitest run --project evals
+npm run test:evals
 ```
 
 This verifies case parsing, duplicate-ID rejection, regex validation, environment

@@ -2,7 +2,7 @@
  * @module logging/adapter-logger.test
  * @description Tests for the ALS-scoped adapter logger.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

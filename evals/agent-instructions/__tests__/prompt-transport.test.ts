@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, CORNER — prompt transport schema contracts. */
 import { describe, expect, it } from 'vitest';
 import { RunnerConfigSchema } from '../schema.js';
 

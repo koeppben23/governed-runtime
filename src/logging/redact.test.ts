@@ -7,7 +7,7 @@
  * redaction (with deliberate non-matches to prevent over-redaction), deep/
  * null-safe extra redaction, and a through-the-logger pipeline check.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, REDACTION
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { describe, it, expect } from 'vitest';

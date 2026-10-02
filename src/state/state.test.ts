@@ -32,9 +32,8 @@ import {
   ReducedCeremonyDecision,
   ImplementationRiskAssessment,
   RiskGate,
-  TaskClass,
-  isTaskClass,
 } from '../state/schema.js';
+import { TaskClass, isTaskClass } from '../state/task-class.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
@@ -211,25 +210,33 @@ describe('state schemas', () => {
       expect(parsed.riskGate).toBeUndefined();
     });
 
-    it('SessionState treats implementationBaseline as optional (absent/null/populated all parse)', () => {
+    it('SessionState rejects missing baseline fields and accepts independent capture availability', () => {
       const state = makeState('TICKET');
-      // Absent (legacy session created before the baseline field existed).
       const legacy: Record<string, unknown> = { ...state };
       delete legacy.implementationBaseline;
-      expect(SessionState.parse(legacy).implementationBaseline).toBeUndefined();
-      // Null is accepted and treated like absent.
-      expect(() => SessionState.parse({ ...state, implementationBaseline: null })).not.toThrow();
-      // Populated parses and round-trips.
+      expect(() => SessionState.parse(legacy)).toThrow();
+      expect(() => SessionState.parse({ ...state, implementationBaseline: null })).toThrow();
       const populated = SessionState.parse({
         ...state,
         implementationBaseline: {
           dirtyFiles: [{ path: 'stale/a.txt', hash: 'abc123' }],
           capturedAt: FIXED_TIME,
+          controlPlaneMarker: null,
         },
       });
-      expect(populated.implementationBaseline?.dirtyFiles).toEqual([
+      expect(populated.implementationBaseline.dirtyFiles).toEqual([
         { path: 'stale/a.txt', hash: 'abc123' },
       ]);
+      expect(
+        SessionState.safeParse({
+          ...state,
+          implementationBaseline: {
+            dirtyFiles: null,
+            capturedAt: FIXED_TIME,
+            controlPlaneMarker: 'marker-1',
+          },
+        }).success,
+      ).toBe(true);
     });
 
     it('SessionState rejects snapshots missing risk authority fields (no read-time defaulting)', () => {
@@ -247,6 +254,30 @@ describe('state schemas', () => {
 
         expect(() => SessionState.parse(incomplete)).toThrow();
       }
+    });
+
+    it('requires the nullable risk-assessment slot and risk triggers when populated', () => {
+      const state = makeState('IMPLEMENTATION');
+      const withoutAssessment: Record<string, unknown> = { ...state };
+      delete withoutAssessment.implementationRiskAssessment;
+      expect(SessionState.safeParse(withoutAssessment).success).toBe(false);
+
+      expect(
+        SessionState.safeParse({
+          ...state,
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'TRIVIAL',
+            effectiveTaskClass: 'TRIVIAL',
+            declaredTaskClass: null,
+            declarationKind: 'absent',
+            ticketDigest: null,
+            touchedSurfaces: [],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 0,
+            implementationDigest: 'implementation-digest',
+          },
+        }).success,
+      ).toBe(false);
     });
 
     it('AuditEvent parses valid event with hash chain fields', () => {
@@ -959,6 +990,7 @@ describe('schema field-boundary contracts', () => {
       declarationKind: 'absent',
       ticketDigest: null,
       touchedSurfaces: [],
+      riskTriggers: [],
       assessedFrom: 'implementation_changed_files',
       assessedFileCount: 3,
       implementationDigest: DIGEST,
@@ -1040,23 +1072,23 @@ describe('schema field-boundary contracts', () => {
     expect(SessionState.safeParse({ ...state, initiatedBy: '' }).success).toBe(false);
   });
 
-  it('requires a non-empty control-plane marker when the baseline carries one', () => {
+  it('requires explicit nullable control-plane marker and dirty-file capture result', () => {
     const state = makeState('READY');
     const baseline = { dirtyFiles: [], capturedAt: NOW };
 
     expect(SessionState.safeParse({ ...state, implementationBaseline: baseline }).success).toBe(
-      true,
+      false,
     );
     expect(
       SessionState.safeParse({
         ...state,
-        implementationBaseline: { ...baseline, controlPlaneMarker: 'marker-1' },
+        implementationBaseline: { ...baseline, controlPlaneMarker: 'marker-1', dirtyFiles: [] },
       }).success,
     ).toBe(true);
     expect(
       SessionState.safeParse({
         ...state,
-        implementationBaseline: { ...baseline, controlPlaneMarker: '' },
+        implementationBaseline: { ...baseline, controlPlaneMarker: '', dirtyFiles: [] },
       }).success,
     ).toBe(false);
   });

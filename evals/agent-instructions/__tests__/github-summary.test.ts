@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, CORNER — GitHub summary rendering contracts. */
 import { describe, expect, it } from 'vitest';
 import { renderGitHubSummary } from '../github-summary.js';
 import type { ExecutedEvalCase } from '../schema.js';
@@ -17,7 +18,12 @@ function ec(
     results.push({ description: 'h', type: 'output_contains', severity: 'hard', passed: false });
   }
   for (let i = 0; i < advisoryFails; i++) {
-    results.push({ description: 'a', type: 'output_contains', severity: 'advisory', passed: false });
+    results.push({
+      description: 'a',
+      type: 'output_contains',
+      severity: 'advisory',
+      passed: false,
+    });
   }
   return {
     evalCase: {
@@ -52,11 +58,7 @@ function ec(
 
 describe('renderGitHubSummary', () => {
   it('renders surface identity with all verdicts', () => {
-    const s = renderGitHubSummary('fake-host', [
-      ec('PASS'),
-      ec('FAIL', 2, 1),
-      ec('RUNNER_ERROR'),
-    ]);
+    const s = renderGitHubSummary('fake-host', [ec('PASS'), ec('FAIL', 2, 1), ec('RUNNER_ERROR')]);
     expect(s).toContain('Eval: fake-host');
     expect(s).toContain('| Surface | Case | Verdict | Hard Failures | Advisory Failures |');
     expect(s).toContain('| repository_contributor | case-PASS | PASS | 0 | 0 |');

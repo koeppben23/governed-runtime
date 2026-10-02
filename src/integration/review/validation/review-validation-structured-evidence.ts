@@ -26,8 +26,8 @@ import {
 import {
   validateChallengeConsistency,
   type ChallengeConsistencyCode,
-  type ChallengeConsistencyInput,
 } from '../enforcement/challenge-consistency.js';
+import { buildChallengeConsistencyInput } from './challenge-consistency-input.js';
 import { validateReviewFindingsConsistency } from '../enforcement/findings-consistency.js';
 import { hashFindings } from '../findings-hash.js';
 import { bindCanonicalEvidenceRefs } from '../enforcement/challenge-binding.js';
@@ -385,7 +385,10 @@ function evaluateParsedStructuredFindings(
   capturedRawFindings: Record<string, unknown>,
   findings: ReviewFindings,
 ): StructuredInvocationEvaluation {
-  if (hashFindings(capturedRawFindings) !== invocation.findingsHash) {
+  // Hash the unmodified capture before normalizing display-only evidence refs.
+  // The rebind below is solely for challenge-consistency evaluation.
+  const rawFindingsHash = hashFindings(capturedRawFindings);
+  if (rawFindingsHash !== invocation.findingsHash) {
     return invalidFindingsEvaluation('REVIEW_FINDINGS_HASH_MISMATCH', context.obligation);
   }
   if (
@@ -424,7 +427,24 @@ function evaluateParsedStructuredFindings(
   // exact check below still rejects it.
   const challenges = rebindChallengesForConsistency(context, findings);
   const challengeConsistency = validateChallengeConsistency(
-    buildChallengeConsistencyInput(context, findings, challenges),
+    buildChallengeConsistencyInput({
+      findings,
+      obligation: context.obligation,
+      challenges,
+      expectedObligationId: context.obligation.obligationId,
+      ...(context.allowedChallengeEvidenceRefs !== undefined
+        ? { allowedEvidenceRefs: context.allowedChallengeEvidenceRefs }
+        : {}),
+      ...(context.unresolvedImplementationChallengeIds !== undefined
+        ? { unresolvedImplementationChallengeIds: context.unresolvedImplementationChallengeIds }
+        : {}),
+      ...(context.unaddressedPriorFailIds !== undefined
+        ? { unaddressedPriorFailIds: context.unaddressedPriorFailIds }
+        : {}),
+      ...(context.previouslyUsedChallengeIds !== undefined
+        ? { previouslyUsedChallengeIds: context.previouslyUsedChallengeIds }
+        : {}),
+    }),
   );
   if (!challengeConsistency.ok) {
     return incoherentFindingsEvaluation(
@@ -487,35 +507,6 @@ function rebindChallengesForConsistency(
   return 'kind' in rebound
     ? findings.challenges
     : (rebound.challenges as ReviewFindings['challenges']);
-}
-
-function buildChallengeConsistencyInput(
-  context: StructuredFindingsEvaluationContext,
-  findings: ReviewFindings,
-  challenges: ReviewFindings['challenges'],
-): ChallengeConsistencyInput {
-  return {
-    overallVerdict: findings.overallVerdict,
-    requiredChallengeCount: context.obligation.requiredChallengeCount,
-    requiredChallengeKind: context.obligation.requiredChallengeKind ?? 'implementation_challenge',
-    challenges,
-    expectedObligationId: context.obligation.obligationId,
-    ...(context.allowedChallengeEvidenceRefs !== undefined
-      ? { allowedEvidenceRefs: context.allowedChallengeEvidenceRefs }
-      : {}),
-    ...(findings.challengeResolutionVerdicts !== undefined
-      ? { resolutionVerdicts: findings.challengeResolutionVerdicts }
-      : {}),
-    ...(context.unresolvedImplementationChallengeIds !== undefined
-      ? { unresolvedImplementationChallengeIds: context.unresolvedImplementationChallengeIds }
-      : {}),
-    ...(context.unaddressedPriorFailIds !== undefined
-      ? { unaddressedPriorFailIds: context.unaddressedPriorFailIds }
-      : {}),
-    ...(context.previouslyUsedChallengeIds !== undefined
-      ? { previouslyUsedChallengeIds: context.previouslyUsedChallengeIds }
-      : {}),
-  };
 }
 
 /**

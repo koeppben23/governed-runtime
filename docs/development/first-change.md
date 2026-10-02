@@ -103,7 +103,7 @@ deterministic one).
 
 - No new file is added, so **no placement entry** is required. The file is owned
   by `tools-validation` in
-  [`src/architecture/__tests__/integration-placement-policy.ts`](../../src/architecture/__tests__/integration-placement-policy.ts).
+  [`src/architecture/__tests__/integration-placement-manifest.ts`](../../src/architecture/__tests__/integration-placement-manifest.ts).
 - The change stays in `src/integration/`, so
   [`src/integration/AGENTS.md`](../../src/integration/AGENTS.md) requires
   `npm run test:architecture` for the subtree regardless of whether an import

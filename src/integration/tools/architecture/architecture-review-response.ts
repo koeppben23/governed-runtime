@@ -40,6 +40,7 @@ import {
   renderPlanClaimDeclarations,
 } from '../../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
+import { hashText } from '../../../shared/hashing.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
@@ -273,12 +274,16 @@ async function attachReviewCard(input: {
       glyphProfile: (await readConfig(session.worktree)).presentation.opencode.glyphProfile,
     }),
   };
+  const serializedState = JSON.stringify(finalState, null, 2) + '\n';
   const artifactErr = await materializeReviewCardArtifact(
     session.sessDir,
     'architecture-review-card',
     resp.reviewCard as string,
-    finalState,
-    revision.currentAdr.digest,
+    {
+      state: finalState,
+      contentDigest: revision.currentAdr.digest,
+      stateHash: hashText(serializedState),
+    },
   );
   if (artifactErr) resp.artifactWarning = artifactErr;
 }

@@ -44,6 +44,14 @@ import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import type { ToolDefinition } from './tools/helpers.js';
 
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {

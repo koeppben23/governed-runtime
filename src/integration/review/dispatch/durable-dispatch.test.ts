@@ -8,10 +8,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { SessionState } from '../../../state/schema.js';
-import {
-  hasReleasedDispatch,
-  resolveReviewContinuation,
-} from '../../../state/review-continuation.js';
+import { resolveReviewContinuation } from '../../../state/review-continuation.js';
+import { hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { makeState } from '../../../fixtures.js';
 import {
   abandonReviewDispatchByHostCall,

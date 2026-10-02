@@ -1,7 +1,6 @@
 /**
  * @module proofgraph-session.test
- * @description SessionState persistence of the optional ProofGraph projection (#762).
- * Proves the field is optional and fail-closed on malformed input.
+ * @description SessionState persistence of the required ProofGraph projection (#762).
  */
 import { describe, it, expect } from 'vitest';
 import { SessionState } from './schema.js';
@@ -16,9 +15,10 @@ describe('SessionState.proofGraph (#762)', () => {
     expect(parsed.proofGraph).toEqual(PROJECTION);
   });
 
-  it('is optional — absent for sessions created before ProofGraph', () => {
-    const parsed = SessionState.parse(makeState('READY'));
-    expect(parsed.proofGraph).toBeUndefined();
+  it('rejects a projection missing from a pre-v8 state', () => {
+    const state: Record<string, unknown> = { ...makeState('READY') };
+    delete state.proofGraph;
+    expect(() => SessionState.parse(state)).toThrow();
   });
 
   it('round-trips a populated projection through JSON', () => {

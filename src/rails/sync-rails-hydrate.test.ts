@@ -37,6 +37,83 @@ describe('hydrate rail', () => {
         // Discovery fields initialize as null in new sessions
         expect(result.state.discoveryDigest).toBeNull();
         expect(result.state.discoverySummary).toBeNull();
+        expect(result.state.implementationBaseline).toEqual({
+          dirtyFiles: null,
+          capturedAt: result.state.createdAt,
+          controlPlaneMarker: null,
+        });
+        expect(result.state.implementationRiskAssessment).toBeNull();
+        expect(result.state.proofGraph).toEqual({
+          version: 'proofgraph.v2',
+          claims: [],
+          evaluatedAt: result.state.createdAt,
+        });
+      }
+    });
+
+    it('preserves a control-plane marker when dirty-file capture is unavailable', () => {
+      const result = executeHydrate(
+        null,
+        {
+          ...HYDRATE_INPUT,
+          session: {
+            ...HYDRATE_INPUT.session,
+            baselineControlPlaneMarker: 'marker-1',
+          },
+        },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.implementationBaseline.dirtyFiles).toBeNull();
+        expect(result.state.implementationBaseline.controlPlaneMarker).toBe('marker-1');
+      }
+    });
+
+    it('persists every independent baseline capture combination', () => {
+      const cases = [
+        {
+          dirtyFiles: undefined,
+          marker: undefined,
+          expectedDirtyFiles: null,
+          expectedMarker: null,
+        },
+        { dirtyFiles: [], marker: undefined, expectedDirtyFiles: [], expectedMarker: null },
+        {
+          dirtyFiles: undefined,
+          marker: 'marker-1',
+          expectedDirtyFiles: null,
+          expectedMarker: 'marker-1',
+        },
+        { dirtyFiles: [], marker: 'marker-1', expectedDirtyFiles: [], expectedMarker: 'marker-1' },
+      ] as const;
+
+      for (const testCase of cases) {
+        const result = executeHydrate(
+          null,
+          {
+            ...HYDRATE_INPUT,
+            session: {
+              ...HYDRATE_INPUT.session,
+              ...(testCase.dirtyFiles !== undefined
+                ? { baselineDirtyFiles: testCase.dirtyFiles }
+                : {}),
+              ...(testCase.marker !== undefined
+                ? { baselineControlPlaneMarker: testCase.marker }
+                : {}),
+            },
+          },
+          ctx,
+        );
+        expect(result.kind).toBe('ok');
+        if (result.kind === 'ok') {
+          expect(result.state.implementationBaseline.dirtyFiles).toEqual(
+            testCase.expectedDirtyFiles,
+          );
+          expect(result.state.implementationBaseline.controlPlaneMarker).toBe(
+            testCase.expectedMarker,
+          );
+        }
       }
     });
 

@@ -39,13 +39,13 @@ import {
   MODULE_CLASSIFICATION,
   MODULE_CLASSIFICATION_BY_NAME,
 } from './module-classification.js';
+import { INTEGRATION_OWNERS } from './integration-placement-manifest.js';
 import {
   isRootCompositionFile,
   isRootHostRuntimeFile,
   isToolCommandContextFile,
   placementOwnerOf,
-  INTEGRATION_OWNERS,
-} from './integration-placement-policy.js';
+} from './integration-placement-analyzer.js';
 import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
 import { collectImportSpecifiers } from './import-specifiers.js';
 import {

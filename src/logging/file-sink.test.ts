@@ -28,7 +28,7 @@ describe('createFileSink', () => {
 
   describe('HAPPY', () => {
     it('creates log file in correct directory', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'hello world' };
       await sink(entry);
 
@@ -37,7 +37,7 @@ describe('createFileSink', () => {
     });
 
     it('writes valid JSONL format', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       const entry: LogEntry = {
         level: 'info',
         service: 'plugin',
@@ -56,7 +56,7 @@ describe('createFileSink', () => {
     });
 
     it('JSONL entry always contains all required fields', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       await sink({ level: 'info', service: 'test', message: 'hello' });
       // Without extra field
       await sink({ level: 'error', service: 'core', message: 'oops', extra: { code: 'E1' } });
@@ -128,7 +128,7 @@ describe('createFileSink', () => {
     });
 
     it('appends to existing daily log file', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       await sink({ level: 'info', service: 'test', message: 'first' });
       await sink({ level: 'info', service: 'test', message: 'second' });
 
@@ -145,7 +145,7 @@ describe('createFileSink', () => {
       await rm(freshRoot, { recursive: true, force: true }).catch(() => {});
       await mkdir(freshRoot, { recursive: true });
 
-      const sink = createFileSink(freshRoot, 7);
+      const sink = createFileSink(freshRoot, { retentionDays: 7 });
       await sink({ level: 'info', service: 'test', message: 'new dir' });
 
       const dirOk = await stat(join(freshRoot, '.opencode/logs'))
@@ -181,7 +181,7 @@ describe('createFileSink', () => {
 
     it('activates lazily once the workspace root appears', async () => {
       const lateRoot = join(testDir, 'late-root');
-      const sink = createFileSink(lateRoot, 7);
+      const sink = createFileSink(lateRoot, { retentionDays: 7 });
       await sink({ level: 'info', service: 'test', message: 'pre-init' });
 
       await mkdir(lateRoot, { recursive: true });
@@ -234,7 +234,7 @@ describe('createFileSink', () => {
     it('does not throw and does not create a non-existent workspace root', async () => {
       const badDir = '/tmp/this-does-not-exist-123456789';
       await rm(badDir, { recursive: true, force: true }).catch(() => {});
-      const sink = createFileSink(badDir, 7);
+      const sink = createFileSink(badDir, { retentionDays: 7 });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'hello' };
       await expect(sink(entry)).resolves.not.toThrow();
       const exists = await stat(badDir)
@@ -244,19 +244,19 @@ describe('createFileSink', () => {
     });
 
     it('handles disk failure gracefully', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'test' };
       await expect(sink(entry)).resolves.not.toThrow();
     });
 
     it('handles empty workspace dir gracefully (no write)', async () => {
-      const sink = createFileSink('', 7);
+      const sink = createFileSink('', { retentionDays: 7 });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'empty dir' };
       await expect(sink(entry)).resolves.not.toThrow();
     });
 
     it('handles relative path gracefully (no write)', async () => {
-      const sink = createFileSink('./relative/path', 7);
+      const sink = createFileSink('./relative/path', { retentionDays: 7 });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'relative' };
       await expect(sink(entry)).resolves.not.toThrow();
     });
@@ -264,7 +264,7 @@ describe('createFileSink', () => {
 
   describe('CORNER', () => {
     it('works with empty extra field', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       await sink({ level: 'info', service: 'test', message: 'no extra' });
 
       const files = await readdir(join(testDir, '.opencode/logs'));
@@ -272,7 +272,7 @@ describe('createFileSink', () => {
     });
 
     it('works with all log levels', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       for (const level of ['debug', 'info', 'warn', 'error'] as const) {
         await sink({ level, service: 'test', message: `msg-${level}` });
       }
@@ -281,7 +281,7 @@ describe('createFileSink', () => {
     });
 
     it('uses default retention of 7 when not specified', async () => {
-      const sink = createFileSink(testDir, undefined);
+      const sink = createFileSink(testDir);
       await sink({ level: 'info', service: 'test', message: 'default retention' });
       const files = await readdir(join(testDir, '.opencode/logs'));
       expect(files.some((f) => f.startsWith('flowguard-'))).toBe(true);
@@ -290,7 +290,7 @@ describe('createFileSink', () => {
 
   describe('EDGE', () => {
     it('handles many concurrent log calls without race condition', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       const entry: LogEntry = { level: 'info', service: 'test', message: 'race test' };
 
       await Promise.all(Array.from({ length: 20 }, async () => sink(entry)));
@@ -305,8 +305,8 @@ describe('createFileSink', () => {
     });
 
     it('handles concurrent writes from multiple sinks', async () => {
-      const sink1 = createFileSink(testDir, 7);
-      const sink2 = createFileSink(testDir, 7);
+      const sink1 = createFileSink(testDir, { retentionDays: 7 });
+      const sink2 = createFileSink(testDir, { retentionDays: 7 });
       await Promise.all([
         sink1({ level: 'info', service: 'sink1', message: 'first' }),
         sink2({ level: 'info', service: 'sink2', message: 'second' }),
@@ -316,7 +316,7 @@ describe('createFileSink', () => {
     });
 
     it('handles very large extra fields', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       await sink({
         level: 'info',
         service: 'test',
@@ -328,7 +328,7 @@ describe('createFileSink', () => {
     });
 
     it('handles unicode in messages', async () => {
-      const sink = createFileSink(testDir, 7);
+      const sink = createFileSink(testDir, { retentionDays: 7 });
       await sink({ level: 'info', service: 'test', message: 'HこんにちはWorld🌍' });
       const files = await readdir(join(testDir, '.opencode/logs'));
       expect(files.length).toBeGreaterThan(0);
@@ -362,7 +362,7 @@ describe('createFileSink', () => {
         const recentDate = new Date(Date.now() - oneDayMs);
         const recentFile = await createLogFile(testDir, makeLogFileName(recentDate));
 
-        const sink = createFileSink(testDir, 7);
+        const sink = createFileSink(testDir, { retentionDays: 7 });
         await sink({ level: 'info', service: 'test', message: 'trigger' });
 
         await expect(stat(recentFile)).resolves.toBeDefined();
@@ -378,7 +378,7 @@ describe('createFileSink', () => {
         const expiredDate = new Date(Date.now() - oneDayMs * 8);
         const expiredFile = await createLogFile(testDir, makeLogFileName(expiredDate));
 
-        const sink = createFileSink(testDir, 7);
+        const sink = createFileSink(testDir, { retentionDays: 7 });
         await sink({ level: 'info', service: 'test', message: 'trigger' });
 
         await expect(stat(expiredFile)).rejects.toThrow();
@@ -409,7 +409,7 @@ describe('createFileSink', () => {
           makeLogFileName(new Date(Date.now() - oneDayMs * 14)),
         );
 
-        const sink = createFileSink(testDir, 7);
+        const sink = createFileSink(testDir, { retentionDays: 7 });
         await sink({ level: 'info', service: 'test', message: 'trigger' });
 
         await expect(stat(recent1)).resolves.toBeDefined();
@@ -431,7 +431,7 @@ describe('createFileSink', () => {
         const oldLog = join(logDir, 'flowguard-2020-01-01.log');
         await writeFile(oldLog, '{"level":"info","message":"old"}\n');
 
-        const sink = createFileSink(testDir, 7);
+        const sink = createFileSink(testDir, { retentionDays: 7 });
         await sink({ level: 'info', service: 'test', message: 'test' });
 
         // File from 2020 should be cleaned up (far outside 7-day retention)
@@ -455,7 +455,7 @@ describe('createFileSink', () => {
         const fakeLog = join(logDir, 'flowguard-2020-01-01.log');
         await mkdir(fakeLog);
 
-        const sink = createFileSink(testDir, 7);
+        const sink = createFileSink(testDir, { retentionDays: 7 });
         // This should not throw — cleanup errors are non-blocking
         await sink({ level: 'info', service: 'test', message: 'test' });
       } finally {

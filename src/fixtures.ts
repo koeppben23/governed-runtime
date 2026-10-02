@@ -19,9 +19,9 @@ import {
   REVIEW_ASSURANCE_SCHEMA_VERSION,
   type ReviewAssuranceState,
   type ReviewAttempt,
-  type ReviewInvocationEvidence,
   type ReviewObligation,
 } from './state/evidence-review.js';
+import type { ReviewInvocationEvidence } from './state/evidence-review-invocation.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,
@@ -650,6 +650,7 @@ export function makeState(
     challengeResolutions: [],
     implValidation: [],
     implementation: null,
+    implementationRiskAssessment: null,
     implementationRework: null,
     reducedCeremony: null,
     implReview: null,
@@ -660,6 +661,12 @@ export function makeState(
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ['test', 'lint'],
+    implementationBaseline: {
+      dirtyFiles: null,
+      capturedAt: FIXED_TIME,
+      controlPlaneMarker: 'test-control-plane-marker',
+    },
+    proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: FIXED_TIME },
     policySnapshot: POLICY_SNAPSHOT,
     initiatedBy: 'initiator-1',
     initiatedByIdentity: DECISION_IDENTITY_INITIATOR,

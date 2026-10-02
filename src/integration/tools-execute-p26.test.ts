@@ -62,6 +62,14 @@ import type { ToolDefinition, ToolResult } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {

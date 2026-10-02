@@ -58,6 +58,20 @@ export type * from './proofgraph-approval.js';
 
 // ─── Review (findings, obligations, assurance, completeness, report, decision) ─
 
+export * from './evidence-findings.js';
+export type * from './evidence-findings.js';
+export * from './evidence-review-subject.js';
+export type * from './evidence-review-subject.js';
+export * from './evidence-review-authority.js';
+export type * from './evidence-review-authority.js';
+export * from './evidence-review-attempt-discovery.js';
+export type * from './evidence-review-attempt-discovery.js';
+export * from './evidence-review-challenge.js';
+export type * from './evidence-review-challenge.js';
+export * from './evidence-review-invocation.js';
+export type * from './evidence-review-invocation.js';
+export * from './review-cycles.js';
+export type * from './review-cycles.js';
 export * from './evidence-review.js';
 export type * from './evidence-review.js';
 export * from './evidence-review-completeness.js';

@@ -5,23 +5,23 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  Finding,
-  PlanAdrSectionRef,
-  ImplementationRef,
-  ValidationAttemptRef,
-  ContentRef,
-  ReviewChallenge,
-  ChallengeResolution,
   ReviewObligation,
-  ReviewInvocationEvidence,
   ReviewProfile,
   ReviewProfileSource,
   ReviewAssuranceState,
-  classifyRepositoryPath,
-  RepositoryLocation,
-  ReviewSubjectScope,
-  FrozenReviewSubject,
 } from './evidence-review.js';
+import { Finding, RepositoryLocation } from './evidence-findings.js';
+import {
+  ChallengeResolution,
+  ContentRef,
+  ImplementationRef,
+  PlanAdrSectionRef,
+  ReviewChallenge,
+  ValidationAttemptRef,
+} from './evidence-review-challenge.js';
+import { ReviewInvocationEvidence } from './evidence-review-invocation.js';
+import { FrozenReviewSubject, ReviewSubjectScope } from './evidence-review-subject.js';
+import { classifyRepositoryPath } from './repository-path.js';
 import {
   ReviewActorInfo,
   ReviewAttestation,

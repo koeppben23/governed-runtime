@@ -58,8 +58,11 @@ npm run check:tests
 # Lint (CI gate: --max-warnings=0)
 npm run lint:strict
 
-# Run tests
+# Run the default unit and integration suite
 npm test
+
+# Run deterministic agent-instruction eval tests
+npm run test:evals
 
 # Run coverage gate
 npm run test:coverage
@@ -70,7 +73,8 @@ npm run build
 
 ## Testing
 
-FlowGuard uses Vitest for testing. All tests must pass before submitting a PR.
+FlowGuard uses Vitest for testing. Run the checks relevant to the changed surface before
+submitting a PR; `npm test` runs the default unit and integration suite only.
 Linting is enforced on `src/**/*.ts` with an additional type-aware safety profile on critical governance surfaces (`src/audit`, `src/config`, `src/redaction`, `src/adapters/workspace`).
 Coverage thresholds are 80% across branches, lines, functions, and statements:
 
@@ -80,8 +84,11 @@ Coverage thresholds are 80% across branches, lines, functions, and statements:
 - Statements: 80%
 
 ```bash
-# Run all tests
+# Run the default unit and integration suite
 npm test
+
+# Run deterministic agent-instruction eval tests
+npm run test:evals
 
 # Run tests in watch mode
 npm run test:watch
@@ -109,6 +116,7 @@ npx vitest run src/architecture/__tests__/dependency-rules.test.ts
 | Unit         | `src/**/*.test.ts` (w/ exclusions) | Core logic testing                |
 | Architecture | `src/architecture/__tests__/`      | Dependency rule verification      |
 | Integration  | `src/integration/*.test.ts`        | OpenCode tool integration         |
+| Evals        | `evals/**/*.test.ts`                | Deterministic agent-instruction harness contracts |
 | Smoke        | `src/cli/*smoke*.test.ts`          | Built CLI + ACP end-to-end        |
 | Performance  | `*.test.ts` with PERF describe     | Performance regression prevention |
 
@@ -463,8 +471,11 @@ git checkout -b feat/my-feature
 # Make changes
 # ... write code ...
 
-# Run tests
+# Run the default unit and integration suite
 npm test
+
+# Run deterministic agent-instruction eval tests
+npm run test:evals
 
 # Run type check
 npm run check

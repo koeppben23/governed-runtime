@@ -345,12 +345,16 @@ export async function convergedPlanReviewCardResponse(
   const presentationMarkdown = buildPlanReviewCard(reviewCardInput, {
     glyphProfile: (await readConfig(scope.worktree)).presentation.opencode.glyphProfile,
   });
+  const serializedState = JSON.stringify(finalState, null, 2) + '\n';
   const artifactErr = await materializeReviewCardArtifact(
     scope.sessDir,
     'plan-review-card',
     reviewCard,
-    finalState,
-    revision.currentPlan.digest,
+    {
+      state: finalState,
+      contentDigest: revision.currentPlan.digest,
+      stateHash: hashText(serializedState),
+    },
   );
   const response: Record<string, unknown> = {
     phase: finalState.phase,

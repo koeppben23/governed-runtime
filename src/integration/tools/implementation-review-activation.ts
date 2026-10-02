@@ -33,7 +33,7 @@ import { freezeCandidatePairAuthority } from '../../rails/repository-authority.j
 import { buildFrozenReviewMaterialContent } from '../review/context/reviewer-context.js';
 import { resolveAttemptDiscoveryOrBlock } from '../review/context/discovery-attempt-context.js';
 import { renderPlanClaimDeclarations } from '../../presentation/index.js';
-import { hasFrozenRepositoryAuthority } from '../../state/evidence-review.js';
+import { hasFrozenRepositoryAuthority } from '../../state/evidence-review-authority.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
 
 export type ImplementationReviewActivationResult = {

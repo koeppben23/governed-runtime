@@ -33,8 +33,7 @@
  *
  * This module lives in the state layer so BOTH the machine layer (NextAction
  * projection) and the integration layer (re-invocation routing) consume the
- * same authority. Integration modules re-export the moved pieces to preserve
- * their historical import surfaces.
+ * same authority.
  *
  * @version v1
  */
@@ -280,20 +279,9 @@ export function verifyFrozenMaterialForObligation(
 
 // ─── Assurance container primitives ──────────────────────────────────────────
 // `ensureReviewAssurance` and the durable dispatch ledger helpers live in
-// `state/review-dispatch.ts`; imported here for local use and re-exported for
-// the continuation callers that need the dispatch ledger alongside it.
+// `state/review-dispatch.ts`.
 
 import { ensureReviewAssurance, hasReleasedDispatch } from './review-dispatch.js';
-
-export {
-  abandonReviewDispatch,
-  appendReviewDispatch,
-  completeReviewDispatch,
-  ensureReviewAssurance,
-  hasReleasedDispatch,
-  markDispatchOutcomeUnknown,
-  rebindReviewDispatchHostCall,
-} from './review-dispatch.js';
 
 /**
  * The attempt a host Task can still be bound to for `obligationId`.

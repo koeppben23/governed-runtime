@@ -31,7 +31,8 @@ export interface ReviewProofGraphGateInput {
   readonly implementationDigest?: string;
   readonly riskAssessment?: {
     readonly implementationDigest: string;
-    readonly riskTriggers?: readonly RiskTrigger[];
+    /** Required trigger taxonomy of the v8 assessment; mirrors the canonical gate input. */
+    readonly riskTriggers: readonly RiskTrigger[];
   };
 }
 
@@ -227,17 +228,15 @@ export function renderCriticalClaimRequirement(
   );
   const riskAssessment = state.implementationRiskAssessment;
   const decision = authorities.evaluateProofGraphGate({
-    ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
+    projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation.digest,
-    ...(riskAssessment !== undefined
+    ...(riskAssessment !== null
       ? {
           riskAssessment: {
             implementationDigest: riskAssessment.implementationDigest,
-            ...(riskAssessment.riskTriggers !== undefined
-              ? { riskTriggers: riskAssessment.riskTriggers }
-              : {}),
+            riskTriggers: riskAssessment.riskTriggers,
           },
         }
       : {}),
@@ -246,7 +245,7 @@ export function renderCriticalClaimRequirement(
     return [
       '## Critical Fact Claim Requirement (persisted)',
       '',
-      '- Status: NOT_VERIFIED. The implementation risk assessment is missing, stale, or predates trigger classification.',
+      '- Status: NOT_VERIFIED. The implementation risk assessment is missing or stale.',
       '',
     ];
   }

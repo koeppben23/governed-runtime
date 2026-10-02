@@ -41,7 +41,10 @@ import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../../user-de
 import { attestReducedCeremonySubject } from '../reduced-ceremony-attestation.js';
 
 // Automatic validation on entry to VALIDATION
-import { runActiveChecksAutomatically } from '../auto-validation.js';
+import {
+  decidePostCommandAutoValidation,
+  runActiveChecksAutomatically,
+} from '../auto-validation.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_decision — Human Verdict at User Gates
@@ -270,9 +273,16 @@ export const decision: ToolDefinition = {
       // decision itself is already persisted and audited; the check response
       // (evidence + post-validation phase/directive) supersedes the decision
       // output only when checks actually ran.
-      if (finalResult.kind === 'ok' && finalResult.state.phase === 'VALIDATION') {
-        const autoValidationResponse = await runActiveChecksAutomatically(context);
-        if (autoValidationResponse !== null) return autoValidationResponse;
+      if (finalResult.kind === 'ok') {
+        const outputText = typeof output === 'string' ? output : output.output;
+        const autoValidation = decidePostCommandAutoValidation({
+          response: outputText,
+          phase: finalResult.state.phase,
+        });
+        if (autoValidation.kind === 'run') {
+          const autoValidationResponse = await runActiveChecksAutomatically(context);
+          if (autoValidationResponse !== null) return autoValidationResponse;
+        }
       }
       return output;
     } catch (err) {

@@ -2,7 +2,7 @@
  * @module adapters/workspace/evidence-artifacts.test
  * @description Tests for derived ticket/plan evidence artifact materialization.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF, E2E-SMOKE
+ * @test-policy HAPPY, BAD, CORNER, EDGE, PERF
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -14,9 +14,10 @@ import { makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
 import type { PlanEvidence } from '../../state/evidence.js';
 import { makePlanRevision, makePlanRevisionAfter } from '../../state/evidence-test-constants.js';
 import { writeState } from '../persistence.js';
+import { hashText } from '../../shared/hashing.js';
 import {
   EVIDENCE_ARTIFACTS_DIR,
-  materializeEvidenceArtifacts,
+  materializeEvidenceArtifacts as materializeEvidenceArtifactsWithStateHash,
   verifyEvidenceArtifacts,
 } from './evidence-artifacts.js';
 
@@ -41,6 +42,17 @@ function planRevision(
 }
 
 let sessionDir: string;
+
+async function materializeEvidenceArtifacts(
+  sessionDir: string,
+  state: Parameters<typeof writeState>[1],
+) {
+  return materializeEvidenceArtifactsWithStateHash(
+    sessionDir,
+    state,
+    hashText(JSON.stringify(state, null, 2) + '\n'),
+  );
+}
 
 beforeEach(async () => {
   sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-evidence-'));

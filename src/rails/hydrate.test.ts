@@ -1,6 +1,6 @@
 /**
  * @module hydrate.test
- * @test-policy mutation-kill — targets applyHydrateOverrides, input validation,
+ * @test-policy HAPPY, BAD, CORNER — targets applyHydrateOverrides, input validation,
  * activeChecks fallback, phaseRuleContent, defaults via ?? operators.
  */
 import { describe, it, expect } from 'vitest';

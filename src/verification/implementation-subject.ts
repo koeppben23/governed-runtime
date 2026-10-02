@@ -31,15 +31,16 @@ export type ScopedImplementationFilesResult =
  * dirty at session start AND are still unchanged (same content hash), so
  * pre-existing worktree changes are not attributed to this implementation —
  * while a pre-dirty file the task actually modified (hash changed) is KEPT,
- * never hidden. Without a baseline, record the full set and mark scoping
- * unavailable. Never hides a change: when a hash is missing the file is kept.
+ * never hidden. When dirty-file capture is unavailable, record the full set
+ * and mark scoping unavailable. Never hides a change: when a hash is missing
+ * the file is kept.
  */
 export async function scopeImplementationFiles(
   worktree: string,
   rawFiles: readonly string[],
   baseline: SessionState['implementationBaseline'],
 ): Promise<ScopedImplementationFilesResult> {
-  if (!baseline) {
+  if (baseline.dirtyFiles === null) {
     return rawFiles.length === 0
       ? { kind: 'empty', rawFiles }
       : { kind: 'ok', subject: { files: rawFiles, baselineScoping: 'unavailable' } };

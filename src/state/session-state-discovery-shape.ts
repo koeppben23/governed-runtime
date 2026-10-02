@@ -74,31 +74,29 @@ export const SessionStateDiscoveryShape = {
    * (e.g. a stale opencode.json) are subtracted so they are not attributed to
    * the implementation or used to raise the risk floor.
    *
-   * `.optional()` for backward compatibility (no schema version bump): when
-   * absent, implement does NOT subtract (records the full worktree exactly as
-   * before) and surfaces `baselineScoping: "unavailable"` — it never hides
-   * evidence. Null is treated identically to absent.
+   * `dirtyFiles: null` means the capture was unavailable. Implement then
+   * records the full worktree and surfaces `baselineScoping: "unavailable"`.
+   * The control-plane marker is captured independently.
    */
-  implementationBaseline: z
-    .object({
-      /**
-       * Files dirty at capture time, each with the git blob hash of its content
-       * at session start. A pre-dirty file is scoped out of implementation
-       * evidence ONLY if its current hash still matches — so a file the task
-       * actually modified (hash changed) is never hidden. `hash` is null for a
-       * path that was unreadable/deleted at capture time.
-       */
-      dirtyFiles: z.array(
+  implementationBaseline: z.object({
+    /**
+     * Files dirty at capture time, each with the git blob hash of its content
+     * at session start. A pre-dirty file is scoped out of implementation
+     * evidence ONLY if its current hash still matches — so a file the task
+     * actually modified (hash changed) is never hidden. `hash` is null for a
+     * path that was unreadable/deleted at capture time.
+     */
+    dirtyFiles: z
+      .array(
         z.object({
           path: z.string(),
           hash: z.string().nullable(),
         }),
-      ),
-      /** ISO-8601 capture timestamp (hydrate time). */
-      capturedAt: z.string().datetime(),
-      // #852: git control-plane marker frozen at baseline; optional for legacy baselines.
-      controlPlaneMarker: z.string().min(1).optional(),
-    })
-    .nullable()
-    .optional(),
+      )
+      .nullable(),
+    /** ISO-8601 capture timestamp (hydrate time). */
+    capturedAt: z.string().datetime(),
+    /** Null when the independent control-plane capture was unavailable. */
+    controlPlaneMarker: z.string().min(1).nullable(),
+  }),
 };

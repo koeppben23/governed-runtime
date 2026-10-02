@@ -689,10 +689,6 @@ describe('isRiskAssessmentCurrent', () => {
       isRiskAssessmentCurrent({ implementationDigest: 'abc', riskTriggers: [] }, undefined),
     ).toBe(false);
   });
-
-  it('treats a pre-trigger assessment as superseded', () => {
-    expect(isRiskAssessmentCurrent({ implementationDigest: 'abc' }, 'abc')).toBe(false);
-  });
 });
 
 describe('buildHeuristicRiskWarning', () => {

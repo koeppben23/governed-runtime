@@ -311,7 +311,7 @@ function decisionBindsRiskAuthority(
   // Canonical assessment presence and digest binding: this is the single
   // authority for these two facts in the guard chain.
   const assessment = s.implementationRiskAssessment;
-  if (assessment === undefined) return false;
+  if (assessment === null) return false;
   if (assessment.implementationDigest !== implementation.digest) return false;
 
   const declaration = boundTicketDeclaration(s);

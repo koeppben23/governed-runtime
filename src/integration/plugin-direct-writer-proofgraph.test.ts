@@ -321,7 +321,7 @@ describe('direct metadata write channel', () => {
       'proofGraph',
       (state: SessionState): SessionState => ({
         ...state,
-        proofGraph: { ...state.proofGraph!, evaluatedAt: '2026-02-01T00:00:00.000Z' },
+        proofGraph: { ...state.proofGraph, evaluatedAt: '2026-02-01T00:00:00.000Z' },
       }),
     ],
     [
@@ -370,6 +370,7 @@ describe('direct metadata write channel', () => {
           declarationKind: 'absent' as const,
           ticketDigest: null,
           touchedSurfaces: [],
+          riskTriggers: [],
           assessedFrom: 'implementation_changed_files',
           assessedFileCount: 0,
           implementationDigest: 'direct-write-test-digest',

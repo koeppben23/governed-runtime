@@ -25,13 +25,10 @@ import type {
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewObligation, ReviewObligationType } from '../../../state/evidence.js';
 import { hashText } from '../../../shared/hashing.js';
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { ensureReviewAssurance, hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { findBindableAttempt } from '../../../state/review-continuation.js';
 import { isCurrentReviewGeneration } from '../obligations/assurance.js';
-import {
-  hasReleasedDispatch,
-  verifyFrozenMaterialForObligation,
-} from '../../../state/review-continuation.js';
+import { verifyFrozenMaterialForObligation } from '../../../state/review-continuation.js';
 import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';

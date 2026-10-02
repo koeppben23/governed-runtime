@@ -16,12 +16,12 @@ import {
   fulfillObligation,
   hasEvidenceReuse,
 } from '../obligations/assurance.js';
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
-import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import {
   completeReviewDispatch,
+  ensureReviewAssurance,
   rebindReviewDispatchHostCall,
-} from '../../../state/review-continuation.js';
+} from '../../../state/review-dispatch.js';
+import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import { hasAuthorizedDispatch } from '../../../state/review-dispatch.js';
 import { updateObligation } from '../obligations/obligation-state.js';
 import type { ReviewerSuccessResult } from '../types.js';

@@ -78,14 +78,14 @@ export const SessionStateEvidenceShape = {
    */
   runtimeLease: RuntimeLease.nullable(),
 
-  /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
+  /** Advisory challenge-resolution evidence; required array, empty before any resolution. */
   challengeResolutions: z.array(ChallengeResolution),
 
   /**
    * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
    * separate from `validation` (the pre-implementation baseline run) so the audit
    * trail retains both the baseline and the re-run of checks against the fixed code.
-   * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
+   * Required array, empty before the first post-implementation check.
    */
   implValidation: z.array(ValidationResult),
 
@@ -96,9 +96,8 @@ export const SessionStateEvidenceShape = {
    * Pre-mutation frozen implementation base (commit-kind frozen repository
    * revision target). Frozen at the transition INTO `IMPLEMENTATION`, before
    * any governed mutation; the implementation review candidate pair resolves
-   * `revision:'base'` against this target. Absent for sessions that entered
-   * IMPLEMENTATION before the frozen-repository-authority generation — such
-   * sessions have no repository evidence authority.
+   * `revision:'base'` against this target. Optional in the current lifecycle:
+   * absent until that entry transition freezes the authority.
    */
   implementationBaseAuthority: FrozenRepositoryRevisionTarget.optional(),
 };
@@ -147,12 +146,11 @@ export const SessionStateReviewEvidenceShape = {
   /**
    * Compact ProofGraph projection (advisory; #762).
    *
-   * Additive and `.optional()` for backward compatibility: sessions created
-   * before ProofGraph have no projection, and its absence is treated as "no
-   * graph". It never gates a workflow on its own — blocking eligibility is a
-   * policy-layer decision. Large provider artifacts live outside session state.
+   * Always materialized, including an empty projection at hydrate. It never
+   * gates a workflow on its own — blocking eligibility is a policy-layer
+   * decision. Large provider artifacts live outside session state.
    */
-  proofGraph: ProofGraphProjection.optional(),
+  proofGraph: ProofGraphProjection,
 
   /** Next auto-generated ADR sequence number for /architecture. */
   nextAdrNumber: z.number().int().positive(),

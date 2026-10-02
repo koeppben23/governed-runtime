@@ -72,6 +72,7 @@ import {
   FIXED_SESSION_UUID,
 } from '../fixtures.js';
 import { materializeReviewCardArtifact } from './workspace/evidence-artifacts.js';
+import { hashText } from '../shared/hashing.js';
 import { initWorkspace, archiveSession } from './workspace/index.js';
 import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy.js';
 import { verifyChain } from '../audit/integrity.js';
@@ -276,13 +277,11 @@ describe('persistence', () => {
 
       // Phase 1: write initial artifact successfully
       const digest1 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1';
-      const r1 = await materializeReviewCardArtifact(
-        tmpDir,
-        'plan-review-card',
-        '# Approved.',
+      const r1 = await materializeReviewCardArtifact(tmpDir, 'plan-review-card', '# Approved.', {
         state,
-        digest1,
-      );
+        contentDigest: digest1,
+        stateHash: hashText(JSON.stringify(state, null, 2) + '\n'),
+      });
       expect(r1).toBeNull();
 
       const artifactsDir = path.join(tmpDir, 'artifacts');
@@ -300,8 +299,11 @@ describe('persistence', () => {
           tmpDir,
           'plan-review-card',
           '# Rejected.',
-          state,
-          digest2,
+          {
+            state,
+            contentDigest: digest2,
+            stateHash: hashText(JSON.stringify(state, null, 2) + '\n'),
+          },
         );
         expect(failedResult).not.toBeNull();
         expect(failedResult?.code).toBe('REVIEW_CARD_ARTIFACT_WRITE_FAILED');

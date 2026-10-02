@@ -13,7 +13,7 @@
  *
  * Split from sdk-contract.test.ts Sections D + E + F for ≤400 LOC compliance.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE — all categories present.
+ * @test-policy HAPPY, BAD, CORNER, EDGE — all applicable categories present.
  * @version v1
  */
 

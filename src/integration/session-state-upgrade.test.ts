@@ -14,6 +14,7 @@ import {
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { readState, statePath } from '../adapters/persistence.js';
 import { status } from './tools/index.js';
+import { makeState } from '../fixtures.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -91,6 +92,20 @@ describe('session-state current epoch boundary', () => {
 
   it('rejects v6 snapshots from before the implementation-generation contract', async () => {
     const sessDir = await writeFixtureState('v6-pre-implementation-generation.json');
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it('rejects an otherwise current v7 snapshot at the read boundary', async () => {
+    const fp = await computeFingerprint(ctx.worktree);
+    const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await fs.writeFile(
+      statePath(sessDir),
+      `${JSON.stringify({ ...makeState(), schemaVersion: 'v7' }, null, 2)}\n`,
+      'utf-8',
+    );
     await expect(readState(sessDir)).rejects.toMatchObject({
       code: 'SESSION_STATE_INCOMPATIBLE',
     });

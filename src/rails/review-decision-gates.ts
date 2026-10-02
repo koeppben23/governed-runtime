@@ -15,7 +15,7 @@ import type { SessionState } from '../state/schema.js';
 import type { ReviewDecision, ReviewVerdict, DecisionIdentity } from '../state/evidence.js';
 import type {
   ArchitectureApprovalCertificate,
-  ArchitectureReviewBinding,
+  ReviewBinding,
 } from '../state/proofgraph-approval.js';
 import {
   authorizedCriticalPlanClaimIds,
@@ -193,13 +193,15 @@ function evaluateEvidenceProofGraphGate(
 ): ReturnType<typeof evaluateProofGraphGate> {
   const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
   return evaluateProofGraphGate({
-    ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
+    projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }
       : {}),
-    riskAssessment: state.implementationRiskAssessment,
+    ...(state.implementationRiskAssessment !== null
+      ? { riskAssessment: state.implementationRiskAssessment }
+      : {}),
   });
 }
 
@@ -368,7 +370,7 @@ function createArchitectureApprovalCertificate(
   architecture: NonNullable<SessionState['architecture']>,
   decision: ReviewDecision,
   ctx: RailContext,
-  reviewBinding: ArchitectureReviewBinding,
+  reviewBinding: ReviewBinding,
 ): ArchitectureApprovalCertificate {
   const claimDeclarations =
     architecture.claimDeclarations ?? emptyClaimDeclarations('architecture');
@@ -403,7 +405,7 @@ function architectureCertificatePatch(
   state: SessionState,
   decision: ReviewDecision,
   ctx: RailContext,
-  architectureReviewBinding: ArchitectureReviewBinding | null,
+  architectureReviewBinding: ReviewBinding | null,
 ): Partial<Pick<SessionState, 'architecture'>> {
   if (
     state.phase !== 'ARCH_REVIEW' ||
@@ -427,7 +429,7 @@ function architectureCertificatePatch(
 }
 
 interface CertificatePatchBindings {
-  readonly architectureReviewBinding: ArchitectureReviewBinding | null;
+  readonly architectureReviewBinding: ReviewBinding | null;
   readonly planReviewEvidence: ResolvedPlanReviewEvidence | null;
 }
 

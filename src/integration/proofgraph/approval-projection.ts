@@ -20,7 +20,7 @@ import {
   hasCurrentArchitectureApprovalCertificate,
   hasCurrentPlanApprovalCertificate,
 } from '../../state/proofgraph-approval.js';
-import type { ArchitectureReviewBinding } from '../../state/proofgraph-approval.js';
+import type { ReviewBinding } from '../../state/proofgraph-approval.js';
 
 /** Digest binding of one human approval certificate. */
 export interface ApprovalCertificateProjection {
@@ -40,7 +40,7 @@ export interface ApprovalCertificateProjection {
    * override. Plan certificates use the nullable reviewObligationId /
    * reviewEvidenceDigest fields instead.
    */
-  readonly reviewBinding?: ArchitectureReviewBinding;
+  readonly reviewBinding?: ReviewBinding;
 }
 
 /** One materialized claim and the evidence chain that backs it. */
@@ -132,7 +132,7 @@ function certificateProjection(state: SessionState): ApprovalCertificateProjecti
  */
 export function buildProofApprovalProjection(state: SessionState): ProofApprovalProjection {
   const evaluated = new Map(
-    (state.proofGraph?.claims ?? []).map((claim) => [claim.claimId, claim] as const),
+    state.proofGraph.claims.map((claim) => [claim.claimId, claim] as const),
   );
   const claims = (state.proofContract?.claims ?? []).map((claim) => ({
     claimId: claim.claimId,

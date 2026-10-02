@@ -5,7 +5,7 @@
  * Verifies that templates remain byte-for-byte identical after refactoring.
  * Uses SHA-256 hashes computed from the compiled template output.
  *
- * @test-policy STABILITY — hash verification
+ * @test-policy HAPPY — hash verification
  */
 
 import { createHash } from 'node:crypto';

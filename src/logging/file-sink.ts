@@ -151,18 +151,12 @@ function parseLogFileDate(filename: string): string | null {
   return null;
 }
 
-function normalizeFileSinkOptions(options?: FileSinkOptions | number): {
+function normalizeFileSinkOptions(options: FileSinkOptions = {}): {
   retentionDays: number;
   maxSizeBytes: number;
   onRotate?: FileSinkOptions['onRotate'];
   onFailure?: FileSinkOptions['onFailure'];
 } {
-  if (typeof options === 'number') {
-    return {
-      retentionDays: options,
-      maxSizeBytes: DEFAULT_MAX_SIZE_BYTES,
-    };
-  }
   return {
     retentionDays: options?.retentionDays ?? DEFAULT_RETENTION_DAYS,
     maxSizeBytes: options?.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES,
@@ -307,10 +301,10 @@ async function appendLogEntry(runtime: FileSinkRuntime, entry: LogEntry): Promis
  * owning logger can account for them centrally.
  *
  * @param workspaceDir - Absolute path to workspace directory.
- * @param options - File sink options or retention days (number, backward-compat).
+ * @param options - File sink options.
  * @returns LogSink function.
  */
-export function createFileSink(workspaceDir: string, options?: FileSinkOptions | number): LogSink {
+export function createFileSink(workspaceDir: string, options: FileSinkOptions = {}): LogSink {
   const normalized = normalizeFileSinkOptions(options);
   const enabled = isAbsolute(workspaceDir);
   const runtime: FileSinkRuntime = {

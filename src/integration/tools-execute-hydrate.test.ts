@@ -48,6 +48,14 @@ import {
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -362,16 +370,16 @@ describe('hydrate', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
-      expect(state!.implementationBaseline).toBeDefined();
-      expect(state!.implementationBaseline!.dirtyFiles.map((d) => d.path)).toEqual(
-        GIT_MOCK_DEFAULTS.changedFiles,
-      );
+      const baseline = state!.implementationBaseline;
+      expect(baseline.dirtyFiles).not.toBeNull();
+      if (baseline.dirtyFiles === null) throw new TypeError('Expected dirty-file baseline capture');
+      expect(baseline.dirtyFiles.map((d) => d.path)).toEqual(GIT_MOCK_DEFAULTS.changedFiles);
       // Each entry carries a content hash slot (null when the path is not
       // hashable in this fixture worktree).
-      for (const entry of state!.implementationBaseline!.dirtyFiles) {
+      for (const entry of baseline.dirtyFiles) {
         expect(entry).toHaveProperty('hash');
       }
-      expect(state!.implementationBaseline!.capturedAt).toBeTruthy();
+      expect(baseline.capturedAt).toBeTruthy();
     });
 
     it('auto-detects TypeScript profile from repo signals', async () => {

@@ -26,6 +26,14 @@ vi.mock('../verification/executor', () => ({
   executeCheck: vi.fn(),
 }));
 
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 import { readState } from '../adapters/persistence.js';
 import { sessionDir, verifyArchive } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';

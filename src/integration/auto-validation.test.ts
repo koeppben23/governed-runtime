@@ -33,7 +33,11 @@ import {
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, implement } from './tools/index.js';
 import { readState, statePath, writeState } from '../adapters/persistence.js';
-import { resumePendingSystemWork, runActiveChecksAutomatically } from './tools/auto-validation.js';
+import {
+  decidePostCommandAutoValidation,
+  resumePendingSystemWork,
+  runActiveChecksAutomatically,
+} from './tools/auto-validation.js';
 import * as fs from 'node:fs/promises';
 import {
   computeFingerprint,
@@ -81,6 +85,17 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       source: 'env' as const,
       assurance: 'best_effort' as const,
     }),
+  };
+});
+
+// The control-plane marker is a git subprocess. A deterministic marker keeps
+// hydrate's frozen baseline and implementation recording in agreement without
+// weakening the fail-closed production check.
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
   };
 });
 
@@ -635,5 +650,47 @@ describe('automatic validation', () => {
       // typed fail-closed result.
       expect(result).toMatchObject({ error: true, code: 'SYSTEM_WORK_STATE_UNREADABLE' });
     });
+  });
+});
+
+describe('decidePostCommandAutoValidation', () => {
+  it('HAPPY: a successful response without phase knowledge runs the trigger', () => {
+    expect(decidePostCommandAutoValidation({ response: '{"error":false}' })).toEqual({
+      kind: 'run',
+    });
+  });
+
+  it('HAPPY: both validation phases run the trigger when the phase is known', () => {
+    for (const phase of ['VALIDATION', 'IMPL_VALIDATION'] as const) {
+      expect(decidePostCommandAutoValidation({ response: '{}', phase })).toEqual({ kind: 'run' });
+    }
+  });
+
+  it('BAD: an error payload and an unparseable payload are fail-closed stop signals', () => {
+    expect(decidePostCommandAutoValidation({ response: '{"error":true}' })).toEqual({
+      kind: 'skip',
+      reason: 'response_error',
+    });
+    expect(decidePostCommandAutoValidation({ response: 'not json' })).toEqual({
+      kind: 'skip',
+      reason: 'response_error',
+    });
+  });
+
+  it('CORNER: a known non-validation phase skips even on a successful response', () => {
+    expect(decidePostCommandAutoValidation({ response: '{}', phase: 'IMPLEMENTATION' })).toEqual({
+      kind: 'skip',
+      reason: 'not_in_validation_phase',
+    });
+    expect(decidePostCommandAutoValidation({ response: '{}', phase: 'READY' })).toEqual({
+      kind: 'skip',
+      reason: 'not_in_validation_phase',
+    });
+  });
+
+  it('EDGE: phase knowledge does not override the response-error stop signal', () => {
+    expect(
+      decidePostCommandAutoValidation({ response: '{"error":true}', phase: 'VALIDATION' }),
+    ).toEqual({ kind: 'skip', reason: 'response_error' });
   });
 });

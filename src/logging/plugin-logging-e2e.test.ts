@@ -2,7 +2,7 @@
  * @module logging/plugin-logging-e2e.test
  * @description E2E tests for the logging infrastructure wired through plugin-logging.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

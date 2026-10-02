@@ -883,7 +883,10 @@ describe('implementation risk assessment (runtime)', () => {
     });
 
     expect(
-      isRiskAssessmentCurrent(state.implementationRiskAssessment, state.implementation?.digest),
+      isRiskAssessmentCurrent(
+        state.implementationRiskAssessment ?? undefined,
+        state.implementation?.digest,
+      ),
     ).toBe(true);
   });
 
@@ -906,7 +909,10 @@ describe('implementation risk assessment (runtime)', () => {
 
     // A stale classification must never justify a gate decision on new code.
     expect(
-      isRiskAssessmentCurrent(state.implementationRiskAssessment, state.implementation?.digest),
+      isRiskAssessmentCurrent(
+        state.implementationRiskAssessment ?? undefined,
+        state.implementation?.digest,
+      ),
     ).toBe(false);
   });
 });

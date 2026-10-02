@@ -32,7 +32,7 @@ that list, not a second authority list.
 
 1. Place production files by the placement authority — every file under
    `src/integration/` needs an entry with exactly **one owner**
-   (`src/architecture/__tests__/integration-placement-policy.ts`). `zone` and
+   (`src/architecture/__tests__/integration-placement-manifest.ts`). `zone` and
    `targetZone` are derived from the path and owner; the physical directory must
    match the owner's target zone.
 2. New tools validate inputs against canonical schemas, route through the state
@@ -98,7 +98,7 @@ mutation scope only to mutation-suitable authorities.
 3. Run `npm run test:architecture`, `npm run check`, `npm run lint:strict`.
 4. `src/integration/**`: add exactly one `{ file, owner }` **placement entry**
    to `INTEGRATION_PLACEMENT`
-   (`src/architecture/__tests__/integration-placement-policy.ts`). A new
+   (`src/architecture/__tests__/integration-placement-manifest.ts`). A new
    directory needs a zone in `INTEGRATION_PLACEMENT_ZONES` and an owner in
    `INTEGRATION_OWNERS`; the physical directory must equal the owner's
    `targetZone`. Review zones carry a **zone budget** (`maxProductionFiles`):

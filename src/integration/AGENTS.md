@@ -15,8 +15,9 @@ API. It must never become a provider of new authorities for lower layers.
   `src/architecture/__tests__/module-dependency-policy.ts`
   (`MODULE_DEPENDENCY_POLICY`), and changes in this subtree must satisfy
   `npm run test:architecture`.
-- Production placement is enforced by the positive authority
-  `src/architecture/__tests__/integration-placement-policy.ts`: every
+- Production placement is enforced by the manifest
+  `src/architecture/__tests__/integration-placement-manifest.ts` and analyzer
+  `src/architecture/__tests__/integration-placement-analyzer.ts`: every
   production file has exactly one owner/zone entry and zero placement debt. A
   new file requires an explicit placement entry in the same change.
 

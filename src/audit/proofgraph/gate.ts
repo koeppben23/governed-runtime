@@ -73,7 +73,12 @@ export interface ProofGraphGateDecision {
 
 export interface ImplementationRiskAssessmentForGate {
   readonly implementationDigest: string;
-  readonly riskTriggers?: readonly RiskTrigger[] | undefined;
+  /**
+   * Trigger taxonomy of the bound assessment. Required in the v8 state
+   * contract; a trigger-less assessment cannot reach this gate because the
+   * session schema rejects it before evaluation.
+   */
+  readonly riskTriggers: readonly RiskTrigger[];
 }
 
 export function planClaimAuthorityOf(plan: SessionState['plan']): PlanClaimAuthority | null {
@@ -98,8 +103,7 @@ export function isRiskAssessmentCurrent(
   return (
     assessment !== undefined &&
     implementationDigest !== undefined &&
-    assessment.implementationDigest === implementationDigest &&
-    Array.isArray(assessment.riskTriggers)
+    assessment.implementationDigest === implementationDigest
   );
 }
 
@@ -162,12 +166,14 @@ export function evaluateProofGraphGate(input: {
 export function evaluateProofGraphGateFromState(state: SessionState): ProofGraphGateDecision {
   const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
   return evaluateProofGraphGate({
-    ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
+    projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }
       : {}),
-    riskAssessment: state.implementationRiskAssessment,
+    ...(state.implementationRiskAssessment !== null
+      ? { riskAssessment: state.implementationRiskAssessment }
+      : {}),
   });
 }

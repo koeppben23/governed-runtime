@@ -10,8 +10,8 @@
  * @version v1
  */
 
-import type { ReviewSubjectScope } from '../../../state/evidence-review.js';
-import type { TaskClass } from '../../../state/schema.js';
+import type { ReviewSubjectScope } from '../../../state/evidence-review-subject.js';
+import type { TaskClass } from '../../../state/task-class.js';
 import { resolveEffectiveTaskClass } from '../../../state/risk-declaration.js';
 import { assessMinimumTaskClass } from '../../phase-tool-gate.js';
 import { challengeKindForObligation, type ChallengeKind } from '../../../config/policy-types.js';

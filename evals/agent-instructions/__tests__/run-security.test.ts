@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, EDGE — eval runner isolation and traversal boundaries. */
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveRunnerEnv, writeReports } from '../run.js';
 import { EvalCaseSchema, type RunnerConfig } from '../schema.js';
@@ -81,8 +82,6 @@ describe('eval runner trust boundaries', () => {
   });
 
   it('rejects traversal-capable report run identifiers before writing', () => {
-    expect(() => writeReports(runner(), [], { runId: '../escape' })).toThrow(
-      'Invalid eval run ID',
-    );
+    expect(() => writeReports(runner(), [], { runId: '../escape' })).toThrow('Invalid eval run ID');
   });
 });

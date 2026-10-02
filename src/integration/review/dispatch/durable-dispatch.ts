@@ -20,7 +20,7 @@ import {
   appendReviewDispatch,
   ensureReviewAssurance,
   markDispatchOutcomeUnknown,
-} from '../../../state/review-continuation.js';
+} from '../../../state/review-dispatch.js';
 import type { ReviewAttempt, ReviewDispatchRecord } from '../../../state/evidence-review.js';
 import type { SessionState } from '../../../state/schema.js';
 

@@ -9,6 +9,7 @@ import {
   PlanClaimDeclaration,
   ProofGraphApprovalCertificate,
   PlanApprovalCertificate,
+  ReviewBinding,
   mintProofGraphClaimId,
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
@@ -59,6 +60,26 @@ const ARCHITECTURE_CLAIM = {
 describe('ProofGraph approval schemas', () => {
   it('parses a digest-bound approval certificate', () => {
     expect(ProofGraphApprovalCertificate.parse(CERTIFICATE)).toEqual(CERTIFICATE);
+  });
+
+  it('uses one canonical schema for both review-binding variants', () => {
+    expect(
+      ReviewBinding.parse({
+        kind: 'current_review',
+        reviewObligationId: '00000000-0000-4000-8000-00000000000a',
+        reviewEvidenceDigest: 'review-evidence-digest',
+        reviewedSubjectDigest: 'subject-digest',
+      }),
+    ).toMatchObject({ kind: 'current_review' });
+    expect(
+      ReviewBinding.parse({
+        kind: 'review_exhausted_override',
+        lastReviewObligationId: '00000000-0000-4000-8000-00000000000a',
+        lastReviewEvidenceDigest: 'review-evidence-digest',
+        reviewedSubjectDigest: 'subject-digest',
+        approvedSubjectDigest: 'subject-digest',
+      }),
+    ).toMatchObject({ kind: 'review_exhausted_override' });
   });
 
   it('rejects a certificate missing a required digest binding', () => {

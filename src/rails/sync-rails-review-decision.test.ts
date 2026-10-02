@@ -140,10 +140,17 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('blocks when a certificate-authorized critical plan claim has no ProofGraph projection', () => {
+    it('blocks when a certificate-authorized critical plan claim has no matching evaluation', () => {
       const state = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
       const result = executeReviewDecision(
-        { ...state, proofGraph: undefined },
+        {
+          ...state,
+          proofGraph: {
+            version: 'proofgraph.v2',
+            claims: [],
+            evaluatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
         { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
         ctx,
       );
@@ -165,10 +172,17 @@ describe('review-decision rail', () => {
       expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_CERTIFICATE_INVALID' });
     });
 
-    it('allows a missing ProofGraph projection when no critical plan claim is authorized', () => {
+    it('allows an empty ProofGraph when no critical plan claim is authorized', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
-        { ...state, proofGraph: undefined },
+        {
+          ...state,
+          proofGraph: {
+            version: 'proofgraph.v2',
+            claims: [],
+            evaluatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
         { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
         ctx,
       );
@@ -257,7 +271,7 @@ describe('review-decision rail', () => {
       expect(result).toMatchObject({ kind: 'ok' });
     });
 
-    it('blocks an assessment that predates trigger classification', () => {
+    it('blocks a stale assessment whose digest does not match the recorded implementation', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
         {
@@ -277,9 +291,10 @@ describe('review-decision rail', () => {
             declarationKind: 'absent' as const,
             ticketDigest: null,
             touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: [],
             assessedFrom: 'implementation_changed_files',
             assessedFileCount: 1,
-            implementationDigest: 'implementation-digest',
+            implementationDigest: 'superseded-implementation-digest',
           },
         },
         { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },

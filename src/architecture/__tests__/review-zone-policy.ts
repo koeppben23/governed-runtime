@@ -30,7 +30,7 @@
 
 import { isTestSourcePath } from './module-classification.js';
 import { collectImportSpecifiers } from './import-specifiers.js';
-import type { IntegrationPlacementZone } from './integration-placement-policy.js';
+import type { IntegrationPlacementZone } from './integration-placement-manifest.js';
 import { stronglyConnectedComponents, type ModuleEdge } from './module-graph.js';
 
 /** Prefix of the review bounded context inside `src/`. */

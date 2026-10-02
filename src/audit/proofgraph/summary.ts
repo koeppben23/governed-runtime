@@ -113,7 +113,7 @@ export interface PersistedProofGraphSummary {
  * state, not a passing one.
  */
 export function summarizePersistedProofGraph(state: SessionState): PersistedProofGraphSummary {
-  const claims = state.proofGraph?.claims ?? [];
+  const claims = state.proofGraph.claims;
   const provenCount = claims.filter((claim) => claim.verificationState === 'PROVEN').length;
   const unprovenCount = claims.length - provenCount;
   const contractClaimIds = new Set((state.proofContract?.claims ?? []).map((c) => c.claimId));

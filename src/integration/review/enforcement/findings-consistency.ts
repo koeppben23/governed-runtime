@@ -4,17 +4,19 @@
  */
 
 import {
-  classifyRepositoryPath,
   FindingRelation,
   RepositoryLocation,
   ReviewSubjectAnchor,
-  ReviewSubjectScope,
   type ArtifactSectionAnchor,
   type FindingRelation as FindingRelationValue,
   type MarkdownSectionPath,
-  type ReviewRepositoryRevisionProvenance,
+} from '../../../state/evidence-findings.js';
+import { ReviewRepositoryRevisionProvenance } from '../../../state/evidence-primitives.js';
+import { classifyRepositoryPath } from '../../../state/repository-path.js';
+import {
+  ReviewSubjectScope,
   type ReviewSubjectScope as ReviewSubjectScopeValue,
-} from '../../../state/evidence-review.js';
+} from '../../../state/evidence-review-subject.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 
 /** Boundary-neutral result of the verdict/blocking-issues coherence check. */
