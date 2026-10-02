@@ -214,8 +214,11 @@ describe('evaluateRepositoryEvidenceBinding', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe('REVIEW_EVIDENCE_NOT_OBSERVED');
-    expect(String(result.details.findingIndexes)).toBe('0');
-    expect(String(result.details.reason).length).toBeGreaterThan(0);
+    expect(result.details).toEqual({
+      obligationId: obligation.obligationId,
+      findingIndexes: [0],
+      failures: [{ kind: 'no_attempt', path: 'src/foo.ts' }],
+    });
   });
 
   it('BAD: a bound attempt without a matching observation is not authority', () => {
@@ -232,7 +235,11 @@ describe('evaluateRepositoryEvidenceBinding', () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(String(result.details.findingIndexes)).toBe('0');
+    expect(result.details).toEqual({
+      obligationId: obligation.obligationId,
+      findingIndexes: [0],
+      failures: [{ kind: 'unobserved', path: 'src/foo.ts', revision: 'head' }],
+    });
   });
 
   it('serializes the binding failure through the adapter boundary envelope', () => {

@@ -19,6 +19,7 @@ import type {
 } from '../../../state/evidence.js';
 import { verifyFrozenMaterialForObligation } from '../../../state/review-continuation.js';
 import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
+import type { PendingReviewRetryDiagnostic } from '../types.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
 import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
@@ -47,7 +48,7 @@ export function canonicalTaskPrompt(
   obligation: ReviewObligation,
   attempt: ReviewAttempt,
   proofGraphAuthorities: ReviewerProofGraphAuthorities,
-  retryDiagnostics?: readonly string[],
+  retryDiagnostics?: readonly PendingReviewRetryDiagnostic[],
 ): string {
   const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
   if (material.kind === 'blocked') {
@@ -70,9 +71,7 @@ export function canonicalTaskPrompt(
     repositoryReview: observationRevisions.length > 0,
     challengeContract: buildReviewChallengeContract(state, obligation) ?? undefined,
     proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
-    ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0
-      ? { retrySchemaErrors: retryDiagnostics }
-      : {}),
+    ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0 ? { retryDiagnostics } : {}),
     frozenReviewerContext,
     artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
     repositoryDiscoverySnapshot:

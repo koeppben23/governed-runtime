@@ -14,7 +14,7 @@
 import { readState } from '../../../adapters/persistence.js';
 import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 
-import type { SessionEnforcementState } from '../types.js';
+import type { SessionEnforcementState, PendingReviewRetryDiagnostic } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 import type {
   ToolHookAfterInput,
@@ -36,7 +36,8 @@ import {
   persistAuthorizedReviewDispatch,
 } from './durable-dispatch.js';
 import {
-  buildCaptureRetryDiagnostics,
+  buildCaptureFailureDiagnostics,
+  buildCodeOnlyRetryDiagnostic,
   buildReviewerCaptureRetryOutput,
   classifyReviewerCaptureFailure,
 } from './capture-retry.js';
@@ -145,7 +146,7 @@ function requireCurrentAttempt(
 ): {
   readonly obligation: ReviewObligation;
   readonly attempt: BindableAttempt;
-  readonly retryDiagnostics?: readonly string[];
+  readonly retryDiagnostics?: readonly PendingReviewRetryDiagnostic[];
 } {
   const pending = pendingBinding(runtime, sessionId);
   if (!pending) {
@@ -294,6 +295,7 @@ interface CaptureFailureContext extends Omit<BlockOutputInput, 'code' | 'reason'
 type CaptureFailureInput = CaptureFailureContext & {
   readonly code: string;
   readonly reason: string;
+  readonly diagnostics: readonly PendingReviewRetryDiagnostic[];
 };
 
 interface StructuredReviewInput {
@@ -339,14 +341,13 @@ async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise
     });
     return;
   }
-  const diagnostics = buildCaptureRetryDiagnostics(input.code, input.reason);
   registerPendingReviewForAttempt(
     input.runtime.ws.getEnforcementState(input.sessionId),
     reviewTool,
     {
       attemptId: rearm.attempt.attemptId,
       obligationId: rearm.obligationId,
-      retryDiagnostics: diagnostics,
+      retryDiagnostics: input.diagnostics,
     },
     new Date().toISOString(),
   );
@@ -354,7 +355,7 @@ async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise
     code: input.code,
     obligationId: rearm.obligationId,
     attemptId: rearm.attempt.attemptId,
-    diagnostics,
+    diagnostics: input.diagnostics,
   });
 }
 
@@ -367,6 +368,7 @@ async function writeBindingFailure(
       ...input,
       code: result.code,
       reason: JSON.stringify(result.details),
+      diagnostics: buildCaptureFailureDiagnostics(result.code, result.details),
     });
     return;
   }
@@ -552,6 +554,7 @@ async function completeStructuredReview(
       ...captureFailure,
       code: captured.code,
       reason: captured.reason,
+      diagnostics: [buildCodeOnlyRetryDiagnostic(captured.code)],
     });
     return;
   }
@@ -565,6 +568,7 @@ async function completeStructuredReview(
       ...captureFailure,
       code: validation.code,
       reason: validation.reason,
+      diagnostics: [buildCodeOnlyRetryDiagnostic(validation.code)],
     });
     return;
   }

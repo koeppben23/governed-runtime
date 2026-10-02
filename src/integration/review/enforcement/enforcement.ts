@@ -37,6 +37,7 @@
 import type { SessionState } from '../../../state/schema.js';
 import type { EnforcementResult } from './types.js';
 import type {
+  PendingReviewRetryDiagnostic,
   PendingReviewTool,
   ReviewableTool,
   SessionEnforcementState,
@@ -98,6 +99,11 @@ function trackReviewRequired(
  * Host-side derived-projection writer: register the exact fresh reviewer attempt
  * FlowGuard authorizes for an already-required review. Delegates to the single
  * pending-review authority so no second tracking path exists.
+ *
+ * `retryDiagnostics` is a transient, best-effort advisory attached to the
+ * in-memory pending review only. A crash between the durable re-arm and this
+ * registration loses the hint; the re-armed attempt stays canonically
+ * recoverable and no review authority or safety property is lost.
  */
 export function registerPendingReviewForAttempt(
   state: SessionEnforcementState,
@@ -105,7 +111,7 @@ export function registerPendingReviewForAttempt(
   binding: {
     readonly attemptId: string;
     readonly obligationId: string;
-    readonly retryDiagnostics?: readonly string[];
+    readonly retryDiagnostics?: readonly PendingReviewRetryDiagnostic[];
   },
   now: string,
 ): void {

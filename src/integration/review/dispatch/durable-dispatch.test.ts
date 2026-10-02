@@ -19,6 +19,8 @@ import {
   type DispatchLedgerWriteDeps,
 } from './durable-dispatch.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
+import { createSessionState } from '../enforcement/enforcement.js';
+import { handleReviewTransportRecovery } from '../../tools/review-transport-recovery.js';
 import {
   artifactReviewSubjectScope,
   appendObligationWithAttempt,
@@ -575,6 +577,64 @@ describe('abandonAndRearmByHostCall', () => {
     expect(after.attempts.find((a) => a.attemptId === first.attempt.attemptId)?.status).toBe(
       'created',
     );
+  });
+});
+
+describe('transient retry hint durability', () => {
+  /**
+   * The retry hint lives only in the in-memory pending review. A crash between
+   * the durable re-arm and that registration loses the hint — this test is the
+   * crash cut: the hint is gone, yet A2 stays recoverable and no reviewer
+   * budget is consumed by the canonical recovery path.
+   */
+  it('recovers the re-armed A2 without diagnostics and never mints A3', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const outcome = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+    expect(outcome.kind).toBe('rearmed');
+    if (outcome.kind !== 'rearmed') return;
+    const a2 = outcome.attempt.attemptId;
+
+    // Crash cut: no pending registration happened, so no diagnostics exist.
+    const enforcement = createSessionState();
+    expect(enforcement.pendingReviews.size).toBe(0);
+    expect(resolveReviewContinuation(stateRef.current.reviewAssurance, 'plan')).toMatchObject({
+      kind: 'awaiting_task',
+      attemptId: a2,
+    });
+
+    // The canonical recovery path re-emits A2: no A3, no budget consumption.
+    let emittedAttemptId: string | null = null;
+    const response = await handleReviewTransportRecovery({
+      state: stateRef.current,
+      sessDir: SESS_DIR,
+      now: NOW,
+      obligationType: 'plan',
+      buildResponse: (_status, authority) => {
+        emittedAttemptId = authority.attempt.attemptId;
+        return 're-emitted';
+      },
+    });
+    expect(response).toBe('re-emitted');
+    expect(emittedAttemptId).toBe(a2);
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.attempts).toHaveLength(2);
+    expect(after.attempts.map((item) => item.attemptId).sort()).toEqual(
+      [attempt.attemptId, a2].sort(),
+    );
+    expect(resolveReviewContinuation(after, 'plan')).toMatchObject({
+      kind: 'awaiting_task',
+      attemptId: a2,
+    });
   });
 });
 

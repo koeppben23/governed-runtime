@@ -211,7 +211,13 @@ describe('pure binder — adversarial matrix', () => {
       { path: 'src/foo.ts', revision: 'head' },
     ]);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('evidence_unavailable');
+    if (!result.ok) {
+      expect(result.code).toBe('evidence_unavailable');
+      expect(result.failingIndexes).toEqual([0]);
+      expect(result.failures).toEqual([
+        { kind: 'unobserved', path: 'src/foo.ts', revision: 'head' },
+      ]);
+    }
   });
 
   it('BAD: base citation with only a head observation is rejected', () => {
@@ -328,6 +334,11 @@ describe('pure binder — adversarial matrix', () => {
       { path: 'src/foo.ts', revision: 'head', line: 4 },
     ]);
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failures).toEqual([
+        { kind: 'binary_line_citation', path: 'src/foo.ts', revision: 'head' },
+      ]);
+    }
   });
 
   it('BAD: line beyond observed content is rejected; within is accepted', () => {
@@ -337,18 +348,36 @@ describe('pure binder — adversarial matrix', () => {
       ...baseAttempt,
       observations: [makeObservation(obligation, baseAttempt, { lineCount: 12 })],
     };
-    expect(
-      bind(obligation, attempt, CHILD_SESSION_ID, [
-        { path: 'src/foo.ts', revision: 'head', line: 13 },
-      ]),
-      'line 13 in 12-line content',
-    ).toMatchObject({ ok: false });
-    expect(
-      bind(obligation, attempt, CHILD_SESSION_ID, [
-        { path: 'src/foo.ts', revision: 'head', line: 2, endLine: 20 },
-      ]),
-      'endLine 20 in 12-line content',
-    ).toMatchObject({ ok: false });
+    const lineFailure = bind(obligation, attempt, CHILD_SESSION_ID, [
+      { path: 'src/foo.ts', revision: 'head', line: 13 },
+    ]);
+    expect(lineFailure, 'line 13 in 12-line content').toMatchObject({ ok: false });
+    if (!lineFailure.ok) {
+      expect(lineFailure.failures).toEqual([
+        {
+          kind: 'line_out_of_range',
+          path: 'src/foo.ts',
+          revision: 'head',
+          line: 13,
+          lineCount: 12,
+        },
+      ]);
+    }
+    const endLineFailure = bind(obligation, attempt, CHILD_SESSION_ID, [
+      { path: 'src/foo.ts', revision: 'head', line: 2, endLine: 20 },
+    ]);
+    expect(endLineFailure, 'endLine 20 in 12-line content').toMatchObject({ ok: false });
+    if (!endLineFailure.ok) {
+      expect(endLineFailure.failures).toEqual([
+        {
+          kind: 'end_line_out_of_range',
+          path: 'src/foo.ts',
+          revision: 'head',
+          endLine: 20,
+          lineCount: 12,
+        },
+      ]);
+    }
     expect(
       bind(obligation, attempt, CHILD_SESSION_ID, [
         { path: 'src/foo.ts', revision: 'head', line: 2, endLine: 5 },

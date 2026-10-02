@@ -50,6 +50,7 @@ import {
   type FindingWithRelation,
 } from '../enforcement/findings-consistency.js';
 import { evaluateRepositoryEvidenceBinding } from '../observations/review-validation-evidence.js';
+import { renderEvidenceLocationFailure } from '../observations/observation-binding.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -287,14 +288,22 @@ function checkRepositoryEvidenceBinding(
   ctx: ReviewFindingsValidationContext,
 ): ReviewValidationFailure | null {
   const binding = evaluateRepositoryEvidenceBinding(findings, obligation, ctx);
-  return binding.ok
-    ? null
-    : {
-        code: binding.code,
-        vars: Object.fromEntries(
-          Object.entries(binding.details).map(([key, value]) => [key, String(value)]),
-        ),
-      };
+  if (binding.ok) return null;
+  const { details } = binding;
+  if ('failures' in details) {
+    return {
+      code: binding.code,
+      vars: {
+        obligationId: details.obligationId,
+        findingIndexes: details.findingIndexes.join(', '),
+        reason: details.failures.map(renderEvidenceLocationFailure).join('; '),
+      },
+    };
+  }
+  return {
+    code: binding.code,
+    vars: { obligationId: details.obligationId, reason: details.reason },
+  };
 }
 
 interface StrictReviewBinding {

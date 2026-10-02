@@ -10,6 +10,7 @@ import type { RepositoryDiscoverySnapshot } from '../../../state/evidence.js';
 import { renderReviewerTaskPrompt, buildReviewContentPrompt } from './prompt-builders.js';
 import type { FrozenReviewerContext } from '../../../state/review-continuation.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from '../enforcement/types.js';
+import type { PendingReviewRetryDiagnostic } from '../types.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -79,7 +80,10 @@ function repositoryFrozenContext(): FrozenReviewerContext {
   };
 }
 
-function hostPrompt(snapshotValue: RepositoryDiscoverySnapshot, retryErrors?: string[]): string {
+function hostPrompt(
+  snapshotValue: RepositoryDiscoverySnapshot,
+  retryDiagnostics?: readonly PendingReviewRetryDiagnostic[],
+): string {
   return renderReviewerTaskPrompt({
     iteration: 1,
     planVersion: 1,
@@ -90,7 +94,7 @@ function hostPrompt(snapshotValue: RepositoryDiscoverySnapshot, retryErrors?: st
     repositoryReview: true,
     frozenReviewerContext: repositoryFrozenContext(),
     repositoryDiscoverySnapshot: snapshotValue,
-    ...(retryErrors ? { retrySchemaErrors: retryErrors } : {}),
+    ...(retryDiagnostics ? { retryDiagnostics } : {}),
   });
 }
 
@@ -117,7 +121,7 @@ describe('repository Discovery envelope (both transports)', () => {
   });
 
   it('repair prompt keeps the envelope before the material marker', () => {
-    const prompt = hostPrompt(snapshot(), ['severity: invalid literal value']);
+    const prompt = hostPrompt(snapshot(), [{ code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' }]);
     expect(prompt).toContain('## Prior Output Rejected — Contract Errors');
     expect(prompt).toContain('Return a fresh complete result.');
     expect(prompt).not.toContain('Return a fresh complete ReviewFindings object');
