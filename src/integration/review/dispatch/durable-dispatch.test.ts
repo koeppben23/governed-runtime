@@ -12,6 +12,7 @@ import { resolveReviewContinuation } from '../../../state/review-continuation.js
 import { hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { makeState } from '../../../fixtures.js';
 import {
+  abandonAndRearmByHostCall,
   abandonReviewDispatchByHostCall,
   buildInterruptedDispatchRearm,
   persistAuthorizedReviewDispatch,
@@ -460,6 +461,120 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
     expect(second.kind).toBe('blocked');
     if (second.kind !== 'blocked') return;
     expect(second.reason).toContain('budget exhausted');
+  });
+});
+
+describe('abandonAndRearmByHostCall', () => {
+  const CHILD_2 = 'child-session-dispatch-2';
+
+  async function releasedA1(
+    deps: DispatchLedgerWriteDeps,
+    obligationId: string,
+    attemptId: string,
+  ) {
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId,
+      obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+  }
+
+  it('HAPPY: stales the released A1 and mints A2 awaiting task in one mutation', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+
+    const outcome = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+
+    expect(outcome.kind).toBe('rearmed');
+    if (outcome.kind !== 'rearmed') return;
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+    expect(after.attempts.find((a) => a.attemptId === attempt.attemptId)?.status).toBe('stale');
+    expect(outcome.attempt).toMatchObject({
+      obligationId: obligation.obligationId,
+      status: 'created',
+      origin: {
+        kind: 'dispatch_rearm',
+        predecessorAttemptId: attempt.attemptId,
+        triggerReason: 'spent',
+      },
+    });
+    expect(outcome.attempt.attemptId).not.toBe(attempt.attemptId);
+    expect(resolveReviewContinuation(after, 'plan')).toMatchObject({
+      kind: 'awaiting_task',
+      attemptId: outcome.attempt.attemptId,
+    });
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('BUDGET: refuses a second re-arm yet still stales A2 and blocks', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    const first = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+    expect(first.kind).toBe('rearmed');
+    if (first.kind !== 'rearmed') return;
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: first.attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD_2,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const second = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD_2, NOW);
+
+    expect(second.kind).toBe('blocked');
+    if (second.kind !== 'blocked') return;
+    expect(second.reason).toContain('budget exhausted');
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.attempts.find((a) => a.attemptId === first.attempt.attemptId)?.status).toBe(
+      'stale',
+    );
+    expect(after.attempts).toHaveLength(2);
+    expect(after.dispatches.find((record) => record.hostCallId === CHILD_2)?.dispatchStatus).toBe(
+      'outcome_unknown',
+    );
+  });
+
+  it('EDGE: an unknown host call is a no-op with the original state', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    const before = stateRef.current.reviewAssurance!;
+
+    const outcome = await abandonAndRearmByHostCall(deps, SESS_DIR, 'unknown-host-call', NOW);
+
+    expect(outcome).toEqual({ kind: 'noop' });
+    expect(stateRef.current.reviewAssurance).toEqual(before);
+  });
+
+  it('CRASH-CUT: re-arming for the unreleased A2 host call is a no-op', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    const first = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+    expect(first.kind).toBe('rearmed');
+    if (first.kind !== 'rearmed') return;
+    expect(resolveReviewContinuation(stateRef.current.reviewAssurance, 'plan')).toMatchObject({
+      kind: 'awaiting_task',
+      attemptId: first.attempt.attemptId,
+    });
+
+    const outcome = await abandonAndRearmByHostCall(deps, SESS_DIR, 'call-a2-not-released', NOW);
+
+    expect(outcome).toEqual({ kind: 'noop' });
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.attempts.find((a) => a.attemptId === first.attempt.attemptId)?.status).toBe(
+      'created',
+    );
   });
 });
 

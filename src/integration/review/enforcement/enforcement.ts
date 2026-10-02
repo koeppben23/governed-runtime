@@ -94,6 +94,20 @@ function trackReviewRequired(
   state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, now, binding));
 }
 
+/**
+ * Host-side derived-projection writer: register the exact fresh reviewer attempt
+ * FlowGuard authorizes for an already-required review. Delegates to the single
+ * pending-review authority so no second tracking path exists.
+ */
+export function registerPendingReviewForAttempt(
+  state: SessionEnforcementState,
+  reviewTool: ReviewableTool,
+  binding: { readonly attemptId: string; readonly obligationId: string },
+  now: string,
+): void {
+  trackReviewRequired(state, reviewTool, now, binding);
+}
+
 /** Injected authorities for the after-hook review tracking boundary. */
 export interface ReviewTrackingDeps {
   readonly now: string;

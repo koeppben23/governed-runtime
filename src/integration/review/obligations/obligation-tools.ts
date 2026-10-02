@@ -94,6 +94,19 @@ export function obligationTypeForTool(toolName: string): ReviewObligationType | 
 export const REVIEWABLE_TOOLS = Object.keys(REVIEW_OBLIGATION_BY_TOOL) as ReviewableTool[];
 
 /**
+ * Reverse mapping: the reviewable tool that owns an obligation type.
+ *
+ * Derived from {@link REVIEW_OBLIGATION_BY_TOOL} so the two directions cannot
+ * drift. Returns `undefined` for an unclassified runtime value so callers fail
+ * closed.
+ */
+export function reviewableToolForObligationType(
+  type: ReviewObligationType,
+): ReviewableTool | undefined {
+  return REVIEWABLE_TOOLS.find((tool) => REVIEW_OBLIGATION_BY_TOOL[tool] === type);
+}
+
+/**
  * Tools whose responses can carry a review signal tracked by the after-hook:
  * the obligation-owning reviewable tools plus the verdict/diagnostic emitters
  * that resolve to an owning obligation.

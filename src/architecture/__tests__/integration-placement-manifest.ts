@@ -73,7 +73,7 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review/dispatch',
     dir: 'integration/review/dispatch',
     description: 'Reviewer/task resolution, dispatch, and orchestration',
-    maxProductionFiles: 11,
+    maxProductionFiles: 12,
   },
   {
     id: 'review/obligations',
@@ -359,6 +359,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/dispatch/dispatch-authority.ts', owner: 'review-dispatch' },
   { file: 'integration/review/enforcement/dispatch-signal.ts', owner: 'review-enforcement' },
   { file: 'integration/review/dispatch/durable-dispatch.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/capture-retry.ts', owner: 'review-dispatch' },
   { file: 'integration/review/enforcement/challenge-binding.ts', owner: 'review-enforcement' },
   { file: 'integration/review/enforcement/challenge-consistency.ts', owner: 'review-enforcement' },
   { file: 'integration/review/enforcement/enforcement.ts', owner: 'review-enforcement' },

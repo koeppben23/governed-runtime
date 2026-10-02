@@ -1416,29 +1416,80 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('blocks malformed structured reviewer output without recording evidence', async () => {
-      const { ws, sessionID, sessDir, obligationId, hooks } = await bootNativeReviewSession(
-        (obligationId) => {
+    it('re-arms a fresh attempt after a malformed capture and binds the retry', async () => {
+      const { ws, sessionID, sessDir, obligationId, hooks, structuredPrompt } =
+        await bootNativeReviewSession((obligationId) => {
           const malformed = nativeFindings(obligationId);
           delete malformed.attestation;
           return malformed;
-        },
-      );
+        });
       try {
         await dispatchReviewerTask(hooks, sessionID);
-        const taskOutput = await completeReviewerTask(hooks, sessionID);
+        const first = await completeReviewerTask(hooks, sessionID);
 
-        const blocked = JSON.parse(String(taskOutput.output)) as Record<string, unknown>;
-        expect(blocked.error).toBe(true);
-        // The host-validated structured payload violates the canonical reviewer
-        // DTO before any obligation evidence is evaluated.
-        expect(blocked.code).toBe('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
+        const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
+        expect(retry.reviewDispatch).toEqual({ required: true, completed: false });
+        const reviewRetry = retry.reviewRetry as Record<string, unknown>;
+        expect(reviewRetry).toMatchObject({
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          obligationId,
+          retryable: true,
+        });
+        const retryAttemptId = reviewRetry.attemptId as string;
+        expect(retryAttemptId).not.toBe(ATTEMPT_ID);
 
-        const state = await readState(sessDir);
+        let state = await readState(sessDir);
+        const attemptStatus = (attemptId: string) =>
+          state?.reviewAssurance?.attempts.find((a) => a.attemptId === attemptId)?.status;
+        expect(attemptStatus(ATTEMPT_ID)).toBe('stale');
+        expect(attemptStatus(retryAttemptId)).toBe('created');
         expect(state?.reviewAssurance?.obligations[0]?.status).toBe('pending');
         expect(state?.reviewAssurance?.invocations).toEqual([]);
-        expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
-        void obligationId;
+
+        structuredPrompt.mockResolvedValue({
+          data: { info: { structured: nativeFindings(obligationId) } },
+        });
+        await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
+        const second = await completeReviewerTask(hooks, sessionID, 'call-native-2');
+
+        const completed = JSON.parse(String(second.output)) as Record<string, unknown>;
+        expect(completed.reviewDispatch).toEqual({
+          required: true,
+          completed: true,
+          verdict: 'accept',
+        });
+        state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
+        expect(attemptStatus(retryAttemptId)).toBe('bound');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks a second malformed capture when the re-arm budget is exhausted', async () => {
+      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession((obligationId) => {
+        const malformed = nativeFindings(obligationId);
+        delete malformed.attestation;
+        return malformed;
+      });
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const first = await completeReviewerTask(hooks, sessionID);
+        const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
+        expect(retry.reviewRetry).toBeDefined();
+
+        await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
+        const second = await completeReviewerTask(hooks, sessionID, 'call-native-2');
+
+        const blocked = JSON.parse(String(second.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
+        expect((blocked.detail as Record<string, unknown>).reason).toContain('budget exhausted');
+
+        const state = await readState(sessDir);
+        const attempts = state?.reviewAssurance?.attempts ?? [];
+        expect(attempts).toHaveLength(2);
+        expect(attempts.find((a) => a.attemptId !== ATTEMPT_ID)?.status).toBe('stale');
       } finally {
         await ws.cleanup();
       }
