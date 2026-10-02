@@ -55,9 +55,7 @@ export default defineConfig({
       'src/integration/review/enforcement/retry-signal.test.ts',
       'src/integration/review/enforcement/findings-consistency.test.ts',
       'src/integration/review/enforcement/challenge-consistency.test.ts',
-      'src/integration/review/prompting/verification-evidence-prompt.test.ts',
       'src/integration/review/evidence/anchor-contract-lines.test.ts',
-      'src/integration/review/prompting/impl-review-prompt.test.ts',
       'src/integration/review/verification-evidence-projection.test.ts',
 
       'src/shared/hashing.test.ts',

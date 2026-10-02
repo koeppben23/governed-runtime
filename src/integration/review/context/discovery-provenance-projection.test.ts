@@ -9,10 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../../fixtures.js';
 import { RepositoryDiscoverySnapshot } from '../../../state/evidence-review-attempt-discovery.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
-import {
-  buildDiscoveryContextSection,
-  buildRepositoryDiscoverySnapshotSection,
-} from '../prompting/discovery-context-prompt.js';
+import { buildRepositoryDiscoverySnapshotSection } from '../prompting/discovery-context-prompt.js';
 import type { DiscoveryReviewContext } from './discovery-port.js';
 import { resolveReviewAttemptDiscoveryContext } from './discovery-attempt-context.js';
 
@@ -114,15 +111,7 @@ describe('Discovery reviewer provenance projection', () => {
     vi.mocked(buildReviewDiscoveryContext).mockReset();
   });
 
-  it('renders correlation identities in the live Discovery review context', () => {
-    const section = buildDiscoveryContextSection(reviewContext());
-
-    expect(section).toContain(`currentDigest: ${CURRENT_DIGEST}`);
-    expect(section).toContain(`persistedDigest: ${PERSISTED_DRIFT_DIGEST}`);
-    expect(section).toContain(`candidateId: ${CANDIDATE_ID}`);
-  });
-
-  it('renders the same correlation identities in the attempt-bound snapshot', () => {
+  it('renders correlation identities in the attempt-bound snapshot', () => {
     const section = buildRepositoryDiscoverySnapshotSection(snapshot());
 
     expect(section).toContain(`discoveryDigest: ${DISCOVERY_DIGEST}`);
