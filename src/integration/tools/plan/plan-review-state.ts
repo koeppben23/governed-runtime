@@ -13,6 +13,7 @@
 
 import { IntegrationInvariantError } from '../../errors.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../../state/evidence.js';
@@ -121,7 +122,7 @@ export function applyPlanRevision(
     return { currentPlan, history, revisionDelta, prevDigest, verdict };
   }
 
-  const revisedBody = scope.args.planText?.trim();
+  const revisedBody = normalizeReviewArtifactText(scope.args.planText ?? '');
   if (!revisedBody) return formatBlocked('REVISED_PLAN_REQUIRED');
   if (!scope.args.claims) {
     return formatBlocked('REVISED_PLAN_CLAIMS_REQUIRED');

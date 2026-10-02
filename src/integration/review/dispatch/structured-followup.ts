@@ -19,6 +19,13 @@ import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import type { OrchestratorClient } from '../types.js';
 
+/** Every blocked code the same-child structured follow-up can return. */
+export type StructuredFollowupFailureCode =
+  | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
+  | 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE'
+  | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
+  | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
+
 export type StructuredFollowupResult =
   | {
       readonly kind: 'ok';
@@ -28,11 +35,7 @@ export type StructuredFollowupResult =
     }
   | {
       readonly kind: 'blocked';
-      readonly code:
-        | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
-        | 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE'
-        | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
-        | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
+      readonly code: StructuredFollowupFailureCode;
       readonly reason: string;
     };
 

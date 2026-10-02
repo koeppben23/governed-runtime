@@ -28,6 +28,8 @@ export type ArchitectureArgs = {
   claims?: ArchitectureClaimDeclarationInput[];
   reviewVerdict?: LoopVerdict;
   reviewerUnavailable?: boolean;
+  /** Explicit typed transport-recovery intent for the pending ADR review. */
+  reviewRecovery?: 'retry_transport';
   targetPaths?: string[];
 };
 
@@ -55,6 +57,7 @@ export function validateArchitectureCallShape(args: ArchitectureArgs): string | 
     text: args.adrText,
     reviewVerdict: args.reviewVerdict,
     reviewerUnavailable: args.reviewerUnavailable,
+    reviewRecovery: args.reviewRecovery,
   });
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
   return null;

@@ -60,12 +60,8 @@ export interface ReviewLoopParams {
    * resubmitted inside the verdict call (plan/architecture).
    */
   changesRequestedVerdictFirst?: boolean;
-  /** The tool call to recover a technically failed reviewer attempt. */
-  strictRecoveryCall: string;
-  /** Verb for the recovery action, e.g. `Re-submit` or `Re-record`. */
-  strictRecoveryVerb: string;
-  /** Noun for recovery attempts. */
-  strictRecoveryNoun: string;
+  /** The typed tool call to recover a technically failed reviewer attempt. */
+  recoveryCall: string;
   /** Iteration limit note, e.g. `(max 3 iterations)`. */
   iterationNote: string;
   /** Step number to return to for the next iteration. */
@@ -112,6 +108,6 @@ export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer result to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
    - If review converged: Report the result per the Presentation section below.
    - If another semantic iteration is needed: CONTINUE AUTOMATICALLY — do not stop and do not wait for a new user command between iterations. Run the next iteration from step ${p.repeatStep}, looping until the reviewer accepts (convergence) or the budget is exhausted ${p.iterationNote}.
-   - If the native reviewer Task or same-child structured serialization fails technically: ${p.strictRecoveryVerb} the SAME ${p.artifactName} with \`${p.strictRecoveryCall}\`. This re-arms the frozen obligation with a fresh append-only ReviewAttempt; it MUST NOT create a new artifact/plan revision solely for a transport failure. Never retry by issuing a second bare Task against the spent attempt.
+   - If the tool response carries \`reviewRetry\` with \`retryable: true\`: invoke the reviewer Task again immediately for the re-armed attempt — no artifact re-submission and no new user command. Otherwise, on a technical reviewer transport/capture failure: use the typed recovery \`${p.recoveryCall}\`; never create a new artifact revision solely for a transport failure, and never retry a second bare Task against the spent attempt.
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.`;
 }

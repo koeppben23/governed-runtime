@@ -461,6 +461,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
 
   const REJECTED_ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
   const REPAIR_ATTEMPT_ID = '44444444-4444-4444-8444-444444444444';
+  const INVOCATION_ID = '77777777-7777-4777-8777-777777777777';
   const LATER = '2026-01-01T00:00:01.000Z';
 
   const REJECTED_ATTEMPT = {
@@ -499,11 +500,61 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     };
   }
 
-  function parseLineage(attempts: readonly unknown[], dispatches: readonly unknown[] = []) {
+  /**
+   * Canonical bound invocation for the rejected predecessor. A completed
+   * dispatch (below) is only schema-coherent together with the matching
+   * invocation, so the F12 predecessor fixtures carry both.
+   */
+  const BOUND_INVOCATION = {
+    invocationId: INVOCATION_ID,
+    obligationId: FIXED_UUID,
+    obligationType: 'plan' as const,
+    parentSessionId: 'ses_parent',
+    childSessionId: 'ses_child',
+    agentType: 'flowguard-reviewer',
+    attemptId: REJECTED_ATTEMPT_ID,
+    invocationMode: 'native_task_structured_followup' as const,
+    hostVisible: true as const,
+    transcriptNavigable: true as const,
+    promptHash: 'b'.repeat(64),
+    canonicalPromptDigest: 'b'.repeat(64),
+    mandateDigest: 'sha256-mandate',
+    criteriaVersion: 'p40-v1',
+    findingsHash: 'c'.repeat(64),
+    invokedAt: FIXED_TIME,
+    fulfilledAt: FIXED_TIME,
+    consumedByObligationId: null,
+    capturedRawFindings: { overallVerdict: 'accept', blockingIssues: [{}] },
+    source: 'host-orchestrated' as const,
+    reviewOutputMode: 'structured_output' as const,
+    structuredOutputUsed: true as const,
+    reviewAssuranceLevel: 'structured_high' as const,
+  };
+
+  /** Completed dispatch closing the BOUND_INVOCATION host release. */
+  function completedDispatch(overrides: Record<string, unknown> = {}) {
+    return {
+      dispatchId: '33333333-3333-4333-8333-333333333333',
+      attemptId: REJECTED_ATTEMPT_ID,
+      obligationId: FIXED_UUID,
+      hostCallId: 'ses_child',
+      canonicalPromptDigest: 'b'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'completed' as const,
+      completedAt: FIXED_TIME,
+      ...overrides,
+    };
+  }
+
+  function parseLineage(
+    attempts: readonly unknown[],
+    dispatches: readonly unknown[] = [],
+    invocations: readonly unknown[] = [],
+  ) {
     return ReviewAssuranceState.safeParse({
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [PLAN_OBLIGATION],
-      invocations: [],
+      invocations,
       attempts,
       dispatches,
     });
@@ -684,7 +735,25 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     expect(JSON.stringify(result.error.issues)).toContain('not an earlier attempt');
   });
 
-  it('rejects a trigger reason that contradicts the predecessor state', () => {
+  it('HAPPY: re-arms a rejected(consistency_invalid) predecessor with a completed dispatch', () => {
+    const result = parseLineage(
+      [
+        { ...REJECTED_ATTEMPT, rejectionReason: 'consistency_invalid' as const },
+        rearmAttempt({
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: REJECTED_ATTEMPT_ID,
+            triggerReason: 'spent',
+          },
+        }),
+      ],
+      [completedDispatch()],
+      [BOUND_INVOCATION],
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a rejected(consistency_invalid) predecessor without a completed dispatch', () => {
     const result = parseLineage([
       { ...REJECTED_ATTEMPT, rejectionReason: 'consistency_invalid' as const },
       rearmAttempt({
@@ -695,6 +764,50 @@ describe('Attempt lineage and dispatch lifecycle', () => {
         },
       }),
     ]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'trigger reason does not match its predecessor state',
+    );
+  });
+
+  it('rejects a rejected predecessor with a different reason even with a completed dispatch', () => {
+    const result = parseLineage(
+      [
+        { ...REJECTED_ATTEMPT, rejectionReason: 'schema_invalid' as const },
+        rearmAttempt({
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: REJECTED_ATTEMPT_ID,
+            triggerReason: 'spent',
+          },
+        }),
+      ],
+      [completedDispatch()],
+      [BOUND_INVOCATION],
+    );
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'trigger reason does not match its predecessor state',
+    );
+  });
+
+  it('rejects a trigger reason that contradicts the F12 predecessor state', () => {
+    const result = parseLineage(
+      [
+        { ...REJECTED_ATTEMPT, rejectionReason: 'consistency_invalid' as const },
+        rearmAttempt({
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: REJECTED_ATTEMPT_ID,
+            triggerReason: 'interrupted',
+          },
+        }),
+      ],
+      [completedDispatch()],
+      [BOUND_INVOCATION],
+    );
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
     expect(JSON.stringify(result.error.issues)).toContain(

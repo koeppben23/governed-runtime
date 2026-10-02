@@ -28,6 +28,7 @@ import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import { readState } from '../../../adapters/persistence.js';
 import { validateAdrSections } from '../../../state/evidence.js';
+import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
 import type { SessionState } from '../../../state/schema.js';
@@ -49,6 +50,7 @@ import {
 } from '../../../state/review-continuation.js';
 import { blockObligation } from '../../review/obligations/obligation-state.js';
 import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
+import { handleReviewTransportRecovery } from '../review-transport-recovery.js';
 import { resolvePreImplementationChallengeClassification } from '../challenge/pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
@@ -104,6 +106,25 @@ export async function routeArchitectureInitialSubmission(
   }
 }
 
+/** Typed retry_transport routing: re-emit or durably re-arm the SAME frozen obligation, never a new ADR revision. */
+export async function routeArchitectureTransportRecovery(
+  session: ArchitectureSession,
+): Promise<string> {
+  return handleReviewTransportRecovery({
+    state: session.state,
+    sessDir: session.sessDir,
+    now: session.ctx.now(),
+    obligationType: 'architecture',
+    buildResponse: (status, authority) =>
+      architectureInstructionResponse(session, {
+        authority,
+        status,
+        iteration: authority.obligation.iteration,
+        planVersion: authority.obligation.planVersion,
+      }),
+  });
+}
+
 async function routeArchitectureMissingAttempt(
   session: ArchitectureSession,
   obligation: NonNullable<ArchitectureSession['state']['reviewAssurance']>['obligations'][number],
@@ -149,7 +170,7 @@ function changedSubjectWhilePending(
   session: ArchitectureSession,
 ): string | null {
   if (!args.adrText || !args.adrText.trim()) return null;
-  const submittedDigest = session.ctx.digest(args.adrText);
+  const submittedDigest = session.ctx.digest(normalizeReviewArtifactText(args.adrText));
   if (submittedDigest === obligation.subjectDigest) return null;
   return formatBlocked('REVIEW_SUBJECT_CHANGED_WHILE_PENDING', {
     obligationId: obligation.obligationId,
@@ -204,7 +225,7 @@ async function routeArchitectureInterruptedDispatch(
   );
 }
 
-function architectureInstructionResponse(
+export function architectureInstructionResponse(
   session: ArchitectureSession,
   input: {
     authority: ReviewDispatchAuthority;

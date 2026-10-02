@@ -14,7 +14,10 @@ import { randomUUID } from 'node:crypto';
 import { buildEnforcementError } from '../../blocked-result.js';
 
 import { authorizeDispatchRearm } from '../obligations/reissue-authority.js';
-import { createAttemptForExistingObligation } from '../obligations/attempt-lifecycle.js';
+import {
+  createAttemptForExistingObligation,
+  updateAttemptStatus,
+} from '../obligations/attempt-lifecycle.js';
 import {
   abandonReviewDispatch,
   appendReviewDispatch,
@@ -121,19 +124,109 @@ export async function persistAuthorizedReviewDispatch(
   });
 }
 
-/** Resolve a concluded host call without bound evidence as outcome_unknown. */
+/**
+ * Resolve a concluded host call without bound evidence as outcome_unknown and
+ * mark the exact released attempt stale in the SAME durable mutation.
+ *
+ * Exact lineage is mandatory: the host call must resolve to exactly ONE
+ * `authorized` dispatch record, and that record's attempt must be exactly ONE
+ * `created` attempt for the obligation. Anything else is a no-op (the caller
+ * still fails the review closed); there is no best-effort fallback to another
+ * attempt or an obligation-wide stale.
+ */
 export async function abandonReviewDispatchByHostCall(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
   hostCallId: string,
+  now: string = new Date().toISOString(),
 ): Promise<void> {
   await deps.updateReviewAssurance(sessDir, (state) => {
     const assurance = ensureReviewAssurance(state.reviewAssurance);
-    return {
+    const authorized = (assurance.dispatches ?? []).filter(
+      (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
+    );
+    if (authorized.length !== 1) return state;
+    const record = authorized[0];
+    if (record === undefined) return state;
+    const attempt = (assurance.attempts ?? []).find(
+      (candidate) => candidate.attemptId === record.attemptId,
+    );
+    if (attempt === undefined || attempt.status !== 'created') return state;
+
+    const abandoned = {
       ...state,
       reviewAssurance: abandonReviewDispatch(assurance, hostCallId),
     };
+    return {
+      ...abandoned,
+      reviewAssurance: updateAttemptStatus(
+        ensureReviewAssurance(abandoned.reviewAssurance),
+        attempt.attemptId,
+        'stale',
+        now,
+      ),
+    };
   });
+}
+
+export type AbandonAndRearmOutcome =
+  | { readonly kind: 'rearmed'; readonly attempt: ReviewAttempt; readonly obligationId: string }
+  | { readonly kind: 'blocked'; readonly reason: string }
+  | { readonly kind: 'noop' };
+
+/**
+ * Abandon one exact authorized host release and re-arm a fresh reviewer attempt
+ * on the same frozen obligation in ONE durable mutation.
+ *
+ * Exact lineage is mandatory: exactly ONE `authorized` dispatch for the host
+ * call and exactly the `created` attempt it points to. Anything else is a no-op
+ * and the caller still fails the review closed. The re-arm budget is the
+ * existing obligation `maxReviewerAttempts` (via `authorizeDispatchRearm`).
+ *
+ * When the re-arm is refused, the abandon+stale mutation is still persisted so
+ * the spent attempt can never be re-released; only the fresh attempt mint is
+ * skipped.
+ */
+export async function abandonAndRearmByHostCall(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  hostCallId: string,
+  now: string = new Date().toISOString(),
+): Promise<AbandonAndRearmOutcome> {
+  let outcome: AbandonAndRearmOutcome = { kind: 'noop' };
+  await deps.updateReviewAssurance(sessDir, (state) => {
+    const assurance = ensureReviewAssurance(state.reviewAssurance);
+    const authorized = (assurance.dispatches ?? []).filter(
+      (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
+    );
+    if (authorized.length !== 1) return state;
+    const record = authorized[0];
+    if (record === undefined) return state;
+    const attempt = (assurance.attempts ?? []).find(
+      (candidate) => candidate.attemptId === record.attemptId,
+    );
+    if (attempt === undefined || attempt.status !== 'created') return state;
+
+    const staled = updateAttemptStatus(
+      abandonReviewDispatch(assurance, hostCallId),
+      attempt.attemptId,
+      'stale',
+      now,
+    );
+    const spent = (staled.attempts ?? []).find(
+      (candidate) => candidate.attemptId === attempt.attemptId,
+    );
+    if (spent === undefined) return state;
+
+    const rearm = buildInterruptedDispatchRearm(staled, spent, now);
+    if (rearm.kind === 'blocked') {
+      outcome = { kind: 'blocked', reason: rearm.reason };
+      return { ...state, reviewAssurance: staled };
+    }
+    outcome = { kind: 'rearmed', attempt: rearm.attempt, obligationId: rearm.attempt.obligationId };
+    return { ...state, reviewAssurance: rearm.assurance };
+  });
+  return outcome;
 }
 
 export type InterruptedDispatchRearm =

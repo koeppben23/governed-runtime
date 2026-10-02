@@ -264,6 +264,15 @@ function mergeDeferredDiagnostics(
   };
 }
 
+function attemptForInvocation(
+  assurance: ReviewAssuranceState,
+  invocationId: string,
+): ReviewAttempt | undefined {
+  const invocation = assurance.invocations.find((item) => item.invocationId === invocationId);
+  if (!invocation) return undefined;
+  return assurance.attempts.find((attempt) => attempt.attemptId === invocation.attemptId);
+}
+
 function finalizeStructuredResolution(
   context: StructuredFindingsEvaluationContext,
   matchingInvocations: readonly ReviewInvocationEvidence[],
@@ -272,14 +281,35 @@ function finalizeStructuredResolution(
   const diagnostics = deferredDiagnostics(deferred);
   const lastUnparseable = deferred.unparseables.at(-1) ?? null;
   if (deferred.unavailableLineage !== null) {
-    return {
-      resolution: {
-        kind: 'attempt_lineage_unavailable',
-        invocationId: deferred.unavailableLineage.invocationId,
-        obligationId: deferred.unavailableLineage.obligationId,
-      },
-      diagnostics,
-    };
+    // The latest host capture is the resolution authority: a NEWER incoherent
+    // capture outranks an older unusable lineage, so its coherence gate (and
+    // the bounded F12 retry) can classify the result. The older capture stays
+    // as operator diagnostics. Without a strictly newer incoherent attempt the
+    // lineage failure keeps precedence (fail closed).
+    const lineageAttempt = attemptForInvocation(
+      context.assurance,
+      deferred.unavailableLineage.invocationId,
+    );
+    const incoherentAttempt =
+      deferred.incoherent === null
+        ? undefined
+        : context.assurance.attempts.find(
+            (attempt) => attempt.attemptId === deferred.incoherent?.attemptId,
+          );
+    const newerIncoherent =
+      incoherentAttempt !== undefined &&
+      lineageAttempt !== undefined &&
+      incoherentAttempt.ordinal > lineageAttempt.ordinal;
+    if (!newerIncoherent) {
+      return {
+        resolution: {
+          kind: 'attempt_lineage_unavailable',
+          invocationId: deferred.unavailableLineage.invocationId,
+          obligationId: deferred.unavailableLineage.obligationId,
+        },
+        diagnostics,
+      };
+    }
   }
   if (deferred.incoherent !== null) {
     return {

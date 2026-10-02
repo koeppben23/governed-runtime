@@ -53,14 +53,53 @@ export interface BindingFindingRelation {
   };
 }
 
+/** Host-classified reason one repository evidenceLocation failed authorization. */
+export type EvidenceLocationFailure =
+  | { kind: 'no_attempt'; path: string }
+  | { kind: 'revision_unavailable'; revision: 'base' | 'head' }
+  | { kind: 'unobserved'; path: string; revision: 'base' | 'head' }
+  | { kind: 'binary_line_citation'; path: string; revision: 'base' | 'head' }
+  | {
+      kind: 'line_out_of_range';
+      path: string;
+      revision: 'base' | 'head';
+      line: number;
+      lineCount: number;
+    }
+  | {
+      kind: 'end_line_out_of_range';
+      path: string;
+      revision: 'base' | 'head';
+      endLine: number;
+      lineCount: number;
+    };
+
 export type EvidenceBindingResult =
   | { readonly ok: true }
   | {
       readonly ok: false;
       readonly code: 'evidence_unavailable';
       readonly failingIndexes: readonly number[];
-      readonly reasons: readonly string[];
+      readonly failures: readonly EvidenceLocationFailure[];
     };
+
+/** Canonical host rendering of one structured failure for operator-facing envelopes. */
+export function renderEvidenceLocationFailure(failure: EvidenceLocationFailure): string {
+  switch (failure.kind) {
+    case 'no_attempt':
+      return `evidenceLocations for '${failure.path}' have no authoritative observation: no attempt-bound observations exist for this review`;
+    case 'revision_unavailable':
+      return `revision '${failure.revision}' has no frozen repository authority for this obligation`;
+    case 'unobserved':
+      return `no authoritative observation exists for '${failure.path}'@${failure.revision} in this reviewer attempt`;
+    case 'binary_line_citation':
+      return `'${failure.path}'@${failure.revision} was observed as binary content; line citations are not admissible`;
+    case 'line_out_of_range':
+      return `line ${failure.line} exceeds the observed content of '${failure.path}'@${failure.revision} (${failure.lineCount} lines)`;
+    case 'end_line_out_of_range':
+      return `endLine ${failure.endLine} exceeds the observed content of '${failure.path}'@${failure.revision} (${failure.lineCount} lines)`;
+  }
+}
 
 function repositoryIdentityEqual(
   a: ReviewRepositoryIdentity,
@@ -112,7 +151,7 @@ export function bindRepositoryEvidenceLocations(input: {
   readonly childSessionId: string;
 }): EvidenceBindingResult {
   const failingIndexes: number[] = [];
-  const reasons: string[] = [];
+  const failures: EvidenceLocationFailure[] = [];
 
   input.findings.forEach((finding, index) => {
     const locations = finding.relation.evidenceLocations ?? [];
@@ -122,7 +161,7 @@ export function bindRepositoryEvidenceLocations(input: {
       const failure = evaluateLocation(input, location);
       if (failure) {
         failingIndexes.push(index);
-        reasons.push(failure);
+        failures.push(failure);
         return;
       }
     }
@@ -133,7 +172,7 @@ export function bindRepositoryEvidenceLocations(input: {
     ok: false,
     code: 'evidence_unavailable',
     failingIndexes,
-    reasons,
+    failures,
   };
 }
 
@@ -149,10 +188,10 @@ function evaluateLocation(
     readonly line?: number;
     readonly endLine?: number;
   },
-): string | null {
+): EvidenceLocationFailure | null {
   const attempt = input.attempt;
   if (!attempt) {
-    return `evidenceLocations for '${location.path}' have no authoritative observation: no attempt-bound observations exist for this review`;
+    return { kind: 'no_attempt', path: location.path };
   }
 
   // The complete frozen target the citation's revision resolves to. No other
@@ -160,7 +199,7 @@ function evaluateLocation(
   // this target.
   const target = resolveFrozenRevisionTarget(input.obligation, location.revision);
   if (!target) {
-    return `revision '${location.revision}' has no frozen repository authority for this obligation`;
+    return { kind: 'revision_unavailable', revision: location.revision };
   }
 
   const observation: RepositoryObservation | undefined = attempt.observations?.find((o) =>
@@ -168,7 +207,11 @@ function evaluateLocation(
   );
 
   if (!observation) {
-    return `no authoritative observation exists for '${location.path}'@${location.revision} in this reviewer attempt`;
+    return {
+      kind: 'unobserved',
+      path: location.path,
+      revision: location.revision,
+    };
   }
 
   return validateLineCitation(observation, location);
@@ -186,17 +229,33 @@ function validateLineCitation(
     readonly line?: number;
     readonly endLine?: number;
   },
-): string | null {
+): EvidenceLocationFailure | null {
   if (location.line === undefined && location.endLine === undefined) return null;
   if (observation.representation === 'binary') {
-    return `'${location.path}'@${location.revision} was observed as binary content; line citations are not admissible`;
+    return {
+      kind: 'binary_line_citation',
+      path: location.path,
+      revision: location.revision,
+    };
   }
   const lineCount = observation.lineCount;
   if (location.line !== undefined && (location.line < 1 || location.line > lineCount)) {
-    return `line ${location.line} exceeds the observed content of '${location.path}'@${location.revision} (${lineCount} lines)`;
+    return {
+      kind: 'line_out_of_range',
+      path: location.path,
+      revision: location.revision,
+      line: location.line,
+      lineCount,
+    };
   }
   if (location.endLine !== undefined && location.endLine > lineCount) {
-    return `endLine ${location.endLine} exceeds the observed content of '${location.path}'@${location.revision} (${lineCount} lines)`;
+    return {
+      kind: 'end_line_out_of_range',
+      path: location.path,
+      revision: location.revision,
+      endLine: location.endLine,
+      lineCount,
+    };
   }
   return null;
 }

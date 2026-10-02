@@ -16,6 +16,8 @@ export type PlanArgs = {
   claims?: PlanClaimDeclarationInput[] | undefined;
   reviewVerdict?: 'accept' | 'changes_requested' | undefined;
   reviewerUnavailable?: boolean | undefined;
+  /** Explicit typed transport-recovery intent for the pending plan review. */
+  reviewRecovery?: 'retry_transport' | undefined;
   targetPaths?: string[] | undefined;
 };
 
@@ -25,6 +27,7 @@ export type PlanInputFlags = {
   hasPlanText: boolean;
   hasVerdict: boolean;
   hasReviewerUnavailable: boolean;
+  hasReviewRecovery: boolean;
   isInitialSubmission: boolean;
 };
 
@@ -32,6 +35,7 @@ export type PlanCallMode =
   | { kind: 'initial_submission' }
   | { kind: 'approval' }
   | { kind: 'revision' }
+  | { kind: 'transport_recovery' }
   | {
       kind: 'invalid';
       code: 'INVALID_PLAN_TOOL_SEQUENCE' | 'PLAN_APPROVE_WITH_TEXT';
@@ -101,11 +105,13 @@ export function planInputFlags(args: PlanArgs): PlanInputFlags {
     text: args.planText,
     reviewVerdict: args.reviewVerdict,
     reviewerUnavailable: args.reviewerUnavailable,
+    reviewRecovery: args.reviewRecovery,
   });
   return {
     hasPlanText: f.hasText,
     hasVerdict: f.hasVerdict,
     hasReviewerUnavailable: f.hasReviewerUnavailable,
+    hasReviewRecovery: f.hasReviewRecovery,
     isInitialSubmission: !f.hasVerdict,
   };
 }
@@ -116,6 +122,7 @@ export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): 
     text: args.planText,
     reviewVerdict: args.reviewVerdict,
     reviewerUnavailable: args.reviewerUnavailable,
+    reviewRecovery: args.reviewRecovery,
   });
   if (mode.kind === 'invalid') {
     return {
@@ -126,6 +133,7 @@ export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): 
   }
   if (mode.kind === 'initial_submission') return { kind: 'initial_submission' };
   if (mode.kind === 'revision') return { kind: 'revision' };
+  if (mode.kind === 'transport_recovery') return { kind: 'transport_recovery' };
   return { kind: 'approval' };
 }
 

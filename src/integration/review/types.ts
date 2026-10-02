@@ -26,11 +26,33 @@ export type ReviewableTool =
 /** Per-tool pending review state. */
 export type PendingReviewTool = ReviewableTool;
 
+/**
+ * Host-classified retry diagnostic for a re-armed reviewer attempt.
+ *
+ * `code` is the host validation failure code; `reasonKind` is the host
+ * classification of the failure (never reviewer-authored text); `data` carries
+ * only scalar values copied from reviewed material or reviewer output. Those
+ * values are UNTRUSTED DATA, rendered as data only — never as instructions.
+ */
+export interface PendingReviewRetryDiagnostic {
+  readonly code: string;
+  readonly reasonKind?: string;
+  readonly data?: Readonly<Record<string, string>>;
+}
+
 export interface PendingReview {
   readonly tool: PendingReviewTool;
   readonly requestedAt: string;
   attemptId: string | null;
   obligationId: string | null;
+  /**
+   * Transient, best-effort advisory diagnostics of the rejected prior capture
+   * for the immediately re-armed attempt. They are never persisted as session
+   * authority: a crash between the durable re-arm and the pending registration
+   * loses the hint, while the re-armed attempt stays canonically recoverable
+   * and no review authority or safety property is lost.
+   */
+  retryDiagnostics?: readonly PendingReviewRetryDiagnostic[];
 }
 
 /** Session-level review-enforcement state. */

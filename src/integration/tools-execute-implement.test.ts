@@ -526,6 +526,78 @@ describe('implement', () => {
       expect(result.phase).toBe('EXPORT_READY');
     });
 
+    it('F12 re-arms one fresh implementation attempt, then fails the second closed', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      const obligation = before!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'implement',
+      );
+      if (!obligation) throw new Error('missing implementation obligation');
+      const a1 =
+        before!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+        ) ??
+        before!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId,
+        );
+      if (!a1) throw new Error('missing implementation attempt');
+
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'implement',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        attemptId: a1.attemptId,
+      });
+
+      const first = parseToolResult(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(first.error).toBeUndefined();
+      expect(first.status).toContain('Incoherent reviewer capture');
+      const a2Id = first.reviewAttemptId;
+      expect(typeof a2Id).toBe('string');
+      expect(a2Id).not.toBe(a1.attemptId);
+
+      const afterFirst = await readState(sessDir);
+      const a1After = afterFirst!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === a1.attemptId,
+      );
+      expect(a1After?.rejectionReason).toBe('consistency_invalid');
+      const a2 = afterFirst!.reviewAssurance!.attempts.find((item) => item.attemptId === a2Id);
+      expect(a2?.origin).toMatchObject({
+        kind: 'dispatch_rearm',
+        predecessorAttemptId: a1.attemptId,
+        triggerReason: 'spent',
+      });
+      const obligationAfter = afterFirst!.reviewAssurance!.obligations.find(
+        (item) => item.obligationId === obligation.obligationId,
+      );
+      expect(obligationAfter).toMatchObject({ status: 'pending', invocationId: null });
+      const attemptsAfterFirst = afterFirst!.reviewAssurance!.attempts.length;
+
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'implement',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        childSessionId: 'ses_impl_reviewer_retry',
+        attemptId: a2Id as string,
+      });
+      const second = parseToolResult(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(second.error).toBe(true);
+      const afterSecond = await readState(sessDir);
+      // The second F12 mints nothing: the attempt count is unchanged.
+      expect(afterSecond!.reviewAssurance!.attempts).toHaveLength(attemptsAfterFirst);
+    });
+
     it('applies reduced ceremony only after post-implementation checks pass', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();

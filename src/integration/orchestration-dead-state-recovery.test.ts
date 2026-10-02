@@ -31,6 +31,8 @@ import {
 import { plan, implement, architecture } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { hashText } from '../shared/hashing.js';
+import { appendReviewDispatch } from '../state/review-dispatch.js';
+import { updateAttemptStatus } from './review/obligations/attempt-lifecycle.js';
 import {
   appendObligationWithAttempt,
   artifactReviewSubjectScope,
@@ -1000,6 +1002,169 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         pending.obligationId,
       );
       expect(result.status).toContain('pending');
+    });
+
+    it('treats a whitespace-different ADR resubmission as the SAME pending revision', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        reviewCycle: 1,
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const withAttempt = appendObligationWithAttempt(undefined, pending, CREATED_AT);
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: withAttempt.assurance,
+      });
+
+      const raw = await architecture.execute(
+        { title: 'Test Decision', adrText: `\n  ${ADR_TEXT}  \n` },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        pending.obligationId,
+      );
+      expect(result.status).toContain('pending');
+    });
+  });
+
+  describe('typed transport recovery', () => {
+    const ADR_TEXT = '## Context\nTest\n## Decision\nTest\n## Consequences\nTest';
+    const CREATED_AT = '2026-01-01T00:00:00.000Z';
+
+    async function setupPendingAttempt(): Promise<{
+      sessDir: string;
+      obligationId: string;
+      attemptId: string;
+    }> {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        reviewCycle: 1,
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const withAttempt = appendObligationWithAttempt(undefined, pending, CREATED_AT);
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: withAttempt.assurance,
+      });
+      return { sessDir, obligationId: pending.obligationId, attemptId: withAttempt.attemptId };
+    }
+
+    async function spendAttempt(
+      sessDir: string,
+      obligationId: string,
+      attemptId: string,
+      hostCallId: string,
+    ): Promise<void> {
+      const state = (await readState(sessDir))!;
+      const now = new Date().toISOString();
+      await writeState(sessDir, {
+        ...state,
+        reviewAssurance: updateAttemptStatus(
+          appendReviewDispatch(state.reviewAssurance, {
+            dispatchId: crypto.randomUUID(),
+            attemptId,
+            obligationId,
+            hostCallId,
+            canonicalPromptDigest: 'd'.repeat(64),
+            dispatchAuthorizedAt: now,
+            dispatchStatus: 'outcome_unknown',
+          }),
+          attemptId,
+          'stale',
+          now,
+        ),
+      });
+    }
+
+    it('re-arms a spent ADR attempt without a new ADR revision, and the budget refuses a second re-arm', async () => {
+      const { sessDir, obligationId, attemptId } = await setupPendingAttempt();
+      const before = (await readState(sessDir))!;
+      await spendAttempt(sessDir, obligationId, attemptId, 'call-spent');
+
+      const raw = await architecture.execute({ reviewRecovery: 'retry_transport' }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect(result.adrId).toBe('ADR-001');
+      expect(result.adrDigest).toBe(hashText(ADR_TEXT));
+      expect(result.status).toContain('same frozen architecture subject');
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        obligationId,
+      );
+      const rearmedAttemptId = result.reviewAttemptId as string;
+      expect(rearmedAttemptId).not.toBe(attemptId);
+
+      const after = (await readState(sessDir))!;
+      // No new ADR revision and no new obligation: the SAME frozen subject is
+      // re-armed with a fresh append-only attempt.
+      expect(after.architecture!.digest).toBe(before.architecture!.digest);
+      expect(after.architecture!.id).toBe('ADR-001');
+      expect(
+        after.reviewAssurance!.obligations.filter((o) => o.obligationType === 'architecture'),
+      ).toHaveLength(
+        before.reviewAssurance!.obligations.filter((o) => o.obligationType === 'architecture')
+          .length,
+      );
+      const rearmed = after.reviewAssurance!.attempts.find(
+        (attempt) => attempt.attemptId === rearmedAttemptId,
+      )!;
+      expect(rearmed.origin.kind).toBe('dispatch_rearm');
+
+      await spendAttempt(sessDir, obligationId, rearmedAttemptId, 'call-spent-again');
+      const secondRaw = await architecture.execute({ reviewRecovery: 'retry_transport' }, ctx);
+      const second = parseToolResult(secondRaw);
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+
+      const final = (await readState(sessDir))!;
+      expect(
+        final.reviewAssurance!.attempts.filter((attempt) => attempt.obligationId === obligationId),
+      ).toHaveLength(2);
+      expect(final.architecture!.digest).toBe(before.architecture!.digest);
+    });
+
+    it('blocks reviewRecovery mixed with ADR text as an invalid argument shape', async () => {
+      await setupPendingAttempt();
+      const raw = await architecture.execute(
+        { reviewRecovery: 'retry_transport', adrText: ADR_TEXT },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
     });
   });
 });

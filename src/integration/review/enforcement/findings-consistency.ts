@@ -28,18 +28,21 @@ export type ReviewFindingsConsistencyResult =
       readonly details: { readonly overallVerdict: 'accept'; readonly blockingIssueCount: number };
     };
 
+/** Every blocked code the structured subject-scope authority can emit. */
+export type ReviewFindingsScopeFailureCode =
+  | 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE'
+  | 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED'
+  | 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY'
+  | 'REVIEW_EVIDENCE_LOCATION_INVALID'
+  | 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
+  | 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE';
+
 /** Boundary-neutral result of structured subject-scope validation. */
 export type ReviewFindingsScopeResult =
   | { readonly ok: true }
   | {
       readonly ok: false;
-      readonly code:
-        | 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE'
-        | 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED'
-        | 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY'
-        | 'REVIEW_EVIDENCE_LOCATION_INVALID'
-        | 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
-        | 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE';
+      readonly code: ReviewFindingsScopeFailureCode;
       readonly details: {
         readonly outOfScopeFindingIndexes: readonly number[];
         readonly reviewSubjectScope: ReviewSubjectScopeValue | undefined;

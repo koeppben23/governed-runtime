@@ -379,6 +379,14 @@ export async function fulfillStrictReviewObligation(
     planVersion: number;
     overallVerdict?: ReviewFindings['overallVerdict'];
     childSessionId?: string;
+    /** Bind this exact attempt; defaults to the obligation's first attempt. */
+    attemptId?: string;
+    /**
+     * Number of blocking issues carried by the captured findings. Paired with
+     * `overallVerdict: 'accept'` this constructs the F12 incoherent-capture
+     * fixture.
+     */
+    blockingIssueCount?: number;
   },
 ): Promise<ReviewFindings> {
   const state = await readState(sessDir);
@@ -464,7 +472,15 @@ export async function fulfillStrictReviewObligation(
     planVersion: input.planVersion,
     reviewMode: 'subagent',
     overallVerdict: input.overallVerdict ?? 'accept',
-    blockingIssues: [],
+    blockingIssues: Array.from({ length: input.blockingIssueCount ?? 0 }, (_, index) => ({
+      severity: 'major' as const,
+      category: 'correctness' as const,
+      message: `captured incoherent finding ${String(index + 1)}`,
+      relation: {
+        subjectAnchors: [{ kind: 'content' as const, subjectDigest: obligation.subjectDigest }],
+        evidenceLocations: [],
+      },
+    })),
     majorRisks: [],
     missingVerification: [],
     scopeCreep: [],
@@ -489,6 +505,7 @@ export async function fulfillStrictReviewObligation(
     assurance.attempts,
     obligation,
     findings.reviewedBy.sessionId,
+    input.attemptId,
   );
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
@@ -595,9 +612,15 @@ function bindHostTaskAttempt(
   attempts: readonly ReviewAttempt[],
   obligation: ReviewObligation,
   childSessionId: string,
+  attemptId?: string,
 ): ReviewAttempt {
   const now = new Date().toISOString();
-  const existing = attempts.find((attempt) => attempt.obligationId === obligation.obligationId);
+  const existing = attemptId
+    ? attempts.find((attempt) => attempt.attemptId === attemptId)
+    : attempts.find((attempt) => attempt.obligationId === obligation.obligationId);
+  if (attemptId && !existing) {
+    throw new Error(`No matching review attempt found: ${attemptId}`);
+  }
   const attempt = existing ?? {
     attemptId: crypto.randomUUID(),
     obligationId: obligation.obligationId,

@@ -116,3 +116,71 @@ describe('classifyToolCallMode — invalid shapes, canonical per-family codes', 
     });
   });
 });
+
+describe('classifyToolCallMode — typed transport recovery (all families)', () => {
+  const families: ToolFamily[] = ['plan', 'architecture', 'implement'];
+  for (const family of families) {
+    it(`${family}: standalone reviewRecovery => transport_recovery`, () => {
+      expect(classifyToolCallMode(family, { reviewRecovery: 'retry_transport' })).toMatchObject({
+        kind: 'transport_recovery',
+      });
+    });
+  }
+
+  it('plan: reviewRecovery mixed with text/verdict/reviewerUnavailable => INVALID_PLAN_TOOL_SEQUENCE', () => {
+    expect(
+      classifyToolCallMode('plan', { reviewRecovery: 'retry_transport', text: '## Plan' }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_PLAN_TOOL_SEQUENCE' });
+    expect(
+      classifyToolCallMode('plan', {
+        reviewRecovery: 'retry_transport',
+        reviewVerdict: 'accept',
+      }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_PLAN_TOOL_SEQUENCE' });
+    expect(
+      classifyToolCallMode('plan', {
+        reviewRecovery: 'retry_transport',
+        reviewerUnavailable: true,
+      }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_PLAN_TOOL_SEQUENCE' });
+  });
+
+  it('architecture: reviewRecovery mixed with text/verdict/reviewerUnavailable => INVALID_ARCHITECTURE_TOOL_SEQUENCE', () => {
+    expect(
+      classifyToolCallMode('architecture', {
+        reviewRecovery: 'retry_transport',
+        text: '## ADR',
+      }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE' });
+    expect(
+      classifyToolCallMode('architecture', {
+        reviewRecovery: 'retry_transport',
+        reviewVerdict: 'accept',
+      }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE' });
+    expect(
+      classifyToolCallMode('architecture', {
+        reviewRecovery: 'retry_transport',
+        reviewerUnavailable: true,
+      }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE' });
+  });
+
+  it('implement: standalone recovery unchanged; mixed inputs stay INVALID_IMPLEMENT_TOOL_SEQUENCE', () => {
+    expect(classifyToolCallMode('implement', { reviewRecovery: 'retry_transport' })).toMatchObject({
+      kind: 'transport_recovery',
+    });
+    expect(
+      classifyToolCallMode('implement', {
+        reviewRecovery: 'retry_transport',
+        reviewVerdict: 'accept',
+      }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE' });
+    expect(
+      classifyToolCallMode('implement', {
+        reviewRecovery: 'retry_transport',
+        reviewerUnavailable: true,
+      }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE' });
+  });
+});

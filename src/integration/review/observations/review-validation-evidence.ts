@@ -16,7 +16,10 @@
 import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import { resolveEvidenceAuthorizingAttempt } from '../obligations/attempt-lifecycle.js';
 import type { FindingWithRelation } from '../enforcement/findings-consistency.js';
-import { bindRepositoryEvidenceLocations } from './observation-binding.js';
+import {
+  bindRepositoryEvidenceLocations,
+  type EvidenceLocationFailure,
+} from './observation-binding.js';
 
 /**
  * Minimal structural context (deliberately NOT imported from
@@ -41,7 +44,13 @@ export type RepositoryEvidenceBindingResult =
   | {
       readonly ok: false;
       readonly code: 'REVIEW_EVIDENCE_NOT_OBSERVED';
-      readonly details: Record<string, unknown>;
+      readonly details:
+        | { readonly obligationId: string; readonly reason: string }
+        | {
+            readonly obligationId: string;
+            readonly findingIndexes: readonly number[];
+            readonly failures: readonly EvidenceLocationFailure[];
+          };
     };
 
 /**
@@ -115,8 +124,8 @@ export function evaluateRepositoryEvidenceBinding(
     code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
     details: {
       obligationId: obligation.obligationId,
-      findingIndexes: binding.failingIndexes.join(', '),
-      reason: binding.reasons.join('; '),
+      findingIndexes: [...binding.failingIndexes],
+      failures: [...binding.failures],
     },
   };
 }

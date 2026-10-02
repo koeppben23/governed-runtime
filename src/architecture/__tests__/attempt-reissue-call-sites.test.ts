@@ -10,11 +10,15 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { repoRelative } from './repo-path.js';
+import { isTestSourcePath } from './module-classification.js';
 
 const SRC = join(process.cwd(), 'src');
 
 /** Production files that may call `createAttemptForExistingObligation(...)`. */
-const ALLOWED_CALLERS = ['integration/review/dispatch/durable-dispatch.ts'];
+const ALLOWED_CALLERS = [
+  'integration/review/dispatch/durable-dispatch.ts',
+  'integration/review/obligations/incoherent-capture-rearm.ts',
+];
 
 function listSourceFiles(dir: string): string[] {
   const results: string[] = [];
@@ -61,6 +65,29 @@ describe('createAttemptForExistingObligation call-site whitelist', () => {
     const afterhooks = readFileSync(join(SRC, 'integration/plugin-afterhooks.ts'), 'utf8');
     expect(afterhooks).not.toContain('authorizeDispatchRearm');
     expect(afterhooks).not.toContain('createAttemptForExistingObligation');
+  });
+
+  it('the F12 incoherent-capture re-arm site routes through its canonical authority', () => {
+    const rearm = readFileSync(
+      join(SRC, 'integration/review/obligations/incoherent-capture-rearm.ts'),
+      'utf8',
+    );
+    expect(rearm).toContain('authorizeIncoherentCaptureRearm');
+    expect(rearm).not.toContain('markDispatchOutcomeUnknown');
+  });
+
+  it('writes the consistency-invalid marker only at the vocabulary enum, the lineage reader, and the F12 re-arm', () => {
+    const allowed = new Set([
+      'state/evidence-review.ts',
+      'state/evidence-review-ledger-refinements.ts',
+      'integration/review/obligations/incoherent-capture-rearm.ts',
+    ]);
+    const offenders = listSourceFiles(SRC)
+      .filter((path) => !isTestSourcePath(repoRelative(SRC, path)))
+      .filter((path) => readFileSync(path, 'utf8').includes("'consistency_invalid'"))
+      .map((path) => repoRelative(SRC, path))
+      .filter((path) => !allowed.has(path));
+    expect(offenders).toEqual([]);
   });
 
   it('the removed repair and task-rearm authorities have no production reference', () => {

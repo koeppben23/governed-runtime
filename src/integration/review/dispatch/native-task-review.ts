@@ -14,7 +14,7 @@
 import { readState } from '../../../adapters/persistence.js';
 import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 
-import type { SessionEnforcementState } from '../types.js';
+import type { SessionEnforcementState, PendingReviewRetryDiagnostic } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 import type {
   ToolHookAfterInput,
@@ -28,20 +28,21 @@ import { hashText } from '../../../shared/hashing.js';
 import { ensureReviewAssurance, hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { findBindableAttempt } from '../../../state/review-continuation.js';
 import { isCurrentReviewGeneration } from '../obligations/assurance.js';
-import { verifyFrozenMaterialForObligation } from '../../../state/review-continuation.js';
-import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
-import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
-import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
-import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
-import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
+import type { ReviewerProofGraphAuthorities } from '../context/proof-context.js';
+import { canonicalTaskPrompt } from './native-task-review-prompt.js';
 import {
-  buildReviewerProofContext,
-  type ReviewerProofGraphAuthorities,
-} from '../context/proof-context.js';
-import {
+  abandonAndRearmByHostCall,
   abandonReviewDispatchByHostCall,
   persistAuthorizedReviewDispatch,
 } from './durable-dispatch.js';
+import {
+  buildCaptureFailureDiagnostics,
+  buildCodeOnlyRetryDiagnostic,
+  buildReviewerCaptureRetryOutput,
+  classifyReviewerCaptureFailure,
+} from './capture-retry.js';
+import { registerPendingReviewForAttempt } from '../enforcement/enforcement.js';
+import { reviewableToolForObligationType } from '../obligations/obligation-tools.js';
 import { projectReviewExecution } from './review-execution-projection.js';
 import type { PersistedState, NativeReviewLineage } from './native-task-review-types.js';
 import {
@@ -113,57 +114,6 @@ function pendingBinding(runtime: NativeReviewTransportRuntime, sessionId: string
   return candidates.length === 1 ? (candidates[0] ?? null) : null;
 }
 
-function subjectLabel(type: ReviewObligationType): string {
-  switch (type) {
-    case 'plan':
-      return 'the frozen plan and ticket context';
-    case 'architecture':
-      return 'the frozen architecture decision and ticket context';
-    case 'implement':
-      return 'the frozen implementation change and approved plan context';
-    case 'review':
-      return 'the frozen peer-review content';
-  }
-}
-
-function canonicalTaskPrompt(
-  state: PersistedState,
-  obligation: ReviewObligation,
-  attempt: BindableAttempt,
-  proofGraphAuthorities: ReviewerProofGraphAuthorities,
-): string {
-  const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
-  if (material.kind === 'blocked') {
-    throw buildEnforcementError(material.code, material.reason);
-  }
-  const frozenReviewerContext =
-    material.context ??
-    (obligation.reviewMaterial ? { reviewMaterial: obligation.reviewMaterial } : undefined);
-  const artifactScope =
-    obligation.reviewSubjectScope?.kind === 'artifact' ? obligation.reviewSubjectScope : undefined;
-  const observationRevisions = resolveObservationRevisions(obligation);
-  return renderReviewerTaskPrompt({
-    iteration: obligation.iteration,
-    planVersion: obligation.planVersion,
-    obligationId: obligation.obligationId,
-    mandateDigest: obligation.mandateDigest,
-    criteriaVersion: obligation.criteriaVersion,
-    subjectLabel: subjectLabel(obligation.obligationType),
-    reviewType: reviewerPromptTypeForTask(obligation.obligationType),
-    repositoryReview: observationRevisions.length > 0,
-    challengeContract: buildReviewChallengeContract(state, obligation) ?? undefined,
-    proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
-    frozenReviewerContext,
-    artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
-    repositoryDiscoverySnapshot:
-      attempt.repositoryDiscovery.kind === 'repository'
-        ? attempt.repositoryDiscovery.snapshot
-        : null,
-    observationCapability: attempt.observationCapability,
-    observationRevisions,
-  });
-}
-
 async function reconcileBeforeReviewerDispatch(
   reconcile: NativeReviewAuditReconciler,
   sessionId: string,
@@ -193,7 +143,11 @@ function requireCurrentAttempt(
   runtime: NativeReviewTransportRuntime,
   sessionId: string,
   state: PersistedState,
-): { readonly obligation: ReviewObligation; readonly attempt: BindableAttempt } {
+): {
+  readonly obligation: ReviewObligation;
+  readonly attempt: BindableAttempt;
+  readonly retryDiagnostics?: readonly PendingReviewRetryDiagnostic[];
+} {
   const pending = pendingBinding(runtime, sessionId);
   if (!pending) {
     throw buildEnforcementError(
@@ -229,22 +183,31 @@ function requireCurrentAttempt(
       )}`,
     );
   }
-  return { obligation, attempt };
+  return {
+    obligation,
+    attempt,
+    ...(pending.retryDiagnostics !== undefined
+      ? { retryDiagnostics: pending.retryDiagnostics }
+      : {}),
+  };
 }
 
 /**
- * Phase-legal recovery for a spent/interrupted reviewer release. The
- * implementation review has a typed in-tool recovery; plan and architecture
- * re-arm through their originating command.
+ * Phase-legal recovery for a spent/interrupted reviewer release. Every
+ * obligation family has a typed or command-native recovery that re-arms the
+ * same frozen obligation with a fresh attempt.
  */
 function transportRecoveryInstruction(obligationType: ReviewObligationType): string {
-  if (obligationType === 'implement') {
-    return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+  switch (obligationType) {
+    case 'implement':
+      return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'plan':
+      return 'Call flowguard_plan({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'architecture':
+      return 'Call flowguard_architecture({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'review':
+      return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
   }
-  if (obligationType === 'review') {
-    return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
-  }
-  return 'Re-run the originating FlowGuard command (/plan or /architecture) so it can re-arm the frozen obligation with a fresh attempt, then invoke Task again.';
 }
 
 function mutateNativeTask(output: ToolHookBeforeOutput, prompt: string): void {
@@ -279,8 +242,18 @@ export async function nativeReviewTaskBefore(
 
   await reconcileBeforeReviewerDispatch(reconcile, sessionId);
   const { sessDir, state } = await requireState(runtime, sessionId);
-  const { obligation, attempt } = requireCurrentAttempt(runtime, sessionId, state);
-  const prompt = canonicalTaskPrompt(state, obligation, attempt, proofGraphAuthorities);
+  const { obligation, attempt, retryDiagnostics } = requireCurrentAttempt(
+    runtime,
+    sessionId,
+    state,
+  );
+  const prompt = canonicalTaskPrompt(
+    state,
+    obligation,
+    attempt,
+    proofGraphAuthorities,
+    retryDiagnostics,
+  );
   const authorizedAt = new Date().toISOString();
   await persistAuthorizedReviewDispatch(runtime.orchestratorDeps, sessDir, {
     attemptId: attempt.attemptId,
@@ -314,15 +287,88 @@ async function abandonAndBlock(input: BlockOutputInput): Promise<void> {
   input.output.output = strictBlockedOutput(input.code, { reason: input.reason });
 }
 
+interface CaptureFailureContext extends Omit<BlockOutputInput, 'code' | 'reason'> {
+  readonly sessionId: string;
+  readonly obligationType: ReviewObligationType;
+}
+
+type CaptureFailureInput = CaptureFailureContext & {
+  readonly code: string;
+  readonly reason: string;
+  readonly diagnostics: readonly PendingReviewRetryDiagnostic[];
+};
+
+interface StructuredReviewInput {
+  readonly sessionId: string;
+  readonly callId: string;
+  readonly sessDir: string;
+  readonly lineage: NativeReviewLineage;
+  readonly childSessionId: string;
+  readonly hookOutput: ToolHookAfterOutput;
+  readonly captureFailure: CaptureFailureContext;
+}
+
+/**
+ * Route one reviewer capture/binding failure: terminal codes fail the review
+ * closed unchanged; retryable codes abandon the exact host release and re-arm a
+ * fresh attempt on the same frozen obligation (bounded by the obligation
+ * budget). A refused re-arm also fails closed with the original capture code.
+ */
+async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise<void> {
+  const decision = classifyReviewerCaptureFailure(input.code);
+  if (!decision.retryable) {
+    await abandonAndBlock(input);
+    return;
+  }
+  const rearm = await abandonAndRearmByHostCall(
+    input.runtime.orchestratorDeps,
+    input.sessDir,
+    input.callId,
+  );
+  if (rearm.kind !== 'rearmed') {
+    const blockedReason =
+      rearm.kind === 'blocked'
+        ? `FlowGuard could not re-arm a fresh reviewer attempt: ${rearm.reason}.`
+        : 'FlowGuard found no exact abandoned dispatch lineage to re-arm.';
+    await abandonAndBlock({ ...input, reason: `${input.reason} ${blockedReason}` });
+    return;
+  }
+  const reviewTool = reviewableToolForObligationType(input.obligationType);
+  if (!reviewTool) {
+    await abandonAndBlock({
+      ...input,
+      reason: `${input.reason} No reviewable tool owns obligation type ${input.obligationType}.`,
+    });
+    return;
+  }
+  registerPendingReviewForAttempt(
+    input.runtime.ws.getEnforcementState(input.sessionId),
+    reviewTool,
+    {
+      attemptId: rearm.attempt.attemptId,
+      obligationId: rearm.obligationId,
+      retryDiagnostics: input.diagnostics,
+    },
+    new Date().toISOString(),
+  );
+  input.output.output = buildReviewerCaptureRetryOutput({
+    code: input.code,
+    obligationId: rearm.obligationId,
+    attemptId: rearm.attempt.attemptId,
+    diagnostics: input.diagnostics,
+  });
+}
+
 async function writeBindingFailure(
-  input: BlockOutputInput,
+  input: CaptureFailureContext,
   result: Exclude<Awaited<ReturnType<typeof bindNativeReviewEvidence>>, 'fulfilled'>,
 ): Promise<void> {
   if (typeof result === 'object') {
-    await abandonAndBlock({
+    await abandonOrRetryCaptureFailure({
       ...input,
       code: result.code,
       reason: JSON.stringify(result.details),
+      diagnostics: buildCaptureFailureDiagnostics(result.code, result.details),
     });
     return;
   }
@@ -469,21 +515,22 @@ async function fulfillNativeReviewTask(
     lineage,
     childSessionId,
     hookOutput,
+    captureFailure: {
+      runtime,
+      sessDir,
+      sessionId,
+      callId,
+      obligationType: lineage.obligation.obligationType,
+      output: hookOutput,
+    },
   });
 }
 
 async function completeStructuredReview(
   runtime: NativeReviewTransportRuntime,
-  input: {
-    readonly sessionId: string;
-    readonly callId: string;
-    readonly sessDir: string;
-    readonly lineage: NativeReviewLineage;
-    readonly childSessionId: string;
-    readonly hookOutput: ToolHookAfterOutput;
-  },
+  input: StructuredReviewInput,
 ): Promise<void> {
-  const { sessionId, callId, sessDir, lineage, childSessionId, hookOutput } = input;
+  const { sessionId, callId, sessDir, lineage, childSessionId, hookOutput, captureFailure } = input;
 
   await persistReviewerObservations(runtime, sessionId, lineage.attempt.attemptId, childSessionId);
   const refreshedState = await readState(sessDir);
@@ -503,7 +550,12 @@ async function completeStructuredReview(
 
   const captured = await capturePreparedFindings(runtime, lineage.obligation, childSessionId);
   if (captured.kind === 'blocked') {
-    await abandonAndBlock({ runtime, sessDir, callId, output: hookOutput, ...captured });
+    await abandonOrRetryCaptureFailure({
+      ...captureFailure,
+      code: captured.code,
+      reason: captured.reason,
+      diagnostics: [buildCodeOnlyRetryDiagnostic(captured.code)],
+    });
     return;
   }
   const validation = validateCapturedFindings(
@@ -512,7 +564,12 @@ async function completeStructuredReview(
     captured.prepared,
   );
   if (validation.kind === 'blocked') {
-    await abandonAndBlock({ runtime, sessDir, callId, output: hookOutput, ...validation });
+    await abandonOrRetryCaptureFailure({
+      ...captureFailure,
+      code: validation.code,
+      reason: validation.reason,
+      diagnostics: [buildCodeOnlyRetryDiagnostic(validation.code)],
+    });
     return;
   }
 
@@ -528,10 +585,7 @@ async function completeStructuredReview(
     phase: refreshedState.phase,
   });
   if (result !== 'fulfilled') {
-    await writeBindingFailure(
-      { runtime, sessDir, callId, output: hookOutput, code: '', reason: '' },
-      result,
-    );
+    await writeBindingFailure(captureFailure, result);
     return;
   }
   if (validation.findings.overallVerdict === 'unable_to_review') {
