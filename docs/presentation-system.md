@@ -118,7 +118,9 @@ including `reviewCard`. OpenCode may render the separate transient
 ASCII profile when configured. That fallback changes only renderer-owned status
 and action markers; it does not transliterate arbitrary Markdown, embedded
 artifact content, or user-authored text. `reviewCard` remains Unicode and must
-be displayed verbatim.
+be displayed verbatim. It is sanctioned host-compatibility output for hosts
+that predate `presentation.markdown`; it may be removed only once every
+supported host renders `presentation.markdown` exclusively.
 
 | Symbol | Meaning               | When to use                                               |
 | ------ | --------------------- | --------------------------------------------------------- |

@@ -27,13 +27,13 @@ compute, 3x I/O-bound) to account for shared runner variability.
 
 Unit, integration, and smoke tests are organized into tiers of decreasing governance criticality:
 
-| Tier   | Name                        | File                                              | What It Proves                                                             |
-| ------ | --------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------- |
-| **T1** | State Machine Invariants    | `machine/state-machine-invariants.test.ts`        | Terminal phase blocks, determinism, command-policy subset, policy variance |
-| **T2** | Actor Assurance Matrix      | `identity/actor-assurance-matrix.test.ts`         | Assurance tiers, identity-provider mode cases, fail-closed unknown actors  |
-| **T3** | Policy Snapshot Regression  | `integration/policy-snapshot-regression.test.ts`  | Snapshot authority, legacy normalization, hydrate persistence              |
-| **T4** | Audit/Archive Tamper Matrix | `integration/audit-archive-tamper-matrix.test.ts` | Archive tamper cases, regulated strict checks, archive integrity           |
-| **T5** | Session State Upgrade       | `integration/session-state-upgrade.test.ts`       | Legacy session-state fixtures and policy snapshot normalization            |
+| Tier   | Name                        | File                                              | What It Proves                                                               |
+| ------ | --------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **T1** | State Machine Invariants    | `machine/state-machine-invariants.test.ts`        | Terminal phase blocks, determinism, command-policy subset, policy variance   |
+| **T2** | Actor Assurance Matrix      | `identity/actor-assurance-matrix.test.ts`         | Assurance tiers, identity-provider mode cases, fail-closed unknown actors    |
+| **T3** | Policy Snapshot Regression  | `integration/policy-snapshot-regression.test.ts`  | Snapshot authority over presets, identity-provider mode, hydrate persistence |
+| **T4** | Audit/Archive Tamper Matrix | `integration/audit-archive-tamper-matrix.test.ts` | Archive tamper cases, regulated strict checks, archive integrity             |
+| **T5** | Session State Upgrade       | `integration/session-state-upgrade.test.ts`       | Current-epoch read boundary: non-current state contracts are rejected        |
 
 Additionally, `integration/identity-policy-e2e.test.ts` proves the identity-policy
 enforcement chain (actor resolution, assurance tiers, policy snapshot flow-through).
@@ -42,21 +42,21 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each test and check job maps to its npm script(s) for clear diagnosis:
 
-| CI Job                      | npm Script                                                      | Scope                                                                                                        | Requires Build |
-| --------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------- |
-| **unit**                    | `npm run test:unit`                                             | All `*.test.ts` outside `integration/`, including T1 and T2                                                  | No             |
-| **unit (scripts)**          | `npm run test:scripts`                                          | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job         | No             |
-| **scripts-windows**         | `npm run test:scripts`                                          | Same script suite on `windows-latest`; merge-blocking through the `ci-gate` aggregator                       | No             |
-| **unit (assertions)**       | `npm run test:assertion-conformance`                            | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                | No             |
-| **agent-instruction-evals** | `npm run test:evals`                                            | Deterministic eval harness and transport-template contracts; no live provider                                | No             |
-| **coverage**                | `npm run test:coverage:ci`                                      | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                       | No             |
-| **integration-perf**        | `npm run test:integration:perf`                                 | All integration PERF tests without v8 instrumentation                                                        | No             |
-| **provider-conformance**    | `npm run test:provider-conformance`                             | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go | No             |
-| **regulated-e2e**           | `npx vitest run --project integration` (three regulated suites) | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                           | No             |
-| **smoke**                   | `npm run test:smoke`                                            | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                             | Yes            |
-| **install-verify**          | `npm run test:install-verify`                                   | Tarball pack/install/doctor verification                                                                     | Yes            |
-| **mutation**                | `npm run mutation`                                              | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                      | No             |
-| **actions-pinning**         | `npm run check:actions-pinned`                                  | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                  | No             |
+| CI Job                   | npm Script                                                      | Scope                                                                                                        | Requires Build |
+| ------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------- |
+| **unit**                 | `npm run test:unit`                                             | All `*.test.ts` outside `integration/`, including T1 and T2                                                  | No             |
+| **unit (scripts)**       | `npm run test:scripts`                                          | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job         | No             |
+| **scripts-windows**      | `npm run test:scripts`                                          | Same script suite on `windows-latest`; merge-blocking through the `ci-gate` aggregator                       | No             |
+| **unit (assertions)**    | `npm run test:assertion-conformance`                            | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                | No             |
+| **deterministic-evals**  | `npm run test:evals`                                            | Deterministic eval harness and transport-template contracts; no live provider                                | No             |
+| **coverage**             | `npm run test:coverage:ci`                                      | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                       | No             |
+| **integration-perf**     | `npm run test:integration:perf`                                 | All integration PERF tests without v8 instrumentation                                                        | No             |
+| **provider-conformance** | `npm run test:provider-conformance`                             | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go | No             |
+| **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites) | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                           | No             |
+| **smoke**                | `npm run test:smoke`                                            | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                             | Yes            |
+| **install-verify**       | `npm run test:install-verify`                                   | Tarball pack/install/doctor verification                                                                     | Yes            |
+| **mutation**             | `npm run mutation`                                              | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                      | No             |
+| **actions-pinning**      | `npm run check:actions-pinned`                                  | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                  | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
@@ -71,13 +71,16 @@ Additional CI jobs from `.github/workflows/ci.yml` (not test-focused):
 `codeql-sast`) run in `.github/workflows/security.yml` and are listed in
 `.github/BRANCH-PROTECTION.md`.
 
-The `typecheck` job runs `npm run check`, which executes both `check:prod` and
-`check:tests`. `check:prod` compiles production sources through `tsconfig.json`.
-`check:tests` typechecks the complete source graph in the test/configuration
-compilation context through `tsconfig.test.json`, including the approved
-root-level Vitest configuration files. The test configuration inherits the
-production compiler rules and does not introduce ambient Vitest globals;
-existing explicit Vitest imports remain the test API authority.
+The `typecheck` job runs `npm run check`, which chains `check:prod`,
+`check:tests`, `check:agent-instructions`, `check:doc-paths`, and
+`check:mutation-registry`. `check:prod` compiles production sources through
+`tsconfig.json`. `check:tests` typechecks the complete source graph in the
+test/configuration compilation context through `tsconfig.test.json`, including
+the approved root-level Vitest configuration files. The test configuration
+inherits the production compiler rules and does not introduce ambient Vitest
+globals; existing explicit Vitest imports remain the test API authority. The
+remaining checks validate installed agent instructions, documentation path
+references, and mutation-registry projection drift.
 
 The `actions-pinning` job enforces the CI supply-chain contract for workflow and
 local composite-action dependencies: external GitHub Actions must use full
@@ -202,8 +205,8 @@ declared range. Every selector listed as admitted in
 `scripts/mutation-profile-registry.json` is enforced per-target on each profile
 full run via `--require-admitted`; the admitted selector list is generated from
 the immutable admission records by `scripts/generate-mutation-registry.mjs`
-(`npm run generate:mutation-registry`, drift gate `check:mutation-registry` in
-the `check` chain) and independently guarded against the active inventory and
+(`node scripts/generate-mutation-registry.mjs --write`, drift gate
+`check:mutation-registry` in the `check` chain) and independently guarded against the active inventory and
 the records by A11 in `mutation-scope.test.ts`. Targets without an admission
 record below the
 per-target threshold are reported as a note and remain tracked for test
@@ -219,7 +222,7 @@ manifest. Admission records are historical and immutable; later runs never
 rewrite them.
 
 The machine-readable scope authority is
-`src/architecture/__tests__/mutation-authority-inventory.ts`. It classifies
+`src/architecture/__tests__/mutation-authority-inventory-data.ts`. It classifies
 every authority under the declared roots as `required`, `admission-backlog`, or
 `not-mutation-suitable`; the latter is always bound to the profile whose
 regime produced the evidence and never excludes a target from other profiles.
@@ -256,7 +259,7 @@ above is the classification authority):
 | MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                                           | 4       | see `reports/mutation/`         |
 | Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                          | 5       | see `reports/mutation/`         |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                                       | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                                                                                       | 16      | see `reports/mutation/`         |
+| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`, integration tools, discovery risk paths, decision-audit intent)                       | 20      | see `reports/mutation/`         |
 | Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, review validation x2, findings hash, reviewed digest) | 10      | see `reports/mutation/`         |
 | State (`evidence-mutation-episode`)                                                                                                                                                               | 1       | see `reports/mutation/`         |
 | Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                                              | 2       | see `reports/mutation/`         |
@@ -298,7 +301,7 @@ Survivor analysis remains part of normal security-critical test maintenance.
 
 Every authority that is not yet in a mutate profile is listed here explicitly
 (the machine-readable authority is
-`src/architecture/__tests__/mutation-authority-inventory.ts`). A target leaves
+`src/architecture/__tests__/mutation-authority-inventory-data.ts`). A target leaves
 this backlog only through a profile full run that proves the per-target and
 aggregate thresholds; a score below the threshold never converts a target into
 `not-mutation-suitable` by itself.

@@ -504,12 +504,12 @@ External references recorded via `/ticket` remain raw in the canonical
 archive. Redacted sharing archives contain only their redacted projections.
 
 **Verification:** `verifyArchive()` (defined in
-`src/adapters/workspace/archive.ts`) validates integrity. Possible finding
-codes are enumerated in `docs/archive.md#verification-finding-codes` and the
-source enum in `src/archive/types.ts` (`AUDIT_CHAIN_*`, `MANIFEST_*`,
-`FILE_DIGEST_*`, `CONTENT_DIGEST_*`, `ARCHIVE_CHECKSUM_*`,
-`TIMESTAMP_UNANCHORED`, `TSA_VERIFICATION_FAILED`, plus per-artifact binding
-codes).
+`src/adapters/workspace/archive-verify-chain.ts`) validates integrity. Possible
+finding codes are enumerated in `docs/archive.md#finding-codes`
+and the source enum `ArchiveFindingCodeSchema` in `src/archive/types.ts`
+(lowercase codes such as `missing_manifest`, `file_digest_mismatch`,
+`audit_chain_invalid`, `timestamp_unanchored`, `tsa_verification_failed`, plus
+per-artifact binding codes).
 
 **Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers
 synchronous archive creation + verification. The `regulatedArchiveStatus` field on session state tracks the lifecycle

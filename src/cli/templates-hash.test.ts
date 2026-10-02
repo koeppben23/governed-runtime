@@ -339,8 +339,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // uses one typed recovery call per command — /plan and /architecture name
     // `reviewRecovery: "retry_transport"` instead of a claim-carrying
     // re-submission, and /implement keeps `flowguard_implement({})`.
+    // Refreshed for host-compatible reviewCard wording: plan/architecture/
+    // implement/review now call the `reviewCard` field a host-compatible
+    // fallback instead of "the legacy reviewCard". Changes all four bodies and
+    // therefore the COMMANDS hash.
     expect(sha256(commandsJson)).toBe(
-      'c82db2960e02027dda5804741175148e6178821272e174bf1401d46435eb097a',
+      'aa938a5c213ac0a7d8de63fe2b8de134075f3ee365f06f70a17d1fabbc411f16',
     );
   });
 
