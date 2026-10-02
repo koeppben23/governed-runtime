@@ -79,7 +79,7 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review/obligations',
     dir: 'integration/review/obligations',
     description: 'Review obligations, attempts, and challenge lifecycle',
-    maxProductionFiles: 11,
+    maxProductionFiles: 12,
   },
   {
     id: 'review/context',
@@ -373,6 +373,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/findings-hash.ts', owner: 'review' },
   { file: 'integration/review/evidence/findings-schema.ts', owner: 'review-evidence' },
   { file: 'integration/review/obligations/freeze-coherence.ts', owner: 'review-obligations' },
+  {
+    file: 'integration/review/obligations/incoherent-capture-rearm.ts',
+    owner: 'review-obligations',
+  },
   { file: 'integration/review/context/frozen-reviewer-context.ts', owner: 'review-context' },
   { file: 'integration/review/prompting/impl-review-prompt.ts', owner: 'review-prompting' },
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },
@@ -482,6 +486,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   { file: 'integration/tools/helpers-rail-presentation.ts', owner: 'tools-infrastructure' },
   { file: 'integration/tools/helpers.ts', owner: 'tools-infrastructure' },
+  {
+    file: 'integration/tools/incoherent-capture-recovery.ts',
+    owner: 'tools-infrastructure',
+  },
   { file: 'integration/tools/reduced-ceremony-attestation.ts', owner: 'tools-infrastructure' },
   { file: 'integration/tools/hydrate/hydrate-discovery-health.ts', owner: 'tools-hydrate' },
   { file: 'integration/tools/hydrate/hydrate-discovery.ts', owner: 'tools-hydrate' },

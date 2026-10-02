@@ -15,6 +15,8 @@ import { handleAdrReview } from './architecture/architecture-review.js';
 import type { ArchitectureArgs, ArchitectureSession } from './architecture/architecture-shared.js';
 import type { ToolContext } from './helpers.js';
 
+const FIXED_NOW = '2026-01-01T00:00:00.000Z';
+
 function parseJSON(s: string): Record<string, unknown> {
   return JSON.parse(s);
 }
@@ -36,7 +38,7 @@ function baseSession(stateOverrides: Record<string, unknown> = {}): Architecture
       ...stateOverrides,
     },
     policy: { reviewBudget: { architecture: 3 } },
-    ctx: {},
+    ctx: { now: () => FIXED_NOW },
   } as unknown as ArchitectureSession;
 }
 

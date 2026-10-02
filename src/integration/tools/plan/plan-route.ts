@@ -199,7 +199,7 @@ function changedSubjectWhilePending(
   });
 }
 
-function planInstructionResponse(
+export function planInstructionResponse(
   scope: PlanExecutionScope,
   authority: ReviewDispatchAuthority,
   status = 'Plan review is pending; reusing the existing review obligation.',

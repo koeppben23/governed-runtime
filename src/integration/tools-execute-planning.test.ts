@@ -1310,6 +1310,102 @@ describe('plan', () => {
     });
   });
 
+  // ─── F12: bounded incoherent reviewer-capture re-arm (plan) ─────────────
+  describe('EDGE: F12 incoherent capture re-arm (plan)', () => {
+    async function planObligationIdentity() {
+      const state = await readState(await currentSessionDir());
+      const obligation = state!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'plan',
+      );
+      if (!obligation) throw new Error('missing plan obligation');
+      const attempt =
+        state!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+        ) ??
+        state!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId,
+        );
+      if (!attempt) throw new Error('missing plan attempt');
+      return { obligation, attempt };
+    }
+
+    it('F12 re-arms one fresh attempt on the same obligation, then fails the second closed', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
+      const sessDir = await currentSessionDir();
+      const { obligation, attempt: a1 } = await planObligationIdentity();
+
+      // Host capture: accept + a blocking issue (F12), bound to A1.
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'plan',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        attemptId: a1.attemptId,
+      });
+
+      const first = parseToolResult(await plan.execute({ reviewVerdict: 'accept' }, ctx));
+      expect(first.error).toBeUndefined();
+      expect(first.status).toContain('Incoherent reviewer capture');
+      const a2Id = first.reviewAttemptId;
+      expect(typeof a2Id).toBe('string');
+      expect(a2Id).not.toBe(a1.attemptId);
+
+      const afterFirst = await readState(sessDir);
+      const a1After = afterFirst!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === a1.attemptId,
+      );
+      expect(a1After).toMatchObject({
+        status: 'rejected',
+        rejectionReason: 'consistency_invalid',
+      });
+      const a2 = afterFirst!.reviewAssurance!.attempts.find((item) => item.attemptId === a2Id);
+      expect(a2).toMatchObject({
+        status: 'created',
+        ordinal: a1.ordinal + 1,
+        origin: {
+          kind: 'dispatch_rearm',
+          predecessorAttemptId: a1.attemptId,
+          triggerReason: 'spent',
+        },
+      });
+      const obligationAfter = afterFirst!.reviewAssurance!.obligations.find(
+        (item) => item.obligationId === obligation.obligationId,
+      );
+      expect(obligationAfter).toMatchObject({
+        status: 'pending',
+        invocationId: null,
+        fulfilledAt: null,
+      });
+      // The completed release stays complete and no outcome-unknown appears.
+      expect(
+        afterFirst!.reviewAssurance!.dispatches.map((record) => record.dispatchStatus),
+      ).toEqual(['completed']);
+
+      // Second F12 on A2 must fail closed with the explicit F12 budget reason
+      // and mint no third attempt. The newer incoherent capture outranks the
+      // older rejected attempt's unusable lineage.
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'plan',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        childSessionId: 'ses_plan_reviewer_retry',
+        attemptId: a2Id as string,
+      });
+      const second = parseToolResult(await plan.execute({ reviewVerdict: 'accept' }, ctx));
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+      expect(JSON.stringify(second)).toContain(
+        'incoherent reviewer capture retry budget exhausted',
+      );
+      const afterSecond = await readState(sessDir);
+      expect(afterSecond!.reviewAssurance!.attempts).toHaveLength(2);
+    });
+  });
+
   // ─── F13 slice 10: architecture tool-layer EDGE pipeline ───────────────
   describe('EDGE: architecture unable_to_review tool-layer integration (F13 slice 10)', () => {
     const adrText =
@@ -1384,6 +1480,74 @@ describe('plan', () => {
       const raw = await architecture.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
+    });
+
+    it('F12 re-arms one fresh attempt on the same ADR obligation, then fails the second closed', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      await architecture.execute(
+        { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      const obligation = before!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'architecture',
+      );
+      if (!obligation) throw new Error('missing architecture obligation');
+      const a1 =
+        before!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+        ) ??
+        before!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId,
+        );
+      if (!a1) throw new Error('missing architecture attempt');
+
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'architecture',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        attemptId: a1.attemptId,
+      });
+
+      const first = parseToolResult(await architecture.execute({ reviewVerdict: 'accept' }, ctx));
+      expect(first.error).toBeUndefined();
+      expect(first.status).toContain('Incoherent reviewer capture');
+      const a2Id = first.reviewAttemptId;
+      expect(typeof a2Id).toBe('string');
+      expect(a2Id).not.toBe(a1.attemptId);
+
+      const afterFirst = await readState(sessDir);
+      const a1After = afterFirst!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === a1.attemptId,
+      );
+      expect(a1After?.rejectionReason).toBe('consistency_invalid');
+      const a2 = afterFirst!.reviewAssurance!.attempts.find((item) => item.attemptId === a2Id);
+      expect(a2?.origin).toMatchObject({
+        kind: 'dispatch_rearm',
+        predecessorAttemptId: a1.attemptId,
+        triggerReason: 'spent',
+      });
+      const obligationAfter = afterFirst!.reviewAssurance!.obligations.find(
+        (item) => item.obligationId === obligation.obligationId,
+      );
+      expect(obligationAfter).toMatchObject({ status: 'pending', invocationId: null });
+
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'architecture',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        childSessionId: 'ses_arch_reviewer_retry',
+        attemptId: a2Id as string,
+      });
+      const second = parseToolResult(await architecture.execute({ reviewVerdict: 'accept' }, ctx));
+      expect(second.error).toBe(true);
+      const afterSecond = await readState(sessDir);
+      expect(afterSecond!.reviewAssurance!.attempts).toHaveLength(2);
     });
   });
 

@@ -35,6 +35,8 @@ import {
   formatReviewValidationFailure,
   logStructuredResolutionDiagnostics,
 } from '../../review/validation/review-validation-failure.js';
+import { attemptIncoherentCaptureRetry } from '../incoherent-capture-recovery.js';
+import { architectureInstructionResponse } from './architecture-restart.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 
@@ -81,11 +83,11 @@ function getObligationExpectation(
   };
 }
 
-function resolveArchitectureReview(
+async function resolveArchitectureReview(
   args: ArchitectureArgs,
   context: ToolContext,
   session: ArchitectureSession,
-): ResolvedReview | string {
+): Promise<ResolvedReview | string> {
   const { state } = session;
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   const pendingObligation = findLatestUnconsumedObligation(assuranceBase, 'architecture');
@@ -116,6 +118,25 @@ function resolveArchitectureReview(
   });
 
   if (resolved.kind === 'blocked') {
+    const retry = await attemptIncoherentCaptureRetry({
+      failure: resolved.failure,
+      state,
+      sessDir: session.sessDir,
+      obligationId: pendingObligation?.obligationId,
+      now: session.ctx.now(),
+      buildResponse: (nextState, authority) =>
+        architectureInstructionResponse(
+          { ...session, state: nextState },
+          {
+            authority,
+            status:
+              'Incoherent reviewer capture detected; a fresh review attempt was re-armed on the same frozen ADR subject.',
+            iteration: authority.obligation.iteration,
+            planVersion: authority.obligation.planVersion,
+          },
+        ),
+    });
+    if (retry.kind !== 'not_applicable') return retry.response;
     return formatReviewValidationFailure(getAdapterLogger(), resolved.failure);
   }
   logStructuredResolutionDiagnostics(getAdapterLogger(), resolved.diagnostics);
@@ -291,7 +312,7 @@ export async function handleAdrReview(
 ): Promise<string> {
   const blocked = validateReviewEntryState(session.state);
   if (blocked) return blocked;
-  const review = resolveArchitectureReview(args, context, session);
+  const review = await resolveArchitectureReview(args, context, session);
   if (typeof review === 'string') return review;
   const revision = applyAdrRevision(args, session);
   if (typeof revision === 'string') return revision;

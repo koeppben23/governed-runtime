@@ -88,7 +88,9 @@ import {
   routePlanInitialSubmission,
   routePlanTransportRecovery,
   blockedPlanReviewInProgress,
+  planInstructionResponse,
 } from './plan-route.js';
+import { attemptIncoherentCaptureRetry } from '../incoherent-capture-recovery.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
@@ -255,6 +257,20 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
 
   const lookup = resolveEffectivePlanFindings(scope);
   if (lookup.resolved.kind === 'blocked') {
+    const retry = await attemptIncoherentCaptureRetry({
+      failure: lookup.resolved.failure,
+      state: scope.state,
+      sessDir: scope.sessDir,
+      obligationId: lookup.pendingObligation?.obligationId,
+      now: scope.ctx.now(),
+      buildResponse: (state, authority) =>
+        planInstructionResponse(
+          { ...scope, state },
+          authority,
+          'Incoherent reviewer capture detected; a fresh review attempt was re-armed on the same frozen plan subject.',
+        ),
+    });
+    if (retry.kind !== 'not_applicable') return retry.response;
     return formatReviewValidationFailure(getAdapterLogger(), lookup.resolved.failure);
   }
   logStructuredResolutionDiagnostics(getAdapterLogger(), lookup.resolved.diagnostics);

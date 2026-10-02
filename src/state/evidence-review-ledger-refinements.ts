@@ -283,6 +283,20 @@ function triggerReasonsForPredecessor(
   dispatches: AssuranceRefinementShape['dispatches'],
 ): readonly string[] | null {
   if (originKind !== 'dispatch_rearm') return null;
+  // F12: a reviewer capture that completed a host release but was structurally
+  // incoherent is rejected under the canonical consistency-invalid marker. Its
+  // completed dispatch proves the release was spent, so the ONLY legal trigger
+  // for its successor is 'spent'. Any other rejected predecessor (different
+  // reason, no completed dispatch) authorizes no re-arm.
+  if (predecessor.status === 'rejected') {
+    if (predecessor.rejectionReason !== 'consistency_invalid') return null;
+    return dispatches.some(
+      (record) =>
+        record.attemptId === predecessor.attemptId && record.dispatchStatus === 'completed',
+    )
+      ? ['spent']
+      : null;
+  }
   if (predecessor.status !== 'created' && predecessor.status !== 'stale') return null;
   const released = dispatches.filter((record) => record.attemptId === predecessor.attemptId);
   if (predecessor.status === 'created') {

@@ -53,6 +53,7 @@ import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import {
   formatReviewValidationFailure,
   logStructuredResolutionDiagnostics,
+  type ReviewValidationFailure,
 } from '../../review/validation/review-validation-failure.js';
 import {
   formatAutoAdvanceOverflow,
@@ -94,8 +95,14 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
+  buildImplementationReviewInstruction,
   nextImplementationReviewIteration,
 } from '../implementation-review-activation.js';
+import {
+  reviewObligationResponseFields,
+  type ReviewDispatchAuthority,
+} from '../../review/dispatch/dispatch-authority.js';
+import { attemptIncoherentCaptureRetry } from '../incoherent-capture-recovery.js';
 import { unknownOutcomeRevalidationBlock } from './implement-shared.js';
 import { handleTransportRecovery } from './implement-review-recovery.js';
 import { handleUnableToReview } from './implement-unable-review.js';
@@ -349,6 +356,50 @@ async function handleUnableToReviewSubmission(input: {
   });
 }
 
+/** Canonical review-required response for a freshly re-armed implementation attempt. */
+function buildRearmedImplementationReviewResponse(
+  state: SessionState,
+  authority: ReviewDispatchAuthority,
+): string {
+  const instruction = buildImplementationReviewInstruction(authority);
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        phase: state.phase,
+        status:
+          'Incoherent reviewer capture detected; a fresh review attempt was re-armed on the same frozen implementation subject.',
+        reviewMode: 'subagent',
+        ...reviewObligationResponseFields(authority),
+        reviewDispatch: instruction.reviewDispatch,
+        reviewInvocation: instruction,
+        _audit: { transitions: [] },
+      },
+      state,
+    ),
+  );
+}
+
+/**
+ * F12 interception: re-arm and persist one fresh attempt inside the caller's
+ * transaction, or return null so the caller keeps its canonical fail-closed
+ * response.
+ */
+async function handleIncoherentCaptureRetry(input: {
+  runtime: ImplementRuntime;
+  failure: ReviewValidationFailure;
+  pendingObligation: ReturnType<typeof findPendingImplObligation>;
+}): Promise<string | null> {
+  const retry = await attemptIncoherentCaptureRetry({
+    failure: input.failure,
+    state: input.runtime.state,
+    sessDir: input.runtime.sessDir,
+    obligationId: input.pendingObligation?.obligationId,
+    now: input.runtime.ctx.now(),
+    buildResponse: buildRearmedImplementationReviewResponse,
+  });
+  return retry.kind === 'not_applicable' ? null : retry.response;
+}
+
 async function handleSubmittedImplementationReview(input: {
   runtime: ImplementRuntime;
   iteration: number;
@@ -362,6 +413,12 @@ async function handleSubmittedImplementationReview(input: {
     planVersion,
   );
   if (resolved.kind === 'blocked') {
+    const retryResponse = await handleIncoherentCaptureRetry({
+      runtime,
+      failure: resolved.failure,
+      pendingObligation,
+    });
+    if (retryResponse !== null) return retryResponse;
     return formatReviewValidationFailure(getAdapterLogger(), resolved.failure);
   }
   logStructuredResolutionDiagnostics(getAdapterLogger(), resolved.diagnostics);

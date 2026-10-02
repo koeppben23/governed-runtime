@@ -225,7 +225,7 @@ async function routeArchitectureInterruptedDispatch(
   );
 }
 
-function architectureInstructionResponse(
+export function architectureInstructionResponse(
   session: ArchitectureSession,
   input: {
     authority: ReviewDispatchAuthority;
