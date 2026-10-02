@@ -80,7 +80,7 @@ function feedbackState() {
 
   return makeState('ARCHITECTURE', {
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6',
+      assuranceSchemaVersion: 'review-assurance.v7',
       obligations: [
         {
           ...obligation,

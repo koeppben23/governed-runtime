@@ -163,7 +163,7 @@ describe('evaluateRepositoryEvidenceBinding', () => {
       { path: 'src/foo.ts', revision: 'head' },
     ]);
     const assurance: ReviewAssuranceState = {
-      assuranceSchemaVersion: 'review-assurance.v6',
+      assuranceSchemaVersion: 'review-assurance.v7',
       obligations: [obligation],
       invocations: [],
       attempts: [{ ...attempt, observations: [observation(obligation, attempt)] }],
@@ -252,7 +252,7 @@ describe('evaluateRepositoryEvidenceBinding', () => {
       expectedPlanVersion: 1,
       expectedIteration: 0,
       assurance: {
-        assuranceSchemaVersion: 'review-assurance.v6',
+        assuranceSchemaVersion: 'review-assurance.v7',
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],

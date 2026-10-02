@@ -163,7 +163,7 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
 /**
  * Canonical review-assurance envelope builder: one obligation (or an explicit
  * obligation list) plus optional invocations and attempts. The single
- * implementation of the `review-assurance.v6` envelope used across test
+ * implementation of the `review-assurance.v7` envelope used across test
  * suites; domain-specific obligation/invocation builders stay local to their
  * suites and feed this builder.
  */

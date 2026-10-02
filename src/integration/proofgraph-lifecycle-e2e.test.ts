@@ -1139,7 +1139,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         reviewCompletion: 'reviewer_accepted',
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [
           {
             obligationId,

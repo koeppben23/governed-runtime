@@ -836,7 +836,7 @@ describe('toolBefore — observation capability parent binding', () => {
     const now = new Date().toISOString();
     const state = makeState('PLAN', {
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,

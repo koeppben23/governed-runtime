@@ -233,7 +233,7 @@ async function setupPlanDeadState(blockedCount = 1): Promise<void> {
   const updatedState: SessionState = {
     ...state,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: blockedObligations,
       invocations: state.reviewAssurance?.invocations ?? [],
       attempts: [],
@@ -289,7 +289,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
       executedAt: new Date().toISOString(),
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
@@ -335,7 +335,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       verdict: 'changes_requested',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
@@ -562,7 +562,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const updatedState: SessionState = {
         ...state,
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [makePendingObligation('architecture', 0, 1)],
           invocations: [],
           attempts: [],
@@ -696,7 +696,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
-        rejectionReason: 'schema_invalid',
+        rejectionReason: 'consistency_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
@@ -707,7 +707,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [pending],
           invocations: [],
           attempts: [rejectedAttempt],
@@ -781,7 +781,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
-        rejectionReason: 'schema_invalid',
+        rejectionReason: 'consistency_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
@@ -792,7 +792,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [tampered],
           invocations: [],
           attempts: [rejectedAttempt],
@@ -845,7 +845,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
-        rejectionReason: 'schema_invalid',
+        rejectionReason: 'consistency_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
@@ -856,7 +856,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [tampered],
           invocations: [],
           attempts: [rejectedAttempt],

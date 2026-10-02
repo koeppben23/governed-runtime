@@ -127,7 +127,7 @@ function hostInvocation(
 
 function assurance(obligations: ReviewObligation[], invocations: ReviewInvocationEvidence[]) {
   return {
-    assuranceSchemaVersion: 'review-assurance.v6' as const,
+    assuranceSchemaVersion: 'review-assurance.v7' as const,
     obligations,
     invocations,
     attempts: [],

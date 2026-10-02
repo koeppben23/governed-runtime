@@ -1650,7 +1650,7 @@ describe('plan', () => {
       const findings = findingsFor(deps, obligation);
       const invocation = invocationFor(deps, obligation, findings, obligation.obligationId);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [],
@@ -1668,7 +1668,7 @@ describe('plan', () => {
       const obligation = producerObligation(deps, 'plan-digest-unbound');
       const findings = findingsFor(deps, obligation);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [],

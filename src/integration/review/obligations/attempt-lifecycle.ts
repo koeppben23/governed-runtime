@@ -162,8 +162,7 @@ export function appendReviewAttempt(
 /**
  * Attempt statuses that may AUTHORIZE repository evidence. Only a `bound`
  * attempt holds authoritative evidence. Rejected, stale,
- * expired, and created attempts are audit-only and can never strengthen
- * later findings.
+ * and created attempts are audit-only and can never strengthen later findings.
  */
 export const EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES: ReadonlySet<ReviewAttempt['status']> = new Set([
   'bound',

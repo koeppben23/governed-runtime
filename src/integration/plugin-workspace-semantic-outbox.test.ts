@@ -20,7 +20,7 @@ describe('PluginWorkspaceImpl semantic outbox', () => {
       const base = makeState('PLAN');
       const blocked = makeState('PLAN', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6',
+          assuranceSchemaVersion: 'review-assurance.v7',
           obligations: [
             {
               obligationId: OBLIGATION_ID,

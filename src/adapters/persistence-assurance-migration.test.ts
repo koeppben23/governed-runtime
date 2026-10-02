@@ -3,7 +3,7 @@
  * @description Assurance epoch read boundary: legacy review-assurance v3/v4
  *              state shapes are never migrated on read — they fail closed
  *              with SCHEMA_VALIDATION_FAILED. Only current-generation
- *              (review-assurance.v6) state loads.
+ *              (review-assurance.v7) state loads.
  *
  * @test-policy HAPPY, BAD
  */
@@ -51,7 +51,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       },
       '2026-08-13T10:00:00.000Z',
     );
-    expect(assurance.assuranceSchemaVersion).toBe('review-assurance.v6');
+    expect(assurance.assuranceSchemaVersion).toBe('review-assurance.v7');
 
     // Persist as if written by a v3 runtime: literal downgraded, no new fields.
     const legacy = JSON.parse(JSON.stringify(assurance)) as Record<string, unknown>;
@@ -157,7 +157,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
 
     const loaded = await readState(sessDir);
     expect(loaded).not.toBeNull();
-    expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v6');
+    expect(loaded!.reviewAssurance?.assuranceSchemaVersion).toBe('review-assurance.v7');
     const loadedObservations = loaded!.reviewAssurance?.attempts[0]?.observations ?? [];
     expect(loadedObservations).toHaveLength(1);
     expect(loadedObservations[0]!.observationId).toBe('33333333-3333-4333-8333-333333333333');
@@ -282,6 +282,6 @@ describe('review-assurance legacy rejection at the read boundary', () => {
     void obligation;
     await writeState(sessDir, { ...makeState('PLAN'), reviewAssurance: assurance });
     const raw = fs.readFileSync(statePath(sessDir), 'utf-8');
-    expect(raw).toContain('"review-assurance.v6"');
+    expect(raw).toContain('"review-assurance.v7"');
   });
 });

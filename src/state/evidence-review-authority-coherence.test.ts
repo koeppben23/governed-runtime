@@ -274,7 +274,7 @@ describe('Current persisted authority schemas are strict', () => {
 
   function assuranceWithInvocation(invocation: Record<string, unknown>) {
     return ReviewAssuranceState.safeParse({
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [PLAN_OBLIGATION],
       invocations: [invocation],
       attempts: [VALID_ATTEMPT],
@@ -325,7 +325,7 @@ describe('Current persisted authority schemas are strict', () => {
 
   it('ReviewAssuranceState rejects an orphan attempt', () => {
     const result = ReviewAssuranceState.safeParse({
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [],
       invocations: [],
       attempts: [VALID_ATTEMPT],
@@ -347,7 +347,7 @@ describe('Current persisted authority schemas are strict', () => {
       dispatchStatus: 'authorized' as const,
     };
     const base = {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [PLAN_OBLIGATION],
       invocations: [],
       attempts: [VALID_ATTEMPT],
@@ -467,7 +467,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     childSessionId: 'ses_child',
     status: 'rejected' as const,
     origin: { kind: 'initial' as const },
-    rejectionReason: 'schema_invalid' as const,
+    rejectionReason: 'consistency_invalid' as const,
     repositoryDiscovery: { kind: 'not_applicable' as const },
     observations: [],
     createdAt: FIXED_TIME,
@@ -546,7 +546,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     invocations: readonly unknown[] = [],
   ) {
     return ReviewAssuranceState.safeParse({
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [PLAN_OBLIGATION],
       invocations,
       attempts,
@@ -602,7 +602,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     }
   });
 
-  it.each(['rejected', 'stale', 'expired'] as const)(
+  it.each(['rejected', 'stale'] as const)(
     'BAD: a %s predecessor without a durable release cannot authorize a re-arm',
     (status) => {
       const predecessor = {
@@ -646,6 +646,16 @@ describe('Attempt lineage and dispatch lifecycle', () => {
 
   it('BAD: the removed task_failed rejection reason is rejected', () => {
     const attempt = { ...REJECTED_ATTEMPT, rejectionReason: 'task_failed' as const };
+    expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
+    expect(parseLineage([attempt, rearmAttempt()]).success).toBe(false);
+  });
+
+  it('BAD: the removed expired attempt status is rejected', () => {
+    const attempt = {
+      ...REJECTED_ATTEMPT,
+      status: 'expired' as const,
+      rejectionReason: undefined,
+    };
     expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
     expect(parseLineage([attempt, rearmAttempt()]).success).toBe(false);
   });
@@ -765,7 +775,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     );
   });
 
-  it('rejects a rejected predecessor with a different reason even with a completed dispatch', () => {
+  it('rejects the removed schema_invalid rejection reason even with a completed dispatch', () => {
     const result = parseLineage(
       [
         { ...REJECTED_ATTEMPT, rejectionReason: 'schema_invalid' as const },
@@ -781,10 +791,6 @@ describe('Attempt lineage and dispatch lifecycle', () => {
       [BOUND_INVOCATION],
     );
     expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain(
-      'trigger reason does not match its predecessor state',
-    );
   });
 
   it('rejects a trigger reason that contradicts the F12 predecessor state', () => {
@@ -834,7 +840,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
       rejectionReason: undefined,
     };
     return ReviewAssuranceState.safeParse({
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [PLAN_OBLIGATION],
       invocations: [],
       attempts: [stale, rearmAttempt()],
@@ -997,7 +1003,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     dispatches?: readonly unknown[];
   }) {
     return ReviewAssuranceState.safeParse({
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: input.obligations ?? [PLAN_OBLIGATION],
       invocations: input.invocations ?? [],
       attempts: [BOUND_ATTEMPT],
@@ -1229,7 +1235,7 @@ describe('Single initial attempt root and attempt status relations', () => {
 
   function parseAttempts(attempts: readonly unknown[]) {
     return ReviewAssuranceState.safeParse({
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [PLAN_OBLIGATION],
       invocations: [],
       attempts,
@@ -1254,7 +1260,7 @@ describe('Single initial attempt root and attempt status relations', () => {
     const result = parseAttempts([
       initialAttempt({
         status: 'rejected' as const,
-        rejectionReason: 'schema_invalid' as const,
+        rejectionReason: 'consistency_invalid' as const,
         completedAt: FIXED_TIME,
       }),
       initialAttempt({
@@ -1291,7 +1297,7 @@ describe('Single initial attempt root and attempt status relations', () => {
       initialAttempt({
         status: 'bound' as const,
         completedAt: FIXED_TIME,
-        rejectionReason: 'schema_invalid' as const,
+        rejectionReason: 'consistency_invalid' as const,
       }),
     ]);
     expect(result.success).toBe(false);
@@ -1303,7 +1309,10 @@ describe('Single initial attempt root and attempt status relations', () => {
 
   it('rejects a rejected attempt without completedAt', () => {
     const result = parseAttempts([
-      initialAttempt({ status: 'rejected' as const, rejectionReason: 'schema_invalid' as const }),
+      initialAttempt({
+        status: 'rejected' as const,
+        rejectionReason: 'consistency_invalid' as const,
+      }),
     ]);
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');

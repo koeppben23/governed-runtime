@@ -117,7 +117,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         ...makeState('PLAN').policySnapshot,
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [
           {
             obligationId,
@@ -193,7 +193,7 @@ async function seedStrictImplementationSession(worktree: string, sessionID: stri
       reviewFindings: [],
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [
         {
           obligationId,

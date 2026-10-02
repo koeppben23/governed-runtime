@@ -90,7 +90,7 @@ function episode(hostCallId: string, toolName: string): SessionState['mutationEp
 
 function blockedObligation(code: string): NonNullable<SessionState['reviewAssurance']> {
   return {
-    assuranceSchemaVersion: 'review-assurance.v6',
+    assuranceSchemaVersion: 'review-assurance.v7',
     obligations: [
       {
         obligationId: OBLIGATION_ID,

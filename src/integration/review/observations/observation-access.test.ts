@@ -169,7 +169,7 @@ describe('resolveRepositoryObservationAccess', () => {
     const obligation = contextObligation();
     const attempt = attemptFor(obligation, null, repositoryDiscoveryContext(NOW));
     const parsed = ReviewAssuranceState.safeParse({
-      assuranceSchemaVersion: 'review-assurance.v6',
+      assuranceSchemaVersion: 'review-assurance.v7',
       obligations: [obligation],
       invocations: [],
       attempts: [attempt],

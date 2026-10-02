@@ -190,25 +190,20 @@ describe('authorizeDispatchRearm', () => {
     expect(result).toMatchObject({ kind: 'blocked' });
   });
 
-  it.each(['rejected', 'expired'] as const)(
-    'blocks a %s attempt even without a dispatch',
-    (status) => {
-      const obligation = makeObligation();
-      const created = initialAttempt(obligation);
-      const assurance = updateAttemptStatus(
-        assuranceWith(obligation, [created]),
-        created.attemptId,
-        status,
-        NOW,
-        status === 'rejected'
-          ? { childSessionId: 'child-session-1', rejectionReason: 'schema_invalid' as const }
-          : undefined,
-      );
-      const attempt = assurance.attempts[0]!;
-      const result = authorizeDispatchRearm(assurance, attempt);
-      expect(result).toMatchObject({ kind: 'blocked' });
-    },
-  );
+  it('blocks a rejected attempt even without a dispatch', () => {
+    const obligation = makeObligation();
+    const created = initialAttempt(obligation);
+    const assurance = updateAttemptStatus(
+      assuranceWith(obligation, [created]),
+      created.attemptId,
+      'rejected',
+      NOW,
+      { childSessionId: 'child-session-1', rejectionReason: 'consistency_invalid' as const },
+    );
+    const attempt = assurance.attempts[0]!;
+    const result = authorizeDispatchRearm(assurance, attempt);
+    expect(result).toMatchObject({ kind: 'blocked' });
+  });
 
   it('blocks re-arm on settled obligations', () => {
     const obligation = makeObligation({ status: 'fulfilled' });

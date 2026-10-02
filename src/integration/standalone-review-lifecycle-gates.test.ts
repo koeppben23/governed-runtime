@@ -104,7 +104,7 @@ describe('peer review lifecycle gates', () => {
       makeState('PEER_REVIEW_COMPLETE', {
         peerReviewEvidence: [...evidenceA, ...evidenceB],
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6',
+          assuranceSchemaVersion: 'review-assurance.v7',
           obligations: [obligation(OBLIGATION_A), obligation(OBLIGATION_B)],
           invocations: [],
           attempts: [],

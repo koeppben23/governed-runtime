@@ -39,7 +39,7 @@ function stateWithBlockedCode(blockedCode: string): SessionState {
   const base = makeState('PLAN');
   return makeState('PLAN', {
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6',
+      assuranceSchemaVersion: 'review-assurance.v7',
       obligations: [
         {
           obligationId: OBLIGATION_ID,

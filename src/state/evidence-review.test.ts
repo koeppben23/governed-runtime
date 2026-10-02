@@ -708,7 +708,7 @@ describe('evidence-review', () => {
 
     it('ReviewAssuranceState parses valid assurance state', () => {
       const state = {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [],
         invocations: [],
         attempts: [],
@@ -780,7 +780,7 @@ describe('evidence-review', () => {
       });
       const attempt = linkedAttempt({ obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [attempt],
@@ -796,7 +796,7 @@ describe('evidence-review', () => {
       const invocation = structuredInvocation({ obligationType: 'architecture' as const });
       const attempt = linkedAttempt({ obligationType: 'architecture' as const });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [attempt],
@@ -813,7 +813,7 @@ describe('evidence-review', () => {
         attemptId: '99999999-9999-4999-8999-999999999999',
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [linkedAttempt()],
@@ -828,7 +828,7 @@ describe('evidence-review', () => {
       const obligation = consumedLinkedObligation();
       const invocation = structuredInvocation();
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [linkedAttempt({ obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' })],
@@ -843,7 +843,7 @@ describe('evidence-review', () => {
       const obligation = consumedLinkedObligation();
       const invocation = structuredInvocation();
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [linkedAttempt({ obligationType: 'plan' as const })],
@@ -890,7 +890,7 @@ describe('evidence-review', () => {
       attempt: Record<string, unknown>,
     ) {
       return ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [consumedContentObligation()],
         invocations: [invocation],
         attempts: [attempt],
@@ -1029,7 +1029,7 @@ describe('evidence-review', () => {
         },
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -1049,7 +1049,7 @@ describe('evidence-review', () => {
       });
       const obligationB = { ...obligationA, subjectDigest: 'b'.repeat(64) };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligationA, obligationB],
         invocations: [],
         attempts: [],
@@ -1093,7 +1093,7 @@ describe('evidence-review', () => {
         capturedRawFindings: { overallVerdict: 'changes_requested' },
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [],
         invocations: [invocation, contradictory],
         attempts: [linkedAttempt({ obligationType: 'plan' as const })],
@@ -1120,7 +1120,7 @@ describe('evidence-review', () => {
         createdAt: FIXED_TIME,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [],
         invocations: [],
         attempts: [attempt, { ...attempt, ordinal: 1 }],
@@ -1138,7 +1138,7 @@ describe('evidence-review', () => {
         obligationType: 'plan' as const,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -1193,7 +1193,7 @@ describe('evidence-review', () => {
         },
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
