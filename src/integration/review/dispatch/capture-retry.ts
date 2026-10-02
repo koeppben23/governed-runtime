@@ -131,6 +131,21 @@ export function classifyReviewerCaptureFailure(code: string): ReviewerCaptureFai
   return isRetryableCode(code) ? { retryable: true, code } : { retryable: false, code };
 }
 
+/**
+ * Central prompt/output budget for retry diagnostics: at most this many
+ * failure entries and this many characters per untrusted scalar reach the
+ * reviewer prompt. The limits protect the prompt budget without altering the
+ * underlying review evidence or the operator envelope.
+ */
+export const MAX_RETRY_DIAGNOSTICS = 8;
+export const MAX_RETRY_SCALAR_CHARS = 200;
+
+function truncateRetryScalar(value: string): string {
+  return value.length > MAX_RETRY_SCALAR_CHARS
+    ? `${value.slice(0, MAX_RETRY_SCALAR_CHARS)}…`
+    : value;
+}
+
 /** Host-classified, code-only retry diagnostic for a capture/binding failure. */
 export function buildCodeOnlyRetryDiagnostic(code: string): PendingReviewRetryDiagnostic {
   return { code };
@@ -139,7 +154,7 @@ export function buildCodeOnlyRetryDiagnostic(code: string): PendingReviewRetryDi
 /** The scalar data carried by one structured evidence-location failure. */
 function locationFailureData(failure: EvidenceLocationFailure): Readonly<Record<string, string>> {
   const data: Record<string, string> = {};
-  if ('path' in failure) data.path = failure.path;
+  if ('path' in failure) data.path = truncateRetryScalar(failure.path);
   if ('revision' in failure) data.revision = failure.revision;
   if ('line' in failure) data.line = String(failure.line);
   if ('endLine' in failure) data.endLine = String(failure.endLine);
@@ -149,13 +164,14 @@ function locationFailureData(failure: EvidenceLocationFailure): Readonly<Record<
 
 /**
  * Host-classified retry diagnostics for structured evidence-location failures.
- * Scalars copied from reviewed material are carried as data values only.
+ * Scalars copied from reviewed material are carried as data values only and are
+ * centrally bounded in count and length.
  */
 export function buildBindingRetryDiagnostics(
   code: RetryableReviewerCaptureCode,
   failures: readonly EvidenceLocationFailure[],
 ): readonly PendingReviewRetryDiagnostic[] {
-  return failures.map((failure) => ({
+  return failures.slice(0, MAX_RETRY_DIAGNOSTICS).map((failure) => ({
     code,
     reasonKind: failure.kind,
     data: locationFailureData(failure),

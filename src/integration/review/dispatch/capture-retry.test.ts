@@ -6,6 +6,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_RETRY_DIAGNOSTICS,
+  MAX_RETRY_SCALAR_CHARS,
   RETRYABLE_REVIEWER_CAPTURE_CODES,
   TERMINAL_REVIEWER_CAPTURE_CODES,
   buildBindingRetryDiagnostics,
@@ -136,6 +138,20 @@ describe('retry diagnostic DTOs', () => {
         failures: [{ kind: 'unobserved', path: 'docs/a.md', revision: 'head' }],
       }),
     ).toEqual([{ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE' }]);
+  });
+
+  it('bounds diagnostic count and untrusted scalar length centrally', () => {
+    const longPath = `docs/${'x'.repeat(MAX_RETRY_SCALAR_CHARS + 50)}.md`;
+    const failures: EvidenceLocationFailure[] = Array.from(
+      { length: MAX_RETRY_DIAGNOSTICS + 4 },
+      () => ({ kind: 'unobserved', path: longPath, revision: 'head' }),
+    );
+    const diagnostics = buildBindingRetryDiagnostics('REVIEW_EVIDENCE_NOT_OBSERVED', failures);
+    expect(diagnostics).toHaveLength(MAX_RETRY_DIAGNOSTICS);
+    const path = diagnostics[0]?.data?.path ?? '';
+    expect(path).toHaveLength(MAX_RETRY_SCALAR_CHARS + 1);
+    expect(path.endsWith('…')).toBe(true);
+    expect(path.startsWith('docs/')).toBe(true);
   });
 
   it('embeds structured diagnostics in the retry output without any free reason', () => {
