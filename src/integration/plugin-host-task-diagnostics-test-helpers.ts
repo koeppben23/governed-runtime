@@ -221,7 +221,7 @@ export function setupFullCycle(
 }
 
 /** Minimal valid repository Discovery snapshot for a repository-governed attempt. */
-export function repositoryDiscoverySnapshot(): RepositoryDiscoverySnapshot {
+function repositoryDiscoverySnapshot(): RepositoryDiscoverySnapshot {
   return {
     observedAt: NOW,
     discoveryDigest: null,
