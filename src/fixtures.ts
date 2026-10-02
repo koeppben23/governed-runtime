@@ -84,7 +84,6 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   minimumActorAssuranceForApproval: 'best_effort',
   identityProvider: undefined,
   identityProviderMode: 'optional',
-  reviewProfile: 'core',
   challengePolicy: {
     version: 'challenge-policy.v1',
     counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
@@ -164,7 +163,7 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
 /**
  * Canonical review-assurance envelope builder: one obligation (or an explicit
  * obligation list) plus optional invocations and attempts. The single
- * implementation of the `review-assurance.v6` envelope used across test
+ * implementation of the `review-assurance.v7` envelope used across test
  * suites; domain-specific obligation/invocation builders stay local to their
  * suites and feed this builder.
  */
@@ -252,8 +251,6 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       fulfilledAt: FIXED_TIME,
       consumedAt: FIXED_TIME,
       subjectDigest: ARCHITECTURE_DECISION.digest,
-      reviewProfile: 'core',
-      profileSource: 'policy_default',
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
       challengePolicyVersion: 'challenge-policy.v1',
@@ -353,8 +350,6 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
     subjectDigest: PLAN_DIGEST,
-    reviewProfile: 'core',
-    profileSource: 'policy_default',
     // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
     // approval gate fails closed when evidence carries no claim binding.
     claimDeclarationsDigest: hashText(

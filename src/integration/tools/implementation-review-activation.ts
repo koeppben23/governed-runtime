@@ -20,7 +20,6 @@ import {
   appendObligationWithAttempt,
   createReviewObligation,
   freezeReviewMaterial,
-  resolveFrozenReviewProfile,
 } from '../review/obligations/assurance.js';
 import { findBindableAttempt } from '../../state/review-continuation.js';
 import type { ReviewDispatchAuthority } from '../review/dispatch/dispatch-authority.js';
@@ -113,8 +112,6 @@ function buildImplementationReviewObligation(
       }),
       digest,
     ),
-    reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
-    profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles,
     declaredTaskClass: declaredTaskClassFor(state),

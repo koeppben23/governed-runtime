@@ -44,7 +44,6 @@ import {
   artifactReviewSubjectScope,
   createObligationAndAttempt,
   freezeReviewMaterial,
-  resolveFrozenReviewProfile,
 } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
@@ -88,7 +87,7 @@ function findPriorPlanTargetPaths(
 }
 
 /** Extract the first non-empty line of text, truncated to 120 characters. */
-export function firstLine(text: string | undefined): string | undefined {
+function firstLine(text: string | undefined): string | undefined {
   if (text == null) return undefined;
   const line =
     text
@@ -152,8 +151,6 @@ export function buildPlanReviewObligationInput(input: {
       planEvidence.digest,
     ),
     reviewSubjectScope: artifactReviewSubjectScope('plan', planEvidence.body, planEvidence.digest),
-    reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
-    profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles: classificationFiles,
     declaredTaskClass: declaredTaskClassFor(state),
@@ -284,7 +281,7 @@ export function latestPlanReviewSummary(
   };
 }
 
-export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<string, unknown> {
+function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<string, unknown> {
   const { scope, finalState, transitions, revision, iteration, forcedConvergence } = input;
   return {
     phase: finalState.phase,
@@ -328,7 +325,7 @@ function convergedReviewCardInput(
   };
 }
 
-export async function convergedPlanReviewCardResponse(
+async function convergedPlanReviewCardResponse(
   input: ConvergedPlanReviewInput,
 ): Promise<Record<string, unknown>> {
   const { scope, finalState, transitions, revision, iteration, forcedConvergence } = input;
@@ -371,7 +368,7 @@ export async function convergedPlanReviewCardResponse(
   return response;
 }
 
-export async function persistConvergedPlanReview(input: ConvergedPlanReviewInput): Promise<string> {
+async function persistConvergedPlanReview(input: ConvergedPlanReviewInput): Promise<string> {
   const { scope, finalState } = input;
   await writeStateWithArtifacts(scope.sessDir, finalState);
   if (finalState.phase !== 'PLAN_REVIEW') {
@@ -382,7 +379,7 @@ export async function persistConvergedPlanReview(input: ConvergedPlanReviewInput
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
-export async function persistNonConvergedPlanReview(
+async function persistNonConvergedPlanReview(
   scope: PlanExecutionScope,
   finalState: SessionState,
   transitions: unknown,
@@ -503,7 +500,7 @@ async function mintPlanRevisionAttempt(input: {
   return { kind: 'ok', attemptResult };
 }
 
-export function nonConvergedPlanResponse(
+function nonConvergedPlanResponse(
   scope: PlanExecutionScope,
   finalState: SessionState,
   transitions: unknown,

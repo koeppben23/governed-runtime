@@ -25,12 +25,9 @@ import type { SessionState } from '../../../state/schema.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { RailBlocked } from '../../../rails/types.js';
 import type { ReviewToolArgs } from './types.js';
-import {
-  ensureMissingAnalysisObligation,
-  hasImplicitContentSignal,
-  validateSubmittedReviewFindings,
-  consumeValidatedReviewObligation,
-} from './obligation.js';
+import { validateSubmittedReviewFindings, consumeValidatedReviewObligation } from './obligation.js';
+import { ensureMissingAnalysisObligation } from './obligation-creation.js';
+import { hasImplicitContentSignal } from './review-input.js';
 import {
   resolveStructuredFindings,
   type StructuredFindingsResolution,

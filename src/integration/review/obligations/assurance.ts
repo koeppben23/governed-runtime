@@ -14,8 +14,6 @@ import type {
   ReviewInvocationEvidence,
   ReviewObligation,
   ReviewObligationType,
-  ReviewProfile,
-  ReviewProfileSource,
   PolicySnapshot,
   ReviewAttempt,
   ReviewAttemptDiscoveryContext,
@@ -171,8 +169,6 @@ export function createReviewObligation(input: {
   claimDeclarationsDigest?: string | undefined;
   reviewSubject?: FrozenReviewSubject | undefined;
   reviewMaterial: ReviewMaterial;
-  reviewProfile?: ReviewProfile | undefined;
-  profileSource?: ReviewProfileSource | undefined;
   policySnapshot?:
     | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
@@ -216,8 +212,6 @@ export function createReviewObligation(input: {
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewProfile: input.reviewProfile ?? 'core',
-    profileSource: input.profileSource ?? 'policy_default',
     ...resolvedChallengeRequirements,
     subjectDigest,
     ...(input.claimDeclarationsDigest
@@ -245,13 +239,6 @@ export function freezeReviewMaterial(content: string, subjectDigest: string): Re
     materialDigest: hashCanonicalReviewContent(normalized),
     subjectDigest,
   };
-}
-
-export function resolveFrozenReviewProfile(
-  policySnapshot: { reviewProfile?: string } | null | undefined,
-): ReviewProfile {
-  const raw = policySnapshot?.reviewProfile;
-  return raw === 'core' || raw === 'full' ? raw : 'core';
 }
 
 function resolveFrozenReviewerAttemptBudget(

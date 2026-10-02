@@ -13,10 +13,6 @@ import {
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { formatSubagentReviewNotInvoked } from './obligation-format.js';
-export {
-  buildRequiredReviewAttestationPayload,
-  formatMissingContentAnalysis,
-} from './obligation-format.js';
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
 import {
   validateReviewFindingsScope,
@@ -25,23 +21,6 @@ import {
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import type { StartedReviewResult } from './types.js';
-
-export {
-  buildReviewReferenceInput,
-  hasReviewContentInput,
-  validateReviewContentSource,
-  hasImplicitContentSignal,
-} from './review-input.js';
-export { ensureMissingAnalysisObligation } from './obligation-creation.js';
-
-// ─── Branch Review Provenance ────────────────────────────────────────────────
-export {
-  BranchReviewSourceSchema,
-  BranchReviewProvenanceSchema,
-  getRequiredBranchReviewProvenance,
-  type RequiredBranchReviewSource,
-  type RequiredBranchReviewProvenance,
-} from '../../review/evidence/review-provenance.js';
 
 function validateSubmittedChallengeConsistency(
   state: SessionState,

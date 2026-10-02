@@ -43,11 +43,10 @@ import type { SessionState } from '../state/schema.js';
 import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./git-control-plane.js')>();
-  return {
-    ...original,
-    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
-  };
+  const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('./git-control-plane.js')>(),
+  );
 });
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -122,8 +121,6 @@ function makeBlockedObligation(
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-blocked',
     maxReviewerAttempts: 1,
-    reviewProfile: 'core',
-    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -172,8 +169,6 @@ function makePendingObligation(
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-pending',
     maxReviewerAttempts: 1,
-    reviewProfile: 'core',
-    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -238,7 +233,7 @@ async function setupPlanDeadState(blockedCount = 1): Promise<void> {
   const updatedState: SessionState = {
     ...state,
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: blockedObligations,
       invocations: state.reviewAssurance?.invocations ?? [],
       attempts: [],
@@ -294,7 +289,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
       executedAt: new Date().toISOString(),
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
@@ -340,7 +335,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       verdict: 'changes_requested',
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: blockedObligations,
       invocations: [],
       attempts: [],
@@ -567,7 +562,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const updatedState: SessionState = {
         ...state,
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [makePendingObligation('architecture', 0, 1)],
           invocations: [],
           attempts: [],
@@ -701,7 +696,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
-        rejectionReason: 'schema_invalid',
+        rejectionReason: 'consistency_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
@@ -712,7 +707,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [pending],
           invocations: [],
           attempts: [rejectedAttempt],
@@ -786,7 +781,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
-        rejectionReason: 'schema_invalid',
+        rejectionReason: 'consistency_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
@@ -797,7 +792,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [tampered],
           invocations: [],
           attempts: [rejectedAttempt],
@@ -850,7 +845,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
-        rejectionReason: 'schema_invalid',
+        rejectionReason: 'consistency_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
         observations: [],
         createdAt: CREATED_AT,
@@ -861,7 +856,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
         selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
           obligations: [tampered],
           invocations: [],
           attempts: [rejectedAttempt],

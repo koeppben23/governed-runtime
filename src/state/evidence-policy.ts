@@ -156,7 +156,7 @@ export type ValidationEvidencePolicy = ExactDeepReadonly<
  * remain optional.
  *
  * The hash is SHA-256 of recursively canonicalized policy content, identified
- * by `hashVersion: policy-digest.v3`. It supports integrity comparison against
+ * by `hashVersion: policy-digest.v4`. It supports integrity comparison against
  * a trusted reference; it does not independently prove authenticity or
  * non-repudiation.
  *
@@ -217,8 +217,6 @@ export const PolicySnapshotSchema = z
      * Controls whether IdP verification failure blocks session creation.
      */
     identityProviderMode: z.enum(['optional', 'required']),
-    /** Frozen mandatory review coverage profile. */
-    reviewProfile: z.enum(['core', 'full']),
     /**
      * Versioned review-challenge policy. REQUIRED in the Hard Assurance Epoch:
      * a snapshot without it would silently disable mandatory challenge

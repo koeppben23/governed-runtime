@@ -101,15 +101,16 @@ mutation scope only to mutation-suitable authorities.
    (`src/architecture/__tests__/integration-placement-manifest.ts`). A new
    directory needs a zone in `INTEGRATION_PLACEMENT_ZONES` and an owner in
    `INTEGRATION_OWNERS`; the physical directory must equal the owner's
-   `targetZone`. Review zones carry a **zone budget** (`maxProductionFiles`):
-   raising it is a deliberate architecture decision; otherwise decompose the
-   zone.
+   `targetZone`. Review zones carry a **growth target**
+   (`targetProductionFiles`): growth beyond the target requires one
+   `budgetExceptions` entry per additional file with an explicit reason,
+   otherwise decompose the zone.
 5. `src/integration/review/**`: declare the observed zone edge in
    `DECLARED_REVIEW_ZONE_EDGES` (`review-zone-policy.ts`); the zone graph must
    stay acyclic.
 6. Mutation-suitable authority: enter the scope as an `admission-candidate` in
    the **mutation inventory**
-   (`src/architecture/__tests__/mutation-authority-inventory.ts`) with its
+   (`src/architecture/__tests__/mutation-authority-inventory-data.ts`) with its
    Stryker selector in `stryker*.conf.json` and its covering suite in
    `vitest.stryker*.config.ts`, or name it in the `admission-backlog`. A new
    inventory entry is not an admission.
@@ -123,9 +124,10 @@ mutation scope only to mutation-suitable authorities.
    run.
 3. Move the inventory entry to `required` with the immutable **admission
    record** in `mutation-admission-records.ts`, then regenerate the
-   `admittedSelectors` projection with `npm run generate:mutation-registry` —
-   never by hand. `npm run check:mutation-registry` (part of the `check`
-   chain) detects projection drift. The record remains the authority, and the
+   `admittedSelectors` projection with
+   `node scripts/generate-mutation-registry.mjs --write` — never by hand.
+   `npm run check:mutation-registry` (part of the `check` chain) detects
+   projection drift. The record remains the authority, and the
    mutation reconciliation guard (A11) independently requires active
    admissions, records, and the registry to match exactly.
    The generator is a development tool for the pinned toolchain
@@ -166,7 +168,7 @@ mutation scope only to mutation-suitable authorities.
   mutation reconciliation guard requires active admissions, records, and
   `scripts/mutation-profile-registry.json` to match exactly. Choose
   deliberately: keep the file as a mutation target, or make a dedicated
-  authority change across `mutation-authority-inventory.ts`,
+  authority change across `mutation-authority-inventory-data.ts`,
   `mutation-admission-records.ts`, and
   `scripts/mutation-profile-registry.json`, including the archival decision
   for the historical record.

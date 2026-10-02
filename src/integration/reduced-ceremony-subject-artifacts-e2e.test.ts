@@ -27,11 +27,10 @@ vi.mock('../verification/executor', () => ({
 }));
 
 vi.mock('./git-control-plane', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./git-control-plane.js')>();
-  return {
-    ...original,
-    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
-  };
+  const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('./git-control-plane.js')>(),
+  );
 });
 
 import { readState } from '../adapters/persistence.js';

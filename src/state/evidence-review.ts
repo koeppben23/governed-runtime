@@ -41,13 +41,7 @@ import {
   refineAssuranceInvocationDispatchLinkage,
 } from './evidence-review-ledger-refinements.js';
 
-export const ReviewAttemptStatusValues = [
-  'created',
-  'rejected',
-  'bound',
-  'stale',
-  'expired',
-] as const;
+export const ReviewAttemptStatusValues = ['created', 'rejected', 'bound', 'stale'] as const;
 
 const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
 type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
@@ -57,22 +51,12 @@ import { ReviewAttemptDiscoveryContext } from './evidence-review-attempt-discove
 /**
  * Canonical rejection classification persisted on a rejected review attempt.
  *
- * These reasons name structural reviewer-evidence failures; none of them
- * authorizes a repair reissue. A rejected attempt is terminal: the obligation
- * settles through the continuation authority, never through a fresh attempt on
- * the same obligation.
+ * The only produced reason is `consistency_invalid`: the F12 incoherent-capture
+ * re-arm is the sole rejection producer. A rejected attempt is terminal: the
+ * obligation settles through the continuation authority, never through a fresh
+ * attempt on the same obligation without a durable release.
  */
-export const ReviewAttemptRejectionReason = z.enum([
-  'schema_invalid',
-  'attestation_invalid',
-  'relation_invalid',
-  'scope_invalid',
-  'evidence_unavailable',
-  'material_integrity_failed',
-  'subject_mismatch',
-  'consistency_invalid',
-  'reviewer_unavailable',
-]);
+export const ReviewAttemptRejectionReason = z.enum(['consistency_invalid']);
 export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejectionReason>;
 
 /**
@@ -158,32 +142,6 @@ export type ReviewAttempt = z.infer<typeof ReviewAttempt>;
 
 // ─── Review Obligations and Invocation Evidence ────────────────────────────────
 
-/**
- * Mandatory review coverage profile frozen into an obligation.
- *
- * Mirrors the canonical `ReviewProfile` in src/config/policy-types.ts. It is
- * duplicated as a Zod enum here (not imported) because the state layer must not
- * import from the config layer (see module-boundary rules). The two definitions
- * are kept in lockstep by review-profile-parity tests.
- *
- * - 'core' — the mandatory, non-optional baseline (never 'off').
- * - 'full' — reserved for Wave 2 (#730); never auto-selected in this wave.
- */
-export const ReviewProfile = z.enum(['core', 'full']);
-export type ReviewProfile = z.infer<typeof ReviewProfile>;
-
-/**
- * Provenance of the frozen review profile. Forward-compatible: Wave 2 (#730)
- * extends this with 'runtime_required_full', 'explicit_full_request', and
- * 'inherited_plan_full'. In the current wave only 'policy_default' is produced.
- */
-export const ReviewProfileSource = z.enum([
-  'policy_default',
-  'runtime_required_full',
-  'explicit_full_request',
-  'inherited_plan_full',
-]);
-export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
 export const ReviewInputFingerprintVersion = z.literal('v2');
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
@@ -223,14 +181,6 @@ export const ReviewObligation = z
     blockedCode: z.string().nullable(),
     fulfilledAt: z.string().datetime().nullable(),
     consumedAt: z.string().datetime().nullable(),
-    /**
-     * Mandatory review coverage profile frozen at obligation creation, before any
-     * reviewer invocation. The mint always materializes it (fail-closed 'core'
-     * baseline without an explicit request), so absence is not a legal shape.
-     */
-    reviewProfile: ReviewProfile,
-    /** Provenance of the frozen review profile (see ReviewProfileSource). */
-    profileSource: ReviewProfileSource,
     /** Challenge coverage frozen from the runtime-computed minimum task class. REQUIRED — 0 is the explicit TRIVIAL value, never an implicit no-policy state. */
     requiredChallengeCount: z.number().int().min(0).max(2),
     /** The sole challenge evidence kind required for this obligation. */
@@ -332,7 +282,7 @@ export type ReviewDispatchRecord = z.infer<typeof ReviewDispatchRecord>;
  * explicit durable dispatch ledger (`dispatches`); absence of that ledger is an
  * incompatible state shape, never equivalent to an empty ledger.
  */
-export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v6' as const;
+export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v7' as const;
 
 /**
  * Persistent strict review assurance state.
@@ -352,7 +302,8 @@ export const REVIEW_ASSURANCE_SCHEMA_VERSION = 'review-assurance.v6' as const;
  * host-owned repository Discovery snapshots to attempts; v4 introduced frozen
  * repository authority, observation capabilities, and attempt-owned
  * observations; v5 makes observations representation-typed; v6 makes the
- * reviewer-dispatch ledger a required authority. States persisted under older
+ * reviewer-dispatch ledger a required authority; v7 cuts attempt statuses and
+ * rejection reasons to the produced values. States persisted under older
  * forms MUST fail parsing — there is deliberately no defaulting path for
  * authority-bearing fields, and no read migration across authority-bearing
  * generations. A `review-assurance.v5` state is NOT current, even if it

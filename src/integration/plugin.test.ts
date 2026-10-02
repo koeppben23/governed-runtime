@@ -117,7 +117,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         ...makeState('PLAN').policySnapshot,
       },
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [
           {
             obligationId,
@@ -133,8 +133,6 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerAttempts: 1,
-            reviewProfile: 'core',
-            profileSource: 'policy_default',
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -195,7 +193,7 @@ async function seedStrictImplementationSession(worktree: string, sessionID: stri
       reviewFindings: [],
     },
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [
         {
           obligationId,
@@ -210,8 +208,6 @@ async function seedStrictImplementationSession(worktree: string, sessionID: stri
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerAttempts: 1,
-          reviewProfile: 'core',
-          profileSource: 'policy_default',
           createdAt: now,
           pluginHandshakeAt: null,
           status: 'pending',

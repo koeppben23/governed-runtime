@@ -836,7 +836,7 @@ describe('toolBefore — observation capability parent binding', () => {
     const now = new Date().toISOString();
     const state = makeState('PLAN', {
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -851,8 +851,6 @@ describe('toolBefore — observation capability parent binding', () => {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerAttempts: 1,
-            reviewProfile: 'core' as const,
-            profileSource: 'policy_default' as const,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',

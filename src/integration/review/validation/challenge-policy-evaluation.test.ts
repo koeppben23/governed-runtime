@@ -230,7 +230,7 @@ async function resolveCapturedFixture(
   });
   const result = resolveStructuredFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [obligation],
       invocations: [invocation],
       attempts: [attempt],
@@ -305,7 +305,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   expect(
     resolveStructuredFindings(
       {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
@@ -327,7 +327,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       },
       implReviewFindings: [firstFindings],
       reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
@@ -406,7 +406,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   );
   const reReview = resolveStructuredFindings(
     {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [secondObligation],
       invocations: [secondInvocation],
       attempts: [secondAttempt],

@@ -42,8 +42,6 @@ export type PlanCallMode =
       params?: Record<string, string> | undefined;
     };
 
-export type PlanReviewPolicy = Record<never, never>;
-
 export type PlanClaimSubmissionDiagnostics = {
   submittedClaimDeclarationsDigest: string;
   acceptedClaimDeclarationsDigest: string;
@@ -62,7 +60,6 @@ export type PlanExecutionScope = MutablePlanSession & {
   args: PlanArgs;
   context: ToolContext;
   input: PlanInputFlags;
-  reviewPolicy: PlanReviewPolicy;
   maxPlanReviewIterations: number;
   claimSubmissionDiagnostics?: PlanClaimSubmissionDiagnostics;
 };
@@ -135,9 +132,4 @@ export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): 
   if (mode.kind === 'revision') return { kind: 'revision' };
   if (mode.kind === 'transport_recovery') return { kind: 'transport_recovery' };
   return { kind: 'approval' };
-}
-
-export function planReviewPolicy(scope: MutablePlanSession): PlanReviewPolicy {
-  void scope;
-  return {};
 }

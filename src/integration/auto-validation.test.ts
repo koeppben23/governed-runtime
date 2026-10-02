@@ -63,15 +63,10 @@ vi.mock('../adapters/git', async (importOriginal) => {
 });
 
 vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
-  return {
-    ...original,
-    freezeRepositoryIdentity: vi.fn(() => ({
-      kind: 'local' as const,
-      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
-    })),
-    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
-  };
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 vi.mock('../adapters/actor', async (importOriginal) => {
@@ -92,11 +87,10 @@ vi.mock('../adapters/actor', async (importOriginal) => {
 // hydrate's frozen baseline and implementation recording in agreement without
 // weakening the fail-closed production check.
 vi.mock('./git-control-plane', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./git-control-plane.js')>();
-  return {
-    ...original,
-    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
-  };
+  const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('./git-control-plane.js')>(),
+  );
 });
 
 // The automatic runner must never spawn real subprocesses in the temp worktree.

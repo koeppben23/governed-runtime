@@ -69,11 +69,10 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('../git-control-plane', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../git-control-plane.js')>();
-  return {
-    ...original,
-    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
-  };
+  const { gitControlPlaneAdapterMock } = await import('../adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('../git-control-plane.js')>(),
+  );
 });
 
 vi.mock('../blocked-result.js', async (importOriginal) => ({

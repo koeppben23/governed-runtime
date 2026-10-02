@@ -118,7 +118,7 @@ function f12Fixture(maxReviewerAttempts = 3): F12Fixture {
     attempt,
     invocation,
     assurance: {
-      assuranceSchemaVersion: 'review-assurance.v6',
+      assuranceSchemaVersion: 'review-assurance.v7',
       obligations: [obligation],
       invocations: [invocation],
       attempts: [attempt],

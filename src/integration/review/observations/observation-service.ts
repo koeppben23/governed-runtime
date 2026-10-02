@@ -26,7 +26,7 @@ export function classifyRepresentation(bytes: Buffer): 'utf8_text' | 'binary' {
 }
 
 /** sha256 hex of a string (no prefix). */
-export function sha256Hex(text: string): string {
+function sha256Hex(text: string): string {
   return hashText(text);
 }
 

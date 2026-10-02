@@ -50,15 +50,6 @@ export interface ObservationReplayResult {
   readonly dropped: number;
 }
 
-async function resolveCapability(
-  assurance: SessionState['reviewAssurance'],
-  attemptId: string,
-): Promise<string | null> {
-  const attempt = assurance?.attempts.find((a) => a.attemptId === attemptId);
-  if (!attempt?.observationCapability) return null;
-  return attempt.observationCapability;
-}
-
 type MintObservationBase = {
   attempt: ReviewAttempt;
   childSessionId: string;
@@ -197,7 +188,7 @@ export async function replayObservationCaptures(input: {
 }): Promise<ObservationReplayResult> {
   const assurance = input.state.reviewAssurance;
   const attempt = assurance?.attempts.find((a) => a.attemptId === input.attemptId);
-  const capability = attempt ? await resolveCapability(assurance, input.attemptId) : null;
+  const capability = attempt?.observationCapability ?? null;
   if (!attempt || !capability) return { observations: [], dropped: 0 };
   const obligation = assurance?.obligations.find((o) => o.obligationId === attempt.obligationId);
   if (!obligation) return { observations: [], dropped: 0 };

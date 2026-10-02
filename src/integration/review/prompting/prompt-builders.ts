@@ -8,24 +8,15 @@
  * @version v2
  */
 
-import type { ProofGraphProjection } from '../../../state/proofgraph.js';
-import type { FrozenReviewSubject, ReviewSubjectScope } from '../../../state/evidence.js';
 import {
   renderReviewerCriteria,
   type ReviewerPromptType,
 } from '../../../templates/mandates-reviewer-criteria.js';
-import { renderPersistedProofGraphContext } from '../context/proof-context.js';
 import { renderFindingRelationGrammar } from '../evidence/finding-relation-grammar.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from '../enforcement/types.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
-import { buildDiscoveryContextSection } from './discovery-context-prompt.js';
-import type { DiscoveryReviewContext } from '../context/discovery-port.js';
-import {
-  buildStackProfileSection,
-  resolveReviewerDiscoverySection,
-  CORE_REVIEW_PROFILE_MARKER,
-} from './prompt-sections.js';
+import { resolveReviewerDiscoverySection, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
 import type { FrozenReviewerContext } from '../../../state/review-continuation.js';
 import type { RepositoryDiscoverySnapshot } from '../../../state/evidence.js';
 import {
@@ -36,8 +27,6 @@ import {
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
 export { renderReviewContext } from './prompt-sections.js';
-export { renderVerificationEvidence } from './impl-review-prompt.js';
-export { buildImplReviewPrompt, type ImplReviewPromptOpts } from './impl-review-prompt.js';
 import { renderReviewContext } from './prompt-sections.js';
 
 /** Serialize the integrity-verified review subject identically for every transport. */
@@ -91,12 +80,6 @@ export interface ReviewerTaskPromptInput {
   readonly observationCapability?: string | undefined;
   readonly observationRevisions?: readonly ('base' | 'head')[];
   readonly retryDiagnostics?: readonly PendingReviewRetryDiagnostic[];
-}
-
-export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSubjectScope {
-  return subject.kind === 'repository_change'
-    ? { kind: 'repository_change', paths: [...subject.changedPaths], revisions: ['base', 'head'] }
-    : { kind: 'content', subjectDigest: subject.subjectDigest, lineCount: subject.lineCount };
 }
 
 /**
@@ -283,6 +266,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
         ]
       : []),
     ...renderAnchorContractLines(input),
+    CORE_REVIEW_PROFILE_MARKER,
     '',
     ...(input.artifactContext && input.artifactContext.length > 0
       ? ['## Frozen Untrusted Subject Context', ...input.artifactContext, '']
@@ -296,179 +280,4 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
   ]
     .filter((line) => line !== '')
     .join('\n');
-}
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface PlanReviewPromptOpts {
-  readonly planText: string;
-  readonly ticketText: string;
-  readonly iteration: number;
-  readonly planVersion: number;
-  readonly obligationId: string;
-  readonly criteriaVersion: string;
-  readonly mandateDigest: string;
-  readonly profileName?: string;
-  readonly profileRules?: string;
-  readonly discoveryContext: DiscoveryReviewContext;
-  readonly proofGraph?: ProofGraphProjection;
-  readonly challengeContract?: ReviewerChallengePromptContract;
-}
-
-export interface ArchitectureReviewPromptOpts {
-  readonly adrText: string;
-  readonly adrTitle: string;
-  readonly ticketText: string;
-  readonly iteration: number;
-  readonly planVersion: number;
-  readonly obligationId: string;
-  readonly criteriaVersion: string;
-  readonly mandateDigest: string;
-  readonly profileName?: string;
-  readonly profileRules?: string;
-  readonly discoveryContext: DiscoveryReviewContext;
-  readonly proofGraph?: ProofGraphProjection;
-  readonly observationCapability?: string;
-  readonly observationRevisions?: readonly ('base' | 'head')[];
-  readonly challengeContract?: ReviewerChallengePromptContract;
-}
-
-export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
-  const {
-    planText,
-    ticketText,
-    iteration,
-    planVersion,
-    obligationId,
-    profileName,
-    profileRules,
-    discoveryContext,
-    proofGraph,
-    mandateDigest,
-    criteriaVersion,
-    challengeContract,
-  } = opts;
-  const stackSection = buildStackProfileSection(profileName, profileRules);
-  const discoverySection = buildDiscoveryContextSection(discoveryContext);
-  return [
-    '## Instructions',
-    renderReviewerCriteria('plan'),
-    'Review the plan against the ticket requirements and falsify its technical claims before accepting.',
-    'Return one ReviewerFindingsInput result using the active output transport.',
-    '',
-    '## Trusted Runtime Context',
-    `iteration=${iteration}, planVersion=${planVersion}`,
-    `obligationId=${obligationId}`,
-    `mandateDigest=${mandateDigest}`,
-    `criteriaVersion=${criteriaVersion}`,
-    ...renderReviewChallengeContract(challengeContract, obligationId),
-    ...(stackSection ? [stackSection] : []),
-    ...(discoverySection ? [discoverySection] : []),
-    ...renderPersistedProofGraphContext(proofGraph),
-    '',
-    '## Frozen Untrusted Subject',
-    '### Ticket',
-    ticketText,
-    '### Plan to Review',
-    planText,
-    '',
-    CORE_REVIEW_PROFILE_MARKER,
-  ].join('\n');
-}
-
-export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts): string {
-  const {
-    adrText,
-    adrTitle,
-    ticketText,
-    iteration,
-    planVersion,
-    obligationId,
-    profileName,
-    profileRules,
-    discoveryContext,
-    proofGraph,
-    observationCapability,
-    observationRevisions,
-    mandateDigest,
-    criteriaVersion,
-    challengeContract,
-  } = opts;
-  const stackSection = buildStackProfileSection(profileName, profileRules);
-  const discoverySection = buildDiscoveryContextSection(discoveryContext);
-  return [
-    '## Instructions',
-    renderReviewerCriteria('adr'),
-    'Review the ADR against the ticket. Falsify problem framing, alternatives, rationale, consequences, reversibility, compatibility, scope, and verification claims.',
-    'Use repository observation only under the supplied observation contract.',
-    '',
-    '## Trusted Runtime Context',
-    `iteration=${iteration}, planVersion=${planVersion}`,
-    `obligationId=${obligationId}`,
-    `mandateDigest=${mandateDigest}`,
-    `criteriaVersion=${criteriaVersion}`,
-    ...renderReviewChallengeContract(challengeContract, obligationId),
-    ...(stackSection ? [stackSection] : []),
-    ...(discoverySection ? [discoverySection] : []),
-    ...renderPersistedProofGraphContext(proofGraph),
-    ...renderRepositoryObservationContract(observationCapability, observationRevisions ?? []),
-    '',
-    '## Frozen Untrusted Subject',
-    '### Ticket',
-    ticketText,
-    `### ADR to Review: ${adrTitle}`,
-    adrText,
-    '',
-    CORE_REVIEW_PROFILE_MARKER,
-  ].join('\n');
-}
-
-export function buildReviewContentPrompt(opts: {
-  content: string;
-  ticketText: string;
-  obligationId: string;
-  mandateDigest: string;
-  criteriaVersion: string;
-  iteration: number;
-  planVersion: number;
-  profileName?: string;
-  profileRules?: string;
-  repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
-  proofGraph?: ProofGraphProjection;
-  frozenReviewerContext?: FrozenReviewerContext;
-  challengeContract?: ReviewerChallengePromptContract;
-}): string {
-  const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
-  const discoverySection = resolveReviewerDiscoverySection(
-    opts.frozenReviewerContext?.reviewSubject?.kind === 'repository_change'
-      ? 'repository_change'
-      : 'other',
-    opts.repositoryDiscoverySnapshot,
-  );
-  const lines: string[] = [
-    '## Instructions',
-    renderReviewerCriteria('content'),
-    'Review the frozen content for concrete defects, risks, scope creep, and missing verification. Falsify before accepting.',
-    'Return one ReviewerFindingsInput result using the active output transport.',
-    '',
-    '## Trusted Runtime Context',
-    `iteration=${opts.iteration}, planVersion=${opts.planVersion}`,
-    `obligationId=${opts.obligationId}`,
-    `mandateDigest=${opts.mandateDigest}`,
-    `criteriaVersion=${opts.criteriaVersion}`,
-    ...renderReviewChallengeContract(opts.challengeContract, opts.obligationId),
-  ];
-  if (stackSection) lines.push(stackSection);
-  if (discoverySection) lines.push(discoverySection);
-  lines.push(...renderPersistedProofGraphContext(opts.proofGraph));
-  if (opts.ticketText) {
-    lines.push('', '## Frozen Untrusted Subject Context', '### Ticket', opts.ticketText);
-  }
-  if (opts.frozenReviewerContext) {
-    lines.push('', ...renderFrozenReviewSubjectEnvelope(opts.frozenReviewerContext));
-  } else {
-    lines.push('', '## Frozen Untrusted Subject', opts.content);
-  }
-  lines.push('', CORE_REVIEW_PROFILE_MARKER);
-  return lines.join('\n');
 }

@@ -20,7 +20,7 @@ describe('PluginWorkspaceImpl semantic outbox', () => {
       const base = makeState('PLAN');
       const blocked = makeState('PLAN', {
         reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6',
+          assuranceSchemaVersion: 'review-assurance.v7',
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -37,8 +37,6 @@ describe('PluginWorkspaceImpl semantic outbox', () => {
               criteriaVersion: 'review-criteria.v1',
               mandateDigest: 'mandate-digest',
               maxReviewerAttempts: 1,
-              reviewProfile: 'core',
-              profileSource: 'policy_default',
               createdAt: NOW,
               pluginHandshakeAt: NOW,
               status: 'blocked',

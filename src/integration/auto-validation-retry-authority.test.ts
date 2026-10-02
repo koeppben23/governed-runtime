@@ -48,15 +48,10 @@ vi.mock('../adapters/git', async (importOriginal) => {
 });
 
 vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
-  return {
-    ...original,
-    freezeRepositoryIdentity: vi.fn(() => ({
-      kind: 'local' as const,
-      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
-    })),
-    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
-  };
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 vi.mock('../adapters/actor', async (importOriginal) => {

@@ -1,5 +1,9 @@
 /**
- * Mandatory-baseline marker appended as the final line of every reviewer prompt.
+ * Mandatory-baseline marker rendered in the trusted runtime context of every
+ * reviewer prompt, immediately before the frozen untrusted subject boundary.
+ *
+ * It must never be placed after `CANONICAL_PROMPT_APPEND_MARKER`: the trusted
+ * instruction would otherwise sit inside the untrusted data region.
  *
  * This declares that the review runs under the canonical 'core' coverage
  * profile — the non-optional baseline whose criteria are owned by
@@ -7,8 +11,7 @@
  * new criteria (no duplicate review authority); it only names the profile and
  * marks it mandatory.
  *
- * It is always appended AFTER the attestation/context block and is
- * intentionally digit-free so it can never interfere with the canonical
+ * It is intentionally digit-free so it can never interfere with the canonical
  * `iteration=`/`planVersion=` context tokens.
  */
 export const CORE_REVIEW_PROFILE_MARKER =
@@ -46,21 +49,6 @@ export function renderReviewContext(input: {
     parts.push(`planVersion=${input.planVersion}`);
   }
   return parts.join(', ');
-}
-
-export function buildStackProfileSection(
-  profileName: string | undefined,
-  profileRules: string | undefined,
-): string {
-  if (!profileName && !profileRules) return '';
-  const lines: string[] = [];
-  if (profileName) {
-    lines.push('## Active Stack Profile', '', profileName, '');
-  }
-  if (profileRules) {
-    lines.push('## Stack Review Rules', '', profileRules, '');
-  }
-  return lines.join('\n');
 }
 
 /**

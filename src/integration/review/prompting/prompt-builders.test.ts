@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ReviewChallenge } from '../../../state/evidence-review-challenge.js';
 import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../../fixtures.js';
-import {
-  buildArchitectureReviewPrompt,
-  buildImplReviewPrompt,
-  buildPlanReviewPrompt,
-  buildReviewContentPrompt,
-  renderFrozenReviewSubjectEnvelope,
-  renderReviewerTaskPrompt,
-} from './prompt-builders.js';
-import { renderPersistedProofGraphContext } from '../context/proof-context.js';
+import { renderFrozenReviewSubjectEnvelope, renderReviewerTaskPrompt } from './prompt-builders.js';
 import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { buildFrozenReviewMaterialContent } from '../context/reviewer-context.js';
 import type { FrozenReviewerContext } from '../../../state/review-continuation.js';
@@ -164,112 +156,14 @@ describe('frozen review subject envelope', () => {
     },
   };
 
-  it('keeps exact persisted material immediately after the anchor in both transports', () => {
+  it('keeps exact persisted material immediately after the anchor', () => {
     const hostPrompt = renderReviewerTaskPrompt({ ...BASE_INPUT, frozenReviewerContext });
-    const sdkPrompt = buildReviewContentPrompt({
-      content: 'untrusted content',
-      ticketText: '',
-      obligationId: BASE_INPUT.obligationId,
-      mandateDigest: BASE_INPUT.mandateDigest,
-      criteriaVersion: BASE_INPUT.criteriaVersion,
-      iteration: BASE_INPUT.iteration,
-      planVersion: BASE_INPUT.planVersion,
-      frozenReviewerContext,
-    });
     const envelope = renderFrozenReviewSubjectEnvelope(frozenReviewerContext).join('\n');
     const anchorAndMaterial =
       'Append the persisted review material below this line:\nexact persisted material';
 
     expect(hostPrompt).toContain(envelope);
-    expect(sdkPrompt).toContain(envelope);
     expect(hostPrompt).toContain(anchorAndMaterial);
-    expect(sdkPrompt).toContain(anchorAndMaterial);
-    expect(sdkPrompt).not.toContain('CONTENT TO REVIEW:');
-    expect(sdkPrompt).not.toContain('untrusted content');
-  });
-});
-
-describe('renderPersistedProofGraphContext', () => {
-  it('reports persisted coverage and critical unresolved claims without evaluating providers', () => {
-    const text = renderPersistedProofGraphContext({
-      version: 'proofgraph.v2',
-      evaluatedAt: '2026-01-01T00:00:00.000Z',
-      claims: [
-        {
-          claimId: '11111111-1111-4111-8111-111111111111',
-          statement: 'The critical path rejects invalid input.',
-          signalClass: 'fact',
-          critical: true,
-          provenance: null,
-          evidenceRefs: [],
-          counterexampleRefs: [],
-          verificationState: 'NOT_VERIFIED',
-        },
-        {
-          claimId: '22222222-2222-4222-8222-222222222222',
-          statement: 'The non-critical path remains compatible.',
-          signalClass: 'fact',
-          critical: false,
-          provenance: null,
-          evidenceRefs: [],
-          counterexampleRefs: [],
-          verificationState: 'PROVEN',
-        },
-      ],
-    }).join('\n');
-
-    expect(text).toContain('Coverage: 1/2 claims PROVEN; 1 unresolved.');
-    expect(text).toContain('[NOT_VERIFIED] 11111111-1111-4111-8111-111111111111');
-    expect(text).toContain('not a review verdict or reviewer authority');
-  });
-
-  it('fails closed when no persisted projection is available', () => {
-    expect(renderPersistedProofGraphContext(undefined).join('\n')).toContain(
-      'Coverage: NOT_DECLARED',
-    );
-  });
-});
-
-describe('ProofGraph prompt context', () => {
-  const proofGraph = {
-    version: 'proofgraph.v2' as const,
-    evaluatedAt: '2026-01-01T00:00:00.000Z',
-    claims: [],
-  };
-  const common = {
-    ticketText: 'ticket',
-    obligationId: BASE_INPUT.obligationId,
-    mandateDigest: BASE_INPUT.mandateDigest,
-    criteriaVersion: BASE_INPUT.criteriaVersion,
-    iteration: BASE_INPUT.iteration,
-    planVersion: BASE_INPUT.planVersion,
-    discoveryContext: {},
-    proofGraph,
-  };
-
-  it('is included in plan, architecture, implementation, and standalone prompts', () => {
-    const challengeContract = {
-      requiredChallengeCount: 1,
-      requiredChallengeKind: 'design_challenge' as const,
-      evidenceRefs: [{ kind: 'content', digest: 'a'.repeat(64) }],
-    };
-    const prompts = [
-      buildPlanReviewPrompt({ ...common, planText: 'plan', challengeContract }),
-      buildArchitectureReviewPrompt({
-        ...common,
-        adrText: 'adr',
-        adrTitle: 'ADR-1',
-        challengeContract,
-      }),
-      buildImplReviewPrompt({ ...common, planText: 'plan', changedFiles: [], challengeContract }),
-      buildReviewContentPrompt({ ...common, content: 'content', challengeContract }),
-    ];
-
-    for (const prompt of prompts) {
-      expect(prompt).toContain('## ProofGraph Context (persisted, advisory)');
-      expect(prompt).toContain('Coverage: 0/0 claims PROVEN; 0 unresolved.');
-      expect(prompt).toContain('return exactly 1 design_challenge challenge(s)');
-    }
   });
 });
 

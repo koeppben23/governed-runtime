@@ -267,8 +267,12 @@ describe('review zone policy — real tree', () => {
           rel.split('/').slice(0, -1).join('/') === zone.dir,
       );
       expect(files.length, zone.id).toBeGreaterThan(0);
-      expect(zone.maxProductionFiles, zone.id).toBeDefined();
-      expect(files.length, zone.id).toBeLessThanOrEqual(zone.maxProductionFiles ?? 0);
+      expect(zone.targetProductionFiles, zone.id).toBeDefined();
+      const target = zone.targetProductionFiles ?? 0;
+      const exceptionFiles = new Set(
+        (zone.budgetExceptions ?? []).map((exception) => exception.file),
+      );
+      expect(files.length, zone.id).toBeLessThanOrEqual(target + exceptionFiles.size);
     }
   });
 });

@@ -60,7 +60,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
       transition can advance straight to \`IMPL_REVIEW\`.
     - Dispatch on the RETURNED \`phase\` field of the tool response; the returned phase is
       authoritative, never an assumed sequence:
-      - \`EVIDENCE_REVIEW\`: display \`presentation.markdown\` (or the legacy \`reviewCard\`)
+      - \`EVIDENCE_REVIEW\`: display \`presentation.markdown\` (or the host-compatible fallback \`reviewCard\`)
         verbatim and STOP. No checks, no reviewer, no further steps — this is the user gate.
         Reduced ceremony waives only the independent IMPL_REVIEW, never this gate.
       - \`EXPORT_READY\`: the policy auto-approved the evidence gate; \`/export\` remains an
@@ -185,7 +185,7 @@ ${renderCommandGovernanceRules()}
 ## Presentation
 
 - If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
-- Only when \`presentation.markdown\` is absent, display the legacy \`reviewCard\` field verbatim.
+- Only when \`presentation.markdown\` is absent, display the host-compatible fallback \`reviewCard\` field verbatim.
 - This is mandatory output: the user relies on it to make their review decision.
 
 ## Done-when
@@ -197,7 +197,7 @@ ${renderCommandGovernanceRules()}
   waiver (completeness reports the implementation review as waived) with every active check
   passing against the frozen implementation.
 ${DISCOVERY_REVIEW_DONE_WHEN}
-- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the fallback \`reviewCard\` is displayed verbatim.
 - On the converged path: phase has advanced to EVIDENCE_REVIEW and the canonical presentation conclusion is the only visible next action.
 - On a blocked path (review not converged, reviewer unavailable, or a FlowGuard error code): no \`/review-decision\` next action is emitted; the response surfaces the FlowGuard blocker and its recovery instead.
 `;

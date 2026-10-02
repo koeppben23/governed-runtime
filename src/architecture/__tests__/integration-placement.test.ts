@@ -143,20 +143,14 @@ describe('integration placement authority', () => {
     }
   });
 
-  it('freezes the agreed root matrix exactly (23 + 4 + 13 = 40)', () => {
-    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => targetZoneOf(entry) === 'root');
-    const byOwner = (owner: string) => rootFiles.filter((entry) => entry.owner === owner);
+  it('freezes the host/runtime boundary set exactly', () => {
+    const hostRuntimeFiles = INTEGRATION_PLACEMENT.filter(
+      (entry) => entry.owner === 'root-host-runtime',
+    )
+      .map((entry) => entry.file)
+      .sort();
 
-    expect(byOwner('root-composition').length).toBe(23);
-    expect(byOwner('root-host-runtime').length).toBe(4);
-    expect(byOwner('root-authority').length).toBe(14);
-    expect(rootFiles.length).toBe(41);
-
-    expect(
-      byOwner('root-host-runtime')
-        .map((entry) => entry.file)
-        .sort(),
-    ).toEqual([
+    expect(hostRuntimeFiles).toEqual([
       'integration/installed-commands.ts',
       'integration/opencode-host-adapter.ts',
       'integration/runtime-instance.ts',
@@ -282,9 +276,9 @@ describe('integration placement negative fixtures', () => {
     ).toEqual(['zone-owner-mismatch']);
   });
 
-  it('detects a zone that exceeds its production-file budget (and never counts test files)', () => {
+  it('detects a zone that exceeds its production-file target (and never counts test files)', () => {
     const budgetZones: readonly IntegrationPlacementZone[] = FIXTURE_ZONES.map((zone) =>
-      zone.id === 'status' ? { ...zone, maxProductionFiles: 1 } : zone,
+      zone.id === 'status' ? { ...zone, targetProductionFiles: 1 } : zone,
     );
 
     expect(
@@ -309,6 +303,90 @@ describe('integration placement negative fixtures', () => {
         testFiles: ['integration/status/rogue.test.ts'],
       }),
     ).toEqual(['test-file-in-placement']);
+  });
+
+  it('accepts a named exception exactly covering the overage and rejects invalid exceptions', () => {
+    const budgetZones: readonly IntegrationPlacementZone[] = FIXTURE_ZONES.map((zone) =>
+      zone.id === 'status' ? { ...zone, targetProductionFiles: 1 } : zone,
+    );
+    const twoFiles = {
+      productionFiles: ['integration/status/a.ts', 'integration/status/b.ts'],
+      placement: [
+        entry('integration/status/a.ts', 'status'),
+        entry('integration/status/b.ts', 'status'),
+      ],
+    };
+
+    expect(
+      analyzeFixture({
+        ...twoFiles,
+        zones: budgetZones.map((zone) =>
+          zone.id === 'status'
+            ? {
+                ...zone,
+                budgetExceptions: [{ file: 'integration/status/b.ts', reason: 'split pending' }],
+              }
+            : zone,
+        ),
+      }),
+    ).toEqual([]);
+
+    expect(
+      analyzeFixture({
+        ...twoFiles,
+        zones: budgetZones.map((zone) =>
+          zone.id === 'status'
+            ? {
+                ...zone,
+                budgetExceptions: [{ file: 'integration/status/gone.ts', reason: 'stale' }],
+              }
+            : zone,
+        ),
+      }),
+    ).toEqual(['stale-zone-budget-exception', 'zone-production-budget-exceeded']);
+
+    expect(
+      analyzeFixture({
+        ...twoFiles,
+        zones: budgetZones.map((zone) =>
+          zone.id === 'status'
+            ? { ...zone, budgetExceptions: [{ file: 'integration/status/b.ts', reason: '  ' }] }
+            : zone,
+        ),
+      }),
+    ).toEqual(['zone-budget-exception-reason-missing']);
+
+    expect(
+      analyzeFixture({
+        ...twoFiles,
+        zones: budgetZones.map((zone) =>
+          zone.id === 'status'
+            ? {
+                ...zone,
+                budgetExceptions: [
+                  { file: 'integration/status/b.ts', reason: 'one' },
+                  { file: 'integration/status/b.ts', reason: 'two' },
+                ],
+              }
+            : zone,
+        ),
+      }),
+    ).toEqual(['duplicate-zone-budget-exception']);
+
+    expect(
+      analyzeFixture({
+        productionFiles: [...twoFiles.productionFiles, 'integration/root.ts'],
+        placement: [...twoFiles.placement, entry('integration/root.ts', 'root-authority')],
+        zones: budgetZones.map((zone) =>
+          zone.id === 'status'
+            ? {
+                ...zone,
+                budgetExceptions: [{ file: 'integration/root.ts', reason: 'wrong zone' }],
+              }
+            : zone,
+        ),
+      }),
+    ).toEqual(['zone-budget-exception-out-of-zone', 'zone-production-budget-exceeded']);
   });
 
   it('detects a test file carrying a placement entry', () => {
@@ -359,7 +437,7 @@ describe('integration placement negative fixtures', () => {
 
   it('gives every violation a concrete repair hint', () => {
     const budgetZones: readonly IntegrationPlacementZone[] = FIXTURE_ZONES.map((zone) =>
-      zone.id === 'status' ? { ...zone, maxProductionFiles: 1 } : zone,
+      zone.id === 'status' ? { ...zone, targetProductionFiles: 1 } : zone,
     );
     const cases: readonly (readonly [string, IntegrationPlacementViolation[]])[] = [
       [

@@ -1,15 +1,16 @@
 /**
  * @module integration/review/discovery-envelope-contract
  * @description Contract: the attempt-bound repository Discovery envelope is
- *              delivered by BOTH reviewer prompt transports, is scoped to
+ *              delivered by the host reviewer Task prompt, is scoped to
  *              repository reviews only, and renders BEFORE the frozen material
  *              marker — including the repair prompt variant.
  */
 import { describe, expect, it } from 'vitest';
 import type { RepositoryDiscoverySnapshot } from '../../../state/evidence.js';
-import { renderReviewerTaskPrompt, buildReviewContentPrompt } from './prompt-builders.js';
+import { renderReviewerTaskPrompt } from './prompt-builders.js';
 import type { FrozenReviewerContext } from '../../../state/review-continuation.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from '../enforcement/types.js';
+import { CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -115,6 +116,16 @@ describe('repository Discovery envelope (both transports)', () => {
     );
   });
 
+  it('renders the core profile marker in the trusted region before the append marker', () => {
+    const prompt = hostPrompt(snapshot());
+    expect(prompt).toContain(CORE_REVIEW_PROFILE_MARKER);
+    expect(prompt.indexOf(CORE_REVIEW_PROFILE_MARKER)).toBeGreaterThan(-1);
+    expect(prompt.indexOf(CORE_REVIEW_PROFILE_MARKER)).toBeLessThan(
+      prompt.indexOf(CANONICAL_PROMPT_APPEND_MARKER),
+    );
+    expect(prompt.indexOf(CORE_REVIEW_PROFILE_MARKER)).toBeLessThan(prompt.indexOf('diff --git'));
+  });
+
   it('host prompt carries the repository-scoped Discovery rules only for repository reviews', () => {
     const prompt = hostPrompt(snapshot());
     expect(prompt).toContain('Check supplied Discovery health/drift before repo-dependent claims');
@@ -128,38 +139,6 @@ describe('repository Discovery envelope (both transports)', () => {
     expect(prompt).toContain('## Repository Discovery Contract');
     expect(prompt.indexOf('## Repository Discovery Context')).toBeLessThan(
       prompt.indexOf(CANONICAL_PROMPT_APPEND_MARKER),
-    );
-  });
-
-  it('SDK prompt renders the identical snapshot block from the same snapshot', () => {
-    const snap = snapshot();
-    const host = hostPrompt(snap);
-    const sdk = buildReviewContentPrompt({
-      content: 'diff --git a/x b/x\n+x\n',
-      ticketText: '',
-      obligationId: '00000000-0000-4000-8000-0000000000aa',
-      mandateDigest: 'mandate',
-      criteriaVersion: 'p40-v1',
-      iteration: 1,
-      planVersion: 1,
-      repositoryDiscoverySnapshot: snap,
-      frozenReviewerContext: repositoryFrozenContext(),
-    });
-    expect(sdk).toContain('## Repository Discovery Context (advisory, host-observed)');
-    expect(sdk).toContain('## Repository Discovery Contract');
-    // Both transports carry the same host-owned provenance facts.
-    for (const token of [
-      'java=21',
-      'npm run build --',
-      'data-access',
-      snap.observedAt,
-      snap.discoveryDigest,
-    ]) {
-      expect(host).toContain(token);
-      expect(sdk).toContain(token);
-    }
-    expect(sdk.indexOf('## Repository Discovery Context')).toBeLessThan(
-      sdk.indexOf(CANONICAL_PROMPT_APPEND_MARKER),
     );
   });
 

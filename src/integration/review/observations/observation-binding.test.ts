@@ -533,7 +533,7 @@ describe('direct/submitted validator path', () => {
     const attempt: ReviewAttempt = {
       ...baseAttempt,
       status: 'rejected',
-      rejectionReason: 'schema_invalid',
+      rejectionReason: 'consistency_invalid',
       observations: [makeObservation(obligation, baseAttempt)],
     };
     const findings = directFindings(obligation.obligationId, [
@@ -573,7 +573,7 @@ describe('direct/submitted validator path', () => {
     const rejected: ReviewAttempt = {
       ...baseRejected,
       status: 'rejected',
-      rejectionReason: 'schema_invalid',
+      rejectionReason: 'consistency_invalid',
       observations: [makeObservation(obligation, baseRejected, { path: 'src/old.ts' })],
     };
     const baseBound = attemptFor(obligation, CHILD_SESSION_ID);

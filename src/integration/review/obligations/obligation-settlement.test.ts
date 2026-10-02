@@ -49,7 +49,7 @@ function planObligation(): ReviewObligation {
 function stateWith(obligation: ReviewObligation, attempts: ReviewAttempt[] = []): SessionState {
   return {
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [obligation],
       invocations: [],
       attempts,
@@ -76,7 +76,7 @@ function attemptFor(
   if (status === 'created') return base;
   const assurance = updateAttemptStatus(
     ensureReviewAssurance({
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       obligations: [obligation],
       invocations: [],
       attempts: [base],
@@ -110,7 +110,7 @@ describe('settleReviewObligationAfterAttempt', () => {
 
   it('blocks the obligation after a rejection — no repair reissue exists', () => {
     const obligation = planObligation();
-    const rejected = attemptFor(obligation, 1, 'rejected', 'schema_invalid');
+    const rejected = attemptFor(obligation, 1, 'rejected', 'consistency_invalid');
     const state = stateWith(obligation, [rejected]);
 
     const settled = settleReviewObligationAfterAttempt(state, obligation.obligationId);
@@ -121,7 +121,7 @@ describe('settleReviewObligationAfterAttempt', () => {
 
   it('blocks the obligation after a governance rejection', () => {
     const obligation = planObligation();
-    const rejected = attemptFor(obligation, 1, 'rejected', 'scope_invalid');
+    const rejected = attemptFor(obligation, 1, 'rejected', 'consistency_invalid');
     const state = stateWith(obligation, [rejected]);
 
     const settled = settleReviewObligationAfterAttempt(state, obligation.obligationId);
@@ -157,7 +157,7 @@ describe('settleReviewObligationAfterAttempt', () => {
       ...obligation,
       reviewMaterial: { ...obligation.reviewMaterial, subjectDigest: 'other-digest' },
     };
-    const rejected = attemptFor(tampered, 1, 'rejected', 'schema_invalid');
+    const rejected = attemptFor(tampered, 1, 'rejected', 'consistency_invalid');
     const state = stateWith(tampered, [rejected]);
 
     const settled = settleReviewObligationAfterAttempt(state, tampered.obligationId);
@@ -169,7 +169,7 @@ describe('settleReviewObligationAfterAttempt', () => {
   it('invariant: every pending obligation keeps a legal continuation after settlement', () => {
     const obligation = planObligation();
     const bindable = attemptFor(obligation, 2, 'created');
-    const rejected = attemptFor(obligation, 1, 'rejected', 'scope_invalid');
+    const rejected = attemptFor(obligation, 1, 'rejected', 'consistency_invalid');
 
     for (const attempts of [[rejected], [bindable], [rejected, bindable]]) {
       const state = stateWith(obligation, attempts);

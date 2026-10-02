@@ -107,7 +107,7 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): NonNullable<ReviewFindingsValidationContext['assurance']> {
   return {
-    assuranceSchemaVersion: 'review-assurance.v6' as const,
+    assuranceSchemaVersion: 'review-assurance.v7' as const,
     attempts: [
       {
         attemptId: '55555555-5555-4555-8555-555555555555',
@@ -137,8 +137,6 @@ function strictAssuranceFixture(
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         mandateDigest: REVIEW_MANDATE_DIGEST,
         maxReviewerAttempts: 1,
-        reviewProfile: 'core' as const,
-        profileSource: 'policy_default' as const,
         reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
         createdAt: new Date().toISOString(),
         pluginHandshakeAt: new Date().toISOString(),
@@ -719,8 +717,6 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       criteriaVersion: REVIEW_CRITERIA_VERSION,
       mandateDigest: REVIEW_MANDATE_DIGEST,
       maxReviewerAttempts: 1,
-      reviewProfile: 'core' as const,
-      profileSource: 'policy_default' as const,
       reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
       createdAt: new Date().toISOString(),
       pluginHandshakeAt: null,
@@ -759,7 +755,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     return makeCtx({
       obligationType: 'implement',
       assurance: {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [implObligation()],
         invocations: [],
         attempts: [],
@@ -1284,7 +1280,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
     captured: ReviewFindings,
   ): NonNullable<ReviewFindingsValidationContext['assurance']> {
     return {
-      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
       attempts: [
         {
           attemptId: ATTEMPT_ID,
@@ -1315,8 +1311,6 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerAttempts: 1,
-          reviewProfile: 'core' as const,
-          profileSource: 'policy_default' as const,
           reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: new Date().toISOString(),

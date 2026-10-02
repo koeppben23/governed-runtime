@@ -111,7 +111,7 @@ ${renderCommandGovernanceRules()}
 ## Presentation
 
 - If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
-- Only when \`presentation.markdown\` is absent, display the legacy \`reviewCard\` field verbatim.
+- Only when \`presentation.markdown\` is absent, display the host-compatible fallback \`reviewCard\` field verbatim.
 - This is mandatory output: the user relies on it to make their review decision.
 
 ## Done-when
@@ -119,7 +119,7 @@ ${renderCommandGovernanceRules()}
 - ADR is created or revised with Context, Decision, and Consequences sections.
 - Independent review loop has reviewer evidence (reviewer accepted or iteration limit reached). Both outcomes require an explicit human decision at ARCH_REVIEW; auto-approval policies never accept an ADR.
 ${DISCOVERY_REVIEW_DONE_WHEN}
-- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the fallback \`reviewCard\` is displayed verbatim.
 - Phase has reached ARCH_REVIEW (ready for human review).
 - When the canonical presentation is present it already ends with its rendered next-action
   conclusion (a \`## Decision required\` block, or a terminal message) — do NOT

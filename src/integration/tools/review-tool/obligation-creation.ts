@@ -20,7 +20,6 @@ import type { PreparedReviewContent } from '../../../rails/review.js';
 import {
   createReviewObligation,
   appendObligationWithAttempt,
-  resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
   findReviewObligationById,
 } from '../../review/obligations/assurance.js';
@@ -166,8 +165,6 @@ async function createNewReviewObligation(
         materialDigest: reviewSubject.materialDigest,
         subjectDigest: reviewSubject.subjectDigest,
       },
-      reviewProfile: resolveFrozenReviewProfile(input.state.policySnapshot),
-      profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
       reviewSubjectScope: buildReviewSubjectScope(reviewSubject),

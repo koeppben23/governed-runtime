@@ -7,11 +7,6 @@
 
 import type { ReviewSubjectScope } from '../../../state/evidence.js';
 
-/** Material envelope contract — the review material follows this marker verbatim. */
-export const FROZEN_REVIEW_MATERIAL_CONTRACT =
-  'The exact persisted review material begins immediately after the canonical anchor. ' +
-  'Do not append, replace, or supplement it.';
-
 /**
  * The exact anchor contract the host binder enforces for an artifact-scoped
  * obligation (plan/ADR), rendered into the reviewer prompt: subjectAnchors

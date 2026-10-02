@@ -84,15 +84,10 @@ vi.mock('../adapters/git', async (importOriginal) => {
 });
 
 vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
-  return {
-    ...original,
-    freezeRepositoryIdentity: vi.fn(() => ({
-      kind: 'local' as const,
-      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
-    })),
-    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
-  };
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 // Mock the verification executor: the automatic validation run must never spawn
@@ -1655,7 +1650,7 @@ describe('plan', () => {
       const findings = findingsFor(deps, obligation);
       const invocation = invocationFor(deps, obligation, findings, obligation.obligationId);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [],
@@ -1673,7 +1668,7 @@ describe('plan', () => {
       const obligation = producerObligation(deps, 'plan-digest-unbound');
       const findings = findingsFor(deps, obligation);
       const assuranceState = {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [],

@@ -37,14 +37,13 @@ describe('FlowGuardConfigSchema', () => {
     }
   });
 
-  it('allows partial archive config without redaction key', () => {
+  it('parses an empty archive object and defaults redaction', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      archive: { retentionDays: 30 },
+      archive: {},
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.archive.retentionDays).toBe(30);
       expect(result.data.archive.redaction).toEqual({
         allowedModes: ['none', 'basic', 'pseudonymous'],
         allowRawExport: false,
@@ -1041,11 +1040,8 @@ describe('FlowGuardConfigSchema boundaries', () => {
     }
   });
 
-  it('bounds archive retention and requires at least one redaction mode', () => {
+  it('requires at least one archive redaction mode', () => {
     const archive = (value: unknown) => parse({ schemaVersion: 'v1', archive: value });
-
-    expect(archive({ retentionDays: 1 }).success).toBe(true);
-    expect(archive({ retentionDays: 0 }).success).toBe(false);
 
     expect(archive({ redaction: { allowedModes: ['basic'] } }).success).toBe(true);
     expect(archive({ redaction: { allowedModes: [] } }).success).toBe(false);

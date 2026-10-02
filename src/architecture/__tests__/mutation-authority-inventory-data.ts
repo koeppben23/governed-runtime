@@ -1621,6 +1621,27 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     SOURCE.rootAgents,
   ]),
   deferredGlob(
+    'src/machine',
+    'Machine surface beyond the admitted transition, guard, and evidence authorities',
+    DEFERRED_REASON,
+    [SOURCE.machine],
+  ),
+  deferredGlob('src/rendering', 'Rendering surface beyond the mandates renderer', DEFERRED_REASON, [
+    SOURCE.productMandates,
+  ]),
+  deferredGlob(
+    'src/redaction',
+    'Redaction surface beyond the export-time redaction boundary',
+    DEFERRED_REASON,
+    [SOURCE.trustBoundaries],
+  ),
+  deferredGlob(
+    'src/archive',
+    'Archive surface beyond the content-digest authority and manifest contracts',
+    DEFERRED_REASON,
+    [SOURCE.trustBoundaries],
+  ),
+  deferredGlob(
     'src/audit',
     'Audit surface beyond the integrity and timestamp authorities',
     DEFERRED_REASON,

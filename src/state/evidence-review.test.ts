@@ -4,12 +4,7 @@
  * Extracted from evidence-split.test.ts.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  ReviewObligation,
-  ReviewProfile,
-  ReviewProfileSource,
-  ReviewAssuranceState,
-} from './evidence-review.js';
+import { ReviewObligation, ReviewAssuranceState } from './evidence-review.js';
 import { Finding, RepositoryLocation } from './evidence-findings.js';
 import {
   ChallengeResolution,
@@ -405,8 +400,6 @@ describe('evidence-review', () => {
         fulfilledAt: null,
         consumedAt: null,
         maxReviewerAttempts: 1,
-        reviewProfile: 'core' as const,
-        profileSource: 'policy_default' as const,
         reviewMaterial: {
           content: 'frozen repository review material',
           materialDigest: 'a'.repeat(64),
@@ -476,8 +469,6 @@ describe('evidence-review', () => {
           revisions: ['base', 'head'],
         },
         maxReviewerAttempts: 1,
-        reviewProfile: 'core' as const,
-        profileSource: 'policy_default' as const,
         reviewMaterial: {
           content: 'frozen plan review material',
           materialDigest: 'a'.repeat(64),
@@ -558,8 +549,6 @@ describe('evidence-review', () => {
         requiredChallengeCount: 0,
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
-        reviewProfile: 'core' as const,
-        profileSource: 'policy_default' as const,
         reviewMaterial: {
           content: 'frozen authority plan review material',
           materialDigest: 'a'.repeat(64),
@@ -719,7 +708,7 @@ describe('evidence-review', () => {
 
     it('ReviewAssuranceState parses valid assurance state', () => {
       const state = {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [],
         invocations: [],
         attempts: [],
@@ -791,7 +780,7 @@ describe('evidence-review', () => {
       });
       const attempt = linkedAttempt({ obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [attempt],
@@ -807,7 +796,7 @@ describe('evidence-review', () => {
       const invocation = structuredInvocation({ obligationType: 'architecture' as const });
       const attempt = linkedAttempt({ obligationType: 'architecture' as const });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [attempt],
@@ -824,7 +813,7 @@ describe('evidence-review', () => {
         attemptId: '99999999-9999-4999-8999-999999999999',
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [linkedAttempt()],
@@ -839,7 +828,7 @@ describe('evidence-review', () => {
       const obligation = consumedLinkedObligation();
       const invocation = structuredInvocation();
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [linkedAttempt({ obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' })],
@@ -854,7 +843,7 @@ describe('evidence-review', () => {
       const obligation = consumedLinkedObligation();
       const invocation = structuredInvocation();
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [invocation],
         attempts: [linkedAttempt({ obligationType: 'plan' as const })],
@@ -901,7 +890,7 @@ describe('evidence-review', () => {
       attempt: Record<string, unknown>,
     ) {
       return ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [consumedContentObligation()],
         invocations: [invocation],
         attempts: [attempt],
@@ -1040,7 +1029,7 @@ describe('evidence-review', () => {
         },
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -1060,7 +1049,7 @@ describe('evidence-review', () => {
       });
       const obligationB = { ...obligationA, subjectDigest: 'b'.repeat(64) };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligationA, obligationB],
         invocations: [],
         attempts: [],
@@ -1104,7 +1093,7 @@ describe('evidence-review', () => {
         capturedRawFindings: { overallVerdict: 'changes_requested' },
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [],
         invocations: [invocation, contradictory],
         attempts: [linkedAttempt({ obligationType: 'plan' as const })],
@@ -1131,7 +1120,7 @@ describe('evidence-review', () => {
         createdAt: FIXED_TIME,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [],
         invocations: [],
         attempts: [attempt, { ...attempt, ordinal: 1 }],
@@ -1149,7 +1138,7 @@ describe('evidence-review', () => {
         obligationType: 'plan' as const,
       };
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -1204,7 +1193,7 @@ describe('evidence-review', () => {
         },
       });
       const result = ReviewAssuranceState.safeParse({
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [obligation],
         invocations: [],
         attempts: [attempt],
@@ -1498,8 +1487,6 @@ describe('evidence-review', () => {
         },
         metadata: { inputFingerprint: 'abc', customField: 42 },
         maxReviewerAttempts: 1,
-        reviewProfile: 'core' as const,
-        profileSource: 'policy_default' as const,
         reviewMaterial: {
           content: 'frozen metadata review material',
           materialDigest: 'a'.repeat(64),
@@ -1573,117 +1560,6 @@ describe('evidence-review', () => {
       ).toBe(false);
     });
   });
-
-  describe('ReviewProfile (Wave 1 — #730)', () => {
-    it('ReviewProfile accepts core and full', () => {
-      expect(ReviewProfile.parse('core')).toBe('core');
-      expect(ReviewProfile.parse('full')).toBe('full');
-    });
-
-    it('ReviewProfile rejects unknown values (no off mode)', () => {
-      expect(ReviewProfile.safeParse('off').success).toBe(false);
-      expect(ReviewProfile.safeParse('').success).toBe(false);
-      expect(ReviewProfile.safeParse('CORE').success).toBe(false);
-    });
-
-    it('ReviewProfileSource is forward-compatible for Wave 2 sources', () => {
-      for (const s of [
-        'policy_default',
-        'runtime_required_full',
-        'explicit_full_request',
-        'inherited_plan_full',
-      ]) {
-        expect(ReviewProfileSource.parse(s)).toBe(s);
-      }
-      expect(ReviewProfileSource.safeParse('bogus').success).toBe(false);
-    });
-
-    it('ReviewObligation accepts frozen reviewProfile and profileSource', () => {
-      const obligation = {
-        obligationId: FIXED_UUID,
-        obligationType: 'plan' as const,
-        reviewCycle: 1,
-        requiredChallengeCount: 0,
-        requiredChallengeKind: 'design_challenge' as const,
-        challengePolicyVersion: 'challenge-policy.v1' as const,
-        subjectDigest: 'sha256-subject',
-        iteration: 0,
-        planVersion: 1,
-        criteriaVersion: 'p40-v1',
-        mandateDigest: 'sha256-mandate',
-        createdAt: FIXED_TIME,
-        pluginHandshakeAt: null,
-        status: 'pending' as const,
-        invocationId: null,
-        blockedCode: null,
-        fulfilledAt: null,
-        consumedAt: null,
-        reviewSubjectScope: {
-          kind: 'repository_change' as const,
-          paths: ['src/auth.ts'],
-          revisions: ['base', 'head'],
-        },
-        reviewProfile: 'core' as const,
-        profileSource: 'policy_default' as const,
-        maxReviewerAttempts: 1,
-        reviewMaterial: {
-          content: 'frozen profile review material',
-          materialDigest: 'sha256-subject',
-          subjectDigest: 'sha256-subject',
-        },
-        repositoryEvidenceFreeze: {
-          kind: 'unavailable' as const,
-          reason: 'repository_unavailable' as const,
-        },
-      };
-      expect(ReviewObligation.parse(obligation)).toEqual(obligation);
-    });
-
-    it('rejects an obligation without frozen profile fields', () => {
-      const legacy = {
-        obligationId: FIXED_UUID,
-        obligationType: 'plan' as const,
-        reviewCycle: 1,
-        requiredChallengeCount: 0,
-        requiredChallengeKind: 'design_challenge' as const,
-        challengePolicyVersion: 'challenge-policy.v1' as const,
-        subjectDigest: 'sha256-subject',
-        iteration: 0,
-        planVersion: 1,
-        criteriaVersion: 'p40-v1',
-        mandateDigest: 'sha256-mandate',
-        createdAt: FIXED_TIME,
-        pluginHandshakeAt: null,
-        status: 'pending' as const,
-        invocationId: null,
-        blockedCode: null,
-        fulfilledAt: null,
-        consumedAt: null,
-        reviewSubjectScope: {
-          kind: 'repository_change' as const,
-          paths: ['src/auth.ts'],
-          revisions: ['base', 'head'],
-        },
-        maxReviewerAttempts: 1,
-        reviewMaterial: {
-          content: 'frozen profile review material',
-          materialDigest: 'sha256-subject',
-          subjectDigest: 'sha256-subject',
-        },
-        repositoryEvidenceFreeze: {
-          kind: 'unavailable' as const,
-          reason: 'repository_unavailable' as const,
-        },
-      };
-      const parsed = ReviewObligation.safeParse(legacy);
-      expect(parsed.success).toBe(false);
-      if (!parsed.success) {
-        const paths = parsed.error.issues.map((issue) => issue.path.join('.'));
-        expect(paths).toContain('reviewProfile');
-        expect(paths).toContain('profileSource');
-      }
-    });
-  });
 });
 
 describe('Implementation subject scope coherence (schema refinement)', () => {
@@ -1711,8 +1587,6 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
       fulfilledAt: null,
       consumedAt: null,
       maxReviewerAttempts: 1,
-      reviewProfile: 'core' as const,
-      profileSource: 'policy_default' as const,
       reviewMaterial: {
         content: 'frozen implementation review material',
         materialDigest: 'a'.repeat(64),

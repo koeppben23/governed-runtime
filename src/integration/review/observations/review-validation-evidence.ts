@@ -93,7 +93,7 @@ export function evaluateRepositoryEvidenceBinding(
   }
   // Fail-closed evidence-authorizing attempt: ONLY a `bound` attempt of this
   // exact obligation and child session may authorize repository evidence.
-  // Rejected/stale/expired/created attempts are audit-only; a reused child
+  // Rejected/stale/created attempts are audit-only; a reused child
   // session can never resurface an older rejected attempt's observations.
   // The explicit pre-bind candidate is the ONLY exception: an exact binding
   // tuple under evaluation before the atomic bind.

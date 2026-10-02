@@ -598,8 +598,8 @@ install, or configure the Codex custom agent directly.
   },
   "archive": {
     "redaction": {
-      "mode": "none",
-      "includeRaw": true
+      "allowedModes": ["none", "basic", "pseudonymous"],
+      "allowRawExport": true
     }
   }
 }

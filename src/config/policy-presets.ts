@@ -31,7 +31,6 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
-  reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,
@@ -58,7 +57,6 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
-  reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,
@@ -85,7 +83,6 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
-  reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,
@@ -112,7 +109,6 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: false,
-  reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,

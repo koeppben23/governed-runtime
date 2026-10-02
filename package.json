@@ -46,6 +46,7 @@
     "check:agent-instructions": "node scripts/check-agent-instructions.mjs",
     "check:doc-paths": "node scripts/check-doc-paths.mjs",
     "check:mutation-registry": "node scripts/generate-mutation-registry.mjs --check",
+    "generate:template-hashes": "node scripts/update-template-hashes.mjs",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
     "check:node-toolchain": "node scripts/check-node-toolchain-consistency.mjs",
     "check:prod": "tsc --noEmit -p tsconfig.json",

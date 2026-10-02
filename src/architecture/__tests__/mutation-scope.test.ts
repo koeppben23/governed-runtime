@@ -28,8 +28,8 @@
  *    record at or above the profile break threshold or a legacy baseline.
  *    Candidates must NOT carry provenance; the full-run verdict decides.
  * A8 completeness closure: every production source under an authority root is
- *    covered, backlog globs have a non-empty effective set, and no effective
- *    glob file is mutated.
+ *    covered, backlog globs are not dead (their root carries production
+ *    sources), and no effective glob file is mutated.
  * A9 count authority: the base mutated set (required + candidates) equals the
  *    base mutate list and the documented `PRODUCT_INVENTORY.mutationFiles`
  *    count.
@@ -73,6 +73,7 @@ import {
   targetOfSelector,
   type AdmissionCandidateEntry,
   type AdmissionRecord,
+  type DeferredAuthorityGlobEntry,
   type MutationProfile,
 } from './mutation-authority-inventory.js';
 import { admissionRecord, admissionRecordSelectors } from './mutation-admission-records.js';
@@ -429,10 +430,62 @@ describe('mutation scope', () => {
     }
     expect(uncovered).toEqual([]);
 
-    const emptyGlobs = globs
-      .filter((entry) => effectiveGlobFiles(entry).length === 0)
+    // A root glob is a standing default-deny gate for future files. It is dead
+    // only when the root itself carries no production source; a root whose
+    // files are all exact-classified (and excluded from the effective set) is
+    // fully covered, not vacuous.
+    const deadGlobs = globs
+      .filter((entry) => {
+        const baseDir = join(ROOT, entry.root);
+        if (!existsSync(baseDir)) return true;
+        const hasProductionSource = walkFiles(baseDir).some(isProductionSource);
+        return !hasProductionSource && effectiveGlobFiles(entry).length === 0;
+      })
       .map((entry) => `${entry.root}/${entry.pattern}`);
-    expect(emptyGlobs).toEqual([]);
+    expect(deadGlobs).toEqual([]);
+  });
+
+  it('A8b: every production file has exactly one effective classifier and one root glob at most', () => {
+    const globs = deferredEntries.filter(
+      (entry): entry is DeferredAuthorityGlobEntry => 'root' in entry,
+    );
+    const problems: string[] = [];
+
+    // A second unscoped glob for the same root would create ambiguous
+    // default-deny authority; exactly one root gate is the contract.
+    const globsByRoot = new Map<string, number>();
+    for (const glob of globs) {
+      globsByRoot.set(glob.root, (globsByRoot.get(glob.root) ?? 0) + 1);
+    }
+    for (const [globRoot, count] of globsByRoot) {
+      if (count > 1) {
+        problems.push(`${globRoot}: ${count} unscoped deferredGlob entries (at most one allowed)`);
+      }
+    }
+
+    for (const root of AUTHORITY_ROOTS) {
+      const baseDir = join(ROOT, root.root);
+      if (!existsSync(baseDir)) continue;
+      for (const file of walkFiles(baseDir).filter(isProductionSource)) {
+        const exact = exactInventoryTargets.has(file);
+        const matchingGlobRoots = globs
+          .filter(
+            (entry) =>
+              file.startsWith(`${entry.root}/`) && globToRegExp(`${entry.root}/**`).test(file),
+          )
+          .map((entry) => entry.root);
+        // Resolution rule: an exact entry shadows every glob. The guard proves
+        // the effective classifier is unique instead of trusting the filter.
+        const effectiveCount = exact ? 1 : matchingGlobRoots.length;
+        if (effectiveCount !== 1) {
+          problems.push(
+            `${file}: ${effectiveCount} effective classifier(s) ` +
+              `(exact=${String(exact)}, globs=${matchingGlobRoots.join(',') || 'none'})`,
+          );
+        }
+      }
+    }
+    expect(problems).toEqual([]);
   });
 
   it('A9: the base mutated set equals the mutate list and the documented count', () => {

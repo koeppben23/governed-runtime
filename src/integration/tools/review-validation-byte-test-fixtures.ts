@@ -183,7 +183,7 @@ function buildStrictFixture(
   mutate(context);
 
   const assurance = {
-    assuranceSchemaVersion: 'review-assurance.v6' as const,
+    assuranceSchemaVersion: 'review-assurance.v7' as const,
     obligations: [context.obligation],
     invocations: [context.invocation],
     attempts: [attempt],
@@ -273,7 +273,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
       expectedPlanVersion: 1,
       expectedIteration: 0,
       assurance: {
-        assuranceSchemaVersion: 'review-assurance.v6',
+        assuranceSchemaVersion: 'review-assurance.v7',
         obligations: [],
         invocations: [],
         attempts: [],
@@ -509,7 +509,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
         input: { reviewerUnavailable: true },
         state: {
           assurance: {
-            assuranceSchemaVersion: 'review-assurance.v6',
+            assuranceSchemaVersion: 'review-assurance.v7',
             obligations: [withInvocations],
             invocations: [
               buildInvocationEvidence({
@@ -543,7 +543,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
         input: { reviewerUnavailable: true },
         state: {
           assurance: {
-            assuranceSchemaVersion: 'review-assurance.v6',
+            assuranceSchemaVersion: 'review-assurance.v7',
             obligations: [],
             invocations: [],
             attempts: [],

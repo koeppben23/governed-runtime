@@ -678,7 +678,6 @@ describe('state schemas', () => {
             tsaTimeoutMs: 10000,
           },
         },
-        reviewProfile: 'core',
         actorClassification: {
           flowguard_decision: 'human',
         },
@@ -704,7 +703,6 @@ describe('state schemas', () => {
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
         maxIncoherentReviewerCaptureRetries: 1,
         maxReviewerAttempts: 1,
-        reviewProfile: 'core',
         challengePolicy: {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
@@ -795,7 +793,6 @@ describe('state schemas', () => {
         allowReducedCeremony: false,
         discoveryHealth: { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' },
         validationEvidence: { enforcement: 'required', allowNoCommands: false },
-        reviewProfile: 'core',
         challengePolicy: {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },

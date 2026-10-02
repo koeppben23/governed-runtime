@@ -47,16 +47,13 @@ Separation of concerns:
 
 **Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. On OpenCode, the reviewer runs in a host-created child session that the plugin prompts with the canonical review prompt and a required `json_schema` output contract; only the host-observed structured result can bind to a review obligation. Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
 
-### Review Coverage Profile (`core` / `full`)
+### Review Coverage Profile (`core`)
 
-Every review — plan, implementation, architecture, and standalone `/review` — runs under a mandatory **review coverage profile**:
+Every review — plan, implementation, architecture, and standalone `/review` — runs under the mandatory **core** coverage baseline:
 
-- **`core`** — the non-optional baseline. It is not operator-selectable and has no `off` mode. `core` reuses the canonical reviewer criteria in `src/templates/mandates-reviewer-criteria.ts`; it does **not** define a second set of criteria or a second review authority. The reviewer prompt carries a digit-free trailing marker declaring the profile; it never displaces the enforcement-bound `iteration`/`planVersion` context tokens.
-- **`full`** — a reserved, forward-compatible value. In the current release it is never auto-selected. Wave 2 of #730 binds parallel specialist coverage and automatic HIGH-RISK escalation to `full`; that work is pending host-capability verification (#732).
+- **`core`** is the non-optional baseline. It is not operator-selectable and has no `off` mode. It reuses the canonical reviewer criteria in `src/templates/mandates-reviewer-criteria.ts`; it does **not** define a second set of criteria or a second review authority. The reviewer prompt renders `CORE_REVIEW_PROFILE_MARKER` in the trusted runtime context, immediately before the frozen untrusted subject boundary; it never displaces the enforcement-bound `iteration`/`planVersion` context tokens.
 
-The profile is **frozen into the review obligation at creation, before any reviewer is invoked** (`ReviewObligation.reviewProfile`, `ReviewObligation.profileSource`). It is sourced from the frozen policy snapshot (`policySnapshot.reviewProfile`), which every preset sets to `core`. Resolution is fail-closed: a missing or invalid frozen value, and any legacy snapshot without the field, resolves to `core`. The chosen profile and its source are recorded in the `review:obligation_created` and `review:subagent_invoked` audit events.
-
-The profile is advisory context and provenance only. It does not transition state, satisfy an obligation, or replace ReviewFindings — the canonical reviewer remains the sole producer of binding, obligation-bound findings.
+The baseline is prompt-local context only. It does not freeze into the obligation, transition state, satisfy an obligation, or replace ReviewFindings — the canonical reviewer remains the sole producer of binding, obligation-bound findings.
 
 ### Controlled Challenge Fixture Evaluation (#747)
 
@@ -521,7 +518,7 @@ Both sources are validated through the same `validateStrictAttestation` gate. At
 
 Standalone PR/content `/review` evaluates external diffs against the **current repository**, so it requires compact Discovery context as review evidence:
 
-- The content-review prompt requires Discovery context (`buildReviewContentPrompt`'s `discoveryContext` is non-optional); the content/PR pipeline enables a **bounded drift check** so reviewers see whether local Discovery is drifted relative to the reviewed branch/diff. Drift checking fails closed: a timeout or error produces an explicit drift failure status (`timeout` / `discovery_drift_timeout`, or `unavailable` / `discovery_drift_unavailable`) rendered as `NOT_VERIFIED`.
+- The host reviewer Task prompt renders the attempt-bound repository Discovery snapshot for repository-scoped reviews (`resolveReviewerDiscoverySection` in `src/integration/review/prompting/prompt-sections.ts`); the content/PR pipeline enables a **bounded drift check** so reviewers see whether local Discovery is drifted relative to the reviewed branch/diff. Drift checking fails closed: a timeout or error produces an explicit drift failure status (`timeout` / `discovery_drift_timeout`, or `unavailable` / `discovery_drift_unavailable`) rendered as `NOT_VERIFIED`.
 - Reviewers MUST check Discovery **health and drift before** any repo-dependent quality claim, flag generic verification suggestions when repo-native `verificationCandidates` exist, and mark Discovery-dependent claims `NOT_VERIFIED` when the content cannot be correlated to local Discovery (diff references files absent from the Discovery snapshot, or local Discovery is drifted).
 - Discovery context is advisory falsification **evidence**, not review verdict authority: ReviewFindings, obligation binding, mandate digest, and attestation remain the review authority. The same shared Discovery review-context builder is reused — there is no separate PR-only Discovery authority. <!-- NOT_VERIFIED: drift-check latency/behavior under live repositories is bounded by the status drift timeout but not measured here. -->
 

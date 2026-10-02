@@ -141,8 +141,6 @@ describe('plugin-review-state', () => {
         revisions: ['base', 'head'],
       },
       ...overrides,
-      reviewProfile: overrides?.reviewProfile ?? 'core',
-      profileSource: overrides?.profileSource ?? 'policy_default',
       reviewMaterial: overrides?.reviewMaterial ?? {
         content: 'frozen review material',
         materialDigest: 'a'.repeat(64),

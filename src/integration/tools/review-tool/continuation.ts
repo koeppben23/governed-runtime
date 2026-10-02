@@ -43,7 +43,7 @@ export function resolveObligationResolvedRefs(
   return { resolvedBranchSha: branchSha, resolvedBaseSha: baseSha };
 }
 
-import { buildReviewReferenceInput } from './obligation.js';
+import { buildReviewReferenceInput } from './review-input.js';
 import type { ReviewToolArgs } from './types.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 

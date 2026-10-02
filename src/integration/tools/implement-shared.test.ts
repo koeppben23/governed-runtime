@@ -342,7 +342,7 @@ function implReviewState(): SessionState {
     },
     validationAttempts: [],
     reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v6',
+      assuranceSchemaVersion: 'review-assurance.v7',
       obligations: [],
       invocations: [],
       attempts: [],

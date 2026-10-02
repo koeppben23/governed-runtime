@@ -6,6 +6,9 @@
  */
 
 import { formatBlocked } from '../../blocked-result.js';
+import { validateAdrSections } from '../../../state/evidence.js';
+import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
+import { IntegrationInvariantError } from '../../errors.js';
 
 import type { MutableSession } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
@@ -120,4 +123,105 @@ export function buildArchitectureReviewInstruction(input: {
       ? { observationCapability: input.authority.attempt.observationCapability }
       : {}),
   });
+}
+
+export function buildRestartedState(
+  state: SessionState,
+  input: {
+    nextAdr: NonNullable<SessionState['architecture']>;
+    sameRevision: boolean;
+    revisionDelta: 'none' | 'minor';
+    assurance: SessionState['reviewAssurance'];
+  },
+): SessionState {
+  const selfReview = state.selfReview;
+  const architecture = state.architecture;
+  if (!selfReview || !architecture) {
+    throw new IntegrationInvariantError(
+      'ARCHITECTURE_RESTART_STATE_REQUIRED',
+      'an architecture review restart requires architecture and self-review state',
+    );
+  }
+  // ADR identity, createdAt, and nextAdrNumber are NEVER mutated here:
+  // a blocked review obligation is a new review generation, not a new ADR.
+  return {
+    ...state,
+    architecture: input.nextAdr,
+    selfReview: {
+      ...selfReview,
+      prevDigest: input.sameRevision ? selfReview.prevDigest : architecture.digest,
+      currDigest: input.nextAdr.digest,
+      revisionDelta: input.sameRevision ? selfReview.revisionDelta : input.revisionDelta,
+      verdict: 'changes_requested',
+    },
+    reviewAssurance: input.assurance,
+  };
+}
+
+export function resolveRestartRevision(
+  args: ArchitectureArgs,
+  state: SessionState,
+  submittedDigest: string,
+  sameRevision: boolean,
+):
+  | { readonly kind: 'blocked'; readonly blocked: string }
+  | {
+      readonly kind: 'ok';
+      readonly nextAdr: NonNullable<SessionState['architecture']>;
+      readonly revisionDelta: 'none' | 'minor';
+    } {
+  const architecture = state.architecture;
+  if (!architecture) {
+    throw new IntegrationInvariantError(
+      'NO_ARCHITECTURE',
+      'an architecture review restart resolution requires ADR state',
+    );
+  }
+  if (sameRevision) {
+    return { kind: 'ok', nextAdr: architecture, revisionDelta: 'none' };
+  }
+  const adrText = args.adrText;
+  if (adrText === undefined) {
+    throw new IntegrationInvariantError(
+      'EMPTY_ADR_TEXT',
+      'an architecture revision requires ADR text to validate',
+    );
+  }
+  const missingSections = validateAdrSections(adrText);
+  if (missingSections.length > 0) {
+    return {
+      kind: 'blocked',
+      blocked: formatBlocked('MISSING_ADR_SECTIONS', {
+        sections: missingSections.join(', '),
+      }),
+    };
+  }
+  let claimDeclarations:
+    | {
+        flow: 'architecture';
+        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
+      }
+    | undefined;
+  if (args.claims) {
+    const normalizedClaims = normalizeArchitectureClaims(args.claims);
+    if (normalizedClaims === undefined) {
+      throw new IntegrationInvariantError(
+        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
+        'normalizing submitted architecture claims produced no canonical declarations',
+      );
+    }
+    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
+  }
+  return {
+    kind: 'ok',
+    nextAdr: {
+      ...architecture,
+      adrText,
+      digest: submittedDigest,
+      ...(claimDeclarations ? { claimDeclarations } : {}),
+      // A revision invalidates any prior approval over the old digest.
+      approvalCertificate: undefined,
+    },
+    revisionDelta: 'minor',
+  };
 }

@@ -207,7 +207,7 @@ export function renderCoverageGaps(state: SessionState): string[] {
 }
 
 /** Render the persisted critical-fact requirement without performing fresh classification. */
-export function renderCriticalClaimRequirement(
+function renderCriticalClaimRequirement(
   state: SessionState,
   authorities: ReviewerProofGraphAuthorities,
 ): string[] {

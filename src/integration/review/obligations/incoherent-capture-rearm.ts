@@ -174,21 +174,16 @@ export function authorizeIncoherentCaptureRearm(
 export function buildIncoherentCaptureRearm(
   input: IncoherentCaptureRearmInput,
 ): IncoherentCaptureRearmResult {
-  const authorization = authorizeIncoherentCaptureRearm(input);
-  if (authorization.kind === 'blocked') return authorization;
+  const base = ensureReviewAssurance(input.assurance);
   const resolved = resolveRearmTarget(input);
   if (resolved.kind === 'blocked') return resolved;
+  const authorization = authorizeResolvedTarget(base, resolved.target, input);
+  if (authorization.kind === 'blocked') return authorization;
   const { obligation, attempt } = resolved.target;
 
-  const rejected = updateAttemptStatus(
-    ensureReviewAssurance(input.assurance),
-    attempt.attemptId,
-    'rejected',
-    input.now,
-    {
-      rejectionReason: 'consistency_invalid',
-    },
-  );
+  const rejected = updateAttemptStatus(base, attempt.attemptId, 'rejected', input.now, {
+    rejectionReason: 'consistency_invalid',
+  });
   const resetObligation: ReviewObligation = {
     ...obligation,
     status: 'pending',
