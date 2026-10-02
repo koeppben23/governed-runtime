@@ -312,7 +312,7 @@ export function findBindableAttempt(
  * no binding authority of its own but authorizes a durable re-arm on the same
  * frozen obligation.
  */
-export function findSpentStaleAttempt(
+function findSpentStaleAttempt(
   assurance: ReviewAssuranceState | undefined,
   obligationId: string,
 ): ReviewAttempt | null {

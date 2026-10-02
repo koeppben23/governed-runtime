@@ -30,7 +30,7 @@ import {
 import { writeStateWithArtifacts } from './helpers.js';
 
 /** The captured-evidence coherence code the F12 re-arm intercepts. */
-export const INCOHERENT_CAPTURE_FAILURE_CODE = 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT' as const;
+const INCOHERENT_CAPTURE_FAILURE_CODE = 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT' as const;
 
 export interface IncoherentCaptureRetryInput {
   /** The structured-resolution failure that blocked the verdict submission. */
