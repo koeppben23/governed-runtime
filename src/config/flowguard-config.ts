@@ -225,12 +225,6 @@ export const FlowGuardConfigSchema = z.object({
   /** Archive configuration. */
   archive: z
     .object({
-      /** Number of days to retain archived sessions. Null = no auto-cleanup. */
-      retentionDays: z.number().int().min(1).optional(),
-      /** Whether to auto-cleanup old sessions on workspace init. */
-      autoCleanupSessions: z.boolean().optional(),
-      /** Custom export path for archived sessions. Null = default location. */
-      exportPath: z.string().optional(),
       /** Export redaction constraints for archive artifacts. */
       redaction: z
         .object({
