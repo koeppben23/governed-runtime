@@ -388,7 +388,6 @@ async function restartArchitectureReview(
     nextAdr,
     sameRevision,
     revisionDelta: revision.revisionDelta,
-    obligation,
     assurance: mintResult.assurance,
   });
   await writeStateWithArtifacts(session.sessDir, augmentedState);

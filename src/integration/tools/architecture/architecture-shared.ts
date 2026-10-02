@@ -8,7 +8,6 @@
 import { formatBlocked } from '../../blocked-result.js';
 import { validateAdrSections } from '../../../state/evidence.js';
 import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
-import { createReviewObligation } from '../../review/obligations/assurance.js';
 import { IntegrationInvariantError } from '../../errors.js';
 
 import type { MutableSession } from '../helpers.js';
@@ -132,7 +131,6 @@ export function buildRestartedState(
     nextAdr: NonNullable<SessionState['architecture']>;
     sameRevision: boolean;
     revisionDelta: 'none' | 'minor';
-    obligation: ReturnType<typeof createReviewObligation> | null;
     assurance: SessionState['reviewAssurance'];
   },
 ): SessionState {
