@@ -27,10 +27,8 @@
 import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import { readState } from '../../../adapters/persistence.js';
-import { validateAdrSections } from '../../../state/evidence.js';
 import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
-import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
 import type { SessionState } from '../../../state/schema.js';
 import {
   appendObligationWithAttempt,
@@ -64,6 +62,8 @@ import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
 import {
   buildArchitectureReviewInstruction,
+  buildRestartedState,
+  resolveRestartRevision,
   type ArchitectureArgs,
   type ArchitectureSession,
 } from './architecture-shared.js';
@@ -542,107 +542,5 @@ function buildRestartResponse(
     reviewDispatch: input.instruction.reviewDispatch,
     reviewInvocation: input.instruction,
     _audit: { transitions: [] },
-  };
-}
-
-function buildRestartedState(
-  state: SessionState,
-  input: {
-    nextAdr: NonNullable<SessionState['architecture']>;
-    sameRevision: boolean;
-    revisionDelta: 'none' | 'minor';
-    obligation: ReturnType<typeof createReviewObligation> | null;
-    assurance: SessionState['reviewAssurance'];
-  },
-): SessionState {
-  const selfReview = state.selfReview;
-  const architecture = state.architecture;
-  if (!selfReview || !architecture) {
-    throw new IntegrationInvariantError(
-      'ARCHITECTURE_RESTART_STATE_REQUIRED',
-      'an architecture review restart requires architecture and self-review state',
-    );
-  }
-  // ADR identity, createdAt, and nextAdrNumber are NEVER mutated here:
-  // a blocked review obligation is a new review generation, not a new ADR.
-  return {
-    ...state,
-    architecture: input.nextAdr,
-    selfReview: {
-      ...selfReview,
-      prevDigest: input.sameRevision ? selfReview.prevDigest : architecture.digest,
-      currDigest: input.nextAdr.digest,
-      revisionDelta: input.sameRevision ? selfReview.revisionDelta : input.revisionDelta,
-      verdict: 'changes_requested',
-    },
-    reviewAssurance: input.assurance,
-  };
-}
-
-function resolveRestartRevision(
-  args: ArchitectureArgs,
-  state: SessionState,
-  submittedDigest: string,
-  sameRevision: boolean,
-):
-  | { readonly kind: 'blocked'; readonly blocked: string }
-  | {
-      readonly kind: 'ok';
-      readonly nextAdr: NonNullable<SessionState['architecture']>;
-      readonly revisionDelta: 'none' | 'minor';
-    } {
-  const architecture = state.architecture;
-  if (!architecture) {
-    throw new IntegrationInvariantError(
-      'NO_ARCHITECTURE',
-      'an architecture review restart resolution requires ADR state',
-    );
-  }
-  if (sameRevision) {
-    return { kind: 'ok', nextAdr: architecture, revisionDelta: 'none' };
-  }
-  const adrText = args.adrText;
-  if (adrText === undefined) {
-    throw new IntegrationInvariantError(
-      'EMPTY_ADR_TEXT',
-      'an architecture revision requires ADR text to validate',
-    );
-  }
-  const missingSections = validateAdrSections(adrText);
-  if (missingSections.length > 0) {
-    return {
-      kind: 'blocked',
-      blocked: formatBlocked('MISSING_ADR_SECTIONS', {
-        sections: missingSections.join(', '),
-      }),
-    };
-  }
-  let claimDeclarations:
-    | {
-        flow: 'architecture';
-        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
-      }
-    | undefined;
-  if (args.claims) {
-    const normalizedClaims = normalizeArchitectureClaims(args.claims);
-    if (normalizedClaims === undefined) {
-      throw new IntegrationInvariantError(
-        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
-        'normalizing submitted architecture claims produced no canonical declarations',
-      );
-    }
-    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
-  }
-  return {
-    kind: 'ok',
-    nextAdr: {
-      ...architecture,
-      adrText,
-      digest: submittedDigest,
-      ...(claimDeclarations ? { claimDeclarations } : {}),
-      // A revision invalidates any prior approval over the old digest.
-      approvalCertificate: undefined,
-    },
-    revisionDelta: 'minor',
   };
 }
