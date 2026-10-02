@@ -363,8 +363,9 @@ enabled. Admitted 2026-09-21 at 99.32 % on the freeze run (df9f8b4d); the base
 classification `not-mutation-suitable` stays scoped to base.
 
 Deferred surfaces (whole roots behind the admission gate):
-`src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
-`src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
+`src/config/**`, `src/state/**`, `src/shared/**`, `src/machine/**`,
+`src/audit/**`, `src/adapters/**`, `src/identity/**`, `src/verification/**`,
+`src/discovery/**`, `src/rendering/**`, `src/redaction/**`, `src/archive/**`,
 `src/logging/**`, `src/hooks/**`, `src/mcp-server/**`, `src/templates/**`,
 `src/presentation/**`, `src/integration/**`, `src/rails/**`, `src/cli/**`,
 `src/providers/**`.

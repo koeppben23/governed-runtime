@@ -28,8 +28,8 @@
  *    record at or above the profile break threshold or a legacy baseline.
  *    Candidates must NOT carry provenance; the full-run verdict decides.
  * A8 completeness closure: every production source under an authority root is
- *    covered, backlog globs have a non-empty effective set, and no effective
- *    glob file is mutated.
+ *    covered, backlog globs are not dead (their root carries production
+ *    sources), and no effective glob file is mutated.
  * A9 count authority: the base mutated set (required + candidates) equals the
  *    base mutate list and the documented `PRODUCT_INVENTORY.mutationFiles`
  *    count.
@@ -429,10 +429,19 @@ describe('mutation scope', () => {
     }
     expect(uncovered).toEqual([]);
 
-    const emptyGlobs = globs
-      .filter((entry) => effectiveGlobFiles(entry).length === 0)
+    // A root glob is a standing default-deny gate for future files. It is dead
+    // only when the root itself carries no production source; a root whose
+    // files are all exact-classified (and excluded from the effective set) is
+    // fully covered, not vacuous.
+    const deadGlobs = globs
+      .filter((entry) => {
+        const baseDir = join(ROOT, entry.root);
+        if (!existsSync(baseDir)) return true;
+        const hasProductionSource = walkFiles(baseDir).some(isProductionSource);
+        return !hasProductionSource && effectiveGlobFiles(entry).length === 0;
+      })
       .map((entry) => `${entry.root}/${entry.pattern}`);
-    expect(emptyGlobs).toEqual([]);
+    expect(deadGlobs).toEqual([]);
   });
 
   it('A9: the base mutated set equals the mutate list and the documented count', () => {
