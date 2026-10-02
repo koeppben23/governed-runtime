@@ -47,16 +47,13 @@ Separation of concerns:
 
 **Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. On OpenCode, the reviewer runs in a host-created child session that the plugin prompts with the canonical review prompt and a required `json_schema` output contract; only the host-observed structured result can bind to a review obligation. Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
 
-### Review Coverage Profile (`core` / `full`)
+### Review Coverage Profile (`core`)
 
-Every review — plan, implementation, architecture, and standalone `/review` — runs under a mandatory **review coverage profile**:
+Every review — plan, implementation, architecture, and standalone `/review` — runs under the mandatory **core** coverage baseline:
 
-- **`core`** — the non-optional baseline. It is not operator-selectable and has no `off` mode. `core` reuses the canonical reviewer criteria in `src/templates/mandates-reviewer-criteria.ts`; it does **not** define a second set of criteria or a second review authority. The reviewer prompt carries a digit-free trailing marker declaring the profile; it never displaces the enforcement-bound `iteration`/`planVersion` context tokens.
-- **`full`** — a reserved, forward-compatible value. In the current release it is never auto-selected. Wave 2 of #730 binds parallel specialist coverage and automatic HIGH-RISK escalation to `full`; that work is pending host-capability verification (#732).
+- **`core`** is the non-optional baseline. It is not operator-selectable and has no `off` mode. It reuses the canonical reviewer criteria in `src/templates/mandates-reviewer-criteria.ts`; it does **not** define a second set of criteria or a second review authority. The reviewer prompt renders `CORE_REVIEW_PROFILE_MARKER` in the trusted runtime context, immediately before the frozen untrusted subject boundary; it never displaces the enforcement-bound `iteration`/`planVersion` context tokens.
 
-The profile is **frozen into the review obligation at creation, before any reviewer is invoked** (`ReviewObligation.reviewProfile`, `ReviewObligation.profileSource`). It is sourced from the frozen policy snapshot (`policySnapshot.reviewProfile`), which every preset sets to `core`. Resolution is fail-closed: a missing or invalid frozen value, and any legacy snapshot without the field, resolves to `core`. The chosen profile and its source are recorded in the `review:obligation_created` and `review:subagent_invoked` audit events.
-
-The profile is advisory context and provenance only. It does not transition state, satisfy an obligation, or replace ReviewFindings — the canonical reviewer remains the sole producer of binding, obligation-bound findings.
+The baseline is prompt-local context only. It does not freeze into the obligation, transition state, satisfy an obligation, or replace ReviewFindings — the canonical reviewer remains the sole producer of binding, obligation-bound findings.
 
 ### Controlled Challenge Fixture Evaluation (#747)
 

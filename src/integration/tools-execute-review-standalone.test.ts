@@ -1514,8 +1514,6 @@ describe('review (standalone flow)', () => {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           maxReviewerAttempts: 1,
-          reviewProfile: 'core' as const,
-          profileSource: 'policy_default' as const,
           reviewMaterial: {
             content: 'frozen review material',
             materialDigest: 'a'.repeat(64),

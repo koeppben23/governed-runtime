@@ -44,7 +44,6 @@ import {
   artifactReviewSubjectScope,
   createObligationAndAttempt,
   freezeReviewMaterial,
-  resolveFrozenReviewProfile,
 } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
@@ -152,8 +151,6 @@ export function buildPlanReviewObligationInput(input: {
       planEvidence.digest,
     ),
     reviewSubjectScope: artifactReviewSubjectScope('plan', planEvidence.body, planEvidence.digest),
-    reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
-    profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles: classificationFiles,
     declaredTaskClass: declaredTaskClassFor(state),

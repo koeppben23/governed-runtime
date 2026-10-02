@@ -176,13 +176,6 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.allowReducedCeremony).toBe(false);
     });
 
-    it('every preset defaults to the mandatory core review profile (Wave 1 — #730)', () => {
-      expect(SOLO_POLICY.reviewProfile).toBe('core');
-      expect(TEAM_POLICY.reviewProfile).toBe('core');
-      expect(TEAM_CI_POLICY.reviewProfile).toBe('core');
-      expect(REGULATED_POLICY.reviewProfile).toBe('core');
-    });
-
     it('every preset freezes challenge-policy.v1', () => {
       for (const policy of [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]) {
         expect(policy.challengePolicy).toEqual({

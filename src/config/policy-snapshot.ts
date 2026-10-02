@@ -149,7 +149,6 @@ export function createPolicySnapshot(
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
     identityProviderMode: policy.identityProviderMode,
-    reviewProfile: policy.reviewProfile,
     challengePolicy: {
       version: policy.challengePolicy.version,
       counts: { ...policy.challengePolicy.counts },
@@ -203,7 +202,6 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries,
     maxReviewerAttempts: snapshot.maxReviewerAttempts,
     allowSelfApproval: snapshot.allowSelfApproval,
-    reviewProfile: snapshot.reviewProfile,
     challengePolicy: snapshot.challengePolicy,
     minimumActorAssuranceForApproval: snapshot.minimumActorAssuranceForApproval,
     audit: {

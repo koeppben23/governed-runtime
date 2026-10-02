@@ -34,8 +34,6 @@ function obligation(overrides: Partial<ReviewObligation>): ReviewObligation {
     fulfilledAt: null,
     consumedAt: null,
     subjectDigest: 'impl-digest',
-    reviewProfile: 'core',
-    profileSource: 'policy_default',
     ...overrides,
   } as ReviewObligation;
 }

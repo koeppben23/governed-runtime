@@ -25,7 +25,6 @@ import {
   createReviewObligation,
   findLatestUnconsumedObligation,
   freezeReviewMaterial,
-  resolveFrozenReviewProfile,
 } from '../../review/obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
@@ -470,8 +469,6 @@ function createNextArchitectureReviewObligation(input: {
       revision.currentAdr.adrText,
       subjectDigest,
     ),
-    reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
-    profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(state),

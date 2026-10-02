@@ -35,7 +35,6 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-  resolveFrozenReviewProfile,
 } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
@@ -313,8 +312,6 @@ async function mintRestartObligation(
       nextAdr.digest,
     ),
     reviewSubjectScope: artifactReviewSubjectScope('adr', nextAdr.adrText, nextAdr.digest),
-    reviewProfile: resolveFrozenReviewProfile(session.state.policySnapshot),
-    profileSource: 'policy_default',
     policySnapshot: session.state.policySnapshot,
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(session.state),

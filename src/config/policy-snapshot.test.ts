@@ -185,10 +185,6 @@ describe('createPolicySnapshot', () => {
       },
       {
         ...SOLO_POLICY,
-        reviewProfile: 'full' as const,
-      },
-      {
-        ...SOLO_POLICY,
         challengePolicy: {
           ...SOLO_POLICY.challengePolicy,
           counts: { ...SOLO_POLICY.challengePolicy.counts, STANDARD: 2 },
@@ -254,13 +250,6 @@ describe('resolvePolicyFromSnapshot', () => {
       const reconstructed = resolvePolicyFromSnapshot(snapshot);
       expect(reconstructed.mode).toBe('regulated');
       expect(reconstructed.requireHumanGates).toBe(true);
-      expect(reconstructed.reviewProfile).toBe('core');
-    });
-
-    it('round-trips the mandatory core reviewProfile (Wave 1 — #730)', () => {
-      const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
-      expect(snapshot.reviewProfile).toBe('core');
-      expect(resolvePolicyFromSnapshot(snapshot).reviewProfile).toBe('core');
     });
 
     it('round-trips the versioned challenge policy', () => {
@@ -321,7 +310,6 @@ function maxDeviationPolicy(): FlowGuardPolicy {
     maxIncoherentReviewerCaptureRetries: 5,
     maxReviewerAttempts: 4,
     allowSelfApproval: true,
-    reviewProfile: 'full',
     challengePolicy: { ...base.challengePolicy },
     audit: {
       emitTransitions: false,

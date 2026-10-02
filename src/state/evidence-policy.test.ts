@@ -34,7 +34,6 @@ const CURRENT_SNAPSHOT = {
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   identityProviderMode: 'optional' as const,
-  reviewProfile: 'core' as const,
   challengePolicy: {
     version: 'challenge-policy.v1' as const,
     counts: { TRIVIAL: 0 as const, STANDARD: 1 as const, 'HIGH-RISK': 2 as const },
@@ -160,11 +159,6 @@ describe('evidence-policy', () => {
 
     it('rejects a snapshot missing allowReducedCeremony', () => {
       const { allowReducedCeremony: _a, ...snapshot } = CURRENT_SNAPSHOT;
-      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
-    });
-
-    it('rejects a snapshot missing reviewProfile', () => {
-      const { reviewProfile: _p, ...snapshot } = CURRENT_SNAPSHOT;
       expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
     });
 

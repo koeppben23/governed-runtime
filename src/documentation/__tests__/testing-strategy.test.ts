@@ -165,7 +165,7 @@ describe('documentation/testing-strategy', () => {
 
     expect(docs).toContain('`StringLiteral`');
     expect(docs).toContain('`ArrayDeclaration`');
-    expect(docs).toContain('mutation-authority-inventory.ts');
+    expect(docs).toContain('mutation-authority-inventory-data.ts');
     expect(docs).toContain('verify-mutation-admission.mjs');
   });
 });

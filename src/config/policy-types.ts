@@ -38,20 +38,6 @@ export type {
 };
 export { CHALLENGE_POLICY_VERSION };
 
-/**
- * Review coverage profile bound to a review obligation.
- *
- * - 'core' — the mandatory, non-optional baseline review pass. It reuses the
- *   canonical reviewer criteria (src/templates/mandates-reviewer-criteria.ts)
- *   as the required floor for every plan, implementation, architecture, and
- *   peer review. It is never operator-optional and has no `off` mode.
- * - 'full' — expanded coverage for runtime-computed HIGH-RISK work and explicit
- *   escalation. Wave 2 (#730) binds parallel specialist coverage to this value;
- *   in the current wave `full` is a reserved, forward-compatible value and is
- *   never auto-selected.
- */
-export type ReviewProfile = 'core' | 'full';
-
 export type ChallengeKind = 'design_challenge' | 'implementation_challenge' | 'content_challenge';
 
 /** Approved V1 matrix, frozen into every new session policy snapshot. */
@@ -169,12 +155,6 @@ export interface FlowGuardPolicy {
    * true  → self-approval allowed (solo/team).
    */
   readonly allowSelfApproval: boolean;
-
-  /**
-   * Mandatory review coverage profile. Defaults to 'core' in every preset.
-   * 'core' is the non-optional baseline; 'full' is reserved for Wave 2 (#730).
-   */
-  readonly reviewProfile: ReviewProfile;
 
   /** Versioned challenge coverage policy frozen into new session snapshots. */
   readonly challengePolicy: ChallengePolicy;

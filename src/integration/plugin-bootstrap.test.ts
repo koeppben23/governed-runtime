@@ -110,8 +110,6 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerAttempts: 1,
-            reviewProfile: 'core',
-            profileSource: 'policy_default',
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',

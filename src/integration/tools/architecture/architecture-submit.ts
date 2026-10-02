@@ -20,7 +20,6 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-  resolveFrozenReviewProfile,
 } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
@@ -147,8 +146,6 @@ async function mintArchSubmissionObligation(
     // The ADR artifact is the review SUBJECT; changedFiles below stay
     // challenge-classification and repository-evidence context only.
     reviewSubjectScope: artifactReviewSubjectScope('adr', adrText, digest),
-    reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
-    profileSource: 'policy_default',
     policySnapshot: ctx.policySnapshot,
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(ctx.state),

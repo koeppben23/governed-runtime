@@ -107,8 +107,6 @@ function blockedObligation(code: string): NonNullable<SessionState['reviewAssura
         criteriaVersion: 'review-criteria.v1',
         mandateDigest: 'mandate-digest',
         maxReviewerAttempts: 1,
-        reviewProfile: 'core',
-        profileSource: 'policy_default',
         createdAt: NOW,
         pluginHandshakeAt: NOW,
         status: 'blocked',
@@ -424,7 +422,6 @@ describe('direct metadata write channel', () => {
       'reviewMaterial',
       { reviewMaterial: freezeReviewMaterial('tampered material', 'tampered-digest') },
     ],
-    ['reviewProfile', { reviewProfile: 'full' }],
     ['requiredChallengeCount', { requiredChallengeCount: 1 }],
     ['maxReviewerAttempts', { maxReviewerAttempts: 5 }],
   ] as const)(

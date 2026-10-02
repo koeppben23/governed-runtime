@@ -120,8 +120,6 @@ describe('subject digest stability', () => {
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
             maxReviewerAttempts: 1,
-            reviewProfile: 'core',
-            profileSource: 'policy_default',
             reviewMaterial: {
               content: 'frozen review material',
               materialDigest: 'a'.repeat(64),

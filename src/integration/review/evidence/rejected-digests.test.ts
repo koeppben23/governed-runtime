@@ -41,8 +41,6 @@ function implementObligation(id: string, digest: string): ReviewObligation {
     reviewSubjectScope: { kind: 'implementation', implementationDigest: digest },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     maxReviewerAttempts: 0,
-    reviewProfile: 'core',
-    profileSource: 'policy_default',
   };
 }
 
@@ -77,8 +75,6 @@ function planObligation(id: string, digest: string): ReviewObligation {
     },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     maxReviewerAttempts: 0,
-    reviewProfile: 'core',
-    profileSource: 'policy_default',
   };
 }
 

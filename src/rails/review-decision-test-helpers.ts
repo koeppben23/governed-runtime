@@ -137,8 +137,6 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       fulfilledAt: createdAt,
       consumedAt: e.status === 'consumed' ? createdAt : null,
       subjectDigest,
-      reviewProfile: 'core' as const,
-      profileSource: 'policy_default' as const,
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
       challengePolicyVersion: 'challenge-policy.v1',
