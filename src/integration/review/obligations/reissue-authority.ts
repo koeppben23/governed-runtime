@@ -40,16 +40,25 @@ type DispatchRearmTrigger = Extract<
  *
  *   created + an unresolved `authorized` dispatch → 'interrupted'
  *   created + only `outcome_unknown` releases     → 'spent'
- * A non-created attempt, an attempt without any durable release, or an
- * attempt with a completed dispatch has no legal re-arm trigger.
+ *   stale   + only `outcome_unknown` releases     → 'spent'
+ *
+ * `stale` is the terminal shape written by `abandonReviewDispatchByHostCall`
+ * when a released host call concluded without bindable evidence. An attempt
+ * without any durable release, a `stale` attempt with an unresolved release,
+ * or an attempt with a completed dispatch has no legal re-arm trigger.
  */
 function dispatchRearmTrigger(
   assurance: ReviewAssuranceState,
   spent: ReviewAttempt,
 ): DispatchRearmTrigger | null {
-  if (spent.status !== 'created') return null;
+  if (spent.status !== 'created' && spent.status !== 'stale') return null;
   const dispatches = assurance.dispatches.filter((record) => record.attemptId === spent.attemptId);
-  if (dispatches.some((record) => record.dispatchStatus === 'authorized')) return 'interrupted';
+  if (
+    spent.status === 'created' &&
+    dispatches.some((record) => record.dispatchStatus === 'authorized')
+  ) {
+    return 'interrupted';
+  }
   if (dispatches.some((record) => record.dispatchStatus === 'outcome_unknown')) return 'spent';
   return null;
 }

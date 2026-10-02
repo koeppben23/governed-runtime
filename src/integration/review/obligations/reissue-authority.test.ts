@@ -134,6 +134,47 @@ describe('authorizeDispatchRearm', () => {
     });
   });
 
+  it('authorizes spent re-arm for a stale attempt whose release concluded without evidence', () => {
+    const obligation = makeObligation();
+    const { assurance, attempt } = createdWithDispatch(obligation, 'outcome_unknown');
+    const stale = updateAttemptStatus(assurance, attempt.attemptId, 'stale', NOW);
+    const result = authorizeDispatchRearm(stale, stale.attempts[0]!);
+    expect(result).toMatchObject({
+      kind: 'authorized',
+      origin: { kind: 'dispatch_rearm', triggerReason: 'spent' },
+    });
+  });
+
+  it('blocks a stale attempt with no durable release', () => {
+    const obligation = makeObligation();
+    const created = initialAttempt(obligation);
+    const stale = updateAttemptStatus(
+      assuranceWith(obligation, [created]),
+      created.attemptId,
+      'stale',
+      NOW,
+    );
+    const result = authorizeDispatchRearm(stale, stale.attempts[0]!);
+    expect(result).toMatchObject({ kind: 'blocked' });
+  });
+
+  it('blocks a stale attempt whose only release is unresolved (authorized)', () => {
+    const obligation = makeObligation();
+    const created = initialAttempt(obligation);
+    const stale = updateAttemptStatus(
+      assuranceWith(
+        obligation,
+        [created],
+        [dispatchRecord(obligation, created.attemptId, 'authorized')],
+      ),
+      created.attemptId,
+      'stale',
+      NOW,
+    );
+    const result = authorizeDispatchRearm(stale, stale.attempts[0]!);
+    expect(result).toMatchObject({ kind: 'blocked' });
+  });
+
   it('blocks a created attempt that carries no released dispatch', () => {
     const obligation = makeObligation();
     const attempt = initialAttempt(obligation);
@@ -149,7 +190,7 @@ describe('authorizeDispatchRearm', () => {
     expect(result).toMatchObject({ kind: 'blocked' });
   });
 
-  it.each(['rejected', 'stale', 'expired'] as const)(
+  it.each(['rejected', 'expired'] as const)(
     'blocks a %s attempt even without a dispatch',
     (status) => {
       const obligation = makeObligation();

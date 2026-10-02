@@ -305,6 +305,31 @@ export function findBindableAttempt(
   return candidate;
 }
 
+/**
+ * The most recent `stale` attempt of the obligation whose durable release
+ * concluded without bindable evidence (`outcome_unknown`). This is the spent
+ * predecessor shape written by `abandonReviewDispatchByHostCall`; it carries
+ * no binding authority of its own but authorizes a durable re-arm on the same
+ * frozen obligation.
+ */
+export function findSpentStaleAttempt(
+  assurance: ReviewAssuranceState | undefined,
+  obligationId: string,
+): ReviewAttempt | null {
+  const base = ensureReviewAssurance(assurance);
+  const spent = (base.attempts ?? []).filter(
+    (attempt) =>
+      attempt.obligationId === obligationId &&
+      attempt.status === 'stale' &&
+      (base.dispatches ?? []).some(
+        (record) =>
+          record.attemptId === attempt.attemptId && record.dispatchStatus === 'outcome_unknown',
+      ),
+  );
+  if (spent.length === 0) return null;
+  return spent.reduce((latest, attempt) => (attempt.ordinal > latest.ordinal ? attempt : latest));
+}
+
 // ─── Dispatch-rearm budget ───────────────────────────────────────────────────
 
 /**
@@ -331,13 +356,15 @@ export type ReviewContinuation =
     }
   | {
       /**
-       * A bindable created attempt exists but its durable dispatch ledger still
-       * carries an unresolved `authorized` record (a crash/restart between
-       * Before and After). It must NOT be re-emitted as a plain `awaiting_task`:
-       * re-invoking the originating command is the authorized trigger to re-arm
-       * durably (the spent attempt is staled, its dispatch marked
-       * `outcome_unknown`, and a fresh append-only attempt minted on the same
-       * obligation).
+       * No runnable reviewer attempt remains, but a durable re-arm of the
+       * SAME frozen obligation is authorized. Two predecessor shapes:
+       * - a bindable `created` attempt whose durable ledger still carries an
+       *   unresolved `authorized` record (crash/restart between Before and
+       *   After);
+       * - a `stale` attempt whose release concluded without bindable evidence
+       *   (`outcome_unknown`), written when the host call was abandoned.
+       * Re-invoking the originating command is the authorized trigger to
+       * re-arm durably (a fresh append-only attempt on the same obligation).
        */
       readonly kind: 'interrupted_dispatch';
       readonly obligation: ReviewObligation;
@@ -404,6 +431,13 @@ export function resolveReviewContinuation(
       return { kind: 'interrupted_dispatch', obligation, attemptId: bindable.attemptId };
     }
     return { kind: 'awaiting_task', obligation, attemptId: bindable.attemptId };
+  }
+  // A spent stale attempt (abandoned release) authorizes exactly one durable
+  // re-arm on the same obligation. It must never override a fresh bindable
+  // attempt: the bindable branch above wins.
+  const spentStale = findSpentStaleAttempt(assurance, obligation.obligationId);
+  if (spentStale) {
+    return { kind: 'interrupted_dispatch', obligation, attemptId: spentStale.attemptId };
   }
   // No bindable attempt remains. The frozen-material authority is verified
   // FIRST: a broken binding is an integrity failure (no closure, no state

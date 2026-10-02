@@ -14,7 +14,10 @@ import { randomUUID } from 'node:crypto';
 import { buildEnforcementError } from '../../blocked-result.js';
 
 import { authorizeDispatchRearm } from '../obligations/reissue-authority.js';
-import { createAttemptForExistingObligation } from '../obligations/attempt-lifecycle.js';
+import {
+  createAttemptForExistingObligation,
+  updateAttemptStatus,
+} from '../obligations/attempt-lifecycle.js';
 import {
   abandonReviewDispatch,
   appendReviewDispatch,
@@ -121,17 +124,47 @@ export async function persistAuthorizedReviewDispatch(
   });
 }
 
-/** Resolve a concluded host call without bound evidence as outcome_unknown. */
+/**
+ * Resolve a concluded host call without bound evidence as outcome_unknown and
+ * mark the exact released attempt stale in the SAME durable mutation.
+ *
+ * Exact lineage is mandatory: the host call must resolve to exactly ONE
+ * `authorized` dispatch record, and that record's attempt must be exactly ONE
+ * `created` attempt for the obligation. Anything else is a no-op (the caller
+ * still fails the review closed); there is no best-effort fallback to another
+ * attempt or an obligation-wide stale.
+ */
 export async function abandonReviewDispatchByHostCall(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
   hostCallId: string,
+  now: string = new Date().toISOString(),
 ): Promise<void> {
   await deps.updateReviewAssurance(sessDir, (state) => {
     const assurance = ensureReviewAssurance(state.reviewAssurance);
-    return {
+    const authorized = (assurance.dispatches ?? []).filter(
+      (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
+    );
+    if (authorized.length !== 1) return state;
+    const record = authorized[0];
+    if (record === undefined) return state;
+    const attempt = (assurance.attempts ?? []).find(
+      (candidate) => candidate.attemptId === record.attemptId,
+    );
+    if (attempt === undefined || attempt.status !== 'created') return state;
+
+    const abandoned = {
       ...state,
       reviewAssurance: abandonReviewDispatch(assurance, hostCallId),
+    };
+    return {
+      ...abandoned,
+      reviewAssurance: updateAttemptStatus(
+        ensureReviewAssurance(abandoned.reviewAssurance),
+        attempt.attemptId,
+        'stale',
+        now,
+      ),
     };
   });
 }
