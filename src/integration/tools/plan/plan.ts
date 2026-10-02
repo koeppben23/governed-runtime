@@ -79,7 +79,7 @@ import type { PlanArgs, PlanInputFlags, PlanExecutionScope } from './plan-types.
 
 // ---- internal helpers ----
 
-import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
+import { classifyPlanCall, planInputFlags } from './plan-types.js';
 import {
   decidePostCommandAutoValidation,
   runActiveChecksAutomatically,
@@ -376,7 +376,6 @@ export const plan: ToolDefinition = {
           args: typedArgs,
           context,
           input: planInputFlags(typedArgs),
-          reviewPolicy: planReviewPolicy(mutableSession),
           maxPlanReviewIterations: mutableSession.policy.reviewBudget.plan,
         };
         // Call-shape validation runs FIRST: mixed inputs are rejected before

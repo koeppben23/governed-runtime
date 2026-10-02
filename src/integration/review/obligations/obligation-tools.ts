@@ -71,14 +71,6 @@ export function reviewSignalOwner(toolName: string): ReviewableTool | undefined 
   return resolveReviewObligationTool(toolName);
 }
 
-/**
- * True when the tool submits a review verdict (its own, for plan/architecture,
- * or the implementation verdict via `flowguard_review_implementation`).
- */
-export function isVerdictSubmittingTool(toolName: string): boolean {
-  return resolveReviewObligationTool(toolName) !== undefined;
-}
-
 /** Map a reviewable tool to its corresponding obligation type. */
 export function obligationTypeForTool(toolName: ReviewableTool): ReviewObligationType;
 

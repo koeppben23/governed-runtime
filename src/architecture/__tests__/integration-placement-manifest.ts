@@ -364,7 +364,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/enforcement/challenge-consistency.ts', owner: 'review-enforcement' },
   { file: 'integration/review/enforcement/enforcement.ts', owner: 'review-enforcement' },
   { file: 'integration/review/enforcement/findings-consistency.ts', owner: 'review-enforcement' },
-  { file: 'integration/review/enforcement/index.ts', owner: 'review-enforcement' },
   { file: 'integration/review/enforcement/normalize.ts', owner: 'review-enforcement' },
   { file: 'integration/review/enforcement/pending-review.ts', owner: 'review-enforcement' },
   { file: 'integration/review/enforcement/prepare-findings.ts', owner: 'review-enforcement' },

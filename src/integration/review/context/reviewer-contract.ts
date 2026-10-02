@@ -44,37 +44,3 @@ export const ANCHOR_KINDS = ReviewSubjectAnchor.options.map(
 export const CHALLENGE_KINDS = ReviewerChallengeInput.options.map(
   (challenge) => challenge.unwrap().shape.kind.value,
 );
-
-/** Canonical shape descriptors for each review subject anchor kind. */
-export interface AnchorShapeDescriptor {
-  readonly kind: (typeof ANCHOR_KINDS)[number];
-  readonly requiredFields: readonly string[];
-}
-
-export const REVIEWER_ANCHOR_SHAPES: Record<(typeof ANCHOR_KINDS)[number], AnchorShapeDescriptor> =
-  {
-    repository_location: { kind: 'repository_location', requiredFields: ['kind', 'location'] },
-    artifact_section: {
-      kind: 'artifact_section',
-      requiredFields: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
-    },
-    content: { kind: 'content', requiredFields: ['kind', 'subjectDigest'] },
-    implementation: {
-      kind: 'implementation',
-      requiredFields: ['kind', 'implementationDigest'],
-    },
-  };
-
-/** Canonical shape descriptor for each challenge kind. */
-export interface ChallengeShapeDescriptor {
-  readonly kind: (typeof CHALLENGE_KINDS)[number];
-}
-
-export const REVIEWER_CHALLENGE_SHAPES: Record<
-  (typeof CHALLENGE_KINDS)[number],
-  ChallengeShapeDescriptor
-> = {
-  design_challenge: { kind: 'design_challenge' },
-  implementation_challenge: { kind: 'implementation_challenge' },
-  content_challenge: { kind: 'content_challenge' },
-};

@@ -190,7 +190,7 @@ export type FrozenArtifactMaterialVerification =
  * (plan/ADR): the frozen material generation AND the artifact subject scope
  * must both bind to the exact artifact subject digest.
  */
-export function verifyFrozenArtifactMaterial(
+function verifyFrozenArtifactMaterial(
   obligation: ReviewObligation,
   reviewMaterial: ReviewMaterial | null | undefined,
 ): FrozenArtifactMaterialVerification {

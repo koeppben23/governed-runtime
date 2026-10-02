@@ -159,18 +159,6 @@ export function appendReviewAttempt(
   return { ...base, attempts: [...(base.attempts ?? []), attempt] };
 }
 
-export function resolveAttempt(
-  assurance: ReviewAssuranceState | undefined,
-  childSessionId: string,
-): ReviewAttempt | null {
-  const base = ensureReviewAssurance(assurance);
-  return (
-    base.attempts?.find(
-      (a) => a.childSessionId === childSessionId && a.status !== 'stale' && a.status !== 'expired',
-    ) ?? null
-  );
-}
-
 /**
  * Attempt statuses that may AUTHORIZE repository evidence. Only a `bound`
  * attempt holds authoritative evidence. Rejected, stale,
