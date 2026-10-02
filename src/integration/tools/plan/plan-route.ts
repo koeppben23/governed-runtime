@@ -14,6 +14,7 @@
 import { readState } from '../../../adapters/persistence.js';
 import type { SessionState } from '../../../state/schema.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
@@ -172,7 +173,7 @@ function changedSubjectWhilePending(
 ): string | null {
   const planText = scope.args.planText;
   if (typeof planText !== 'string' || !planText.trim()) return null;
-  const submittedDigest = scope.ctx.digest(planText);
+  const submittedDigest = scope.ctx.digest(normalizeReviewArtifactText(planText));
   if (submittedDigest === obligation.subjectDigest) return null;
   return formatBlocked('REVIEW_SUBJECT_CHANGED_WHILE_PENDING', {
     obligationId: obligation.obligationId,

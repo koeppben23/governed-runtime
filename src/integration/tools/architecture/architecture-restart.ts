@@ -28,6 +28,7 @@ import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import { readState } from '../../../adapters/persistence.js';
 import { validateAdrSections } from '../../../state/evidence.js';
+import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
 import type { SessionState } from '../../../state/schema.js';
@@ -149,7 +150,7 @@ function changedSubjectWhilePending(
   session: ArchitectureSession,
 ): string | null {
   if (!args.adrText || !args.adrText.trim()) return null;
-  const submittedDigest = session.ctx.digest(args.adrText);
+  const submittedDigest = session.ctx.digest(normalizeReviewArtifactText(args.adrText));
   if (submittedDigest === obligation.subjectDigest) return null;
   return formatBlocked('REVIEW_SUBJECT_CHANGED_WHILE_PENDING', {
     obligationId: obligation.obligationId,

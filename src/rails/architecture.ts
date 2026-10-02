@@ -24,6 +24,7 @@ import type { SessionState } from '../state/schema.js';
 import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../state/evidence.js';
 import type { ArchitectureClaimDeclaration } from '../state/proofgraph-approval.js';
 import { validateAdrSections } from '../state/evidence.js';
+import { normalizeReviewArtifactText } from '../shared/review-artifact-text.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import {
@@ -65,12 +66,13 @@ export function executeArchitecture(
   if (!input.title.trim()) {
     return blocked('EMPTY_ADR_TITLE');
   }
-  if (!input.adrText.trim()) {
+  const adrText = normalizeReviewArtifactText(input.adrText);
+  if (!adrText) {
     return blocked('EMPTY_ADR_TEXT');
   }
 
   // 3. Validate MADR sections
-  const missingSections = validateAdrSections(input.adrText);
+  const missingSections = validateAdrSections(adrText);
   if (missingSections.length > 0) {
     return blocked('MISSING_ADR_SECTIONS', {
       sections: missingSections.join(', '),
@@ -99,11 +101,11 @@ export function executeArchitecture(
   const adr: ArchitectureDecision = {
     id: adrId,
     title: input.title,
-    adrText: input.adrText,
+    adrText,
     status: 'proposed',
     reviewCompletion: 'pending',
     createdAt: ctx.now(),
-    digest: ctx.digest(input.adrText),
+    digest: ctx.digest(adrText),
     ...(input.claims
       ? { claimDeclarations: { flow: 'architecture' as const, claims: input.claims } }
       : {}),

@@ -8,6 +8,7 @@
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { ToolContext } from '../helpers.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import { formatAutoAdvanceOverflow } from '../helpers.js';
 
 import type { SessionState } from '../../../state/schema.js';
@@ -167,7 +168,7 @@ function applyAdrRevision(
 
   if (verdict !== 'changes_requested') return { currentAdr, prevDigest, revisionDelta };
 
-  const revisedText = args.adrText?.trim();
+  const revisedText = normalizeReviewArtifactText(args.adrText ?? '');
   if (!revisedText) return formatBlocked('EMPTY_ADR_TEXT');
   const missingSections = validateAdrSections(revisedText);
   if (missingSections.length > 0) {

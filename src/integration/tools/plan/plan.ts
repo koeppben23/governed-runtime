@@ -37,6 +37,7 @@ import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import {
   formatReviewValidationFailure,
@@ -167,7 +168,7 @@ function classificationScopeUnknown(classification: ChallengeClassification): bo
 }
 
 async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
-  const planBody = scope.args.planText?.trim();
+  const planBody = normalizeReviewArtifactText(scope.args.planText ?? '');
   if (!planBody) return formatBlocked('EMPTY_PLAN');
 
   const predecessorVersion = scope.state.plan?.current.planVersion;

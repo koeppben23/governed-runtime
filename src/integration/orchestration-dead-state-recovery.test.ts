@@ -1001,5 +1001,45 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       );
       expect(result.status).toContain('pending');
     });
+
+    it('treats a whitespace-different ADR resubmission as the SAME pending revision', async () => {
+      await setupArchitectureDeadState(1);
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('No state');
+
+      const pending = createReviewObligation({
+        obligationType: 'architecture',
+        reviewCycle: 1,
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: CREATED_AT,
+        subjectDigest: hashText(ADR_TEXT),
+        reviewMaterial: freezeReviewMaterial(ADR_TEXT, hashText(ADR_TEXT)),
+        reviewSubjectScope: artifactReviewSubjectScope('adr', ADR_TEXT, hashText(ADR_TEXT)),
+        changedFiles: [],
+        policySnapshot: state.policySnapshot,
+      });
+      const withAttempt = appendObligationWithAttempt(undefined, pending, CREATED_AT);
+      await writeState(sessDir, {
+        ...state,
+        architecture: { ...state.architecture!, adrText: ADR_TEXT, digest: hashText(ADR_TEXT) },
+        selfReview: { ...state.selfReview!, currDigest: hashText(ADR_TEXT) },
+        reviewAssurance: withAttempt.assurance,
+      });
+
+      const raw = await architecture.execute(
+        { title: 'Test Decision', adrText: `\n  ${ADR_TEXT}  \n` },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).not.toBe(true);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        pending.obligationId,
+      );
+      expect(result.status).toContain('pending');
+    });
   });
 });

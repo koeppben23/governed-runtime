@@ -19,6 +19,7 @@ import {
 } from '../../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
 import { projectMarkdownHeadings } from '../../../shared/markdown-sections.js';
+import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import { formatBlocked } from '../../blocked-result.js';
 
 import type { SessionState } from '../../../state/schema.js';
@@ -46,7 +47,8 @@ export function buildPlanEvidence(
     revisionReason?: string | null;
   },
 ): PlanEvidence {
-  const contentDigest = scope.ctx.digest(planBody);
+  const normalizedBody = normalizeReviewArtifactText(planBody);
+  const contentDigest = scope.ctx.digest(normalizedBody);
   const planVersion = lineage?.planVersion ?? 1;
   const supersedesRecordDigest = lineage?.supersedesRecordDigest ?? null;
   const originatingReviewObligationId = lineage?.originatingReviewObligationId ?? null;
@@ -54,9 +56,9 @@ export function buildPlanEvidence(
   const revisionId = randomUUID();
 
   return {
-    body: planBody,
+    body: normalizedBody,
     digest: contentDigest,
-    sections: projectMarkdownHeadings(planBody),
+    sections: projectMarkdownHeadings(normalizedBody),
     createdAt: scope.ctx.now(),
     revisionId,
     recordDigest: computeRecordDigest({

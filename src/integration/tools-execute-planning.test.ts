@@ -556,6 +556,27 @@ describe('plan', () => {
       expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
     });
 
+    it('treats a whitespace-different resubmission as the SAME pending plan revision', async () => {
+      await hydrateAndTicket();
+      const firstRaw = await plan.execute(
+        { planText: '## Plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const first = parseToolResult(firstRaw);
+      expect(first.error).not.toBe(true);
+
+      // Same artifact revision: surrounding whitespace is not an identity change.
+      const raw = await plan.execute(
+        { planText: '\n  ## Plan  \n', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        (first.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      );
+    });
+
     it('re-arms a restarted reviewer dispatch on /plan re-invocation across a fresh process', async () => {
       await hydrateAndTicket();
       const firstRaw = await plan.execute(
