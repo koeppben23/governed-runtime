@@ -30,10 +30,7 @@ import {
 } from '../../review/obligations/assurance.js';
 import type { PlanEvidence } from '../../../state/evidence.js';
 import { computeRecordDigest } from '../../../state/evidence-plan.js';
-import {
-  normalizePlanClaims,
-  type PlanClaimDeclarations,
-} from '../../../state/proofgraph-approval.js';
+import { emptyClaimDeclarations, normalizePlanClaims } from '../../../state/proofgraph-approval.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewObligationInput } from './plan-response.js';
 
@@ -125,7 +122,7 @@ export async function createPlanReviewAttempt(
       planClaimDeclarations:
         submittedPlanClaimDeclarations(scope) ??
         scope.state.plan?.claimDeclarations ??
-        ({ flow: 'plan', version: 'v2', claims: [] } satisfies PlanClaimDeclarations),
+        emptyClaimDeclarations('plan'),
     }),
     scope.ctx.now(),
     discovery.context,

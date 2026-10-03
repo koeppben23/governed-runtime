@@ -8,7 +8,10 @@
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { PlanEvidence, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
-import type { PlanClaimDeclarations } from '../../../state/proofgraph-approval.js';
+import {
+  emptyClaimDeclarations,
+  type PlanClaimDeclarations,
+} from '../../../state/proofgraph-approval.js';
 import {
   freezeContextAuthorityAtHead,
   freezeOutcomeRecord,
@@ -69,11 +72,6 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { IntegrationInvariantError } from '../../errors.js';
 
-export type LegacyEmptyPlanClaimDeclarations = {
-  readonly flow: 'plan';
-  readonly claims: readonly [];
-};
-
 function findPriorPlanTargetPaths(
   assurance: import('../../../state/schema.js').SessionState['reviewAssurance'],
 ): string[] | undefined {
@@ -113,7 +111,7 @@ export function buildPlanReviewObligationInput(input: {
   classificationFiles: readonly string[] | undefined;
   provisionalScopeUnknown?: boolean | undefined;
   freeze: RepositoryAuthorityFreezeResult;
-  planClaimDeclarations: PlanClaimDeclarations | LegacyEmptyPlanClaimDeclarations;
+  planClaimDeclarations: PlanClaimDeclarations;
 }): Parameters<typeof createObligationAndAttempt>[1] {
   const {
     state,
@@ -145,7 +143,7 @@ export function buildPlanReviewObligationInput(input: {
         obligationType: 'plan',
         state,
         artifact: planEvidence.body,
-        ...('version' in planClaimDeclarations ? { planClaimDeclarations } : {}),
+        planClaimDeclarations,
         renderPlanClaimDeclarations,
       }),
       planEvidence.digest,
@@ -490,9 +488,7 @@ async function mintPlanRevisionAttempt(input: {
       classificationFiles: resolvedTargetPaths,
       provisionalScopeUnknown,
       freeze,
-      planClaimDeclarations:
-        finalState.plan?.claimDeclarations ??
-        ({ flow: 'plan', claims: [] } as unknown as PlanClaimDeclarations),
+      planClaimDeclarations: finalState.plan?.claimDeclarations ?? emptyClaimDeclarations('plan'),
     }),
     scope.ctx.now(),
     discovery.context,
