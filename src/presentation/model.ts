@@ -149,9 +149,9 @@ export interface FindingRelationPresentation {
 export interface FindingItem {
   readonly category: string;
   readonly message: string;
-  /** Reviewed locations or artifact sections. Absent for legacy findings. */
+  /** Reviewed locations or artifact sections. Absent for non-material findings. */
   readonly subjects?: readonly FindingSubject[];
-  /** Repository evidence locations. Absent for legacy findings. */
+  /** Repository evidence locations. Absent for non-material findings. */
   readonly evidence?: readonly FindingRepositoryLocation[];
 }
 

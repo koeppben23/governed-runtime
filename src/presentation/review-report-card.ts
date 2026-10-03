@@ -219,7 +219,7 @@ function buildFindingsSection(findings: ReviewReportCardInput['findings']): Pres
     bucket.items.push({
       category: categoryLabel(f.category),
       message: f.message,
-      ...projectFindingRelation(f.relation),
+      ...(f.relation !== undefined ? projectFindingRelation(f.relation) : {}),
     });
   }
   const groups: FindingGroup[] = [...grouped.entries()]
