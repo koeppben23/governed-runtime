@@ -542,6 +542,12 @@ describe('abandonAndRearmByHostCall', () => {
     expect(after.dispatches.find((record) => record.hostCallId === CHILD_2)?.dispatchStatus).toBe(
       'outcome_unknown',
     );
+    // The refused re-arm closes the unrecoverable obligation so the next
+    // originating command mints a fresh one instead of dead-ending.
+    expect(after.obligations.find((o) => o.obligationId === obligation.obligationId)?.status).toBe(
+      'blocked',
+    );
+    expect(resolveReviewContinuation(after, 'plan')).toMatchObject({ kind: 'blocked' });
   });
 
   it('EDGE: an unknown host call is a no-op with the original state', async () => {

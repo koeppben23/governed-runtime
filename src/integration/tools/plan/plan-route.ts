@@ -140,6 +140,19 @@ async function routePlanMissingAttempt(
   obligation: PlanReviewObligation,
   code: string,
 ): Promise<string> {
+  return closePlanReviewObligation(scope, obligation, code);
+}
+
+/**
+ * Deterministically close a pending plan review obligation that can never be
+ * repaired in place. The next `/plan` then mints a fresh obligation through the
+ * regular submission path instead of dead-ending on a pending one.
+ */
+async function closePlanReviewObligation(
+  scope: PlanExecutionScope,
+  obligation: PlanReviewObligation,
+  code: string,
+): Promise<string> {
   const blockedState = blockObligation(scope.state, obligation.obligationId, code);
   await writeStateWithArtifacts(scope.sessDir, blockedState);
   return formatBlocked(code, {
@@ -167,6 +180,13 @@ async function routePlanInterruptedDispatch(
     scope.ctx.now(),
   );
   if (rearmed.kind === 'blocked') {
+    if (rearmed.cause === 'budget_exhausted') {
+      return closePlanReviewObligation(
+        scope,
+        obligation,
+        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      );
+    }
     return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
       obligationId: obligation.obligationId,
       reason: rearmed.reason,

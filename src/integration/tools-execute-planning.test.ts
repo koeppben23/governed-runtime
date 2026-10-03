@@ -732,6 +732,22 @@ describe('plan', () => {
       ).toHaveLength(2);
       expect(final.plan!.current.digest).toBe(before.plan!.current.digest);
       expect(final.plan!.history).toHaveLength(before.plan!.history.length);
+      // The refused re-arm closes the unrecoverable obligation ...
+      expect(
+        final.reviewAssurance!.obligations.find((o) => o.obligationId === obligationId)!.status,
+      ).toBe('blocked');
+
+      // ... so the next /plan submission mints a fresh obligation instead of
+      // dead-ending on the pending one.
+      const recoveryRaw = await plan.execute(
+        { planText: '## Plan v2', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
+      const recovery = parseToolResult(recoveryRaw);
+      expect(recovery.error).not.toBe(true);
+      const freshObligationId = (recovery.reviewObligation as { obligationId: string })
+        .obligationId;
+      expect(freshObligationId).not.toBe(obligationId);
     });
 
     it('blocks reviewRecovery mixed with plan text as an invalid argument shape', async () => {

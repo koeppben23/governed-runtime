@@ -129,6 +129,20 @@ async function routeArchitectureMissingAttempt(
   obligation: NonNullable<ArchitectureSession['state']['reviewAssurance']>['obligations'][number],
   code: string,
 ): Promise<string> {
+  return closeArchitectureReviewObligation(session, obligation, code);
+}
+
+/**
+ * Deterministically close a pending architecture review obligation that can
+ * never be repaired in place. The next `/architecture` then restarts review
+ * orchestration through the blocked-obligation path instead of dead-ending on
+ * a pending one.
+ */
+async function closeArchitectureReviewObligation(
+  session: ArchitectureSession,
+  obligation: ReviewObligation,
+  code: string,
+): Promise<string> {
   const blockedState = blockObligation(session.state, obligation.obligationId, code);
   await writeStateWithArtifacts(session.sessDir, blockedState);
   return formatBlocked(code, {
@@ -199,6 +213,13 @@ async function routeArchitectureInterruptedDispatch(
     session.ctx.now(),
   );
   if (rearmed.kind === 'blocked') {
+    if (rearmed.cause === 'budget_exhausted') {
+      return closeArchitectureReviewObligation(
+        session,
+        obligation,
+        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      );
+    }
     return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
       obligationId: obligation.obligationId,
       reason: rearmed.reason,

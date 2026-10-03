@@ -135,7 +135,8 @@ export const REVIEW_FINDING_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child session completed without a host-owned execution provenance record. Its output cannot bind to a review obligation.',
     recoverySteps: [
-      'Re-run the originating FlowGuard command to authorize a fresh reviewer dispatch',
+      'Re-run the originating FlowGuard command to authorize a fresh reviewer dispatch or restart the review orchestration',
+      'When the reviewer re-arm budget was exhausted, the broken obligation has been deterministically closed; the re-run mints a fresh review obligation',
       'Do not reuse the prior reviewer output or submit copied findings',
     ],
   },

@@ -24,6 +24,7 @@ import type { ReviewObligationType } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import { resolveReviewContinuation } from '../../state/review-continuation.js';
 import { buildInterruptedDispatchRearm } from '../review/dispatch/durable-dispatch.js';
+import { blockObligation } from '../review/obligations/obligation-state.js';
 import {
   resolveReviewDispatchAuthority,
   type ReviewDispatchAuthority,
@@ -54,6 +55,70 @@ function frozenSubjectNoun(obligationType: ReviewObligationType): string {
 }
 
 /**
+ * Close a pending obligation whose reviewer re-arm budget is exhausted. The
+ * obligation can never be repaired in place, so closing it deterministically
+ * lets the next originating command mint a fresh obligation.
+ */
+async function closeBudgetExhaustedObligation(
+  state: SessionState,
+  sessDir: string,
+  obligationId: string,
+  reason: string,
+): Promise<string> {
+  const blockedState = blockObligation(
+    state,
+    obligationId,
+    'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+  );
+  await writeStateWithArtifacts(sessDir, blockedState);
+  return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+    obligationId,
+    reason,
+    recovery:
+      'The broken review obligation has been deterministically closed. Re-run the originating command to submit a fresh revision and mint a new review obligation.',
+  });
+}
+
+/**
+ * Durably re-arm a fresh attempt on the SAME frozen obligation/subject for a
+ * spent or interrupted dispatch. A budget-exhausted refusal closes the
+ * obligation deterministically instead of dead-ending on a pending one.
+ */
+async function recoverInterruptedDispatch(
+  input: ReviewTransportRecoveryInput,
+  obligationId: string,
+  attemptId: string,
+): Promise<string> {
+  const { state, sessDir, now, obligationType, buildResponse } = input;
+  const spent = state.reviewAssurance?.attempts.find((attempt) => attempt.attemptId === attemptId);
+  if (!spent) {
+    return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      obligationId,
+      reason: 'the interrupted reviewer attempt is absent from review assurance',
+    });
+  }
+  const rearmed = buildInterruptedDispatchRearm(state.reviewAssurance, spent, now);
+  if (rearmed.kind === 'blocked') {
+    if (rearmed.cause === 'budget_exhausted') {
+      return closeBudgetExhaustedObligation(state, sessDir, obligationId, rearmed.reason);
+    }
+    return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      obligationId,
+      reason: rearmed.reason,
+    });
+  }
+  await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: rearmed.assurance });
+  const authority = resolveReviewDispatchAuthority(rearmed.assurance, obligationId);
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
+  return buildResponse(
+    `Reviewer transport was interrupted; a fresh review attempt was re-armed on the same frozen ${frozenSubjectNoun(obligationType)} subject.`,
+    authority.authority,
+  );
+}
+
+/**
  * Typed transport recovery for the pending review of one obligation family.
  *
  * `awaiting_task`  — re-emit the dispatch for the SAME current attempt.
@@ -65,7 +130,7 @@ function frozenSubjectNoun(obligationType: ReviewObligationType): string {
 export async function handleReviewTransportRecovery(
   input: ReviewTransportRecoveryInput,
 ): Promise<string> {
-  const { state, sessDir, now, obligationType, buildResponse } = input;
+  const { state, obligationType, buildResponse } = input;
   const continuation = resolveReviewContinuation(state.reviewAssurance, obligationType);
   if (continuation.kind === 'awaiting_task') {
     const authority = resolveReviewDispatchAuthority(
@@ -81,34 +146,10 @@ export async function handleReviewTransportRecovery(
     );
   }
   if (continuation.kind === 'interrupted_dispatch') {
-    const spent = state.reviewAssurance?.attempts.find(
-      (attempt) => attempt.attemptId === continuation.attemptId,
-    );
-    if (!spent) {
-      return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
-        obligationId: continuation.obligation.obligationId,
-        reason: 'the interrupted reviewer attempt is absent from review assurance',
-      });
-    }
-    const rearmed = buildInterruptedDispatchRearm(state.reviewAssurance, spent, now);
-    if (rearmed.kind === 'blocked') {
-      return formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
-        obligationId: continuation.obligation.obligationId,
-        reason: rearmed.reason,
-      });
-    }
-    const persistedState: SessionState = { ...state, reviewAssurance: rearmed.assurance };
-    await writeStateWithArtifacts(sessDir, persistedState);
-    const authority = resolveReviewDispatchAuthority(
-      rearmed.assurance,
+    return recoverInterruptedDispatch(
+      input,
       continuation.obligation.obligationId,
-    );
-    if (authority.kind === 'blocked') {
-      return formatBlocked(authority.code, { reason: authority.reason });
-    }
-    return buildResponse(
-      `Reviewer transport was interrupted; a fresh review attempt was re-armed on the same frozen ${frozenSubjectNoun(obligationType)} subject.`,
-      authority.authority,
+      continuation.attemptId,
     );
   }
   if (continuation.kind === 'integrity_blocked') {

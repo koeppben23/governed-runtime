@@ -209,7 +209,11 @@ describe('authorizeDispatchRearm', () => {
     const obligation = makeObligation({ status: 'fulfilled' });
     const attempt = initialAttempt(obligation);
     const result = authorizeDispatchRearm(assuranceWith(obligation, [attempt]), attempt);
-    expect(result).toEqual({ kind: 'blocked', reason: 'rearm_obligation_settled' });
+    expect(result).toEqual({
+      kind: 'blocked',
+      reason: 'rearm_obligation_settled',
+      cause: 'obligation_settled',
+    });
   });
 
   it('blocks re-arm when the obligation is missing', () => {
@@ -218,7 +222,11 @@ describe('authorizeDispatchRearm', () => {
     const assurance = assuranceWith(obligation, [attempt]);
     const orphaned = { ...attempt, obligationId: '00000000-0000-4000-8000-000000000000' };
     const result = authorizeDispatchRearm(assurance, orphaned);
-    expect(result).toEqual({ kind: 'blocked', reason: 'rearm_obligation_not_found' });
+    expect(result).toEqual({
+      kind: 'blocked',
+      reason: 'rearm_obligation_not_found',
+      cause: 'obligation_not_found',
+    });
   });
 
   it('exhausts the frozen budget: one existing re-arm blocks the next', () => {
@@ -241,6 +249,7 @@ describe('authorizeDispatchRearm', () => {
     const result = authorizeDispatchRearm(assuranceWith(obligation, [initial, rearmed]), initial);
     expect(result).toMatchObject({ kind: 'blocked' });
     expect(result.kind === 'blocked' && result.reason).toContain('budget exhausted');
+    expect(result.kind === 'blocked' && result.cause).toBe('budget_exhausted');
   });
 
   it('respects a frozen budget of zero even when a release was interrupted', () => {
