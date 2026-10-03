@@ -149,9 +149,9 @@ export interface FindingRelationPresentation {
 export interface FindingItem {
   readonly category: string;
   readonly message: string;
-  /** Reviewed locations or artifact sections. Absent for legacy findings. */
+  /** Reviewed locations or artifact sections. Absent for non-material findings. */
   readonly subjects?: readonly FindingSubject[];
-  /** Repository evidence locations. Absent for legacy findings. */
+  /** Repository evidence locations. Absent for non-material findings. */
   readonly evidence?: readonly FindingRepositoryLocation[];
 }
 
@@ -280,7 +280,7 @@ export interface NoticeSection {
   readonly heading?: string;
   /** Primary message body. */
   readonly message: string;
-  /** Additional messages — each with its own symbol prefix. Optional, backwards-compatible. */
+  /** Additional messages — each with its own symbol prefix. Optional. */
   readonly additionalMessages?: readonly string[];
   /** Structured detail rows. */
   readonly details: readonly KeyValueItem[];
@@ -460,8 +460,8 @@ export interface PresentationBuildOptions {
 export interface CompactCardDocument {
   readonly kind: 'compact_card';
   readonly density: 'compact';
-  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
-  readonly form?: PresentationForm;
+  /** Card form discriminator — required on every card document. */
+  readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
   /** Compact cards always carry a conclusion. */
   readonly conclusion: PresentationConclusion;
@@ -469,19 +469,19 @@ export interface CompactCardDocument {
 
 export interface ReviewCardDocument {
   readonly kind: 'review_card';
-  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
-  readonly form?: PresentationForm;
+  /** Card form discriminator — required on every card document. */
+  readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
-  /** Review cards may omit a conclusion when the card presents findings only. */
+  /** Every rendered card carries exactly one conclusion (contract-enforced). */
   readonly conclusion?: PresentationConclusion;
 }
 
 export interface DiagnosticCardDocument {
   readonly kind: 'diagnostic_card';
-  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
-  readonly form?: PresentationForm;
+  /** Card form discriminator — required on every card document. */
+  readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
-  /** Diagnostic cards may omit a conclusion — blocked-action semantics are inline. */
+  /** Every rendered card carries exactly one conclusion (contract-enforced). */
   readonly conclusion?: PresentationConclusion;
 }
 

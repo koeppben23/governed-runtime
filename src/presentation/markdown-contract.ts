@@ -14,7 +14,12 @@ import type { PresentationAction, PresentationConclusion, PresentationDocument }
 /** Enforce the semantic language contract before any Markdown is emitted. */
 export function validateDocumentContract(document: PresentationDocument): void {
   validateTitleContract(document);
-  if (!('form' in document) || document.form === undefined) return;
+  if (document.kind === 'plan_document' || document.kind === 'help_document') return;
+  if (document.form === undefined) {
+    throw new PresentationContractError(
+      'PresentationDocument: card documents require a form discriminator',
+    );
+  }
   if (!document.conclusion) {
     throw new PresentationContractError(
       `PresentationDocument: ${document.form} form requires exactly one conclusion`,

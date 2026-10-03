@@ -460,6 +460,22 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING — card presentation documents require a form discriminator.**
+  `CompactCardDocument`, `ReviewCardDocument`, and `DiagnosticCardDocument`
+  now require `form`, and the Markdown contract validates every card instead
+  of skipping validation when the discriminator was absent. `plan_document`
+  and `help_document` remain form-less and are explicitly exempt. This is a
+  breaking internal presentation contract; card documents without a form are
+  rejected before rendering.
+
+- **BREAKING — canonical empty plan claim declarations.** Plan review
+  obligations now use the single canonical empty declaration shape
+  (`{ flow: 'plan', version: 'v2', claims: [] }` from `emptyClaimDeclarations`)
+  instead of an unversioned legacy fallback. `claimDeclarationsDigest` for
+  future empty-declaration obligations changes accordingly; already persisted
+  obligations keep their digests. Rendered review material for empty
+  declarations is unchanged.
+
 - **BREAKING — repository signals fail closed when git is unavailable.**
   `listRepoSignals` no longer collapses git failures into empty signals:
   `GIT_NOT_FOUND`, `GIT_TIMEOUT`, `GIT_COMMAND_FAILED`, and `NOT_GIT_REPO`

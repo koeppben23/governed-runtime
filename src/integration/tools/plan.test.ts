@@ -3,10 +3,7 @@ import { POLICY_DIGEST_VERSION } from '../../state/evidence-identifiers.js';
 import { makePlanRevision, makePlanRevisionAfter } from '../../state/evidence-test-constants.js';
 import { makeState } from '../../fixtures.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import {
-  buildPlanReviewObligationInput,
-  type LegacyEmptyPlanClaimDeclarations,
-} from './plan/plan-response.js';
+import { buildPlanReviewObligationInput } from './plan/plan-response.js';
 
 const POLICY_DIGEST = 'a'.repeat(64);
 
@@ -41,7 +38,7 @@ describe('plan review obligation characterization', () => {
     expect(canonicalJsonStringify(actual)).toMatchSnapshot();
   });
 
-  it('preserves canonical revision authority bytes without claim version', () => {
+  it('preserves canonical revision authority bytes with canonical empty declarations', () => {
     const actual = buildPlanReviewObligationInput({
       state: makeState('PLAN'),
       now: '2026-01-01T00:00:00.000Z',
@@ -50,10 +47,7 @@ describe('plan review obligation characterization', () => {
       planVersion: 2,
       classificationFiles: [],
       freeze: UNAVAILABLE_FREEZE,
-      planClaimDeclarations: {
-        flow: 'plan',
-        claims: [],
-      } satisfies LegacyEmptyPlanClaimDeclarations,
+      planClaimDeclarations: { flow: 'plan', version: 'v2', claims: [] },
     });
     expect(canonicalJsonStringify(actual)).toMatchSnapshot();
   });

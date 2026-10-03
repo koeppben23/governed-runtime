@@ -51,6 +51,17 @@ const PROOFGRAPH_CORE_FILES = [
  */
 const PLAN_DECLARATION_WRITER = 'integration/tools/plan/plan-submission-state.ts';
 
+/**
+ * Every production module that builds or passes plan claim declarations into
+ * the review obligation. The submission path and the revision path both feed
+ * `claimDeclarationsDigest`, so both are guarded against the unversioned
+ * legacy shape and the `as unknown as` cast that previously bypassed it.
+ */
+const PLAN_DECLARATION_PRODUCERS = [
+  PLAN_DECLARATION_WRITER,
+  'integration/tools/plan/plan-response.ts',
+];
+
 const FORBIDDEN = [
   /counterexampleCheckId/,
   /LEGACY_PROVIDER_BY_PREFIX/,
@@ -175,8 +186,21 @@ describe('proofgraph legacy guard', () => {
   });
 
   it('production code does not construct legacy plan declaration literals', () => {
-    const content = readFileSync(join(SRC, PLAN_DECLARATION_WRITER), 'utf-8');
-    expect(content).not.toMatch(/claimDeclarations:\s*\{\s*flow:\s*'plan',\s*claims:/);
+    const violations: string[] = [];
+    for (const rel of PLAN_DECLARATION_PRODUCERS) {
+      const content = readFileSync(join(SRC, rel), 'utf-8');
+      // Unversioned `{ flow: 'plan', claims: … }` — the canonical shape always
+      // carries `version: 'v2'` between flow and claims.
+      if (/flow:\s*'plan',\s*claims:/.test(content)) {
+        violations.push(`${rel}: unversioned plan declaration literal`);
+      }
+      // An `as unknown as PlanClaimDeclarations` cast previously smuggled the
+      // legacy shape past the type contract.
+      if (/as unknown as PlanClaimDeclarations/.test(content)) {
+        violations.push(`${rel}: unsound plan declaration cast`);
+      }
+    }
+    expect(violations).toEqual([]);
   });
 
   it('execution-subject resolution must not derive behavior from candidate.source or candidate.command', () => {

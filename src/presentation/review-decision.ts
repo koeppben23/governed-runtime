@@ -129,14 +129,14 @@ export interface ReviewDecisionProjectionInput {
     readonly message: string;
     readonly severity?: string;
     readonly category?: string;
-    readonly relation?: FindingRelationPresentation;
+    readonly relation: FindingRelationPresentation;
     readonly findingId?: string;
   }>;
   readonly majorRisks?: ReadonlyArray<{
     readonly message: string;
     readonly severity?: string;
     readonly category?: string;
-    readonly relation?: FindingRelationPresentation;
+    readonly relation: FindingRelationPresentation;
   }>;
   readonly missingVerification?: readonly string[];
   readonly scopeCreep?: readonly string[];
@@ -148,7 +148,7 @@ function toDecisionIssues(
   findings?: ReadonlyArray<{
     readonly message: string;
     readonly severity?: string;
-    readonly relation?: FindingRelationPresentation;
+    readonly relation: FindingRelationPresentation;
     readonly findingId?: string;
   }>,
 ): DecisionIssue[] {

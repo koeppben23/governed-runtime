@@ -228,7 +228,7 @@ export interface ReadinessProjection {
   fourEyesSatisfied: boolean;
   actorKnown: boolean;
   minimumActorAssuranceForApproval: ActorAssurance | null;
-  /** Warnings about configuration normalization or legacy values. */
+  /** Warnings about configuration normalization. */
   warnings: string[];
 }
 

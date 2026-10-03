@@ -518,7 +518,8 @@ export function getLastChainHash(events: Record<string, unknown>[]): string {
 
 /**
  * Type guard: does this event have chain hash fields?
- * Every audit-chain.v3 record is chained; non-chained input is legacy.
+ * Every persisted audit-chain.v3 record carries chain-hash fields; input
+ * without those fields is not a current persisted record.
  */
 function isChainedEvent(event: Record<string, unknown>): boolean {
   return (

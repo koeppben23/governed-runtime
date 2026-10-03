@@ -79,8 +79,8 @@ export type DiscoveryHealthDriftAction = DiscoveryHealthPolicy['onDrift'];
  *
  * regulated/team-ci fail closed (required); solo/team stay advisory-off so
  * existing default behavior introduces no new workflow blocks. This is the
- * single source of truth for the default, reused by presets, snapshot
- * normalization, and persisted-snapshot backward-compat resolution.
+ * single source of truth for the default, reused by presets and snapshot
+ * normalization.
  */
 export function defaultDiscoveryHealthForMode(mode: PolicyMode): DiscoveryHealthPolicy {
   if (mode === 'regulated' || mode === 'team-ci') {
@@ -102,8 +102,7 @@ export type ValidationEvidenceEnforcement = ValidationEvidencePolicy['enforcemen
  *
  * regulated/team-ci fail closed ('required'); solo/team stay 'off' so existing
  * low-risk default behavior introduces no new workflow blocks. Single source of
- * truth for the default, reused by presets, snapshot normalization, and
- * persisted-snapshot backward-compat resolution.
+ * truth for the default, reused by presets and snapshot normalization.
  */
 export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEvidencePolicy {
   if (mode === 'regulated' || mode === 'team-ci') {
@@ -172,7 +171,7 @@ export interface FlowGuardPolicy {
   /**
    * P34: Minimum required actor assurance for regulated approval decisions.
    *
-   * - 'best_effort'     → any actor may approve (default, backward-compat with P33 v0)
+   * - 'best_effort'     → any actor may approve (default)
    * - 'claim_validated' → only actors with validated local claims may approve
    * - 'idp_verified'    → only IdP-verified actors may approve (future P35 enterprise target)
    *
