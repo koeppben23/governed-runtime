@@ -198,7 +198,7 @@ describe('renderMarkdown', () => {
     );
   });
 
-  it('keeps the legacy layout for unmigrated blockers with code in the primary line', () => {
+  it('keeps the baseline layout for unmigrated blockers with code in the primary line', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',

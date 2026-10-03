@@ -83,7 +83,7 @@ function attachFooterToString(output: string, glyphProfile?: GlyphProfile): stri
 }
 
 /**
- * Add the smallest shared-renderer presentation for legacy blocked JSON at the
+ * Add the smallest shared-renderer presentation for blocked JSON at the
  * OpenCode tool boundary. Other host protocols retain their raw payloads.
  */
 function attachPresentationToBlockedResult(

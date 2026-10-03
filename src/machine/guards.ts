@@ -120,7 +120,7 @@ export const selfReviewPending: GuardFn = (s) => s.selfReview !== null && !selfR
 /**
  * All active validation checks passed.
  *
- * Vacuous truth (legacy): if activeChecks is empty (no verificationCandidates
+ * Vacuous truth: if activeChecks is empty (no verificationCandidates
  * discovered), all checks are trivially satisfied → returns true. This allows
  * low-risk sessions without discoverable commands to skip VALIDATION cleanly.
  *

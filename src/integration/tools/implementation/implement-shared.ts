@@ -88,9 +88,9 @@ export function validateImplementSequence(args: ImplementArgs, state: SessionSta
  * Normalize reviewer-supplied findings into host-authoritative identity.
  *
  * Reviewer-supplied `findingId` values are not trusted — the host mints
- * fresh UUIDs for every finding. Legacy findings without an ID remain
- * readable without one. Never trusts, preserves, or forwards a reviewer-
- * supplied UUID as finding identity.
+ * fresh UUIDs for every finding. Reviewer findings may omit the ID; the host
+ * still mints the authoritative one. Never trusts, preserves, or forwards a
+ * reviewer-supplied UUID as finding identity.
  */
 export function normalizeHostFindings(findings: ReviewFindings): ReviewFindings {
   return {

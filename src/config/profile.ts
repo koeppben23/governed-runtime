@@ -33,7 +33,7 @@ export type { PhaseInstructions } from './profile-types.js';
 /**
  * Resolve effective instructions for a given phase.
  *
- * - Plain string → returned as-is (backward compatible).
+ * - Plain string → returned as-is.
  * - PhaseInstructions → base + byPhase[phase] if present.
  * - Undefined → empty string.
  *
@@ -138,7 +138,7 @@ export interface FlowGuardProfile {
    * Additional LLM instructions injected when this profile is active.
    *
    * Accepts either:
-   * - A plain string (backward compatible — same instructions for all phases).
+   * - A plain string (same instructions for all phases).
    * - A PhaseInstructions object with `base` + optional `byPhase` overrides.
    *
    * Use `resolveProfileInstructions(profile.instructions, phase)` to resolve

@@ -280,7 +280,7 @@ export interface NoticeSection {
   readonly heading?: string;
   /** Primary message body. */
   readonly message: string;
-  /** Additional messages — each with its own symbol prefix. Optional, backwards-compatible. */
+  /** Additional messages — each with its own symbol prefix. Optional. */
   readonly additionalMessages?: readonly string[];
   /** Structured detail rows. */
   readonly details: readonly KeyValueItem[];
@@ -472,7 +472,7 @@ export interface ReviewCardDocument {
   /** Card form discriminator — required on every card document. */
   readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
-  /** Review cards may omit a conclusion when the card presents findings only. */
+  /** Every rendered card carries exactly one conclusion (contract-enforced). */
   readonly conclusion?: PresentationConclusion;
 }
 
@@ -481,7 +481,7 @@ export interface DiagnosticCardDocument {
   /** Card form discriminator — required on every card document. */
   readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
-  /** Diagnostic cards may omit a conclusion — blocked-action semantics are inline. */
+  /** Every rendered card carries exactly one conclusion (contract-enforced). */
   readonly conclusion?: PresentationConclusion;
 }
 

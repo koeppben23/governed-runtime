@@ -62,7 +62,7 @@ describe('finding relation presentation', () => {
     expect(renderMarkdown(document)).toBe(await readGolden('finding-relation-presentation.md'));
   });
 
-  it('leaves legacy findings neutral when no relation was provided', () => {
+  it('leaves non-material findings neutral when no relation applies', () => {
     const document: ReviewCardDocument = {
       kind: 'review_card',
       form: 'terminal',

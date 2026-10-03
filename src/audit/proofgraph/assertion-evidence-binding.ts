@@ -56,8 +56,8 @@ function describeMissingExtraction(extraction: AssertionExtractionResult | undef
 function validatePreconditions(request: AssertionBindingRequest): AssertionBindingDecision | null {
   const { requirement, checkId, extraction } = request;
 
-  // Legacy assertion requirements have no kind discriminator. Only the explicit
-  // aggregate variant lacks an assertion identity and cannot bind here.
+  // The aggregate requirement variant carries no assertion identity and
+  // cannot bind here.
   if (!('assertion' in requirement)) {
     return {
       status: 'rejected',

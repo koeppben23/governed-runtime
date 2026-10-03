@@ -185,7 +185,7 @@ function buildOperationAuditBody(
  * audit evidence and no recovery path.
  *
  * `emitTransitions` therefore governs only which operations the producer
- * creates (`audit-outbox.ts`) and the legacy transition-gap assertion below —
+ * creates (`audit-outbox.ts`) and the transition-gap assertion below —
  * never whether an already-committed operation gets drained.
  */
 export async function emitTransitionAudits(input: {
@@ -199,10 +199,10 @@ export async function emitTransitionAudits(input: {
   const operations =
     state?.pendingAuditOperations.filter((operation) => operation.status !== 'reconciled') ?? [];
   if (operations.length === 0) {
-    // The legacy-gap check looks for a transition event. Under
+    // The transition-gap check looks for a transition event. Under
     // `emitTransitions: false` that event is intentionally never emitted, so
     // asserting it would report a gap for evidence the policy suppressed.
-    if (ctx.emitTransitions) await assertNoLegacyTransitionGap(ctx.sessDir, state);
+    if (ctx.emitTransitions) await assertNoTransitionGap(ctx.sessDir, state);
     return;
   }
   if (!state) {
@@ -267,10 +267,7 @@ function assertLatestOperationMatchesState(
   }
 }
 
-async function assertNoLegacyTransitionGap(
-  sessDir: string,
-  state: SessionState | null,
-): Promise<void> {
+async function assertNoTransitionGap(sessDir: string, state: SessionState | null): Promise<void> {
   if (!state?.transition) return;
   const events = await readAuditTrail(sessDir);
   const transition = state.transition;
