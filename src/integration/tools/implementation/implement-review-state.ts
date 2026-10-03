@@ -174,7 +174,7 @@ export function appendImplReviewState(input: {
     runtime.ctx.now(),
     evidenceInvocationId,
   );
-  const existingFindings = runtime.state.implReviewFindings ?? [];
+  const existingFindings = runtime.state.implReviewFindings;
   const newReviewFindings = [...existingFindings, normalizeHostFindings(effectiveFindings)];
   const reviewedState: SessionState = {
     ...runtime.state,

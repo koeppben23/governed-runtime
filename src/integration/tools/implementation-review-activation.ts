@@ -44,7 +44,7 @@ export type ImplementationReviewActivationResult = {
 
 export function nextImplementationReviewIteration(state: SessionState): number {
   let latest = state.implReview?.iteration ?? 0;
-  for (const findings of state.implReviewFindings ?? []) {
+  for (const findings of state.implReviewFindings) {
     latest = Math.max(latest, findings.iteration);
   }
   return latest + 1;

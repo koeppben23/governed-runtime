@@ -79,7 +79,7 @@ export function getReviewLoopProgress(
 
 function extractOutstandingIssues(state: SessionState): string[] {
   if (state.phase === 'IMPL_REVIEW') {
-    const findings = state.implReviewFindings?.at(-1);
+    const findings = state.implReviewFindings.at(-1);
     if (findings?.blockingIssues && Array.isArray(findings.blockingIssues)) {
       return findings.blockingIssues
         .slice(0, 3)

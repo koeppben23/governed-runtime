@@ -42,6 +42,8 @@ function state(phase: Phase, overrides: Partial<SessionState> = {}): SessionStat
     reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
+    implReviewFindings: [],
+    peerReviewFindings: [],
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: [],
