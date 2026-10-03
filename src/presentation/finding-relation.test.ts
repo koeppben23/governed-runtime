@@ -15,6 +15,7 @@ describe('finding relation presentation', () => {
   it('renders structured repository and artifact relations without losing locations', async () => {
     const document: ReviewCardDocument = {
       kind: 'review_card',
+      form: 'terminal',
       sections: [
         {
           kind: 'findings',
@@ -55,6 +56,7 @@ describe('finding relation presentation', () => {
           ],
         },
       ],
+      conclusion: { kind: 'terminal', message: 'End.' },
     };
 
     expect(renderMarkdown(document)).toBe(await readGolden('finding-relation-presentation.md'));
@@ -63,6 +65,7 @@ describe('finding relation presentation', () => {
   it('leaves legacy findings neutral when no relation was provided', () => {
     const document: ReviewCardDocument = {
       kind: 'review_card',
+      form: 'terminal',
       sections: [
         {
           kind: 'findings',
@@ -75,6 +78,7 @@ describe('finding relation presentation', () => {
           ],
         },
       ],
+      conclusion: { kind: 'terminal', message: 'End.' },
     };
 
     const markdown = renderMarkdown(document);

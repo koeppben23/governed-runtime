@@ -460,8 +460,8 @@ export interface PresentationBuildOptions {
 export interface CompactCardDocument {
   readonly kind: 'compact_card';
   readonly density: 'compact';
-  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
-  readonly form?: PresentationForm;
+  /** Card form discriminator — required on every card document. */
+  readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
   /** Compact cards always carry a conclusion. */
   readonly conclusion: PresentationConclusion;
@@ -469,8 +469,8 @@ export interface CompactCardDocument {
 
 export interface ReviewCardDocument {
   readonly kind: 'review_card';
-  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
-  readonly form?: PresentationForm;
+  /** Card form discriminator — required on every card document. */
+  readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
   /** Review cards may omit a conclusion when the card presents findings only. */
   readonly conclusion?: PresentationConclusion;
@@ -478,8 +478,8 @@ export interface ReviewCardDocument {
 
 export interface DiagnosticCardDocument {
   readonly kind: 'diagnostic_card';
-  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
-  readonly form?: PresentationForm;
+  /** Card form discriminator — required on every card document. */
+  readonly form: PresentationForm;
   readonly sections: readonly PresentationSection[];
   /** Diagnostic cards may omit a conclusion — blocked-action semantics are inline. */
   readonly conclusion?: PresentationConclusion;

@@ -9,3 +9,5 @@
   - HEAD · src/range.ts:10
   - HEAD · test/range.test.ts
 - **quality:** Legacy finding
+
+End.
