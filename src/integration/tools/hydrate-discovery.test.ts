@@ -47,8 +47,8 @@ function detectionInput(overrides = {}) {
   return {
     repoSignals: {
       files: [],
-      packageFiles: ['package.json'],
-      configFiles: ['tsconfig.json'],
+      packageFilePaths: ['package.json'],
+      configFilePaths: ['tsconfig.json'],
     } as RepoSignals,
     discovery: {
       schemaVersion: 1,
@@ -93,10 +93,22 @@ describe('buildProfileEvidence', () => {
 
   it('detects Python profile via pyproject.toml', () => {
     const input = detectionInput({
-      repoSignals: { packageFiles: ['pyproject.toml'], configFiles: [] },
+      repoSignals: { packageFilePaths: ['pyproject.toml'], configFilePaths: [] },
     });
     const evidence = buildProfileEvidence(profile({ id: 'python' }), input);
     expect(evidence).toContain('packageFile:pyproject.toml');
+  });
+
+  it('deduplicates repeated manifest basenames in first-occurrence order', () => {
+    const input = detectionInput({
+      repoSignals: {
+        files: ['pom.xml', 'module-a/pom.xml', 'module-b/pom.xml'],
+        packageFilePaths: ['pom.xml', 'module-a/pom.xml', 'module-b/pom.xml'],
+        configFilePaths: [],
+      },
+    });
+    const evidence = buildProfileEvidence(profile({ id: 'backend-java' }), input);
+    expect(evidence).toEqual(['packageFile:pom.xml']);
   });
 });
 

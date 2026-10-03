@@ -463,14 +463,10 @@ export interface CollectorInput {
   readonly fingerprint: string;
   /** All file paths relative to worktree root (from git ls-files). */
   readonly allFiles: readonly string[];
-  /** Package/dependency manifest files (basenames). */
-  readonly packageFiles: readonly string[];
-  /** Configuration files (basenames). */
-  readonly configFiles: readonly string[];
   /** Package/dependency manifest files (full relative paths from worktree root). */
-  readonly packageFilePaths?: readonly string[];
+  readonly packageFilePaths: readonly string[];
   /** Configuration files (full relative paths from worktree root). */
-  readonly configFilePaths?: readonly string[];
+  readonly configFilePaths: readonly string[];
   /**
    * Optional file reader for manifest content extraction.
    * Accepts a relative path from worktree root, returns file content or undefined.

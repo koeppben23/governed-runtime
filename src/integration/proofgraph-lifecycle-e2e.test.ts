@@ -283,8 +283,6 @@ async function boot(label: string): Promise<Env> {
   mkdirSync(sDir, { recursive: true });
   const discovery = await runRequiredDiscovery(worktree, fp.fingerprint, {
     files: [],
-    packageFiles: [],
-    configFiles: [],
     packageFilePaths: [],
     configFilePaths: [],
   });

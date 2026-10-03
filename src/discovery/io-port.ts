@@ -14,8 +14,6 @@ import type { DiscoveryResult } from './types.js';
 /** Repository signals needed by discovery planning (structural subset). */
 export interface DiscoveryRepoSignals {
   readonly files: readonly string[];
-  readonly packageFiles: readonly string[];
-  readonly configFiles: readonly string[];
   readonly packageFilePaths: readonly string[];
   readonly configFilePaths: readonly string[];
 }

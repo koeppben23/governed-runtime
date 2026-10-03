@@ -296,9 +296,8 @@ describe('git adapter behavior contracts', () => {
       await git(repo, ['commit', '-q', '-m', 'signals']);
 
       const signals = await listRepoSignals(repo);
-      expect(signals.packageFiles).toContain('package.json');
-      expect(signals.configFiles).toContain('tsconfig.json');
       expect(signals.packageFilePaths).toContain('package.json');
+      expect(signals.configFilePaths).toContain('tsconfig.json');
       expect(signals.files).toContain(path.normalize('src/deep.ts'));
     });
 
@@ -309,7 +308,31 @@ describe('git adapter behavior contracts', () => {
       await git(repo, ['commit', '-q', '-m', 'dotnet']);
 
       const signals = await listRepoSignals(repo);
-      expect(signals.packageFiles).toEqual(expect.arrayContaining(['App.csproj', 'App.sln']));
+      expect(signals.packageFilePaths).toEqual(expect.arrayContaining(['App.csproj', 'App.sln']));
+    });
+
+    it('keeps nested manifest paths while consumers derive ordered unique basenames', async () => {
+      await fs.mkdir(path.join(repo, 'module-a'), { recursive: true });
+      await fs.mkdir(path.join(repo, 'module-b'), { recursive: true });
+      await fs.writeFile(path.join(repo, 'pom.xml'), '<project/>\n', 'utf8');
+      await fs.writeFile(path.join(repo, 'module-a', 'pom.xml'), '<project/>\n', 'utf8');
+      await fs.writeFile(path.join(repo, 'module-b', 'pom.xml'), '<project/>\n', 'utf8');
+      await fs.mkdir(path.join(repo, 'apps', 'web'), { recursive: true });
+      await fs.writeFile(path.join(repo, 'apps', 'web', 'tsconfig.json'), '{}\n', 'utf8');
+      await git(repo, ['add', '-A']);
+      await git(repo, ['commit', '-q', '-m', 'nested']);
+
+      const signals = await listRepoSignals(repo);
+      const packageBasenames = [...new Set(signals.packageFilePaths.map((f) => path.basename(f)))];
+      const configBasenames = [...new Set(signals.configFilePaths.map((f) => path.basename(f)))];
+
+      expect(packageBasenames).toEqual(['pom.xml']);
+      expect(configBasenames).toEqual(['tsconfig.json']);
+      expect(signals.packageFilePaths.map((f) => path.normalize(f))).toEqual([
+        path.normalize('module-a/pom.xml'),
+        path.normalize('module-b/pom.xml'),
+        path.normalize('pom.xml'),
+      ]);
     });
 
     it('returns empty signals for a repository without commits', async () => {
@@ -321,8 +344,6 @@ describe('git adapter behavior contracts', () => {
       const signals = await listRepoSignals(unborn);
       expect(signals).toEqual({
         files: [],
-        packageFiles: [],
-        configFiles: [],
         packageFilePaths: [],
         configFilePaths: [],
       });
@@ -335,8 +356,6 @@ describe('git adapter behavior contracts', () => {
       const signals = await listRepoSignals(plain);
       expect(signals).toEqual({
         files: [],
-        packageFiles: [],
-        configFiles: [],
         packageFilePaths: [],
         configFilePaths: [],
       });

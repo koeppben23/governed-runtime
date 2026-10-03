@@ -70,8 +70,6 @@ import type { DiscoveryIoPort } from './io-port.js';
 
 const EMPTY_SIGNALS = {
   files: [] as string[],
-  packageFiles: [] as string[],
-  configFiles: [] as string[],
   packageFilePaths: [] as string[],
   configFilePaths: [] as string[],
 };
@@ -91,8 +89,8 @@ const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -116,8 +114,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -136,8 +134,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -504,8 +502,8 @@ describe('discovery/orchestrator', () => {
         worktreePath: '/test/gradle',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/app.kt'],
-        packageFiles: ['build.gradle'],
-        configFiles: ['jest.config.ts'],
+        packageFilePaths: ['build.gradle'],
+        configFilePaths: ['jest.config.ts'],
       };
 
       const result = await runDiscovery(input, DISCOVERY_IO);
@@ -518,8 +516,8 @@ describe('discovery/orchestrator', () => {
         worktreePath: '/test/multi',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/lib.rs', 'main.go', 'Cargo.toml', 'go.mod'],
-        packageFiles: ['Cargo.toml', 'go.mod'],
-        configFiles: [],
+        packageFilePaths: ['Cargo.toml', 'go.mod'],
+        configFilePaths: [],
       };
 
       const result = await runDiscovery(input, DISCOVERY_IO);
@@ -533,8 +531,8 @@ describe('discovery/orchestrator', () => {
         worktreePath: '/test/maven',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       };
 
       const result = await runDiscovery(input, DISCOVERY_IO);
@@ -547,7 +545,7 @@ describe('discovery/orchestrator', () => {
       // Input with both invalid and valid package files
       const badInput: CollectorInput = {
         ...TS_PROJECT_INPUT,
-        packageFiles: ['yarn.lock', 'package.json'],
+        packageFilePaths: ['yarn.lock', 'package.json'],
       };
 
       // Should not throw — should handle gracefully

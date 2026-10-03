@@ -460,6 +460,15 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING — repository signal paths are the canonical `RepoSignals` representation.**
+  The exported `RepoSignals` type now carries `files`, `packageFilePaths`, and
+  `configFilePaths` only; the `packageFiles` / `configFiles` basename fields were
+  removed (breaking TypeScript API change). Consumers derive basenames locally
+  from the normalized relative paths, preserving dedupe and first-occurrence
+  order. Discovery persistence (`discovery.v2`), profile selection, profile
+  evidence, collector outputs, the `/hydrate` response, and git enumeration
+  semantics are unchanged.
+
 - **BREAKING — archive manifest v4: regulated receipt actor hard cut.**
   `ARCHIVE_MANIFEST_SCHEMA_VERSION` is now `archive-manifest.v4`. The regulated
   completion verifier accepts exactly one decision-receipt actor

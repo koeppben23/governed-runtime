@@ -271,7 +271,7 @@ describe('hydrate rail', () => {
           ...HYDRATE_INPUT,
           profile: {
             ...HYDRATE_INPUT.profile,
-            repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+            repoSignals: { files: [], packageFilePaths: ['pom.xml'], configFilePaths: [] },
           },
         },
         ctx,
@@ -293,7 +293,7 @@ describe('hydrate rail', () => {
           profile: {
             ...HYDRATE_INPUT.profile,
             profileId: 'typescript',
-            repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+            repoSignals: { files: [], packageFilePaths: ['pom.xml'], configFilePaths: [] },
           },
         },
         ctx,

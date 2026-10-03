@@ -265,8 +265,8 @@ export const GIT_MOCK_DEFAULTS = {
    */
   repoSignals: {
     files: ['tsconfig.json', 'package.json', 'src/index.ts'],
-    packageFiles: ['package.json'],
-    configFiles: ['tsconfig.json'],
+    packageFilePaths: ['package.json'],
+    configFilePaths: ['tsconfig.json'],
   },
 } as const;
 
