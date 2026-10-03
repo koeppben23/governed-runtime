@@ -48,7 +48,7 @@ export interface EvidenceReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    relation?: FindingRelationPresentation;
+    relation: FindingRelationPresentation;
     findingId?: string;
   }>;
   /** Accepted advisory risks from the latest independent implementation review. */
@@ -56,7 +56,7 @@ export interface EvidenceReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    relation?: FindingRelationPresentation;
+    relation: FindingRelationPresentation;
   }>;
   /** Verification gaps identified by the latest independent implementation review. */
   missingVerification?: string[];
@@ -171,7 +171,7 @@ function buildFindingGroups(
     severity: string;
     category: string;
     message: string;
-    relation?: FindingRelationPresentation;
+    relation: FindingRelationPresentation;
   }>,
 ): FindingGroup[] {
   const bySeverity = new Map<string, FindingItem[]>();

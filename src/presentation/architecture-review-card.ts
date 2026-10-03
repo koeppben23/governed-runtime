@@ -55,14 +55,14 @@ export interface ArchitectureReviewCardInput {
     severity: string;
     category: string;
     message: string;
-    relation?: FindingRelationPresentation;
+    relation: FindingRelationPresentation;
   }>;
   /** Major risks from review findings. */
   majorRisks?: Array<{
     severity: string;
     category: string;
     message: string;
-    relation?: FindingRelationPresentation;
+    relation: FindingRelationPresentation;
   }>;
   /** Missing verifications. */
   missingVerification?: string[];
@@ -249,7 +249,7 @@ interface FindingInputs {
         severity: string;
         category: string;
         message: string;
-        relation?: FindingRelationPresentation;
+        relation: FindingRelationPresentation;
       }>
     | undefined;
   majorRisks?:
@@ -257,7 +257,7 @@ interface FindingInputs {
         severity: string;
         category: string;
         message: string;
-        relation?: FindingRelationPresentation;
+        relation: FindingRelationPresentation;
       }>
     | undefined;
   missingVerification?: string[] | undefined;
@@ -266,7 +266,7 @@ interface FindingInputs {
 }
 
 function toFindingItems(
-  raw: Array<{ category: string; message: string; relation?: FindingRelationPresentation }>,
+  raw: Array<{ category: string; message: string; relation: FindingRelationPresentation }>,
 ): FindingItem[] {
   return raw.map((f) => ({
     category: f.category,

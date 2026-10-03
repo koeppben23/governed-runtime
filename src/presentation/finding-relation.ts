@@ -9,13 +9,10 @@ import type {
   FindingSubject,
 } from './model.js';
 
-export function projectFindingRelation(relation: FindingRelationPresentation | undefined):
-  | {
-      readonly subjects: readonly FindingSubject[];
-      readonly evidence: readonly FindingRepositoryLocation[];
-    }
-  | Record<never, never> {
-  if (relation === undefined) return {};
+export function projectFindingRelation(relation: FindingRelationPresentation): {
+  readonly subjects: readonly FindingSubject[];
+  readonly evidence: readonly FindingRepositoryLocation[];
+} {
   return {
     subjects: relation.subjectAnchors.map((subject) => {
       if (subject.kind === 'repository_location') {

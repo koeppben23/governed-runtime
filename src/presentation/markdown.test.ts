@@ -60,6 +60,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'keyValue',
@@ -79,20 +80,24 @@ describe('renderMarkdown', () => {
   it('renders a title section as an H1 with canonical spacing', () => {
     const doc: ReviewCardDocument = {
       kind: 'review_card',
+      form: 'terminal',
       sections: [
         { kind: 'title', text: 'FlowGuard Plan Review' },
         { kind: 'keyValue', items: [{ label: 'Status', value: 'Approved' }] },
       ],
+      conclusion: { kind: 'terminal', message: 'End.' },
     };
     const result = renderMarkdown(doc);
     assertRendererInvariants(result);
-    expect(result).toBe('# FlowGuard Plan Review\n\n**Status:** Approved');
+    expect(result).toBe('# FlowGuard Plan Review\n\n**Status:** Approved\n\nEnd.');
   });
 
   it('throws when a title section text is empty', () => {
     const doc: ReviewCardDocument = {
       kind: 'review_card',
+      form: 'terminal',
       sections: [{ kind: 'title', text: '   ' }],
+      conclusion: { kind: 'terminal', message: 'End.' },
     };
     expect(() => renderMarkdown(doc)).toThrow(/TitleSection: text must not be empty/);
   });
@@ -101,6 +106,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'success',
       sections: [
         {
           kind: 'commandList',
@@ -126,6 +132,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         {
           kind: 'blocker',
@@ -152,6 +159,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         {
           kind: 'blocker',
@@ -190,10 +198,11 @@ describe('renderMarkdown', () => {
     );
   });
 
-  it('keeps the legacy layout for unmigrated blockers with code in the primary line', () => {
+  it('keeps the baseline layout for unmigrated blockers with code in the primary line', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         {
           kind: 'blocker',
@@ -219,6 +228,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         {
           kind: 'blocker',
@@ -249,6 +259,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         {
           kind: 'blocker',
@@ -282,6 +293,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         {
           kind: 'blocker',
@@ -312,6 +324,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'checklist',
@@ -335,6 +348,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'code',
@@ -353,6 +367,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'code',
@@ -374,6 +389,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [{ kind: 'text', content: markdown }],
       conclusion: { kind: 'terminal', message: 'End.' },
     };
@@ -386,6 +402,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'notice',
@@ -411,6 +428,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'decision',
       sections: [],
       conclusion: {
         kind: 'decision_required',
@@ -435,6 +453,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [],
       // Trailing whitespace would otherwise silently break the document
       // invariants — the renderer must fail closed.
@@ -447,6 +466,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [],
       conclusion: { kind: 'terminal', message: '' },
     };
@@ -457,6 +477,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'decision',
       sections: [],
       conclusion: {
         kind: 'decision_required',
@@ -471,6 +492,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'findings',
@@ -521,6 +543,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'artifactList',
@@ -546,9 +569,27 @@ describe('renderMarkdown', () => {
     expect(result).toContain('— ADR');
   });
 
-  it('renders review card without conclusion', () => {
+  it('rejects a card document without a form discriminator', () => {
+    const doc = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [],
+      conclusion: { kind: 'terminal', message: 'End.' },
+    } as unknown as CompactCardDocument;
+    expect(() => renderMarkdown(doc)).toThrow(/require a form discriminator/);
+  });
+
+  it('accepts form-less plan and help documents', () => {
+    const plan: PlanDocument = { kind: 'plan_document', sections: [] };
+    const help: HelpDocument = { kind: 'help_document', sections: [] };
+    expect(() => renderMarkdown(plan)).not.toThrow();
+    expect(() => renderMarkdown(help)).not.toThrow();
+  });
+
+  it('rejects a review card without a conclusion', () => {
     const doc: ReviewCardDocument = {
       kind: 'review_card',
+      form: 'terminal',
       sections: [
         {
           kind: 'keyValue',
@@ -556,14 +597,13 @@ describe('renderMarkdown', () => {
         },
       ],
     };
-    const result = renderMarkdown(doc);
-    assertRendererInvariants(result);
-    expect(result).toBe('**Status:** Review complete');
+    expect(() => renderMarkdown(doc)).toThrow(/requires exactly one conclusion/);
   });
 
   it('renders review card with conclusion', () => {
     const doc: ReviewCardDocument = {
       kind: 'review_card',
+      form: 'success',
       sections: [
         {
           kind: 'keyValue',
@@ -583,6 +623,7 @@ describe('renderMarkdown', () => {
   it('renders diagnostic card', () => {
     const doc: DiagnosticCardDocument = {
       kind: 'diagnostic_card',
+      form: 'terminal',
       sections: [
         {
           kind: 'keyValue',
@@ -612,6 +653,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         { kind: 'keyValue', items: [{ label: 'A', value: '1' }] },
         { kind: 'keyValue', items: [{ label: 'B', value: '2' }] },
@@ -627,6 +669,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [{ kind: 'keyValue', items: [{ label: 'A', value: '1' }] }],
       conclusion: { kind: 'terminal', message: 'End.' },
     };
@@ -638,6 +681,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         { kind: 'keyValue', items: [{ label: 'A', value: '1' }] },
         { kind: 'keyValue', items: [{ label: 'B', value: '2' }] },
@@ -654,6 +698,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'success',
       sections: [
         { kind: 'keyValue', items: [{ label: 'Phase', value: 'Planning' }] },
         { kind: 'keyValue', items: [{ label: 'Policy', value: 'Team' }] },
@@ -674,6 +719,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         {
           kind: 'blocker',
@@ -691,6 +737,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         { kind: 'keyValue', items: [] },
         { kind: 'commandList', items: [] },
@@ -707,6 +754,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'success',
       sections: [{ kind: 'keyValue', items: [{ label: 'A', value: '1' }] }],
       conclusion: {
         kind: 'next_action',
@@ -725,6 +773,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'success',
       sections: [],
       conclusion: {
         kind: 'next_action',
@@ -743,6 +792,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'blocked',
       sections: [
         { kind: 'blocker', code: 'MISSING', text: 'Missing evidence.', recovery: 'Run /check' },
         {
@@ -760,6 +810,7 @@ describe('renderMarkdown', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [
         {
           kind: 'code',
@@ -778,6 +829,7 @@ describe('renderMarkdown', () => {
     it('demotes an embedded H1 body under a ## heading to H3 (no H1-under-H2 inversion)', () => {
       const doc: ReviewCardDocument = {
         kind: 'review_card',
+        form: 'terminal',
         sections: [
           { kind: 'title', text: 'FlowGuard Plan Review' },
           {
@@ -786,6 +838,7 @@ describe('renderMarkdown', () => {
             content: '# Implementation Plan\n\n## Approach\n\n- a',
           },
         ],
+        conclusion: { kind: 'terminal', message: 'End.' },
       };
       const result = renderMarkdown(doc);
       // Exactly one document-level H1 (the card title), body H1 demoted to H3.
@@ -817,6 +870,7 @@ describe('renderMarkdown', () => {
     it('preserves relative heading structure when demoting', () => {
       const doc: ReviewCardDocument = {
         kind: 'review_card',
+        form: 'terminal',
         sections: [
           { kind: 'title', text: 'Card' },
           {
@@ -825,6 +879,7 @@ describe('renderMarkdown', () => {
             content: '# Top\n\n## Mid\n\n### Deep',
           },
         ],
+        conclusion: { kind: 'terminal', message: 'End.' },
       };
       const result = renderMarkdown(doc);
       expect(result).toContain('### Top');
@@ -835,6 +890,7 @@ describe('renderMarkdown', () => {
     it('strips trailing whitespace and collapses triple newlines in embedded content', () => {
       const doc: ReviewCardDocument = {
         kind: 'review_card',
+        form: 'terminal',
         sections: [
           { kind: 'title', text: 'Card' },
           {
@@ -843,6 +899,7 @@ describe('renderMarkdown', () => {
             content: 'line with trailing space   \n\n\n\nnext block',
           },
         ],
+        conclusion: { kind: 'terminal', message: 'End.' },
       };
       const result = renderMarkdown(doc);
       expect(result).not.toMatch(/[ \t]+$/m);
@@ -852,6 +909,7 @@ describe('renderMarkdown', () => {
     it('preserves code-fence content verbatim (triple newlines and indentation exempt)', () => {
       const doc: ReviewCardDocument = {
         kind: 'review_card',
+        form: 'terminal',
         sections: [
           { kind: 'title', text: 'Card' },
           {
@@ -860,6 +918,7 @@ describe('renderMarkdown', () => {
             content: '```ts\nconst x = 1;\n\n\n// keep\n```',
           },
         ],
+        conclusion: { kind: 'terminal', message: 'End.' },
       };
       const result = renderMarkdown(doc);
       expect(result).toContain('```ts\nconst x = 1;\n\n\n// keep\n```');
@@ -868,6 +927,7 @@ describe('renderMarkdown', () => {
     it('does not demote # inside a code fence', () => {
       const doc: ReviewCardDocument = {
         kind: 'review_card',
+        form: 'terminal',
         sections: [
           { kind: 'title', text: 'Card' },
           {
@@ -876,6 +936,7 @@ describe('renderMarkdown', () => {
             content: '## Real heading\n\n```sh\n# a shell comment, not a heading\n```',
           },
         ],
+        conclusion: { kind: 'terminal', message: 'End.' },
       };
       const result = renderMarkdown(doc);
       expect(result).toContain('# a shell comment, not a heading');
@@ -902,6 +963,7 @@ describe('Presentation Language forms', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [{ kind: 'notice', level: 'not_verified', message: 'Not verified.', details: [] }],
       conclusion: { kind: 'terminal', message: 'Complete.' },
     };
@@ -916,6 +978,7 @@ describe('Presentation Language forms', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
       density: 'compact',
+      form: 'terminal',
       sections: [{ kind: 'keyValue', items: [{ label: 'Root cause', value: '' }] }],
       conclusion: { kind: 'terminal', message: 'Complete.' },
     };

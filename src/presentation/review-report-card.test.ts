@@ -190,6 +190,27 @@ describe('buildReviewReportCard', () => {
     expect(card).toContain('### Notes (1)');
   });
 
+  it('shows relation details only for material findings', () => {
+    const card = buildReviewReportCard({
+      ...baseInput,
+      overallStatus: 'issues',
+      findings: [
+        materialFinding('error', 'major', 'correctness', 'Material finding'),
+        {
+          source: 'mechanical',
+          reportSeverity: 'warning',
+          category: 'mechanical',
+          message: 'Mechanical finding',
+        },
+      ],
+    });
+    expect(card).toContain('- **Correctness:** Material finding');
+    expect(card).toContain('Affected: BASE · src/subject.ts:8');
+    expect(card).toContain('- **mechanical:** Mechanical finding');
+    // Exactly one relation detail: the non-material finding carries none.
+    expect(card.match(/Affected:/g) ?? []).toHaveLength(1);
+  });
+
   it('omits evidence section when no evidence fields present', () => {
     const card = buildReviewReportCard(baseInput);
     expect(card).not.toContain('## Evidence');

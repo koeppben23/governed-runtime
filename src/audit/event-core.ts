@@ -67,7 +67,7 @@ export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v3'
  * - To verify: recompute chainHash from prevHash + event data, compare
  *
  * Actor identity (P27):
- * - `actor`: Classification label — "human", "machine", or "system" (backward-compat string)
+ * - `actor`: Classification label — "human", "machine", or "system"
  * - `actorInfo`: Optional structured identity (id, email, source). Present on
  *   human-influenced events (lifecycle, tool_call, decision). Absent on
  *   machine-only events (transition, error). When absent, JSON.stringify

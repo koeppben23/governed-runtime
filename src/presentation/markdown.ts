@@ -205,7 +205,7 @@ function renderBlocker(section: BlockerSection, warning: string): string {
   const symbol = warning;
   // Migrated codes carry human projection detail fields (canonicalMessage /
   // explanation); the reason code is diagnostic identity and moves out of the
-  // primary Blocked line into Details. Unmigrated sections keep the legacy
+  // primary Blocked line into Details. Unmigrated sections keep the baseline
   // layout byte-for-byte.
   if (section.explanation || section.canonicalMessage) {
     const lines: string[] = [`${symbol} **Blocked:** ${section.text}`];
@@ -382,7 +382,7 @@ function noticeSymbol(level: NoticeSection['level'], glyphs: PresentationGlyphs)
 function renderDetailedCommandList(section: DetailedCommandListSection): string {
   const lines: string[] = [];
   // A `## heading` (emitted centrally by the section dispatcher) supersedes the
-  // legacy inline `**label:**`. Only render the label when no heading is set.
+  // inline `**label:**`. Only render the label when no heading is set.
   const hasHeading = section.heading !== undefined && section.heading.length > 0;
   if (!hasHeading && section.label) {
     lines.push(`**${section.label}:**`);

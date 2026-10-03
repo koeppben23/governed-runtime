@@ -5,6 +5,14 @@ import {
   REVIEW_DECISION_COPY,
 } from './review-decision.js';
 import type { DirectiveProjection, ReviewDecisionProjectionInput } from './review-decision.js';
+import type { FindingRelationPresentation } from './model.js';
+
+const RELATION: FindingRelationPresentation = {
+  subjectAnchors: [
+    { kind: 'repository_location', location: { path: 'src/example.ts', revision: 'head' } },
+  ],
+  evidenceLocations: [],
+};
 
 describe('buildReviewDecisionConclusion', () => {
   it('renders every directive command verbatim at a normal gate', () => {
@@ -90,7 +98,7 @@ describe('projectReviewDecision', () => {
 
   it('blockingIssues produce not_ready readiness', () => {
     const input: ReviewDecisionProjectionInput = {
-      blockingIssues: [{ message: 'Missing null check' }],
+      blockingIssues: [{ message: 'Missing null check', relation: RELATION }],
     };
     const result = projectReviewDecision(input);
     expect(result.readiness).toBe('not_ready');
@@ -102,7 +110,7 @@ describe('projectReviewDecision', () => {
 
   it('majorRisks do NOT affect readiness', () => {
     const input: ReviewDecisionProjectionInput = {
-      majorRisks: [{ message: 'Retry behavior untested' }],
+      majorRisks: [{ message: 'Retry behavior untested', relation: RELATION }],
     };
     const result = projectReviewDecision(input);
     expect(result.readiness).toBe('ready');
@@ -112,8 +120,8 @@ describe('projectReviewDecision', () => {
 
   it('blockingIssues override majorRisks for readiness', () => {
     const input: ReviewDecisionProjectionInput = {
-      blockingIssues: [{ message: 'Missing null check' }],
-      majorRisks: [{ message: 'Retry behavior untested' }],
+      blockingIssues: [{ message: 'Missing null check', relation: RELATION }],
+      majorRisks: [{ message: 'Retry behavior untested', relation: RELATION }],
     };
     const result = projectReviewDecision(input);
     expect(result.readiness).toBe('not_ready');
@@ -123,7 +131,10 @@ describe('projectReviewDecision', () => {
 
   it('multiple blockingIssues produce plural summary', () => {
     const input: ReviewDecisionProjectionInput = {
-      blockingIssues: [{ message: 'Issue A' }, { message: 'Issue B' }],
+      blockingIssues: [
+        { message: 'Issue A', relation: RELATION },
+        { message: 'Issue B', relation: RELATION },
+      ],
     };
     const result = projectReviewDecision(input);
     expect(result.summary).toContain('2 blocking issues');
@@ -155,7 +166,7 @@ describe('projectReviewDecision', () => {
 
   it('preserves findingId when present', () => {
     const input: ReviewDecisionProjectionInput = {
-      blockingIssues: [{ message: 'Issue', findingId: 'abc-123' }],
+      blockingIssues: [{ message: 'Issue', relation: RELATION, findingId: 'abc-123' }],
     };
     const result = projectReviewDecision(input);
     expect(result.blockers[0]!.findingId).toBe('abc-123');
@@ -163,7 +174,7 @@ describe('projectReviewDecision', () => {
 
   it('omits findingId when absent', () => {
     const input: ReviewDecisionProjectionInput = {
-      blockingIssues: [{ message: 'Issue' }],
+      blockingIssues: [{ message: 'Issue', relation: RELATION }],
     };
     const result = projectReviewDecision(input);
     expect(result.blockers[0]!.findingId).toBeUndefined();
