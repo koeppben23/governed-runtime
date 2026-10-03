@@ -15,6 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { appendAuditEvent } from '../persistence-audit.js';
 import type { ArchiveFinding, ArchiveManifest } from '../../archive/types.js';
+import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
 import type { AuditEvent } from '../../state/evidence.js';
 import type { TimestampEvidence } from '../../state/evidence-timestamp.js';
 import type { SessionState } from '../../state/schema.js';
@@ -102,7 +103,7 @@ async function appendEvent(
 
 function manifest(overrides: Partial<ArchiveManifest> = {}): ArchiveManifest {
   return {
-    schemaVersion: 'archive-manifest.v3',
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
     layoutVersion: 2,
     createdAt: AT,
     sessionId: SESSION_UUID,

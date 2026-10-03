@@ -12,6 +12,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ArchiveFinding, ArchiveManifest } from '../../archive/types.js';
+import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
 import { computeArchiveContentDigest } from '../../archive/content-digest.js';
 import { hashBuffer } from '../../shared/hashing.js';
 import { makeState } from '../../fixtures.js';
@@ -25,7 +26,7 @@ afterEach(async () => {
 
 function baseManifest(): ArchiveManifest {
   return {
-    schemaVersion: 'archive-manifest.v3',
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
     layoutVersion: 2,
     createdAt: '2026-01-01T00:00:00.000Z',
     sessionId: 'session-1',

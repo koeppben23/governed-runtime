@@ -17,10 +17,13 @@
  * fields (policy mode, audit head/count, identity) could be mutated without
  * detection. Any change to a covered field invalidates the digest (fail-closed).
  *
- * Formula epoch: `archive-manifest.v3`. The v2 header was serialized with a
- * literal-insertion-order `JSON.stringify`, so routing it through the canonical
- * serializer intentionally changes the digest bytes. v2 archives fail closed
- * at schema validation; there is no dual-formula compatibility path.
+ * Digest epoch: `archive-manifest.v4`. The formula is unchanged from v3
+ * (canonical header plus length-framed parts), but `schemaVersion` is an
+ * integrity-covered field, so v4 manifests produce v4-specific digest bytes.
+ * The v2 header was serialized with a literal-insertion-order `JSON.stringify`,
+ * so routing it through the canonical serializer intentionally changed the
+ * digest bytes. Older archives fail closed at schema validation; there is no
+ * dual-formula compatibility path.
  *
  * Pure module: no I/O, no logging, no side effects. Both the archive builder
  * and verifier call this so there is no parallel/duplicate digest formula.

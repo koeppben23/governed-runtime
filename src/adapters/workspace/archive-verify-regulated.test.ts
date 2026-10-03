@@ -89,7 +89,7 @@ function decisionEvent(overrides: Record<string, unknown> = {}): ChainedAuditEve
       ...overrides,
     }),
     event: 'decision:DEC-001',
-    actor: 'reviewer-1',
+    actor: 'human',
   };
 }
 
@@ -238,17 +238,26 @@ describe('verifyRegulatedCompletionCompleteness', () => {
     );
   });
 
-  it.each([
-    { actor: 'reviewer-1', label: 'the legacy deciding-authority actor field' },
-    { actor: 'human', label: 'the policy classification actor field' },
-  ])('accepts $label while binding identity via decisionIdentity ($actor)', ({ actor }) => {
+  it('accepts the frozen policy classification while binding identity via decisionIdentity', () => {
     const events = boundCompletionEvents();
-    events[1] = { ...events[1]!, actor };
+    events[1] = { ...events[1]!, actor: 'human' };
     const { codes } = run(regulatedCompleteState(), events);
     expect(codes).toEqual([]);
   });
 
-  it('rejects a receipt actor that is neither the classification nor the deciding authority', () => {
+  it('rejects the pre-classification deciding-authority actor field (hard cut)', () => {
+    const events = boundCompletionEvents();
+    events[1] = { ...events[1]!, actor: 'reviewer-1' };
+    const { findings } = run(regulatedCompleteState(), events);
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        code: 'regulated_terminal_decision_invalid',
+        message: expect.stringContaining('classification'),
+      }),
+    );
+  });
+
+  it('rejects a receipt actor that is not the classification', () => {
     const events = boundCompletionEvents();
     events[1] = { ...events[1]!, actor: 'machine' };
     const { codes } = run(regulatedCompleteState(), events);

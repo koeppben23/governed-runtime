@@ -35,8 +35,15 @@ import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
  * instead of literal insertion order, and multi-part input is length-framed.
  * This intentionally changes the digest bytes, so v2 archives fail closed via
  * schema validation. There is no dual-formula compatibility path.
+ *
+ * v4 (breaking, no legacy path): the regulated completion verifier accepts
+ * exactly one decision-receipt actor representation — the frozen policy
+ * classification for the decision tool, with the `system` fallback when the
+ * classification map omits it. The pre-classification actor-id form is
+ * rejected. Because `schemaVersion` is integrity-covered, v4 digests differ
+ * from v3; v3 archives fail closed via schema validation.
  */
-export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v3' as const;
+export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v4' as const;
 export const ARCHIVE_LAYOUT_VERSION = 2 as const;
 
 /**

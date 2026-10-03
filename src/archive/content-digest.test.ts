@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { computeArchiveContentDigest, type ArchiveContentDigestInput } from './content-digest.js';
+import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from './types.js';
 
 const DIGEST_A = 'a'.repeat(64);
 const DIGEST_B = 'b'.repeat(64);
@@ -15,7 +16,7 @@ const DIGEST_C = 'c'.repeat(64);
 
 function baseInput(): ArchiveContentDigestInput {
   return {
-    schemaVersion: 'archive-manifest.v3',
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
     layoutVersion: 2,
     sessionId: 'ses_test',
     fingerprint: '1234567890abcdef12345678',
@@ -39,19 +40,19 @@ describe('computeArchiveContentDigest', () => {
     expect(computeArchiveContentDigest(input)).toBe(computeArchiveContentDigest(input));
   });
 
-  it('COMPATIBILITY: pins the v3 canonical digest golden vector', () => {
+  it('COMPATIBILITY: pins the v4 canonical digest golden vector', () => {
     // The digest is a persistence/integrity contract. If this vector changes,
-    // the digest formula changed and the manifest schema version MUST change
-    // with it — never silently.
+    // the digest formula or its integrity-covered inputs changed and the
+    // manifest schema version MUST change with it — never silently.
     expect(computeArchiveContentDigest(baseInput())).toBe(
-      '9f45203d0d839c01d57d27b5557b92042f8d701d36c1d9de37b48fc8e4868c8d',
+      '63e2771236b50cf025c3acca879acef71c8dc34e91f051216e6d58eaf81021cf',
     );
   });
 
-  it('COMPATIBILITY: the retired v2 literal-order digest differs from the v3 canonical digest', () => {
+  it('COMPATIBILITY: the retired v2 literal-order digest differs from the current canonical digest', () => {
     // v2 serialized the integrity header with literal insertion order. The
     // canonical serializer sorts keys, so the epoch boundary must be real:
-    // there is no silent byte carry-over between v2 and v3.
+    // there is no silent byte carry-over between v2 and the current epoch.
     const input: ArchiveContentDigestInput = {
       ...baseInput(),
       schemaVersion: 'archive-manifest.v2',
@@ -76,7 +77,7 @@ describe('computeArchiveContentDigest', () => {
   });
 
   it.each([
-    ['schemaVersion', { schemaVersion: 'archive-manifest.v4' }],
+    ['schemaVersion', { schemaVersion: 'archive-manifest.v3' }],
     ['layoutVersion', { layoutVersion: 3 }],
     ['sessionId', { sessionId: 'ses_other' }],
     ['fingerprint', { fingerprint: 'fedcba0987654321fedcba09' }],

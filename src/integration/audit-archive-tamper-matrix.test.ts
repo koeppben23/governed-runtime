@@ -851,11 +851,13 @@ describe('audit/archive tamper matrix', () => {
   });
 
   it.skipIf(!tarOk)(
-    'legacy v2 manifest schema -> manifest_parse_error (hard epoch boundary)',
+    'legacy v3 manifest schema -> manifest_parse_error (hard epoch boundary)',
     async () => {
-      // The v3 digest epoch is a hard cut: an older manifest schema must fail
-      // closed at the verifier with manifest_parse_error, never be re-read
-      // under the current formula.
+      // The v4 digest/actor epoch is a hard cut: an older manifest schema must
+      // fail closed at the verifier with manifest_parse_error, never be re-read
+      // under the current formula. v3 remains the immediately retired epoch —
+      // its receipt-actor form is rejected here at the schema boundary rather
+      // than later as regulated_terminal_decision_invalid.
       const ids = await completeRegulatedSession();
       await mutateArchive(ids, async (root) => {
         const manifestPath = path.join(root, 'archive-manifest.json');
@@ -863,8 +865,8 @@ describe('audit/archive tamper matrix', () => {
           string,
           unknown
         >;
-        expect(manifest.schemaVersion).toBe('archive-manifest.v3');
-        manifest.schemaVersion = 'archive-manifest.v2';
+        expect(manifest.schemaVersion).toBe('archive-manifest.v4');
+        manifest.schemaVersion = 'archive-manifest.v3';
         await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
       });
 
