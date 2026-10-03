@@ -12,6 +12,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ArchiveFinding, ArchiveManifest } from '../../archive/types.js';
+import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
 import { verifyArtifactBinding } from './archive-verify-artifact-binding.js';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -29,7 +30,7 @@ async function createRoot(): Promise<string> {
 
 function manifest(overrides: Partial<ArchiveManifest> = {}): ArchiveManifest {
   return {
-    schemaVersion: 'archive-manifest.v3',
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
     layoutVersion: 2,
     createdAt: AT,
     sessionId: 'session-1',

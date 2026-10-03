@@ -71,7 +71,7 @@ Each archive includes an `archive-manifest.json`:
 
 ```json
 {
-  "schemaVersion": "archive-manifest.v3",
+  "schemaVersion": "archive-manifest.v4",
   "layoutVersion": 2,
   "createdAt": "2026-04-15T10:00:00.000Z",
   "sessionId": "uuid",
@@ -94,9 +94,9 @@ Each archive includes an `archive-manifest.json`:
 
 ### Manifest schema versions
 
-`archive-manifest.v3` is a **breaking** schema with **no legacy compatibility
-path**. v1 and v2 archives are hard-rejected at verification: the older schema
-versions fail `ArchiveManifestSchema` validation and surface as
+`archive-manifest.v4` is a **breaking** schema with **no legacy compatibility
+path**. v1, v2, and v3 archives are hard-rejected at verification: the older
+schema versions fail `ArchiveManifestSchema` validation and surface as
 `manifest_parse_error` (fail-closed). There is no in-place upgrade — an older
 archive must be re-sealed by re-running archive creation against its source
 session.
@@ -117,6 +117,14 @@ digests are combined with the canonical length-framed multi-part hash. The
 covered field set is unchanged, but the digest bytes intentionally differ from
 v2; v2 archives fail closed instead of being silently re-interpreted.
 
+The v4 change hardens the regulated completion receipt actor: the verifier
+accepts exactly one representation, the frozen policy classification for
+`flowguard_decision` (with the `system` fallback when the classification map
+omits the tool). A receipt actor that only matches `decisionIdentity.actorId`
+is rejected as `regulated_terminal_decision_invalid`. Because `schemaVersion`
+is integrity-covered, v4 digest bytes differ from v3; v3 archives fail closed
+at schema validation rather than being re-interpreted.
+
 ## Verification
 
 FlowGuard provides `verifyArchive(fingerprint, sessionId)` to validate the
@@ -127,7 +135,7 @@ binding against the originating session. It does not accept a package path.
 An auditor who received only the package and has no access to the originating
 workspace uses the standalone offline verifier shipped with the Java demo
 (`demos/java-task-manager/verify-evidence-package.mjs`): it validates the
-embedded `archive-manifest.v3`, recomputes file and content digests with the
+embedded `archive-manifest.v4`, recomputes file and content digests with the
 canonical primitives, verifies the archived audit chain, and checks the
 expected session assignment. It cannot reproduce the external publication
 binding and does not cryptographically validate TSA tokens offline; its exact

@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { hashBuffer } from '../../shared/hashing.js';
 import type { ArchiveFinding, ArchiveManifest } from '../../archive/types.js';
+import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
 import { checkUnexpectedFiles, verifyManifestFiles } from './archive-verify-manifest.js';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -26,7 +27,7 @@ async function createSession(files: Record<string, string>): Promise<string> {
 
 function manifest(files: Record<string, string>): ArchiveManifest {
   return {
-    schemaVersion: 'archive-manifest.v3',
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
     layoutVersion: 2,
     createdAt: '2026-01-01T00:00:00.000Z',
     sessionId: 'session',

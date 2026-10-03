@@ -460,6 +460,18 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING — archive manifest v4: regulated receipt actor hard cut.**
+  `ARCHIVE_MANIFEST_SCHEMA_VERSION` is now `archive-manifest.v4`. The regulated
+  completion verifier accepts exactly one decision-receipt actor
+  representation — the frozen policy classification for `flowguard_decision`
+  (with the `system` fallback when the classification map omits the tool). The
+  pre-classification `decisionIdentity.actorId` form is rejected as
+  `regulated_terminal_decision_invalid` instead of being tolerated. Because
+  `schemaVersion` is integrity-covered, v4 content digests differ from v3;
+  `v1`–`v3` archives fail closed with `manifest_parse_error` at schema
+  validation. `audit-chain.v3`, session state, and the decision-receipt
+  projection are unchanged.
+
 - **BREAKING — reduced ceremony is now post-verification and digest-bound (#819).**
   The persisted session schema is `v7`: `ImplEvidence` and implementation-scope
   `ValidationAttempt` carry a required `implementationId`, and

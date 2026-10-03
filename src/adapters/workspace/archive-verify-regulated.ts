@@ -202,32 +202,28 @@ function addDecisionBindingFindings(
     });
   }
   addDecisionIdentityBindingFindings(findings, detail, decision.decisionIdentity);
-  addDecisionActorBindingFindings(findings, event, decision, actorClassification);
+  addDecisionActorBindingFindings(findings, event, actorClassification);
 }
 
 /**
- * The receipt actor must be either the frozen policy classification for the
- * decision tool (current receipts) or the deciding actor id (archives created
- * before the classification contract). Every other value is a contradiction
- * inside the audit envelope and fails closed. The producer falls back to
- * `system` when the classification map omits the decision tool, so the
- * verifier applies the same fallback.
+ * The receipt actor must be the frozen policy classification for the decision
+ * tool. Every other value is a contradiction inside the audit envelope and
+ * fails closed. The producer falls back to `system` when the classification
+ * map omits the decision tool, so the verifier applies the same fallback.
+ * The pre-classification actor-id form is not accepted.
  */
 function addDecisionActorBindingFindings(
   findings: ArchiveFinding[],
   event: ChainedAuditEvent,
-  decision: NonNullable<SessionState['reviewDecision']>,
   actorClassification: Readonly<Record<string, string>>,
 ): void {
   const frozenClassification = actorClassification['flowguard_decision'] ?? 'system';
-  const matchesLegacyActorId = event.actor === decision.decisionIdentity.actorId;
-  const matchesFrozenClassification = event.actor === frozenClassification;
-  if (!matchesLegacyActorId && !matchesFrozenClassification) {
+  if (event.actor !== frozenClassification) {
     findings.push({
       code: 'regulated_terminal_decision_invalid',
       severity: 'error',
       message:
-        'Regulated completion decision receipt actor is neither the frozen policy classification nor the deciding authority',
+        'Regulated completion decision receipt actor is not the frozen policy classification',
       file: 'audit/audit.jsonl',
     });
   }
