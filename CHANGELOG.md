@@ -460,6 +460,16 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING — repository signals fail closed when git is unavailable.**
+  `listRepoSignals` no longer collapses git failures into empty signals:
+  `GIT_NOT_FOUND`, `GIT_TIMEOUT`, `GIT_COMMAND_FAILED`, and `NOT_GIT_REPO`
+  (normalized outside a repository) propagate as typed `GitError`s, and
+  `flowguard_hydrate` aborts with `DISCOVERY_RESULT_MISSING` while preserving
+  the git cause in the message. Previously an empty signal list could classify
+  as an empty risk surface (`discoveryRiskPaths` → `TRIVIAL`), so a missing
+  repository could weaken risk classification instead of blocking. Unexpected
+  (non-git) errors keep propagating unmasked.
+
 - **BREAKING — repository signal paths are the canonical `RepoSignals` representation.**
   The exported `RepoSignals` type now carries `files`, `packageFilePaths`, and
   `configFilePaths` only; the `packageFiles` / `configFiles` basename fields were

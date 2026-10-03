@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
@@ -23,6 +23,18 @@ import { writeRepoConfig } from '../../adapters/persistence-config.js';
 import { createPolicySnapshot } from '../../config/policy-snapshot.js';
 import { hashText } from '../../shared/hashing.js';
 import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
+
+vi.mock('../../adapters/git', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+  return {
+    ...actual,
+    listRepoSignals: vi.fn().mockResolvedValue({
+      files: [],
+      packageFilePaths: [],
+      configFilePaths: [],
+    }),
+  };
+});
 
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,

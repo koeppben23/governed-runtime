@@ -357,16 +357,23 @@ describe('git adapter behavior contracts', () => {
       expect(signals.packageFilePaths).toContain('package.json');
     });
 
-    it('returns empty signals outside a repository', async () => {
+    it('fails closed outside a repository instead of returning empty signals', async () => {
       const plain = path.join(tmpDir, 'plain');
       await fs.mkdir(plain);
 
-      const signals = await listRepoSignals(plain);
-      expect(signals).toEqual({
-        files: [],
-        packageFilePaths: [],
-        configFilePaths: [],
-      });
+      await expect(listRepoSignals(plain)).rejects.toSatisfy(
+        (err: unknown) => gitErrorCode(err) === 'NOT_GIT_REPO',
+      );
+    });
+
+    it('preserves GIT_COMMAND_FAILED for a corrupt repository instead of returning empty signals', async () => {
+      const corrupt = path.join(tmpDir, 'corrupt-signals');
+      await fs.mkdir(corrupt);
+      await fs.writeFile(path.join(corrupt, '.git'), 'garbage not a gitfile', 'utf8');
+
+      await expect(listRepoSignals(corrupt)).rejects.toSatisfy(
+        (err: unknown) => gitErrorCode(err) === 'GIT_COMMAND_FAILED',
+      );
     });
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import { status, hydrate } from './index.js';
 import {
@@ -10,6 +10,18 @@ import {
   withTestEnv,
 } from '../test-helpers.js';
 import { readState, writeState } from '../../adapters/persistence.js';
+
+vi.mock('../../adapters/git', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+  return {
+    ...actual,
+    listRepoSignals: vi.fn().mockResolvedValue({
+      files: [],
+      packageFilePaths: [],
+      configFilePaths: [],
+    }),
+  };
+});
 
 let ctx: TestToolContext;
 let ws: TestWorkspace;

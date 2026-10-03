@@ -47,6 +47,7 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { GitError } from '../adapters/git-command.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
   const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
@@ -573,10 +574,31 @@ describe('hydrate', () => {
     });
 
     it('fails closed when repo signals are unavailable on fresh hydrate', async () => {
-      vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce(undefined as never);
+      vi.mocked(gitMock.listRepoSignals).mockRejectedValueOnce(
+        new GitError('NOT_GIT_REPO', 'Directory is not inside a git repository: /plain'),
+      );
       const result = await hydrateSession();
       expect(result.error).toBe(true);
       expect(result.code).toBe('DISCOVERY_RESULT_MISSING');
+      expect(result.message).toContain('NOT_GIT_REPO');
+    });
+
+    it('preserves a missing git executable as a discovery failure on fresh hydrate', async () => {
+      vi.mocked(gitMock.listRepoSignals).mockRejectedValueOnce(
+        new GitError('GIT_NOT_FOUND', 'git executable not found in PATH. Ensure git is installed.'),
+      );
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('DISCOVERY_RESULT_MISSING');
+      expect(result.message).toContain('GIT_NOT_FOUND');
+    });
+
+    it('propagates unexpected repository-signal errors instead of masking them', async () => {
+      vi.mocked(gitMock.listRepoSignals).mockRejectedValueOnce(new TypeError('boom'));
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INTERNAL_ERROR');
+      expect(result.message).toContain('boom');
     });
 
     it('maps actor claim resolution errors to structured hydrate errors', async () => {

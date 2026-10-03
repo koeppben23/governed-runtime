@@ -9,7 +9,8 @@
  */
 
 import * as path from 'node:path';
-import { git, gitRaw } from './git-command.js';
+import { GitError, git, gitRaw } from './git-command.js';
+import { isNotRepoFailure, notGitRepoError } from './git-repo.js';
 
 /**
  * Known package/dependency manifest basenames — exact matches.
@@ -233,7 +234,8 @@ export async function hashWorktreeFiles(
  *
  * Uses a single NUL-delimited `git ls-files --cached --others --exclude-standard`
  * invocation, so tracked and untracked paths are enumerated verbatim (no
- * C-quoting, no newline parsing).
+ * C-quoting, no newline parsing). A git failure propagates as a typed GitError
+ * (`NOT_GIT_REPO` outside a repository); signals are never silently emptied.
  *
  * Performance: On very large repos, this returns all root-level relevant files.
  * The profile detect() functions only check for specific filenames, so even
@@ -247,10 +249,15 @@ export async function listRepoSignals(worktree: string): Promise<{
   let raw: string;
   try {
     raw = await gitRaw(worktree, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
-  } catch {
-    // Historical fail-soft contract: a git failure yields empty signals.
-    // The next commit replaces this with the explicit fail-closed behavior.
-    return { files: [], packageFilePaths: [], configFilePaths: [] };
+  } catch (err) {
+    if (
+      err instanceof GitError &&
+      err.code === 'GIT_COMMAND_FAILED' &&
+      isNotRepoFailure(err.message)
+    ) {
+      throw notGitRepoError(worktree);
+    }
+    throw err;
   }
   const allFiles = raw
     .split('\0')
