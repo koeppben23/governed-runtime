@@ -113,11 +113,17 @@ export const SessionStateReviewEvidenceShape = {
   /** Human review-cycle counters for the governed loops; REQUIRED — see `review-cycles.ts`. */
   reviewCycles: ReviewCycles,
 
-  /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
-  implReviewFindings: z.array(ReviewFindings).optional(),
+  /**
+   * Independent review findings for /implement (parallel, NOT mixed with
+   * ImplEvidence). REQUIRED — no findings is the empty array.
+   */
+  implReviewFindings: z.array(ReviewFindings),
 
-  /** Independent review findings for standalone /review, retained append-only for audit. */
-  peerReviewFindings: z.array(ReviewFindings).optional(),
+  /**
+   * Independent review findings for standalone /review, retained append-only
+   * for audit. REQUIRED — no findings is the empty array.
+   */
+  peerReviewFindings: z.array(ReviewFindings),
 
   /** P35 strict independent-review obligations and invocation evidence. */
   reviewAssurance: ReviewAssuranceState.optional(),

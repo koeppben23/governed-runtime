@@ -188,7 +188,7 @@ export function appendImplReviewState(input: {
       verdict: runtime.args.reviewVerdict as LoopVerdict,
       executedAt: runtime.ctx.now(),
     },
-    implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
+    implReviewFindings: newReviewFindings,
     reviewAssurance: {
       ...consumedAssurance,
     },

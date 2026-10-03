@@ -32,7 +32,7 @@ import {
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v9' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v10' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 

@@ -22,6 +22,7 @@ describe('evidence-architecture', () => {
         status: 'proposed' as const,
         createdAt: FIXED_TIME,
         digest: 'sha256-adr',
+        reviewFindings: [],
         reviewCompletion: 'pending' as const,
       };
       expect(ArchitectureDecision.parse(adr)).toEqual(adr);
@@ -107,6 +108,7 @@ describe('evidence-architecture', () => {
         title: 'Exhausted ADR',
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         status: 'proposed' as const,
+        reviewFindings: [],
         reviewCompletion: 'review_exhausted' as const,
         createdAt: FIXED_TIME,
         digest: 'content-digest',
@@ -123,6 +125,7 @@ describe('evidence-architecture', () => {
           title: 'Test',
           adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
           status: 'proposed',
+          reviewFindings: [],
           reviewCompletion: 'accepted',
           createdAt: FIXED_TIME,
           digest: 'abc',

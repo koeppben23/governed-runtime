@@ -97,6 +97,20 @@ describe('session-state current epoch boundary', () => {
     });
   });
 
+  it('rejects an otherwise current v9 snapshot at the read boundary (immediate predecessor)', async () => {
+    const fp = await computeFingerprint(ctx.worktree);
+    const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await fs.writeFile(
+      statePath(sessDir),
+      `${JSON.stringify({ ...makeState(), schemaVersion: 'v9' }, null, 2)}\n`,
+      'utf-8',
+    );
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
   it('rejects an otherwise current v8 snapshot at the read boundary (immediate predecessor)', async () => {
     const fp = await computeFingerprint(ctx.worktree);
     const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);

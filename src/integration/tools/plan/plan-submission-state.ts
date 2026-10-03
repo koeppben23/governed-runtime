@@ -29,7 +29,7 @@ import {
   createObligationAndAttempt,
 } from '../../review/obligations/assurance.js';
 import type { PlanEvidence } from '../../../state/evidence.js';
-import { computeRecordDigest } from '../../../state/evidence-plan.js';
+import { carriedPlanReviewFindings, computeRecordDigest } from '../../../state/evidence-plan.js';
 import { emptyClaimDeclarations, normalizePlanClaims } from '../../../state/proofgraph-approval.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewObligationInput } from './plan-response.js';
@@ -178,7 +178,7 @@ export function buildPlanSubmissionState(
       history,
       // Host-captured review findings are append-only and are only ever
       // written by handlePlanReview from the resolved structured evidence.
-      reviewFindings: scope.state.plan?.reviewFindings,
+      reviewFindings: carriedPlanReviewFindings(scope.state.plan),
       claimDeclarations: submittedPlanClaimDeclarations(scope),
       claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
       claimSubmissionHistory: appendClaimSubmissionHistory(scope, planVersion),

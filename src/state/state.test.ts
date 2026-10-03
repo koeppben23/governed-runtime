@@ -533,6 +533,7 @@ describe('state schemas', () => {
       const record = {
         current: makePlanRevision({ body: 'Plan', createdAt: FIXED_TIME }),
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending' as const,
       };
       expect(() => PlanRecord.parse(record)).not.toThrow();
@@ -602,12 +603,9 @@ describe('state schemas', () => {
       expect(() => ReviewObligationType.parse('')).toThrow();
     });
 
-    it('ArchitectureDecision accepts optional reviewFindings array (F13 slice 7c)', () => {
-      // F13 slice 7c adds an optional reviewFindings array to ArchitectureDecision
-      // mirroring plan.reviewFindings and implementation.reviewFindings, so the
-      // independent review history of an ADR is auditable across iterations.
-      // The field MUST be optional for backwards-compat with sessions created
-      // before F13 — schema MUST accept both absent and empty array.
+    it('ArchitectureDecision requires the reviewFindings array', () => {
+      // v10 requires the independent review history on every ADR: no findings
+      // is the empty array, never an absent field.
       const baseAdr = {
         id: 'ADR-1',
         title: 'Test',
@@ -617,9 +615,9 @@ describe('state schemas', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         digest: 'sha256-deadbeef',
       };
-      // Absent reviewFindings: valid (legacy).
-      expect(() => ArchitectureDecision.parse(baseAdr)).not.toThrow();
-      // Empty array: valid (initial state after F13).
+      // Absent reviewFindings: rejected.
+      expect(() => ArchitectureDecision.parse(baseAdr)).toThrow();
+      // Empty array: valid.
       expect(() => ArchitectureDecision.parse({ ...baseAdr, reviewFindings: [] })).not.toThrow();
       // Populated array of well-formed ReviewFindings: valid.
       const findings = {

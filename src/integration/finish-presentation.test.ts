@@ -325,6 +325,7 @@ describe('buildFinishDocument', () => {
       plan: {
         current,
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
         claimDeclarations: declarations,
         approvalCertificate: certificate,

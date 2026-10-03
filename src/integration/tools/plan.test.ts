@@ -220,7 +220,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       }
     });
 
-    it('PlanRecord allows missing reviewFindings (backward compat)', async () => {
+    it('PlanRecord rejects missing reviewFindings (v10 requires the history)', async () => {
       const { PlanRecord } = await import('../../state/evidence.js');
 
       const recordWithoutReview = {
@@ -230,7 +230,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       };
 
       const result = PlanRecord.safeParse(recordWithoutReview);
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(() => PlanRecord.parse({ ...recordWithoutReview, reviewFindings: [] })).not.toThrow();
     });
   });
 });

@@ -112,7 +112,7 @@ function stateWith(opts: {
     ...makeState('IMPLEMENTATION'),
     reviewAssurance: assuranceWith({ obligations: opts.obligations }),
     implementationRework: opts.rework ?? null,
-    implReviewFindings: opts.findings.length > 0 ? opts.findings : undefined,
+    implReviewFindings: opts.findings,
   };
 }
 

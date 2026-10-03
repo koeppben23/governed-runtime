@@ -156,6 +156,7 @@ export const ARCHITECTURE_DECISION: ArchitectureDecision = {
     '## Context\nWe need a database.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.',
   status: 'proposed',
   reviewCompletion: 'pending',
+  reviewFindings: [],
   createdAt: FIXED_TIME,
   digest: 'digest-of-adr',
 };
@@ -455,6 +456,7 @@ export const PLAN_EVIDENCE: PlanEvidence = {
 export const PLAN_RECORD: PlanRecord = {
   current: PLAN_EVIDENCE,
   history: [],
+  reviewFindings: [],
   reviewCompletion: 'pending',
 };
 
@@ -653,6 +655,8 @@ export function makeState(
     reviewDecision: null,
     reviewReportPath: null,
     peerReviewEvidence: [],
+    implReviewFindings: [],
+    peerReviewFindings: [],
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ['test', 'lint'],

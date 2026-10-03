@@ -104,6 +104,7 @@ export function executeArchitecture(
     adrText,
     status: 'proposed',
     reviewCompletion: 'pending',
+    reviewFindings: [],
     createdAt: ctx.now(),
     digest: ctx.digest(adrText),
     ...(input.claims

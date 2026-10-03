@@ -227,7 +227,7 @@ describe('verdict-only structured evidence consumption', () => {
     );
     expect(invocation?.consumedByObligationId).toBe(obligationId);
     expect(state.peerReviewFindings).toHaveLength(1);
-    expect(state.peerReviewFindings![0]!.reviewedBy.sessionId).toBe(REVIEWER_SESSION_ID);
+    expect(state.peerReviewFindings[0]!.reviewedBy.sessionId).toBe(REVIEWER_SESSION_ID);
   });
 
   it('BAD: explicit obligation without bound evidence re-emits its native dispatch authority', async () => {

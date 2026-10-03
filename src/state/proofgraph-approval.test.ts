@@ -146,6 +146,7 @@ describe('ProofGraph approval schemas', () => {
           plan: {
             current: makePlanRevision({ body: 'Plan', createdAt: NOW }),
             history: [],
+            reviewFindings: [],
             reviewCompletion: 'pending',
             approvalCertificate: {
               ...CERTIFICATE,
@@ -170,6 +171,7 @@ describe('ProofGraph approval schemas', () => {
         plan: {
           current,
           history: [],
+          reviewFindings: [],
           reviewCompletion: 'pending',
           claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
           approvalCertificate: {

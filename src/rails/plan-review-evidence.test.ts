@@ -63,6 +63,7 @@ describe('enforcePlanReviewEvidence', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
+        reviewFindings: [],
         claimDeclarations: declarations,
         reviewCompletion: 'reviewer_accepted',
       },
@@ -88,6 +89,7 @@ describe('enforcePlanReviewEvidence', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
+        reviewFindings: [],
         reviewCompletion: 'reviewer_accepted',
       },
     });
@@ -112,6 +114,7 @@ describe('enforcePlanReviewEvidence', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
+        reviewFindings: [],
         claimDeclarations: declarations,
         reviewCompletion: 'reviewer_accepted',
       },
@@ -222,6 +225,7 @@ describe('plan approval certificate authority (version-tuple binding)', () => {
       plan: {
         current: { ...PLAN_RECORD.current, planVersion: 2 },
         history: [PLAN_RECORD.current],
+        reviewFindings: [],
         reviewCompletion: 'reviewer_accepted',
       },
       reviewAssurance: assuranceChain([

@@ -321,6 +321,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       title: 'Test Decision',
       adrText: '## Context\nTest\n## Decision\nTest\n## Consequences\nTest',
       status: 'proposed',
+      reviewFindings: [],
       reviewCompletion: 'pending',
       digest: 'adr-digest',
       createdAt: new Date().toISOString(),

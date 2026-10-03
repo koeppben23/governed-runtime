@@ -433,7 +433,7 @@ export async function handleImplRecord(
     // implementation always invalidates any prior decision.
     reducedCeremony: null,
     implReview: null,
-    implReviewFindings: existingFindings.length > 0 ? existingFindings : undefined,
+    implReviewFindings: existingFindings,
     reviewAssurance: input.state.reviewAssurance,
     error: null,
   };

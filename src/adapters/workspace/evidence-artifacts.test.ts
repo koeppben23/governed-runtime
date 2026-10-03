@@ -67,7 +67,12 @@ describe('evidence-artifacts', () => {
     it('materializes ticket and plan artifacts for a new plan', async () => {
       const state = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
 
@@ -83,7 +88,12 @@ describe('evidence-artifacts', () => {
     it('writes metadata with sourceStateHash and contentHash', async () => {
       const state = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -100,7 +110,12 @@ describe('evidence-artifacts', () => {
     it('rejects invalid sourceStateHash format in artifact metadata', async () => {
       const state = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -130,7 +145,7 @@ describe('evidence-artifacts', () => {
       });
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: newer, history: [older], reviewCompletion: 'pending' },
+        plan: { current: newer, history: [older], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -145,7 +160,12 @@ describe('evidence-artifacts', () => {
     it('fails verification when current plan hash mismatches', async () => {
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -163,7 +183,12 @@ describe('evidence-artifacts', () => {
     it('fails verification when markdown artifact is tampered', async () => {
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -205,7 +230,12 @@ describe('evidence-artifacts', () => {
     it('fails verification when artifact metadata version mismatches filename version', async () => {
       const state = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -223,7 +253,12 @@ describe('evidence-artifacts', () => {
     it('fails verification when artifact markdownPath mismatches filename', async () => {
       const state = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -285,7 +320,7 @@ describe('evidence-artifacts', () => {
       });
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v3, history: [v2, v1], reviewCompletion: 'pending' },
+        plan: { current: v3, history: [v2, v1], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -302,7 +337,12 @@ describe('evidence-artifacts', () => {
     it('is idempotent when materialized twice for same state', async () => {
       const state = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -348,7 +388,12 @@ describe('evidence-artifacts', () => {
 
       const planState = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, planState);
       await materializeEvidenceArtifacts(sessionDir, planState);
@@ -360,14 +405,24 @@ describe('evidence-artifacts', () => {
     it('does not create plan.v2 when phase changes but plan digest stays the same', async () => {
       const planState = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, planState);
       await materializeEvidenceArtifacts(sessionDir, planState);
 
       const validationState = makeState('VALIDATION', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, validationState);
       await materializeEvidenceArtifacts(sessionDir, validationState);
@@ -388,7 +443,7 @@ describe('evidence-artifacts', () => {
       });
       const firstState = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v1, history: [], reviewCompletion: 'pending' },
+        plan: { current: v1, history: [], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, firstState);
       await materializeEvidenceArtifacts(sessionDir, firstState);
@@ -401,7 +456,7 @@ describe('evidence-artifacts', () => {
       });
       const secondState = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v2, history: [v1], reviewCompletion: 'pending' },
+        plan: { current: v2, history: [v1], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, secondState);
       await materializeEvidenceArtifacts(sessionDir, secondState);
@@ -441,7 +496,7 @@ describe('evidence-artifacts', () => {
 
       const firstState = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v1, history: [], reviewCompletion: 'pending' },
+        plan: { current: v1, history: [], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, firstState);
       await materializeEvidenceArtifacts(sessionDir, firstState);
@@ -456,7 +511,7 @@ describe('evidence-artifacts', () => {
       });
       const thirdState = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v3, history: [v2, v1], reviewCompletion: 'pending' },
+        plan: { current: v3, history: [v2, v1], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, thirdState);
       await materializeEvidenceArtifacts(sessionDir, thirdState);
@@ -483,7 +538,12 @@ describe('evidence-artifacts', () => {
       });
       const firstState = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: firstLineageV1, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: firstLineageV1,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, firstState);
       await materializeEvidenceArtifacts(sessionDir, firstState);
@@ -497,7 +557,12 @@ describe('evidence-artifacts', () => {
       });
       const secondState = makeState('PLAN_REVIEW', {
         ticket: { ...TICKET, text: 'Second attempt', digest: 'digest-ticket-2' },
-        plan: { current: secondLineageV1, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: secondLineageV1,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, secondState);
       await materializeEvidenceArtifacts(sessionDir, secondState);
@@ -524,7 +589,12 @@ describe('evidence-artifacts', () => {
       });
       const firstState = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: firstInstance, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: firstInstance,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, firstState);
       await materializeEvidenceArtifacts(sessionDir, firstState);
@@ -537,7 +607,12 @@ describe('evidence-artifacts', () => {
       expect(secondInstance.recordDigest).not.toBe(firstInstance.recordDigest);
       const secondState = makeState('PLAN_REVIEW', {
         ticket: { ...TICKET, text: 'Second attempt', digest: 'digest-ticket-3' },
-        plan: { current: secondInstance, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: secondInstance,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, secondState);
       await materializeEvidenceArtifacts(sessionDir, secondState);
@@ -553,7 +628,12 @@ describe('evidence-artifacts', () => {
     it('fails verification when one revision identity is materialized twice', async () => {
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -584,7 +664,12 @@ describe('evidence-artifacts', () => {
     it('fails verification when an artifact timestamp does not match its revision', async () => {
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -613,7 +698,7 @@ describe('evidence-artifacts', () => {
       };
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v3, history: [v1], reviewCompletion: 'pending' },
+        plan: { current: v3, history: [v1], reviewFindings: [], reviewCompletion: 'pending' },
       });
 
       // Lineage coherence is enforced by the PlanRecord refinement: the
@@ -640,7 +725,7 @@ describe('evidence-artifacts', () => {
       });
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v3, history: [v2, v1], reviewCompletion: 'pending' },
+        plan: { current: v3, history: [v2, v1], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -665,7 +750,12 @@ describe('evidence-artifacts', () => {
 
       const planState = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, planState);
       await materializeEvidenceArtifacts(sessionDir, planState);
@@ -692,7 +782,7 @@ describe('evidence-artifacts', () => {
       });
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v3, history: [v2, v1], reviewCompletion: 'pending' },
+        plan: { current: v3, history: [v2, v1], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -715,7 +805,7 @@ describe('evidence-artifacts', () => {
       });
       const state = makeState('PLAN_REVIEW', {
         ticket: TICKET,
-        plan: { current: v2, history: [v1], reviewCompletion: 'pending' },
+        plan: { current: v2, history: [v1], reviewFindings: [], reviewCompletion: 'pending' },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -733,7 +823,12 @@ describe('evidence-artifacts', () => {
     it('fails verification when plan missing sourceStateHash', async () => {
       const state = makeState('PLAN', {
         ticket: TICKET,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
       await materializeEvidenceArtifacts(sessionDir, state);
@@ -770,7 +865,12 @@ describe('evidence-artifacts', () => {
     it('materializes plan even when ticket is null', async () => {
       const state = makeState('PLAN', {
         ticket: null,
-        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+        plan: {
+          current: PLAN_EVIDENCE,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        },
       });
       await writeState(sessionDir, state);
 

@@ -346,6 +346,8 @@ function buildNewHydrateState(
     reviewDecision: null,
     reviewReportPath: null,
     peerReviewEvidence: [],
+    implReviewFindings: [],
+    peerReviewFindings: [],
     nextAdrNumber: 1,
     activeProfile,
     activeChecks,

@@ -33,7 +33,7 @@ import type {
   ArchitectureDecision,
 } from '../state/evidence.js';
 import { validateAdrSections } from '../state/evidence.js';
-import { resolvePlanReviewCompletion } from '../state/evidence-plan.js';
+import { carriedPlanReviewFindings, resolvePlanReviewCompletion } from '../state/evidence-plan.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
@@ -245,6 +245,7 @@ async function runOneSelfReviewIteration(
       ? {
           current: loop.artifact,
           history: [currentPlan, ...planHistory],
+          reviewFindings: carriedPlanReviewFindings(state.plan),
           reviewCompletion: completion,
         }
       : { ...state.plan, reviewCompletion: completion };

@@ -88,6 +88,7 @@ describe('buildReviewChallengeContract frozen authority', () => {
           sections: ['## Live heading'],
         },
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
       },
     });
