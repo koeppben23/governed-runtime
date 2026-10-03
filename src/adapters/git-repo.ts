@@ -36,15 +36,20 @@ export async function resolveRoot(dir: string): Promise<string> {
       err.code === 'GIT_COMMAND_FAILED' &&
       isNotRepoFailure(err.message)
     ) {
-      throw new GitError('NOT_GIT_REPO', `Directory is not inside a git repository: ${dir}`);
+      throw notGitRepoError(dir);
     }
     throw err;
   }
 }
 
 /** git's stable stderr signature for operating outside a repository. */
-function isNotRepoFailure(message: string): boolean {
+export function isNotRepoFailure(message: string): boolean {
   return /not a git repository/i.test(message);
+}
+
+/** Typed NOT_GIT_REPO error for a directory git reports as outside a repository. */
+export function notGitRepoError(dir: string): GitError {
+  return new GitError('NOT_GIT_REPO', `Directory is not inside a git repository: ${dir}`);
 }
 
 /**

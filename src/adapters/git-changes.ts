@@ -9,7 +9,8 @@
  */
 
 import * as path from 'node:path';
-import { git, gitRaw } from './git-command.js';
+import { GitError, git, gitRaw } from './git-command.js';
+import { isNotRepoFailure, notGitRepoError } from './git-repo.js';
 
 /**
  * Known package/dependency manifest basenames — exact matches.
@@ -231,8 +232,10 @@ export async function hashWorktreeFiles(
  * The full path is the canonical signal; consumers that need a basename derive
  * it locally from the path.
  *
- * Uses `git ls-files` for tracked files and `git ls-files --others --exclude-standard`
- * for untracked files.
+ * Uses a single NUL-delimited `git ls-files --cached --others --exclude-standard`
+ * invocation, so tracked and untracked paths are enumerated verbatim (no
+ * C-quoting, no newline parsing). A git failure propagates as a typed GitError
+ * (`NOT_GIT_REPO` outside a repository); signals are never silently emptied.
  *
  * Performance: On very large repos, this returns all root-level relevant files.
  * The profile detect() functions only check for specific filenames, so even
@@ -243,28 +246,23 @@ export async function listRepoSignals(worktree: string): Promise<{
   packageFilePaths: string[];
   configFilePaths: string[];
 }> {
-  let allFiles: string[] = [];
-
+  let raw: string;
   try {
-    // Tracked files
-    const tracked = await git(worktree, ['ls-files']);
-    if (tracked) {
-      allFiles = tracked.split('\n').filter((f) => f.trim());
+    raw = await gitRaw(worktree, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+  } catch (err) {
+    if (
+      err instanceof GitError &&
+      err.code === 'GIT_COMMAND_FAILED' &&
+      isNotRepoFailure(err.message)
+    ) {
+      throw notGitRepoError(worktree);
     }
-  } catch {
-    // No commits yet or not a git repo — try status-based fallback
-    try {
-      const status = await gitRaw(worktree, ['status', '--porcelain=v1', '-z']);
-      if (status) {
-        allFiles = parsePorcelainZ(status);
-      }
-    } catch {
-      // No git at all — return empty signals
-    }
+    throw err;
   }
-
-  // Normalize paths
-  allFiles = allFiles.map((f) => path.normalize(f));
+  const allFiles = raw
+    .split('\0')
+    .filter((file) => file.length > 0)
+    .map((file) => path.normalize(file));
 
   // Categorize by basename; the normalized full path is the canonical signal
   const packageFilePaths: string[] = [];

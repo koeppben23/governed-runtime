@@ -18,7 +18,7 @@
  * @version v1
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import {
   createTestWorkspace,
@@ -33,6 +33,18 @@ import { readState } from '../../adapters/persistence.js';
 import { writeStateWithArtifacts } from './helpers.js';
 import { mintProofGraphClaimId } from '../../state/proofgraph-approval.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
+
+vi.mock('../../adapters/git', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+  return {
+    ...actual,
+    listRepoSignals: vi.fn().mockResolvedValue({
+      files: [],
+      packageFilePaths: [],
+      configFilePaths: [],
+    }),
+  };
+});
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const SHA = 'a'.repeat(64);

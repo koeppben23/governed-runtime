@@ -335,30 +335,45 @@ describe('git adapter behavior contracts', () => {
       ]);
     });
 
-    it('returns empty signals for a repository without commits', async () => {
+    it('enumerates tracked and untracked signals together', async () => {
+      await fs.writeFile(path.join(repo, 'package.json'), '{}\n', 'utf8');
+      await git(repo, ['add', '-A']);
+      await git(repo, ['commit', '-q', '-m', 'tracked manifest']);
+      await fs.writeFile(path.join(repo, 'tsconfig.json'), '{}\n', 'utf8');
+
+      const signals = await listRepoSignals(repo);
+      expect(signals.packageFilePaths).toContain('package.json');
+      expect(signals.configFilePaths).toContain('tsconfig.json');
+    });
+
+    it('enumerates an untracked manifest in a repository without commits', async () => {
       const unborn = path.join(tmpDir, 'unborn');
       await fs.mkdir(unborn);
       await git(unborn, ['init', '-q']);
       await fs.writeFile(path.join(unborn, 'package.json'), '{}\n', 'utf8');
 
       const signals = await listRepoSignals(unborn);
-      expect(signals).toEqual({
-        files: [],
-        packageFilePaths: [],
-        configFilePaths: [],
-      });
+      expect(signals.files).toContain('package.json');
+      expect(signals.packageFilePaths).toContain('package.json');
     });
 
-    it('returns empty signals outside a repository', async () => {
+    it('fails closed outside a repository instead of returning empty signals', async () => {
       const plain = path.join(tmpDir, 'plain');
       await fs.mkdir(plain);
 
-      const signals = await listRepoSignals(plain);
-      expect(signals).toEqual({
-        files: [],
-        packageFilePaths: [],
-        configFilePaths: [],
-      });
+      await expect(listRepoSignals(plain)).rejects.toSatisfy(
+        (err: unknown) => gitErrorCode(err) === 'NOT_GIT_REPO',
+      );
+    });
+
+    it('preserves GIT_COMMAND_FAILED for a corrupt repository instead of returning empty signals', async () => {
+      const corrupt = path.join(tmpDir, 'corrupt-signals');
+      await fs.mkdir(corrupt);
+      await fs.writeFile(path.join(corrupt, '.git'), 'garbage not a gitfile', 'utf8');
+
+      await expect(listRepoSignals(corrupt)).rejects.toSatisfy(
+        (err: unknown) => gitErrorCode(err) === 'GIT_COMMAND_FAILED',
+      );
     });
   });
 });

@@ -460,6 +460,16 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING — repository signals fail closed when git is unavailable.**
+  `listRepoSignals` no longer collapses git failures into empty signals:
+  `GIT_NOT_FOUND`, `GIT_TIMEOUT`, `GIT_COMMAND_FAILED`, and `NOT_GIT_REPO`
+  (normalized outside a repository) propagate as typed `GitError`s, and
+  `flowguard_hydrate` aborts with `DISCOVERY_RESULT_MISSING` while preserving
+  the git cause in the message. Previously an empty signal list could classify
+  as an empty risk surface (`discoveryRiskPaths` → `TRIVIAL`), so a missing
+  repository could weaken risk classification instead of blocking. Unexpected
+  (non-git) errors keep propagating unmasked.
+
 - **BREAKING — repository signal paths are the canonical `RepoSignals` representation.**
   The exported `RepoSignals` type now carries `files`, `packageFilePaths`, and
   `configFilePaths` only; the `packageFiles` / `configFiles` basename fields were
@@ -638,6 +648,17 @@ true })` returns the evaluated projection. Key invariants:
   consolidated into single canonical implementations.
 
 ### Fixed
+
+- **Discovery enumerates tracked and untracked repository signals.** Repository
+  signals now come from a single NUL-delimited
+  `git ls-files --cached --others --exclude-standard` call, so untracked
+  manifests and config files are detected (`.gitignore` still applies) and
+  paths with spaces or non-ASCII characters are no longer C-quoted. Existing
+  sessions whose persisted discovery omitted relevant untracked files may
+  report discovery drift after this change; a same-session `/hydrate` does not
+  regenerate discovery, so policies with `onDrift=block` may require starting a
+  fresh governed session so discovery is captured under the corrected
+  enumeration semantics.
 
 - **Diagnostic file logging no longer materializes an uninitialized workspace.**
   The file sink previously created the full `{workspaces}/<fingerprint>/` root

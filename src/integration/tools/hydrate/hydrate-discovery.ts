@@ -33,6 +33,7 @@ import {
   writeProfileResolutionSnapshot,
 } from '../../../adapters/persistence-discovery.js';
 import { listRepoSignals } from '../../../adapters/git.js';
+import { GitError } from '../../../adapters/git-command.js';
 import { defaultProfileRegistry as profileRegistryForResolution } from '../../../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../../../config/profile.js';
 
@@ -321,12 +322,17 @@ export async function hydrateDiscoveryForNewSession(
   args: HydrateArgs,
   resolvedAt: string,
 ): Promise<DiscoveryHydration> {
-  const repoSignals = await listRepoSignals(worktree);
-  if (!repoSignals) {
-    throwHydrateError(
-      'DISCOVERY_RESULT_MISSING',
-      'Discovery requires repository signals on first hydrate, but none were available',
-    );
+  let repoSignals: RepoSignals;
+  try {
+    repoSignals = await listRepoSignals(worktree);
+  } catch (err) {
+    if (err instanceof GitError) {
+      throwHydrateError(
+        'DISCOVERY_RESULT_MISSING',
+        `Repository signals unavailable (${err.code}: ${err.message})`,
+      );
+    }
+    throw err;
   }
 
   const discoveryResult = await runRequiredDiscovery(worktree, workspace.fingerprint, repoSignals);
