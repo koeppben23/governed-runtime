@@ -222,10 +222,14 @@ export async function hashWorktreeFiles(
 /**
  * Gather repository file signals for profile auto-detection.
  *
- * Lists all tracked and untracked files in the worktree, then categorizes them:
- * - packageFiles: build/dependency manifest files (pom.xml, package.json, build.gradle, etc.)
- * - configFiles: configuration and tool config files (tsconfig.json, angular.json, etc.)
+ * Lists all tracked and untracked files in the worktree, then categorizes their
+ * normalized relative paths:
+ * - packageFilePaths: build/dependency manifest files (pom.xml, package.json, build.gradle, etc.)
+ * - configFilePaths: configuration and tool config files (tsconfig.json, angular.json, etc.)
  * - files: all file paths (relative to worktree root)
+ *
+ * The full path is the canonical signal; consumers that need a basename derive
+ * it locally from the path.
  *
  * Uses `git ls-files` for tracked files and `git ls-files --others --exclude-standard`
  * for untracked files.
@@ -236,8 +240,6 @@ export async function hashWorktreeFiles(
  */
 export async function listRepoSignals(worktree: string): Promise<{
   files: string[];
-  packageFiles: string[];
-  configFiles: string[];
   packageFilePaths: string[];
   configFilePaths: string[];
 }> {
@@ -264,32 +266,19 @@ export async function listRepoSignals(worktree: string): Promise<{
   // Normalize paths
   allFiles = allFiles.map((f) => path.normalize(f));
 
-  // Categorize by basename (basenames for backward compat, full paths for new consumers)
-  const packageFiles: string[] = [];
-  const configFiles: string[] = [];
+  // Categorize by basename; the normalized full path is the canonical signal
   const packageFilePaths: string[] = [];
   const configFilePaths: string[] = [];
 
   for (const filePath of allFiles) {
     const basename = path.basename(filePath);
-    if (PACKAGE_FILES.has(basename)) {
-      packageFiles.push(basename);
-      packageFilePaths.push(filePath);
-    } else if (basename.endsWith('.csproj') || basename.endsWith('.sln')) {
-      packageFiles.push(basename);
+    if (PACKAGE_FILES.has(basename) || basename.endsWith('.csproj') || basename.endsWith('.sln')) {
       packageFilePaths.push(filePath);
     }
     if (CONFIG_FILES.has(basename)) {
-      configFiles.push(basename);
       configFilePaths.push(filePath);
     }
   }
 
-  return {
-    files: allFiles,
-    packageFiles: [...new Set(packageFiles)],
-    configFiles: [...new Set(configFiles)],
-    packageFilePaths,
-    configFilePaths,
-  };
+  return { files: allFiles, packageFilePaths, configFilePaths };
 }

@@ -765,8 +765,6 @@ describe('HAPPY', () => {
     );
     vi.mocked(listRepoSignals).mockResolvedValueOnce({
       files: ['package.json', 'requirements.txt', 'pyproject.toml'],
-      packageFiles: ['package.json', 'requirements.txt'],
-      configFiles: ['pyproject.toml'],
       packageFilePaths: ['package.json', 'requirements.txt'],
       configFilePaths: ['pyproject.toml'],
     });

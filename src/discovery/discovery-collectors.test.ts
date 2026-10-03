@@ -72,8 +72,8 @@ const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -97,8 +97,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -117,8 +117,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ describe('discovery/collectors/topology', () => {
         const result = await collectTopology({
           ...EMPTY_INPUT,
           allFiles: [manifest],
-          packageFiles: [manifest],
+          packageFilePaths: [manifest],
         });
 
         expect(result.data.kind).toBe('single-project');
@@ -180,7 +180,7 @@ describe('discovery/collectors/topology', () => {
       const result = await collectTopology({
         ...EMPTY_INPUT,
         allFiles: ['packages/api/package.json'],
-        packageFiles: ['package.json'],
+        packageFilePaths: ['package.json'],
       });
 
       expect(result.data.kind).toBe('unknown');
@@ -328,8 +328,8 @@ describe('discovery/collectors/code-surface-analysis', () => {
         worktreePath: tmp,
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: Object.keys(files),
-        packageFiles: ['package.json'],
-        configFiles: ['tsconfig.json'],
+        packageFilePaths: ['package.json'],
+        configFilePaths: ['tsconfig.json'],
       });
     } finally {
       await fs.rm(tmp, { recursive: true, force: true });
@@ -454,8 +454,8 @@ describe('discovery/collectors/code-surface-analysis', () => {
         worktreePath: '/definitely/missing/worktree',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/api/missing.ts'],
-        packageFiles: [],
-        configFiles: [],
+        packageFilePaths: [],
+        configFilePaths: [],
       });
       expect(result.status).toBe('partial');
       expect(result.data.status).toBe('partial');
@@ -466,8 +466,8 @@ describe('discovery/collectors/code-surface-analysis', () => {
         worktreePath: '/tmp',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: [null as unknown as string],
-        packageFiles: [],
-        configFiles: [],
+        packageFilePaths: [],
+        configFilePaths: [],
       } as CollectorInput;
 
       const result = await collectCodeSurfaces(malformed);

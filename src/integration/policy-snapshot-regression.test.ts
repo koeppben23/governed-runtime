@@ -26,8 +26,8 @@ vi.mock('../adapters/git', async (importOriginal) => {
     changedFiles: vi.fn().mockResolvedValue(['src/foo.ts', 'src/bar.ts']),
     listRepoSignals: vi.fn().mockResolvedValue({
       files: ['tsconfig.json', 'package.json', 'src/index.ts'],
-      packageFiles: ['package.json'],
-      configFiles: ['tsconfig.json'],
+      packageFilePaths: ['package.json'],
+      configFilePaths: ['tsconfig.json'],
     }),
   };
 });

@@ -100,9 +100,9 @@ import { extractFromRustRootFiles } from './languages/rust.js';
 /**
  * Enforce root-first authority for selected build tools.
  *
- * `listRepoSignals()` currently reports package files by basename, which can include
- * nested manifests. For Python/Rust/Go ecosystem facts we require explicit root-level
- * evidence and remove unsupported tool detections.
+ * `listRepoSignals()` classifies package files by basename, so the path list can
+ * include nested manifests. For Python/Rust/Go ecosystem facts we require
+ * explicit root-level evidence and remove unsupported tool detections.
  */
 function enforceRootFirstBuildTools(
   buildTools: DetectedItem[],
@@ -119,7 +119,7 @@ function enforceRootFirstBuildTools(
   }
 }
 
-/** Add root-level build tools derived from lock/manifests not covered by packageFiles. */
+/** Add root-level build tools derived from lock/manifests not covered by package signal rules. */
 export function addRootFirstBuildTools(
   buildTools: DetectedItem[],
   rootFiles: ReadonlySet<string>,
@@ -247,9 +247,9 @@ export function addRootFirstLanguageAndLintFacts(
 export async function collectStack(input: CollectorInput): Promise<CollectorOutput<StackInfo>> {
   try {
     const languages = detectLanguages(input.allFiles);
-    const buildTools = detectBuildTools(input.packageFiles);
+    const buildTools = detectBuildTools(uniqueBasenames(input.packageFilePaths));
     const { frameworks, testFrameworks, runtimes, qualityTools } = detectFromConfigs(
-      input.configFiles,
+      uniqueBasenames(input.configFilePaths),
     );
     const tools: DetectedItem[] = [];
     const databases: DetectedItem[] = [];
@@ -366,6 +366,16 @@ function detectLanguages(allFiles: readonly string[]): DetectedItem[] {
 
   // Sort by confidence descending
   return items.sort((a, b) => b.confidence - a.confidence);
+}
+
+/**
+ * Collapse full signal paths to ordered unique basenames.
+ *
+ * Deduplicates while preserving first-occurrence order; consumers depend on
+ * this stable order.
+ */
+function uniqueBasenames(filePaths: readonly string[]): string[] {
+  return [...new Set(filePaths.map((filePath) => path.basename(filePath)))];
 }
 
 /**

@@ -157,8 +157,6 @@ describe('stack-evidence E2E', () => {
       // 2. Override repoSignals to match workspace contents
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['pom.xml', 'src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
         packageFilePaths: ['pom.xml'],
         configFilePaths: [],
       });
@@ -225,8 +223,6 @@ describe('stack-evidence E2E', () => {
       await writeManifest('pom.xml', JAVA_POM_XML);
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['pom.xml', 'src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
         packageFilePaths: ['pom.xml'],
         configFilePaths: [],
       });
@@ -263,8 +259,6 @@ describe('stack-evidence E2E', () => {
       // 2. Override repoSignals
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['.nvmrc', 'package.json', 'tsconfig.json', 'src/index.ts'],
-        packageFiles: ['package.json'],
-        configFiles: ['tsconfig.json'],
         packageFilePaths: ['package.json'],
         configFilePaths: ['tsconfig.json'],
       });
@@ -329,8 +323,6 @@ describe('stack-evidence E2E', () => {
 
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['docker-compose.yml'],
-        packageFiles: [],
-        configFiles: ['docker-compose.yml'],
         packageFilePaths: [],
         configFilePaths: ['docker-compose.yml'],
       });
@@ -398,8 +390,6 @@ components = ["clippy", "rustfmt"]
           'go.mod',
           '.golangci.yml',
         ],
-        packageFiles: ['pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod'],
-        configFiles: ['.golangci.yml'],
         packageFilePaths: ['pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod'],
         configFilePaths: ['.golangci.yml'],
       });
@@ -478,8 +468,6 @@ components = ["clippy", "rustfmt"]
       await writeManifest('pom.xml', JAVA_POM_XML);
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['pom.xml', 'src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
         packageFilePaths: ['pom.xml'],
         configFilePaths: [],
       });
@@ -548,8 +536,6 @@ components = ["clippy", "rustfmt"]
       // 2. Override repoSignals to include nested files
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['package.json', 'src/index.ts', 'apps/web/package.json', 'apps/web/src/index.tsx'],
-        packageFiles: ['package.json', 'apps/web/package.json'],
-        configFiles: [],
         packageFilePaths: ['package.json', 'apps/web/package.json'],
         configFilePaths: [],
       });
@@ -624,8 +610,6 @@ services:
       // 2. Override repoSignals
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['package.json', 'services/db/docker-compose.yml'],
-        packageFiles: ['package.json'],
-        configFiles: [],
         packageFilePaths: ['package.json'],
         configFilePaths: [],
       });

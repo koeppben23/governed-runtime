@@ -173,14 +173,14 @@ describe('Runtime Assertion Provider Conformance', () => {
           await cp(join(PROJECTS_ROOT, fixture.name), tmpDir, { recursive: true });
 
           const allFiles = await collectAllFiles(tmpDir);
-          const packageFiles = allFiles.filter(
+          const packageFilePaths = allFiles.filter(
             (f) =>
               f.endsWith('package.json') ||
               f.endsWith('pom.xml') ||
               f.endsWith('pyproject.toml') ||
               f.endsWith('go.mod'),
           );
-          const configFiles = allFiles.filter(
+          const configFilePaths = allFiles.filter(
             (f) =>
               f.includes('vitest.config') ||
               f.includes('jest.config') ||
@@ -201,8 +201,8 @@ describe('Runtime Assertion Provider Conformance', () => {
             worktreePath: tmpDir,
             fingerprint: `runtime-conformance-${fixture.name}`,
             allFiles,
-            packageFiles,
-            configFiles,
+            packageFilePaths,
+            configFilePaths,
             readFile: readFileFn,
           };
 

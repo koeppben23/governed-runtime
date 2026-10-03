@@ -72,8 +72,8 @@ const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -97,8 +97,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -117,8 +117,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -139,8 +139,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       worktreePath: '/test/repo',
       fingerprint: 'abcdef0123456789abcdef01',
       allFiles: overrides?.allFiles ?? ['src/index.ts', 'package.json'],
-      packageFiles: overrides?.packageFiles ?? ['package.json'],
-      configFiles: overrides?.configFiles ?? [],
+      packageFilePaths: overrides?.packageFilePaths ?? ['package.json'],
+      configFilePaths: overrides?.configFilePaths ?? [],
       readFile: mockReadFile(files),
     };
   }
@@ -156,7 +156,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/App.tsx', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -176,7 +176,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/App.vue', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -194,8 +194,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/app/page.tsx', 'package.json', 'next.config.mjs'],
-          packageFiles: ['package.json'],
-          configFiles: ['next.config.mjs'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['next.config.mjs'],
         },
       );
       const result = await collectStack(input);
@@ -217,7 +217,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/routes/+page.svelte', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -238,7 +238,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/pages/index.astro', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -256,7 +256,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['app/root.tsx', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -277,7 +277,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -296,7 +296,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -314,7 +314,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -332,7 +332,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -350,7 +350,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -369,7 +369,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -387,7 +387,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -401,8 +401,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         {},
         {
           allFiles: ['src/index.ts', 'package.json', '.eslintrc.json'],
-          packageFiles: ['package.json'],
-          configFiles: ['.eslintrc.json'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['.eslintrc.json'],
         },
       );
       const result = await collectStack(input);
@@ -417,8 +417,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         {},
         {
           allFiles: ['src/index.ts', 'package.json', '.prettierrc'],
-          packageFiles: ['package.json'],
-          configFiles: ['.prettierrc'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['.prettierrc'],
         },
       );
       const result = await collectStack(input);
@@ -451,7 +451,7 @@ python_version = "3.12"
         },
         {
           allFiles: ['pyproject.toml', '.python-version'],
-          packageFiles: ['pyproject.toml'],
+          packageFilePaths: ['pyproject.toml'],
         },
       );
 
@@ -475,7 +475,7 @@ python_version = "3.12"
         },
         {
           allFiles: ['uv.lock', 'poetry.lock', 'requirements.txt', 'requirements-dev.txt'],
-          packageFiles: ['requirements.txt'],
+          packageFilePaths: ['requirements.txt'],
         },
       );
 
@@ -494,7 +494,7 @@ python_version = "3.12"
         { 'go.mod': 'module example.com/test\n\ngo 1.21\n' },
         {
           allFiles: ['go.mod', 'main.go', 'main_test.go'],
-          configFiles: ['go.mod'],
+          configFilePaths: ['go.mod'],
         },
       );
       const result = await collectStack(input);
@@ -517,7 +517,7 @@ components = ["clippy", "rustfmt"]
         },
         {
           allFiles: ['Cargo.toml', 'rust-toolchain.toml'],
-          packageFiles: ['Cargo.toml'],
+          packageFilePaths: ['Cargo.toml'],
         },
       );
 
@@ -541,8 +541,8 @@ components = ["clippy", "rustfmt"]
         },
         {
           allFiles: ['go.mod', '.golangci.yml'],
-          packageFiles: ['go.mod'],
-          configFiles: ['.golangci.yml'],
+          packageFilePaths: ['go.mod'],
+          configFilePaths: ['.golangci.yml'],
         },
       );
 
@@ -564,7 +564,7 @@ components = ["clippy", "rustfmt"]
         {},
         {
           allFiles: ['src/index.ts', 'package.json', 'pnpm-lock.yaml'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -580,7 +580,7 @@ components = ["clippy", "rustfmt"]
         {},
         {
           allFiles: ['src/index.ts', 'package.json', 'yarn.lock'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -595,7 +595,7 @@ components = ["clippy", "rustfmt"]
         {},
         {
           allFiles: ['src/index.ts', 'package.json', 'bun.lockb'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -610,7 +610,7 @@ components = ["clippy", "rustfmt"]
         {},
         {
           allFiles: ['src/index.ts', 'package.json', 'bun.lock'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -624,7 +624,7 @@ components = ["clippy", "rustfmt"]
         {},
         {
           allFiles: ['src/index.ts', 'package.json', 'package-lock.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -638,7 +638,7 @@ components = ["clippy", "rustfmt"]
         {},
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -658,7 +658,7 @@ components = ["clippy", "rustfmt"]
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -680,7 +680,7 @@ components = ["clippy", "rustfmt"]
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -700,7 +700,7 @@ components = ["clippy", "rustfmt"]
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -720,7 +720,7 @@ components = ["clippy", "rustfmt"]
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);

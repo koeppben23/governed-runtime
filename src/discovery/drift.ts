@@ -71,8 +71,6 @@ export async function checkDiscoveryDrift(
       worktreePath: worktree,
       fingerprint,
       allFiles: repoSignals.files,
-      packageFiles: repoSignals.packageFiles,
-      configFiles: repoSignals.configFiles,
       packageFilePaths: repoSignals.packageFilePaths,
       configFilePaths: repoSignals.configFilePaths,
     },

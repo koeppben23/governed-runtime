@@ -21,22 +21,34 @@ describe('config/profile', () => {
     });
 
     it('baseline profile detected with lowest confidence', () => {
-      const signals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
+      const signals: RepoSignals = { files: [], packageFilePaths: [], configFilePaths: [] };
       expect(baselineProfile.detect!({ repoSignals: signals })).toBe(0.1);
     });
 
     it('java profile detected by pom.xml', () => {
-      const signals: RepoSignals = { files: [], packageFiles: ['pom.xml'], configFiles: [] };
+      const signals: RepoSignals = {
+        files: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
+      };
       expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
     });
 
     it('angular profile detected by angular.json', () => {
-      const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ['angular.json'] };
+      const signals: RepoSignals = {
+        files: [],
+        packageFilePaths: [],
+        configFilePaths: ['angular.json'],
+      };
       expect(angularProfile.detect!({ repoSignals: signals })).toBe(0.85);
     });
 
     it('typescript profile detected by tsconfig.json', () => {
-      const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ['tsconfig.json'] };
+      const signals: RepoSignals = {
+        files: [],
+        packageFilePaths: [],
+        configFilePaths: ['tsconfig.json'],
+      };
       expect(typescriptProfile.detect!({ repoSignals: signals })).toBe(0.7);
     });
 
@@ -44,8 +56,8 @@ describe('config/profile', () => {
       // Both angular.json and tsconfig.json present → angular wins (0.85 > 0.7)
       const signals: RepoSignals = {
         files: [],
-        packageFiles: [],
-        configFiles: ['angular.json', 'tsconfig.json'],
+        packageFilePaths: [],
+        configFilePaths: ['angular.json', 'tsconfig.json'],
       };
       const detected = defaultProfileRegistry.detect({ repoSignals: signals });
       expect(detected?.id).toBe('frontend-angular');
@@ -60,7 +72,7 @@ describe('config/profile', () => {
 
     it('detect returns undefined when no profile matches', () => {
       const registry = new ProfileRegistry();
-      const signals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
+      const signals: RepoSignals = { files: [], packageFilePaths: [], configFilePaths: [] };
       expect(registry.detect({ repoSignals: signals })).toBeUndefined();
     });
   });
@@ -70,19 +82,27 @@ describe('config/profile', () => {
     it('java profile detects build.gradle.kts', () => {
       const signals: RepoSignals = {
         files: [],
-        packageFiles: ['build.gradle.kts'],
-        configFiles: [],
+        packageFilePaths: ['build.gradle.kts'],
+        configFilePaths: [],
       };
       expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
     });
 
     it('angular profile detects nx.json', () => {
-      const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ['nx.json'] };
+      const signals: RepoSignals = {
+        files: [],
+        packageFilePaths: [],
+        configFilePaths: ['nx.json'],
+      };
       expect(angularProfile.detect!({ repoSignals: signals })).toBe(0.85);
     });
 
     it('no matching signals → detect returns only baseline (via confidence > 0)', () => {
-      const signals: RepoSignals = { files: ['readme.md'], packageFiles: [], configFiles: [] };
+      const signals: RepoSignals = {
+        files: ['readme.md'],
+        packageFilePaths: [],
+        configFilePaths: [],
+      };
       const detected = defaultProfileRegistry.detect({ repoSignals: signals });
       expect(detected?.id).toBe('baseline');
     });
@@ -101,7 +121,7 @@ describe('config/profile', () => {
     it('profile without detect function cannot be auto-detected', () => {
       const registry = new ProfileRegistry();
       registry.register({ id: 'manual', name: 'Manual', activeChecks: [] });
-      const signals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
+      const signals: RepoSignals = { files: [], packageFilePaths: [], configFilePaths: [] };
       expect(registry.detect({ repoSignals: signals })).toBeUndefined();
     });
 
@@ -161,8 +181,8 @@ describe('config/profile', () => {
       const files = Array.from({ length: 10000 }, (_, i) => `src/file${i}.ts`);
       const signals: RepoSignals = {
         files,
-        packageFiles: ['pom.xml'],
-        configFiles: ['tsconfig.json'],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: ['tsconfig.json'],
       };
       const result = benchmarkSync(
         () => {
@@ -252,7 +272,7 @@ describe('config/profile/version-neutrality', () => {
 });
 
 describe('config/profile built-in registration contract', () => {
-  const noSignals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
+  const noSignals: RepoSignals = { files: [], packageFilePaths: [], configFilePaths: [] };
 
   it('registers every built-in profile in the default registry', () => {
     expect([...defaultProfileRegistry.ids()].sort()).toEqual(
@@ -285,18 +305,51 @@ describe('config/profile built-in registration contract', () => {
 
 describe('config/profile signal evaluation with non-matching inputs', () => {
   it('scores zero when package files do not match any Java build file', () => {
-    const signals: RepoSignals = { files: [], packageFiles: ['README.md'], configFiles: [] };
+    const signals: RepoSignals = {
+      files: [],
+      packageFilePaths: ['README.md'],
+      configFilePaths: [],
+    };
     expect(javaProfile.detect!({ repoSignals: signals })).toBe(0);
   });
 
   it('detects Java from build.gradle specifically', () => {
-    const signals: RepoSignals = { files: [], packageFiles: ['build.gradle'], configFiles: [] };
+    const signals: RepoSignals = {
+      files: [],
+      packageFilePaths: ['build.gradle'],
+      configFilePaths: [],
+    };
     expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
   });
 
   it('scores zero when config files do not match Angular or TypeScript signals', () => {
-    const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ['README.md'] };
+    const signals: RepoSignals = {
+      files: [],
+      packageFilePaths: [],
+      configFilePaths: ['README.md'],
+    };
     expect(angularProfile.detect!({ repoSignals: signals })).toBe(0);
     expect(typescriptProfile.detect!({ repoSignals: signals })).toBe(0);
+  });
+});
+
+describe('config/profile nested signal path equivalence', () => {
+  it('derives the manifest basename from nested package paths', () => {
+    const signals: RepoSignals = {
+      files: ['pom.xml', 'module-a/pom.xml', 'module-b/pom.xml'],
+      packageFilePaths: ['pom.xml', 'module-a/pom.xml', 'module-b/pom.xml'],
+      configFilePaths: [],
+    };
+    expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
+  });
+
+  it('derives the config basename from nested config paths', () => {
+    const signals: RepoSignals = {
+      files: ['apps/web/tsconfig.json', 'apps/web/angular.json'],
+      packageFilePaths: [],
+      configFilePaths: ['apps/web/tsconfig.json', 'apps/web/angular.json'],
+    };
+    expect(typescriptProfile.detect!({ repoSignals: signals })).toBe(0.7);
+    expect(angularProfile.detect!({ repoSignals: signals })).toBe(0.85);
   });
 });

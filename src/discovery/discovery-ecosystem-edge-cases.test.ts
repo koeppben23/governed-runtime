@@ -70,8 +70,6 @@ import type { DiscoveryIoPort } from './io-port.js';
 
 const EMPTY_SIGNALS = {
   files: [] as string[],
-  packageFiles: [] as string[],
-  configFiles: [] as string[],
   packageFilePaths: [] as string[],
   configFilePaths: [] as string[],
 };
@@ -91,8 +89,8 @@ const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -116,8 +114,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -136,8 +134,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -158,8 +156,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       worktreePath: '/test/repo',
       fingerprint: 'abcdef0123456789abcdef01',
       allFiles: overrides?.allFiles ?? ['src/index.ts', 'package.json'],
-      packageFiles: overrides?.packageFiles ?? ['package.json'],
-      configFiles: overrides?.configFiles ?? [],
+      packageFilePaths: overrides?.packageFilePaths ?? ['package.json'],
+      configFilePaths: overrides?.configFilePaths ?? [],
       readFile: mockReadFile(files),
     };
   }
@@ -174,8 +172,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json', 'vitest.config.ts'],
-          packageFiles: ['package.json'],
-          configFiles: ['vitest.config.ts'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['vitest.config.ts'],
         },
       );
       const result = await collectStack(input);
@@ -195,8 +193,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json', '.eslintrc.json'],
-          packageFiles: ['package.json'],
-          configFiles: ['.eslintrc.json'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['.eslintrc.json'],
         },
       );
       const result = await collectStack(input);
@@ -215,8 +213,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json', '.prettierrc'],
-          packageFiles: ['package.json'],
-          configFiles: ['.prettierrc'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['.prettierrc'],
         },
       );
       const result = await collectStack(input);
@@ -235,8 +233,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json', 'vite.config.ts'],
-          packageFiles: ['package.json'],
-          configFiles: ['vite.config.ts'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['vite.config.ts'],
         },
       );
       const result = await collectStack(input);
@@ -254,8 +252,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/app/page.tsx', 'package.json', 'next.config.mjs'],
-          packageFiles: ['package.json'],
-          configFiles: ['next.config.mjs'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['next.config.mjs'],
         },
       );
       const result = await collectStack(input);
@@ -276,7 +274,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['app/root.tsx', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -289,7 +287,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         {},
         {
           allFiles: ['src/main/java/App.java', 'pom.xml', 'pnpm-lock.yaml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
       const result = await collectStack(input);
@@ -305,7 +303,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         {},
         {
           allFiles: ['src/index.ts', 'package.json', 'packages/app/pnpm-lock.yaml'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -328,8 +326,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
             'packages/svc/go.mod',
             'packages/svc/.golangci.yml',
           ],
-          packageFiles: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
-          configFiles: ['.golangci.yml'],
+          packageFilePaths: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
+          configFilePaths: ['.golangci.yml'],
         },
       );
 
@@ -354,7 +352,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         {
           // yarn.lock at root would normally trigger yarn — but packageManager wins
           allFiles: ['src/index.ts', 'package.json', 'yarn.lock'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -374,7 +372,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json', 'pnpm-lock.yaml'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -395,7 +393,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -430,8 +428,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
             'tailwind.config.js',
             'pnpm-lock.yaml',
           ],
-          packageFiles: ['package.json'],
-          configFiles: [
+          packageFilePaths: ['package.json'],
+          configFilePaths: [
             'vite.config.ts',
             'vitest.config.ts',
             '.eslintrc.json',
@@ -474,7 +472,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -488,8 +486,8 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         worktreePath: '/test/repo',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/index.ts'],
-        packageFiles: [],
-        configFiles: [],
+        packageFilePaths: [],
+        configFilePaths: [],
         readFile: async () => undefined,
       };
       const result = await collectStack(input);
@@ -506,7 +504,7 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json', 'yarn.lock'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -525,7 +523,7 @@ edition = "2021"
         },
         {
           allFiles: ['Cargo.toml'],
-          packageFiles: ['Cargo.toml'],
+          packageFilePaths: ['Cargo.toml'],
         },
       );
 
@@ -545,7 +543,7 @@ channel = "1.78.0"
         },
         {
           allFiles: ['rust-toolchain.toml'],
-          packageFiles: [],
+          packageFilePaths: [],
         },
       );
 
@@ -565,7 +563,7 @@ channel = "1.78.0"
         },
         {
           allFiles: ['rust-toolchain'],
-          packageFiles: [],
+          packageFilePaths: [],
         },
       );
 
@@ -585,7 +583,7 @@ channel = "1.78.0"
         },
         {
           allFiles: ['pyproject.toml'],
-          packageFiles: ['pyproject.toml'],
+          packageFilePaths: ['pyproject.toml'],
         },
       );
 
@@ -606,7 +604,7 @@ requires-python = ">=3.12"
         },
         {
           allFiles: ['pyproject.toml'],
-          packageFiles: ['pyproject.toml'],
+          packageFilePaths: ['pyproject.toml'],
         },
       );
 
@@ -631,7 +629,7 @@ line-length = 100
         },
         {
           allFiles: ['pyproject.toml'],
-          packageFiles: ['pyproject.toml'],
+          packageFilePaths: ['pyproject.toml'],
         },
       );
 
@@ -648,7 +646,7 @@ line-length = 100
         },
         {
           allFiles: ['.python-version'],
-          packageFiles: [],
+          packageFilePaths: [],
         },
       );
 
@@ -668,7 +666,7 @@ line-length = 100
         },
         {
           allFiles: ['requirements.txt'],
-          packageFiles: ['requirements.txt'],
+          packageFilePaths: ['requirements.txt'],
         },
       );
 
@@ -688,7 +686,7 @@ line-length = 100
         {},
         {
           allFiles: ['src/index.ts', 'package.json', 'pnpm-lock.yaml'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await runDiscovery(input, DISCOVERY_IO);
@@ -711,7 +709,7 @@ line-length = 100
         },
         {
           allFiles: ['src/App.tsx', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await runDiscovery(input, DISCOVERY_IO);
@@ -745,8 +743,8 @@ line-length = 100
             '.eslintrc.json',
             'yarn.lock',
           ],
-          packageFiles: ['package.json'],
-          configFiles: ['vitest.config.ts', '.eslintrc.json'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['vitest.config.ts', '.eslintrc.json'],
         },
       );
       const result = await runDiscovery(input, DISCOVERY_IO);
@@ -771,7 +769,7 @@ line-length = 100
         },
         {
           allFiles: ['src/App.tsx', 'package.json', 'pnpm-lock.yaml'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await runDiscovery(input, DISCOVERY_IO);
@@ -794,8 +792,8 @@ line-length = 100
         },
         {
           allFiles: ['docker-compose.yml'],
-          packageFiles: [],
-          configFiles: ['docker-compose.yml'],
+          packageFilePaths: [],
+          configFilePaths: ['docker-compose.yml'],
         },
       );
 
@@ -845,8 +843,8 @@ components = ["clippy", "rustfmt"]
             'go.mod',
             '.golangci.yml',
           ],
-          packageFiles: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
-          configFiles: ['.golangci.yml'],
+          packageFilePaths: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
+          configFilePaths: ['.golangci.yml'],
         },
       );
 
@@ -912,8 +910,8 @@ components = ["clippy", "rustfmt"]
             'next.config.mjs',
             'pnpm-lock.yaml',
           ],
-          packageFiles: ['package.json'],
-          configFiles: [
+          packageFilePaths: ['package.json'],
+          configFilePaths: [
             'vite.config.ts',
             'vitest.config.ts',
             '.eslintrc.json',
@@ -972,8 +970,8 @@ components = ["clippy", "rustfmt"]
             'go.mod',
             '.golangci.yaml',
           ],
-          packageFiles: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
-          configFiles: ['.golangci.yaml'],
+          packageFilePaths: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
+          configFilePaths: ['.golangci.yaml'],
         },
       );
 

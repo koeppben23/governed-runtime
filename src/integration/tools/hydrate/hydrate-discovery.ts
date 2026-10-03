@@ -81,14 +81,8 @@ export async function runRequiredDiscovery(
         worktreePath: worktree,
         fingerprint,
         allFiles: repoSignals.files,
-        packageFiles: repoSignals.packageFiles,
-        configFiles: repoSignals.configFiles,
-        ...(repoSignals.packageFilePaths !== undefined
-          ? { packageFilePaths: repoSignals.packageFilePaths }
-          : {}),
-        ...(repoSignals.configFilePaths !== undefined
-          ? { configFilePaths: repoSignals.configFilePaths }
-          : {}),
+        packageFilePaths: repoSignals.packageFilePaths,
+        configFilePaths: repoSignals.configFilePaths,
       },
       DISCOVERY_IO,
     );
@@ -228,9 +222,12 @@ export function buildProfileEvidence(
     go: ['go.mod'],
     python: ['pyproject.toml', 'requirements.txt'],
   };
+  const packageBasenames = [
+    ...new Set(repoSignals.packageFilePaths.map((f) => nodePath.basename(f))),
+  ];
   for (const [keyword, manifests] of Object.entries(manifestSignals)) {
     if (!profileId.includes(keyword)) continue;
-    for (const f of repoSignals.packageFiles) {
+    for (const f of packageBasenames) {
       if (manifests.includes(f)) evidence.push(`packageFile:${f}`);
     }
   }

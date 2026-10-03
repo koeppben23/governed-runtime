@@ -92,7 +92,7 @@ export async function collectTopology(
 ): Promise<CollectorOutput<TopologyInfo>> {
   try {
     const modules = detectModules(input.allFiles);
-    const kind = detectTopologyKind(modules, input.configFiles, input.allFiles);
+    const kind = detectTopologyKind(modules, input.configFilePaths, input.allFiles);
     const entryPoints = detectEntryPoints(input.allFiles);
     const rootConfigs = detectRootConfigs(input.allFiles);
 
@@ -157,10 +157,10 @@ function detectModules(allFiles: readonly string[]): ModuleInfo[] {
  */
 function detectTopologyKind(
   modules: readonly ModuleInfo[],
-  configFiles: readonly string[],
+  configFilePaths: readonly string[],
   allFiles: readonly string[],
 ): TopologyKind {
-  const configSet = new Set(configFiles);
+  const configSet = new Set(configFilePaths.map((filePath) => path.basename(filePath)));
 
   // Strong monorepo signals
   const hasMonorepoIndicator = [...MONOREPO_INDICATORS].some((f) => configSet.has(f));
@@ -170,12 +170,12 @@ function detectTopologyKind(
   if (modules.length >= 2) return 'monorepo';
 
   // A root manifest is direct evidence of one project when stronger monorepo
-  // signals are absent. packageFiles cannot express whether it was at root.
+  // signals are absent.
   const hasRootManifest = allFiles.some((filePath) => {
     const normalized = filePath.replace(/\\/g, '/');
     return !normalized.includes('/') && MANIFEST_BASENAMES.has(path.basename(normalized));
   });
-  if (hasRootManifest || configFiles.length > 0) return 'single-project';
+  if (hasRootManifest || configFilePaths.length > 0) return 'single-project';
 
   return 'unknown';
 }

@@ -37,8 +37,6 @@ vi.mock('../adapters/git', () => ({
   remoteOriginUrl: vi.fn().mockResolvedValue(null),
   listRepoSignals: vi.fn().mockResolvedValue({
     files: [],
-    packageFiles: [],
-    configFiles: [],
     packageFilePaths: [],
     configFilePaths: [],
   }),
@@ -64,8 +62,8 @@ const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 describe('discovery/diagnostics (#372)', () => {
@@ -176,8 +174,8 @@ describe('discovery/diagnostics (#372)', () => {
           worktreePath: tmpDir,
           fingerprint: 'abcdef0123456789abcdef01',
           allFiles: ['good.ts', 'missing.ts'],
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -210,8 +208,8 @@ describe('discovery/diagnostics (#372)', () => {
           worktreePath: tmpDir,
           fingerprint: 'abcdef0123456789abcdef01',
           allFiles,
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -239,8 +237,8 @@ describe('discovery/diagnostics (#372)', () => {
           worktreePath: tmpDir,
           fingerprint: 'abcdef0123456789abcdef01',
           allFiles,
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -271,8 +269,8 @@ describe('discovery/diagnostics (#372)', () => {
           fingerprint: 'abcdef0123456789abcdef01',
           // Intentionally list deep file first to test sorting
           allFiles: ['deep/nested/z.ts', 'a.ts'],
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -562,8 +560,8 @@ describe('discovery/diagnostics (#372)', () => {
           worktreePath: '/test/repo',
           fingerprint: 'abcdef0123456789abcdef01',
           allFiles: [],
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         },
         DISCOVERY_IO,
       );
@@ -574,8 +572,6 @@ describe('discovery/diagnostics (#372)', () => {
       const { listRepoSignals } = await import('../adapters/git.js');
       (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
         files: [],
-        packageFiles: [],
-        configFiles: [],
         packageFilePaths: [],
         configFilePaths: [],
       });
@@ -600,8 +596,6 @@ describe('discovery/diagnostics (#372)', () => {
       const { listRepoSignals } = await import('../adapters/git.js');
       (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
         files: ['src/index.ts'],
-        packageFiles: ['package.json'],
-        configFiles: ['tsconfig.json'],
         packageFilePaths: ['package.json'],
         configFilePaths: ['tsconfig.json'],
       });
@@ -637,8 +631,6 @@ describe('discovery/diagnostics (#372)', () => {
       const { listRepoSignals } = await import('../adapters/git.js');
       (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
         files: [],
-        packageFiles: [],
-        configFiles: [],
         packageFilePaths: [],
         configFilePaths: [],
       });
