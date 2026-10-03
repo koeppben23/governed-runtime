@@ -467,7 +467,8 @@ true })` returns the evaluated projection. Key invariants:
   writers emit `[]` from the start. `v9` and earlier states are rejected at
   the read boundary with `SESSION_STATE_INCOMPATIBLE`; there is no read default
   or migration. This is also a breaking TypeScript API change to the exported
-  `PlanRecord` and `ArchitectureDecision` types. `assurance-epoch.v3`,
+  `PlanRecord`, `ArchitectureDecision`, and `SessionState` contracts (the
+  review findings arrays are now required). `assurance-epoch.v3`,
   `state-digest.v2`, `audit-chain.v3`, and the nullable peer-review
   `findingsDigest` are unchanged.
 
