@@ -639,6 +639,17 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Fixed
 
+- **Discovery enumerates tracked and untracked repository signals.** Repository
+  signals now come from a single NUL-delimited
+  `git ls-files --cached --others --exclude-standard` call, so untracked
+  manifests and config files are detected (`.gitignore` still applies) and
+  paths with spaces or non-ASCII characters are no longer C-quoted. Existing
+  sessions whose persisted discovery omitted relevant untracked files may
+  report discovery drift after this change; a same-session `/hydrate` does not
+  regenerate discovery, so policies with `onDrift=block` may require starting a
+  fresh governed session so discovery is captured under the corrected
+  enumeration semantics.
+
 - **Diagnostic file logging no longer materializes an uninitialized workspace.**
   The file sink previously created the full `{workspaces}/<fingerprint>/` root
   as a side effect of its first log record (`mkdir -p` down to

@@ -335,18 +335,26 @@ describe('git adapter behavior contracts', () => {
       ]);
     });
 
-    it('returns empty signals for a repository without commits', async () => {
+    it('enumerates tracked and untracked signals together', async () => {
+      await fs.writeFile(path.join(repo, 'package.json'), '{}\n', 'utf8');
+      await git(repo, ['add', '-A']);
+      await git(repo, ['commit', '-q', '-m', 'tracked manifest']);
+      await fs.writeFile(path.join(repo, 'tsconfig.json'), '{}\n', 'utf8');
+
+      const signals = await listRepoSignals(repo);
+      expect(signals.packageFilePaths).toContain('package.json');
+      expect(signals.configFilePaths).toContain('tsconfig.json');
+    });
+
+    it('enumerates an untracked manifest in a repository without commits', async () => {
       const unborn = path.join(tmpDir, 'unborn');
       await fs.mkdir(unborn);
       await git(unborn, ['init', '-q']);
       await fs.writeFile(path.join(unborn, 'package.json'), '{}\n', 'utf8');
 
       const signals = await listRepoSignals(unborn);
-      expect(signals).toEqual({
-        files: [],
-        packageFilePaths: [],
-        configFilePaths: [],
-      });
+      expect(signals.files).toContain('package.json');
+      expect(signals.packageFilePaths).toContain('package.json');
     });
 
     it('returns empty signals outside a repository', async () => {

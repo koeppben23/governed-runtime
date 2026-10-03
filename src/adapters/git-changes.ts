@@ -231,8 +231,9 @@ export async function hashWorktreeFiles(
  * The full path is the canonical signal; consumers that need a basename derive
  * it locally from the path.
  *
- * Uses `git ls-files` for tracked files and `git ls-files --others --exclude-standard`
- * for untracked files.
+ * Uses a single NUL-delimited `git ls-files --cached --others --exclude-standard`
+ * invocation, so tracked and untracked paths are enumerated verbatim (no
+ * C-quoting, no newline parsing).
  *
  * Performance: On very large repos, this returns all root-level relevant files.
  * The profile detect() functions only check for specific filenames, so even
@@ -243,28 +244,18 @@ export async function listRepoSignals(worktree: string): Promise<{
   packageFilePaths: string[];
   configFilePaths: string[];
 }> {
-  let allFiles: string[] = [];
-
+  let raw: string;
   try {
-    // Tracked files
-    const tracked = await git(worktree, ['ls-files']);
-    if (tracked) {
-      allFiles = tracked.split('\n').filter((f) => f.trim());
-    }
+    raw = await gitRaw(worktree, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
   } catch {
-    // No commits yet or not a git repo — try status-based fallback
-    try {
-      const status = await gitRaw(worktree, ['status', '--porcelain=v1', '-z']);
-      if (status) {
-        allFiles = parsePorcelainZ(status);
-      }
-    } catch {
-      // No git at all — return empty signals
-    }
+    // Historical fail-soft contract: a git failure yields empty signals.
+    // The next commit replaces this with the explicit fail-closed behavior.
+    return { files: [], packageFilePaths: [], configFilePaths: [] };
   }
-
-  // Normalize paths
-  allFiles = allFiles.map((f) => path.normalize(f));
+  const allFiles = raw
+    .split('\0')
+    .filter((file) => file.length > 0)
+    .map((file) => path.normalize(file));
 
   // Categorize by basename; the normalized full path is the canonical signal
   const packageFilePaths: string[] = [];
