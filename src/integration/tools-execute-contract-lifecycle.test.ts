@@ -423,6 +423,7 @@ describe('declare_contract', () => {
       plan: {
         current: makePlanRevision({ body: 'manual authority plan', createdAt: NOW }),
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
       },
       proofContract: { version: 'contract.v2', claims: [existingClaim] },

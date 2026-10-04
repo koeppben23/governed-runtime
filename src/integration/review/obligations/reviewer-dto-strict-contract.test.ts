@@ -173,6 +173,7 @@ describe('reviewer DTO strict boundary', () => {
           sections: ['## Plan', '## Execution'],
         },
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
       },
     });

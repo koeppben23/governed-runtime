@@ -21,13 +21,16 @@ import type {
 } from '../../../state/evidence.js';
 import { countReviewAttempts } from '../../../state/review-continuation.js';
 
+export type DispatchRearmBlockCause =
+  'obligation_not_found' | 'obligation_settled' | 'budget_exhausted' | 'no_released_dispatch';
+
 export type DispatchRearmAuthorization =
   | {
       readonly kind: 'authorized';
       readonly obligation: ReviewObligation;
       readonly origin: Extract<ReviewAttemptOrigin, { readonly kind: 'dispatch_rearm' }>;
     }
-  | { readonly kind: 'blocked'; readonly reason: string };
+  | { readonly kind: 'blocked'; readonly reason: string; readonly cause: DispatchRearmBlockCause };
 
 type DispatchRearmTrigger = Extract<
   ReviewAttemptOrigin,
@@ -79,20 +82,21 @@ export function authorizeDispatchRearm(
 ): DispatchRearmAuthorization {
   const obligation = assurance.obligations.find((o) => o.obligationId === spent.obligationId);
   if (!obligation) {
-    return { kind: 'blocked', reason: 'rearm_obligation_not_found' };
+    return { kind: 'blocked', reason: 'rearm_obligation_not_found', cause: 'obligation_not_found' };
   }
   if (
     obligation.status === 'fulfilled' ||
     obligation.status === 'consumed' ||
     obligation.status === 'blocked'
   ) {
-    return { kind: 'blocked', reason: 'rearm_obligation_settled' };
+    return { kind: 'blocked', reason: 'rearm_obligation_settled', cause: 'obligation_settled' };
   }
   const rearms = countReviewAttempts(assurance, obligation.obligationId);
   if (rearms >= obligation.maxReviewerAttempts) {
     return {
       kind: 'blocked',
       reason: `reviewer re-arm budget exhausted (${rearms}/${obligation.maxReviewerAttempts})`,
+      cause: 'budget_exhausted',
     };
   }
   const triggerReason = dispatchRearmTrigger(assurance, spent);
@@ -100,6 +104,7 @@ export function authorizeDispatchRearm(
     return {
       kind: 'blocked',
       reason: `reviewer attempt ${spent.attemptId} has no released dispatch to recover from`,
+      cause: 'no_released_dispatch',
     };
   }
   return {

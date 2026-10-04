@@ -460,6 +460,18 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING — session state v10 requires the review findings histories.**
+  `PlanRecord.reviewFindings`, `ArchitectureDecision.reviewFindings`,
+  `SessionState.implReviewFindings`, and `SessionState.peerReviewFindings` are
+  now required: no findings is the empty array, never an absent field, and all
+  writers emit `[]` from the start. `v9` and earlier states are rejected at
+  the read boundary with `SESSION_STATE_INCOMPATIBLE`; there is no read default
+  or migration. This is also a breaking TypeScript API change to the exported
+  `PlanRecord`, `ArchitectureDecision`, and `SessionState` contracts (the
+  review findings arrays are now required). `assurance-epoch.v3`,
+  `state-digest.v2`, `audit-chain.v3`, and the nullable peer-review
+  `findingsDigest` are unchanged.
+
 - **BREAKING — card presentation documents require a form discriminator.**
   `CompactCardDocument`, `ReviewCardDocument`, and `DiagnosticCardDocument`
   now require `form`, and the Markdown contract validates every card instead

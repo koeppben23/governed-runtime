@@ -58,13 +58,12 @@ export const ArchitectureDecision = z
     /**
      * Independent review findings, one entry per review iteration (F13).
      *
-     * Parallel to plan.reviewFindings and implementation.reviewFindings:
-     * stored append-only as the architecture review loop progresses, so the
-     * full review history is auditable. Optional for backwards-compat with
-     * sessions created before F13 — absent and empty array MUST be treated
-     * equivalently by all consumers.
+     * Parallel to plan.reviewFindings and implReviewFindings: stored
+     * append-only as the architecture review loop progresses, so the full
+     * review history is auditable. REQUIRED — no findings is the empty array,
+     * never an absent field.
      */
-    reviewFindings: z.array(ReviewFindings).optional(),
+    reviewFindings: z.array(ReviewFindings),
     /** User-declared ProofGraph claims for this architecture decision. */
     claimDeclarations: ArchitectureClaimDeclarations.optional(),
     /** User approval certificate bound to this architecture decision. */

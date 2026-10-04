@@ -281,7 +281,7 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     hasImplementation: state.implementation !== null,
     implReviewIteration: state.implReview?.iteration ?? null,
     implReviewConverged: implReviewConverged(state),
-    latestImplementationReview: latestReviewSummary(state.implReviewFindings ?? null, {
+    latestImplementationReview: latestReviewSummary(state.implReviewFindings, {
       includePlanVersion: false,
       assurance: state.reviewAssurance,
       obligationType: 'implement',

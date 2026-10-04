@@ -26,7 +26,11 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { TicketEvidence, PlanEvidence, LoopVerdict } from '../state/evidence.js';
-import { computeRecordDigest, resolvePlanReviewCompletion } from '../state/evidence-plan.js';
+import {
+  carriedPlanReviewFindings,
+  computeRecordDigest,
+  resolvePlanReviewCompletion,
+} from '../state/evidence-plan.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import {
@@ -197,6 +201,7 @@ export async function executePlan(
     plan: {
       current: loop.artifact,
       history,
+      reviewFindings: carriedPlanReviewFindings(state.plan),
       reviewCompletion: resolvePlanReviewCompletion(
         loop.iteration,
         loop.maxIterations,

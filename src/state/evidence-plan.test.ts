@@ -34,7 +34,12 @@ describe('evidence-plan', () => {
         body: '## Plan v2',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
-      const record = { current: v2, history: [v1], reviewCompletion: 'pending' as const };
+      const record = {
+        current: v2,
+        history: [v1],
+        reviewFindings: [],
+        reviewCompletion: 'pending' as const,
+      };
       const parsed = PlanRecord.parse(record);
       expect(parsed.current).toMatchObject(v2);
       expect(parsed.history[0]).toMatchObject(v1);
@@ -42,7 +47,12 @@ describe('evidence-plan', () => {
 
     it('PlanRecord with empty history is valid', () => {
       const current = makePlanRevision({ body: 'Plan' });
-      const record = { current, history: [], reviewCompletion: 'pending' as const };
+      const record = {
+        current,
+        history: [],
+        reviewFindings: [],
+        reviewCompletion: 'pending' as const,
+      };
       expect(PlanRecord.parse(record).current).toMatchObject(current);
     });
 
@@ -56,8 +66,18 @@ describe('evidence-plan', () => {
         body: '## Plan v3',
         createdAt: '2026-01-01T00:00:02.000Z',
       });
-      const newestFirst = { current: v3, history: [v2, v1], reviewCompletion: 'pending' as const };
-      const oldestFirst = { current: v3, history: [v1, v2], reviewCompletion: 'pending' as const };
+      const newestFirst = {
+        current: v3,
+        history: [v2, v1],
+        reviewFindings: [],
+        reviewCompletion: 'pending' as const,
+      };
+      const oldestFirst = {
+        current: v3,
+        history: [v1, v2],
+        reviewFindings: [],
+        reviewCompletion: 'pending' as const,
+      };
       expect(PlanRecord.parse(newestFirst).history).toHaveLength(2);
       expect(PlanRecord.parse(oldestFirst).history).toHaveLength(2);
     });
@@ -107,9 +127,9 @@ describe('evidence-plan', () => {
 
     it('PlanRecord rejects a digest that does not match hashText(body)', () => {
       const current = { ...makePlanRevision({ body: 'Plan' }), digest: 'not-the-body-hash' };
-      expect(() => PlanRecord.parse({ current, history: [], reviewCompletion: 'pending' })).toThrow(
-        /digest does not match hashText\(body\)/,
-      );
+      expect(() =>
+        PlanRecord.parse({ current, history: [], reviewFindings: [], reviewCompletion: 'pending' }),
+      ).toThrow(/digest does not match hashText\(body\)/);
     });
 
     it('PlanRecord rejects a recordDigest that does not match computeRecordDigest(...)', () => {
@@ -117,15 +137,20 @@ describe('evidence-plan', () => {
         ...makePlanRevision({ body: 'Plan' }),
         recordDigest: 'wrong-record-digest',
       };
-      expect(() => PlanRecord.parse({ current, history: [], reviewCompletion: 'pending' })).toThrow(
-        /recordDigest does not match computeRecordDigest/,
-      );
+      expect(() =>
+        PlanRecord.parse({ current, history: [], reviewFindings: [], reviewCompletion: 'pending' }),
+      ).toThrow(/recordDigest does not match computeRecordDigest/);
     });
 
     it('PlanRecord rejects a non-contiguous lineage (v2 without v1)', () => {
       const v2 = makePlanRevision({ body: '## Plan v2', planVersion: 2 });
       expect(() =>
-        PlanRecord.parse({ current: v2, history: [], reviewCompletion: 'pending' }),
+        PlanRecord.parse({
+          current: v2,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        }),
       ).toThrow(/not contiguous/);
     });
 
@@ -139,7 +164,12 @@ describe('evidence-plan', () => {
         supersedesRecordDigest: 'a'.repeat(64),
       });
       expect(() =>
-        PlanRecord.parse({ current: v2, history: [v1], reviewCompletion: 'pending' }),
+        PlanRecord.parse({
+          current: v2,
+          history: [v1],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        }),
       ).toThrow(/chain is broken at v2/);
     });
 
@@ -149,7 +179,12 @@ describe('evidence-plan', () => {
         supersedesRecordDigest: 'a'.repeat(64),
       });
       expect(() =>
-        PlanRecord.parse({ current: badV1, history: [], reviewCompletion: 'pending' }),
+        PlanRecord.parse({
+          current: badV1,
+          history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        }),
       ).toThrow(/chain is broken at v1/);
     });
 
@@ -157,7 +192,12 @@ describe('evidence-plan', () => {
       const v1 = makePlanRevision({ body: '## Plan v1' });
       const v2 = makePlanRevisionAfter(v1, { body: '## Plan v2' });
       expect(() =>
-        PlanRecord.parse({ current: v1, history: [v2], reviewCompletion: 'pending' }),
+        PlanRecord.parse({
+          current: v1,
+          history: [v2],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
+        }),
       ).toThrow(/not the lineage head/);
     });
 

@@ -49,6 +49,7 @@ function planWith(body: string): PlanRecord {
   return {
     current: makePlanRevision({ body, createdAt: FIXED_TIME }),
     history: [],
+    reviewFindings: [],
     reviewCompletion: 'pending',
   };
 }

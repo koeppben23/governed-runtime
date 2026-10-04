@@ -22,7 +22,7 @@ export function collectHistoricallyRejectedImplementationDigests(
     (state.reviewAssurance?.obligations ?? []).map((o) => [o.obligationId, o]),
   );
   const rejected = new Set<string>();
-  for (const finding of state.implReviewFindings ?? []) {
+  for (const finding of state.implReviewFindings) {
     if (finding.overallVerdict !== 'changes_requested') continue;
     const obligationId = finding.attestation?.toolObligationId;
     if (!obligationId) continue;

@@ -292,6 +292,7 @@ describe('evaluateProofGraphGateFromState', () => {
     return {
       current: PLAN_CURRENT,
       history: [],
+      reviewFindings: [],
       reviewCompletion: 'pending',
       claimDeclarations: decls,
       ...(cert ? { approvalCertificate: cert } : {}),

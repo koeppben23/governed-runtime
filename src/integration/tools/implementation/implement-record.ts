@@ -394,7 +394,7 @@ export async function handleImplRecord(
   const implEvidence = await buildImplEvidence(input, files, domainFiles, digest);
   // Host-captured findings are append-only and only ever written by
   // handleImplReview from the resolved structured evidence.
-  const existingFindings = input.state.implReviewFindings ?? [];
+  const existingFindings = input.state.implReviewFindings;
   const reviewIteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
   const declarationBlocked = ticketDeclarationBlocked(input.state);
@@ -433,7 +433,7 @@ export async function handleImplRecord(
     // implementation always invalidates any prior decision.
     reducedCeremony: null,
     implReview: null,
-    implReviewFindings: existingFindings.length > 0 ? existingFindings : undefined,
+    implReviewFindings: existingFindings,
     reviewAssurance: input.state.reviewAssurance,
     error: null,
   };

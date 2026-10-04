@@ -928,7 +928,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
       plan: {
         current: PLAN_CURRENT,
         history: [],
-        reviewFindings: undefined,
+        reviewFindings: [],
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [claim] },
         reviewCompletion: 'reviewer_accepted',
       },
@@ -1132,7 +1132,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
       plan: {
         current: PLAN_CURRENT,
         history: [],
-        reviewFindings: undefined,
+        reviewFindings: [],
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
         reviewCompletion: 'reviewer_accepted',
       },

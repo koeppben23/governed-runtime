@@ -272,6 +272,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       plan: {
         current: makePlanRevision({ body: '## Plan\nShip status tests', createdAt: fixedTime }),
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
       },
     };

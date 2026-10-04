@@ -330,7 +330,7 @@ async function convergedPlanReviewCardResponse(
   const reviewedIdentity = resolveReviewedArtifactIdentity(
     finalState.reviewAssurance,
     'plan',
-    finalState.plan?.reviewFindings?.at(-1),
+    finalState.plan?.reviewFindings.at(-1),
     getAdapterLogger(),
   );
   const taskTitle = firstLine(finalState.ticket?.text);

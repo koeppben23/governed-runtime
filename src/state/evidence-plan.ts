@@ -108,7 +108,8 @@ function planRevisionIssuePath(
  *
  * - current: the active plan version
  * - history: all previous versions (newest first)
- * - reviewFindings: independent review findings per iteration (parallel, NOT mixed)
+ * - reviewFindings: independent review findings per iteration (parallel, NOT mixed);
+ *   REQUIRED — no findings is the empty array, never an absent field
  *
  * Architecture invariant: plan.history = author artifacts, plan.reviewFindings = reviewer artifacts
  *
@@ -123,7 +124,7 @@ export const PlanRecord = z
   .object({
     current: PlanEvidence,
     history: z.array(PlanEvidence),
-    reviewFindings: z.array(ReviewFindings).optional(),
+    reviewFindings: z.array(ReviewFindings),
     /** User-declared ProofGraph claims for the current plan authority. */
     claimDeclarations: PlanClaimDeclarations.optional(),
     /**
@@ -297,4 +298,12 @@ export function resolvePlanReviewCompletion(
   if (reviewerAccepted) return 'reviewer_accepted';
   if (iteration >= maxIterations) return 'review_exhausted';
   return 'pending';
+}
+
+/**
+ * Review findings carried across a plan rewrite. A missing parent plan is a
+ * legitimate empty history, never a reason to synthesize a findings object.
+ */
+export function carriedPlanReviewFindings(plan: PlanRecord | null | undefined): ReviewFindings[] {
+  return plan?.reviewFindings ?? [];
 }

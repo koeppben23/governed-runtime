@@ -817,6 +817,7 @@ describe('audit completeness', () => {
         plan: {
           current,
           history: [],
+          reviewFindings: [],
           reviewCompletion: 'pending',
         },
       });

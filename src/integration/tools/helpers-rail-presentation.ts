@@ -147,7 +147,7 @@ export function formatRailResult(
 }
 
 function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
-  const latestFindings = state.implReviewFindings?.at(-1);
+  const latestFindings = state.implReviewFindings.at(-1);
   const document = buildEvidenceApprovalCompletionDocument({
     proofSummary: projectCompletionProofStatus(state),
     exportAction: projectStatusActionFromCommand('/export', 'recommended'),

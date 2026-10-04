@@ -122,7 +122,7 @@ function projectImplementationRework(
 ): StatusProjection['implementationRework'] {
   const marker = state.implementationRework;
   if (!marker) return null;
-  const findings = [...(state.implReviewFindings ?? [])]
+  const findings = [...state.implReviewFindings]
     .reverse()
     .find((item) => item.overallVerdict === 'changes_requested');
   return {

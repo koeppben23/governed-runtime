@@ -174,7 +174,7 @@ export function appendImplReviewState(input: {
     runtime.ctx.now(),
     evidenceInvocationId,
   );
-  const existingFindings = runtime.state.implReviewFindings ?? [];
+  const existingFindings = runtime.state.implReviewFindings;
   const newReviewFindings = [...existingFindings, normalizeHostFindings(effectiveFindings)];
   const reviewedState: SessionState = {
     ...runtime.state,
@@ -188,7 +188,7 @@ export function appendImplReviewState(input: {
       verdict: runtime.args.reviewVerdict as LoopVerdict,
       executedAt: runtime.ctx.now(),
     },
-    implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
+    implReviewFindings: newReviewFindings,
     reviewAssurance: {
       ...consumedAssurance,
     },

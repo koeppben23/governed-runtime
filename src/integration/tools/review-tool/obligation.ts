@@ -139,7 +139,7 @@ export function consumeValidatedReviewObligation(
     state: {
       ...result.state,
       peerReviewFindings: [
-        ...(result.state.peerReviewFindings ?? []),
+        ...result.state.peerReviewFindings,
         ...(consumption?.effectiveReviewFindings ? [consumption.effectiveReviewFindings] : []),
       ],
       reviewAssurance: consumeReviewObligation(

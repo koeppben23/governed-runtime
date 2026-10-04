@@ -424,7 +424,7 @@ describe('FlowGuard tool-level E2E', () => {
             current: makePlanRevision({ body: '# Plan', createdAt: FIXED_TIME }),
             history: [],
             reviewCompletion: 'pending',
-            reviewFindings: undefined,
+            reviewFindings: [],
           },
           // No active checks → IMPL_VALIDATION passes vacuously and auto-advances to
           // IMPL_REVIEW (this segment exercises the review handshake, not re-validation).

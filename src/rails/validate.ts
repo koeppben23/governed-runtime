@@ -139,7 +139,7 @@ function buildValidationResultState(
       ? {
           selfReview: null,
           reviewDecision: null,
-          plan: state.plan ? { ...state.plan, reviewFindings: undefined } : null,
+          plan: state.plan ? { ...state.plan, reviewFindings: [] } : null,
         }
       : {}),
   };

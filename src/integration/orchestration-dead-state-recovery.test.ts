@@ -321,6 +321,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
       title: 'Test Decision',
       adrText: '## Context\nTest\n## Decision\nTest\n## Consequences\nTest',
       status: 'proposed',
+      reviewFindings: [],
       reviewCompletion: 'pending',
       digest: 'adr-digest',
       createdAt: new Date().toISOString(),
@@ -1149,6 +1150,22 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         final.reviewAssurance!.attempts.filter((attempt) => attempt.obligationId === obligationId),
       ).toHaveLength(2);
       expect(final.architecture!.digest).toBe(before.architecture!.digest);
+      // The refused re-arm closes the unrecoverable obligation ...
+      expect(
+        final.reviewAssurance!.obligations.find((o) => o.obligationId === obligationId)!.status,
+      ).toBe('blocked');
+
+      // ... so the next /architecture submission restarts review orchestration
+      // with a fresh obligation instead of dead-ending on the pending one.
+      const recoveryRaw = await architecture.execute(
+        { title: 'Test Decision', adrText: ADR_TEXT },
+        ctx,
+      );
+      const recovery = parseToolResult(recoveryRaw);
+      expect(recovery.error).not.toBe(true);
+      const freshObligationId = (recovery.reviewObligation as { obligationId: string })
+        .obligationId;
+      expect(freshObligationId).not.toBe(obligationId);
     });
 
     it('blocks reviewRecovery mixed with ADR text as an invalid argument shape', async () => {

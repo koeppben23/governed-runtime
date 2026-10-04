@@ -444,6 +444,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
     return {
       current: PLAN_CURRENT,
       history: [],
+      reviewFindings: [],
       reviewCompletion: 'pending',
       claimDeclarations: declarations(),
       approvalCertificate: certificate(),
@@ -554,6 +555,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
       plan: {
         current: makePlanRevision({ body: '## Plan\n...' }),
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
       },
     };
@@ -690,6 +692,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       plan: {
         current: makePlanRevision({ body: '## Plan' }),
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
       },
       selfReview: {
@@ -781,6 +784,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       plan: {
         current: makePlanRevision({ body: '## Plan' }),
         history: [],
+        reviewFindings: [],
         reviewCompletion: 'pending',
       },
       selfReview: {

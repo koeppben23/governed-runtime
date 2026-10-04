@@ -13,7 +13,11 @@
 import { randomUUID } from 'node:crypto';
 import { buildEnforcementError } from '../../blocked-result.js';
 
-import { authorizeDispatchRearm } from '../obligations/reissue-authority.js';
+import {
+  authorizeDispatchRearm,
+  type DispatchRearmBlockCause,
+} from '../obligations/reissue-authority.js';
+import { blockObligation } from '../obligations/obligation-state.js';
 import {
   createAttemptForExistingObligation,
   updateAttemptStatus,
@@ -171,7 +175,12 @@ export async function abandonReviewDispatchByHostCall(
 
 export type AbandonAndRearmOutcome =
   | { readonly kind: 'rearmed'; readonly attempt: ReviewAttempt; readonly obligationId: string }
-  | { readonly kind: 'blocked'; readonly reason: string }
+  | {
+      readonly kind: 'blocked';
+      readonly reason: string;
+      readonly cause: DispatchRearmBlockCause;
+      readonly obligationId: string;
+    }
   | { readonly kind: 'noop' };
 
 /**
@@ -220,7 +229,22 @@ export async function abandonAndRearmByHostCall(
 
     const rearm = buildInterruptedDispatchRearm(staled, spent, now);
     if (rearm.kind === 'blocked') {
-      outcome = { kind: 'blocked', reason: rearm.reason };
+      outcome = {
+        kind: 'blocked',
+        reason: rearm.reason,
+        cause: rearm.cause,
+        obligationId: attempt.obligationId,
+      };
+      // The attempt budget is exhausted: the obligation is unrecoverable in
+      // place. Close it deterministically so the next originating command can
+      // mint a fresh obligation instead of dead-ending on a pending one.
+      if (rearm.cause === 'budget_exhausted') {
+        return blockObligation(
+          { ...state, reviewAssurance: staled },
+          attempt.obligationId,
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        );
+      }
       return { ...state, reviewAssurance: staled };
     }
     outcome = { kind: 'rearmed', attempt: rearm.attempt, obligationId: rearm.attempt.obligationId };
@@ -235,7 +259,7 @@ export type InterruptedDispatchRearm =
       readonly assurance: SessionState['reviewAssurance'];
       readonly attempt: ReviewAttempt;
     }
-  | { readonly kind: 'blocked'; readonly reason: string };
+  | { readonly kind: 'blocked'; readonly reason: string; readonly cause: DispatchRearmBlockCause };
 
 export function buildInterruptedDispatchRearm(
   assurance: SessionState['reviewAssurance'] | undefined,
@@ -244,7 +268,7 @@ export function buildInterruptedDispatchRearm(
 ): InterruptedDispatchRearm {
   const authorization = authorizeDispatchRearm(ensureReviewAssurance(assurance), spent);
   if (authorization.kind === 'blocked') {
-    return { kind: 'blocked', reason: authorization.reason };
+    return { kind: 'blocked', reason: authorization.reason, cause: authorization.cause };
   }
   const minted = createAttemptForExistingObligation(
     assurance,

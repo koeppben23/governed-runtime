@@ -171,6 +171,7 @@ describe('review-decision rail', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
+        reviewFindings: [],
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
         reviewCompletion: 'reviewer_accepted',
       },
@@ -204,6 +205,7 @@ describe('review-decision rail', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
+        reviewFindings: [],
         claimDeclarations: emptyClaimDeclarations('plan'),
         reviewCompletion: 'reviewer_accepted',
       },
@@ -232,6 +234,7 @@ describe('review-decision rail', () => {
       plan: {
         current: PLAN_RECORD.current,
         history: PLAN_RECORD.history,
+        reviewFindings: [],
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
         reviewCompletion: 'reviewer_accepted',
       },

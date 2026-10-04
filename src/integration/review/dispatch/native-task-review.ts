@@ -328,7 +328,9 @@ async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise
   if (rearm.kind !== 'rearmed') {
     const blockedReason =
       rearm.kind === 'blocked'
-        ? `FlowGuard could not re-arm a fresh reviewer attempt: ${rearm.reason}.`
+        ? rearm.cause === 'budget_exhausted'
+          ? `FlowGuard closed the broken review obligation because the re-arm budget is exhausted (${rearm.reason}). Re-run the originating command to mint a fresh obligation.`
+          : `FlowGuard could not re-arm a fresh reviewer attempt: ${rearm.reason}.`
         : 'FlowGuard found no exact abandoned dispatch lineage to re-arm.';
     await abandonAndBlock({ ...input, reason: `${input.reason} ${blockedReason}` });
     return;
