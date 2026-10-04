@@ -33,58 +33,58 @@ const REPO_ROOT = join(__dirname, '..', '..', '..');
 const read = (relativePath: string): string =>
   readFileSync(join(REPO_ROOT, relativePath), 'utf-8').replace(/\r\n/g, '\n');
 
-/** One documented contract row: markdown label plus its canonical authority. */
+/** One documented contract row: markdown label plus its canonical authorities. */
 interface DocumentedContract {
   readonly label: string;
   readonly value: string;
-  readonly authority: string;
+  readonly authorities: readonly string[];
 }
 
 const ARCHITECTURE_MAP_CONTRACTS: readonly DocumentedContract[] = [
   {
     label: 'Session state',
     value: CURRENT_SESSION_STATE_SCHEMA_VERSION,
-    authority: 'src/state/schema.ts',
+    authorities: ['src/state/schema.ts'],
   },
   {
     label: 'Assurance epoch',
     value: CURRENT_ASSURANCE_EPOCH,
-    authority: 'src/state/schema.ts',
+    authorities: ['src/state/schema.ts'],
   },
   {
     label: 'State digest',
     value: CURRENT_STATE_DIGEST_FORMAT,
-    authority: 'src/state/schema.ts',
+    authorities: ['src/state/schema.ts'],
   },
   {
     label: 'Audit chain',
     value: CURRENT_AUDIT_CHAIN_FORMAT,
-    authority: 'src/state/evidence-audit.ts',
+    authorities: ['src/state/schema.ts', 'src/state/evidence-audit.ts'],
   },
   {
     label: 'Policy digest',
     value: POLICY_DIGEST_VERSION,
-    authority: 'src/state/evidence-identifiers.ts',
+    authorities: ['src/state/evidence-identifiers.ts'],
   },
   {
     label: 'Archive manifest',
     value: ARCHIVE_MANIFEST_SCHEMA_VERSION,
-    authority: 'src/archive/types.ts',
+    authorities: ['src/archive/types.ts'],
   },
   {
     label: 'Review assurance',
     value: REVIEW_ASSURANCE_SCHEMA_VERSION,
-    authority: 'src/state/evidence-review.ts',
+    authorities: ['src/state/evidence-review.ts'],
   },
   {
     label: 'Peer-review evidence',
     value: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
-    authority: 'src/state/peer-review.ts',
+    authorities: ['src/state/peer-review.ts'],
   },
   {
     label: 'Discovery',
     value: DISCOVERY_SCHEMA_VERSION,
-    authority: 'src/discovery/types.ts',
+    authorities: ['src/discovery/types.ts'],
   },
 ];
 
@@ -93,49 +93,49 @@ const UPGRADE_ROLLBACK_CONTRACTS: readonly DocumentedContract[] = [
   {
     label: 'Session state',
     value: CURRENT_SESSION_STATE_SCHEMA_VERSION,
-    authority: 'src/state/schema.ts',
+    authorities: ['src/state/schema.ts'],
   },
   {
     label: 'Assurance epoch',
     value: CURRENT_ASSURANCE_EPOCH,
-    authority: 'src/state/schema.ts',
+    authorities: ['src/state/schema.ts'],
   },
   {
     label: 'State digest',
     value: CURRENT_STATE_DIGEST_FORMAT,
-    authority: 'src/state/schema.ts',
+    authorities: ['src/state/schema.ts'],
   },
   {
     label: 'Policy digest',
     value: POLICY_DIGEST_VERSION,
-    authority: 'src/state/evidence-identifiers.ts',
+    authorities: ['src/state/evidence-identifiers.ts'],
   },
   {
     label: 'Audit chain',
     value: CURRENT_AUDIT_CHAIN_FORMAT,
-    authority: 'src/state/evidence-audit.ts',
+    authorities: ['src/state/evidence-audit.ts'],
   },
 ];
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** Matches one markdown table row whose label and value share the same row. */
-function tableRowPattern(contract: DocumentedContract): RegExp {
-  return new RegExp(
-    `\\|\\s*${escapeRegExp(contract.label)}\\s*\\|\\s*\`${escapeRegExp(contract.value)}\`\\s*\\|`,
-  );
+/** The markdown table row whose first cell is the contract label. */
+function contractRow(markdown: string, label: string): string | undefined {
+  return markdown.split('\n').find((line) => line.startsWith(`| ${label} `));
 }
 
 describe('developer contract version documentation', () => {
   describe('architecture map', () => {
-    it('pins every documented contract version against its source constant', () => {
+    it('pins label, version, and authorities on the same table row', () => {
       const map = read('docs/development/architecture-map.md');
 
       for (const contract of ARCHITECTURE_MAP_CONTRACTS) {
-        expect(map, `${contract.label} row (${contract.value})`).toMatch(tableRowPattern(contract));
-        expect(map, `${contract.label} authority`).toContain(contract.authority);
+        const row = contractRow(map, contract.label);
+        expect(row, `${contract.label} row`).toBeDefined();
+        expect(row, `${contract.label} version (${contract.value})`).toContain(
+          `\`${contract.value}\``,
+        );
+        for (const authority of contract.authorities) {
+          expect(row, `${contract.label} authority (${authority})`).toContain(`\`${authority}\``);
+        }
       }
       expect(map).toContain(
         'Version tables are navigation. The named source constants are authority.',
