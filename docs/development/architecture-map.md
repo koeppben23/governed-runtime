@@ -175,14 +175,6 @@ mutation scope only to mutation-suitable authorities.
 
 ## Commands
 
-```sh
-npm run check                 # production + test typecheck
-npm run lint:strict           # eslint, zero warnings
-npm run check:format          # prettier
-npm run test:architecture     # dependency, placement, zone, SSOT guards
-npm run test:unit             # fast unit project
-npx vitest run --project integration
-npm run test:scripts          # repository scripts tests
-npm run mutation              # admitted mutation targets (slow)
-npm run check:doc-drift       # generated docs inventory
-```
+Command selection and the executable verification surface are curated in
+[Testing Strategy](../testing-strategy.md); `package.json` is the executable
+script authority. Change-specific commands stay in the checklists above.
