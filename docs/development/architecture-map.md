@@ -68,6 +68,10 @@ the read boundary, with no read migration and no defaulting. See
 
 ### Review change (`src/integration/review/`)
 
+- `Mode B` is the historical/internal test label for the explicit review-verdict
+  submission path used by plan and architecture; it is not a policy mode or a
+  fourth product flow. The `test:review-modeb-contract` script and the
+  contract-smoke workflow keep the label.
 - Zones: `dispatch/`, `obligations/`, `context/`, `observations/`, `evidence/`,
   `validation/`, `prompting/`, `enforcement/`. The review bounded context has no
   barrel facade; production code imports the concrete subzone authority. The
