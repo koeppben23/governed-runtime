@@ -26,6 +26,30 @@ that list, not a second authority list.
 | Installed mandates/commands                 | `src/templates/`                                | `src/templates/mandates.ts`, `src/integration/installed-commands.ts` |
 | Hashing/canonical serialization             | `src/shared/`                                   | `src/shared/hashing.ts`, `src/shared/canonical-json.ts`              |
 
+## Versioned contracts
+
+Persisted and externally referenced contracts carry a hard version. The table
+below is navigation; the named source constants are authority.
+
+| Contract             | Current                         | Authority                                            |
+| -------------------- | ------------------------------- | ---------------------------------------------------- |
+| Session state        | `v10`                           | `src/state/schema.ts`                                |
+| Assurance epoch      | `assurance-epoch.v3`            | `src/state/schema.ts`                                |
+| State digest         | `state-digest.v2`               | `src/state/schema.ts`                                |
+| Audit chain          | `audit-chain.v3`                | `src/state/schema.ts`, `src/state/evidence-audit.ts` |
+| Policy digest        | `policy-digest.v4`              | `src/state/evidence-identifiers.ts`                  |
+| Archive manifest     | `archive-manifest.v4`           | `src/archive/types.ts`                               |
+| Review assurance     | `review-assurance.v7`           | `src/state/evidence-review.ts`                       |
+| Peer-review evidence | `standalone-review-evidence.v2` | `src/state/peer-review.ts`                           |
+| Discovery            | `discovery.v2`                  | `src/discovery/types.ts`                             |
+
+Version tables are navigation. The named source constants are authority.
+
+Contract replacement is a hard version boundary: the old shape is rejected at
+the read boundary, with no read migration and no defaulting. See
+[Upgrade and Rollback](../upgrade-rollback.md) and the superseded
+[Schema Migration Architecture](../architecture/schema-migration.md).
+
 ## Change-type checklists
 
 ### New feature or tool
