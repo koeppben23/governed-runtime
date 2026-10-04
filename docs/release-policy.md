@@ -56,18 +56,34 @@ The following are considered breaking governance semantics changes (major versio
 `main` is the canonical release authority and is protected by repository rules.
 Contributor release steps, including the PR-first, tag-after-merge ordering,
 are owned by [CONTRIBUTING.md](../CONTRIBUTING.md#release-branches). A `v*` tag
-must point at a commit already contained in `origin/main`. That guide also owns
-the recovery procedure for a tag published before merge. Do not use `npm
-version` for FlowGuard releases, and do not overwrite or force-push a tag.
+must point at a commit already contained in `origin/main`, and the tag itself
+must be annotated and signed; the tag-triggered workflow verifies the
+GitHub-verified signature and the exact `main` target before any write-capable
+step. That guide also owns the
+recovery procedure for a tag published before merge. Do not use `npm version`
+for FlowGuard releases, and do not overwrite or force-push a tag.
+
+Release tags are protected by separate creation-authority and immutability
+rulesets, and publication runs behind the protected `release` environment with
+a 15-minute wait timer. A version with a SemVer prerelease suffix is published
+as a GitHub prerelease. The relied-upon live configuration is verified by
+`scripts/control-plane-drift.js` against the executable contract in
+`scripts/control-plane-contract.js`; see
+[BRANCH-PROTECTION.md](../.github/BRANCH-PROTECTION.md).
+
+After a release, `main` and `develop` remain genealogically divergent by design;
+release metadata is synced back to `develop` through a protected PR instead of
+merging the branch histories.
 
 ### Artifact Creation
 
-1. Build once: TypeScript is compiled and `npm pack` creates one `flowguard-core-{version}.tgz` artifact.
-2. Bind: the verify job records that artifact's SHA-256 in `checksums.sha256` and uploads both as one workflow artifact.
-3. Verify: runtime and cross-platform smoke jobs download that exact artifact and verify its checksum before use.
-4. Gate: mutation testing must complete before publication can run.
-5. Publish: the protected `release` environment downloads and re-verifies the same artifact before its tarball provenance attestation and GitHub Release.
-6. Authority: write, OIDC, and attestation permissions exist only in the final publish job; all preceding jobs have read-only repository access.
+1. Preflight: the tag-triggered workflow verifies the annotated, GitHub-signed tag and the live release controls before any write-capable job runs.
+2. Build once: TypeScript is compiled and `npm pack` creates one `flowguard-core-{version}.tgz` artifact.
+3. Bind: the verify job records that artifact's SHA-256 in `checksums.sha256` and uploads both as one workflow artifact.
+4. Verify: runtime and cross-platform smoke jobs download that exact artifact and verify its checksum before use.
+5. Gate: mutation testing must complete before publication can run.
+6. Publish: the protected `release` environment downloads and re-verifies the same artifact before its tarball provenance attestation and GitHub Release.
+7. Authority: write, OIDC, and attestation permissions exist only in the final publish job; all preceding jobs have read-only repository access.
 
 ### Artifact Contents
 
@@ -85,6 +101,7 @@ version` for FlowGuard releases, and do not overwrite or force-push a tag.
 | **Artifact integrity**        | SHA-256 checksum in `checksums.sha256`                                           |
 | **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`) released beside the tarball                 |
 | **Build provenance**          | SLSA-style attestation for the tarball (verifiable with `gh attestation verify`) |
+| **Tag provenance**            | Annotated, GitHub-verified signature on the exact protected `main` commit        |
 | **Content integrity**         | SHA-256 content digest in `flowguard-mandates.md`                                |
 
 ---

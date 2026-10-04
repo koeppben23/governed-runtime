@@ -53,7 +53,7 @@ describe('documentation/release-process', () => {
       const contributing = readRepoFile('CONTRIBUTING.md');
 
       expect(contributing).toContain(
-        'Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`',
+        'Create and push a signed annotated tag: `git tag -s vX.Y.Z -m "FlowGuard vX.Y.Z" && git push origin vX.Y.Z`',
       );
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
       expect(contributing).toContain('`npm version` for FlowGuard releases');
@@ -111,8 +111,20 @@ describe('documentation/release-process', () => {
       expect(contributing).toContain('release/vX.Y.Z');
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
       expect(contributing).toContain(
-        'Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`',
+        'Create and push a signed annotated tag: `git tag -s vX.Y.Z -m "FlowGuard vX.Y.Z" && git push origin vX.Y.Z`',
       );
+      expect(contributing).toContain('gpg.format ssh');
+      expect(contributing).toContain('SemVer prerelease suffix');
+    });
+
+    it('wires the tag preflight and prerelease publication into the release workflow', () => {
+      const workflow = readRepoFile('.github/workflows/release.yml');
+
+      expect(workflow).toContain('node scripts/verify-release-tag.js "$GITHUB_REF_NAME"');
+      expect(workflow).toContain(
+        'needs: [preflight, verify, release-smoke, verify-runtime, mutation]',
+      );
+      expect(workflow).toContain('--prerelease');
     });
   });
 });
