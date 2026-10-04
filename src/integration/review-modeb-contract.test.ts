@@ -1,9 +1,13 @@
 /**
  * @module integration/review-modeb-contract.test
- * @description Plan and architecture Mode-B review validation contract.
+ * @description Plan and architecture review-verdict submission contract.
+ *
+ * "Mode B" is the historical/internal test label for the explicit
+ * review-verdict submission path used by plan and architecture; it is not a
+ * policy mode or a fourth product flow.
  *
  * Calls actual plan.execute() and architecture.execute() in review-verdict
- * mode (Mode B) with real git worktrees and persistence. Bootstraps state
+ * mode with real git worktrees and persistence. Bootstraps state
  * at the correct phase with pre-built evidence and host-specific synthetic
  * review assurance, then invokes the tool to validate and consume.
  *

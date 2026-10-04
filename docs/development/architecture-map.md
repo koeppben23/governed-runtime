@@ -26,6 +26,30 @@ that list, not a second authority list.
 | Installed mandates/commands                 | `src/templates/`                                | `src/templates/mandates.ts`, `src/integration/installed-commands.ts` |
 | Hashing/canonical serialization             | `src/shared/`                                   | `src/shared/hashing.ts`, `src/shared/canonical-json.ts`              |
 
+## Versioned contracts
+
+Persisted and externally referenced contracts carry a hard version. The table
+below is navigation; the named source constants are authority.
+
+| Contract             | Current                         | Authority                                            |
+| -------------------- | ------------------------------- | ---------------------------------------------------- |
+| Session state        | `v10`                           | `src/state/schema.ts`                                |
+| Assurance epoch      | `assurance-epoch.v3`            | `src/state/schema.ts`                                |
+| State digest         | `state-digest.v2`               | `src/state/schema.ts`                                |
+| Audit chain          | `audit-chain.v3`                | `src/state/schema.ts`, `src/state/evidence-audit.ts` |
+| Policy digest        | `policy-digest.v4`              | `src/state/evidence-identifiers.ts`                  |
+| Archive manifest     | `archive-manifest.v4`           | `src/archive/types.ts`                               |
+| Review assurance     | `review-assurance.v7`           | `src/state/evidence-review.ts`                       |
+| Peer-review evidence | `standalone-review-evidence.v2` | `src/state/peer-review.ts`                           |
+| Discovery            | `discovery.v2`                  | `src/discovery/types.ts`                             |
+
+Version tables are navigation. The named source constants are authority.
+
+Contract replacement is a hard version boundary: the old shape is rejected at
+the read boundary, with no read migration and no defaulting. See
+[Upgrade and Rollback](../upgrade-rollback.md) and the superseded
+[Schema Migration Architecture](../architecture/schema-migration.md).
+
 ## Change-type checklists
 
 ### New feature or tool
@@ -44,6 +68,10 @@ that list, not a second authority list.
 
 ### Review change (`src/integration/review/`)
 
+- `Mode B` is the historical/internal test label for the explicit review-verdict
+  submission path used by plan and architecture; it is not a policy mode or a
+  fourth product flow. The `test:review-modeb-contract` script and the
+  contract-smoke workflow keep the label.
 - Zones: `dispatch/`, `obligations/`, `context/`, `observations/`, `evidence/`,
   `validation/`, `prompting/`, `enforcement/`. The review bounded context has no
   barrel facade; production code imports the concrete subzone authority. The
@@ -175,14 +203,6 @@ mutation scope only to mutation-suitable authorities.
 
 ## Commands
 
-```sh
-npm run check                 # production + test typecheck
-npm run lint:strict           # eslint, zero warnings
-npm run check:format          # prettier
-npm run test:architecture     # dependency, placement, zone, SSOT guards
-npm run test:unit             # fast unit project
-npx vitest run --project integration
-npm run test:scripts          # repository scripts tests
-npm run mutation              # admitted mutation targets (slow)
-npm run check:doc-drift       # generated docs inventory
-```
+Command selection and the executable verification surface are curated in
+[Testing Strategy](../testing-strategy.md); `package.json` is the executable
+script authority. Change-specific commands stay in the checklists above.

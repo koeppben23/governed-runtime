@@ -5,6 +5,81 @@ Suites may document applicable coverage categories in a `@test-policy` doc comme
 used, a tag lists only the canonical categories exercised by that suite; headers are optional
 and are not a repository-wide enforcement mechanism.
 
+## Which command should I run?
+
+`package.json` is the executable script authority. This section is a curated
+navigation projection; when a script is added, renamed, or removed, update the
+projection in the same change.
+
+**Every TypeScript change**
+
+```sh
+npm run check:format
+npm run check
+npm run lint:strict
+```
+
+**Normal behavior**
+
+```sh
+npm test
+npm run test:unit
+npm run test:integration
+```
+
+**Architecture / ownership**
+
+```sh
+npm run test:architecture
+npm run check:unused-dependencies
+```
+
+**Review contracts**
+
+```sh
+npm run test:review-host-contract
+npm run test:review-modeb-contract
+npm run test:independent-review-e2e
+```
+
+**SDK / host contracts**
+
+```sh
+npm run test:sdk-contract:all
+npm run test:provider-conformance
+npm run test:evals
+```
+
+**Distribution**
+
+```sh
+npm run build
+npm run test:install-verify
+npm run test:smoke
+```
+
+**High-risk authorities**
+
+```sh
+npm run mutation
+```
+
+**Documentation**
+
+```sh
+npm run check:doc-drift
+```
+
+| Change                   | Minimum additional verification                 |
+| ------------------------ | ----------------------------------------------- |
+| Import / placement       | `npm run test:architecture`                     |
+| State / persistence      | owning state + integration tests                |
+| Review pipeline          | `npm run test:review-host-contract`             |
+| Public SDK               | `npm run test:sdk-contract:all`                 |
+| Distribution / installer | `npm run build` + `npm run test:install-verify` |
+| High-risk authority      | `npm run mutation`                              |
+| Docs                     | `npm run check:doc-drift`                       |
+
 ## Test Categories
 
 Every test suite should cover the applicable correctness categories:
