@@ -1038,6 +1038,16 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Security
 
+- **Release tag provenance and control-plane drift.** The tag-triggered release
+  workflow now runs a POST-TAG preflight before any write-capable step: the
+  pushed tag must be an annotated tag object with a GitHub-verified signature
+  pointing at the exact current protected `main` commit, and the relied-upon
+  tag rulesets and `release` environment must match the executable contract in
+  `scripts/control-plane-contract.js`. `v*` tags are protected by separate
+  creation-authority and immutability rulesets. SemVer prereleases are
+  published as GitHub prereleases. The PRE-TAG assertion and the CI preflight
+  share one decision authority in `scripts/release-preflight.js`.
+
 - **Self-contradictory reviewer findings can no longer accept a review gate (F12).**
   A reviewer verdict of `accept` carrying a non-empty `blockingIssues` array is now
   rejected fail-closed at every ingestion boundary. Previously the only rule requiring

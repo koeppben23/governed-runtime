@@ -104,22 +104,106 @@ The following jobs run but are intentionally **not** required by the live rulese
 If any of these is promoted to merge-blocking, move it to the required list
 above in the same PR that flips the ruleset setting.
 
+## Tag Protection
+
+Release tags are protected by two separate rulesets. The split is deliberate: a
+single combined ruleset would let the creation bypass weaken the
+immutability rules.
+
+| Ruleset                          | Target | Rules                                         | Bypass                         |
+| -------------------------------- | ------ | --------------------------------------------- | ------------------------------ |
+| `Release tag creation authority` | `v*`   | Restrict creations                            | Release actor (the maintainer) |
+| `Release tag immutability`       | `v*`   | Restrict updates, deletions, non-fast-forward | No normal bypass               |
+
+The rulesets make `v*` tags immutable for normal actors while still allowing the
+release authority to create them. The tag-triggered release workflow
+additionally enforces, before any write-capable step, that the pushed tag is an
+annotated tag object, carries a GitHub-verified signature, and points at the
+exact current protected `main` commit.
+
+## Release Environment
+
+Release publication runs behind the protected `release` environment with a
+15-minute wait timer. The timer is an anti-impulse and recovery window, not a
+claim of independent approval. The environment's deployment branch policy is
+restricted to `v*` tags.
+
+## Control-Plane Drift Detection
+
+`scripts/control-plane-contract.js` is the single structured authority for the
+relied-upon GitHub configuration. `scripts/control-plane-drift.js` compares it
+against the live rulesets and the release environment and fails closed on any
+missing or divergent setting. It runs:
+
+- read-only on pull requests that touch `.github/**` or the control-plane
+  scripts, and
+- scheduled and on demand, with a separate remediation job that holds
+  `issues: write` and opens at most one open `control-plane-drift` issue.
+
+`bypass_actors` is only visible to callers with enough ruleset access. When the
+API hides the actor list, the drift report marks it `UNVERIFIED` instead of
+silently accepting it; an owner-authorized read is the documented verification
+path.
+
+## Solo Maintainer Review Model
+
+This repository uses a solo-maintainer ruleset: GitHub cannot count the PR
+author's own approval toward required approvals, so the live ruleset does not
+require a separate approving reviewer. Lead-level protection is enforced through
+mandatory PRs, strict required checks, branch freshness, linear history,
+resolved review threads, and deletion/force-push protection.
+
+External review remains recommended for high-risk release, security, persistence,
+policy, identity, audit, archive, installer, and CI changes when a second
+reviewer is available.
+
+A solo repository owner cannot achieve separation of duties from themselves.
+This is an explicitly accepted residual risk: no repository-local control can
+prevent the owner from editing the rulesets, the environment, or the workflow
+files. The compensating controls are fail-closed verification in the release
+workflow, immutable tags, the publication wait timer, the control-plane drift
+detection, and the auditable configuration recorded in this file.
+
+### Owner-Account Compromise Recovery
+
+If the owner account may be compromised:
+
+1. Revoke all GitHub sessions, tokens, and registered SSH keys; re-authenticate
+   with recovered credentials.
+2. Lock or rotate deployment credentials (package registry, release
+   environment) and any external secrets.
+3. Inspect ruleset, tag, and release history for unauthorized changes; restore
+   the contract from `scripts/control-plane-contract.js`.
+4. Invalidate suspect releases and attestations; publish a new immutable tag
+   through the protected release process after remediation.
+5. Record the incident and, where required, publish a follow-up advisory.
+
+Use the emergency procedure below only with recorded scope and expiry, and
+re-enable every control immediately after recovery.
+
 ## Source Of Truth
 
-- Live GitHub ruleset: `Protect main and develop`
+- Live branch/tag rulesets: `Protect main and develop`, `Release tag creation
+authority`, `Release tag immutability`
+- Structured contract: `scripts/control-plane-contract.js`
+- Drift detection: `scripts/control-plane-drift.js`
+- Release preflight: `scripts/verify-release-tag.js` (tag-triggered workflow)
 - CI workflow: `.github/workflows/ci.yml`
 - Security workflow: `.github/workflows/security.yml`
 - Commit title check: `.github/workflows/conventional-commits.yml`
 
-If CI job names change, update this file and the ruleset required-check list together.
+If CI job names change, update the contract, this file, and the ruleset
+required-check list together.
 
 ## Quick Validation Steps
 
-1. Open `Settings -> Rules -> Rulesets -> Protect main and develop`.
-2. Verify `refs/heads/main` and `refs/heads/develop` are included.
-3. Verify all settings in this file are enabled.
-4. Verify all required check names above are present and exact.
-5. Open a test PR and confirm merge stays blocked until all required checks pass.
+1. Run `node scripts/control-plane-drift.js --verbose --repo owner/name` and
+   confirm it reports `control-plane-drift OK`.
+2. For an owner-authorized bypass-actor check, open `Settings -> Rules ->
+Rulesets` and verify the two `v*` rulesets and their bypass actors.
+3. Verify the `release` environment wait timer (15 minutes) and its `v*` tag
+   deployment policy.
+4. Open a test PR and confirm merge stays blocked until all required checks pass.
 
 ## Emergency Procedure
 

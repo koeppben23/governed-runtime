@@ -13,8 +13,31 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    name: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Verify release tag provenance and live controls
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-release-tag.js "$GITHUB_REF_NAME"
+
   verify:
     name: verify
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -22,17 +45,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Require tag target to equal protected main
-        shell: bash
-        run: |
-          git fetch --no-tags origin main
-          TAG_TARGET="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
-          MAIN_TARGET="$(git rev-parse origin/main)"
-          if [ "$TAG_TARGET" != "$MAIN_TARGET" ]; then
-            echo "::error::Release tag must target the exact current origin/main commit"
-            exit 1
-          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
@@ -43,17 +55,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Validate tag matches package.json
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION="$(node -p 'require("./package.json").version')"
-          echo "Tag: $TAG_VERSION"
-          echo "package.json: $PKG_VERSION"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag $TAG_VERSION does not match package.json $PKG_VERSION"
-            exit 1
-          fi
 
       - name: Type check
         run: npm run check
@@ -215,7 +216,7 @@ jobs:
 
   release:
     name: release
-    needs: [verify, release-smoke, verify-runtime, mutation]
+    needs: [preflight, verify, release-smoke, verify-runtime, mutation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: release
@@ -242,6 +243,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          PRERELEASE_ARGS=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            PRERELEASE_ARGS+=(--prerelease)
+          fi
           gh release create "$GITHUB_REF_NAME" \
             release/*.tgz \
             release/checksums.sha256 \
@@ -249,4 +254,5 @@ jobs:
             release/LICENSE \
             --title "FlowGuard v${GITHUB_REF_NAME#v}" \
             --generate-notes \
-            --verify-tag
+            --verify-tag \
+            "${PRERELEASE_ARGS[@]}"

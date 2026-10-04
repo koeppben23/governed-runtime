@@ -219,7 +219,7 @@ Run this protected-main release procedure:
 7. Open a PR to `main`, wait for required checks, and squash-merge it.
 8. Refresh local `main`: `git switch main && git pull --ff-only origin main`.
 9. Prove tag safety: `npm run release:assert-main-tag -- vX.Y.Z`.
-10. Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+10. Create and push a signed annotated tag: `git tag -s vX.Y.Z -m "FlowGuard vX.Y.Z" && git push origin vX.Y.Z`.
 11. Verify the GitHub Release, checksums, SBOM, and provenance artifacts.
 
 Use `npm run release:prepare -- X.Y.Z` to update release files. Do not use
@@ -228,6 +228,20 @@ before branch protection and required checks have accepted the release. Before
 tagging, run `npm run release:assert-main-tag -- vX.Y.Z` to fail closed unless
 the checkout is clean, on `main`, equal to `origin/main`, version-consistent, and
 untagged.
+
+Release tags must be annotated and signed; the tag-triggered release workflow
+verifies the GitHub-verified signature, the annotated tag object, and that the
+tagged commit is the exact current protected `main` commit before any
+write-capable step. To sign with SSH, register the public key as a signing key
+on GitHub and configure `git config --global gpg.format ssh` plus
+`git config --global user.signingkey <path-to-public-key>`. A version with a
+SemVer prerelease suffix (`X.Y.Z-...`) is published as a GitHub prerelease.
+
+After the release PR is merged, `main` and `develop` stay genealogically
+divergent by design. Sync the release metadata back to `develop` through a
+normal PR (version, changelog, release-pinned docs); do not merge `main` into
+`develop` to reconcile the histories, and review the diff before committing so
+only release-related changes are included.
 
 If a release tag is pushed before the release commit is merged to `main`, stop
 and treat the release as inconsistent. Do not overwrite or force-push the tag.
@@ -296,14 +310,14 @@ Run the baseline checks required by [AGENTS.md](AGENTS.md#verification), then
 add the narrowest checks that cover the changed surface. This table is a routing
 aid; scripts, tests, CI, and `AGENTS.md` remain the enforcement authorities.
 
-| Changed surface | Additional verification |
-| --- | --- |
-| Documentation or Markdown links | Relevant `src/documentation/__tests__` files and `full-repo-links.test.ts` |
-| TypeScript source or tests | `npm run check`, `npm run lint:strict` |
-| Imports, exports, placement, or layer boundaries | `npm run test:architecture` |
-| Runtime configuration, installed commands, or templates | Owning contract and install tests; `npm run build` for distribution changes |
-| State, policy, audit, guards, or security boundaries | Meaningful negative paths and `npm run mutation`; verify the changed selector is admitted by `stryker.conf.json` and `scripts/mutation-profile-registry.json` |
-| Dependencies or module surface | `npm run check:unused-dependencies` |
+| Changed surface                                         | Additional verification                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Documentation or Markdown links                         | Relevant `src/documentation/__tests__` files and `full-repo-links.test.ts`                                                                                    |
+| TypeScript source or tests                              | `npm run check`, `npm run lint:strict`                                                                                                                        |
+| Imports, exports, placement, or layer boundaries        | `npm run test:architecture`                                                                                                                                   |
+| Runtime configuration, installed commands, or templates | Owning contract and install tests; `npm run build` for distribution changes                                                                                   |
+| State, policy, audit, guards, or security boundaries    | Meaningful negative paths and `npm run mutation`; verify the changed selector is admitted by `stryker.conf.json` and `scripts/mutation-profile-registry.json` |
+| Dependencies or module surface                          | `npm run check:unused-dependencies`                                                                                                                           |
 
 ## Pull Request Process
 
