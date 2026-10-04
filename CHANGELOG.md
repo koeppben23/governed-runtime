@@ -1048,6 +1048,18 @@ true })` returns the evaluated projection. Key invariants:
   published as GitHub prereleases. The PRE-TAG assertion and the CI preflight
   share one decision authority in `scripts/release-preflight.js`.
 
+- **Release control-plane verification is fully fail-closed.** The
+  control-plane contract now pins the exact `v*` ref target
+  (`refs/tags/v*`, no excludes), the exact tag bypass actor and mode
+  (`User:57482452:always` for creation, none for immutability), the active
+  environment deployment-policy mode, and the repository Actions policy
+  (Actions enabled, all actions allowed, SHA pinning required, all required
+  checks bound to the GitHub Actions app). Trusted runs (scheduled drift and
+  the release POST-TAG preflight) fail closed when `bypass_actors` or the
+  Actions policy cannot be read, and require the read-only
+  `CONTROL_PLANE_READ_TOKEN` secret; only pull-request drift runs may report
+  `PARTIAL_VERIFICATION`.
+
 - **Self-contradictory reviewer findings can no longer accept a review gate (F12).**
   A reviewer verdict of `accept` carrying a non-empty `blockingIssues` array is now
   rejected fail-closed at every ingestion boundary. Previously the only rule requiring

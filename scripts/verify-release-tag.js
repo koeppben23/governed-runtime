@@ -4,7 +4,13 @@
  * @description POST-TAG release preflight for the tag-triggered release
  * workflow. Fails closed unless the pushed tag is an annotated,
  * GitHub-verified signature over the exact current protected `main` commit and
- * the required live release controls are present.
+ * the required live release controls — including the exact bypass actors and
+ * the Actions policy — are present.
+ *
+ * The live-control comparison runs in `strict` mode: hidden `bypass_actors`
+ * or an unreadable Actions policy fail the release. Set `CONTROL_PLANE_TOKEN`
+ * to a read-only token with `Administration: read` so the release authority can
+ * prove the configuration it relies on.
  *
  * This runs before any write-capable release job. The pure decisions live in
  * `scripts/release-preflight.js`; the live-control comparison reuses the
@@ -15,7 +21,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +29,7 @@ import { CONTROL_PLANE_CONTRACT } from './control-plane-contract.js';
 import { evaluateControlPlane, fetchLiveControlPlane } from './control-plane-drift.js';
 import {
   evaluateReleasePostTag,
+  isPrereleaseVersion,
   releaseVersionOf,
   validateReleaseTagName,
 } from './release-preflight.js';
@@ -74,6 +81,7 @@ async function main() {
     process.exit(1);
   }
 
+  const label = `release-tag-preflight (${tag})`;
   git(failures, ['fetch', '--no-tags', 'origin', 'main']);
 
   const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8'));
@@ -116,8 +124,11 @@ async function main() {
   );
 
   try {
-    const live = await fetchLiveControlPlane({ repo, token: process.env.GITHUB_TOKEN });
-    const controlPlane = evaluateControlPlane(live, CONTROL_PLANE_CONTRACT);
+    const live = await fetchLiveControlPlane({
+      repo,
+      token: process.env.CONTROL_PLANE_TOKEN || process.env.GITHUB_TOKEN,
+    });
+    const controlPlane = evaluateControlPlane(live, CONTROL_PLANE_CONTRACT, { mode: 'strict' });
     for (const warning of controlPlane.warnings) {
       console.warn(`warning: ${warning}`);
     }
@@ -128,14 +139,18 @@ async function main() {
 
   if (failures.length > 0) {
     for (const failure of failures) {
-      console.error(`release-tag-preflight: ${failure}`);
+      console.error(`${label}: ${failure}`);
     }
-    console.error(`release-tag-preflight failed: ${failures.length} violation(s)`);
+    console.error(`${label} failed: ${failures.length} violation(s)`);
     process.exit(1);
   }
 
+  const prerelease = isPrereleaseVersion(tag);
+  if (process.env.GITHUB_OUTPUT) {
+    appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${prerelease}\n`);
+  }
   console.log(
-    `release-tag-preflight OK: ${tag} is annotated, verified, and points at protected main.`,
+    `${label} OK: annotated, verified, points at protected main; prerelease=${prerelease}.`,
   );
 }
 

@@ -232,7 +232,10 @@ untagged.
 Release tags must be annotated and signed; the tag-triggered release workflow
 verifies the GitHub-verified signature, the annotated tag object, and that the
 tagged commit is the exact current protected `main` commit before any
-write-capable step. To sign with SSH, register the public key as a signing key
+write-capable step. The preflight also verifies the release control plane in
+strict mode, which requires the repository secret `CONTROL_PLANE_READ_TOKEN`
+(read-only token with `Administration: read`); without it the release fails
+closed. To sign with SSH, register the public key as a signing key
 on GitHub and configure `git config --global gpg.format ssh` plus
 `git config --global user.signingkey <path-to-public-key>`. A version with a
 SemVer prerelease suffix (`X.Y.Z-...`) is published as a GitHub prerelease.

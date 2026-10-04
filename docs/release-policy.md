@@ -66,10 +66,13 @@ for FlowGuard releases, and do not overwrite or force-push a tag.
 Release tags are protected by separate creation-authority and immutability
 rulesets, and publication runs behind the protected `release` environment with
 a 15-minute wait timer. A version with a SemVer prerelease suffix is published
-as a GitHub prerelease. The relied-upon live configuration is verified by
-`scripts/control-plane-drift.js` against the executable contract in
+as a GitHub prerelease. The relied-upon live configuration — rulesets, exact
+bypass actors, environment policy mode, and the repository Actions policy — is
+verified by `scripts/control-plane-drift.js` against the executable contract in
 `scripts/control-plane-contract.js`; see
-[BRANCH-PROTECTION.md](../.github/BRANCH-PROTECTION.md).
+[BRANCH-PROTECTION.md](../.github/BRANCH-PROTECTION.md). The release preflight
+runs this verification in strict mode and requires the read-only
+`CONTROL_PLANE_READ_TOKEN` secret; without it the release fails closed.
 
 After a release, `main` and `develop` remain genealogically divergent by design;
 release metadata is synced back to `develop` through a protected PR instead of

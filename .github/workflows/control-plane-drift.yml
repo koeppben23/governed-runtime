@@ -33,10 +33,18 @@ jobs:
         with:
           node-version-file: .node-version
 
-      - name: Verify live control plane
+      - name: Verify live control plane (pull request, partial)
+        if: github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/control-plane-drift.js --verbose
+        run: node scripts/control-plane-drift.js --mode partial --verbose
+
+      - name: Verify live control plane (trusted, strict)
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}
+        run: node scripts/control-plane-drift.js --mode strict --verbose
 
   # Remediation runs only for trusted schedule/dispatch events, never for
   # pull_request runs of untrusted code, and holds issues:write without any

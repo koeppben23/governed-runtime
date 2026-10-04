@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      prerelease: ${{ steps.verify.outputs.prerelease }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
@@ -31,8 +33,10 @@ jobs:
           node-version-file: .node-version
 
       - name: Verify release tag provenance and live controls
+        id: verify
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}
         run: node scripts/verify-release-tag.js "$GITHUB_REF_NAME"
 
   verify:
@@ -244,7 +248,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PRERELEASE_ARGS=()
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+          if [ "${{ needs.preflight.outputs.prerelease }}" = "true" ]; then
             PRERELEASE_ARGS+=(--prerelease)
           fi
           gh release create "$GITHUB_REF_NAME" \
