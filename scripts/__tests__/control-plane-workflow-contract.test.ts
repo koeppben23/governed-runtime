@@ -44,6 +44,12 @@ describe('scripts/control-plane-workflow-contract', () => {
       expect(workflow).toContain('needs.preflight.outputs.prerelease');
       expect(workflow).toContain('--prerelease');
     });
+
+    it('publishes without requiring a git checkout in the write job', () => {
+      const releaseJob = workflow.slice(workflow.indexOf('  release:'));
+      expect(releaseJob).not.toContain('actions/checkout');
+      expect(releaseJob).toContain('--repo "$GITHUB_REPOSITORY"');
+    });
   });
 
   describe('control-plane drift workflow', () => {

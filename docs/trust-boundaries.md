@@ -376,5 +376,5 @@ FlowGuard is filesystem-first and offline-capable by default. Network-dependent 
 
 ---
 
-FlowGuard Version: 2.0.0-tp.1
+FlowGuard Version: 2.0.0-tp.2
 _Last Updated: 2026-06-06_
