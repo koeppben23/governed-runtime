@@ -1,7 +1,7 @@
 {
   "platform": "opencode",
-  "updated": "2026-07-06T11:40:32.133Z",
-  "version": "1.17.13",
+  "updated": "2026-09-28T16:39:42.704Z",
+  "version": "1.18.33",
   "files": [
     {
       "label": "plugin/dist/index.d.ts",
@@ -10,6 +10,10 @@
     {
       "label": "plugin/dist/tool.d.ts",
       "hash": "5237b30a9b5a9a814f93327ce446e73b726da139fe2eba8edf88c4a45b4b8b2d"
+    },
+    {
+      "label": "sdk/gen/types.gen.d.ts#Event",
+      "hash": "bbf632c72d2484a5fdc39c9259606fe69ed45078cba64e9445e497688d1e804a"
     }
   ]
 }

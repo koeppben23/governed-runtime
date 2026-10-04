@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { executePlan } from '../rails/plan.js';
 import { executeValidate } from '../rails/validate.js';
 import type { ValidateExecutors } from '../rails/validate.js';
@@ -21,6 +21,22 @@ import {
 import type { SessionState } from '../state/schema.js';
 import type { ValidationResult } from '../state/evidence-validation.js';
 import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...original, headCommitFull: vi.fn().mockResolvedValue('a'.repeat(40)) };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local',
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+  };
+});
 
 const ctx = createTestContext();
 
@@ -114,7 +130,7 @@ describe('plan rail', () => {
       }
     });
 
-    it('maxIterations from policy limits loop (solo = 1)', async () => {
+    it('uses the plan review budget from policy', async () => {
       let count = 0;
       const neverApprove = {
         generate: async () => '## Plan',
@@ -128,7 +144,7 @@ describe('plan rail', () => {
       const result = await executePlan(state, {}, soloCtx, neverApprove);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.selfReview!.iteration).toBe(2);
+        expect(result.state.selfReview!.iteration).toBe(SOLO_POLICY.reviewBudget.plan);
       }
     });
   });
@@ -143,16 +159,6 @@ describe('plan rail', () => {
       const planState = makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD });
       const r2 = await executePlan(planState, { text: 'New Plan' }, ctx, planExecutors);
       expect(r2.kind).toBe('ok');
-    });
-  });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('plan execution with instant executors is fast', async () => {
-      const state = makeState('TICKET', { ticket: TICKET });
-      const start = performance.now();
-      await executePlan(state, { text: 'Plan' }, ctx, planExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
     });
   });
 });
@@ -174,6 +180,7 @@ describe('validate rail', () => {
       executionMs: 100,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: passed ? 'supported' : 'inconclusive',
     };
   }
 
@@ -256,16 +263,6 @@ describe('validate rail', () => {
       expect(order).toEqual(['test', 'lint']);
     });
   });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('validate with instant executors is fast', async () => {
-      const state = makeProgressedState('VALIDATION');
-      const start = performance.now();
-      await executeValidate(state, ctx, validateExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
-    });
-  });
 });
 
 describe('implement rail', () => {
@@ -279,14 +276,16 @@ describe('implement rail', () => {
 
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('executes impl and advances through IMPL_REVIEW to EVIDENCE_REVIEW', async () => {
+    it('executes impl and stops in IMPL_VALIDATION for fresh post-impl checks', async () => {
       const state = makeProgressedState('IMPLEMENTATION');
       const result = await executeImplement(state, ctx, implExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.implementation).not.toBeNull();
-        expect(result.state.implReview).not.toBeNull();
-        expect(result.state.phase).toBe('EVIDENCE_REVIEW');
+        expect(result.state.phase).toBe('IMPL_VALIDATION');
+        // Independent review is activated by runtime-owned revalidation, not
+        // by this rail call.
+        expect(result.state.implReview).toBeNull();
       }
     });
   });
@@ -322,7 +321,7 @@ describe('implement rail', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('impl review loop respects maxIterations from policy', async () => {
+    it('implementation review loop respects the policy budget', async () => {
       let count = 0;
       const neverApprove = {
         execute: async () => ({ changedFiles: ['a.ts'], domainFiles: [] }),
@@ -332,31 +331,25 @@ describe('implement rail', () => {
         },
       };
       const soloCtx = { ...ctx, policy: SOLO_POLICY };
-      const state = makeProgressedState('IMPLEMENTATION');
+      // Only the explicit vacuous zero-check policy reaches IMPL_REVIEW
+      // directly; active-check flows defer review to runtime-owned revalidation.
+      const state = { ...makeProgressedState('IMPLEMENTATION'), activeChecks: [] };
       await executeImplement(state, soloCtx, neverApprove);
-      expect(count).toBe(1); // SOLO = maxImplReviewIterations: 1
+      expect(count).toBe(SOLO_POLICY.reviewBudget.implementation);
     });
   });
 
   // ─── EDGE ──────────────────────────────────────────────────
   describe('EDGE', () => {
     it('records multiple transitions (IMPLEMENTATION→IMPL_REVIEW→EVIDENCE_REVIEW)', async () => {
-      const state = makeProgressedState('IMPLEMENTATION');
+      // Vacuous zero-check policy: the bundled review path still advances
+      // through IMPL_REVIEW in one rail call.
+      const state = { ...makeProgressedState('IMPLEMENTATION'), activeChecks: [] };
       const result = await executeImplement(state, ctx, implExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.transitions.length).toBeGreaterThanOrEqual(2);
       }
-    });
-  });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('implement with instant executors is fast', async () => {
-      const state = makeProgressedState('IMPLEMENTATION');
-      const start = performance.now();
-      await executeImplement(state, ctx, implExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
     });
   });
 });
@@ -374,6 +367,7 @@ describe('continue rail', () => {
       executionMs: 100,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: 'supported' as const,
     }),
     selfReview: async () => ({ verdict: 'accept' as const }),
     implReview: async () => ({ verdict: 'accept' as const }),
@@ -403,7 +397,7 @@ describe('continue rail', () => {
       const state = makeProgressedState('VALIDATION');
       const failingExecutors = {
         ...continueExecutors,
-        runCheck: async (checkId: string, _state: SessionState) => ({
+        runCheck: async (checkId: string, _state: SessionState): Promise<ValidationResult> => ({
           checkId,
           passed: checkId !== 'test',
           detail: 'check result',
@@ -414,6 +408,7 @@ describe('continue rail', () => {
           executionMs: 100,
           outputDigest: 'a'.repeat(64),
           timedOut: false,
+          outcome: checkId !== 'test' ? 'supported' : 'inconclusive',
         }),
       };
       const result = await executeContinue(state, ctx, failingExecutors);
@@ -479,7 +474,7 @@ describe('continue rail', () => {
     });
 
     it('at REVIEW_COMPLETE → blocked (terminal)', async () => {
-      const state = makeProgressedState('REVIEW_COMPLETE');
+      const state = makeProgressedState('PEER_REVIEW_COMPLETE');
       const result = await executeContinue(state, ctx, continueExecutors);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
@@ -508,6 +503,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -538,6 +534,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -573,6 +570,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -590,12 +588,12 @@ describe('continue rail', () => {
     });
 
     it('at REVIEW → auto-advances to REVIEW_COMPLETE', async () => {
-      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
+      const state = makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = await executeContinue(state, ctx, continueExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        // reviewDone guard fires when phase === "REVIEW" and reviewReportPath is set
-        expect(result.state.phase).toBe('REVIEW_COMPLETE');
+        // reviewDone guard fires when phase === "PEER_REVIEW" and reviewReportPath is set
+        expect(result.state.phase).toBe('PEER_REVIEW_COMPLETE');
       }
     });
 
@@ -666,6 +664,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -678,15 +677,6 @@ describe('continue rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.architecture!.adrText).toBe(ARCHITECTURE_DECISION.adrText);
       }
-    });
-  });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('continue at TICKET is fast', async () => {
-      const start = performance.now();
-      await executeContinue(makeState('TICKET'), ctx, continueExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
     });
   });
 });

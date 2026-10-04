@@ -28,7 +28,16 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  appendInvocationEvidence,
+  buildInvocationEvidence,
+  fulfillObligation,
+} from './review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../state/review-dispatch.js';
+import { hashFindings } from './review/findings-hash.js';
+import { updateAttemptStatus } from './review/obligations/attempt-lifecycle.js';
 import {
   status,
   hydrate,
@@ -55,6 +64,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
@@ -241,8 +251,15 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
 }
 
+async function currentSessionDir(): Promise<string> {
+  const { computeFingerprint, sessionDir: resolveSessionDir } =
+    await import('../adapters/workspace/index.js');
+  const fp = await computeFingerprint(ws.tmpDir);
+  return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-// Tool: review (standalone review flow)
+// Tool: review (peer review flow)
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('review', () => {
@@ -252,14 +269,18 @@ describe('review', () => {
       expect(review.args.prNumber).toBeDefined();
       expect(review.args.branch).toBeDefined();
       expect(review.args.url).toBeDefined();
-      expect(review.args.reviewFindings).toBeDefined();
+      expect(review.args.reviewObligationId).toBeDefined();
     });
 
     it('requires analysis findings for content-aware review inputs', async () => {
       await hydrateSession();
-      const raw = await review.execute({ text: 'diff --git a/file.ts b/file.ts' }, ctx);
+      const raw = await review.execute(
+        { text: 'diff --git a/file.ts b/file.ts', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe('pending_review');
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
     });
 
@@ -268,17 +289,51 @@ describe('review', () => {
       // Step 1: call /review with content but no findings — creates the obligation
       // and gives us the canonical toolObligationId.
       const blockedRaw = await review.execute(
-        { inputOrigin: 'manual_text', text: 'diff --git a/file.ts b/file.ts' },
+        {
+          inputOrigin: 'manual_text',
+          text: 'diff --git a/file.ts b/file.ts',
+          targetPaths: ['docs/test.md'],
+        },
         ctx,
       );
       const blocked = parseToolResult(blockedRaw);
-      expect(blocked.error).toBe(true);
+      expect(blocked.error).toBeUndefined();
+      expect(blocked.status).toBe('pending_review');
       expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
         .toolObligationId;
       expect(obligationId).toMatch(/^[0-9a-f-]{36}$/);
+      if (typeof obligationId !== 'string') {
+        throw new TypeError('Expected toolObligationId');
+      }
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new TypeError('Expected persisted session state');
+      await writeState(sessDir, {
+        ...state,
+        reviewAssurance: {
+          ...state.reviewAssurance!,
+          obligations: state.reviewAssurance!.obligations.map((obligation) =>
+            obligation.obligationId === obligationId
+              ? {
+                  ...obligation,
+                  reviewSubjectScope: {
+                    kind: 'repository_change' as const,
+                    paths: ['docs/test.md'],
+                    revisions: ['head'] as const,
+                  },
+                  repositoryRevisionProvenance: {
+                    kind: 'available' as const,
+                    headSha: 'a'.repeat(40),
+                  },
+                }
+              : obligation,
+          ),
+        },
+      });
 
-      // Step 2: submit valid ReviewFindings with the matching toolObligationId.
+      // Step 2: host-capture the reviewer's structured findings and bind them to
+      // the obligation's attempt (the only accepted evidence provenance).
       const findings = {
         iteration: 1,
         planVersion: 1,
@@ -290,11 +345,21 @@ describe('review', () => {
             severity: 'major' as const,
             category: 'correctness',
             message: 'The supplied diff needs follow-up review evidence.',
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'repository_location' as const,
+                  location: { path: 'docs/test.md', revision: 'head' },
+                },
+              ],
+              evidenceLocations: [],
+            },
           },
         ],
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {
@@ -303,15 +368,59 @@ describe('review', () => {
           planVersion: 1,
           reviewedBy: 'flowguard-reviewer',
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: 'p37-v1',
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
         },
       };
+      const scopedState = await readState(sessDir);
+      if (!scopedState) throw new TypeError('Expected persisted session state');
+      const assurance = ensureReviewAssurance(scopedState.reviewAssurance);
+      const boundAttempt = assurance.attempts.find((a) => a.obligationId === obligationId);
+      if (!boundAttempt) throw new TypeError('Expected review attempt');
+      const fulfilledAt = '2026-01-01T00:00:00.000Z';
+      const invocation = buildInvocationEvidence({
+        obligationId,
+        obligationType: 'review',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        parentSessionId: ctx.sessionID,
+        childSessionId: findings.reviewedBy.sessionId,
+        promptHash: 'a'.repeat(64),
+        findingsHash: hashFindings(findings),
+        invokedAt: fulfilledAt,
+        fulfilledAt,
+        capturedRawFindings: findings,
+        attemptId: boundAttempt.attemptId,
+      });
+      const boundAssurance = updateAttemptStatus(
+        assurance,
+        boundAttempt.attemptId,
+        'bound',
+        fulfilledAt,
+        { childSessionId: findings.reviewedBy.sessionId },
+      );
+      const withInvocation = appendInvocationEvidence(
+        {
+          ...boundAssurance,
+          dispatches: [...boundAssurance.dispatches, completedDispatchForInvocation(invocation)],
+        },
+        invocation,
+      );
+      await writeState(sessDir, {
+        ...scopedState,
+        reviewAssurance: fulfillObligation(
+          withInvocation,
+          obligationId,
+          invocation.invocationId,
+          fulfilledAt,
+        ),
+      });
 
+      // Step 3: verdict-only re-invocation consumes the bound structured evidence.
       const raw = await review.execute(
         {
           inputOrigin: 'manual_text',
           text: 'diff --git a/file.ts b/file.ts',
-          reviewFindings: findings,
+          reviewObligationId: obligationId,
         },
         ctx,
       );
@@ -320,29 +429,47 @@ describe('review', () => {
       expect(result.findings).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            severity: 'error', // 'major' maps to 'error'
-            category: 'correctness',
-            message: 'The supplied diff needs follow-up review evidence.',
+            source: 'material_finding',
+            reportSeverity: 'error', // 'major' maps to report severity 'error'
+            finding: expect.objectContaining({
+              severity: 'major',
+              category: 'correctness',
+              message: 'The supplied diff needs follow-up review evidence.',
+            }),
           }),
         ]),
       );
     });
 
-    it('starts review flow from READY and transitions to REVIEW_COMPLETE', async () => {
+    it('starts review flow from READY and transitions to REVIEW_COMPLETE with exact target coverage', async () => {
       await hydrateSession();
       const raw = await review.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.completeness).toBeDefined();
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
+      expect(result.peerReviewCoverage).toEqual({
+        targetResolved: false,
+        targetFrozen: false,
+        repositoryIdentityVerified: null,
+        baseSha: null,
+        headSha: null,
+        changedPathCount: 0,
+        objectivesCovered: 0,
+        objectivesTotal: 0,
+        reviewAssurance: null,
+        missingVerification: [],
+      });
     });
 
-    it('report includes completeness matrix', async () => {
+    it('response exposes no local session completeness or four-eyes fields', async () => {
       await hydrateSession();
       const result = parseToolResult(await review.execute({}, ctx));
-      const comp = result.completeness as Record<string, unknown>;
-      expect(typeof comp.overallComplete).toBe('boolean');
-      expect(comp.slots).toBeDefined();
+      expect(result.completeness).toBeUndefined();
+      expect(result.fourEyes).toBeUndefined();
+      const coverage = result.peerReviewCoverage as Record<string, unknown>;
+      expect(coverage.slots).toBeUndefined();
+      expect(coverage.overallComplete).toBeUndefined();
+      expect(coverage.phase).toBeUndefined();
     });
   });
 
@@ -368,10 +495,10 @@ describe('review', () => {
       await hydrateSession();
       await review.execute({}, ctx);
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).toBe('REVIEW_COMPLETE');
+      expect(s.phase).toBe('PEER_REVIEW_COMPLETE');
     });
 
-    it('review with references stores them in report and on disk', async () => {
+    it('review with references + inputOrigin but no content field is blocked', async () => {
       await hydrateSession();
       const raw = await review.execute(
         {
@@ -389,29 +516,37 @@ describe('review', () => {
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.inputOrigin).toBe('pr');
-      expect(result.references).toBeDefined();
-      expect(Array.isArray(result.references)).toBe(true);
-      expect((result.references as unknown[]).length).toBe(1);
-      expect((result.references as Record<string, unknown>[])[0]!.ref).toBe(
-        'https://github.com/org/repo/pull/42',
-      );
+      // inputOrigin + references are provenance metadata, not content loaders.
+      // prNumber or text is required for a content-aware pr review.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_CONTENT_SOURCE_INCOMPLETE');
+    });
 
-      // Also verify the persisted report file contains references
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
-      const { readFile } = await import('node:fs/promises');
-      const { join } = await import('node:path');
-      const fp = await computeFingerprint(ws.tmpDir);
-      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-      const reportRaw = await readFile(join(sessDir, 'review-report.json'), 'utf-8');
-      const report = JSON.parse(reportRaw);
-      expect(report.inputOrigin).toBe('pr');
-      expect(report.references).toHaveLength(1);
-      expect(report.references[0].ref).toBe('https://github.com/org/repo/pull/42');
-      expect(report.references[0].type).toBe('pr');
-      expect(report.references[0].source).toBe('github');
+    it('review with text + inputOrigin creates a content-aware obligation', async () => {
+      await hydrateSession();
+      const raw = await review.execute(
+        {
+          inputOrigin: 'manual_text',
+          text: 'diff --git a/foo.ts b/foo.ts\n+export const bar = 1;',
+          targetPaths: ['docs/test.md'],
+          references: [
+            {
+              ref: 'https://github.com/org/repo/pull/42',
+              type: 'pr',
+              title: 'PR #42: Fix auth',
+              source: 'github',
+              extractedAt: '2026-01-15T10:00:00.000Z',
+            },
+          ],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      // With text as concrete content, the review is content-aware.
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe('pending_review');
+      expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      expect(result.requiredReviewAttestation).toBeDefined();
     });
 
     // P8b: writeReport throws → no REVIEW_COMPLETE persisted
@@ -428,11 +563,11 @@ describe('review', () => {
       expect(result.code).toBe('INTERNAL_ERROR');
       // Phase on disk should still be READY (session was at READY before review
       // was called, and the failed review didn't persist any state).
-      // Actually, startReviewFlow transitions in-memory to REVIEW, but that
+      // Actually, startReviewFlow transitions in-memory to PEER_REVIEW, but that
       // state was never persisted because writeReport failed before
       // writeStateWithArtifacts. The persisted state (from hydrate) remains READY.
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).not.toBe('REVIEW_COMPLETE');
+      expect(s.phase).not.toBe('PEER_REVIEW_COMPLETE');
     });
   });
 });

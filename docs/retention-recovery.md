@@ -69,29 +69,34 @@ FlowGuard manages several types of data with different retention requirements. T
 - SHA-256 file hashes in manifest
 - Content digest for complete archive
 
-### Archive Contents
+### Raw-Evidence Archive Contents
 
 ```
 {sessionId}.tar.gz
 ├── archive-manifest.json                  # Session metadata, file inventory, digests
-├── session-state.json                     # Final session state (raw)
-├── audit.jsonl                            # Complete audit trail (hash-chained)
-├── discovery-snapshot.json                # Repository discovery snapshot
-├── profile-resolution-snapshot.json       # Profile resolution evidence
-├── decision-receipts.redacted.v1.json     # Redacted decision receipts (default)
-├── review-report.redacted.json            # Redacted review report (when /review ran)
+├── state/session-state.json               # Final session state (raw)
+├── audit/audit.jsonl                      # Complete audit trail (hash-chained)
+├── audit/decision-receipts.v1.json        # Decision receipt projection (raw)
+├── context/discovery-snapshot.json        # Repository discovery snapshot
+├── context/profile-resolution-snapshot.json # Profile resolution evidence
+├── reports/review-report.json             # Review report when /review ran (raw)
 └── artifacts/                             # Append-only evidence artifacts
     ├── ticket.v*.{md,json}
     ├── plan.v*.{md,json}
     └── architecture-review-card.<digest>.{md,json}  # ADR evidence (architecture flow)
 ```
 
-Raw artifacts (`review-report.json`, raw decision receipts) are **excluded by
-default** under `archive.redaction.mode=basic, includeRaw=false`. Setting
-`includeRaw=true` includes them and sets the manifest risk flag
-`raw_export_enabled`. ADRs are emitted as `architecture-review-card.*` evidence
-artifacts under `artifacts/` — there is no top-level `adr/` directory in the
-archive.
+Archive Layout v2 defaults to a redacted sharing archive (`basic`,
+`includeRaw=false`), which is `not_verifiable` because canonical raw evidence is
+intentionally omitted. An authorized raw export uses
+`redactionMode=none, includeRaw=true` after enabling
+`archive.redaction.allowRawExport`; its manifest records `rawIncluded: true` and
+the `raw_audit_evidence_export` risk flag. ADRs are emitted as `architecture-review-card.*` evidence artifacts
+under `artifacts/` — there is no top-level `adr/` directory in the archive.
+
+Redacted sharing archives use the corresponding `*.redacted.*` state, audit,
+receipt, and review-report paths when present; they do not contain the raw paths
+shown above.
 
 ### Archive Verification
 
@@ -229,5 +234,5 @@ archive.
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-15_

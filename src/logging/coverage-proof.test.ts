@@ -3,7 +3,7 @@
  * @description Comprehensive tests proving adapter, identity, and CLI logging
  * covers real critical paths with proper sinks and redaction.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -45,7 +45,10 @@ describe('Coverage proofs', () => {
   describe('persistence/atomicWrite failure → real file sink', () => {
     it('HAPPY: atomicWrite failure logged to file sink', async () => {
       const captured: string[] = [];
-      const logger = createLogger('debug', [createConsoleSink(), createFileSink(tmpDir, 7)]);
+      const logger = createLogger('debug', [
+        createConsoleSink(),
+        createFileSink(tmpDir, { retentionDays: 7 }),
+      ]);
       const adapter = toAdapter(logger);
       vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
         captured.push(String(chunk));

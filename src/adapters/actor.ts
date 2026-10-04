@@ -33,11 +33,11 @@
 
 import { z } from 'zod';
 import * as fs from 'node:fs/promises';
-import type { ActorInfo } from '../audit/types.js';
+import type { ActorInfo } from '../state/evidence.js';
 import { gitUserEmail, gitUserName } from './git.js';
 import { IdpError } from '../identity/errors.js';
 import { resolveIdpToken, isIdpConfigured } from '../identity/index.js';
-import type { IdpConfig } from '../identity/types.js';
+import type { IdpConfig } from '../shared/policy-idp-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { redactIdentityExtra } from '../logging/redact.js';
 
@@ -113,7 +113,6 @@ export class ActorIdentityError extends Error {
  * @throws ActorClaimError if claim is missing, unreadable, invalid, or expired.
  */
 export async function resolveActorFromClaim(claimsPath: string): Promise<ActorClaim> {
-  // Check file exists and is readable
   let fileContent: string;
   try {
     fileContent = await fs.readFile(claimsPath, 'utf-8');
@@ -127,7 +126,6 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
     );
   }
 
-  // Parse JSON
   let claim: unknown;
   try {
     claim = JSON.parse(fileContent);
@@ -135,7 +133,6 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
     throw new ActorClaimError('ACTOR_CLAIM_INVALID', 'Actor claim is not valid JSON');
   }
 
-  // Validate schema
   const parseResult = ActorClaimSchema.safeParse(claim);
   if (!parseResult.success) {
     throw new ActorClaimError(
@@ -145,8 +142,6 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
   }
 
   const validClaim = parseResult.data;
-
-  // Validate temporal constraints (strict - no tolerance)
   const now = new Date();
   const issuedAt = new Date(validClaim.issuedAt);
   const expiresAt = new Date(validClaim.expiresAt);
@@ -175,6 +170,106 @@ export interface ResolveActorOptions {
   readonly env?: NodeJS.ProcessEnv;
 }
 
+async function resolveIdpActor(
+  idpConfig: IdpConfig | null | undefined,
+  idpMode: 'optional' | 'required',
+  env: NodeJS.ProcessEnv,
+): Promise<ActorInfo | null> {
+  const tokenPath = env.FLOWGUARD_ACTOR_TOKEN_PATH;
+  if (!isIdpConfigured(idpConfig)) return null;
+  if (!tokenPath) {
+    if (idpMode === 'required') {
+      throw new ActorIdentityError(
+        'ACTOR_IDP_MODE_REQUIRED',
+        'IdP mode is required but FLOWGUARD_ACTOR_TOKEN_PATH is not set',
+      );
+    }
+    return null;
+  }
+  try {
+    const idpActor = await resolveIdpToken(tokenPath, idpConfig);
+    return {
+      id: idpActor.id,
+      email: idpActor.email,
+      displayName: idpActor.displayName,
+      source: 'oidc',
+      assurance: 'idp_verified',
+      verificationMeta: idpActor.verificationMeta,
+    };
+  } catch (err) {
+    getAdapterLogger().warn(
+      'actor',
+      'IdP token resolution failed',
+      redactIdentityExtra({
+        tokenPath,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    if (err instanceof IdpError && idpMode === 'required') {
+      throw new ActorIdentityError(
+        'ACTOR_IDP_MODE_REQUIRED',
+        `IdP verification required but failed: ${err.code} - ${err.message}`,
+      );
+    }
+    if (err instanceof IdpError) return null;
+    throw err;
+  }
+}
+
+async function resolveClaimActor(env: NodeJS.ProcessEnv): Promise<ActorInfo | null> {
+  const rawClaimsPath = env.FLOWGUARD_ACTOR_CLAIMS_PATH;
+  if (rawClaimsPath === undefined) return null;
+  const claimsPath = rawClaimsPath.trim();
+  if (!claimsPath) {
+    throw new ActorClaimError(
+      'ACTOR_CLAIM_PATH_EMPTY',
+      'FLOWGUARD_ACTOR_CLAIMS_PATH is empty or whitespace only',
+    );
+  }
+  const claim = await resolveActorFromClaim(claimsPath);
+  return {
+    id: claim.actorId,
+    email: claim.actorEmail ?? null,
+    displayName: claim.actorDisplayName ?? null,
+    source: 'claim',
+    assurance: 'claim_validated',
+  };
+}
+
+function resolveEnvActor(env: NodeJS.ProcessEnv): ActorInfo | null {
+  const envId = env.FLOWGUARD_ACTOR_ID?.trim();
+  if (!envId) return null;
+  return {
+    id: envId,
+    email: env.FLOWGUARD_ACTOR_EMAIL?.trim() || null,
+    displayName: env.FLOWGUARD_ACTOR_DISPLAY_NAME?.trim() || null,
+    source: 'env',
+    assurance: 'best_effort',
+  };
+}
+
+async function resolveGitActor(worktree: string): Promise<ActorInfo | null> {
+  const gitName = await gitUserName(worktree);
+  if (!gitName) return null;
+  return {
+    id: gitName,
+    email: await gitUserEmail(worktree),
+    displayName: null,
+    source: 'git',
+    assurance: 'best_effort',
+  };
+}
+
+function unknownActor(): ActorInfo {
+  return {
+    id: 'unknown',
+    email: null,
+    displayName: null,
+    source: 'unknown',
+    assurance: 'best_effort',
+  };
+}
+
 /**
  * Resolve actor identity from IdP token, claim file, environment, or git config.
  *
@@ -198,100 +293,13 @@ export async function resolveActor(
   options?: ResolveActorOptions,
 ): Promise<ActorInfo> {
   const { idpConfig, idpMode = 'optional', env = process.env } = options ?? {};
-
-  const tokenPath = env.FLOWGUARD_ACTOR_TOKEN_PATH;
-  if (isIdpConfigured(idpConfig)) {
-    if (!tokenPath) {
-      if (idpMode === 'required') {
-        throw new ActorIdentityError(
-          'ACTOR_IDP_MODE_REQUIRED',
-          'IdP mode is required but FLOWGUARD_ACTOR_TOKEN_PATH is not set',
-        );
-      }
-      // optional mode: fall through to next priority
-    } else {
-      try {
-        const idpActor = await resolveIdpToken(tokenPath, idpConfig);
-        return {
-          id: idpActor.id,
-          email: idpActor.email,
-          displayName: idpActor.displayName,
-          source: 'oidc',
-          assurance: 'idp_verified',
-          verificationMeta: idpActor.verificationMeta,
-        };
-      } catch (err) {
-        getAdapterLogger().warn(
-          'actor',
-          'IdP token resolution failed',
-          redactIdentityExtra({
-            tokenPath,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
-        if (err instanceof IdpError) {
-          if (idpMode === 'required') {
-            throw new ActorIdentityError(
-              'ACTOR_IDP_MODE_REQUIRED',
-              `IdP verification required but failed: ${err.code} - ${err.message}`,
-            );
-          }
-        } else {
-          throw err;
-        }
-      }
-    }
-  }
-
-  const rawClaimsPath = env.FLOWGUARD_ACTOR_CLAIMS_PATH;
-  if (rawClaimsPath !== undefined) {
-    const claimsPath = rawClaimsPath.trim();
-    if (!claimsPath) {
-      throw new ActorClaimError(
-        'ACTOR_CLAIM_PATH_EMPTY',
-        'FLOWGUARD_ACTOR_CLAIMS_PATH is empty or whitespace only',
-      );
-    }
-    const claim = await resolveActorFromClaim(claimsPath);
-    return {
-      id: claim.actorId,
-      email: claim.actorEmail ?? null,
-      displayName: (claim.actorDisplayName ?? null) as string | null,
-      source: 'claim',
-      assurance: 'claim_validated',
-    };
-  }
-
-  const envId = env.FLOWGUARD_ACTOR_ID?.trim();
-  if (envId) {
-    const envEmail = env.FLOWGUARD_ACTOR_EMAIL?.trim() || null;
-    const envDisplayName = env.FLOWGUARD_ACTOR_DISPLAY_NAME?.trim() || null;
-    return {
-      id: envId,
-      email: envEmail,
-      displayName: envDisplayName,
-      source: 'env',
-      assurance: 'best_effort',
-    };
-  }
-
-  const gitName = await gitUserName(worktree);
-  if (gitName) {
-    const gitEmail = await gitUserEmail(worktree);
-    return {
-      id: gitName,
-      email: gitEmail,
-      displayName: null,
-      source: 'git',
-      assurance: 'best_effort',
-    };
-  }
-
-  return {
-    id: 'unknown',
-    email: null,
-    displayName: null,
-    source: 'unknown',
-    assurance: 'best_effort',
-  };
+  const idpActor = await resolveIdpActor(idpConfig, idpMode, env);
+  if (idpActor) return idpActor;
+  const claimActor = await resolveClaimActor(env);
+  if (claimActor) return claimActor;
+  const envActor = resolveEnvActor(env);
+  if (envActor) return envActor;
+  const gitActor = await resolveGitActor(worktree);
+  if (gitActor) return gitActor;
+  return unknownActor();
 }

@@ -1,0 +1,276 @@
+/**
+ * @module integration/status/status-finish
+ * @description Finish-card composition for the read-only completion view.
+ *
+ * Split out of status.ts to keep that module within the file-size budget. This
+ * module performs NO independent evidence, phase, obligation, or gate
+ * evaluation: it composes existing projections (including a verbatim
+ * projection of the persisted ReviewReport's reviewer caveats) and applies one
+ * presentational classifier. It is not an authority.
+ *
+ * @version v1
+ */
+
+import type { Phase, SessionState } from '../../state/schema.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
+import type { ReviewReport } from '../../state/evidence.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
+import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import { isTerminalPhase } from '../../machine/topology.js';
+import {
+  buildEvidenceDetailProjection,
+  buildReadinessProjection,
+  buildBlockedProjection,
+} from './status-detail-projections.js';
+import type {
+  EvidenceDetailProjection,
+  ReadinessProjection,
+  FinishActionGuidance,
+  FinishCard,
+  FinishOverallStatus,
+  FinishReviewCaveat,
+} from './status-types.js';
+
+// ─── Finish Card ──────────────────────────────────────────────────────────────
+
+/**
+ * Project the reviewer-authored caveats of the persisted ReviewReport.
+ *
+ * Pure projection of persisted review authority: only `missing_verification`
+ * and `unknown` are human-visible at /finish; material findings, scope creep,
+ * mechanical findings, and challenge outcomes belong to other surfaces. The
+ * reviewer `message` is copied verbatim (no trim, no rewrite). Whitespace-only
+ * messages are skipped because `NoticeSection` rejects empty bodies — the
+ * read-only finish surface must not fail on schema-valid persisted data.
+ */
+function projectFinishReviewCaveats(reviewReport: ReviewReport | null): FinishReviewCaveat[] {
+  if (!reviewReport) return [];
+  const caveats: FinishReviewCaveat[] = [];
+  for (const finding of reviewReport.findings) {
+    if (finding.source !== 'missing_verification' && finding.source !== 'unknown') continue;
+    if (finding.message.trim().length === 0) continue;
+    caveats.push({ source: finding.source, message: finding.message });
+  }
+  return caveats;
+}
+
+/**
+ * Whether any REQUIRED evidence slot is unverified (missing or failed).
+ *
+ * Operates on the already-composed EvidenceDetailProjection — no second
+ * evaluateCompleteness() call. `not_yet_required` slots NEVER count as
+ * unverified (early phases are classified via readiness.blocked, not here).
+ * There is no `stale` slot status in the canonical completeness report, so no
+ * stale detection is claimed.
+ */
+function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
+  return evidence.slots.some(
+    (slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'),
+  );
+}
+
+/**
+ * Derive the single overall Finish status by combining existing projection
+ * results. This is the ONLY new classification in the Finish Card and it is
+ * strictly presentational — it re-evaluates nothing.
+ *
+ * Precedence (highest first):
+ * 1. BLOCKED             — readiness projection reports blocked (waiting).
+ * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
+ * 3. READY/READY_WITH_WARNINGS — EXPORT_READY: evidence is complete and the
+ *    canonical directive requires `/export`; completion is ready, not pending.
+ * 4. IN_PROGRESS         — other non-terminal phase; lifecycle not yet complete.
+ * 5. CHANGES_REQUIRED    — completed peer review report has issues.
+ * 6. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
+ * 7. READY               — otherwise.
+ *
+ * BLOCKED intentionally wins over NOT_VERIFIED so a blocked session is not
+ * mislabelled merely because evidence is also incomplete.
+ */
+export function deriveFinishOverallStatus(
+  readiness: ReadinessProjection,
+  evidence: EvidenceDetailProjection,
+  reviewReport: ReviewReport | null = null,
+): FinishOverallStatus {
+  if (readiness.blocked) return 'BLOCKED';
+  if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
+  // EXPORT_READY is the explicit completion gate: the canonical directive
+  // requires `/export`, so the session is ready for completion, not "in
+  // progress". Reporting IN_PROGRESS here would contradict the directive.
+  if (readiness.phase === 'EXPORT_READY') {
+    return readiness.warnings.length > 0 ? 'READY_WITH_WARNINGS' : 'READY';
+  }
+  // Other non-terminal phases are in progress regardless of warnings or review status.
+  if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
+  if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
+  if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';
+  return 'READY';
+}
+
+/** Candidate next actions the Finish Card annotates (non-exit). */
+const FINISH_CANDIDATE_ACTIONS = ['create PR', 'export evidence', 'keep branch'] as const;
+
+/** Actions that mean "proceed toward landing" (vs. "keep the branch open"). */
+const FINISH_PROCEED_ACTIONS = new Set<string>(['create PR', 'export evidence']);
+
+/** Exit options the system does not govern. Never rendered as forbidden. */
+const FINISH_EXIT_OPTIONS = ['abandon'] as const;
+
+/**
+ * Per-overall-status guidance for "proceed" vs "keep branch" actions.
+ *
+ * This is a static presentation table, not eligibility logic. Each entry maps
+ * the overall Finish status to a label + reason for proceed-actions and for the
+ * keep-branch action. Labels are presentation-only and must not be consumed for
+ * enforcement.
+ */
+const FINISH_ACTION_TABLE: Record<
+  FinishOverallStatus,
+  { proceed: Omit<FinishActionGuidance, 'action'>; keep: Omit<FinishActionGuidance, 'action'> }
+> = {
+  READY: {
+    proceed: {
+      status: 'recommended',
+      reason: 'Session reports ready; proceeding is a suitable next step.',
+    },
+    keep: {
+      status: 'not_recommended',
+      reason: 'Session is ready; keeping the branch open is not necessary.',
+    },
+  },
+  READY_WITH_WARNINGS: {
+    proceed: {
+      status: 'recommended',
+      reason: 'Ready with warnings; review warnings before proceeding.',
+    },
+    keep: {
+      status: 'not_recommended',
+      reason: 'Ready with warnings; keeping the branch open is optional.',
+    },
+  },
+  CHANGES_REQUIRED: {
+    proceed: {
+      status: 'not_recommended',
+      reason:
+        'Review completed with findings that require changes before the artifact can proceed.',
+    },
+    keep: {
+      status: 'recommended',
+      reason:
+        'Keep the artifact available while the documented findings are addressed and reviewed again.',
+    },
+  },
+  NOT_VERIFIED: {
+    proceed: {
+      status: 'not_verified',
+      reason: 'Required evidence is missing or failed; proceeding is not verified.',
+    },
+    keep: {
+      status: 'recommended',
+      reason: 'Keep the branch to complete verification before proceeding.',
+    },
+  },
+  IN_PROGRESS: {
+    proceed: {
+      status: 'not_verified',
+      reason: 'Workflow is not yet complete; export is not applicable.',
+    },
+    keep: {
+      status: 'recommended',
+      reason: 'Keep the branch open while the workflow progresses.',
+    },
+  },
+  BLOCKED: {
+    proceed: {
+      status: 'not_recommended',
+      reason: 'Session is blocked; resolve blockers before proceeding.',
+    },
+    keep: {
+      status: 'recommended',
+      reason: 'Keep the branch to resolve blockers before proceeding.',
+    },
+  },
+};
+
+/**
+ * Build the non-normative action guidance.
+ *
+ * At EXPORT_READY the canonical directive requires `/export`
+ * (`allowedIntents: ['EXPORT']`), so the guidance must not present
+ * "create PR" as an equal alternative to the required completion commit.
+ * Everywhere else the label is a trivial, documented lookup keyed by
+ * overallStatus. These labels are presentation-only and must not be consumed
+ * for enforcement.
+ */
+function buildFinishActionGuidance(
+  overallStatus: FinishOverallStatus,
+  phase: Phase,
+): FinishActionGuidance[] {
+  if (phase === 'EXPORT_READY') {
+    return [
+      {
+        action: 'create PR',
+        status: 'not_recommended',
+        reason: 'Complete the required /export before landing the change.',
+      },
+      {
+        action: 'export evidence',
+        status: 'recommended',
+        reason: 'Required: /export materializes the completion package and completes the workflow.',
+      },
+      {
+        action: 'keep branch',
+        status: 'not_recommended',
+        reason: 'The session is ready for its required export.',
+      },
+    ];
+  }
+  const entry = FINISH_ACTION_TABLE[overallStatus];
+  return FINISH_CANDIDATE_ACTIONS.map((action) => ({
+    action,
+    ...(FINISH_PROCEED_ACTIONS.has(action) ? entry.proceed : entry.keep),
+  }));
+}
+
+/**
+ * Build the Finish Card by composing existing projections. Pure function:
+ * requires a valid SessionState and policy. No-session / unreadable-state
+ * handling stays in the calling tool via the read-only session helpers.
+ *
+ * This function performs NO independent evidence, phase, obligation, or gate
+ * evaluation — it only composes buildReadinessProjection,
+ * buildEvidenceDetailProjection, resolveWorkflowDirective,
+ * projectFinishReviewCaveats (pure projection of persisted ReviewReport truth),
+ * and the single presentation classifier deriveFinishOverallStatus.
+ */
+export function buildFinishCard(
+  state: SessionState,
+  policy: FlowGuardPolicy,
+  reviewReport: ReviewReport | null = null,
+): FinishCard {
+  const readiness = buildReadinessProjection(state, policy);
+  const evidence = buildEvidenceDetailProjection(state);
+  const blocker = buildBlockedProjection(state, policy);
+  const directive = resolveWorkflowDirective(state);
+  const overallStatus = deriveFinishOverallStatus(readiness, evidence, reviewReport);
+
+  return {
+    phase: state.phase,
+    overallStatus,
+    readiness,
+    evidence,
+    directive,
+    blocker,
+    reviewCaveats: projectFinishReviewCaveats(reviewReport),
+    warnings: readiness.warnings,
+    actionGuidance: buildFinishActionGuidance(overallStatus, state.phase),
+    exitOptions: [...FINISH_EXIT_OPTIONS],
+    guarantees: {
+      readOnly: true,
+      approves: false,
+      consumesObligations: false,
+      triggersExport: false,
+    },
+    proofSummary: projectCompletionProofStatus(state),
+  };
+}

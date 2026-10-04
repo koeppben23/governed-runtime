@@ -14,27 +14,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
-const { mockOnFlowGuardToolAfter, mockOnTaskToolAfter } = vi.hoisted(() => ({
+const { mockOnFlowGuardToolAfter } = vi.hoisted(() => ({
   mockOnFlowGuardToolAfter: vi.fn(),
-  mockOnTaskToolAfter: vi.fn(),
 }));
 
 vi.mock('./review/enforcement/enforcement.js', () => ({
   onFlowGuardToolAfter: (...args: unknown[]) => mockOnFlowGuardToolAfter(...args),
-  onTaskToolAfter: (...args: unknown[]) => mockOnTaskToolAfter(...args),
 }));
 
-import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
-import type {
-  SessionEnforcementState,
-  PendingReviewTool,
-  PendingReview,
-} from './review/enforcement/types.js';
+import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
+import type { ReviewSignalTool } from './review/obligations/obligation-tools.js';
+import type { PendingReview, PendingReviewTool, SessionEnforcementState } from './review/types.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function makeEState(): SessionEnforcementState {
-  return { pendingReviews: new Map<PendingReviewTool, PendingReview>() };
+  return {
+    pendingReviews: new Map<PendingReviewTool, PendingReview>(),
+  };
 }
 
 const FIXED_NOW = '2026-05-15T12:00:00.000Z';
@@ -61,7 +58,7 @@ describe('trackFlowGuardEnforcement', () => {
       'flowguard_plan',
       { key: 'val' },
       'plan result text',
-      FIXED_NOW,
+      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
     );
   });
 
@@ -77,7 +74,7 @@ describe('trackFlowGuardEnforcement', () => {
       'flowguard_review',
       expect.any(Object),
       expect.any(String),
-      FIXED_NOW,
+      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
     );
   });
 
@@ -100,13 +97,10 @@ describe('trackFlowGuardEnforcement', () => {
 
     trackFlowGuardEnforcement(eState, 'flowguard_plan', input, { output: 'text' }, FIXED_NOW);
 
-    expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(
-      eState,
-      'flowguard_plan',
-      {},
-      'text',
-      FIXED_NOW,
-    );
+    expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(eState, 'flowguard_plan', {}, 'text', {
+      now: FIXED_NOW,
+      isTerminalPhase: expect.any(Function),
+    });
   });
 
   it('delegates with rawOutput = JSON-stringified fallback when output has no output field', () => {
@@ -121,124 +115,35 @@ describe('trackFlowGuardEnforcement', () => {
       'flowguard_plan',
       { x: 1 },
       '""',
-      FIXED_NOW,
+      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
     );
   });
 
   // ─── CORNER ────────────────────────────────────────────────
 
-  it('delegates even when toolName is empty string (enforcement module decides)', () => {
-    const eState = makeEState();
+  it('delegates every review-signal identity unchanged', () => {
+    const reviewSignalTools: readonly ReviewSignalTool[] = [
+      'flowguard_plan',
+      'flowguard_implement',
+      'flowguard_architecture',
+      'flowguard_review',
+      'flowguard_review_implementation',
+      'flowguard_run_check',
+    ];
 
-    trackFlowGuardEnforcement(eState, '', { args: {} }, { output: 'x' }, FIXED_NOW);
+    for (const toolName of reviewSignalTools) {
+      vi.clearAllMocks();
+      const eState = makeEState();
 
-    expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(
-      eState,
-      '',
-      expect.any(Object),
-      expect.any(String),
-      FIXED_NOW,
-    );
-  });
-});
+      trackFlowGuardEnforcement(eState, toolName, { args: {} }, { output: 'x' }, FIXED_NOW);
 
-// ─── trackTaskEnforcement ───────────────────────────────────────────────────
-
-describe('trackTaskEnforcement', () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-  });
-
-  // ─── HAPPY ─────────────────────────────────────────────────
-
-  it('extracts args, output, metadata, callID and delegates with TaskToolContext', () => {
-    const eState = makeEState();
-    const input = {
-      tool: 'task',
-      sessionID: 's1',
-      callID: 'call-abc-123',
-      args: { subagent_type: 'flowguard-reviewer' },
-    };
-    const output = {
-      title: 'Task',
-      output: 'task result',
-      metadata: { sessionID: 'child-session-1', foo: 'bar' },
-    };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledTimes(1);
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      { subagent_type: 'flowguard-reviewer' },
-      'task result',
-      FIXED_NOW,
-      { metadata: { sessionID: 'child-session-1', foo: 'bar' }, callID: 'call-abc-123' },
-    );
-  });
-
-  it('forwards callID and metadata without normalization (BUG-14 guard)', () => {
-    const eState = makeEState();
-    const uniqueCallID = 'unusual-call-id-!@#$%';
-    const nestedMetadata = { sessionID: 'sess-nested', deep: { key: 'val' } };
-    const input = { callID: uniqueCallID, args: {} };
-    const output = { output: 'ok', metadata: nestedMetadata };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      expect.any(Object),
-      expect.any(String),
-      FIXED_NOW,
-      { metadata: nestedMetadata, callID: uniqueCallID },
-    );
-  });
-
-  // ─── BAD ───────────────────────────────────────────────────
-
-  it('propagates error when onTaskToolAfter throws', () => {
-    const eState = makeEState();
-    mockOnTaskToolAfter.mockImplementation(() => {
-      throw new Error('task enforcement failure');
-    });
-
-    expect(() => trackTaskEnforcement(eState, { args: {} }, { output: 'x' }, FIXED_NOW)).toThrow(
-      'task enforcement failure',
-    );
-  });
-
-  // ─── CORNER ────────────────────────────────────────────────
-
-  it('passes metadata = {} in TaskToolContext when output metadata is absent', () => {
-    const eState = makeEState();
-    const input = { callID: 'c1', args: {} };
-    const output = { output: 'text' };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      expect.any(Object),
-      expect.any(String),
-      FIXED_NOW,
-      { metadata: {}, callID: 'c1' },
-    );
-  });
-
-  it('passes callID = "" in TaskToolContext when input has no callID', () => {
-    const eState = makeEState();
-    const input = { args: {} };
-    const output = { output: 'text', metadata: {} };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      expect.any(Object),
-      expect.any(String),
-      FIXED_NOW,
-      { metadata: {}, callID: '' },
-    );
+      expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(
+        eState,
+        toolName,
+        expect.any(Object),
+        expect.any(String),
+        { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
+      );
+    }
   });
 });

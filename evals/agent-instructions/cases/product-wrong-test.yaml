@@ -1,0 +1,17 @@
+id: product-wrong-test
+description: Product agent challenges a test whose assertion contradicts the documented contract
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  The documented contract says a blocked operation returns BLOCKED. A new test expects the same operation to continue successfully.
+  The implementation still returns BLOCKED. What should be changed?
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Agent identifies the test-contract conflict
+    value: test
+  - type: output_contains
+    severity: advisory
+    description: Agent preserves the documented contract rather than test-fitting production
+    value: contract

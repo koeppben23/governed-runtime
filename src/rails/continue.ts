@@ -4,7 +4,7 @@
  *
  * Behavior depends on current phase:
  * - User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW): return "waiting" — use /review-decision
- * - Terminal (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE): return "terminal"
+ * - Terminal (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE): return "terminal"
  * - VALIDATION: run all active checks, then evaluate
  * - PLAN: run one more self-review iteration, then evaluate
  * - IMPL_REVIEW: run one more review iteration, then evaluate
@@ -16,7 +16,7 @@
  *
  * maxIterations for review loops are resolved from policy:
  * - Existing state values are used if present (selfReview.maxIterations)
- * - Falls back to policy.maxSelfReviewIterations / policy.maxImplReviewIterations
+ * - Falls back to the applicable policy.reviewBudget value
  * - Ultimate fallback: 3 (TEAM_POLICY default)
  *
  * @version v1
@@ -33,6 +33,7 @@ import type {
   ArchitectureDecision,
 } from '../state/evidence.js';
 import { validateAdrSections } from '../state/evidence.js';
+import { carriedPlanReviewFindings, resolvePlanReviewCompletion } from '../state/evidence-plan.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
@@ -143,17 +144,12 @@ export async function executeContinue(
   const advanced = autoAdvance(workState, evalFn, ctx);
   if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
 
-  const finalState =
-    advanced.state.phase === 'ARCH_COMPLETE' && advanced.state.architecture
-      ? {
-          ...advanced.state,
-          architecture: { ...advanced.state.architecture, status: 'accepted' as const },
-        }
-      : advanced.state;
-
+  // The IMPLEMENTATION-entry invariant (frozen pre-mutation base) is enforced
+  // at the single persistence boundary by the adapter-layer transition
+  // finalizer — rails no longer duplicate that enforcement.
   return {
     kind: 'ok',
-    state: finalState,
+    state: advanced.state,
     evalResult: advanced.evalResult,
     transitions: advanced.transitions,
   };
@@ -203,7 +199,7 @@ async function runOneSelfReviewIteration(
   // maxIterations: existing state value > policy > fallback 3
   const maxIterations =
     state.selfReview?.maxIterations ??
-    ctx.policy?.maxSelfReviewIterations ??
+    ctx.policy?.reviewBudget.plan ??
     DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runSingleIteration(
@@ -238,15 +234,26 @@ async function runOneSelfReviewIteration(
   // No iteration ran (already at max)
   if (loop.iteration === startIteration) return state;
 
+  const completion = resolvePlanReviewCompletion(
+    loop.iteration,
+    loop.maxIterations,
+    loop.revisionDelta,
+    loop.verdict,
+  );
   const updatedPlan =
     loop.artifact !== currentPlan
-      ? { current: loop.artifact, history: [currentPlan, ...planHistory] }
-      : state.plan;
+      ? {
+          current: loop.artifact,
+          history: [currentPlan, ...planHistory],
+          reviewFindings: carriedPlanReviewFindings(state.plan),
+          reviewCompletion: completion,
+        }
+      : { ...state.plan, reviewCompletion: completion };
 
   return {
     ...state,
     plan: updatedPlan,
-    selfReview: buildSelfReviewState(loop),
+    selfReview: buildSelfReviewState(loop, state.reviewCycles.plan),
   };
 }
 
@@ -264,7 +271,7 @@ async function runOneImplReviewIteration(
   // maxIterations: existing state value > policy > fallback 3
   const maxIterations =
     state.implReview?.maxIterations ??
-    ctx.policy?.maxImplReviewIterations ??
+    ctx.policy?.reviewBudget.implementation ??
     DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runSingleIteration(
@@ -273,7 +280,10 @@ async function runOneImplReviewIteration(
     maxIterations,
     async (impl, iter) => {
       const review = await executors.implReview(impl, plan, iter);
-      return { verdict: review.verdict, updated: review.updatedImpl };
+      return {
+        verdict: review.verdict,
+        ...(review.updatedImpl !== undefined ? { updated: review.updatedImpl } : {}),
+      };
     },
     state.implReview?.verdict,
   );
@@ -292,7 +302,7 @@ async function runOneImplReviewIteration(
   return {
     ...state,
     implementation: loop.artifact,
-    implReview: buildImplReviewState(loop, ctx.now()),
+    implReview: buildImplReviewState(loop, ctx.now(), state.reviewCycles.implementation),
   };
 }
 
@@ -309,7 +319,7 @@ async function runOneArchitectureReviewIteration(
   // maxIterations: existing state value > policy > fallback 3
   const maxIterations =
     state.selfReview?.maxIterations ??
-    ctx.policy?.maxSelfReviewIterations ??
+    ctx.policy?.reviewBudget.architecture ??
     DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runSingleIteration(
@@ -356,6 +366,6 @@ async function runOneArchitectureReviewIteration(
   return {
     ...state,
     architecture: updatedArchitecture,
-    selfReview: buildSelfReviewState(loop),
+    selfReview: buildSelfReviewState(loop, state.reviewCycles.architecture),
   };
 }

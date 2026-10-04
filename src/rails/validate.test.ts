@@ -10,36 +10,71 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeValidate, type ValidateExecutors } from './validate.js';
-import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
+import {
+  makeState,
+  FIXED_TIME,
+  TICKET,
+  VERIFICATION_CANDIDATES,
+  FIXTURE_TEST_CANDIDATE_ID,
+  FIXTURE_LINT_CANDIDATE_ID,
+} from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
+import { TEAM_POLICY } from '../config/policy.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...original, headCommitFull: vi.fn().mockResolvedValue('a'.repeat(40)) };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local',
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+  };
+});
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: {},
+  policy: TEAM_POLICY,
 };
 
 function planWith(body: string): PlanRecord {
   return {
-    current: { body, digest: 'd', sections: [], createdAt: FIXED_TIME },
+    current: makePlanRevision({ body, createdAt: FIXED_TIME }),
     history: [],
+    reviewFindings: [],
+    reviewCompletion: 'pending',
   };
 }
 
 /** Create a full ValidationResult matching the v2 execution-evidence schema. */
 function makeValidationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  const candidate =
+    checkId === 'test'
+      ? { candidateId: FIXTURE_TEST_CANDIDATE_ID, command: 'npm test' }
+      : checkId === 'lint'
+        ? { candidateId: FIXTURE_LINT_CANDIDATE_ID, command: 'npm run lint' }
+        : { candidateId: `candidate-${checkId}`, command: 'npm test' };
   return {
     checkId,
+    ...candidate,
     passed,
     detail,
     executedAt: FIXED_TIME,
-    kind: 'test',
-    command: 'npm test',
+    kind: checkId === 'lint' ? 'lint' : 'test',
+    command: candidate.command,
     exitCode: passed ? 0 : 1,
     executionMs: 1000,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: passed ? 'supported' : 'inconclusive',
   };
 }
 
@@ -61,9 +96,9 @@ function validationState(overrides?: Record<string, unknown>) {
     plan: planWith('## Plan\nTest'),
     reviewDecision: {
       verdict: 'approve',
-      decidedBy: 'r1',
+      rationale: 'approved',
       decidedAt: FIXED_TIME,
-      decidedByIdentity: {
+      decisionIdentity: {
         actorId: 'r1',
         actorEmail: 'r@t.com',
         actorSource: 'env' as const,
@@ -72,11 +107,12 @@ function validationState(overrides?: Record<string, unknown>) {
     },
     selfReview: {
       iteration: 1,
+      reviewCycle: 1,
       maxIterations: 3,
       prevDigest: null,
       currDigest: 'd1',
       revisionDelta: 'none' as const,
-      verdict: 'converged' as const,
+      verdict: 'accept' as const,
     },
     ...overrides,
   });
@@ -96,6 +132,27 @@ describe('validate rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('IMPLEMENTATION');
         expect(result.state.validation).toHaveLength(2);
+      }
+    });
+
+    it('a blocked outcome (subject drift) keeps VALIDATION and clears no approval authority', async () => {
+      const state = validationState();
+      const executors: ValidateExecutors = {
+        runCheck: vi.fn(async (checkId) => ({
+          ...makeValidationResult(checkId, false, 'subject changed during execution'),
+          outcome: 'blocked' as const,
+          exitCode: 0,
+          classificationReason: 'VERIFICATION_SUBJECT_CHANGED: plan digest changed',
+        })),
+      };
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('VALIDATION');
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision).not.toBeNull();
+        expect(result.state.validation[0]).toMatchObject({ outcome: 'blocked', passed: false });
       }
     });
 
@@ -177,6 +234,142 @@ describe('validate rail', () => {
         runCheck: vi.fn().mockRejectedValue(new Error('executor crashed')),
       };
       await expect(executeValidate(state, ctx, executors)).rejects.toThrow('executor crashed');
+    });
+  });
+
+  // ── IMPL_VALIDATION ────────────────────────────────────────────────────
+  describe('IMPL_VALIDATION', () => {
+    function implValidationState(overrides?: Record<string, unknown>) {
+      const state = makeState('IMPL_VALIDATION', {
+        verificationCandidates: VERIFICATION_CANDIDATES,
+        ticket: TICKET,
+        plan: planWith('## Plan\nTest'),
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'approved',
+          decidedAt: FIXED_TIME,
+          decisionIdentity: {
+            actorId: 'r1',
+            actorEmail: 'r@t.com',
+            actorSource: 'env' as const,
+            actorAssurance: 'best_effort' as const,
+          },
+        },
+        selfReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'd1',
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+        },
+        implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          changedFiles: ['src/auth.ts'],
+          domainFiles: ['src/auth.ts'],
+          digest: 'impl-d',
+          executedAt: FIXED_TIME,
+        },
+        ...overrides,
+      });
+      // Post-implementation evidence binds a passing implementation-scoped
+      // attempt per active check to the current implementation generation.
+      const checks =
+        (overrides?.['activeChecks'] as readonly string[] | undefined) ?? state.activeChecks;
+      return {
+        ...state,
+        validationAttempts: checks.map((checkId, index) => ({
+          attemptId: `00000000-0000-4000-8000-0000000000${String(index + 10).padStart(2, '0')}`,
+          scope: 'implementation' as const,
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'impl-d',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: makeValidationResult(checkId, true, 'OK'),
+        })),
+      };
+    }
+
+    it('ALL_PASSED writes to implValidation and advances to IMPL_REVIEW', async () => {
+      const state = implValidationState({ activeChecks: ['test', 'lint'] });
+      const executors = makeExecutors([
+        { checkId: 'test', passed: true, detail: 'OK' },
+        { checkId: 'lint', passed: true, detail: 'OK' },
+      ]);
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('IMPL_REVIEW');
+        // Results land in implValidation, not validation
+        expect(result.state.implValidation).toHaveLength(2);
+        expect(result.state.validation).toHaveLength(0);
+        // Plan and self-review evidence must be preserved
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision).not.toBeNull();
+      }
+    });
+
+    it('genuine failure clears implementation and routes to IMPLEMENTATION', async () => {
+      const state = implValidationState({ activeChecks: ['test'] });
+      const executors = makeExecutors([{ checkId: 'test', passed: false, detail: 'FAIL' }]);
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('IMPLEMENTATION');
+        expect(result.state.implValidation).toHaveLength(1);
+        // Implementation cleared so agent must re-run /implement.
+        expect(result.state.implementation).toBeNull();
+        // Plan must survive — the code is wrong, not the plan.
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision).not.toBeNull();
+      }
+    });
+
+    it('execution error (timedOut) keeps implValidation and plan intact', async () => {
+      const state = implValidationState({ activeChecks: ['test'] });
+      const executors = {
+        runCheck: vi.fn(async () => ({
+          checkId: 'test',
+          passed: false,
+          detail: 'Timeout',
+          executedAt: FIXED_TIME,
+          kind: 'test' as const,
+          command: 'npm test',
+          exitCode: 124,
+          executionMs: 300_000,
+          outputDigest: 'a'.repeat(64),
+          timedOut: true,
+          outcome: 'blocked' as const,
+        })),
+      };
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // Stays in IMPL_VALIDATION for retry.
+        expect(result.state.phase).toBe('IMPL_VALIDATION');
+        expect(result.state.implValidation).toHaveLength(1);
+        // Implementation and plan survive.
+        expect(result.state.implementation).not.toBeNull();
+        expect(result.state.plan).not.toBeNull();
+      }
+    });
+
+    it('keeps pre-implementation validation separate from implValidation', async () => {
+      const state = implValidationState({
+        activeChecks: ['test'],
+        validation: [makeValidationResult('test', true, 'pre-impl')],
+      });
+      const executors = makeExecutors([{ checkId: 'test', passed: true, detail: 'post-impl' }]);
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // pre-implementation validation untouched
+        expect(result.state.validation).toHaveLength(1);
+        // post-implementation validation recorded separately
+        expect(result.state.implValidation).toHaveLength(1);
+      }
     });
   });
 });

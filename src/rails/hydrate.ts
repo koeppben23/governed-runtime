@@ -7,7 +7,7 @@
  *
  * Behavior:
  * 1. If state already exists → return it unchanged except explicit risk-class
- *    recovery may update claimedTaskClass and clear a blocked riskGate
+ *    recovery may update claimedTaskClass as a raise-only escalation (a blocked riskGate is NOT cleared)
  * 2. If state is null → create a new SessionState:
  *    - Generate UUID
  *    - Resolve binding from OpenCode tool context (sessionId, worktree)
@@ -19,28 +19,42 @@
  * 3. Evaluate the new state (returns "pending" at READY — waiting for flow selection)
  *
  * Idempotent: calling /hydrate on an existing session is a no-op unless
- * claimedTaskClass is provided for explicit riskGate recovery. That recovery
- * may only update claimedTaskClass and clear riskGate; it must not rebind the
- * session or rewrite the policy snapshot.
+ * claimedTaskClass is provided to record an explicit raise-only risk escalation. That
+ * recovery may only update claimedTaskClass; it must not rebind the session or
+ * rewrite the policy snapshot. A blocked riskGate is fail-closed and is NOT
+ * cleared by hydrate — recovering from a blocked risk gate requires a fresh
+ * governed session.
  *
  * Special: This is the ONLY rail that accepts `null` as state input.
  *
  * @version v1
  */
 
-import type { SessionState, TaskClass } from '../state/schema.js';
+import {
+  CURRENT_ASSURANCE_EPOCH,
+  CURRENT_AUDIT_CHAIN_FORMAT,
+  CURRENT_SESSION_STATE_SCHEMA_VERSION,
+  CURRENT_STATE_DIGEST_FORMAT,
+  type SessionState,
+} from '../state/schema.js';
+import type { TaskClass } from '../state/task-class.js';
 import type { BindingInfo } from '../state/evidence.js';
-import { FINGERPRINT_PATTERN } from '../state/evidence.js';
-import type { ActorInfo } from '../audit/types.js';
+import type { ActorAssurance } from '../shared/actor-assurance.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
+import type { ActorInfo } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence.js';
-import type { DiscoverySummary } from '../discovery/types.js';
-import type { DetectedStack } from '../discovery/types.js';
-import type { VerificationCandidates } from '../discovery/types.js';
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type {
+  DetectedStack,
+  DiscoverySummary,
+  ExecutionSubjectInput,
+  VerificationCandidates,
+} from '../state/discovery-schemas.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { evaluate } from '../machine/evaluate.js';
+import { summarizeProofGraph } from '../audit/proofgraph/summary.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { defaultProfileRegistry } from '../config/profile.js';
+import { baselineProfile, defaultProfileRegistry } from '../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile.js';
@@ -53,6 +67,7 @@ import {
 import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy.js';
 import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy.js';
 import type { HydratePolicyResolution } from '../config/policy.js';
+import type { ReviewBudget } from '../config/policy-types.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +85,7 @@ export interface HydrateSessionInput {
   readonly discoverySummary?: DiscoverySummary;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
+  readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly claimedTaskClass?: TaskClass;
   /**
    * Files already dirty in the worktree at session start (with content hashes),
@@ -78,6 +94,12 @@ export interface HydrateSessionInput {
    * scope (records the full worktree, as before) and marks scoping unavailable.
    */
   readonly baselineDirtyFiles?: ReadonlyArray<{ path: string; hash: string | null }>;
+  /**
+   * Git control-plane integrity marker captured at baseline time (#852).
+   * Frozen into `implementationBaseline.controlPlaneMarker`; implementation
+   * recording fails closed when the live control plane diverges.
+   */
+  readonly baselineControlPlaneMarker?: string;
 }
 
 /**
@@ -97,14 +119,11 @@ export interface HydratePolicyInput {
   readonly policyDigest?: string;
   readonly policyVersion?: string;
   readonly policyPathHint?: string;
-  readonly maxSelfReviewIterations?: number;
-  readonly maxImplReviewIterations?: number;
-  readonly requireVerifiedActorsForApproval?: boolean;
+  readonly reviewBudget?: Partial<ReviewBudget>;
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
-  readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+  readonly minimumActorAssuranceForApproval?: ActorAssurance;
   readonly enforceRiskClassification?: boolean;
-  readonly allowRiskDowngradeOverride?: boolean;
   readonly allowReducedCeremony?: boolean;
   readonly policyResolution?: HydratePolicyResolution;
 }
@@ -154,14 +173,8 @@ export function applyHydrateOverrides(
 ): FlowGuardPolicy {
   return {
     ...base,
-    ...(p.maxSelfReviewIterations !== undefined
-      ? { maxSelfReviewIterations: p.maxSelfReviewIterations }
-      : {}),
-    ...(p.maxImplReviewIterations !== undefined
-      ? { maxImplReviewIterations: p.maxImplReviewIterations }
-      : {}),
-    ...(p.requireVerifiedActorsForApproval !== undefined
-      ? { requireVerifiedActorsForApproval: p.requireVerifiedActorsForApproval }
+    ...(p.reviewBudget !== undefined
+      ? { reviewBudget: { ...base.reviewBudget, ...p.reviewBudget } }
       : {}),
     ...(p.identityProvider !== undefined ? { identityProvider: p.identityProvider } : {}),
     ...(p.identityProviderMode !== undefined
@@ -172,9 +185,6 @@ export function applyHydrateOverrides(
       : {}),
     ...(p.enforceRiskClassification !== undefined
       ? { enforceRiskClassification: p.enforceRiskClassification }
-      : {}),
-    ...(p.allowRiskDowngradeOverride !== undefined
-      ? { allowRiskDowngradeOverride: p.allowRiskDowngradeOverride }
       : {}),
     ...(p.allowReducedCeremony !== undefined
       ? { allowReducedCeremony: p.allowReducedCeremony }
@@ -202,6 +212,32 @@ function handleExistingState(
   return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
 }
 
+function defaultGateBehavior(policy: FlowGuardPolicy): EffectiveGateBehavior {
+  return policy.requireHumanGates ? 'human_gated' : 'auto_approve';
+}
+
+function buildSnapshotOptions(p: HydratePolicyInput, policy: FlowGuardPolicy) {
+  return {
+    requestedMode: p.requestedPolicyMode ?? policy.mode,
+    source: p.policySource ?? 'default',
+    effectiveGateBehavior: p.effectiveGateBehavior ?? defaultGateBehavior(policy),
+    ...(p.policyDegradedReason !== undefined ? { degradedReason: p.policyDegradedReason } : {}),
+    ...(p.policyResolutionReason !== undefined
+      ? { resolutionReason: p.policyResolutionReason }
+      : {}),
+    ...(p.centralMinimumMode !== undefined ? { centralMinimumMode: p.centralMinimumMode } : {}),
+    ...(p.policyDigest !== undefined ? { policyDigest: p.policyDigest } : {}),
+    ...(p.policyVersion !== undefined ? { policyVersion: p.policyVersion } : {}),
+    ...(p.policyPathHint !== undefined ? { policyPathHint: p.policyPathHint } : {}),
+  };
+}
+
+function createSnapshotFromPolicyInput(p: HydratePolicyInput, ctx: RailContext, now: string) {
+  const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
+  const policy = applyHydrateOverrides(basePolicy, p);
+  return createPolicySnapshot(policy, now, ctx.digest, buildSnapshotOptions(p, policy));
+}
+
 function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: string) {
   if (p.policyResolution) return freezePolicySnapshot(p.policyResolution, now, ctx.digest);
   // NOTE: this preset fallback is only reached by callers that build a
@@ -209,20 +245,7 @@ function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: str
   // defensive callers). The production tool path always sets policyResolution
   // and takes the early return above. The user-facing default for /start is
   // resolved one layer up (resolveNewPolicyResolution → defaultMode: 'team').
-  const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
-  const policy = applyHydrateOverrides(basePolicy, p);
-  return createPolicySnapshot(policy, now, ctx.digest, {
-    requestedMode: p.requestedPolicyMode ?? policy.mode,
-    source: p.policySource ?? 'default',
-    effectiveGateBehavior:
-      p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    degradedReason: p.policyDegradedReason,
-    resolutionReason: p.policyResolutionReason,
-    centralMinimumMode: p.centralMinimumMode,
-    policyDigest: p.policyDigest,
-    policyVersion: p.policyVersion,
-    policyPathHint: p.policyPathHint,
-  });
+  return createSnapshotFromPolicyInput(p, ctx, now);
 }
 
 function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
@@ -231,9 +254,9 @@ function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
   else if (pr.repoSignals)
     profile = defaultProfileRegistry.detect({
       repoSignals: pr.repoSignals,
-      discovery: pr.discoveryResult,
+      ...(pr.discoveryResult !== undefined ? { discovery: pr.discoveryResult } : {}),
     });
-  if (!profile) profile = defaultProfileRegistry.get('baseline')!;
+  if (!profile) profile = baselineProfile;
 
   const activeChecks =
     pr.activeChecks && pr.activeChecks.length > 0
@@ -252,6 +275,25 @@ function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
   return { profile, activeChecks, activeProfile };
 }
 
+/**
+ * Pre-implementation baseline object for a NEW session. The dirty-file and
+ * control-plane captures are independent and each records its availability.
+ */
+function buildImplementationBaseline(
+  s: HydrateSessionInput,
+  now: string,
+): {
+  dirtyFiles: Array<{ path: string; hash: string | null }> | null;
+  capturedAt: string;
+  controlPlaneMarker: string | null;
+} {
+  return {
+    dirtyFiles: s.baselineDirtyFiles?.map((d) => ({ path: d.path, hash: d.hash })) ?? null,
+    capturedAt: now,
+    controlPlaneMarker: s.baselineControlPlaneMarker ?? null,
+  };
+}
+
 function buildNewHydrateState(
   s: HydrateSessionInput,
   p: HydratePolicyInput,
@@ -263,16 +305,26 @@ function buildNewHydrateState(
   const now = ctx.now();
   const snapshotWithContext = resolvePolicySnapshot(p, ctx, now);
   const binding: BindingInfo = {
-    sessionId: s.sessionId,
+    hostSessionId: s.sessionId,
     worktree: s.worktree,
     fingerprint: s.fingerprint,
     resolvedAt: now,
   };
 
-  const newState: SessionState = {
-    id: crypto.randomUUID(),
-    schemaVersion: 'v1',
+  const sessionId = crypto.randomUUID();
+  const implementationBaseline = buildImplementationBaseline(s, now);
+  const stateWithoutProofGraph: Omit<SessionState, 'proofGraph'> = {
+    id: sessionId,
+    flowguardSessionId: sessionId,
+    schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
+    assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+    stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+    auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
     phase: 'READY',
+    // No runtime instance governs the session until the first host mutation
+    // dispatch acquires the fencing lease.
+    runtimeLease: null,
+    implementationRework: null,
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,
     ticket: null,
@@ -280,11 +332,22 @@ function buildNewHydrateState(
     plan: null,
     selfReview: null,
     validation: [],
+    validationAttempts: [],
+    mutationAttempts: [],
+    mutationEpisodes: [],
+    mutationEpisodeResolutions: [],
+    challengeResolutions: [],
+    implValidation: [],
     implementation: null,
+    implementationRiskAssessment: null,
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
+    peerReviewEvidence: [],
+    implReviewFindings: [],
+    peerReviewFindings: [],
     nextAdrNumber: 1,
     activeProfile,
     activeChecks,
@@ -296,19 +359,21 @@ function buildNewHydrateState(
     discoverySummary: s.discoverySummary ?? null,
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
-    ...(s.baselineDirtyFiles
-      ? {
-          implementationBaseline: {
-            dirtyFiles: s.baselineDirtyFiles.map((d) => ({ path: d.path, hash: d.hash })),
-            capturedAt: now,
-          },
-        }
-      : {}),
+    executionSubjectInputsByCandidateId: s.executionSubjectInputsByCandidateId ?? {},
+    implementationBaseline,
     transition: null,
+    pendingAuditOperations: [],
     error: null,
     createdAt: now,
+    regulatedArchiveStatus: null,
+    exportCompletionEvidence: null,
+    pendingSystemWork: null,
   };
 
+  const newState: SessionState = {
+    ...stateWithoutProofGraph,
+    proofGraph: summarizeProofGraph(stateWithoutProofGraph as SessionState, now).projection,
+  };
   const result = evaluate(newState, ctx.policy);
   return { kind: 'ok', state: newState, evalResult: result, transitions: [] };
 }

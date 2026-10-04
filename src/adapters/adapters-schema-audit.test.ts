@@ -61,7 +61,7 @@ import {
 } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import type { SessionState } from '../state/schema.js';
-import type { AuditEvent, ReviewReport } from '../state/evidence.js';
+import type { AuditEvent, AuditEventBody, ReviewReport } from '../state/evidence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import {
   makeState,
@@ -96,13 +96,14 @@ async function cleanTmpDir(dir: string): Promise<void> {
 }
 
 /** Create a minimal valid AuditEvent for persistence tests. */
-function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
+function makeValidAuditEvent(overrides: Partial<AuditEventBody> = {}): AuditEventBody {
   return {
     id: FIXED_UUID,
-    sessionId: FIXED_SESSION_UUID,
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_host_test',
     phase: 'PLAN',
     event: 'transition:PLAN_READY',
-    timestamp: FIXED_TIME,
+    occurredAt: FIXED_TIME,
     actor: 'machine',
     detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
     ...overrides,
@@ -112,6 +113,7 @@ function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 /** Create a minimal valid ReviewReport for persistence tests. */
 function makeValidReport(): ReviewReport {
   return {
+    reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: FIXED_SESSION_UUID,
     generatedAt: FIXED_TIME,
@@ -121,20 +123,17 @@ function makeValidReport(): ReviewReport {
     validationSummary: [],
     findings: [],
     overallStatus: 'clean',
-    completeness: {
-      sessionId: FIXED_SESSION_UUID,
-      phase: 'COMPLETE',
-      policyMode: 'solo',
-      overallComplete: true,
-      slots: [],
-      fourEyes: {
-        required: false,
-        satisfied: true,
-        initiatedBy: 'test',
-        decidedBy: null,
-        detail: 'Four-eyes not required by policy',
-      },
-      summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
     },
   };
 }
@@ -159,7 +158,7 @@ describe('persistence', () => {
 
     async function assertReadFails(
       json: unknown,
-      expectedCode: 'SCHEMA_VALIDATION_FAILED' | 'PARSE_FAILED',
+      expectedCode: 'SCHEMA_VALIDATION_FAILED' | 'PARSE_FAILED' | 'SESSION_STATE_INCOMPATIBLE',
     ) {
       await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
       let caught: unknown;
@@ -183,7 +182,7 @@ describe('persistence', () => {
     it('rejects missing required field "schemaVersion"', () => {
       const state = makeState('TICKET');
       const { schemaVersion: _, ...rest } = state;
-      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+      return assertReadFails(rest, 'SESSION_STATE_INCOMPATIBLE');
     });
 
     it('rejects missing required field "phase"', () => {
@@ -231,8 +230,8 @@ describe('persistence', () => {
 
     it('rejects wrong schemaVersion', () => {
       return assertReadFails(
-        { ...makeState('TICKET'), schemaVersion: 'v2' },
-        'SCHEMA_VALIDATION_FAILED',
+        { ...makeState('TICKET'), schemaVersion: 'v1' },
+        'SESSION_STATE_INCOMPATIBLE',
       );
     });
 
@@ -252,7 +251,10 @@ describe('persistence', () => {
 
     it('rejects empty sessionId', () => {
       return assertReadFails(
-        { ...makeState('TICKET'), binding: { ...makeState('TICKET').binding, sessionId: '' } },
+        {
+          ...makeState('TICKET'),
+          binding: { ...makeState('TICKET').binding, hostSessionId: '' },
+        },
         'SCHEMA_VALIDATION_FAILED',
       );
     });
@@ -261,7 +263,7 @@ describe('persistence', () => {
       return assertReadFails(
         {
           ...makeState('TICKET'),
-          binding: { ...makeState('TICKET').binding, sessionId: 'a'.repeat(129) },
+          binding: { ...makeState('TICKET').binding, hostSessionId: 'a'.repeat(129) },
         },
         'SCHEMA_VALIDATION_FAILED',
       );
@@ -341,8 +343,8 @@ describe('persistence', () => {
       expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
     });
 
-    it('rejects event missing required field "sessionId"', async () => {
-      const { sessionId: _, ...invalid } = makeValidAuditEvent();
+    it('rejects event missing required field "flowguardSessionId"', async () => {
+      const { flowguardSessionId: _, ...invalid } = makeValidAuditEvent();
       await expect(appendAuditEvent(tmpDir, invalid as AuditEvent)).rejects.toThrow(
         PersistenceError,
       );
@@ -359,21 +361,21 @@ describe('persistence', () => {
       expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
     });
 
-    it('rejects event with invalid sessionId (empty)', async () => {
+    it('rejects event with invalid flowguardSessionId (empty)', async () => {
       await expect(
-        appendAuditEvent(tmpDir, makeValidAuditEvent({ sessionId: '' })),
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ flowguardSessionId: '' })),
       ).rejects.toThrow(PersistenceError);
     });
 
-    it('rejects event with invalid sessionId (special characters)', async () => {
+    it('rejects event with invalid flowguardSessionId (non-UUID)', async () => {
       await expect(
-        appendAuditEvent(tmpDir, makeValidAuditEvent({ sessionId: 'bad.id' })),
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ flowguardSessionId: 'bad.id' })),
       ).rejects.toThrow(PersistenceError);
     });
 
-    it('rejects event with invalid timestamp', async () => {
+    it('rejects event with invalid occurredAt', async () => {
       await expect(
-        appendAuditEvent(tmpDir, makeValidAuditEvent({ timestamp: 'now' })),
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ occurredAt: 'now' })),
       ).rejects.toThrow(PersistenceError);
     });
 
@@ -399,28 +401,72 @@ describe('persistence', () => {
       await expect(appendAuditEvent(tmpDir, makeValidAuditEvent({ id: 'bad' }))).rejects.toThrow(
         PersistenceError,
       );
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(0);
-      expect(skipped).toBe(0);
     });
 
     // ── CORNER ──────────────────────────────────────────────
 
-    it('re-throws raw error and preserves existing trail on atomic rename failure', async () => {
+    it('recovers a dead-process audit lock before appending', async () => {
+      const lockPath = path.join(tmpDir, 'audit.jsonl.lock');
+      await fs.writeFile(lockPath, 'pid=999999999\ntoken=dead-token\n', 'utf-8');
+
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+
+      const events = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(existsSync(lockPath)).toBe(false);
+    });
+
+    it('fails closed with a typed PersistenceError and preserves the existing trail on atomic rename failure', async () => {
       await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
       vi.mocked(fs.rename).mockRejectedValueOnce(
         Object.assign(new Error('disk full'), { code: 'ENOSPC' }),
       );
       try {
-        try {
-          await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
-        } catch (err) {
-          expect(err).not.toBeInstanceOf(PersistenceError);
-          expect(err).toBeInstanceOf(Error);
-          expect((err as NodeJS.ErrnoException).code).toBe('ENOSPC');
-        }
-        const { events } = await readAuditTrail(tmpDir);
+        // The append routes through the canonical durable writer, so a raw
+        // errno never escapes the persistence boundary (AGENTS.md: typed
+        // errors with a `code` field at persistence boundaries).
+        await expect(
+          appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
+        ).rejects.toMatchObject({ code: 'WRITE_FAILED' });
+        const events = await readAuditTrail(tmpDir);
         expect(events).toHaveLength(1);
+      } finally {
+        restoreRename();
+      }
+    });
+
+    it('fsyncs the audit directory so a committed append survives a crash after the rename', async () => {
+      // Regression: the append previously hand-rolled temp+fsync+rename and
+      // omitted the parent-directory fsync that durableAtomicWrite performs.
+      // A crash after the rename then reverted audit.jsonl to its pre-append
+      // content while session-state.json was already durable — a governed
+      // transition with no audit record, and the surviving prefix stays
+      // chain-valid, so verifyChain cannot detect the loss.
+      const openSpy = vi.spyOn(fs, 'open');
+      try {
+        await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+        expect(openSpy).toHaveBeenCalledWith(tmpDir, 'r', 0o600);
+      } finally {
+        openSpy.mockRestore();
+      }
+    });
+
+    it('retries transient Windows rename failures without losing the audit trail', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      const rename = vi.mocked(fs.rename);
+      rename.mockClear();
+      rename
+        .mockRejectedValueOnce(Object.assign(new Error('file locked'), { code: 'EPERM' }))
+        .mockRejectedValueOnce(Object.assign(new Error('file busy'), { code: 'EBUSY' }));
+
+      try {
+        await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+        expect(rename).toHaveBeenCalledTimes(3);
+        const events = await readAuditTrail(tmpDir);
+        expect(events).toHaveLength(2);
+        expect(verifyChain(events).valid).toBe(true);
       } finally {
         restoreRename();
       }
@@ -429,17 +475,13 @@ describe('persistence', () => {
     // ── HAPPY ───────────────────────────────────────────────
 
     it('computes chainHash and prevHash under the append lock', async () => {
-      const event = makeValidAuditEvent({
-        prevHash: PREV_HASH_64,
-        chainHash: CHAIN_HASH_64,
-      });
+      const event = makeValidAuditEvent();
       await appendAuditEvent(tmpDir, event);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.prevHash).toBe('genesis');
       expect(events[0]!.chainHash).not.toBe(CHAIN_HASH_64);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      expect(verifyChain(events).valid).toBe(true);
     });
 
     it('serializes concurrent chained audit appends without lost updates or chain forks', async () => {
@@ -449,11 +491,10 @@ describe('persistence', () => {
 
       await Promise.all(inputs.map((event) => appendAuditEvent(tmpDir, event)));
 
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(inputs.length);
       expect(new Set(events.map((event) => event.id)).size).toBe(inputs.length);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      expect(verifyChain(events).valid).toBe(true);
       for (let i = 1; i < events.length; i++) {
         expect(events[i]!.prevHash).toBe(events[i - 1]!.chainHash);
       }
@@ -468,10 +509,10 @@ describe('persistence', () => {
         const canonicalDigest = computeCanonicalEventDigest({
           ...event,
           auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-        } as Record<string, unknown>);
+        });
         const withTSA = {
           ...event,
-          canonicalEventDigest: canonicalDigest,
+          semanticEventDigest: canonicalDigest,
           timestampEvidence: {
             status: 'tsa_stamped' as const,
             source: 'tsa' as const,
@@ -485,16 +526,15 @@ describe('persistence', () => {
             },
           },
         };
-        return withTSA as unknown as AuditEvent;
+        return withTSA;
       });
 
       await Promise.all(inputs.map((event) => appendAuditEvent(tmpDir, event)));
 
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(inputs.length);
-      expect(verifyChain(events, { strict: true }).valid).toBe(true);
-      const tsResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      expect(verifyChain(events).valid).toBe(true);
+      const tsResult = verifyChain(events, { strictTimestamps: true });
       expect(tsResult.valid).toBe(false);
       expect(tsResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
       for (let i = 1; i < events.length; i++) {
@@ -511,8 +551,8 @@ describe('persistence', () => {
       delete stripped.chainHash;
       delete stripped.prevHash;
       delete stripped.timestampEvidence;
-      delete stripped.canonicalEventDigest;
-      const bodyWithOldPrev = {
+      delete stripped.semanticEventDigest;
+      const bodyWithOldPrev: Record<string, unknown> = {
         ...stripped,
         prevHash: 'old-prev-hash-64-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       };
@@ -526,7 +566,7 @@ describe('persistence', () => {
 
       const withTsa = {
         ...event,
-        canonicalEventDigest: v1Digest,
+        semanticEventDigest: v1Digest,
         timestampEvidence: {
           status: 'tsa_stamped' as const,
           source: 'tsa' as const,
@@ -540,10 +580,10 @@ describe('persistence', () => {
           },
         },
       };
-      await appendAuditEvent(tmpDir, withTsa as unknown as AuditEvent);
-      const { events } = await readAuditTrail(tmpDir);
+      await appendAuditEvent(tmpDir, withTsa);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
-      const result = verifyChain(events, { strict: true, strictTimestamps: true });
+      const result = verifyChain(events, { strictTimestamps: true });
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
     });
@@ -554,7 +594,7 @@ describe('persistence', () => {
       await fs.writeFile(auditFilePath, '{invalid-json\n', 'utf-8');
 
       const event = makeValidAuditEvent({ id: crypto.randomUUID() });
-      await expect(appendAuditEvent(tmpDir, event)).rejects.toThrow(/unparseable line/);
+      await expect(appendAuditEvent(tmpDir, event)).rejects.toThrow(/not valid JSONL|LEGACY/i);
 
       // Original corrupt trail is preserved, no partial append.
       const raw = await fs.readFile(auditFilePath, 'utf-8');
@@ -571,8 +611,7 @@ describe('persistence', () => {
         },
       });
       await appendAuditEvent(tmpDir, event);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.actorInfo?.id).toBe('actor-1');
       expect(events[0]!.actorInfo?.source).toBe('env');
@@ -581,8 +620,7 @@ describe('persistence', () => {
     it('accepts event without optional actorInfo', async () => {
       const event = makeValidAuditEvent();
       await appendAuditEvent(tmpDir, event);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.actorInfo).toBeUndefined();
     });
@@ -591,7 +629,7 @@ describe('persistence', () => {
       const nestedDir = path.join(tmpDir, 'deep', 'nested', 'session');
       const event = makeValidAuditEvent();
       await appendAuditEvent(nestedDir, event);
-      const { events } = await readAuditTrail(nestedDir);
+      const events = await readAuditTrail(nestedDir);
       expect(events).toHaveLength(1);
     });
 
@@ -605,11 +643,88 @@ describe('persistence', () => {
           }),
         );
       }
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(5);
       expect(events[0]!.event).toBe('step_0');
       expect(events[4]!.event).toBe('step_4');
+    });
+  });
+
+  describe('appendAuditEvent — exactly-once on re-delivery', () => {
+    const FORGED_CHAIN_HASH = 'a'.repeat(64);
+    const FORGED_PREV_HASH = 'b'.repeat(64);
+
+    // An event id is a commit identity. A crash between append and
+    // acknowledgement re-delivers the SAME raw producer body — which carries
+    // no positional fields and no auditFormatVersion. The writer must return
+    // the already-persisted record rather than fail the retry closed.
+
+    it('returns the persisted record when the identical raw body is re-delivered', async () => {
+      const body = makeValidAuditEvent();
+      const first = await appendAuditEvent(tmpDir, body);
+
+      const second = await appendAuditEvent(tmpDir, body);
+
+      expect(second).toEqual(first);
+      const events = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.auditSequence).toBe(1);
+    });
+
+    it('returns the persisted record when a re-delivery carries forged positional fields', async () => {
+      const body = makeValidAuditEvent();
+      const first = await appendAuditEvent(tmpDir, body);
+
+      // Producer-supplied positional/authority values are never accepted, so
+      // they must not influence the exactly-once comparison either.
+      const forged = {
+        ...body,
+        auditFormatVersion: 'audit-chain.v1',
+        auditSequence: 99,
+        recordedAt: '2020-01-01T00:00:00.000Z',
+        semanticEventDigest: 'f'.repeat(64),
+        prevHash: FORGED_PREV_HASH,
+        chainHash: FORGED_CHAIN_HASH,
+      } as unknown as AuditEventBody;
+
+      const second = await appendAuditEvent(tmpDir, forged);
+
+      expect(second).toEqual(first);
+      const events = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.auditSequence).toBe(1);
+    });
+
+    it('fails closed when the same id is re-delivered with different semantics', async () => {
+      const body = makeValidAuditEvent();
+      await appendAuditEvent(tmpDir, body);
+
+      let caught: unknown;
+      try {
+        await appendAuditEvent(tmpDir, { ...body, event: 'transition:IMPL_READY' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(PersistenceError);
+      expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+      const events = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.event).toBe('transition:PLAN_READY');
+    });
+
+    it('keeps the chain verifiable across a re-delivered append', async () => {
+      const body = makeValidAuditEvent();
+      await appendAuditEvent(tmpDir, body);
+      await appendAuditEvent(
+        tmpDir,
+        makeValidAuditEvent({ id: '00000000-0000-4000-8000-0000000000aa' }),
+      );
+      await appendAuditEvent(tmpDir, body);
+
+      const events = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(2);
+      expect(verifyChain(events).valid).toBe(true);
     });
   });
 });

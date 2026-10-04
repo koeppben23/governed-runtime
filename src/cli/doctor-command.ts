@@ -12,7 +12,6 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { HostId } from '../shared/hosts.js';
 import {
   COMMANDS,
-  LEGACY_INSTRUCTION_ENTRY,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
   REVIEWER_AGENT_FILENAME,
@@ -24,19 +23,20 @@ import {
   mandatesInstructionEntry,
 } from './templates.js';
 import {
-  type CliArgs,
-  type DoctorCheck,
-  type InstallScope,
-  PACKAGE_VERSION,
   computeMandatesDigest,
-  hasNonFlowGuardInstructions,
-  parseJsonc,
   resolveOpencodeConfigPath,
   resolveTarget,
   safeRead,
   sha256,
-  vendorDependency,
 } from './install-helpers.js';
+import {
+  hasNonFlowGuardInstructions,
+  PACKAGE_VERSION,
+  type CliArgs,
+  type DoctorCheck,
+  type InstallScope,
+} from './install-types.js';
+import { parseJsonc, vendorDependency } from './install-json.js';
 import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { buildPlatformTrustReport } from './platform-trust-report.js';
@@ -44,36 +44,30 @@ import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
+import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
+import {
+  classifyOpenCodeHostContract,
+  classifyOpenCodeRuntime,
+} from './opencode-runtime-compat.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
 
-/**
- * Read a file for doctor inspection. Returns content or null.
- *
- * Pushes a DoctorCheck automatically:
- * - 'missing' when file does not exist (ENOENT)
- * - 'error' when file cannot be read (EACCES, EPERM, etc.)
- * Callers can check `if (!content) return/continue` without further checks.
- */
 async function checkedRead(filePath: string, checks: DoctorCheck[]): Promise<string | null> {
   try {
     const content = await safeRead(filePath);
-    if (content === null) {
-      checks.push({ file: filePath, status: 'missing' });
-    }
+    if (content === null) checks.push({ file: filePath, status: 'missing' });
     return content;
   } catch (err: unknown) {
     const code = typeof err === 'object' && err !== null && 'code' in err ? err.code : undefined;
     const msg = err instanceof Error ? err.message : String(err);
-    const detail = code ? `Cannot read (${code}): ${msg}` : `Cannot read: ${msg}`;
     checks.push({
       file: filePath,
       status: 'error',
-      detail,
+      detail: code ? `Cannot read (${code}): ${msg}` : `Cannot read: ${msg}`,
     });
     return null;
   }
 }
 
-/** Check managed artifacts: mandates.md, tool wrapper, plugin wrapper, commands. */
 async function checkMandatesDigest(target: string, checks: DoctorCheck[]): Promise<void> {
   const mandatesPath = join(target, MANDATES_FILENAME);
   const mandatesContent = await checkedRead(mandatesPath, checks);
@@ -170,42 +164,32 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   return checks;
 }
 
-/** Check package.json A1 model + vendor tarball. */
 async function checkDependencies(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-
-  // 5. package.json (A1 model validation)
   const pkgPath = join(target, 'package.json');
   const pkgContent = await checkedRead(pkgPath, checks);
   if (!pkgContent) return checks;
-  else {
-    try {
-      const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-      const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
-      const coreDep = deps['@flowguard/core'];
-      const expectedDep = vendorDependency(PACKAGE_VERSION());
+  try {
+    const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
+    const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
+    const coreDep = deps['@flowguard/core'];
+    const expectedDep = vendorDependency(PACKAGE_VERSION());
 
-      if (!coreDep) {
-        checks.push({
-          file: pkgPath,
-          status: 'error',
-          detail: 'missing @flowguard/core dependency',
-        });
-      } else if (coreDep !== expectedDep) {
-        checks.push({
-          file: pkgPath,
-          status: 'error',
-          detail: `@flowguard/core must be "${expectedDep}" (got: ${coreDep})`,
-        });
-      } else {
-        checks.push({ file: pkgPath, status: 'ok' });
-      }
-    } catch {
-      checks.push({ file: pkgPath, status: 'error', detail: 'malformed JSON' });
+    if (!coreDep) {
+      checks.push({ file: pkgPath, status: 'error', detail: 'missing @flowguard/core dependency' });
+    } else if (coreDep !== expectedDep) {
+      checks.push({
+        file: pkgPath,
+        status: 'error',
+        detail: `@flowguard/core must be "${expectedDep}" (got: ${coreDep})`,
+      });
+    } else {
+      checks.push({ file: pkgPath, status: 'ok' });
     }
+  } catch {
+    checks.push({ file: pkgPath, status: 'error', detail: 'malformed JSON' });
   }
 
-  // Vendor tarball
   const vendorTarballPath = join(target, 'vendor', `flowguard-core-${PACKAGE_VERSION()}.tgz`);
   if (existsSync(vendorTarballPath)) {
     checks.push({ file: vendorTarballPath, status: 'ok' });
@@ -220,7 +204,6 @@ async function checkDependencies(target: string): Promise<DoctorCheck[]> {
   return checks;
 }
 
-/** Check opencode.json instruction entries. */
 async function checkOpencodeInstructions(
   target: string,
   scope: InstallScope,
@@ -244,22 +227,18 @@ async function checkOpencodeInstructions(
         detail: `instructions array does not contain "${entry}"`,
       });
     }
-    if (instructions.includes(LEGACY_INSTRUCTION_ENTRY)) {
+    if (instructions.includes('AGENTS.md')) {
       checks.push({
         file: opencodeJsonPath,
-        status: 'instruction_stale',
-        detail: `legacy "${LEGACY_INSTRUCTION_ENTRY}" entry still in instructions — run install to migrate`,
+        status: 'warn',
+        detail:
+          'AGENTS.md is configured alongside FlowGuard mandates. Ownership is ambiguous: verify that this additional instruction authority is intentional before reinstalling or upgrading.',
       });
     }
-
     const hasIssue = checks.some(
-      (c) =>
-        c.file === opencodeJsonPath &&
-        (c.status === 'instruction_missing' || c.status === 'instruction_stale'),
+      (check) => check.file === opencodeJsonPath && check.status === 'instruction_missing',
     );
-    if (!hasIssue) {
-      checks.push({ file: opencodeJsonPath, status: 'ok' });
-    }
+    if (!hasIssue) checks.push({ file: opencodeJsonPath, status: 'ok' });
 
     checkDesktopTaskHardening(parsed, instructions, opencodeJsonPath, checks);
   } catch {
@@ -269,33 +248,106 @@ async function checkOpencodeInstructions(
   return checks;
 }
 
+const ACTIVATION_CHECK = 'opencode-instruction-source-activation';
+
+async function checkOpencodeInstructionSourceActivation(
+  scope: InstallScope,
+  target: string,
+): Promise<DoctorCheck[]> {
+  const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
+  const evidence = await detectOpenCodeRuntimeEvidence({ scope, platform: 'opencode', target });
+  const classification = classifyOpenCodeRuntime(evidence);
+  const hostContract = classifyOpenCodeHostContract(evidence.version);
+
+  if (hostContract.status === 'known-incompatible') {
+    return [
+      {
+        file: opencodeJsonPath,
+        status: 'error',
+        detail: `OpenCode host contract is known incompatible: ${hostContract.reason}`,
+        check: ACTIVATION_CHECK,
+      },
+    ];
+  }
+
+  if (classification.status === 'known-unsupported') {
+    const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
+      runtimeLine: evidence.runtimeLine ?? 'unknown',
+      version: evidence.version ?? 'unknown',
+    });
+    return [
+      {
+        file: opencodeJsonPath,
+        status: 'error',
+        detail: `${formatted.reason} (${classification.matched?.reason ?? ''})`.trim(),
+        check: ACTIVATION_CHECK,
+      },
+    ];
+  }
+
+  const runtimeDesc = `${evidence.runtimeKind}${evidence.version ? ` v${evidence.version}` : ''}`;
+  return [
+    {
+      file: opencodeJsonPath,
+      status: 'warn',
+      detail:
+        `runtime ${runtimeDesc}; host contract ${hostContract.status} ` +
+        `(tested ${hostContract.testedVersion}); instruction-source activation is NOT_VERIFIED. ` +
+        'FlowGuard cannot prove that OpenCode loaded the configured source. ' +
+        'See docs/platform-limitations.md.',
+      check: ACTIVATION_CHECK,
+    },
+  ];
+}
+
 function checkDesktopTaskHardening(
   parsed: Record<string, unknown>,
   instructions: string[],
   path: string,
   checks: DoctorCheck[],
 ): void {
-  const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
-  const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
-  if (!hasPluginField && !hasDesktopInstructions) return;
+  const taskPerms = resolveDesktopTaskPermissions(parsed);
+  if (!requiresDesktopTaskHardeningCheck(parsed, instructions, taskPerms)) return;
 
+  const detail = desktopTaskHardeningWarning(taskPerms);
+  if (detail) checks.push({ file: path, status: 'warn', detail });
+}
+
+function resolveDesktopTaskPermissions(
+  parsed: Record<string, unknown>,
+): Record<string, unknown> | undefined {
   const agent = parsed['agent'] as Record<string, unknown> | undefined;
   const buildPerms = (agent?.['build'] as Record<string, unknown> | undefined)?.['permission'] as
     Record<string, unknown> | undefined;
-  const taskPerms = buildPerms?.['task'] as Record<string, unknown> | undefined;
-  const hasTaskHardening =
-    taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
-  if (!hasTaskHardening) {
-    checks.push({
-      file: path,
-      status: 'warn',
-      detail:
-        'desktop-owned OpenCode config does not include FlowGuard reviewer task hardening; installer does not modify task permissions for desktop-owned configs',
-    });
-  }
+  return buildPerms?.['task'] as Record<string, unknown> | undefined;
 }
 
-/** Check FlowGuard config (flat path). Scope-aware: checks only the relevant config for the scope. */
+function requiresDesktopTaskHardeningCheck(
+  parsed: Record<string, unknown>,
+  instructions: string[],
+  taskPerms: Record<string, unknown> | undefined,
+): boolean {
+  const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
+  const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
+  const hasTaskConfig = taskPerms !== undefined && Object.keys(taskPerms).length > 0;
+  return hasPluginField || hasDesktopInstructions || hasTaskConfig;
+}
+
+function desktopTaskHardeningWarning(
+  taskPerms: Record<string, unknown> | undefined,
+): string | null {
+  const hasTaskConfig = taskPerms !== undefined && Object.keys(taskPerms).length > 0;
+  if (hasTaskConfig && taskPerms[REVIEWER_SUBAGENT_TYPE] !== 'allow') {
+    return 'FlowGuard task hardening is incomplete: customer-owned OpenCode task permissions do not explicitly allow flowguard-reviewer; FlowGuard preserves customer permissions, so independent reviewer execution may be blocked';
+  }
+
+  const hasTaskHardening =
+    taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
+  return hasTaskHardening
+    ? null
+    : 'FlowGuard task hardening is not active for this customer-owned OpenCode config; installer intentionally preserves customer task permissions';
+}
+
 async function checkWorkspaceConfig(
   scope: InstallScope,
   platform: HostId = 'opencode',
@@ -320,7 +372,7 @@ async function checkWorkspaceConfig(
         return checks;
       }
       try {
-        const config = await readConfig(); // no worktree = global only
+        const config = await readConfig();
         const hasCustom = detectCustomConfig(config);
         checks.push({
           file: cfgPath,
@@ -331,7 +383,6 @@ async function checkWorkspaceConfig(
         pushConfigError(checks, cfgPath, err);
       }
     } else {
-      // scope === 'repo': check only repo config, NO fallback to global
       const cfgPath = join(cwd, '.opencode', 'flowguard.json');
       if (!existsSync(cfgPath)) {
         checks.push({
@@ -394,7 +445,6 @@ async function checkPlatformWorkspaceConfig(
   return checks;
 }
 
-/** Detect if config has been customized beyond installer defaults. */
 function detectCustomConfig(config: {
   logging: { level: string };
   policy: Record<string, unknown>;
@@ -402,24 +452,18 @@ function detectCustomConfig(config: {
 }): boolean {
   return (
     config.logging.level !== 'info' ||
-    config.policy.maxSelfReviewIterations !== undefined ||
-    config.policy.maxImplReviewIterations !== undefined ||
+    config.policy.reviewBudget !== undefined ||
     config.profile.defaultId !== undefined ||
     config.profile.activeChecks !== undefined
   );
 }
 
-/** Push a config-read error check. */
 function pushConfigError(checks: DoctorCheck[], cfgPath: string, err: unknown): void {
   if (err instanceof PersistenceError) {
     if (err.code === 'PARSE_FAILED' || err.code === 'SCHEMA_VALIDATION_FAILED') {
       checks.push({ file: cfgPath, status: 'error', detail: err.message });
     } else {
-      checks.push({
-        file: cfgPath,
-        status: 'error',
-        detail: `cannot read config: ${err.message}`,
-      });
+      checks.push({ file: cfgPath, status: 'error', detail: `cannot read config: ${err.message}` });
     }
   } else {
     checks.push({
@@ -444,6 +488,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkDependencies(target)));
   if (installPlatform === 'opencode') {
     checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
+    checks.push(...(await checkOpencodeInstructionSourceActivation(args.installScope, target)));
   }
   checks.push(...(await checkWorkspaceConfig(args.installScope, installPlatform, target)));
   if (installPlatform === 'opencode') {
@@ -487,18 +532,13 @@ async function checkPlatformPluginArtifacts(
     checks.push({
       file: filePath,
       status: existsSync(filePath) ? 'ok' : 'missing',
-      detail: existsSync(filePath) ? 'configured; runtime load NOT_VERIFIED_RUNTIME' : undefined,
+      ...(existsSync(filePath) ? { detail: 'configured; runtime load NOT_VERIFIED_RUNTIME' } : {}),
     });
   }
 
   return checks;
 }
 
-/**
- * Detect "files installed but dependencies unresolved" broken state.
- * This happens when a previous install failed after writing assets but
- * before resolving dependencies.
- */
 async function checkBrokenInstall(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const mandatesPath = join(target, MANDATES_FILENAME);

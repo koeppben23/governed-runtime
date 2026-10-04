@@ -67,7 +67,7 @@ Expected output (truncated):
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/agents/flowguard-reviewer.md
   [ok] ~/.config/opencode/commands/hydrate.md
-  ... (20 command files — 12 canonical + 8 product aliases)
+  ... (installed command files)
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json (or opencode.jsonc when present)
   [ok] flowguard.json — config valid
@@ -94,7 +94,11 @@ HTTP hooks provide sub-20ms latency via a persistent server process.
 #### 1. Start the hook server
 
 ```bash
-# Start the FlowGuard HTTP hook server (background)
+# Generate once per local deployment. Keep the token in the environment inherited
+# by both Claude Code and the HTTP hook server; never commit it to hooks.json.
+export FLOWGUARD_HOOK_TOKEN="$(openssl rand -hex 32)"
+
+# Start the FlowGuard HTTP hook server (background).
 flowguard-hook-server &
 
 # Or with a custom port:
@@ -102,10 +106,22 @@ FLOWGUARD_HOOK_PORT=18462 flowguard-hook-server &
 
 # Verify:
 curl http://127.0.0.1:18462/health
-# → {"status":"ok","port":18462,"pid":...}
+# → {"status":"ok"}
 ```
 
-The listener binds to `127.0.0.1` by default (`FLOWGUARD_HOOK_HOST`).
+`FLOWGUARD_HOOK_TOKEN` is mandatory, must contain at least 32 non-whitespace
+characters, and is never logged by FlowGuard. Start Claude Code from the same
+shell or service environment so it inherits this variable. The HTTP hook
+configuration expands it only when it is listed in `allowedEnvVars` below.
+`GET /health` is the sole unauthenticated endpoint. Every other request is
+authenticated before FlowGuard evaluates its method or route.
+
+The listener binds to `127.0.0.1` by default (`FLOWGUARD_HOOK_HOST`). Only
+`127.0.0.1` and `::1` are accepted without explicit remote opt-in. Remote
+binding requires `FLOWGUARD_HOOK_ALLOW_REMOTE=1` as well as the token. It does
+not add TLS: use remote HTTP only behind a trusted network boundary or a
+TLS-terminating reverse proxy, because bearer tokens sent over HTTP can be
+observed on the network.
 
 #### 2. Configure hooks.json
 
@@ -118,6 +134,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/pre-tool-use",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "matcher": "Bash|Edit|Write",
         "timeout": 10000
       }
@@ -126,6 +144,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/post-tool-use",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "matcher": "Bash|Edit|Write|mcp__flowguard__.*",
         "timeout": 30000
       }
@@ -134,6 +154,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/session-start",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "matcher": "startup"
       }
     ],
@@ -141,6 +163,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/stop",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "timeout": 15000
       }
     ]
@@ -215,7 +239,9 @@ curl -s http://127.0.0.1:18462/health | jq .
 
 # Test pre-tool-use deny (investigation phase)
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"session_id":"test","cwd":"/project"}' \
-  | curl -s -X POST http://127.0.0.1:18462/hooks/pre-tool-use -d @-
+  | curl -s -X POST http://127.0.0.1:18462/hooks/pre-tool-use \
+      -H "Authorization: Bearer ${FLOWGUARD_HOOK_TOKEN}" \
+      -H 'Content-Type: application/json' --data-binary @-
 
 # Test MCP server
 echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | flowguard-mcp
@@ -377,22 +403,31 @@ cat .codex/mcp.json
 
 ## Environment Variables (All Platforms)
 
-| Variable                | Default     | Description                                                                                           |
-| ----------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
-| `FLOWGUARD_HOOK_PORT`   | `18462`     | HTTP hook server port (Claude Code)                                                                   |
-| `FLOWGUARD_HOOK_HOST`   | `127.0.0.1` | HTTP hook server bind address                                                                         |
-| `FLOWGUARD_SESSION_DIR` | (none)      | Explicit session directory override; consumed by both hook scripts and the MCP session resolver       |
-| `FLOWGUARD_PROJECT_DIR` | (none)      | Host-advertised project dir for MCP (Claude Code MCP template sets this from `${CLAUDE_PROJECT_DIR}`) |
+| Variable                        | Default       | Description                                                                                                  |
+| ------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `FLOWGUARD_HOOK_PORT`           | `18462`       | HTTP hook server port (Claude Code)                                                                          |
+| `FLOWGUARD_HOOK_HOST`           | `127.0.0.1`   | HTTP hook server bind address                                                                                |
+| `FLOWGUARD_HOOK_TOKEN`          | Required      | Bearer token for all HTTP governance routes; never commit or log it                                          |
+| `FLOWGUARD_HOOK_ALLOW_REMOTE`   | Unset         | Set exactly to `1` to permit a non-loopback HTTP bind; does not enable TLS                                   |
+| `FLOWGUARD_SESSION_DIR`         | (none)        | Explicit session directory override; consumed by both hook scripts and the MCP session resolver              |
+| `FLOWGUARD_PROJECT_DIR`         | (none)        | Host-advertised project dir for MCP (Claude Code MCP template sets this from `${CLAUDE_PROJECT_DIR}`)        |
+| `FLOWGUARD_MCP_TOOL_TIMEOUT_MS` | `30000` ms    | Per-call MCP response deadline; a timed-out execution is not cancelled and retains its slot until settlement |
+| `FLOWGUARD_MCP_MAX_CONCURRENT`  | `10`          | Maximum active MCP tool executions shared by all tools in one MCP server process                             |
+| `FLOWGUARD_MCP_MAX_PER_SECOND`  | `50` starts/s | Maximum tool starts in a rolling one-second window, shared by all tools in one MCP server process            |
 
-> **MCP session resolution is fail-closed.** The MCP server resolves the
-> project directory from `FLOWGUARD_SESSION_DIR`, then `FLOWGUARD_PROJECT_DIR`,
-> then host-advertised MCP roots — in that order. There is **no `cwd`
-> fallback**: if none of these is present, tool calls are denied with
-> `SESSION_UNRESOLVABLE`. The Claude Code MCP template sets
-> `FLOWGUARD_PROJECT_DIR=${CLAUDE_PROJECT_DIR}` automatically. Hosts that
-> advertise neither an env source nor MCP roots (currently the Codex MCP
-> template) must set `FLOWGUARD_SESSION_DIR` or `FLOWGUARD_PROJECT_DIR` for
-> MCP tool calls to resolve.
+> **MCP session resolution is fail-closed.** MCP `roots/list` is the sole
+> repository authority. Every `file:` root and its Git worktree is resolved by
+> real path; multiple worktrees require `FLOWGUARD_PROJECT_DIR` to select one
+> already authorized worktree. `FLOWGUARD_SESSION_DIR` cannot select a
+> repository and is accepted only below the bound workspace's session directory.
+> There is no `cwd` fallback. Missing, changed, ambiguous, foreign, or symlink-
+> escaped roots return `SESSION_UNRESOLVABLE`.
+
+> **MCP execution limits are fail-closed.** All limit values must be positive,
+> safe integers; invalid or timer-unsupported values prevent server startup.
+> `MCP_TOOL_TIMEOUT` and `MCP_RATE_LIMITED` are structured non-error governance
+> denials. Retry after active executions settle or the rolling one-second start
+> window has advanced.
 
 `FLOWGUARD_LOG_LEVEL` is **not** consumed by the runtime; the log level is
 sourced exclusively from `config.logging.level` (see `docs/configuration.md`).

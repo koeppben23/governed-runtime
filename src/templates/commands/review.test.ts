@@ -9,7 +9,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { REVIEW_COMMAND } from './review.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 describe('templates/commands/review (#401 Discovery context)', () => {
   // HAPPY — Discovery context is required review evidence
@@ -25,9 +24,10 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toContain('repo-dependent quality claim');
     });
 
-    it('passes Discovery context to the manually-spawned reviewer subagent', () => {
-      expect(REVIEW_COMMAND).toContain(REVIEWER_SUBAGENT_TYPE);
-      expect(REVIEW_COMMAND).toMatch(/Pass the compact Discovery context/);
+    it('requires the native Task transport and keeps findings bound by FlowGuard', () => {
+      expect(REVIEW_COMMAND).toContain('reviewInvocation.action === "call_task"');
+      expect(REVIEW_COMMAND).toContain('subagent_type: "flowguard-reviewer"');
+      expect(REVIEW_COMMAND).toContain('Do not submit, copy, or alter `reviewFindings`');
     });
   });
 
@@ -35,7 +35,7 @@ describe('templates/commands/review (#401 Discovery context)', () => {
   describe('BAD — NOT_VERIFIED correlation rule', () => {
     it('marks Discovery-dependent claims NOT_VERIFIED when correlation fails', () => {
       expect(REVIEW_COMMAND).toContain('NOT_VERIFIED');
-      expect(REVIEW_COMMAND).toMatch(/cannot be correlated to local repository Discovery/);
+      expect(REVIEW_COMMAND).toMatch(/could not be\s+correlated to local Discovery/);
     });
 
     it('does not invent repository truth when Discovery is unavailable/degraded/drifted', () => {
@@ -64,8 +64,8 @@ describe('templates/commands/review (#401 Discovery context)', () => {
   describe('EDGE — evidence, not verdict authority', () => {
     it('states Discovery context is advisory evidence, not verdict authority', () => {
       expect(REVIEW_COMMAND).toMatch(/advisory[\s\S]*NOT review verdict[\s\S]*authority/);
-      expect(REVIEW_COMMAND).toContain('ReviewFindings');
-      expect(REVIEW_COMMAND).toContain('attestation');
+      expect(REVIEW_COMMAND).toContain('host-observed structured reviewer invocation evidence');
+      expect(REVIEW_COMMAND).not.toMatch(/attestation remain the review authority/);
     });
 
     it('Done-when requires Discovery health/drift and correlation checks', () => {
@@ -78,16 +78,16 @@ describe('templates/commands/review (#401 Discovery context)', () => {
     });
   });
 
-  describe('HAPPY — host-task continuation', () => {
-    it('treats HOST_SUBAGENT_TASK_REQUIRED as an intermediate host-task step', () => {
-      expect(REVIEW_COMMAND).toContain('HOST_SUBAGENT_TASK_REQUIRED');
-      expect(REVIEW_COMMAND).toContain('expected intermediate state');
-      expect(REVIEW_COMMAND).toMatch(/not\s+a terminal failure/);
+  describe('HAPPY — review continuation', () => {
+    it('keeps branch materialization inside FlowGuard', () => {
+      expect(REVIEW_COMMAND).toContain('never run `git diff`');
+      expect(REVIEW_COMMAND).not.toContain('git diff <base>...<branch>');
     });
 
-    it('documents local branch diff fallback when no remote PR is available', () => {
-      expect(REVIEW_COMMAND).toContain('git diff <base>...<branch>');
-      expect(REVIEW_COMMAND).toContain('when no remote/PR is available');
+    it('requires obligation-id completion after FlowGuard binds evidence', () => {
+      expect(REVIEW_COMMAND).toContain('Do not submit, copy, or alter `reviewFindings`');
+      expect(REVIEW_COMMAND).toContain('flowguard_review({ reviewObligationId })');
+      expect(REVIEW_COMMAND).not.toContain('reviewVerdict');
     });
   });
 });

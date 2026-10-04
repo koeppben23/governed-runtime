@@ -1,68 +1,232 @@
 /**
  * @test-policy
- * HAPPY: renders full plan body with phase label, version, policy, task.
- * HAPPY: PLAN_REVIEW footer includes /approve, /request-changes, /reject with explanations.
- * CORNER: omits version/policy/task sections when absent.
- * CORNER: footer adapts to available product commands.
+ * HAPPY: renders full plan body with phase label, version, policy, task via the
+ *        shared renderer (renderMarkdown), next action as a Decision required
+ *        conclusion.
+ * CORNER: omits version/policy/task rows when absent.
+ * CORNER: conclusion adapts to the canonical workflow directive commands.
  * EDGE: plan body is preserved verbatim (no markdown corruption).
  * EDGE: status must not say "approved" — it must say "ready for".
  * PERF: not applicable; pure function.
+ *
+ * Note: v2 renders through the central PresentationDocument → renderMarkdown
+ * pipeline. Metadata is emitted as `**Label:** value` (keyValue), the next
+ * action as a `## Decision required` conclusion with `•`/`→` action lines —
+ * NOT the legacy blockquote/`## Next recommended action` footer.
  */
 import { describe, expect, it } from 'vitest';
-import { buildPlanReviewCard } from './plan-review-card.js';
+import { buildPlanReviewCard as buildCard, type PlanReviewCardInput } from './plan-review-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
+async function readGolden(name: string): Promise<string> {
+  const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
+  return (await readFile(p, 'utf-8')).trimEnd();
+}
+
+// #709 implementation-plan visual contract: one `#` top heading, `##` sections.
 const fullPlanBody = [
-  '## Objective',
-  'Implement payment validation.',
+  '# Implementation Plan',
+  '',
+  '> **Objective:** Implement payment validation. | **Scope:** src/payments | **Risk:** Low | **Version:** 1',
   '',
   '## Approach',
-  'Use a validation pipeline.',
+  '- Use a validation pipeline.',
   '',
-  '## Steps',
-  '1. Add `validate.ts` in `src/payments/`.',
-  '2. Add tests in `src/payments/validate.test.ts`.',
+  '## Implementation',
+  '### 1. Add validator',
+  '**Files:** `src/payments/validate.ts`',
+  '**Changes:** add validate().',
   '',
-  '## Files to Modify',
-  '- `src/payments/validate.ts`',
-  '- `src/payments/validate.test.ts`',
+  '## Change Inventory',
+  '| Area | Files | Change |',
+  '|---|---|---|',
+  '| Payments | `src/payments/validate.ts` | CREATE |',
   '',
-  '## Edge Cases',
-  '1. Empty input → return false.',
-  '2. Invalid currency → throw PaymentError.',
+  '## Acceptance Criteria',
+  '- [ ] Valid payment returns true.',
   '',
-  '## Validation Criteria',
-  '1. `npm test` passes.',
-  '2. Valid payment returns true.',
-  '',
-  '## Verification Plan',
-  '1. `npm test` — Source: package.json:scripts.test',
-  '2. Manual review of payment edge cases.',
+  '## Verification',
+  '1. `npm test` — Source: package.json#scripts.test',
 ].join('\n');
 
-const productNextAction = {
-  text: 'Review the plan. If it is complete and acceptable, run /approve.',
-  commands: ['/approve', '/request-changes', '/reject'] as readonly string[],
+// The same body after the renderer demotes it for embedding in the review card
+// (# -> ###, ## -> ####, ### -> #####) so it nests under `## Proposed Plan`.
+const fullPlanBodyEmbedded = [
+  '### Implementation Plan',
+  '',
+  '> **Objective:** Implement payment validation. | **Scope:** src/payments | **Risk:** Low | **Version:** 1',
+  '',
+  '#### Approach',
+  '- Use a validation pipeline.',
+  '',
+  '#### Implementation',
+  '##### 1. Add validator',
+  '**Files:** `src/payments/validate.ts`',
+  '**Changes:** add validate().',
+  '',
+  '#### Change Inventory',
+  '| Area | Files | Change |',
+  '|---|---|---|',
+  '| Payments | `src/payments/validate.ts` | CREATE |',
+  '',
+  '#### Acceptance Criteria',
+  '- [ ] Valid payment returns true.',
+  '',
+  '#### Verification',
+  '1. `npm test` — Source: package.json#scripts.test',
+].join('\n');
+
+const planDecisionDirective: WorkflowDirective = {
+  kind: 'human_gate',
+  code: 'PLAN_DECISION_REQUIRED',
+  allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+  commands: ['/approve', '/request-changes', '/reject'],
 };
 
-const productNextActionPartial = {
-  text: 'Review the plan.',
-  commands: ['/approve'] as readonly string[],
+/** Plan human-gate directive carrying exactly the supplied gate commands. */
+function planGate(commands: readonly string[]): WorkflowDirective {
+  return { ...planDecisionDirective, commands };
+}
+
+const planBlockedDirective: WorkflowDirective = {
+  kind: 'blocked',
+  code: 'WORKFLOW_BLOCKED',
+  allowedIntents: [],
+  commands: [],
+  context: {
+    reasonCode: 'PLAN_REVIEW_TEST_BLOCKED',
+    recovery: 'clear the simulated block before reviewing the plan',
+  },
 };
+
+const proofSummary: CompactProofPresentation = {
+  kind: 'declaration',
+  flow: 'plan',
+  overallStatus: 'NOT_DECLARED',
+  claimCount: 0,
+  criticalCount: 0,
+  approval: { attestations: [] },
+};
+function buildPlanReviewCard(
+  input: Omit<PlanReviewCardInput, 'proofSummary'> &
+    Partial<Pick<PlanReviewCardInput, 'proofSummary'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ proofSummary, ...input }, options);
+}
 
 describe('buildPlanReviewCard', () => {
+  it('renders every authority-relevant claim declaration field', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      claimDeclarations: {
+        flow: 'plan',
+        version: 'v2',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'Invalid payment is rejected.',
+            critical: true,
+            authoritySectionId: 'payment-validation',
+            claimScope: 'specific_behavior',
+            expectedCheckId: 'payment-invalid-test',
+            counterexampleRequirement: {
+              kind: 'assertion',
+              checkId: 'payment-invalid-test',
+              assertion: { providerId: 'vitest', localId: 'rejects-invalid-payment' },
+            },
+            structuralSurface: 'src/payments/validate.ts',
+            mutationProfile: 'boundary',
+          },
+        ],
+      },
+    });
+
+    expect(card).toContain('Claim Declarations Under Approval');
+    expect(card).toContain('Claim scope: specific_behavior');
+    expect(card).toContain('providerId: vitest');
+    expect(card).toContain('localId: rejects-invalid-payment');
+    expect(card).toContain('Structural surface: src/payments/validate.ts');
+  });
+
+  it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
+    const input = {
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW' as const,
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      forcedConvergence: true,
+    };
+    const canonical = buildPlanReviewCard(input);
+
+    expect(buildPlanReviewCard(input)).toBe(canonical);
+    expect(canonical).toContain('⚠ Reviewer did NOT approve this plan.');
+    expect(buildPlanReviewCard(input, { glyphProfile: 'ascii' })).toContain(
+      '[WARN] Reviewer did NOT approve this plan.',
+    );
+  });
+
+  it('renders reviewed provenance rows when a reviewed digest is bound', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      reviewedDigest: 'reviewed-digest',
+      reviewedObligationId: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(card).toContain('**Reviewed plan digest:** `reviewed-digest`');
+    expect(card).toContain('**Reviewed obligation:** `00000000-0000-4000-8000-000000000001`');
+  });
+
+  it('warns explicitly when the displayed findings apply to a prior plan revision', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      forcedConvergence: true,
+      currentPlanDigest: 'current-digest',
+      reviewedDigest: 'prior-digest',
+    });
+    expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
+    expect(card).toContain('Reviewed digest: `prior-digest`');
+    expect(card).toContain('Current digest:  `current-digest`');
+  });
+
+  it('omits the mismatch warning when the reviewed digest matches the current digest', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      currentPlanDigest: 'same-digest',
+      reviewedDigest: 'same-digest',
+    });
+    expect(card).not.toContain('These reviewer findings apply to a prior plan revision.');
+  });
+
   describe('HAPPY', () => {
     it('renders the full plan body without truncation', () => {
       const card = buildPlanReviewCard({
         planText: fullPlanBody,
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
-      expect(card).toContain(fullPlanBody);
+      expect(card).toContain(fullPlanBodyEmbedded);
       expect(card).toContain('# FlowGuard Plan Review');
       expect(card).toContain('## Proposed Plan');
-      expect(card).toContain('## Next recommended action');
+      expect(card).toContain('## Decision required');
+      // Exactly one document-level H1 (the card title); the plan body H1 is demoted.
+      expect(card.match(/^# /gm)).toHaveLength(1);
     });
 
     it('includes phase label in the status line', () => {
@@ -70,10 +234,10 @@ describe('buildPlanReviewCard', () => {
         planText: 'Simple plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
-      expect(card).toContain('> **Status:** Ready for plan approval');
+      expect(card).toContain('**Status:** Ready for plan approval');
     });
 
     it('includes plan version when provided', () => {
@@ -81,11 +245,11 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         planVersion: 3,
       });
 
-      expect(card).toContain('> **Plan version:** v3');
+      expect(card).toContain('**Plan version:** v3');
     });
 
     it('omits plan version when planVersion is 0', () => {
@@ -93,11 +257,11 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         planVersion: 0,
       });
 
-      expect(card).not.toContain('> **Plan version:** v0');
+      expect(card).not.toContain('**Plan version:** v0');
     });
 
     it('omits plan version when planVersion is -1', () => {
@@ -105,11 +269,11 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         planVersion: -1,
       });
 
-      expect(card).not.toContain('> **Plan version:**');
+      expect(card).not.toContain('**Plan version:**');
     });
 
     it('omits plan version when planVersion is 1.5 (non-integer)', () => {
@@ -117,11 +281,11 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
-        planVersion: 1.5 as unknown as number,
+        directive: planDecisionDirective,
+        planVersion: 1.5,
       });
 
-      expect(card).not.toContain('> **Plan version:**');
+      expect(card).not.toContain('**Plan version:**');
     });
 
     it('renders plan version when planVersion is 1', () => {
@@ -129,11 +293,11 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         planVersion: 1,
       });
 
-      expect(card).toContain('> **Plan version:** v1');
+      expect(card).toContain('**Plan version:** v1');
     });
 
     it('includes policy mode when provided', () => {
@@ -141,11 +305,11 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         policyMode: 'regulated',
       });
 
-      expect(card).toContain('> **Policy:** regulated');
+      expect(card).toContain('**Policy:** regulated');
     });
 
     it('includes task title when provided', () => {
@@ -153,11 +317,11 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         taskTitle: 'Implement payment validation',
       });
 
-      expect(card).toContain('> **Task:** Implement payment validation');
+      expect(card).toContain('**Task:** Implement payment validation');
     });
 
     it('renders /approve, /request-changes, /reject with explanations when all three are available', () => {
@@ -165,7 +329,7 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
       expect(card).toContain('- `/approve` — approve the plan if it is complete and acceptable');
@@ -180,7 +344,7 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
       expect(card).not.toContain('Plan version');
@@ -191,7 +355,7 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
       expect(card).not.toContain('Policy:');
@@ -202,37 +366,39 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
       expect(card).not.toContain('Task:');
     });
 
-    it('renders only available product commands without listing unavailable ones', () => {
+    it('renders only available directive commands without listing unavailable ones', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: productNextActionPartial,
+        directive: planGate(['/approve']),
       });
 
+      expect(card).toContain('Plan decision required.');
       expect(card).toContain('- `/approve` — approve the plan if it is complete and acceptable');
       expect(card).not.toContain('`/request-changes`');
       expect(card).not.toContain('`/reject`');
     });
 
-    it('omits decision bullets when no product commands are available', () => {
+    it('renders a terminal conclusion when the directive has no gate commands', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: { text: 'Review the plan manually.', commands: [] },
+        directive: planBlockedDirective,
       });
 
-      expect(card).toContain('Review the plan manually.');
-      expect(card).not.toContain('- `/approve`');
-      expect(card).not.toContain('- `/request-changes`');
-      expect(card).not.toContain('- `/reject`');
+      expect(card).toContain('Workflow blocked.');
+      expect(card).not.toContain('## Decision required');
+      expect(card).not.toContain('`/approve`');
+      expect(card).not.toContain('`/request-changes`');
+      expect(card).not.toContain('`/reject`');
     });
 
     it('renders correctly with all optional fields set', () => {
@@ -240,120 +406,103 @@ describe('buildPlanReviewCard', () => {
         planText: fullPlanBody,
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         planVersion: 2,
         policyMode: 'team',
         taskTitle: 'Fix login bug',
       });
 
-      expect(card).toContain('> **Plan version:** v2');
-      expect(card).toContain('> **Policy:** team');
-      expect(card).toContain('> **Task:** Fix login bug');
-      expect(card).toContain(fullPlanBody);
+      expect(card).toContain('**Plan version:** v2');
+      expect(card).toContain('**Policy:** team');
+      expect(card).toContain('**Task:** Fix login bug');
+      expect(card).toContain(fullPlanBodyEmbedded);
     });
   });
 
   describe('STRUCTURE', () => {
-    // These tests pin exact section ordering, separators, and join behavior
-    // so that string-literal and array-literal mutations cannot survive.
+    // These tests pin section ordering and renderer spacing so string-literal
+    // and array-literal mutations cannot survive.
 
-    it('joins lines with "\\n" and produces a multi-line markdown document', () => {
+    it('starts with the H1 title and renders the status metadata below it', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan body line.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
       const lines = card.split('\n');
-      // Document must contain many lines; an empty join char would collapse to 1.
-      expect(lines.length).toBeGreaterThan(10);
+      expect(lines.length).toBeGreaterThan(5);
       expect(lines[0]).toBe('# FlowGuard Plan Review');
-      // Second line must be the empty header separator.
+      // Renderer enforces exactly one blank line between sections.
       expect(lines[1]).toBe('');
-      expect(lines[2]).toBe('> **Status:** Ready for plan approval');
+      expect(lines[2]).toBe('**Status:** Ready for plan approval');
     });
 
-    it('places the body section after a horizontal rule separator', () => {
+    it('renders the body section under the ## Proposed Plan heading with canonical spacing', () => {
       const card = buildPlanReviewCard({
         planText: 'BODY_MARKER',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
-      // body = ['', '---', '', '## Proposed Plan', '', planText]
-      // Must contain the exact sequence: blank line, '---', blank line, heading, blank line, body
-      expect(card).toContain('\n\n---\n\n## Proposed Plan\n\nBODY_MARKER');
+      expect(card).toContain('## Proposed Plan\n\nBODY_MARKER');
     });
 
-    it('places the footer section after a horizontal rule separator', () => {
+    it('renders the terminal conclusion as the final paragraph when the directive has no commands', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'NEXT_ACTION_MARKER',
-          commands: [] as readonly string[],
-        },
+        directive: planBlockedDirective,
       });
 
-      // footer starts with: '', '---', '', '## Next recommended action', '', text
-      expect(card).toContain('\n\n---\n\n## Next recommended action\n\nNEXT_ACTION_MARKER');
+      // Terminal conclusion is the final block, separated by the renderer's \n\n.
+      expect(card).toContain('\n\nWorkflow blocked.');
+      expect(card.endsWith('Workflow blocked.')).toBe(true);
     });
 
-    it('separates the next-action paragraph from the option bullets with a blank line', () => {
+    it('separates the decision question from the action lines with a single newline', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'Action paragraph.',
-          commands: ['/approve'] as readonly string[],
-        },
+        directive: planGate(['/approve']),
       });
 
-      // After the action paragraph, an empty line must precede the bullet list.
+      // Decision-required conclusion: directive label then action lines (single newline).
       expect(card).toContain(
-        'Action paragraph.\n\n- `/approve` — approve the plan if it is complete and acceptable',
+        'Plan decision required.\n- `/approve` — approve the plan if it is complete and acceptable',
       );
-      // No back-to-back bullet glue (would indicate missing blank line push).
-      expect(card).not.toContain('Action paragraph.\n- `/approve`');
     });
 
-    it('starts the option list empty and only adds requested commands (no synthetic entries)', () => {
+    it('starts the action list empty and only adds requested commands (no synthetic entries)', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'Action.',
-          commands: ['/approve'] as readonly string[],
-        },
+        directive: planGate(['/approve']),
       });
 
-      // Exactly one bullet line (the /approve bullet), no leftover seed entries.
-      const bulletLines = card.split('\n').filter((l) => l.startsWith('- '));
-      expect(bulletLines).toEqual([
+      const actionLines = card.split('\n').filter((l) => l.startsWith('- '));
+      expect(actionLines).toEqual([
         '- `/approve` — approve the plan if it is complete and acceptable',
       ]);
     });
 
-    it('omits the entire option block (no blank-line separator) when no commands are recommended', () => {
+    it('omits the decision block entirely when no commands are recommended', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'Action only.',
-          commands: [] as readonly string[],
-        },
+        directive: planBlockedDirective,
       });
 
-      // Card ends with the action text, no trailing blank line + bullet list.
-      expect(card.endsWith('Action only.')).toBe(true);
-      const bulletLines = card.split('\n').filter((l) => l.startsWith('- '));
-      expect(bulletLines).toHaveLength(0);
+      expect(card.endsWith('Workflow blocked.')).toBe(true);
+      expect(card).not.toContain('## Decision required');
+      const actionLines = card.split('\n').filter((l) => l.startsWith('- '));
+      expect(actionLines).toHaveLength(0);
     });
 
     it('renders only /approve when only /approve is recommended (kills "always emit request-changes")', () => {
@@ -361,11 +510,9 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'Action.',
-          commands: ['/approve'] as readonly string[],
-        },
+        directive: planGate(['/approve']),
       });
+      expect(card).toContain('- `/approve` — approve the plan if it is complete and acceptable');
       expect(card).not.toContain('/request-changes');
       expect(card).not.toContain('/reject');
     });
@@ -375,10 +522,7 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'Action.',
-          commands: ['/request-changes'] as readonly string[],
-        },
+        directive: planGate(['/request-changes']),
       });
       expect(card).toContain('- `/request-changes` — send the plan back for revision');
       expect(card).not.toContain('/approve');
@@ -390,10 +534,7 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'Action.',
-          commands: ['/reject'] as readonly string[],
-        },
+        directive: planGate(['/reject']),
       });
       expect(card).toContain('- `/reject` — stop this task');
       expect(card).not.toContain('/approve');
@@ -405,52 +546,60 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: {
-          text: 'Action.',
-          commands: ['/approve', '/reject'] as readonly string[],
-        },
+        directive: planGate(['/approve', '/reject']),
       });
       expect(card).toContain('- `/approve`');
       expect(card).toContain('- `/reject`');
       expect(card).not.toContain('/request-changes');
     });
 
-    it('emits options in canonical order: approve, request-changes, reject', () => {
-      const card = buildPlanReviewCard({
+    it('renders gate options in canonical order and preserves the directive command order', () => {
+      const canonical = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        // Pass commands in a different order than canonical to confirm order is fixed.
-        productNextAction: {
-          text: 'Action.',
-          commands: ['/reject', '/request-changes', '/approve'] as readonly string[],
-        },
+        directive: planGate(['/approve', '/request-changes', '/reject']),
       });
-      const idxApprove = card.indexOf('- `/approve`');
-      const idxRequest = card.indexOf('- `/request-changes`');
-      const idxReject = card.indexOf('- `/reject`');
-      expect(idxApprove).toBeGreaterThan(-1);
-      expect(idxRequest).toBeGreaterThan(idxApprove);
-      expect(idxReject).toBeGreaterThan(idxRequest);
+      expect(canonical.split('\n').filter((l) => l.startsWith('- '))).toEqual([
+        '- `/approve` — approve the plan if it is complete and acceptable',
+        '- `/request-changes` — send the plan back for revision',
+        '- `/reject` — stop this task',
+      ]);
+
+      // The directive is the ordering authority: the card renders exactly the
+      // command sequence it is given and never reorders or synthesizes entries.
+      const reversed = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        directive: planGate(['/reject', '/request-changes', '/approve']),
+      });
+      expect(reversed.split('\n').filter((l) => l.startsWith('- '))).toEqual([
+        '- `/reject` — stop this task',
+        '- `/request-changes` — send the plan back for revision',
+        '- `/approve` — approve the plan if it is complete and acceptable',
+      ]);
     });
   });
 
   describe('EDGE', () => {
-    it('plan body is preserved verbatim (no markdown corruption)', () => {
-      const markdownWithSpecialChars =
+    it('preserves plan body content (only heading levels are demoted, no other corruption)', () => {
+      const body =
         '## Plan\n\nUse `code` and **bold** and _italic_.\n\n> A quote block\n\n```ts\nconst x = 1;\n```';
 
       const card = buildPlanReviewCard({
-        planText: markdownWithSpecialChars,
+        planText: body,
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
-      expect(card).toContain(markdownWithSpecialChars);
-      expect(card).toContain('```ts');
-      expect(card).toContain('const x = 1;');
+      // Heading demoted under `## Proposed Plan` (## -> ###); everything else intact.
+      expect(card).toContain('### Plan\n\nUse `code` and **bold** and _italic_.');
+      expect(card).toContain('```ts\nconst x = 1;\n```');
       expect(card).toContain('> A quote block');
+      // Exactly one document-level H1.
+      expect(card.match(/^# /gm)).toHaveLength(1);
     });
 
     it('status text says "ready for" not "approved"', () => {
@@ -458,10 +607,10 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
       });
 
-      expect(card).toContain('> **Status:** Ready for plan approval');
+      expect(card).toContain('**Status:** Ready for plan approval');
       expect(card).not.toMatch(/\bapproved\b/i);
     });
 
@@ -470,11 +619,11 @@ describe('buildPlanReviewCard', () => {
         planText: '.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction: { text: 'Run /approve.', commands: [] },
+        directive: planBlockedDirective,
       });
 
       expect(card.length).toBeGreaterThan(0);
-      expect(card).toContain('Run /approve.');
+      expect(card).toContain('Workflow blocked.');
     });
   });
 
@@ -484,7 +633,7 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         forcedConvergence: true,
       });
 
@@ -497,11 +646,103 @@ describe('buildPlanReviewCard', () => {
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
-        productNextAction,
+        directive: planDecisionDirective,
         forcedConvergence: false,
       });
 
       expect(card).not.toContain('Reviewer did NOT approve');
     });
+  });
+});
+
+// ─── Golden Baseline Tests ──────────────────────────────────────────────────────
+
+// #709 implementation-plan visual contract (one `#` top heading). Exercises the
+// real template structure so the golden catches double-H1 / inversion regressions.
+const planBody = [
+  '# Implementation Plan',
+  '',
+  '> **Objective:** Implement payment validation. | **Scope:** src/payments | **Risk:** Low | **Version:** 3',
+  '',
+  '## Approach',
+  '- Use a validation pipeline.',
+  '',
+  '## Implementation',
+  '### 1. Add validator',
+  '**Files:** src/payments/validate.ts',
+  '**Changes:** add validate().',
+  '',
+  '## Change Inventory',
+  '| Area | Files | Change |',
+  '|---|---|---|',
+  '| Payments | src/payments/validate.ts | CREATE |',
+  '',
+  '## Acceptance Criteria',
+  '- [ ] Valid payment returns true.',
+  '',
+  '## Verification',
+  '1. npm test — Source: package.json#scripts.test',
+].join('\n');
+
+describe('plan review golden fixtures', () => {
+  it('review-plan-approved matches golden output', async () => {
+    const card = buildPlanReviewCard({
+      planText: planBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      planVersion: 3,
+      policyMode: 'team',
+      taskTitle: 'Add payment validation',
+      forcedConvergence: false,
+    });
+    expect(card).toBe(await readGolden('review-plan-approved.md'));
+  });
+
+  it('review-plan-changes-requested matches golden output', async () => {
+    const card = buildPlanReviewCard({
+      planText: planBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      planVersion: 2,
+      policyMode: 'team',
+      taskTitle: 'Add payment validation',
+      forcedConvergence: true,
+    });
+    expect(card).toBe(await readGolden('review-plan-changes-requested.md'));
+  });
+
+  it('injects proof obligations section when proofSummary is provided', () => {
+    const card = buildPlanReviewCard({
+      planText: fullPlanBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planGate(['/approve', '/request-changes']),
+      planVersion: 1,
+      proofSummary: {
+        kind: 'declaration',
+        flow: 'plan',
+        overallStatus: 'AWAITING_EVIDENCE',
+        claimCount: 2,
+        criticalCount: 1,
+        approval: { attestations: [] },
+      },
+    });
+    expect(card).toContain('## Verification');
+    expect(card).toContain('2 plan claim(s) declared');
+    expect(card).toContain('1 critical');
+    expect(card).toContain('AWAITING_EVIDENCE');
+  });
+
+  it('omits proof obligations section when proofSummary is absent', () => {
+    const card = buildPlanReviewCard({
+      planText: fullPlanBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planGate(['/approve', '/request-changes']),
+      planVersion: 1,
+    });
+    expect(card).not.toContain('## Proof obligations');
   });
 });

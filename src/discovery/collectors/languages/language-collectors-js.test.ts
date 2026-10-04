@@ -26,18 +26,14 @@ describe('languages/node', () => {
   describe('HAPPY', () => {
     it('detects node version from .nvmrc', async () => {
       const runtimes: DetectedItem[] = [makeItem('node')];
-      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '20.11.0\n' }), runtimes, [
-        '.nvmrc',
-      ]);
-      expect(runtimes[0].version).toBe('20.11.0');
+      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '20.11.0\n' }), runtimes);
+      expect(runtimes[0]!.version).toBe('20.11.0');
     });
 
     it('detects node version from .node-version', async () => {
       const runtimes: DetectedItem[] = [makeItem('node')];
-      await extractFromNodeVersionFiles(mockReadFile({ '.node-version': '18.17.1\n' }), runtimes, [
-        '.node-version',
-      ]);
-      expect(runtimes[0].version).toBe('18.17.1');
+      await extractFromNodeVersionFiles(mockReadFile({ '.node-version': '18.17.1\n' }), runtimes);
+      expect(runtimes[0]!.version).toBe('18.17.1');
     });
   });
 
@@ -45,16 +41,14 @@ describe('languages/node', () => {
     it('skips empty .nvmrc content', async () => {
       // Covers line 23: !version || !/^\d/.test(version)
       const runtimes: DetectedItem[] = [makeItem('node')];
-      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '\n' }), runtimes, ['.nvmrc']);
-      expect(runtimes[0].version).toBeUndefined();
+      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '\n' }), runtimes);
+      expect(runtimes[0]!.version).toBeUndefined();
     });
 
     it('skips .nvmrc with non-numeric content', async () => {
       const runtimes: DetectedItem[] = [makeItem('node')];
-      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': 'lts/iron\n' }), runtimes, [
-        '.nvmrc',
-      ]);
-      expect(runtimes[0].version).toBeUndefined();
+      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': 'lts/iron\n' }), runtimes);
+      expect(runtimes[0]!.version).toBeUndefined();
     });
   });
 
@@ -63,40 +57,40 @@ describe('languages/node', () => {
       const runtimes: DetectedItem[] = [
         makeItem('node', { version: '20.0.0', versionEvidence: 'prior' }),
       ];
-      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '21.0.0\n' }), runtimes, [
-        '.nvmrc',
-      ]);
-      expect(runtimes[0].version).toBe('20.0.0');
+      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '21.0.0\n' }), runtimes);
+      expect(runtimes[0]!.version).toBe('20.0.0');
     });
   });
 
   describe('EDGE', () => {
     it('strips v prefix from node version', async () => {
       const runtimes: DetectedItem[] = [makeItem('node')];
-      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': 'v20.11.0\n' }), runtimes, [
-        '.nvmrc',
-      ]);
-      expect(runtimes[0].version).toBe('20.11.0');
+      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': 'v20.11.0\n' }), runtimes);
+      expect(runtimes[0]!.version).toBe('20.11.0');
     });
   });
 });
 
 describe('languages/js-ecosystem', () => {
   describe('extractFromPackageJson', () => {
+    const emptyTargets = {
+      languages: [] as DetectedItem[],
+      frameworks: [] as DetectedItem[],
+      runtimes: [] as DetectedItem[],
+      testFrameworks: [] as DetectedItem[],
+      qualityTools: [] as DetectedItem[],
+      databases: [] as DetectedItem[],
+    };
+
     it('detects typescript from devDependencies', async () => {
       const languages: DetectedItem[] = [makeItem('typescript')];
       await extractFromPackageJson(
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { typescript: '^5.3' } }),
         }),
-        languages,
-        [],
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, languages },
       );
-      expect(languages[0].version).toBe('5.3');
+      expect(languages[0]!.version).toBe('5.3');
     });
 
     it('skips ts version enrichment when version already set', async () => {
@@ -108,14 +102,9 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { typescript: '^5.3' } }),
         }),
-        languages,
-        [],
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, languages },
       );
-      expect(languages[0].version).toBe('5.4');
+      expect(languages[0]!.version).toBe('5.4');
     });
 
     it('detects database from devDependencies only (not in deps)', async () => {
@@ -125,12 +114,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { pg: '^8.11.0' } }),
         }),
-        [],
-        [],
-        [],
-        [],
-        [],
-        databases,
+        { ...emptyTargets, databases },
       );
       const pg = databases.find((d) => d.id === 'postgresql');
       expect(pg).toBeDefined();
@@ -148,14 +132,14 @@ describe('languages/js-ecosystem', () => {
         }),
         languages,
       );
-      expect(languages[0].compilerTarget).toBe('es2022');
-      expect(languages[0].compilerTargetEvidence).toBe('tsconfig.json:compilerOptions.target');
+      expect(languages[0]!.compilerTarget).toBe('es2022');
+      expect(languages[0]!.compilerTargetEvidence).toBe('tsconfig.json:compilerOptions.target');
     });
 
     it('does nothing when tsconfig.json is absent', async () => {
       const languages: DetectedItem[] = [makeItem('typescript')];
       await extractFromTsConfig(mockReadFile({}), languages);
-      expect(languages[0].compilerTarget).toBeUndefined();
+      expect(languages[0]!.compilerTarget).toBeUndefined();
     });
 
     it('does nothing when tsconfig has no target property', async () => {
@@ -164,7 +148,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({ 'tsconfig.json': JSON.stringify({ compilerOptions: {} }) }),
         languages,
       );
-      expect(languages[0].compilerTarget).toBeUndefined();
+      expect(languages[0]!.compilerTarget).toBeUndefined();
     });
 
     it('does not overwrite existing compilerTarget', async () => {
@@ -177,11 +161,20 @@ describe('languages/js-ecosystem', () => {
         }),
         languages,
       );
-      expect(languages[0].compilerTarget).toBe('es2020');
+      expect(languages[0]!.compilerTarget).toBe('es2020');
     });
   });
 
   describe('extractFromPackageJson edge cases', () => {
+    const emptyTargets = {
+      languages: [] as DetectedItem[],
+      frameworks: [] as DetectedItem[],
+      runtimes: [] as DetectedItem[],
+      testFrameworks: [] as DetectedItem[],
+      qualityTools: [] as DetectedItem[],
+      databases: [] as DetectedItem[],
+    };
+
     it('detects framework from dependencies with version', async () => {
       // Covers JS_ECOSYSTEM_DEPS framework detection path in deps
       const frameworks: DetectedItem[] = [];
@@ -189,12 +182,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ dependencies: { react: '^18.3.1' } }),
         }),
-        [],
-        frameworks,
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, frameworks },
       );
       expect(frameworks.find((f) => f.id === 'react')).toBeDefined();
     });
@@ -206,12 +194,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ dependencies: { mysql2: '^3.9.0' } }),
         }),
-        [],
-        [],
-        [],
-        [],
-        [],
-        databases,
+        { ...emptyTargets, databases },
       );
       const mysql = databases.find((d) => d.id === 'mysql');
       expect(mysql).toBeDefined();
@@ -225,14 +208,9 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ engines: { node: '>=20.0.0' } }),
         }),
-        [],
-        [],
-        runtimes,
-        [],
-        [],
-        [],
+        { ...emptyTargets, runtimes },
       );
-      expect(runtimes[0].version).toBe('20.0.0');
+      expect(runtimes[0]!.version).toBe('20.0.0');
     });
 
     it('detects react framework with version from dependencies', async () => {
@@ -241,12 +219,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ dependencies: { vue: '^3.4.0' } }),
         }),
-        [],
-        frameworks,
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, frameworks },
       );
       expect(frameworks.find((f) => f.id === 'vue')).toBeDefined();
     });
@@ -262,8 +235,8 @@ describe('languages/js-ecosystem', () => {
         buildTools,
       );
       expect(result).toBe(true);
-      expect(buildTools[0].id).toBe('pnpm');
-      expect(buildTools[0].version).toBe('9.0.0');
+      expect(buildTools[0]!.id).toBe('pnpm');
+      expect(buildTools[0]!.version).toBe('9.0.0');
     });
 
     it('returns false when packageManager field is absent', async () => {
@@ -284,8 +257,8 @@ describe('languages/js-ecosystem', () => {
         }),
         buildTools,
       );
-      expect(buildTools[0].version).toBe('10.0.0');
-      expect(buildTools[0].evidence.length).toBeGreaterThan(0);
+      expect(buildTools[0]!.version).toBe('10.0.0');
+      expect(buildTools[0]!.evidence.length).toBeGreaterThan(0);
     });
 
     it('skips duplicate evidence when npm already has packageManager evidence', async () => {
@@ -299,8 +272,8 @@ describe('languages/js-ecosystem', () => {
         }),
         buildTools,
       );
-      expect(buildTools[0].evidence).toHaveLength(1);
-      expect(buildTools[0].version).toBe('10.0.0');
+      expect(buildTools[0]!.evidence).toHaveLength(1);
+      expect(buildTools[0]!.version).toBe('10.0.0');
     });
   });
 
@@ -308,33 +281,33 @@ describe('languages/js-ecosystem', () => {
     it('replaces npm with yarn when yarn.lock is present', () => {
       const buildTools: DetectedItem[] = [makeItem('npm', { version: '10.0.0' })];
       refineBuildToolFromLockfiles(['yarn.lock'], buildTools);
-      expect(buildTools[0].id).toBe('yarn');
+      expect(buildTools[0]!.id).toBe('yarn');
     });
 
     it('replaces npm with pnpm when pnpm-lock.yaml is present', () => {
       const buildTools: DetectedItem[] = [makeItem('npm', { version: '10.0.0' })];
       refineBuildToolFromLockfiles(['pnpm-lock.yaml'], buildTools);
-      expect(buildTools[0].id).toBe('pnpm');
+      expect(buildTools[0]!.id).toBe('pnpm');
     });
 
     it('leaves npm when no lockfile is found', () => {
       const buildTools: DetectedItem[] = [makeItem('npm', { version: '10.0.0' })];
       refineBuildToolFromLockfiles([], buildTools);
-      expect(buildTools[0].id).toBe('npm');
+      expect(buildTools[0]!.id).toBe('npm');
     });
 
     it('adds package-lock.json evidence when present', () => {
       const buildTools: DetectedItem[] = [makeItem('npm', { evidence: [] })];
       refineBuildToolFromLockfiles(['package-lock.json'], buildTools);
-      expect(buildTools[0].id).toBe('npm');
-      expect(buildTools[0].evidence).toContain('package-lock.json');
+      expect(buildTools[0]!.id).toBe('npm');
+      expect(buildTools[0]!.evidence).toContain('package-lock.json');
     });
 
     it('skips duplicate package-lock.json evidence', () => {
       // Covers line 106: npmItem.evidence already contains package-lock.json
       const buildTools: DetectedItem[] = [makeItem('npm', { evidence: ['package-lock.json'] })];
       refineBuildToolFromLockfiles(['package-lock.json'], buildTools);
-      expect(buildTools[0].evidence).toHaveLength(1);
+      expect(buildTools[0]!.evidence).toHaveLength(1);
     });
   });
 });

@@ -12,11 +12,12 @@ import { describe, expect, it } from 'vitest';
 import { executeTicket, type TicketInput } from './ticket.js';
 import { makeState, FIXED_TIME } from '../fixtures.js';
 import type { RailContext } from './types.js';
+import { TEAM_POLICY } from '../config/policy.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: {},
+  policy: TEAM_POLICY,
 };
 
 function ticketInput(overrides?: Partial<TicketInput>): TicketInput {

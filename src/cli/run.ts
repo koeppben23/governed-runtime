@@ -109,7 +109,12 @@ export async function run(config: HeadlessConfig): Promise<RunResult> {
 
   let host: HostId;
   try {
-    host = (await resolveHost({ cliHost: config.host, cwd })).host;
+    host = (
+      await resolveHost({
+        ...(config.host !== undefined ? { cliHost: config.host } : {}),
+        cwd,
+      })
+    ).host;
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -169,7 +174,12 @@ async function resolveServeHost(
   cwd: string,
   port: number,
 ): Promise<ServeHostResolution> {
-  const selectedHost = (await resolveHost({ cliHost: config.host, cwd })).host;
+  const selectedHost = (
+    await resolveHost({
+      ...(config.host !== undefined ? { cliHost: config.host } : {}),
+      cwd,
+    })
+  ).host;
   const spec = HOST_COMMANDS[selectedHost];
   if (!supportsServe(spec)) {
     return { ok: false, error: unsupportedServeResult(selectedHost, port) };
@@ -246,7 +256,11 @@ export async function serve(config: ServeConfig): Promise<ServeResult> {
     return { success: false, port, error: startupError || 'Server failed to start' };
   }
 
-  return { success: true, port, pid: serverProcess.pid };
+  return {
+    success: true,
+    port,
+    ...(serverProcess.pid !== undefined ? { pid: serverProcess.pid } : {}),
+  };
 }
 
 // ─── CLI Entry Point ──────────────────────────────────────────────────────────
@@ -294,12 +308,18 @@ Options:
 export async function runMain(argv: string[]): Promise<number> {
   const parsed = parseRunArgs(argv);
 
-  if (!parsed) {
+  if (parsed.kind === 'help') {
     console.log(getRunUsage());
-    return 1;
+    return 0;
   }
 
-  const result = await run(parsed.config);
+  if (parsed.kind === 'error') {
+    console.error(`[error] ${parsed.error}`);
+    console.error(getRunUsage());
+    return 2;
+  }
+
+  const result = await run(parsed.value);
   console.log(formatRunResult(result));
 
   return result.success ? 0 : 1;
@@ -308,15 +328,21 @@ export async function runMain(argv: string[]): Promise<number> {
 export async function serveMain(argv: string[]): Promise<number> {
   const parsed = parseServeArgs(argv);
 
-  if (!parsed) {
+  if (parsed.kind === 'help') {
     console.log(getServeUsage());
-    return 1;
+    return 0;
   }
 
-  const result = await serve(parsed.config);
+  if (parsed.kind === 'error') {
+    console.error(`[error] ${parsed.error}`);
+    console.error(getServeUsage());
+    return 2;
+  }
+
+  const result = await serve(parsed.value);
 
   if (!result.success) {
-    console.log(`[error] ${result.error}`);
+    console.error(`[error] ${result.error}`);
     return 1;
   }
 

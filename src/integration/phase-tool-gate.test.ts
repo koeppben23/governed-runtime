@@ -12,12 +12,62 @@ import {
   isHostToolAllowedInPhase,
   assessMinimumTaskClass,
   isRiskClassificationAllowed,
+  maxTaskClass,
+  projectCeremonyEligibility,
+  reducedCeremonyEligible,
   resolveCeremonyProfile,
+  ticketDeclarationGate,
+  declaredTaskClassFor,
   MUTATING_HOST_TOOLS,
-  INVESTIGATION_ONLY_PHASES,
+  HOST_MUTATION_PHASE,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
-import { makeState } from '../fixtures.js';
+import {
+  makeState,
+  PLAN_REVIEW_ASSURANCE,
+  IMPL_EVIDENCE,
+  VERIFICATION_CANDIDATES,
+  FIXTURE_TEST_CANDIDATE_ID,
+  FIXTURE_LINT_CANDIDATE_ID,
+} from '../fixtures.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import { hashText } from '../shared/hashing.js';
+
+function implementationAttempt(
+  checkId: string,
+  implementation: { implementationId: string; digest: string },
+) {
+  return {
+    attemptId:
+      checkId === 'test'
+        ? '00000000-0000-4000-8000-0000000000c1'
+        : '00000000-0000-4000-8000-0000000000c2',
+    scope: 'implementation' as const,
+    implementationId: implementation.implementationId,
+    implementationDigest: implementation.digest,
+    executionObservation: TEST_EXECUTION_OBSERVATION,
+    result: validationResult(checkId),
+  };
+}
+
+function validationResult(checkId: string) {
+  const candidate =
+    checkId === 'lint'
+      ? { candidateId: FIXTURE_LINT_CANDIDATE_ID, command: 'npm run lint', kind: 'lint' as const }
+      : { candidateId: FIXTURE_TEST_CANDIDATE_ID, command: 'npm test', kind: 'test' as const };
+  return {
+    checkId,
+    ...candidate,
+    passed: true,
+    detail: 'OK',
+    executedAt: '2026-01-01T00:00:00.000Z',
+    exitCode: 0,
+    executionMs: 1,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+    outcome: 'supported' as const,
+  };
+}
 
 // ─── isMutatingHostTool ──────────────────────────────────────────────────────
 
@@ -71,6 +121,10 @@ describe('phase-tool-gate', () => {
       it('T9: flowguard_plan → false (FlowGuard tools excluded)', () => {
         expect(isMutatingHostTool('flowguard_plan')).toBe(false);
       });
+
+      it('T9b: mcp__flowguard__flowguard_status → false (MCP FlowGuard surface excluded)', () => {
+        expect(isMutatingHostTool('mcp__flowguard__flowguard_status')).toBe(false);
+      });
     });
 
     describe('EDGE — empty and unknown tools', () => {
@@ -80,6 +134,10 @@ describe('phase-tool-gate', () => {
 
       it('T11: unknown_tool → true (fail-closed until explicitly classified)', () => {
         expect(isMutatingHostTool('unknown_tool')).toBe(true);
+      });
+
+      it('T11b: mcp__other__danger → true (unknown MCP surface fails closed)', () => {
+        expect(isMutatingHostTool('mcp__other__danger')).toBe(true);
       });
     });
   });
@@ -198,37 +256,39 @@ describe('phase-tool-gate', () => {
       });
     });
 
-    describe('CORNER — mutating tools allowed in non-investigation phases', () => {
-      it('T27: bash in VALIDATION → allowed (tests need bash)', () => {
+    describe('BAD — mutating tools blocked outside IMPLEMENTATION', () => {
+      it('T27: bash in VALIDATION → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'VALIDATION');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
+        expect(result.code).toBe('HOST_TOOL_PHASE_DENIED');
       });
 
-      it('T28: bash in READY → allowed (entry phase, no restriction)', () => {
+      it('T28: bash in READY → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'READY');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
 
-      it('T29: bash in PLAN_REVIEW → allowed (reviewer has platform restrictions)', () => {
+      it('T29: bash in PLAN_REVIEW → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'PLAN_REVIEW');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
 
-      it('T30: bash in IMPL_REVIEW → allowed', () => {
+      it('T30: bash in IMPL_REVIEW → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'IMPL_REVIEW');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
 
-      it('T31: edit in EVIDENCE_REVIEW → allowed', () => {
+      it('T31: edit in EVIDENCE_REVIEW → blocked', () => {
         const result = isHostToolAllowedInPhase('edit', 'EVIDENCE_REVIEW');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
       });
     });
 
     describe('EDGE — boundary and terminal phases', () => {
-      it('T32: bash in COMPLETE → allowed (terminal, no active work)', () => {
+      it('T32: bash in COMPLETE → blocked', () => {
         const result = isHostToolAllowedInPhase('bash', 'COMPLETE');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
+        expect(result.code).toBe('HOST_TOOL_PHASE_DENIED');
       });
 
       it('T33: flowguard_plan in PLAN → allowed (not in MUTATING_HOST_TOOLS)', () => {
@@ -260,29 +320,41 @@ describe('phase-tool-gate', () => {
         expect(MUTATING_HOST_TOOLS.has('apply_patch')).toBe(true);
       });
 
-      it('T37: INVESTIGATION_ONLY_PHASES contains exactly TICKET, PLAN, ARCHITECTURE', () => {
-        expect(INVESTIGATION_ONLY_PHASES.size).toBe(3);
-        expect(INVESTIGATION_ONLY_PHASES.has('TICKET')).toBe(true);
-        expect(INVESTIGATION_ONLY_PHASES.has('PLAN')).toBe(true);
-        expect(INVESTIGATION_ONLY_PHASES.has('ARCHITECTURE')).toBe(true);
+      it('T37: HOST_MUTATION_PHASE is IMPLEMENTATION', () => {
+        expect(HOST_MUTATION_PHASE).toBe('IMPLEMENTATION');
       });
 
       it('T38: blocked result includes actionable reason text', () => {
         const result = isHostToolAllowedInPhase('bash', 'PLAN');
         expect(result.allowed).toBe(false);
-        expect(result.reason).toContain('read-only tools');
+        expect(result.reason).toContain('only allowed in phase IMPLEMENTATION');
         expect(result.reason).toContain('read, glob, grep');
       });
     });
 
     // ── E2E — full matrix coverage ──────────────────────────────────────
 
-    describe('E2E — every mutating tool × every investigation phase → blocked', () => {
+    describe('E2E — every mutating tool × every non-implementation phase → blocked', () => {
       const mutatingTools = ['bash', 'write', 'edit', 'apply_patch'] as const;
-      const investigationPhases: Phase[] = ['TICKET', 'PLAN', 'ARCHITECTURE'];
+      const nonImplementationPhases: Phase[] = [
+        'READY',
+        'TICKET',
+        'PLAN',
+        'PLAN_REVIEW',
+        'VALIDATION',
+        'IMPL_VALIDATION',
+        'IMPL_REVIEW',
+        'EVIDENCE_REVIEW',
+        'COMPLETE',
+        'ARCHITECTURE',
+        'ARCH_REVIEW',
+        'ARCH_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
+      ];
 
       for (const tool of mutatingTools) {
-        for (const phase of investigationPhases) {
+        for (const phase of nonImplementationPhases) {
           it(`T-MATRIX: ${tool} × ${phase} → blocked`, () => {
             const result = isHostToolAllowedInPhase(tool, phase);
             expect(result.allowed).toBe(false);
@@ -292,36 +364,51 @@ describe('phase-tool-gate', () => {
       }
     });
 
-    describe('E2E — every mutating tool × every non-investigation phase → allowed', () => {
-      const mutatingTools = ['bash', 'write', 'edit'] as const;
-      const nonInvestigationPhases: Phase[] = [
-        'READY',
-        'PLAN_REVIEW',
-        'VALIDATION',
-        'IMPLEMENTATION',
-        'IMPL_REVIEW',
-        'EVIDENCE_REVIEW',
-        'COMPLETE',
-        'ARCH_REVIEW',
-        'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
-      ];
+    describe('E2E — every mutating tool × IMPLEMENTATION → allowed', () => {
+      const mutatingTools = ['bash', 'write', 'edit', 'apply_patch'] as const;
 
       for (const tool of mutatingTools) {
-        for (const phase of nonInvestigationPhases) {
-          it(`T-MATRIX: ${tool} × ${phase} → allowed`, () => {
-            const result = isHostToolAllowedInPhase(tool, phase);
-            expect(result.allowed).toBe(true);
-          });
-        }
+        it(`T-MATRIX: ${tool} × IMPLEMENTATION → allowed`, () => {
+          const result = isHostToolAllowedInPhase(tool, 'IMPLEMENTATION');
+          expect(result.allowed).toBe(true);
+        });
       }
     });
   });
 
-  describe('risk classification gate', () => {
-    it('BAD — TRIVIAL claim on src/state change is blocked', () => {
-      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
+  describe('fail-closed decision contract', () => {
+    it('ALLOW results carry no denial metadata', () => {
+      for (const result of [
+        isHostToolAllowedInPhase('bash', 'IMPLEMENTATION'),
+        isHostToolAllowedInPhase('read', 'PLAN'),
+      ]) {
+        expect(result.allowed).toBe(true);
+        expect(result.code).toBeUndefined();
+        expect(result.reason).toBeUndefined();
+      }
+    });
+
+    it('DENY results always carry string code and reason (host gate)', () => {
+      for (const result of [
+        isHostToolAllowedInPhase('bash', 'PLAN'),
+        isHostToolAllowedInPhase('mystery_tool', 'PLAN'),
+      ]) {
+        expect(result.allowed).toBe(false);
+        expect(typeof result.code).toBe('string');
+        expect(typeof result.reason).toBe('string');
+      }
+    });
+
+    it('DENY results always carry string code and reason (risk gate)', () => {
+      const state = makeState('IMPLEMENTATION', {
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_GATE_BLOCKED',
+          message: 'blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+          lastDecisionId: 'RISK-1',
+        },
+      });
       const result = isRiskClassificationAllowed({
         state,
         changedFiles: ['src/state/schema.ts'],
@@ -329,11 +416,26 @@ describe('phase-tool-gate', () => {
       });
 
       expect(result.allowed).toBe(false);
-      expect(result.code).toBe('RISK_CLASSIFICATION_MISMATCH');
+      expect(typeof result.code).toBe('string');
+      expect(typeof result.reason).toBe('string');
+    });
+  });
+
+  describe('risk classification gate', () => {
+    it('HAPPY — an escalation claim can never lower the computed class', () => {
+      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
+      const result = isRiskClassificationAllowed({
+        state,
+        changedFiles: ['src/state/schema.ts'],
+        now: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(result.allowed).toBe(true);
       expect(result.minimumTaskClass).toBe('HIGH-RISK');
+      expect(result.effectiveTaskClass).toBe('HIGH-RISK');
     });
 
-    it('BAD — missing claim is blocked under enforced gate checks', () => {
+    it('HAPPY — a missing claim never blocks; the computed class governs', () => {
       const state = makeState('IMPLEMENTATION');
       const result = isRiskClassificationAllowed({
         state,
@@ -341,8 +443,9 @@ describe('phase-tool-gate', () => {
         now: '2026-01-01T00:00:00.000Z',
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.code).toBe('RISK_CLASSIFICATION_REQUIRED');
+      expect(result.allowed).toBe(true);
+      expect(result.effectiveTaskClass).toBe('TRIVIAL');
+      expect(result.declaredTaskClass).toBeNull();
     });
 
     it('HAPPY — HIGH-RISK claim on sensitive change is allowed', () => {
@@ -405,6 +508,27 @@ describe('phase-tool-gate', () => {
       }
     });
 
+    it('reports every specific trigger and uses ceremony_only only without one', () => {
+      expect(
+        assessMinimumTaskClass([
+          'src/state/schema.ts',
+          'src/templates/commands/plan.ts',
+          'scripts/release.js',
+        ]).riskTriggers,
+      ).toEqual(['command_contract', 'distribution_integrity', 'state_integrity']);
+      expect(assessMinimumTaskClass(['src/archive/verify.ts']).riskTriggers).toEqual([
+        'ceremony_only',
+      ]);
+      // src/config/ remains HIGH-RISK for ceremony, but only the named policy
+      // authorities create a claim requirement.
+      expect(assessMinimumTaskClass(['src/config/logging-config.ts']).riskTriggers).toEqual([
+        'ceremony_only',
+      ]);
+      expect(assessMinimumTaskClass(['src/config/policy-resolver.ts']).riskTriggers).toEqual([
+        'policy_authority',
+      ]);
+    });
+
     it('HAPPY — root tool/editor config (opencode.json, tsconfig, vitest config) is not a STANDARD floor', () => {
       for (const cfg of [
         'opencode.json',
@@ -447,25 +571,16 @@ describe('phase-tool-gate', () => {
       ).toBe('TRIVIAL');
     });
 
-    it('BAD — downgrade override flag is denied rather than accepted', () => {
-      const base = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
-      const state = {
-        ...base,
-        policySnapshot: {
-          ...base.policySnapshot,
-          allowRiskDowngradeOverride: true,
-        },
-      };
-
+    it('EDGE — there is no downgrade path: the effective class escalates conservatively', () => {
+      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
       const result = isRiskClassificationAllowed({
         state,
         changedFiles: ['src/identity/actor-info.ts'],
         now: '2026-01-01T00:00:00.000Z',
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.code).toBe('RISK_DOWNGRADE_OVERRIDE_DENIED');
-      expect(result.minimumTaskClass).toBe('HIGH-RISK');
+      expect(result.allowed).toBe(true);
+      expect(result.effectiveTaskClass).toBe('HIGH-RISK');
     });
 
     it('BAD — existing persistent riskGate block stops subsequent mutating paths', () => {
@@ -473,7 +588,7 @@ describe('phase-tool-gate', () => {
         claimedTaskClass: 'HIGH-RISK',
         riskGate: {
           status: 'blocked',
-          code: 'RISK_CLASSIFICATION_MISMATCH',
+          code: 'RISK_GATE_BLOCKED',
           message: 'previous block',
           blockedAt: '2026-01-01T00:00:00.000Z',
           lastDecisionId: 'RISK-1',
@@ -491,35 +606,54 @@ describe('phase-tool-gate', () => {
     });
   });
 
+  describe('reduced ceremony eligibility boundary', () => {
+    it('excludes instruction, permission and control-plane surfaces at any depth', () => {
+      const excluded = [
+        'AGENTS.md',
+        'pkg/AGENTS.md',
+        'CLAUDE.md',
+        'nested/GEMINI.md',
+        '.claude/settings.json',
+        'pkg/.opencode/agent.md',
+        '.github/copilot-instructions.md',
+        'opencode.json',
+        'vitest.config.ts',
+      ];
+      for (const path of excluded) {
+        expect(reducedCeremonyEligible([path]), path).toBe(false);
+      }
+    });
+
+    it('allows ordinary documentation and source files', () => {
+      expect(reducedCeremonyEligible(['docs/usage-notes.md', 'src/feature.ts'])).toBe(true);
+      expect(reducedCeremonyEligible([])).toBe(false);
+    });
+
+    it('escalates instruction surfaces in the general risk classifier', () => {
+      for (const path of [
+        'CLAUDE.md',
+        'GEMINI.md',
+        'nested/AGENTS.md',
+        '.claude/settings.json',
+        '.github/copilot-instructions.md',
+      ]) {
+        expect(assessMinimumTaskClass([path]).minimumTaskClass, path).toBe('HIGH-RISK');
+      }
+    });
+  });
+
   describe('reduced ceremony profile', () => {
     it('HAPPY — permits reduced ceremony only for verified TRIVIAL runtime evidence', () => {
-      const base = makeState('IMPLEMENTATION', {
+      const implementation = IMPL_EVIDENCE;
+      const base = makeState('IMPL_VALIDATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-            kind: 'test',
-            command: 'npm test',
-            exitCode: 0,
-            executionMs: 100,
-            outputDigest: 'a'.repeat(64),
-            timedOut: false,
-          },
-          {
-            checkId: 'lint',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-            kind: 'lint',
-            command: 'npm run lint',
-            exitCode: 0,
-            executionMs: 100,
-            outputDigest: 'b'.repeat(64),
-            timedOut: false,
-          },
+        verificationCandidates: VERIFICATION_CANDIDATES,
+        implementation,
+        activeChecks: ['test', 'lint'],
+        implValidation: [validationResult('test'), validationResult('lint')],
+        validationAttempts: [
+          implementationAttempt('test', implementation),
+          implementationAttempt('lint', implementation),
         ],
       });
       const state = {
@@ -533,55 +667,34 @@ describe('phase-tool-gate', () => {
       });
 
       expect(result.profile).toBe('reduced');
-      expect(result.reason).toBe('RUNTIME_VERIFIED_TRIVIAL');
-      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
+      if (result.profile === 'reduced') {
+        expect(result.reason).toBe('POST_IMPL_VERIFIED_TRIVIAL');
+        expect(result.implementationId).toBe(implementation.implementationId);
+        expect(result.implementationDigest).toBe(implementation.digest);
+        expect(result.policyDigest).toBe(state.policySnapshot.hash);
+        expect(result.verificationBasis.checkIds).toEqual(['test', 'lint']);
+        expect(result.verificationBasis.attempts).toHaveLength(2);
+      }
     });
 
-    it('BAD — missing task class claim keeps full ceremony', () => {
+    it('HAPPY — a missing task class claim no longer keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
         policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
       };
 
-      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
-
-      expect(result.profile).toBe('full');
-      expect(result.reason).toBe('TASK_CLASS_CLAIM_MISSING');
+      expect(
+        projectCeremonyEligibility({ state, changedFiles: ['docs/usage-notes.md'] }).status,
+      ).toBe('pending_post_implementation_verification');
     });
 
     it('BAD — non-TRIVIAL task class claim keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'STANDARD',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
@@ -591,59 +704,44 @@ describe('phase-tool-gate', () => {
       const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
 
       expect(result.profile).toBe('full');
-      expect(result.reason).toBe('CLAIMED_CLASS_NOT_TRIVIAL');
+      expect(result.reason).toBe('RESOLVED_RISK_NOT_TRIVIAL');
+      expect(result.effectiveTaskClass).toBe('STANDARD');
     });
 
-    it('BAD — host-task-required review policy keeps full ceremony', () => {
+    it('BAD — an outstanding review obligation keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test'), validationResult('lint')],
       });
+      const outstandingObligation = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        status: 'pending' as const,
+        invocationId: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
       const state = {
         ...base,
         policySnapshot: {
           ...base.policySnapshot,
           allowReducedCeremony: true,
-          reviewInvocationPolicy: 'host_task_required' as const,
+        },
+        reviewAssurance: {
+          ...PLAN_REVIEW_ASSURANCE,
+          obligations: [outstandingObligation],
         },
       };
 
       const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
 
       expect(result.profile).toBe('full');
-      expect(result.reason).toBe('POLICY_REVIEW_REQUIRED');
+      expect(result.reason).toBe('REVIEW_OBLIGATION_REQUIRED');
     });
 
     it('BAD — default policy keeps full ceremony even for TRIVIAL evidence', () => {
       const state = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
 
       const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
@@ -655,20 +753,7 @@ describe('phase-tool-gate', () => {
     it('BAD — governance surface escalates to computed HIGH-RISK and blocks reduction', () => {
       const base = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
@@ -678,7 +763,7 @@ describe('phase-tool-gate', () => {
       const result = resolveCeremonyProfile({ state, changedFiles: ['src/security/policy.ts'] });
 
       expect(result.profile).toBe('full');
-      expect(result.reason).toBe('COMPUTED_MINIMUM_NOT_TRIVIAL');
+      expect(result.reason).toBe('RESOLVED_RISK_NOT_TRIVIAL');
       expect(result.computedMinimumTaskClass).toBe('HIGH-RISK');
     });
 
@@ -687,25 +772,12 @@ describe('phase-tool-gate', () => {
         claimedTaskClass: 'TRIVIAL',
         riskGate: {
           status: 'blocked',
-          code: 'RISK_CLASSIFICATION_MISMATCH',
+          code: 'RISK_GATE_BLOCKED',
           message: 'blocked',
           blockedAt: '2026-01-01T00:00:00.000Z',
           lastDecisionId: 'RISK-1',
         },
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
@@ -717,5 +789,135 @@ describe('phase-tool-gate', () => {
       expect(result.profile).toBe('full');
       expect(result.reason).toBe('RISK_GATE_BLOCKED');
     });
+  });
+});
+
+describe('ticket declaration gate projection', () => {
+  function ticketState(input: {
+    text: string;
+    digest?: string;
+    riskDeclaration:
+      | { kind: 'absent' }
+      | { kind: 'declared'; taskClass: 'TRIVIAL' | 'STANDARD' | 'HIGH-RISK' }
+      | { kind: 'conflict'; values: Array<'TRIVIAL' | 'STANDARD' | 'HIGH-RISK'> }
+      | { kind: 'invalid'; raw: string };
+  }) {
+    return makeState('TICKET', {
+      ticket: {
+        text: input.text,
+        digest: input.digest ?? hashText(input.text),
+        source: 'user',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        riskDeclaration: input.riskDeclaration,
+      },
+    });
+  }
+
+  it('HAPPY: a valid declaration is clear and contributes its floor', () => {
+    const state = ticketState({
+      text: 'Risk: STANDARD\n\nBounded change.',
+      riskDeclaration: { kind: 'declared', taskClass: 'STANDARD' },
+    });
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBe('STANDARD');
+  });
+
+  it('HAPPY: an absent declaration is clear with no floor', () => {
+    const state = ticketState({ text: 'No risk line.', riskDeclaration: { kind: 'absent' } });
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBeNull();
+  });
+
+  it('BAD: an invalid declaration blocks with TICKET_RISK_DECLARATION_INVALID', () => {
+    const state = ticketState({
+      text: 'Risk: nonsense',
+      riskDeclaration: { kind: 'invalid', raw: 'nonsense' },
+    });
+    expect(ticketDeclarationGate(state)).toMatchObject({
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INVALID',
+    });
+    expect(declaredTaskClassFor(state)).toBeNull();
+  });
+
+  it('BAD: a digest that does not hash the text blocks as inconsistent', () => {
+    const state = ticketState({
+      text: 'Risk: TRIVIAL',
+      digest: 'not-the-hash-of-the-text',
+      riskDeclaration: { kind: 'declared', taskClass: 'TRIVIAL' },
+    });
+    expect(ticketDeclarationGate(state)).toMatchObject({
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INCONSISTENT',
+    });
+  });
+
+  it('BAD: a stored declaration that disagrees with the parser blocks as inconsistent', () => {
+    // The digest alone would pass; only re-running the parser over the text
+    // proves the stored declaration describes that text.
+    const text = 'Risk: TRIVIAL';
+    const state = ticketState({
+      text,
+      digest: hashText(text),
+      riskDeclaration: { kind: 'declared', taskClass: 'HIGH-RISK' },
+    });
+    expect(ticketDeclarationGate(state)).toMatchObject({
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INCONSISTENT',
+    });
+  });
+
+  it('EDGE: a conflicting declaration is clear but floors at the highest value', () => {
+    const text = 'Risk: TRIVIAL\nRisk: HIGH-RISK';
+    const state = ticketState({
+      text,
+      riskDeclaration: { kind: 'conflict', values: ['HIGH-RISK', 'TRIVIAL'] },
+    });
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBe('HIGH-RISK');
+  });
+
+  it('EDGE: no ticket never blocks and has no floor', () => {
+    const state = makeState('TICKET');
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBeNull();
+  });
+});
+
+describe('task class ordering', () => {
+  const CLASSES = ['TRIVIAL', 'STANDARD', 'HIGH-RISK'] as const;
+
+  it('pins the full order and tie behaviour of maxTaskClass', () => {
+    expect(maxTaskClass('TRIVIAL', 'STANDARD')).toBe('STANDARD');
+    expect(maxTaskClass('STANDARD', 'TRIVIAL')).toBe('STANDARD');
+    expect(maxTaskClass('STANDARD', 'HIGH-RISK')).toBe('HIGH-RISK');
+    expect(maxTaskClass('HIGH-RISK', 'STANDARD')).toBe('HIGH-RISK');
+    expect(maxTaskClass('TRIVIAL', 'HIGH-RISK')).toBe('HIGH-RISK');
+    expect(maxTaskClass('HIGH-RISK', 'TRIVIAL')).toBe('HIGH-RISK');
+
+    for (const taskClass of CLASSES) {
+      expect(maxTaskClass(taskClass, taskClass), taskClass).toBe(taskClass);
+    }
+  });
+
+  it('is commutative and idempotent for every pair', () => {
+    for (const first of CLASSES) {
+      for (const second of CLASSES) {
+        const maximum = maxTaskClass(first, second);
+        expect(maximum, `${first} vs ${second}`).toBe(maxTaskClass(second, first));
+        expect(maxTaskClass(maximum, second), `${first} vs ${second}`).toBe(maximum);
+        expect(maxTaskClass(first, first)).toBe(first);
+      }
+    }
+  });
+
+  it('never lowers an assessed minimum when combined with a claim', () => {
+    const minimum = assessMinimumTaskClass(['src/state/schema.ts']).minimumTaskClass;
+    expect(minimum).toBe('HIGH-RISK');
+
+    for (const claimed of CLASSES) {
+      expect(maxTaskClass(minimum, claimed), claimed).toBe('HIGH-RISK');
+      expect(maxTaskClass(claimed, minimum), claimed).toBe('HIGH-RISK');
+    }
   });
 });

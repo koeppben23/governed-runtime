@@ -1,37 +1,21 @@
-/**
- * @module integration/tools/helpers
- * @description Shared helpers for FlowGuard tool definitions.
- *
- * Contains:
- * - ToolContext / ToolDefinition interfaces (OpenCode contract)
- * - Formatting helpers (formatEval, formatRailResult, formatBlocked, formatError)
- * - Workspace resolution (getWorktree, resolveWorkspacePaths)
- * - State helpers (requireState, resolvePolicyFromState, createPolicyContext)
- * - Persistence helper (persistAndFormat)
- * - Plan parsing (extractSections)
- *
- * @version v3
- */
-
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
-
 // State & Machine
-import { SessionState } from '../../state/schema.js';
+import { SessionState, type PendingAuditOperation } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
-import type { EvalResult } from '../../machine/evaluate.js';
-import { resolveNextAction } from '../../machine/next-action.js';
-import { TERMINAL } from '../../machine/topology.js';
-
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 // Rail helpers
-import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
+import type { RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
 import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js';
-
 // Adapters
-import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
+import {
+  PersistenceError,
+  readState,
+  writeStateAlreadyLocked,
+} from '../../adapters/persistence.js';
+import { prepareStateWithAuditOperations, type SemanticAuditIntent } from '../audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
-
 // Workspace
 import {
   computeFingerprint,
@@ -40,16 +24,12 @@ import {
   verifyEvidenceArtifacts,
   workspaceDir as resolveWorkspaceDir,
 } from '../../adapters/workspace/index.js';
-
 // Config
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
-import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
-import { getReviewLoopProgress } from '../review/review-loop-progress.js';
-
+import { PHASE_LABELS } from '../../presentation/index.js';
+import { IntegrationInvariantError } from '../errors.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -78,9 +58,17 @@ export interface ToolContext {
   agent: string;
   directory: string;
   worktree: string;
-  abort: AbortSignal;
+  workspaceFingerprint?: string;
+  abort: AbortSignal | undefined;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
+
+/**
+ * The workspace/session subset that session resolution and rail execution
+ * need. Host hooks (which have no message/agent context) can resume canonical
+ * system work with this narrower context.
+ */
+export type WorkspaceToolContext = Pick<ToolContext, 'sessionID' | 'worktree' | 'directory'>;
 
 /**
  * Result type for FlowGuard tools.
@@ -100,99 +88,11 @@ export type ToolDefinition = {
   // any is required because OpenCode passes tool args as plain objects
   // and the concrete type depends on each tool's runtime Zod schema,
   // which cannot be known at the ToolDefinition level.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- host-supplied args have no static shape; each tool validates them with its runtime Zod schema
   execute(args: any, context: ToolContext): Promise<ToolResult>;
 };
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
-
-/** Format an EvalResult into a human-readable next-action string. */
-export function formatEval(ev: EvalResult): string {
-  switch (ev.kind) {
-    case 'transition':
-      return `Auto-advanced to ${ev.target} via ${ev.event}.`;
-    case 'waiting':
-      return ev.reason;
-    case 'terminal':
-      return 'Workflow complete. Session is terminal.';
-    case 'pending':
-      return `Phase ${ev.phase} needs more work.`;
-  }
-}
-
-/** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
-export function formatRailResult(result: RailResult): ToolResult {
-  if (result.kind === 'blocked') {
-    getAdapterLogger().warn('machine', 'tool_blocked', {
-      code: result.code,
-      ...(result.overflow ? { overflowLimit: result.overflow.limit } : {}),
-      ...getLogTraceFields(),
-    });
-    const diagnostics = buildBlockedDiagnostics(result.code, {
-      reason: result.reason,
-    });
-    return JSON.stringify({
-      error: true,
-      code: result.code,
-      message: result.reason,
-      recovery: result.recovery,
-      quickFix: result.quickFix,
-      ...(diagnostics ? { diagnostics } : {}),
-      // #428: surface structured overflow context so the plugin boundary can
-      // detect and log the fail-closed overflow without parsing the message.
-      ...(result.overflow ? { autoAdvanceOverflow: result.overflow } : {}),
-    });
-  }
-  const nextAction = resolveNextAction(result.state.phase, result.state);
-  const productNext = buildProductNextAction(nextAction, result.state.phase);
-  const reviewDecision = result.state.reviewDecision;
-  const { archiveStatus } = result.state;
-  const reviewLoop = getReviewLoopProgress(result.state);
-  const json = JSON.stringify({
-    phase: result.state.phase,
-    phaseLabel: PHASE_LABELS[result.state.phase],
-    status: 'ok',
-    next: formatEval(result.evalResult),
-    nextAction,
-    productNextAction: productNext,
-    ...(reviewDecision
-      ? {
-          reviewDecision: {
-            verdict: reviewDecision.verdict,
-            rationale: reviewDecision.rationale,
-            decidedBy: reviewDecision.decidedBy,
-            decidedAt: reviewDecision.decidedAt,
-          },
-        }
-      : {}),
-    ...(archiveStatus ? { archiveStatus } : {}),
-    ...(reviewLoop ? { reviewLoop } : {}),
-  });
-  return { output: json, metadata: { transitions: result.transitions } };
-}
-
-/**
- * Format a blocked error using the reason registry.
- * Used for inline blocked returns in tool logic (outside rail calls).
- */
-export function formatBlocked(
-  code: string,
-  vars?: Record<string, string>,
-  extra?: Record<string, unknown>,
-): string {
-  getAdapterLogger().warn('machine', 'tool_blocked', { code, ...getLogTraceFields() });
-  const info = defaultReasonRegistry.format(code, vars);
-  const diagnostics = buildBlockedDiagnostics(info.code, vars);
-  return JSON.stringify({
-    error: true,
-    code: info.code,
-    message: info.reason,
-    recovery: info.recovery,
-    quickFix: info.quickFix,
-    ...(diagnostics ? { diagnostics } : {}),
-    ...(extra ?? {}),
-  });
-}
 
 /**
  * Format an auto-advance overflow (#428) as a fail-closed blocked tool result.
@@ -219,16 +119,6 @@ export function formatAutoAdvanceOverflow(overflow: AutoAdvanceOverflow): string
   });
 }
 
-/** Wrap any thrown error into a structured JSON string via the registry. */
-export function formatError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const code =
-    err instanceof Error && 'code' in err
-      ? String((err as { code: unknown }).code)
-      : 'INTERNAL_ERROR';
-  return formatBlocked(code, { message });
-}
-
 // ─── Workspace Helpers ────────────────────────────────────────────────────────
 
 /** Extract worktree from OpenCode tool context. */
@@ -249,6 +139,7 @@ export async function resolveWorkspacePaths(context: {
   sessionID: string;
   worktree: string;
   directory: string;
+  workspaceFingerprint?: string;
 }): Promise<{
   worktree: string;
   fingerprint: string;
@@ -256,10 +147,11 @@ export async function resolveWorkspacePaths(context: {
   wsDir: string;
 }> {
   const worktree = getWorktree(context);
-  const fpResult = await computeFingerprint(worktree);
-  const sessDir = resolveSessionDir(fpResult.fingerprint, context.sessionID);
-  const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
-  return { worktree, fingerprint: fpResult.fingerprint, sessDir, wsDir };
+  const fingerprint =
+    context.workspaceFingerprint ?? (await computeFingerprint(worktree)).fingerprint;
+  const sessDir = resolveSessionDir(fingerprint, context.sessionID);
+  const wsDir = resolveWorkspaceDir(fingerprint);
+  return { worktree, fingerprint, sessDir, wsDir };
 }
 
 // ─── State Helpers ────────────────────────────────────────────────────────────
@@ -268,9 +160,9 @@ export async function resolveWorkspacePaths(context: {
 export async function requireState(sessDir: string): Promise<SessionState> {
   const state = await readState(sessDir);
   if (!state) {
-    throw Object.assign(
-      new Error('No FlowGuard session found. Run /hydrate first to bootstrap a session.'),
-      { code: 'NO_SESSION' },
+    throw new IntegrationInvariantError(
+      'NO_SESSION',
+      'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
     );
   }
   return state;
@@ -287,7 +179,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
 }
 
 /**
- * Persist state and materialize derived evidence artifacts.
+ * Commit an already prepared state and materialize derived evidence artifacts.
  *
  * Ordering: artifacts-first, state-last.
  *
@@ -300,7 +192,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
  *   verification only checks state→artifacts direction).
  * - Crash after state → both exist, consistent.
  *
- * The sourceStateHash is pre-computed from the serialized nextState so that
+ * The sourceStateHash is pre-computed from the serialized prepared state so that
  * materializeEvidenceArtifacts does not need to read state from disk.
  *
  * The session write lock is acquired over both artifact materialization and
@@ -313,54 +205,218 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
  * Failure semantics:
  * - If validation fails: nothing written.
  * - If artifact materialization fails: no state change persisted.
- * - If state write fails after artifacts: orphan artifacts only (benign).
+ * - If the state rename fails: the old state remains and orphan artifacts may remain.
+ * - If directory fsync fails after rename: WRITE_FAILED is surfaced, but the
+ *   persisted outcome is uncertain; recovery must re-read state and its outbox.
  */
-export async function writeStateWithArtifactsAlreadyLocked(
+async function commitPreparedStateWithArtifactsAlreadyLocked(
   sessDir: string,
-  nextState: SessionState,
-): Promise<void> {
+  preparedState: SessionState,
+): Promise<SessionState> {
   // 1. Validate BEFORE any I/O — fail-closed
-  const result = SessionState.safeParse(nextState);
+  const result = SessionState.safeParse(preparedState);
   if (!result.success) {
-    throw Object.assign(new Error(`Refusing to persist invalid state: ${result.error.message}`), {
-      code: 'SCHEMA_VALIDATION_FAILED',
-    });
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to persist invalid state: ${result.error.message}`,
+    );
   }
 
-  // 2. Pre-compute serialized form and hash (identical to what writeState would produce)
+  // Preparation (implementation base, ProofGraph, audit operations) has already
+  // completed under the session lock. Nothing here may change the authority
+  // state after the audit operation's postStateDigest was computed.
   const serialized = JSON.stringify(result.data, null, 2) + '\n';
   const preComputedStateHash = hashText(serialized);
 
-  await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
-  await writeStateAlreadyLocked(sessDir, nextState);
+  await materializeEvidenceArtifacts(sessDir, result.data, preComputedStateHash);
+  await writeStateAlreadyLocked(sessDir, result.data);
+  // Return the persisted state so callers render the prepared ProofGraph.
+  return result.data;
 }
 
 export async function writeStateWithArtifacts(
   sessDir: string,
   nextState: SessionState,
-): Promise<void> {
-  if (lockedSessionDir.getStore() === sessDir) {
-    await writeStateWithArtifactsAlreadyLocked(sessDir, nextState);
-    return;
-  }
-
-  // 3. Materialize artifacts and write state atomically under the session lock
-  await withSessionWriteLock(sessDir, async () => {
-    await lockedSessionDir.run(sessDir, () =>
-      writeStateWithArtifactsAlreadyLocked(sessDir, nextState),
-    );
-  });
+): Promise<SessionState> {
+  return writeStateWithArtifactsAndAuditOperations(sessDir, nextState);
 }
 
-/** Context handed to a {@link withSessionWriteTransaction} callback. */
+export async function writeStateWithArtifactsAndAuditOperations(
+  sessDir: string,
+  nextState: SessionState,
+  transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
+): Promise<SessionState> {
+  const persist = (): Promise<SessionState> =>
+    writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
+      sessDir,
+      nextState,
+      transitions,
+      semanticIntents,
+    );
+
+  if (lockedSessionDir.getStore() === sessDir) {
+    return persist();
+  }
+
+  return withSessionWriteLock(sessDir, async () => lockedSessionDir.run(sessDir, persist));
+}
+
+/**
+ * Carry forward every audit operation of the current authority that the
+ * caller's prepared state does not contain while preserving the persisted
+ * operation order.
+ *
+ * A caller that held a snapshot from before an intervening writer committed an
+ * operation would otherwise drop committed, possibly unreconciled evidence when
+ * persisting its next state. The persisted authority list wins on id collision
+ * (its status is the durable one). A new operation may be inserted only at one
+ * unambiguous position between common neighbor IDs; conflicting placement fails
+ * closed. Authority digests are unaffected: the outbox is excluded from
+ * `computeStateDigest`.
+ */
+function withCarriedAuditOperations(previous: SessionState, next: SessionState): SessionState {
+  const persisted = previous.pendingAuditOperations;
+  if (persisted.length === 0) return next;
+
+  const persistedById = new Map(persisted.map((operation) => [operation.operationId, operation]));
+  assertPreparedOrderMatchesPersisted(next.pendingAuditOperations, persisted, persistedById);
+  const insertions = collectPreparedInsertions(
+    next.pendingAuditOperations,
+    persisted,
+    persistedById,
+  );
+  return { ...next, pendingAuditOperations: applyPreparedInsertions(persisted, insertions) };
+}
+
+function assertPreparedOrderMatchesPersisted(
+  prepared: readonly PendingAuditOperation[],
+  persisted: readonly PendingAuditOperation[],
+  persistedById: ReadonlyMap<string, PendingAuditOperation>,
+): void {
+  const commonIds = prepared
+    .map((operation) => operation.operationId)
+    .filter((id) => persistedById.has(id));
+  const persistedCommonIds = persisted
+    .map((operation) => operation.operationId)
+    .filter((id) => commonIds.includes(id));
+  if (!sameOrder(commonIds, persistedCommonIds)) {
+    throw new PersistenceError(
+      'OUTBOX_ORDER_CONFLICT',
+      'Refusing prepared state that reorders persisted pending audit operations',
+    );
+  }
+}
+
+function collectPreparedInsertions(
+  prepared: readonly PendingAuditOperation[],
+  persisted: readonly PendingAuditOperation[],
+  persistedById: ReadonlyMap<string, PendingAuditOperation>,
+): ReadonlyMap<string, PendingAuditOperation> {
+  const persistedIndexById = new Map(
+    persisted.map((operation, index) => [operation.operationId, index]),
+  );
+  const insertions = new Map<string, PendingAuditOperation>();
+  for (let index = 0; index < prepared.length; index++) {
+    const operation = prepared[index];
+    if (operation === undefined) continue;
+    if (persistedById.has(operation.operationId)) continue;
+    const before = nearestPersistedId(prepared, index, -1, persistedById);
+    const after = nearestPersistedId(prepared, index, 1, persistedById);
+    if (before === undefined && after === undefined) {
+      throw new PersistenceError(
+        'OUTBOX_ORDER_CONFLICT',
+        'Refusing prepared audit operation without persisted ordering neighbors',
+      );
+    }
+    if (!areAdjacentAnchors(before, after, persisted, persistedIndexById)) {
+      throw new PersistenceError(
+        'OUTBOX_ORDER_CONFLICT',
+        'Refusing prepared audit operation without an unambiguous persisted position',
+      );
+    }
+    const anchor = `${before ?? ''}:${after ?? ''}`;
+    if (insertions.has(anchor)) {
+      throw new PersistenceError(
+        'OUTBOX_ORDER_CONFLICT',
+        'Refusing ambiguous prepared audit operations with identical ordering neighbors',
+      );
+    }
+    insertions.set(anchor, operation);
+  }
+  return insertions;
+}
+
+function applyPreparedInsertions(
+  persisted: readonly PendingAuditOperation[],
+  insertions: ReadonlyMap<string, PendingAuditOperation>,
+): PendingAuditOperation[] {
+  const merged: PendingAuditOperation[] = [];
+  const firstOperation = persisted[0];
+  if (firstOperation === undefined) return merged;
+  const firstInsertion = insertions.get(`:${firstOperation.operationId}`);
+  if (firstInsertion !== undefined) merged.push(firstInsertion);
+  for (let index = 0; index < persisted.length; index++) {
+    const operation = persisted[index];
+    if (operation === undefined) continue;
+    merged.push(operation);
+    const afterOperation = insertions.get(
+      `${operation.operationId}:${persisted[index + 1]?.operationId ?? ''}`,
+    );
+    if (afterOperation !== undefined) merged.push(afterOperation);
+  }
+  return merged;
+}
+
+function areAdjacentAnchors(
+  before: string | undefined,
+  after: string | undefined,
+  persisted: readonly PendingAuditOperation[],
+  persistedIndexById: ReadonlyMap<string, number>,
+): boolean {
+  if (before === undefined) return after === persisted[0]?.operationId;
+  if (after === undefined) return before === persisted.at(-1)?.operationId;
+  const beforeIndex = persistedIndexById.get(before);
+  const afterIndex = persistedIndexById.get(after);
+  return beforeIndex !== undefined && afterIndex === beforeIndex + 1;
+}
+
+function sameOrder(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function nearestPersistedId(
+  operations: readonly PendingAuditOperation[],
+  start: number,
+  direction: -1 | 1,
+  persistedById: ReadonlyMap<string, PendingAuditOperation>,
+): string | undefined {
+  for (let index = start + direction; index >= 0 && index < operations.length; index += direction) {
+    const operation = operations[index];
+    if (operation && persistedById.has(operation.operationId)) return operation.operationId;
+  }
+  return undefined;
+}
+
+export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
+  sessDir: string,
+  nextState: SessionState,
+  transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
+  semanticIntents: readonly SemanticAuditIntent[] = [],
+): Promise<SessionState> {
+  const previous = await readState(sessDir);
+  const preparedNext =
+    previous === null ? nextState : withCarriedAuditOperations(previous, nextState);
+  const stateWithOperations = await prepareStateWithAuditOperations(
+    previous,
+    preparedNext,
+    transitions,
+    semanticIntents,
+  );
+  return commitPreparedStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
+}
+
 export interface SessionWriteTransaction {
-  /**
-   * Whether the session write lock contended with a live holder before it
-   * could be acquired. `false` when acquired immediately (uncontended).
-   *
-   * Deterministic — derived from the lock acquisition path, not a timing
-   * heuristic — so callers can faithfully report contention without noise.
-   */
   readonly waited: boolean;
 }
 
@@ -409,12 +465,10 @@ export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
   }
   // Fail-closed: a hydrated session must always have a policySnapshot.
   // If missing, this is a data integrity error — not a recoverable fallback.
-  throw Object.assign(
-    new Error(
-      'Session state is missing policySnapshot. This indicates data corruption — ' +
-        'every hydrated session must have a frozen policy snapshot.',
-    ),
-    { code: 'POLICY_SNAPSHOT_MISSING' },
+  throw new IntegrationInvariantError(
+    'POLICY_SNAPSHOT_MISSING',
+    'Session state is missing policySnapshot. This indicates data corruption — ' +
+      'every hydrated session must have a frozen policy snapshot.',
   );
 }
 
@@ -427,84 +481,35 @@ export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
 }
 
 /**
- * Persist a RailResult if it's an "ok" result. Returns the formatted JSON.
- * Rails don't persist — the caller (this tool layer) does it atomically.
+ * Machine-readable NextAction routing fields appended by
+ * {@link enrichWithWorkflowDirective}. These are NOT a rendered footer — user-facing
+ * next-action text is owned by the presentation conclusion where a rendered
+ * document exists.
  */
-export async function persistAndFormat(sessDir: string, result: RailResult): Promise<ToolResult> {
-  if (result.kind === 'ok') {
-    if (result.transitions.length > 0) {
-      getAdapterLogger().info('machine', 'transitions_applied', {
-        sessionId: result.state.binding.sessionId,
-        stateId: result.state.id,
-        path: result.transitions.map((t) => `${t.from}\u2192${t.to}`),
-        count: result.transitions.length,
-        ...getLogTraceFields(),
-      });
-    }
-    await writeStateWithArtifacts(sessDir, result.state);
-    logPersistedLifecycle(result);
-  }
-  return formatRailResult(result);
-}
-
-function logPersistedLifecycle(result: Extract<RailResult, { kind: 'ok' }>): void {
-  if (result.transitions.length === 0) return;
-  const sessionId = result.state.binding.sessionId;
-  const phase = result.state.phase;
-  const log = getAdapterLogger();
-
-  if (isPersistedAbort(result)) {
-    log.info('machine', 'session_aborted', {
-      sessionId,
-      phase,
-      ...getLogTraceFields(),
-    });
-    return;
-  }
-
-  if (TERMINAL.has(phase)) {
-    log.info('machine', 'session_completed', {
-      sessionId,
-      phase,
-      ...getLogTraceFields(),
-    });
-  }
-}
-
-function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean {
-  return (
-    result.state.error?.code === 'ABORTED' && result.transitions.some((t) => t.event === 'ABORT')
-  );
+export interface WorkflowDirectiveFields {
+  directive: ReturnType<typeof resolveWorkflowDirective>;
+  phaseLabel: string;
 }
 
 /**
- * Append NextAction to a custom JSON response string.
+ * Enrich an arbitrary value object with a workflow directive.
  *
- * Use this when a tool builds custom JSON (not via formatRailResult)
- * but still needs the mandatory NextAction footer.
+ * Callers serialize the enriched object only at their response boundary.
  *
- * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
- * @param state - Current session state for NextAction resolution.
- * @returns JSON string with nextAction field + trailing footer line.
+ * @param value - The object to enrich.
+ * @param state - Current session state for workflow-directive resolution.
+ * @returns The value augmented with directive and phaseLabel.
  */
-export function appendNextAction(jsonStr: string, state: SessionState): string {
-  const nextAction = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(nextAction, state.phase);
-  const parsed = JSON.parse(jsonStr);
-  parsed.nextAction = nextAction;
-  parsed.phaseLabel = PHASE_LABELS[state.phase];
-  parsed.productNextAction = productNext;
-  return JSON.stringify(parsed);
-}
-
-// ─── Plan Parsing ─────────────────────────────────────────────────────────────
-
-/** Extract markdown section headers from plan text. */
-export function extractSections(body: string): string[] {
-  return body
-    .split('\n')
-    .filter((line) => /^#{1,3}\s/.test(line))
-    .map((line) => line.replace(/^#+\s*/, '').trim());
+export function enrichWithWorkflowDirective<T extends Record<string, unknown>>(
+  value: T,
+  state: SessionState,
+): T & WorkflowDirectiveFields {
+  const directive = resolveWorkflowDirective(state);
+  return {
+    ...value,
+    directive,
+    phaseLabel: PHASE_LABELS[state.phase],
+  };
 }
 
 // ─── Session Bootstrap Wrappers ────────────────────────────────────────────────

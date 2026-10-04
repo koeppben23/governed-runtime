@@ -1,3 +1,5 @@
 .flowguard/
 .opencode/
+opencode.json
+.demo-preflight-maven-*.log
 target/

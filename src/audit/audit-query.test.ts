@@ -26,56 +26,57 @@ import {
 import type { AuditEvent } from '../state/evidence.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { SESSION_ID, TS1, TS2, TS3, makeAuditEvent } from './audit-test-helpers.js';
+import type { AuditEventKind } from './types.js';
 describe('audit query', () => {
   // ─── Shared events for query tests ─────────────────────────
   const events: AuditEvent[] = [
     makeAuditEvent({
       id: 'e1',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'TICKET',
       event: 'lifecycle:session_created',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'system',
     }),
     makeAuditEvent({
       id: 'e2',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'PLAN',
       event: 'transition:TICKET_SET',
-      timestamp: TS1,
+      occurredAt: TS1,
       actor: 'machine',
     }),
     makeAuditEvent({
       id: 'e3',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'PLAN',
       event: 'tool_call:flowguard_plan',
-      timestamp: TS2,
+      occurredAt: TS2,
       actor: 'user-1',
     }),
     makeAuditEvent({
       id: 'e4',
-      sessionId: 'sess-b',
+      hostSessionId: 'sess-b',
       phase: 'TICKET',
       event: 'lifecycle:session_created',
-      timestamp: TS2,
+      occurredAt: TS2,
       actor: 'system',
     }),
     makeAuditEvent({
       id: 'e5',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'VALIDATION',
       event: 'error:CHECK_TIMEOUT',
-      timestamp: TS3,
+      occurredAt: TS3,
       actor: 'machine',
       detail: { kind: 'error', code: 'CHECK_TIMEOUT' },
     }),
     makeAuditEvent({
       id: 'e6',
-      sessionId: 'sess-a',
+      hostSessionId: 'sess-a',
       phase: 'PLAN_REVIEW',
       event: 'decision:DEC-001',
-      timestamp: TS3,
+      occurredAt: TS3,
       actor: 'human',
       detail: {
         kind: 'decision',
@@ -84,7 +85,12 @@ describe('audit query', () => {
         gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
         rationale: 'looks good',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
         decidedAt: TS3,
         fromPhase: 'PLAN_REVIEW',
         toPhase: 'VALIDATION',
@@ -99,7 +105,7 @@ describe('audit query', () => {
     it('bySession filters by session ID', () => {
       const result = filterEvents(events, bySession('sess-a'));
       expect(result).toHaveLength(5);
-      expect(result.every((e) => e.sessionId === 'sess-a')).toBe(true);
+      expect(result.every((e) => e.hostSessionId === 'sess-a')).toBe(true);
     });
 
     it('byPhase filters by exact phase', () => {
@@ -158,11 +164,45 @@ describe('audit query', () => {
       expect(receipts[0]!.policyMode).toBe('team');
     });
 
-    it('distinctSessions returns unique session IDs', () => {
+    it('decisionReceipts parses a governance-override approval verdict', () => {
+      const overrideReceipt = makeAuditEvent({
+        id: 'override-decision',
+        hostSessionId: 'sess-a',
+        phase: 'EVIDENCE_REVIEW',
+        event: 'decision:DEC-002',
+        occurredAt: TS3,
+        actor: 'human',
+        detail: {
+          kind: 'decision',
+          decisionId: 'DEC-002',
+          decisionSequence: 2,
+          gatePhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve_with_governance_override',
+          rationale: 'exhausted review accepted by the operator',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
+          decidedAt: TS3,
+          fromPhase: 'EVIDENCE_REVIEW',
+          toPhase: 'EXPORT_READY',
+          transitionEvent: 'APPROVE',
+          policyMode: 'regulated',
+        },
+      });
+
+      const receipts = decisionReceipts([overrideReceipt]);
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0]!.verdict).toBe('approve_with_governance_override');
+      expect(receipts[0]!.policyMode).toBe('regulated');
+    });
+
+    it('distinctSessions returns unique FlowGuard session IDs', () => {
       const ids = distinctSessions(events);
-      expect(ids).toHaveLength(2);
-      expect(ids).toContain('sess-a');
-      expect(ids).toContain('sess-b');
+      expect(ids).toHaveLength(1);
+      expect(ids).toContain(SESSION_ID);
     });
 
     it('countByKind counts events by kind prefix', () => {
@@ -259,7 +299,7 @@ describe('audit query', () => {
     it('not negates a filter', () => {
       const result = filterEvents(events, not(bySession('sess-a')));
       expect(result).toHaveLength(1);
-      expect(result[0]!.sessionId).toBe('sess-b');
+      expect(result[0]!.hostSessionId).toBe('sess-b');
     });
 
     it('allOf with zero filters matches everything', () => {
@@ -267,15 +307,50 @@ describe('audit query', () => {
       expect(result).toHaveLength(6);
     });
 
-    it('decisionReceipts skips malformed decision payloads', () => {
+    it('decisionReceipts fails closed on malformed decision payloads', () => {
       const malformed = makeAuditEvent({
         id: 'bad-decision',
         event: 'decision:DEC-999',
-        detail: { kind: 'decision', decisionId: 999 as unknown as string },
+        detail: { kind: 'decision', decisionId: 999 },
       });
-      const receipts = decisionReceipts([...events, malformed]);
-      expect(receipts).toHaveLength(1);
-      expect(receipts[0]!.decisionId).toBe('DEC-001');
+      try {
+        decisionReceipts([...events, malformed]);
+        expect.unreachable('malformed decision payloads must fail closed');
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'AUDIT_DECISION_RECEIPT_INVALID' });
+      }
+    });
+
+    it('decisionReceipts rejects a verdict outside the canonical vocabulary', () => {
+      const foreignVerdict = makeAuditEvent({
+        id: 'foreign-verdict',
+        event: 'decision:DEC-998',
+        detail: {
+          kind: 'decision',
+          decisionId: 'DEC-998',
+          decisionSequence: 9,
+          gatePhase: 'PLAN_REVIEW',
+          verdict: 'deferred',
+          rationale: 'not a canonical verdict',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
+          decidedAt: TS3,
+          fromPhase: 'PLAN_REVIEW',
+          toPhase: 'VALIDATION',
+          transitionEvent: 'APPROVE',
+          policyMode: 'team',
+        },
+      });
+      try {
+        decisionReceipts([foreignVerdict]);
+        expect.unreachable('a non-canonical verdict must fail closed');
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'AUDIT_DECISION_RECEIPT_INVALID' });
+      }
     });
 
     it('anyOf with zero filters matches nothing', () => {
@@ -297,7 +372,7 @@ describe('audit query', () => {
       const largeTrail: AuditEvent[] = Array.from({ length: 10000 }, (_, i) =>
         makeAuditEvent({
           id: `perf-${i}`,
-          sessionId: i % 2 === 0 ? 'sess-a' : 'sess-b',
+          hostSessionId: i % 2 === 0 ? 'sess-a' : 'sess-b',
           phase: i % 3 === 0 ? 'PLAN' : 'TICKET',
           event: `transition:EVENT_${i}`,
         }),
@@ -308,6 +383,101 @@ describe('audit query', () => {
         10,
       );
       expect(p95Ms).toBeLessThan(PERF_BUDGETS.filterEvents10000Ms);
+    });
+  });
+
+  // ─── audit-chain.v3 event-name contract ─────────────────────
+  describe('kind discrimination follows the audit-chain.v3 event names', () => {
+    // Not every kind names its events `${kind}:...`. state_write and
+    // enforcement:denied are the two current exceptions, and byKind must
+    // reach them without dropping the prefix-named kinds.
+    const KIND_CASES: ReadonlyArray<{ event: string; kind: AuditEventKind }> = [
+      { event: 'transition:PLAN_READY', kind: 'transition' },
+      { event: 'state_write', kind: 'state_write' },
+      { event: 'enforcement:denied', kind: 'enforcement_denied' },
+      { event: 'tool_call:flowguard_plan', kind: 'tool_call' },
+      { event: 'error:SESSION_ERROR', kind: 'error' },
+      { event: 'lifecycle:session_created', kind: 'lifecycle' },
+      { event: 'decision:DEC-001', kind: 'decision' },
+    ];
+
+    for (const { event, kind } of KIND_CASES) {
+      it(`byKind('${kind}') matches "${event}"`, () => {
+        // No detail.kind: events appended through the generic review/audit
+        // append path carry caller-supplied detail, so the event name has to
+        // be sufficient on its own.
+        const trail = [makeAuditEvent({ id: 'k1', event, detail: {} })];
+        expect(filterEvents(trail, byKind(kind))).toHaveLength(1);
+      });
+    }
+
+    it('byKind does not confuse enforcement_denied with other enforcement events', () => {
+      const trail = [
+        makeAuditEvent({ id: 'k1', event: 'enforcement:denied', detail: {} }),
+        makeAuditEvent({ id: 'k2', event: 'enforcement:allowed', detail: {} }),
+      ];
+      const result = filterEvents(trail, byKind('enforcement_denied'));
+      expect(result).toHaveLength(1);
+      expect(result[0]!.event).toBe('enforcement:denied');
+    });
+
+    it('countByKind namespaces every current event-name form', () => {
+      const trail = [
+        makeAuditEvent({ id: 'c1', event: 'transition:PLAN_READY', detail: {} }),
+        makeAuditEvent({ id: 'c2', event: 'state_write', detail: {} }),
+        makeAuditEvent({ id: 'c3', event: 'enforcement:denied', detail: {} }),
+        makeAuditEvent({ id: 'c4', event: 'error:SESSION_ERROR', detail: {} }),
+        makeAuditEvent({ id: 'c5', event: 'review:obligation_created', detail: {} }),
+        makeAuditEvent({ id: 'c6', event: 'review:obligation_blocked', detail: {} }),
+      ];
+      expect(countByKind(trail)).toEqual({
+        transition: 1,
+        state_write: 1,
+        enforcement_denied: 1,
+        error: 1,
+        // review:* is not an AuditEventKind; it keeps its own namespace.
+        review: 2,
+      });
+    });
+  });
+
+  // ─── occurrence time vs. record order ───────────────────────
+  describe('timeSpan uses occurrence time, not trail position', () => {
+    it('reports the true span when a reconciled event occurred before its predecessor', () => {
+      // Legitimate under audit-chain.v3: the trail is ordered by recordedAt,
+      // and an outbox event reconciled later may carry an older occurredAt.
+      const trail = [
+        makeAuditEvent({ id: 't1', event: 'transition:PLAN_READY', occurredAt: TS2 }),
+        makeAuditEvent({ id: 't2', event: 'state_write', occurredAt: TS3 }),
+        makeAuditEvent({ id: 't3', event: 'tool_call:flowguard_plan', occurredAt: TS1 }),
+      ];
+      const span = timeSpan(trail);
+      expect(span).not.toBeNull();
+      expect(span!.first).toBe(TS1);
+      expect(span!.last).toBe(TS3);
+      expect(span!.durationMs).toBe(120000);
+    });
+
+    it('never reports a negative duration', () => {
+      const trail = [
+        makeAuditEvent({ id: 't1', event: 'state_write', occurredAt: TS3 }),
+        makeAuditEvent({ id: 't2', event: 'state_write', occurredAt: TS1 }),
+      ];
+      expect(timeSpan(trail)!.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('is unaffected by input ordering', () => {
+      const trail = [
+        makeAuditEvent({ id: 't1', event: 'state_write', occurredAt: TS2 }),
+        makeAuditEvent({ id: 't2', event: 'state_write', occurredAt: TS1 }),
+        makeAuditEvent({ id: 't3', event: 'state_write', occurredAt: TS3 }),
+      ];
+      expect(timeSpan(trail)).toEqual(timeSpan([...trail].reverse()));
+    });
+
+    it('single event spans zero', () => {
+      const span = timeSpan([makeAuditEvent({ id: 't1', occurredAt: TS2 })]);
+      expect(span).toEqual({ first: TS2, last: TS2, durationMs: 0 });
     });
   });
 });

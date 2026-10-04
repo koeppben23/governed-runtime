@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from './evidence-identifiers.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
 import { OpenCodeSessionId } from './evidence-assurance-internal.js';
 
 /**
@@ -21,7 +21,7 @@ import { OpenCodeSessionId } from './evidence-assurance-internal.js';
  */
 export const BindingInfo = z
   .object({
-    sessionId: OpenCodeSessionId,
+    hostSessionId: OpenCodeSessionId,
     worktree: z.string().min(1),
     fingerprint: z.string().regex(FINGERPRINT_PATTERN),
     resolvedAt: z.string().datetime(),

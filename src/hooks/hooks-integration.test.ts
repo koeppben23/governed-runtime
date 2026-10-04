@@ -56,7 +56,7 @@ async function simulatePreToolUseDecision(stdinJson: string): Promise<{
 
   // Step 4: Phase gate check (skip session resolution for unit-level integration)
   // Use PLAN phase to test deny, IMPLEMENTATION to test allow.
-  const phase = ((payload as Record<string, unknown>)['_test_phase'] as string) ?? 'PLAN';
+  const phase = (payload['_test_phase'] as string) ?? 'PLAN';
   const gateResult = isHostToolAllowedInPhase(toolNameLower, phase as any);
 
   if (!gateResult.allowed) {

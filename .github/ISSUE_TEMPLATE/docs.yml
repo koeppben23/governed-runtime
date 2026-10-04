@@ -31,7 +31,7 @@ body:
     attributes:
       label: Definition Of Done
       value: |
-        - [ ] Clean conventional branch created from current main.
+        - [ ] Clean conventional branch created according to CONTRIBUTING.md.
         - [ ] Docs reflect current behavior and do not invent unsupported behavior.
         - [ ] Docs drift tests updated where relevant.
         - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.

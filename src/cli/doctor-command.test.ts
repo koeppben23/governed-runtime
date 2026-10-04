@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { doctor } from './doctor-command.js';
+import { formatDoctor } from './install.js';
 import { repoArgs, globalArgs, setupCliTestEnvironment } from './install-test-helpers.test.js';
 import type { DoctorCheck } from './install-types.js';
 
@@ -24,6 +25,7 @@ const VALID_STATUSES = [
   'instruction_stale',
   'error',
   'warn',
+  'info',
 ] as const;
 
 function hasMissingFor(check: string, checks: DoctorCheck[]): boolean {
@@ -64,5 +66,67 @@ describe('doctor', () => {
     for (const check of checks) {
       expect(VALID_STATUSES).toContain(check.status);
     }
+  });
+});
+
+describe('formatDoctor', () => {
+  it('reports HEALTHY when all checks pass', () => {
+    const result = formatDoctor([{ file: 'x', status: 'ok' }], 'opencode');
+    expect(result).toContain('Status: HEALTHY');
+    expect(result).toContain('1/1 actionable checks passed');
+  });
+
+  it('reports HEALTHY_WITH_WARNINGS with trust/context recovery', () => {
+    const result = formatDoctor(
+      [
+        { file: 'x', status: 'ok' },
+        { file: 'y', status: 'warn', detail: 'not verified' },
+      ],
+      'opencode',
+    );
+    expect(result).toContain('Status: HEALTHY_WITH_WARNINGS');
+    expect(result).toContain('trust/context warning');
+    expect(result).toContain('review check details');
+  });
+
+  it('reports HEALTHY_WITH_WARNINGS with shipped-executable reinstall recovery', () => {
+    const result = formatDoctor(
+      [
+        { file: 'x', status: 'ok' },
+        { file: 'node', status: 'warn', check: 'shipped-executable' },
+        { file: 'y', status: 'warn' },
+      ],
+      'opencode',
+    );
+    expect(result).toContain('Status: HEALTHY_WITH_WARNINGS');
+    expect(result).toContain('shipped-executable warning');
+    expect(result).toContain('install --force');
+    expect(result).toContain('trust/context warning');
+  });
+
+  it('reports NOT_VERIFIED when missing checks exist', () => {
+    const result = formatDoctor(
+      [
+        { file: 'x', status: 'ok' },
+        { file: 'y', status: 'missing' },
+      ],
+      'opencode',
+    );
+    expect(result).toContain('Status: NOT_VERIFIED');
+    expect(result).toContain('install --force');
+  });
+
+  it('reports NOT_VERIFIED for empty check list', () => {
+    const result = formatDoctor([], 'opencode');
+    expect(result).toContain('Status: NOT_VERIFIED');
+    expect(result).toContain('0/0 actionable checks passed');
+  });
+
+  it('names the selected host platform in recovery', () => {
+    const result = formatDoctor(
+      [{ file: 'x', status: 'warn', detail: 'not verified' }],
+      'claude-code',
+    );
+    expect(result).toContain('Claude Code');
   });
 });

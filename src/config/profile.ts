@@ -17,6 +17,7 @@
  * @version v2
  */
 
+import * as path from 'node:path';
 import type { Phase } from '../state/schema.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import type { PhaseInstructions } from './profile-types.js';
@@ -32,7 +33,7 @@ export type { PhaseInstructions } from './profile-types.js';
 /**
  * Resolve effective instructions for a given phase.
  *
- * - Plain string → returned as-is (backward compatible).
+ * - Plain string → returned as-is.
  * - PhaseInstructions → base + byPhase[phase] if present.
  * - Undefined → empty string.
  *
@@ -84,17 +85,15 @@ export function extractByPhaseInstructions(
  *
  * Profiles use these signals to determine if they match the repo:
  * - files: all file paths in the repo (relative to root)
- * - packageFiles: package manager files (basenames, deduplicated)
- * - configFiles: config files (basenames, deduplicated)
  * - packageFilePaths: package manager files (full relative paths)
  * - configFilePaths: config files (full relative paths)
+ *
+ * Consumers derive a basename from a path locally when needed.
  */
 export interface RepoSignals {
   readonly files: readonly string[];
-  readonly packageFiles: readonly string[];
-  readonly configFiles: readonly string[];
-  readonly packageFilePaths?: readonly string[];
-  readonly configFilePaths?: readonly string[];
+  readonly packageFilePaths: readonly string[];
+  readonly configFilePaths: readonly string[];
 }
 
 /**
@@ -139,7 +138,7 @@ export interface FlowGuardProfile {
    * Additional LLM instructions injected when this profile is active.
    *
    * Accepts either:
-   * - A plain string (backward compatible — same instructions for all phases).
+   * - A plain string (same instructions for all phases).
    * - A PhaseInstructions object with `base` + optional `byPhase` overrides.
    *
    * Use `resolveProfileInstructions(profile.instructions, phase)` to resolve
@@ -239,8 +238,8 @@ export const baselineProfile: FlowGuardProfile = {
  * Java (Spring Boot) FlowGuard profile.
  *
  * Detection signals (confidence = 0.8):
- * - pom.xml in packageFiles → Maven-based Java project
- * - build.gradle / build.gradle.kts in packageFiles → Gradle-based Java project
+ * - pom.xml among the package signal paths → Maven-based Java project
+ * - build.gradle / build.gradle.kts among the package signal paths → Gradle-based Java project
  *
  * activeChecks are empty — derived from verificationCandidates at hydrate-time.
  */
@@ -249,9 +248,12 @@ export const javaProfile: FlowGuardProfile = {
   name: 'Java / Spring Boot',
   activeChecks: [],
   detect: (input: ProfileDetectionInput): number => {
-    const hasJavaBuild = input.repoSignals.packageFiles.some(
-      (f) => f === 'pom.xml' || f === 'build.gradle' || f === 'build.gradle.kts',
-    );
+    const hasJavaBuild = input.repoSignals.packageFilePaths.some((f) => {
+      const basename = path.basename(f);
+      return (
+        basename === 'pom.xml' || basename === 'build.gradle' || basename === 'build.gradle.kts'
+      );
+    });
     return hasJavaBuild ? 0.8 : 0;
   },
   instructions: javaRuleContent,
@@ -263,8 +265,8 @@ export const javaProfile: FlowGuardProfile = {
  * Angular (+ Nx) FlowGuard profile.
  *
  * Detection signals (confidence = 0.85):
- * - angular.json in configFiles → Angular CLI project
- * - nx.json in configFiles → Nx workspace (often Angular)
+ * - angular.json among the config signal paths → Angular CLI project
+ * - nx.json among the config signal paths → Nx workspace (often Angular)
  *
  * Scores slightly higher than TypeScript (0.85 > 0.7) because Angular
  * projects always have TypeScript but not vice versa.
@@ -274,9 +276,10 @@ export const angularProfile: FlowGuardProfile = {
   name: 'Angular / Nx',
   activeChecks: [],
   detect: (input: ProfileDetectionInput): number => {
-    const hasAngular = input.repoSignals.configFiles.some(
-      (f) => f === 'angular.json' || f === 'nx.json',
-    );
+    const hasAngular = input.repoSignals.configFilePaths.some((f) => {
+      const basename = path.basename(f);
+      return basename === 'angular.json' || basename === 'nx.json';
+    });
     return hasAngular ? 0.85 : 0;
   },
   instructions: angularRuleContent,
@@ -288,7 +291,7 @@ export const angularProfile: FlowGuardProfile = {
  * TypeScript (Node.js / general) FlowGuard profile.
  *
  * Detection signals (confidence = 0.7):
- * - tsconfig.json in configFiles → TypeScript project
+ * - tsconfig.json among the config signal paths → TypeScript project
  *
  * Lower confidence than Angular (0.7 < 0.85) so that Angular projects
  * with tsconfig.json get the Angular profile, not this one.
@@ -299,7 +302,9 @@ export const typescriptProfile: FlowGuardProfile = {
   name: 'TypeScript / Node.js',
   activeChecks: [],
   detect: (input: ProfileDetectionInput): number => {
-    const hasTs = input.repoSignals.configFiles.some((f) => f === 'tsconfig.json');
+    const hasTs = input.repoSignals.configFilePaths.some(
+      (f) => path.basename(f) === 'tsconfig.json',
+    );
     return hasTs ? 0.7 : 0;
   },
   instructions: typescriptRuleContent,

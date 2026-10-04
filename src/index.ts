@@ -80,6 +80,8 @@ export type {
   LoopVerdict,
   RevisionDelta,
   PolicySnapshot,
+  ActorInfo,
+  ActorVerificationMeta,
 } from './state/evidence.js';
 
 export {
@@ -97,8 +99,8 @@ export { Command, isCommandAllowed } from './machine/commands.js';
 export { evaluate } from './machine/evaluate.js';
 /** @public */
 export type { EvalResult } from './machine/evaluate.js';
-export { resolveNextAction, ACTION_CODES } from './machine/next-action.js';
-export type { NextAction } from './machine/next-action.js';
+export { resolveWorkflowDirective } from './machine/workflow-directive.js';
+export type { WorkflowDirective, WorkflowIntent } from './machine/workflow-directive.js';
 
 // ─── Rail Result Types ───────────────────────────────────────────────────────
 
@@ -166,9 +168,10 @@ export { type FlowGuardLogger, createLogger, createNoopLogger } from './logging/
 // ─── Audit ───────────────────────────────────────────────────────────────────
 
 export {
-  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
+  type StateWriteDetail,
+  type EnforcementDeniedDetail,
   type ToolCallDetail,
   type ErrorDetail,
   type LifecycleDetail,
@@ -296,6 +299,26 @@ export {
   ArchiveFindingSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
 } from './archive/types.js';
+
+/**
+ * Canonical archive content-digest primitive. Exported so an offline verifier
+ * can recompute the digest from a received package without a live session;
+ * the formula and its covered field set remain owned by
+ * `src/archive/content-digest.ts` — this is a re-export, not a second authority.
+ */
+export {
+  computeArchiveContentDigest,
+  type ArchiveContentDigestInput,
+} from './archive/content-digest.js';
+
+/**
+ * Canonical regulated-completion evidence validator. Exported so an offline
+ * verifier can validate the admissible ARCHIVED evidence (terminal transition,
+ * reconciled outbox, ordered decision/export/lifecycle audit trail) instead of
+ * assuming the live post-verification `regulatedArchiveStatus`. Ownership stays
+ * in `src/adapters/workspace/archive-verify-regulated.ts` — re-export only.
+ */
+export { verifyRegulatedCompletionCompleteness } from './adapters/workspace/archive-verify-regulated.js';
 
 /** @public */
 export { verifyArchive } from './adapters/workspace/index.js';

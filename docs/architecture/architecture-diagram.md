@@ -114,10 +114,11 @@ From `READY`, three flows are available:
 ### 1. Ticket Flow (Full Development Lifecycle)
 
 ```
-READY → TICKET → PLAN ⇄ PLAN_REVIEW → VALIDATION → IMPLEMENTATION ⇄ IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+READY → TICKET → PLAN ⇄ PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION (automatic post-implementation checks; failure returns to IMPLEMENTATION) ⇄ IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE
 ```
 
-- `/task` → `/plan` → `/approve` → `/check` → `/implement` → `/approve`
+- `/task` → `/plan` → `/approve` → `/implement` (automatically runs active checks) → `/approve` → `/export`
+- `/check` is a manual compatibility and recovery command, not part of the happy path.
 - Subagent review loops at PLAN and IMPLEMENTATION for iterative convergence
 - User gates at PLAN_REVIEW, EVIDENCE_REVIEW (human approval required)
 - Self-review never accepted as evidence — mandatory independent subagent attestation
@@ -132,10 +133,10 @@ READY → ARCHITECTURE ⇄ ARCH_REVIEW → ARCH_COMPLETE
 - MADR-format ADR with independent subagent review
 - Fail-closed: `unable_to_review` verdict blocks at all layers
 
-### 3. Review Flow (Standalone)
+### 3. Peer Review Flow
 
 ```
-READY → REVIEW → REVIEW_COMPLETE
+READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
 ```
 
 - `/review` — content-aware (PR, branch, text, URL)

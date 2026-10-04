@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_export",
+  "title": "flowguard_export",
+  "description": "Materialize the required verifiable development export. Only available at EXPORT_READY; successful evidence persistence completes the workflow.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

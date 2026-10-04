@@ -32,6 +32,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
+import { FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { status, hydrate } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 
@@ -156,8 +157,8 @@ describe('stack-evidence E2E', () => {
       // 2. Override repoSignals to match workspace contents
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['pom.xml', 'src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       });
 
       // 3. Hydrate — runs real discovery with real file reads
@@ -186,23 +187,6 @@ describe('stack-evidence E2E', () => {
         ]),
       );
 
-      // versions[] backward compat — only versioned items
-      expect(ds.versions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: 'java',
-            version: '21',
-            target: 'language',
-            evidence: 'pom.xml:<java.version>',
-          }),
-          expect.objectContaining({
-            id: 'spring-boot',
-            version: '3.4.1',
-            target: 'framework',
-          }),
-        ]),
-      );
-
       // 6. Verify flowguard_status surfaces full object (not summary string)
       const statusResult = await callStatus();
       expect(statusResult.detectedStack).not.toBeNull();
@@ -213,8 +197,6 @@ describe('stack-evidence E2E', () => {
       expect(statusDs.summary).toContain('java=21');
       expect(Array.isArray(statusDs.items)).toBe(true);
       expect((statusDs.items as unknown[]).length).toBeGreaterThanOrEqual(2);
-      expect(Array.isArray(statusDs.versions)).toBe(true);
-      expect((statusDs.versions as unknown[]).length).toBeGreaterThanOrEqual(2);
 
       const verificationCandidates = statusResult.verificationCandidates as Array<
         Record<string, unknown>
@@ -241,8 +223,8 @@ describe('stack-evidence E2E', () => {
       await writeManifest('pom.xml', JAVA_POM_XML);
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['pom.xml', 'src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       });
       await hydrateSession();
       const sessDir = await resolveSessionDir();
@@ -250,8 +232,14 @@ describe('stack-evidence E2E', () => {
       expect(state).not.toBeNull();
 
       // Phases that MUST include the rule
-      for (const phase of ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'REVIEW'] as const) {
-        await writeState(sessDir, { ...state!, phase });
+      for (const phase of ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'PEER_REVIEW'] as const) {
+        await writeState(sessDir, {
+          ...state!,
+          phase,
+          ...(phase === 'IMPLEMENTATION'
+            ? { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }
+            : {}),
+        });
         const result = await callStatus();
         expect(result.profileRules).toContain(VERSION_EVIDENCE_RULE);
       }
@@ -271,8 +259,8 @@ describe('stack-evidence E2E', () => {
       // 2. Override repoSignals
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['.nvmrc', 'package.json', 'tsconfig.json', 'src/index.ts'],
-        packageFiles: ['package.json'],
-        configFiles: ['tsconfig.json'],
+        packageFilePaths: ['package.json'],
+        configFilePaths: ['tsconfig.json'],
       });
 
       // 3. Hydrate
@@ -298,24 +286,13 @@ describe('stack-evidence E2E', () => {
           }),
         ]),
       );
-      expect(ds.versions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: 'node',
-            version: '20.11.0',
-            target: 'runtime',
-            evidence: '.nvmrc',
-          }),
-        ]),
-      );
-
       // 6. Status surfaces full object
       const statusResult = await callStatus();
       expect(statusResult.detectedStack).not.toBeNull();
       const statusDs = statusResult.detectedStack as Record<string, unknown>;
       expect(statusDs.summary).toContain('node=20.11.0');
       expect(Array.isArray(statusDs.items)).toBe(true);
-      expect(Array.isArray(statusDs.versions)).toBe(true);
+      expect(statusDs).not.toHaveProperty('versions');
       expect(Array.isArray(statusResult.verificationCandidates)).toBe(true);
 
       const candidates = statusResult.verificationCandidates as Array<Record<string, unknown>>;
@@ -346,8 +323,8 @@ describe('stack-evidence E2E', () => {
 
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['docker-compose.yml'],
-        packageFiles: [],
-        configFiles: ['docker-compose.yml'],
+        packageFilePaths: [],
+        configFilePaths: ['docker-compose.yml'],
       });
 
       await hydrateSession();
@@ -413,8 +390,8 @@ components = ["clippy", "rustfmt"]
           'go.mod',
           '.golangci.yml',
         ],
-        packageFiles: ['pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod'],
-        configFiles: ['.golangci.yml'],
+        packageFilePaths: ['pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod'],
+        configFilePaths: ['.golangci.yml'],
       });
 
       await hydrateSession();
@@ -471,7 +448,7 @@ components = ["clippy", "rustfmt"]
 
       const ds = state!.detectedStack!;
       expect(ds.items.length).toBeGreaterThan(0);
-      expect(ds.versions).toHaveLength(0); // no versioned items
+      expect(ds.items.every((item) => item.version === undefined)).toBe(true);
 
       // Verify status surfaces full object (not null)
       const result = await callStatus();
@@ -491,8 +468,8 @@ components = ["clippy", "rustfmt"]
       await writeManifest('pom.xml', JAVA_POM_XML);
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['pom.xml', 'src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       });
       await hydrateSession();
 
@@ -508,7 +485,6 @@ components = ["clippy", "rustfmt"]
       const obj = ds as Record<string, unknown>;
       expect(typeof obj.summary).toBe('string');
       expect(Array.isArray(obj.items)).toBe(true);
-      expect(Array.isArray(obj.versions)).toBe(true);
 
       // Each item has required fields
       const items = obj.items as Array<Record<string, unknown>>;
@@ -532,27 +508,6 @@ components = ["clippy", "rustfmt"]
         // evidence is optional — string or undefined
         if (item.evidence !== undefined) {
           expect(typeof item.evidence).toBe('string');
-        }
-      }
-
-      // Each version entry has required fields (backward compat)
-      const versions = obj.versions as Array<Record<string, unknown>>;
-      for (const v of versions) {
-        expect(typeof v.id).toBe('string');
-        expect(typeof v.version).toBe('string');
-        expect([
-          'language',
-          'framework',
-          'runtime',
-          'buildTool',
-          'tool',
-          'testFramework',
-          'qualityTool',
-          'database',
-        ]).toContain(v.target);
-        // evidence is optional — string or undefined, never fabricated
-        if (v.evidence !== undefined) {
-          expect(typeof v.evidence).toBe('string');
         }
       }
     });
@@ -581,8 +536,8 @@ components = ["clippy", "rustfmt"]
       // 2. Override repoSignals to include nested files
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['package.json', 'src/index.ts', 'apps/web/package.json', 'apps/web/src/index.tsx'],
-        packageFiles: ['package.json', 'apps/web/package.json'],
-        configFiles: [],
+        packageFilePaths: ['package.json', 'apps/web/package.json'],
+        configFilePaths: [],
       });
 
       // 3. Hydrate — runs real discovery with real file reads
@@ -630,9 +585,9 @@ components = ["clippy", "rustfmt"]
       const statusScopes = statusDs.scopes as Array<Record<string, unknown>>;
       expect(statusScopes).toBeDefined();
       expect(statusScopes).toHaveLength(1);
-      expect(statusScopes![0]!.path).toBe('apps/web');
+      expect(statusScopes[0]!.path).toBe('apps/web');
 
-      const statusScopeItems = statusScopes![0]!.items as Array<Record<string, unknown>>;
+      const statusScopeItems = statusScopes[0]!.items as Array<Record<string, unknown>>;
       const statusItemIds = statusScopeItems.map((i) => i.id);
       expect(statusItemIds).toContain('react');
       expect(statusItemIds).toContain('vitest');
@@ -655,8 +610,8 @@ services:
       // 2. Override repoSignals
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
         files: ['package.json', 'services/db/docker-compose.yml'],
-        packageFiles: ['package.json'],
-        configFiles: [],
+        packageFilePaths: ['package.json'],
+        configFilePaths: [],
       });
 
       // 3. Hydrate
@@ -692,9 +647,9 @@ services:
       const statusScopes = statusDs.scopes as Array<Record<string, unknown>>;
       expect(statusScopes).toBeDefined();
       expect(statusScopes).toHaveLength(1);
-      expect(statusScopes![0]!.path).toBe('services/db');
+      expect(statusScopes[0]!.path).toBe('services/db');
 
-      const statusScopeItems = statusScopes![0]!.items as Array<Record<string, unknown>>;
+      const statusScopeItems = statusScopes[0]!.items as Array<Record<string, unknown>>;
       const statusItemIds = statusScopeItems.map((i) => i.id);
       expect(statusItemIds).toContain('postgresql');
       expect(statusItemIds).toContain('redis');

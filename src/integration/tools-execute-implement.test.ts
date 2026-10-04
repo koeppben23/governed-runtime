@@ -28,7 +28,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import {
   status,
   hydrate,
@@ -43,7 +43,7 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { appendReviewDispatch } from '../state/review-dispatch.js';
 import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
@@ -56,9 +56,18 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
-import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import type { ReviewFindings } from '../state/evidence.js';
+import { resolvePolicyFromState } from './tools/helpers.js';
+import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
+
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('./git-control-plane.js')>(),
+  );
+});
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -66,8 +75,11 @@ vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
+    isGitRepo: vi.fn().mockResolvedValue(true),
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
     // Deterministic per-path content hash so baseline scoping is testable: a
     // file is "unchanged since baseline" iff the baseline recorded this same
@@ -78,7 +90,17 @@ vi.mock('../adapters/git', async (importOriginal) => {
       for (const p of paths) out[p] = `stable:${p}`;
       return out;
     }),
+    // Defaults to the real helper (which returns '' on the non-repo temp worktree);
+    // F3 tests override it per-call to exercise diff-artifact capture.
+    worktreeDiff: vi.fn(original.worktreeDiff),
   };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
@@ -126,6 +148,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -172,12 +195,24 @@ vi.mock('../verification/executor', () => ({
     })),
 }));
 
+// Transparent pass-through to the real implement-diff-artifact module so
+// writeImplementationDiffArtifact can be selectively intercepted per-test
+// (e.g. the F3 write-failure negative case).
+vi.mock('./tools/implementation/implement-diff-artifact.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('./tools/implementation/implement-diff-artifact.js')>();
+  return {
+    writeImplementationDiffArtifact: vi.fn(actual.writeImplementationDiffArtifact),
+  };
+});
+
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 const persistenceMock = await import('../adapters/persistence.js');
 const executorMock = await import('../verification/executor.js');
+const diffArtifactMock = await import('./tools/implementation/implement-diff-artifact.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -266,7 +301,7 @@ async function currentSessionDir(): Promise<string> {
 async function fulfillReview(
   obligationType: 'plan' | 'implement',
   iteration: number,
-  overallVerdict: 'accept' | 'changes_requested' = 'accept',
+  overallVerdict: ReviewFindings['overallVerdict'] = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType,
@@ -274,6 +309,22 @@ async function fulfillReview(
     planVersion: 1,
     overallVerdict,
   });
+}
+
+function implementationReview(result: Record<string, unknown>): {
+  reviewMode: string;
+  iteration: number;
+} {
+  const review = result.latestImplementationReview;
+  if (
+    review === null ||
+    typeof review !== 'object' ||
+    typeof (review as Record<string, unknown>).reviewMode !== 'string' ||
+    typeof (review as Record<string, unknown>).iteration !== 'number'
+  ) {
+    throw new TypeError('Expected latestImplementationReview summary');
+  }
+  return review as { reviewMode: string; iteration: number };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -284,76 +335,315 @@ describe('implement', () => {
   /** Helper: reach IMPLEMENTATION phase via solo workflow. */
   async function reachImplementation(): Promise<void> {
     await hydrateAndTicket();
-    await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-    const planReviewFindings = await fulfillReview('plan', 0, 'accept');
-    await plan.execute({ reviewVerdict: 'accept', reviewFindings: planReviewFindings }, ctx);
-    // Solo: PLAN_REVIEW auto-approves → VALIDATION
-    // Discovery detects TypeScript → activeChecks=['typecheck'] → run check to advance
+    await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
+    await fulfillReview('plan', 0, 'accept');
+    // Solo auto-approves PLAN_REVIEW into VALIDATION and the runtime runs the
+    // active checks automatically (discovery detects TypeScript →
+    // activeChecks=['typecheck']), advancing to IMPLEMENTATION.
+    await plan.execute({ reviewVerdict: 'accept' }, ctx);
+    const sessDir = await currentSessionDir();
+    const readyForImplementation = await readState(sessDir);
+    expect(readyForImplementation?.phase).toBe('IMPLEMENTATION');
+    await writeState(sessDir, {
+      ...readyForImplementation!,
+      policySnapshot: {
+        ...readyForImplementation!.policySnapshot,
+        reviewBudget: { ...readyForImplementation!.policySnapshot.reviewBudget, implementation: 1 },
+      },
+    });
+  }
+
+  /**
+   * Re-run the active checks in IMPL_VALIDATION (the post-implementation re-run
+   * against the fixed code) to advance IMPL_VALIDATION → IMPL_REVIEW. No-op unless
+   * the session is currently in IMPL_VALIDATION with active checks.
+   */
+  async function passImplValidation(): Promise<Record<string, unknown> | null> {
     const sessDir = await currentSessionDir();
     const state = await readState(sessDir);
-    if (state && state.activeChecks.length > 0) {
-      for (const kind of state.activeChecks) {
-        await run_check.execute({ kind }, ctx);
-      }
+    if (!state || state.phase !== 'IMPL_VALIDATION' || state.activeChecks.length === 0) return null;
+    let result: Record<string, unknown> | null = null;
+    for (const kind of state.activeChecks) {
+      result = parseToolResult(await run_check.execute({ kind }, ctx));
     }
+    return result;
   }
 
   describe('HAPPY', () => {
+    it('defers implementation review obligation and invocation until post-implementation checks pass', async () => {
+      await reachImplementation();
+      // Force the automatic post-implementation check to ERROR (timeout): an
+      // execution error stays in IMPL_VALIDATION for a retry, so no implement
+      // obligation may be minted until checks actually pass.
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'typecheck',
+        command: 'npx tsc --noEmit',
+        exitCode: -1,
+        passed: false,
+        executionMs: 60000,
+        outputDigest: '0'.repeat(64),
+        stdout: '',
+        stderr: '',
+        timedOut: true,
+        startedAt: new Date().toISOString(),
+      });
+      const recordResult = parseToolResult(await implement.execute({}, ctx));
+      const sessDir = await currentSessionDir();
+
+      expect(recordResult.phase).toBe('IMPL_VALIDATION');
+      expect(recordResult.directive).toMatchObject({
+        kind: 'system_work',
+        code: 'IMPLEMENTATION_VALIDATION_IN_PROGRESS',
+        commands: [],
+      });
+      expect(recordResult.next).toBeUndefined();
+      expect(recordResult.reviewDispatch).toBeUndefined();
+      expect(recordResult.reviewObligation).toBeUndefined();
+      expect(recordResult.reviewInvocation).toBeUndefined();
+      expect(
+        (await readState(sessDir))?.reviewAssurance?.obligations.filter(
+          (obligation) => obligation.obligationType === 'implement',
+        ) ?? [],
+      ).toHaveLength(0);
+
+      // Retry the errored check through the compatibility surface: the passing
+      // re-run mints the review obligation and advances to IMPL_REVIEW.
+      const validationResult = await passImplValidation();
+      expect(validationResult?.phase).toBe('IMPL_REVIEW');
+      expect(validationResult?.reviewObligation).toBeDefined();
+      expect(validationResult?.reviewInvocation).toBeDefined();
+      expect(validationResult?.reviewDispatch).toEqual({ required: true });
+      const implState = await readState(sessDir);
+      const implObligation = implState?.reviewAssurance?.obligations.find(
+        (obligation) => obligation.obligationType === 'implement',
+      );
+      expect(implObligation).toBeDefined();
+      expect(validationResult?.reviewAttemptId).toBe(
+        implState?.reviewAssurance?.attempts.find(
+          (attempt) =>
+            attempt.obligationId === implObligation?.obligationId && attempt.status === 'created',
+        )?.attemptId,
+      );
+      expect(
+        (await readState(sessDir))?.reviewAssurance?.obligations.filter(
+          (obligation) => obligation.obligationType === 'implement',
+        ) ?? [],
+      ).toHaveLength(1);
+    });
+
     it('Mode A: records changed files from git', async () => {
       await reachImplementation();
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.changedFiles).toBeDefined();
-      expect(result.domainFiles).toBeDefined();
+      // The automatic post-implementation validation supersedes the record
+      // response; the recorded evidence is asserted from persisted state.
+      const state = await readState(await currentSessionDir());
+      expect(state?.phase).toBe('IMPL_REVIEW');
+      expect(state?.implementation?.changedFiles).toEqual(GIT_MOCK_DEFAULTS.changedFiles);
+      expect(state?.implementation?.domainFiles).toEqual(GIT_MOCK_DEFAULTS.changedFiles);
+    });
+
+    it('F3: binds a content digest and writes the change diff artifact', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const diff =
+        'diff --git a/src/auth.ts b/src/auth.ts\n' +
+        '--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1 +1 @@\n-old\n+new\n';
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/auth.ts']);
+      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(diff);
+
+      const raw = await implement.execute({}, ctx);
+      await passImplValidation();
+      expect(parseToolResult(raw).error).toBeUndefined();
+
+      const state = await readState(sessDir);
+      const impl = state!.implementation!;
+      // Digest is derived from per-path CONTENT hashes (see hashWorktreeFiles mock),
+      // not a hash of the file-name list — distinct content yields a distinct digest.
+      expect(impl.digest).toBeTruthy();
+      expect(impl.diffDigest).toBeTruthy();
+
+      // The diff artifact is written, content-addressed by diffDigest, and is picked
+      // up by the archive manifest (it lives under the session directory).
+      const patch = await fs.readFile(
+        `${sessDir}/implementation-diff.${impl.diffDigest}.patch`,
+        'utf8',
+      );
+      expect(patch).toBe(diff);
+    });
+
+    it('F3: omits diffDigest and writes no artifact when the diff is empty', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/auth.ts']);
+      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce('   \n');
+
+      const raw = await implement.execute({}, ctx);
+      await passImplValidation();
+      expect(parseToolResult(raw).error).toBeUndefined();
+
+      const impl = (await readState(sessDir))!.implementation!;
+      expect(impl.diffDigest).toBeUndefined();
+    });
+
+    it('F3: omits diffDigest and never persists a claimed artifact when write fails', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/auth.ts']);
+      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(
+        'diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts',
+      );
+      // Simulate writeImplementationDiffArtifact failing (ENOSPC).
+      vi.mocked(diffArtifactMock.writeImplementationDiffArtifact).mockResolvedValueOnce(false);
+
+      const raw = await implement.execute({}, ctx);
+      expect(parseToolResult(raw).error).toBeUndefined();
+
+      const impl = (await readState(sessDir))!.implementation!;
+      // Implementation recording itself must still succeed (best-effort diff).
+      expect(impl.digest).toBeTruthy();
+      // diffDigest must NOT be set — no artifact was written.
+      expect(impl.diffDigest).toBeUndefined();
     });
 
     it('Mode B: approve review converges in solo', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
-      const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'accept', reviewFindings },
-        ctx,
-      );
+      await passImplValidation();
+      await fulfillReview('implement', 1, 'accept');
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(
-        result.converged === true ||
-          result.phase === 'EVIDENCE_REVIEW' ||
-          result.phase === 'COMPLETE',
-      ).toBe(true);
+      // Solo auto-approves the evidence gate; completion now stops at the
+      // explicit EXPORT_READY position and waits for /export.
+      expect(result.phase).toBe('EXPORT_READY');
     });
 
-    it('reduced ceremony records evidence and skips implementation review obligation only for runtime-verified TRIVIAL changes', async () => {
+    it('F12 re-arms one fresh implementation attempt, then fails the second closed', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      const obligation = before!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'implement',
+      );
+      if (!obligation) throw new Error('missing implementation obligation');
+      const a1 =
+        before!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+        ) ??
+        before!.reviewAssurance!.attempts.find(
+          (item) => item.obligationId === obligation.obligationId,
+        );
+      if (!a1) throw new Error('missing implementation attempt');
+
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'implement',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        attemptId: a1.attemptId,
+      });
+
+      const first = parseToolResult(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(first.error).toBeUndefined();
+      expect(first.status).toContain('Incoherent reviewer capture');
+      const a2Id = first.reviewAttemptId;
+      expect(typeof a2Id).toBe('string');
+      expect(a2Id).not.toBe(a1.attemptId);
+
+      const afterFirst = await readState(sessDir);
+      const a1After = afterFirst!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === a1.attemptId,
+      );
+      expect(a1After?.rejectionReason).toBe('consistency_invalid');
+      const a2 = afterFirst!.reviewAssurance!.attempts.find((item) => item.attemptId === a2Id);
+      expect(a2?.origin).toMatchObject({
+        kind: 'dispatch_rearm',
+        predecessorAttemptId: a1.attemptId,
+        triggerReason: 'spent',
+      });
+      const obligationAfter = afterFirst!.reviewAssurance!.obligations.find(
+        (item) => item.obligationId === obligation.obligationId,
+      );
+      expect(obligationAfter).toMatchObject({ status: 'pending', invocationId: null });
+      const attemptsAfterFirst = afterFirst!.reviewAssurance!.attempts.length;
+
+      await fulfillStrictReviewObligation(sessDir, {
+        obligationType: 'implement',
+        iteration: obligation.iteration,
+        planVersion: obligation.planVersion,
+        overallVerdict: 'accept',
+        blockingIssueCount: 1,
+        childSessionId: 'ses_impl_reviewer_retry',
+        attemptId: a2Id as string,
+      });
+      const second = parseToolResult(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(second.error).toBe(true);
+      const afterSecond = await readState(sessDir);
+      // The second F12 mints nothing: the attempt count is unchanged.
+      expect(afterSecond!.reviewAssurance!.attempts).toHaveLength(attemptsAfterFirst);
+    });
+
+    it('applies reduced ceremony only after post-implementation checks pass', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+        policySnapshot: {
+          ...state!.policySnapshot,
+          allowReducedCeremony: true,
+          requireHumanGates: true,
+          effectiveGateBehavior: 'human_gated',
+        },
       });
 
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['docs/usage-notes.md']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['docs/usage-notes.md']);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
 
       expect(result.error).toBeUndefined();
-      expect(result.ceremonyProfile).toBe('reduced');
-      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
-      expect(result.reviewMode).toBe('reduced_ceremony');
       expect(finalState?.implementation).not.toBeNull();
       expect(finalState?.implReview).toBeNull();
       expect(finalState?.reducedCeremony).toMatchObject({
         profile: 'reduced',
-        reason: 'RUNTIME_VERIFIED_TRIVIAL',
-        claimedTaskClass: 'TRIVIAL',
+        reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL',
+        escalatedTaskClass: 'TRIVIAL',
+        declaredTaskClass: null,
+        declarationKind: 'absent',
         computedMinimumTaskClass: 'TRIVIAL',
+        implementationId: finalState?.implementation?.implementationId,
+        implementationDigest: finalState?.implementation?.digest,
+        policyDigest: finalState?.policySnapshot.hash,
       });
-      expect(finalState?.transition?.event).toBe('APPROVE');
-      expect(finalState?.phase).toBe('COMPLETE');
+      expect(finalState?.reducedCeremony?.verificationBasis.checkIds).toEqual(
+        finalState?.activeChecks,
+      );
+      // The structured decision event is durably queued through the canonical
+      // audit outbox in the same locked commit; it flushes on later writes.
+      expect(
+        (finalState?.pendingAuditOperations ?? []).some(
+          (operation) =>
+            operation.kind === 'semantic' &&
+            operation.semantic.event === 'reduced_ceremony_applied' &&
+            operation.semantic.detail.status === 'applied',
+        ),
+      ).toBe(true);
+      expect(finalState?.transition?.event).toBe('REDUCED_CEREMONY');
+      // The human evidence gate remains mandatory.
+      expect(finalState?.phase).toBe('EVIDENCE_REVIEW');
       expect(
         finalState?.reviewAssurance?.obligations.some(
           (obligation) => obligation.obligationType === 'implement',
@@ -368,18 +658,25 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+        policySnapshot: {
+          ...state!.policySnapshot,
+          allowReducedCeremony: true,
+          requireHumanGates: true,
+          effectiveGateBehavior: 'human_gated',
+        },
       });
 
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/security/policy.ts']);
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
 
       expect(result.error).toBeUndefined();
-      expect(result.ceremonyProfile).toBe('full');
-      expect(result.ceremonyReason).toBe('COMPUTED_MINIMUM_NOT_TRIVIAL');
-      expect(result.computedMinimumTaskClass).toBe('HIGH-RISK');
+      // The automatic post-implementation validation supersedes the record
+      // response; the full-ceremony decision is asserted from persisted state.
+      expect(finalState?.implementationRiskAssessment).toMatchObject({
+        computedMinimumTaskClass: 'HIGH-RISK',
+      });
       expect(finalState?.reducedCeremony).toBeNull();
       expect(finalState?.phase).toBe('IMPL_REVIEW');
       expect(
@@ -391,8 +688,42 @@ describe('implement', () => {
   });
 
   describe('BAD', () => {
+    it('blocks recording while a dispatched host mutation has no completion outcome', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new Error('expected session state');
+      await writeState(sessDir, {
+        ...state,
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'host-call-1',
+            toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: new Date().toISOString(),
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+      });
+
+      const result = parseToolResult(await implement.execute({}, ctx));
+      expect(result).toMatchObject({
+        error: true,
+        code: 'MUTATION_EPISODE_UNRESOLVED',
+      });
+    });
+  });
+
+  describe('BAD', () => {
     it('blocks without session', async () => {
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
@@ -401,6 +732,7 @@ describe('implement', () => {
     it('blocks without plan/ticket', async () => {
       await hydrateSession();
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
     });
@@ -409,14 +741,14 @@ describe('implement', () => {
   describe('CORNER', () => {
     it('filters out .opencode/ files from domain files', async () => {
       await reachImplementation();
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/foo.ts',
         '.opencode/tools/flowguard.ts',
         'node_modules/dep/index.js',
       ]);
       const raw = await implement.execute({}, ctx);
-      const result = parseToolResult(raw);
-      const domain = result.domainFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      const domain = (await readState(await currentSessionDir()))!.implementation!.domainFiles;
       expect(domain).toContain('src/foo.ts');
       expect(domain).not.toContain('.opencode/tools/flowguard.ts');
       expect(domain).not.toContain('node_modules/dep/index.js');
@@ -426,15 +758,16 @@ describe('implement', () => {
       // Real demo case: a stale opencode.json detected in the worktree must not
       // be counted as an implementation domain surface.
       await reachImplementation();
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'opencode.json',
         'src/main/Service.java',
         'tsconfig.json',
       ]);
       const raw = await implement.execute({}, ctx);
-      const result = parseToolResult(raw);
-      const domain = result.domainFiles as string[];
-      const changed = result.changedFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      const implementation = (await readState(await currentSessionDir()))!.implementation!;
+      const domain = implementation.domainFiles;
+      const changed = implementation.changedFiles;
       expect(domain).toContain('src/main/Service.java');
       expect(domain).not.toContain('opencode.json');
       expect(domain).not.toContain('tsconfig.json');
@@ -451,19 +784,21 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [{ path: 'stale/preexisting.txt', hash: 'stable:stale/preexisting.txt' }],
           capturedAt: new Date().toISOString(),
         },
       });
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/main/Service.java',
         'stale/preexisting.txt',
       ]);
       const raw = await implement.execute({}, ctx);
-      const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.baselineScoping).toBe('applied');
-      const changed = result.changedFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      // The scoping status is a record-response field superseded by the
+      // automatic validation response; the subtraction it performs is asserted
+      // from the persisted evidence.
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
       expect(changed).toContain('src/main/Service.java');
       expect(changed).not.toContain('stale/preexisting.txt');
     });
@@ -477,27 +812,36 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [{ path: 'src/main/Service.java', hash: 'old:src/main/Service.java' }],
           capturedAt: new Date().toISOString(),
         },
       });
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/main/Service.java']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/main/Service.java']);
       const raw = await implement.execute({}, ctx);
-      const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.baselineScoping).toBe('applied');
-      const changed = result.changedFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
       expect(changed).toContain('src/main/Service.java');
     });
 
-    it('absent baseline records the full worktree and marks scoping unavailable', async () => {
+    it('records the full worktree when dirty capture is unavailable but the marker is valid (null + marker)', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
-      // Simulate a legacy session: strip any captured baseline.
-      const { implementationBaseline: _drop, ...withoutBaseline } = state!;
-      await writeState(sessDir, withoutBaseline as typeof state);
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      // Independent availability: a successfully captured control-plane marker
+      // must never be discarded because dirty-file capture failed. Recording
+      // proceeds conservatively over the full worktree with an explicit signal.
+      if (!state) throw new TypeError('Expected persisted session state');
+      await writeState(sessDir, {
+        ...state,
+        activeChecks: [],
+        implementationBaseline: {
+          ...state.implementationBaseline,
+          dirtyFiles: null,
+          controlPlaneMarker: 'test-control-plane-marker',
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/main/Service.java',
         'stale/preexisting.txt',
       ]);
@@ -505,10 +849,59 @@ describe('implement', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.baselineScoping).toBe('unavailable');
-      const changed = result.changedFiles as string[];
-      // No subtraction: the full worktree is recorded, nothing hidden.
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
       expect(changed).toContain('src/main/Service.java');
       expect(changed).toContain('stale/preexisting.txt');
+    });
+
+    it('blocks when the marker is unavailable even with a captured dirty baseline (list + null)', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new TypeError('Expected persisted session state');
+      await writeState(sessDir, {
+        ...state,
+        implementationBaseline: {
+          ...state.implementationBaseline,
+          dirtyFiles: [{ path: 'stale/preexisting.txt', hash: 'stable:stale/preexisting.txt' }],
+          controlPlaneMarker: null,
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
+        'src/main/Service.java',
+        'stale/preexisting.txt',
+      ]);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE');
+      const persisted = await readState(sessDir);
+      expect(persisted?.implementation).toBeNull();
+    });
+
+    it('blocks when both baseline captures are unavailable (null + null)', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      // Independent dirty-file capture may be unavailable, but implementation
+      // cannot proceed without the control-plane marker.
+      if (!state) throw new TypeError('Expected persisted session state');
+      await writeState(sessDir, {
+        ...state,
+        implementationBaseline: {
+          ...state.implementationBaseline,
+          dirtyFiles: null,
+          controlPlaneMarker: null,
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
+        'src/main/Service.java',
+        'stale/preexisting.txt',
+      ]);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE');
     });
 
     it('a stale HIGH-RISK file in the baseline does not escalate ceremony once scoped out', async () => {
@@ -518,8 +911,14 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+        policySnapshot: {
+          ...state!.policySnapshot,
+          allowReducedCeremony: true,
+          requireHumanGates: true,
+          effectiveGateBehavior: 'human_gated',
+        },
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [{ path: 'package.json', hash: 'stable:package.json' }],
           capturedAt: new Date().toISOString(),
         },
@@ -527,16 +926,15 @@ describe('implement', () => {
       // The task only touched a doc; a stale dirty package.json (HIGH-RISK) was
       // present before the task, unchanged, and must be scoped out, not raise
       // the floor.
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
-        'docs/usage-notes.md',
-        'package.json',
-      ]);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['docs/usage-notes.md', 'package.json']);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
+      const finalState = await readState(sessDir);
       expect(result.error).toBeUndefined();
-      expect(result.baselineScoping).toBe('applied');
-      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
-      expect(result.ceremonyProfile).toBe('reduced');
+      expect(finalState?.implementation?.changedFiles).toEqual(['docs/usage-notes.md']);
+      expect(finalState?.implementationRiskAssessment?.computedMinimumTaskClass).toBe('TRIVIAL');
+      expect(finalState?.reducedCeremony?.profile).toBe('reduced');
     });
 
     it('blocks when every changed file was already dirty and unchanged since session start', async () => {
@@ -546,6 +944,7 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [
             { path: 'stale/a.txt', hash: 'stable:stale/a.txt' },
             { path: 'stale/b.txt', hash: 'stable:stale/b.txt' },
@@ -553,8 +952,9 @@ describe('implement', () => {
           capturedAt: new Date().toISOString(),
         },
       });
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['stale/a.txt', 'stale/b.txt']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['stale/a.txt', 'stale/b.txt']);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_EMPTY');
@@ -572,9 +972,133 @@ describe('implement', () => {
       expect(result.message).toContain('accept');
     });
 
-    it('blocks reviewerUnavailable mixed into a record-mode call with INVALID_IMPLEMENT_TOOL_SEQUENCE (#499 gap closed)', async () => {
+    it('blocks reviewerUnavailable before implementation evidence is recorded', async () => {
       await reachImplementation();
       const raw = await review_implementation.execute({ reviewerUnavailable: true }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
+    });
+
+    it('fails closed on reviewerUnavailable at IMPL_REVIEW without consuming the implementation obligation', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      const retryState = {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot,
+        },
+      };
+      await writeState(sessDir, retryState);
+
+      const raw = await review_implementation.execute({ reviewerUnavailable: true }, ctx);
+      const result = parseToolResult(raw);
+      const after = await readState(sessDir);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
+      expect(after?.phase).toBe('IMPL_REVIEW');
+      expect(after?.reviewAssurance).toEqual(retryState.reviewAssurance);
+      expect(after?.implReview).toEqual(retryState.implReview);
+    });
+
+    it('reviewRecovery retry_transport re-emits the current authorized attempt without a new one', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      const obligation = before!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'implement' && item.status === 'pending',
+      )!;
+      const attempt = before!.reviewAssurance!.attempts.find(
+        (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+      )!;
+
+      const raw = await review_implementation.execute({ reviewRecovery: 'retry_transport' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.reviewDispatch).toEqual({ required: true });
+      expect(result.reviewAttemptId).toBe(attempt.attemptId);
+      expect((result.reviewObligation as { obligationId?: string }).obligationId).toBe(
+        obligation.obligationId,
+      );
+
+      const after = await readState(sessDir);
+      expect(after?.reviewAssurance?.attempts).toHaveLength(
+        before!.reviewAssurance!.attempts.length,
+      );
+      expect(after?.reviewAssurance?.dispatches).toHaveLength(
+        before!.reviewAssurance!.dispatches.length,
+      );
+    });
+
+    it('reviewRecovery retry_transport re-arms an interrupted release on the same obligation', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      const obligation = before!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'implement' && item.status === 'pending',
+      )!;
+      const spent = before!.reviewAssurance!.attempts.find(
+        (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+      )!;
+      await writeState(sessDir, {
+        ...before!,
+        reviewAssurance: appendReviewDispatch(before!.reviewAssurance, {
+          dispatchId: crypto.randomUUID(),
+          attemptId: spent.attemptId,
+          obligationId: obligation.obligationId,
+          hostCallId: 'task-call-interrupted',
+          canonicalPromptDigest: 'a'.repeat(64),
+          dispatchAuthorizedAt: new Date().toISOString(),
+          dispatchStatus: 'authorized',
+        }),
+      });
+
+      const raw = await review_implementation.execute({ reviewRecovery: 'retry_transport' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.reviewDispatch).toEqual({ required: true });
+      const rearmedAttemptId = result.reviewAttemptId as string;
+      expect(rearmedAttemptId).not.toBe(spent.attemptId);
+      expect((result.reviewObligation as { obligationId?: string }).obligationId).toBe(
+        obligation.obligationId,
+      );
+
+      const after = await readState(sessDir);
+      const spentAfter = after!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === spent.attemptId,
+      )!;
+      const rearmed = after!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === rearmedAttemptId,
+      )!;
+      expect(spentAfter.status).toBe('stale');
+      expect(rearmed.origin.kind).toBe('dispatch_rearm');
+      expect(
+        after!.reviewAssurance!.dispatches.every(
+          (dispatch) =>
+            dispatch.attemptId !== spent.attemptId || dispatch.dispatchStatus === 'outcome_unknown',
+        ),
+      ).toBe(true);
+    });
+
+    it('blocks reviewRecovery mixed with a verdict as an invalid argument shape', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const raw = await review_implementation.execute(
+        { reviewRecovery: 'retry_transport', reviewVerdict: 'accept' },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
@@ -583,6 +1107,7 @@ describe('implement', () => {
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED when implementation is null', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -601,35 +1126,7 @@ describe('implement', () => {
     });
   });
 
-  describe('P34b: Agent-Orchestrated Implementation Review', () => {
-    const validReviewFindingsSubagent = {
-      iteration: 0,
-      planVersion: 1,
-      reviewMode: 'subagent' as const,
-      overallVerdict: 'accept' as const,
-      blockingIssues: [],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      reviewedBy: { sessionId: 'ses_test' },
-      reviewedAt: new Date().toISOString(),
-    };
-
-    const validReviewFindingsSelf = {
-      iteration: 0,
-      planVersion: 1,
-      reviewMode: 'self' as unknown as 'subagent',
-      overallVerdict: 'accept' as const,
-      blockingIssues: [],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      reviewedBy: { sessionId: 'ses_self' },
-      reviewedAt: new Date().toISOString(),
-    };
-
+  describe('P34b: Host-Captured Implementation Review', () => {
     async function setSelfReviewPolicy(
       subagentEnabled: boolean,
       fallbackToSelf: boolean,
@@ -643,324 +1140,303 @@ describe('implement', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot,
-          selfReview: { subagentEnabled, fallbackToSelf },
         },
       });
     }
 
     async function enterImplReview(): Promise<void> {
       await implement.execute({}, ctx);
+      await passImplValidation();
     }
 
-    it('reviewMode=subagent accepted by mandatory default in Mode B', async () => {
+    it('verdict-only submission against bound structured evidence succeeds (subagent mode)', async () => {
       await reachImplementation();
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'accept', reviewFindings },
-        ctx,
-      );
+      await fulfillReview('implement', 1, 'accept');
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
-    });
-
-    it('reviewMode=self blocked by mandatory default in Mode B', async () => {
-      await reachImplementation();
-      await enterImplReview();
-      const raw = await review_implementation.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-    });
-
-    it('planVersion mismatch blocked in Mode B', async () => {
-      await reachImplementation();
-      await enterImplReview();
-      const wrongVersion = { ...validReviewFindingsSubagent, iteration: 1, planVersion: 99 };
-      const raw = await review_implementation.execute(
-        {
-          reviewVerdict: 'changes_requested',
-          reviewFindings: wrongVersion,
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
-    });
-
-    it('reviewFindings without reviewVerdict blocks with INVALID_IMPLEMENT_TOOL_SEQUENCE', async () => {
-      await reachImplementation();
-      const raw = await review_implementation.execute(
-        { reviewFindings: validReviewFindingsSubagent },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+      expect(implementationReview(result).reviewMode).toBe('subagent');
     });
 
     it('subagentEnabled=true + reviewMode=subagent -> accepted in Mode B', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'accept', reviewFindings },
-        ctx,
-      );
+      await fulfillReview('implement', 1, 'accept');
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview).toBeTruthy();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
-    });
-
-    it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self -> BLOCKED in Mode B', async () => {
-      await reachImplementation();
-      await setSelfReviewPolicy(true, true);
-      await enterImplReview();
-      const raw = await review_implementation.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-    });
-
-    it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self -> BLOCKED in Mode B', async () => {
-      await reachImplementation();
-      await setSelfReviewPolicy(true, false);
-      await enterImplReview();
-      const raw = await review_implementation.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+      expect(implementationReview(result).reviewMode).toBe('subagent');
     });
 
     it('Mode B: missing mandatory reviewer findings blocks approve', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
       const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+      expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     });
 
-    it('Mode B: reviewMode=self blocked when subagentEnabled=true and fallbackToSelf=false', async () => {
-      await reachImplementation();
-      await setSelfReviewPolicy(true, false);
-      await enterImplReview();
-
-      const modeBFindings = { ...validReviewFindingsSelf, iteration: 1 };
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: modeBFindings },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-    });
-
-    it('Mode B: planVersion mismatch blocked', async () => {
+    it('Mode B: reviewVerdict must match the captured findings overallVerdict', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
-      const wrongVersion = { ...validReviewFindingsSubagent, iteration: 1, planVersion: 99 };
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
-    });
-
-    it('Mode B: iteration mismatch blocked', async () => {
-      await reachImplementation();
-      await implement.execute({}, ctx);
-
-      const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_ITERATION_MISMATCH');
-    });
-
-    it('Mode B: reviewVerdict must match reviewFindings overallVerdict', async () => {
-      await reachImplementation();
-      await implement.execute({}, ctx);
-
-      const changesRequestedFindings = await fulfillReview('implement', 1, 'changes_requested');
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'accept', reviewFindings: changesRequestedFindings },
-        ctx,
-      );
+      await fulfillReview('implement', 1, 'changes_requested');
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
     });
 
-    it('Mode B: changes_requested accepted with valid reviewFindings', async () => {
+    it('Mode B: changes_requested accepted against bound captured evidence', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
-      const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
-        ctx,
-      );
+      await fulfillReview('implement', 1, 'changes_requested');
+      const raw = await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.status).toContain('Changes requested');
     });
 
-    it('Mode B: changes_requested returns to IMPLEMENTATION for fresh implementation evidence', async () => {
+    it('Mode B: exhausted changes_requested ends at EVIDENCE_REVIEW with the governance override gate', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
-      const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
-      const reviewRaw = await review_implementation.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
-        ctx,
-      );
-      const reviewResult = parseToolResult(reviewRaw);
-      expect(reviewResult.error).toBeUndefined();
-      expect(reviewResult.phase).toBe('IMPLEMENTATION');
+      await fulfillReview('implement', 1, 'changes_requested');
+      const raw = await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
+      const result = parseToolResult(raw);
+      // Solo implementation budget=1: the single negative verdict exhausts the
+      // budget, so the review loop transitions IMPL_REVIEW --REVIEW_EXHAUSTED-->
+      // EVIDENCE_REVIEW and hands the decision to the user as a governance
+      // override gate.
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('EVIDENCE_REVIEW');
+      expect(result.status).toContain('exhausted');
+      expect(result.directive).toMatchObject({
+        kind: 'human_gate',
+        code: 'IMPLEMENTATION_OVERRIDE_REQUIRED',
+        commands: ['/override-approve', '/request-changes', '/reject'],
+      });
+      expect(result.presentation).toBeDefined();
+      const markdown = (result.presentation as { markdown: string } | undefined)?.markdown ?? '';
+      expect(markdown).toContain('`/override-approve`');
+      expect(markdown).not.toContain('IMPLEMENTATION_OVERRIDE_REQUIRED');
 
       const sessDir = await currentSessionDir();
-      const afterReviewState = await readState(sessDir);
-      expect(afterReviewState?.implementation).toBeNull();
-      expect(afterReviewState?.implReview).toBeNull();
-      expect(afterReviewState?.reducedCeremony).toBeNull();
-
-      const recordRaw = await implement.execute({}, ctx);
-      const recordResult = parseToolResult(recordRaw);
-      expect(recordResult.error).toBeUndefined();
-      expect(recordResult.phase).toBe('IMPL_REVIEW');
-      expect(recordResult.reviewObligationIteration).toBe(2);
-
-      const afterRecordState = await readState(sessDir);
-      expect(afterRecordState?.implementation).not.toBeNull();
-      expect(afterRecordState?.implReview).toBeNull();
-      expect(afterRecordState?.implReviewFindings).toHaveLength(1);
-
-      const secondReviewFindings = await fulfillReview('implement', 2, 'accept');
-      const approveRaw = await review_implementation.execute(
-        { reviewVerdict: 'accept', reviewFindings: secondReviewFindings },
-        ctx,
-      );
-      const approveResult = parseToolResult(approveRaw);
-      expect(approveResult.error).toBeUndefined();
-      expect(approveResult.implReviewIteration).toBe(2);
-      expect(['EVIDENCE_REVIEW', 'COMPLETE']).toContain(approveResult.phase);
+      const after = await readState(sessDir);
+      expect(after?.phase).toBe('EVIDENCE_REVIEW');
+      expect(after?.implementationRework).toEqual({
+        rejectedDigest: expect.any(String),
+        exhausted: true,
+      });
+      // The exhausted loop keeps the reviewed implementation: the override and
+      // the request-changes paths both bind to the exact reviewed revision.
+      expect(after?.implementation).not.toBeNull();
     });
 
-    it('approve + subagentEnabled=true + missing reviewFindings -> BLOCKED', async () => {
+    it('Mode B: non-exhausted changes_requested is an internal continuation without an intermediate card', async () => {
       await reachImplementation();
-      await setSelfReviewPolicy(true, false);
       await implement.execute({}, ctx);
+      await passImplValidation();
 
-      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
+      // Allow multiple iterations so the loop continues after the first
+      // negative verdict instead of ending in a user decision.
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot,
+          reviewBudget: { ...state!.policySnapshot.reviewBudget, implementation: 3 },
+        },
+      });
+
+      await fulfillReview('implement', 1, 'changes_requested');
+      const raw = await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('IMPLEMENTATION');
+      expect(result.status).toContain('iteration 1/3');
+      expect(result.status).not.toContain('exhausted');
+      expect(String(result.agentInstruction)).toContain('flowguard_implement');
+      expect(String(result.agentInstruction)).toContain('re-record');
+      expect(result.next).toBeUndefined();
+      // Active loop: no intermediate presentation card — the negative verdict
+      // is an internal continuation (repair -> re-record -> validation ->
+      // challenge resolution -> fresh review), not a terminal result.
+      expect(result.presentation).toBeUndefined();
+      const after = await readState(sessDir);
+      expect(after?.implementationRework?.exhausted).toBe(false);
     });
 
-    it('Mode B: changes_requested with NO resolvable findings still returns to IMPLEMENTATION (no dead-state)', async () => {
-      // Regression: a reviewer asking for changes must never wedge the session
-      // into an unrecoverable IMPL_REVIEW state. Unlike `accept`, changes_requested
-      // closes the loop by returning to IMPLEMENTATION (fresh evidence replaces the
-      // stale evidence), so it must NOT require bindable reviewer findings. The
-      // sibling `accept` case above stays BLOCKED with REVIEW_FINDINGS_REQUIRED.
+    it('Mode B: request-changes at the exhausted gate returns to IMPLEMENTATION and permits a changed re-record', async () => {
       await reachImplementation();
-      await enterImplReview(); // pending obligation, but NO bound reviewer evidence
+      await implement.execute({}, ctx);
+      await passImplValidation();
 
+      await fulfillReview('implement', 1, 'changes_requested');
       const reviewRaw = await review_implementation.execute(
         { reviewVerdict: 'changes_requested' },
         ctx,
       );
       const reviewResult = parseToolResult(reviewRaw);
       expect(reviewResult.error).toBeUndefined();
-      expect(reviewResult.phase).toBe('IMPLEMENTATION');
+      expect(reviewResult.phase).toBe('EVIDENCE_REVIEW');
 
       const sessDir = await currentSessionDir();
-      const afterReviewState = await readState(sessDir);
-      expect(afterReviewState?.implementation).toBeNull();
-      expect(afterReviewState?.implReview).toBeNull();
+      const exhaustedState = await readState(sessDir);
+      expect(exhaustedState?.implementationRework).toEqual({
+        rejectedDigest: expect.any(String),
+        exhausted: true,
+      });
+      const rejectedDigest = exhaustedState!.implementationRework!.rejectedDigest;
 
-      // Recovery is actually reachable: re-recording implementation works.
+      // The user chooses /request-changes at the override gate: the machine
+      // returns to IMPLEMENTATION. The exhausted marker survives so the
+      // rejected revision can never be re-recorded.
+      const changesRaw = await decision.execute(
+        { verdict: 'changes_requested', rationale: 'Continue with fixes' },
+        ctx,
+      );
+      const changesResult = parseToolResult(changesRaw);
+      expect(changesResult.error).toBeUndefined();
+      expect(changesResult.phase).toBe('IMPLEMENTATION');
+      const reopened = await readState(sessDir);
+      expect(reopened?.implementation).toBeNull();
+      expect(reopened?.implementationRework).toEqual({
+        rejectedDigest,
+        exhausted: true,
+      });
+
+      // Re-recording the unchanged rejected revision stays blocked.
+      const unchangedRaw = await implement.execute({}, ctx);
+      expect(parseToolResult(unchangedRaw).code).toBe('IMPLEMENTATION_REWORK_REQUIRED');
+
+      // A changed revision is recordable: the exhausted marker is cleared only
+      // when the fresh validation fully passes and the machine advances. The
+      // automatic post-implementation check is forced to ERROR so the
+      // intermediate IMPL_VALIDATION state (marker still set) is observable.
+      const gitMockForDigest = await import('../adapters/git.js');
+      vi.mocked(gitMockForDigest.changedFiles).mockResolvedValue([
+        ...GIT_MOCK_DEFAULTS.changedFiles,
+        'src/fixed-after-review.ts',
+      ]);
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'typecheck',
+        command: 'npx tsc --noEmit',
+        exitCode: -1,
+        passed: false,
+        executionMs: 60000,
+        outputDigest: '0'.repeat(64),
+        stdout: '',
+        stderr: '',
+        timedOut: true,
+        startedAt: new Date().toISOString(),
+      });
       const recordRaw = await implement.execute({}, ctx);
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
-      expect(recordResult.phase).toBe('IMPL_REVIEW');
-      // No reviewer findings were recorded for the changes_requested cycle, so the
-      // next review obligation starts fresh at iteration 1 (not 2).
-      expect(recordResult.reviewObligationIteration).toBe(1);
+      expect(recordResult.phase).toBe('IMPL_VALIDATION');
+      const afterRecord = await readState(sessDir);
+      expect(afterRecord?.implementation?.digest).not.toBe(rejectedDigest);
+      expect(afterRecord?.implementationRework?.exhausted).toBe(true);
+
+      const validationResult = await passImplValidation();
+      expect(validationResult?.phase).toBe('IMPL_REVIEW');
+      const atImplReview = await readState(sessDir);
+      expect(atImplReview?.implementationRework).toBeNull();
     });
 
-    it('approve + subagentEnabled=true + valid reviewFindings -> accepted', async () => {
+    it('Mode B: plain /approve at the exhausted gate is BLOCKED with GOVERNANCE_OVERRIDE_REQUIRED', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      await fulfillReview('implement', 1, 'changes_requested');
+      await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('GOVERNANCE_OVERRIDE_REQUIRED');
+
+      // No state transition: the gate still awaits the explicit override.
+      const state = await readState(await currentSessionDir());
+      expect(state?.phase).toBe('EVIDENCE_REVIEW');
+    });
+
+    it('Mode B: /override-approve accepts the exhausted gate', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      await fulfillReview('implement', 1, 'changes_requested');
+      await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
+
+      const raw = await decision.execute(
+        { verdict: 'approve_with_governance_override', rationale: 'Accepted with override' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('EXPORT_READY');
+    });
+
+    it('approve + subagentEnabled=true + missing host-captured findings -> BLOCKED', async () => {
+      await reachImplementation();
+      await setSelfReviewPolicy(true, false);
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    });
+
+    it('Mode B: changes_requested without findings blocks without changing phase or obligation', async () => {
+      await reachImplementation();
+      await enterImplReview(); // pending obligation, but NO bound reviewer evidence
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+
+      const reviewRaw = await review_implementation.execute(
+        { reviewVerdict: 'changes_requested' },
+        ctx,
+      );
+      const reviewResult = parseToolResult(reviewRaw);
+      expect(reviewResult.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+      expect(await readState(sessDir)).toEqual(before);
+    });
+
+    it('approve + subagentEnabled=true + bound captured findings -> accepted', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
 
       await enterImplReview();
-      const modeBFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await review_implementation.execute(
-        { reviewVerdict: 'accept', reviewFindings: modeBFindings },
-        ctx,
-      );
+      await fulfillReview('implement', 1, 'accept');
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
       expect(result.implReviewIteration).toBeGreaterThanOrEqual(1);
       expect(result.latestImplementationReview).toBeTruthy();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
-    });
-
-    it('blocks tampered implementation review findings that do not match evidence', async () => {
-      await reachImplementation();
-      await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'accept');
-
-      const raw = await review_implementation.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: {
-            ...reviewFindings,
-            missingVerification: ['tampered verification gap'],
-          },
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+      expect(implementationReview(result).reviewMode).toBe('subagent');
     });
 
     it('persists implReviewFindings in state', async () => {
       await reachImplementation();
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      await review_implementation.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      await fulfillReview('implement', 1, 'accept');
+      await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -968,57 +1444,54 @@ describe('implement', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
 
+      expect(state).not.toBeNull();
+      if (!state) throw new TypeError('Expected persisted session state');
       expect(state.implReviewFindings).toHaveLength(1);
-      expect(state.implReviewFindings?.[0].reviewMode).toBe('subagent');
+      expect(state.implReviewFindings?.[0]?.reviewMode).toBe('subagent');
     });
 
     it('latestImplementationReview appears in status', async () => {
       await reachImplementation();
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      await review_implementation.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      await fulfillReview('implement', 1, 'accept');
+      await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
 
       const raw = await status.execute({}, ctx);
       const result = parseToolResult(raw);
 
       expect(result.latestImplementationReview).toBeDefined();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
-      expect(result.latestImplementationReview.iteration).toBe(1);
+      expect(implementationReview(result).reviewMode).toBe('subagent');
+      expect(implementationReview(result).iteration).toBe(1);
     });
 
     // ─── P1.3 slice 8: third-verdict end-to-end through tool layer ──────
     describe('EDGE: unable_to_review tool-layer integration', () => {
-      it('blocks implement with SUBAGENT_UNABLE_TO_REVIEW when findings.overallVerdict=unable_to_review (E2E)', async () => {
+      it('blocks implement with SUBAGENT_UNABLE_TO_REVIEW when the capture declares unable_to_review (E2E)', async () => {
         // End-to-end mirror of the plan-layer slice-8 test: real impl
-        // obligation, mutated finding verdict, full tool-layer pipeline.
+        // obligation whose HOST capture declares unable_to_review, full
+        // tool-layer pipeline.
         await reachImplementation();
         await enterImplReview();
-        const baseFindings = await fulfillReview('implement', 1, 'accept');
-        const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+        await fulfillReview('implement', 1, 'unable_to_review');
 
-        const raw = await review_implementation.execute(
-          { reviewVerdict: 'changes_requested', reviewFindings: unableFindings },
-          ctx,
-        );
+        const raw = await review_implementation.execute({ reviewVerdict: 'unable_to_review' }, ctx);
         const result = parseToolResult(raw);
         expect(result.error).toBe(true);
         expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
       });
 
-      it('blocks implement even when paired with reviewVerdict=approve (E2E precedence)', async () => {
-        // unable_to_review must override any submitted reviewVerdict.
+      it('never converges an unable_to_review capture under a different submitted verdict (E2E precedence)', async () => {
+        // unable_to_review can never be coerced into convergence: a
+        // non-matching submitted verdict fails closed with the canonical
+        // mismatch block instead of accepting the implementation.
         await reachImplementation();
         await enterImplReview();
-        const baseFindings = await fulfillReview('implement', 1, 'accept');
-        const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+        await fulfillReview('implement', 1, 'unable_to_review');
 
-        const raw = await review_implementation.execute(
-          { reviewVerdict: 'accept', reviewFindings: unableFindings },
-          ctx,
-        );
+        const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
         const result = parseToolResult(raw);
         expect(result.error).toBe(true);
-        expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+        expect(result.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
       });
     });
   });
@@ -1036,7 +1509,7 @@ describe('implement', () => {
       const raw = await implement.execute({ reviewVerdict: null } as any, ctx);
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
-      expect(result.changedFiles).toBeDefined();
+      expect((await readState(await currentSessionDir()))?.implementation).not.toBeNull();
     });
 
     it('HAPPY: stray reviewFindings=null is ignored → records implementation', async () => {
@@ -1044,7 +1517,7 @@ describe('implement', () => {
       const raw = await implement.execute({ reviewFindings: null } as any, ctx);
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
-      expect(result.changedFiles).toBeDefined();
+      expect((await readState(await currentSessionDir()))?.implementation).not.toBeNull();
     });
 
     it('CORNER: both stray reviewVerdict=null + reviewFindings=null → records implementation', async () => {
@@ -1055,7 +1528,24 @@ describe('implement', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
-      expect(result.changedFiles).toBeDefined();
+      expect((await readState(await currentSessionDir()))?.implementation).not.toBeNull();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // Tool boundary: the published strict input schema rejects unknown args
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('strict tool input schema', () => {
+    it('rejects an unknown reviewFindings argument (no agent findings submission)', () => {
+      const schema = convertArgsToInputSchema(review_implementation.args);
+      const parsed = schema.safeParse({ reviewVerdict: 'accept', reviewFindings: {} });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((issue) => issue.code === 'unrecognized_keys')).toBe(true);
+      }
+      // Verdict-only submission remains representable.
+      expect(schema.safeParse({ reviewVerdict: 'accept' }).success).toBe(true);
     });
   });
 });

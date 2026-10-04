@@ -146,7 +146,9 @@ must each be disabled (or explicitly pinned) for true offline operation:
 
 - `/review url=...` — HTTPS content loading when invoked.
 - `policy.identityProvider.mode = 'jwks'` with `jwksUri` — HTTPS JWKS refresh
-  (`IDP_JWKS_FETCH_FAILED` is fail-closed under `identityProviderMode: required`).
+  from the configured URI. Redirects are rejected and the response body is
+  limited to 1 MiB (`IDP_JWKS_FETCH_FAILED` is fail-closed under
+  `identityProviderMode: required`).
 - Claude Code HTTP hook mode (`flowguard-hook-server`) — starts a localhost
   listener bound to `127.0.0.1` by default.
 - `policy.audit.timestampAssurance.mode = 'tsa_critical'` with `tsaUrl` — RFC
@@ -154,16 +156,14 @@ must each be disabled (or explicitly pinned) for true offline operation:
 - `policy.audit.timestampAssurance.mode = 'ntp_check'` with `ntpServers` —
   NTP drift checks against the configured servers.
 
-For `/review url=...`, FlowGuard validates the URL scheme and resolved DNS
-targets before calling native `fetch` via the DNS-preflight SSRF mitigation
-implemented in `src/adapters/dns-resolution.ts` and `src/adapters/ip-validation.ts`.
-DNS failures, empty answers, malformed addresses, private/reserved A or AAAA
-records, and mixed public/private DNS answers are blocked fail-closed, and
-redirects are disabled. This is a DNS-preflight SSRF mitigation, not a complete
-network sandbox: DNS rebinding or time-of-check/time-of-use changes between
-validation and the HTTPS connection remain residual risks. Use firewall,
-proxy, or sandbox egress controls for deployments that require complete
-outbound network containment.
+For `/review url=...`, FlowGuard validates every resolved DNS target and pins
+the HTTPS connection to one validated IP. The original hostname remains the
+HTTP host, TLS SNI value, and certificate-validation subject; connection-time
+DNS lookup is not permitted. DNS failures, empty answers, malformed addresses,
+private/reserved A or AAAA records, mixed public/private answers, peer-address
+mismatches, and redirects are blocked fail-closed. Response limits apply after
+streaming `identity`, `gzip`, `deflate`, or `br` decoding. Firewall, proxy, or
+sandbox egress controls remain defense in depth for outbound network policy.
 
 **Verification:**
 
@@ -218,40 +218,38 @@ FlowGuard stores session data as plaintext JSON. If encryption is required:
 
 ---
 
-## Strict Audit Chain Verification
+## Audit Chain Verification
 
-The `verifyChain` function supports a strict verification mode via `{ strict: true }`.
+`verifyChain` has no strict-vs-legacy mode and no legacy tolerance. Every record
+must satisfy the canonical `audit-chain.v3` event envelope. Anything that is not
+a valid v3 record fails closed with reason `AUDIT_ENVELOPE_INVALID` and is never
+handed to secondary assurance authorities (timestamp monotonicity, timestamp
+evidence presence, TSA imprint). No records are skipped or counted as tolerated.
 
-**Default (legacy-tolerant):** Events without hash chain fields (`prevHash`, `chainHash`) are
-skipped and counted in `skippedCount`. The chain remains valid. This mode supports migration
-and diagnostic workflows with mixed legacy/chained trails.
+`verifyChain(events, options?)` accepts only:
 
-**Strict mode:** Events without hash chain fields are treated as integrity failures.
-`skippedCount > 0` makes the chain invalid with reason `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`.
-Regulated verification paths must use strict mode to ensure no unchained events are silently
-tolerated in new sessions.
+| Option                       | Effect                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `strictTimestamps`           | Missing timestamp evidence, TSA imprint mismatch, and pending token verification become failures, not diagnostics. |
+| `expectedFlowguardSessionId` | Binds the trail to the state-owned FlowGuard session identity; a mismatch is reported as `CHAIN_BREAK`.            |
 
-| Mode    | Legacy events    | Chain break | Result                                         |
-| ------- | ---------------- | ----------- | ---------------------------------------------- |
-| Default | Skipped, counted | Detected    | `valid: true` (if no chain break)              |
-| Strict  | Rejected         | Detected    | `valid: false`, reason identifies failure type |
+Clock monotonicity is a property of the trail itself and is **always** enforced;
+it is never gated by an option.
 
-Failure reason priority: `CHAIN_BREAK` > `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`.
-A tampered chain is a harder failure than unchained events.
-
-Legacy audit tolerance exists only for migration/diagnostic workflows and is reported
-explicitly via `skippedCount` in the verification result.
+Failure reason priority: `CHAIN_BREAK` > `AUDIT_ENVELOPE_INVALID` > timestamp
+reasons (`CLOCK_ANOMALY`, `TIMESTAMP_EVIDENCE_MISSING`,
+`TSA_MESSAGE_IMPRINT_MISMATCH`, `TOKEN_VERIFICATION_REQUIRED`). A tampered chain
+is a harder failure than an invalid envelope.
 
 ### Archive Verification Call-Site
 
-Archive verification (`verifyArchive`) is the first production call-site for strict chain
-verification. Strictness is derived from the **integrity-covered**
-`state.policySnapshot.mode` (the SSOT), **not** from the mutable, unsigned
-`manifest.policyMode`. When the governed mode resolves to `regulated`, the verifier passes
-`{ strict: true }` to `verifyChain`. A resolvable non-regulated mode remains
-legacy-tolerant. When the mode cannot be resolved from state (missing/invalid
-`session-state.json`), verification **defaults to strict** (fail-closed default-deny) — a
-resolvable non-regulated mode is never escalated.
+Archive verification (`verifyArchive`) always verifies the chain fail-closed —
+envelope validity is not mode-dependent. What the governed mode controls is
+whether **timestamp** failures are fatal. Strictness is derived from the
+**integrity-covered** `state.policySnapshot.mode` (the SSOT), **not** from the
+mutable, unsigned `manifest.policyMode`. When the mode cannot be resolved from
+state (missing/invalid `session-state.json`), verification **defaults to strict**
+(fail-closed default-deny) — a resolvable non-regulated mode is never escalated.
 
 The verifier additionally cross-checks `manifest.policyMode` against the governed state
 mode and reports `manifest_policy_mode_mismatch` (error) when they disagree — this catches a
@@ -260,8 +258,8 @@ run **before** the content digest so a mode/anchor tamper surfaces as an explici
 rather than only as a digest mismatch.
 
 On chain failure, the verifier emits an `audit_chain_invalid` finding with error severity. The
-finding message includes the chain verification reason (`CHAIN_BREAK` or
-`LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and event counts for diagnosis.
+finding message includes the chain verification reason (for example `CHAIN_BREAK` or
+`AUDIT_ENVELOPE_INVALID`) and event counts for diagnosis.
 
 ### Archive Audit Completeness Anchor and Residual Risk
 
@@ -313,19 +311,19 @@ Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requ
 creation **and** verification success. The decision tool owns the synchronous archive
 lifecycle for regulated sessions:
 
-1. State set to `archiveStatus: 'pending'`
+1. State set to `regulatedArchiveStatus: 'pending'`
 2. `session_completed` audit event appended to trail (before archive)
 3. `archiveSession()` called synchronously (not fire-and-forget)
 4. `verifyArchive()` validates archive integrity
-5. State updated to `archiveStatus: 'verified'` or `archiveStatus: 'failed'`
+5. State updated to `regulatedArchiveStatus: 'verified'` or `regulatedArchiveStatus: 'failed'`
 
 The `session_completed` event is emitted **before** `archiveSession()` so the archive
-contains the terminal lifecycle event. The audit plugin detects `archiveStatus` on the
+contains the terminal lifecycle event. The audit plugin detects `regulatedArchiveStatus` on the
 persisted state and skips its own `session_completed` emission and auto-archive to avoid
 duplication. The plugin's chain hash cache is invalidated for regulated completions to
 prevent chain forks.
 
-A regulated session with `phase: 'COMPLETE'` and `archiveStatus !== 'verified'` (without
+A regulated session with `phase: 'COMPLETE'` and `regulatedArchiveStatus !== 'verified'` (without
 `error`) is NOT a clean regulated completion — it is a degraded terminal state.
 
 **Checksum sidecar hardening:** In regulated mode, `.sha256` sidecar write failure is
@@ -333,7 +331,8 @@ fatal (`ARCHIVE_FAILED`). Non-regulated mode remains tolerant.
 
 **Scope exclusions:** Aborted sessions (`error.code === 'ABORTED'`) do not trigger the
 regulated archive lifecycle — abort is an emergency escape with no archive guarantee.
-Non-regulated sessions use the existing fire-and-forget auto-archive in the audit plugin.
+Solo sessions may use the fire-and-forget auto-archive path; team sessions require an
+explicit `/export` and are never archived by completion auditing.
 
 ---
 
@@ -416,5 +415,5 @@ Representative typed fail-closed IdP errors:
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-23_

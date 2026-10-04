@@ -19,7 +19,7 @@ const { mockAppendReviewAudit, mockWithSessionWriteLock, mockReadState } = vi.ho
   mockReadState: vi.fn(),
 }));
 
-vi.mock('./review/audit-events.js', () => ({
+vi.mock('./review/evidence/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAudit,
 }));
 
@@ -30,14 +30,13 @@ vi.mock('../adapters/persistence.js', async (importOriginal) => {
     withSessionWriteLock: mockWithSessionWriteLock,
     readState: mockReadState,
     writeStateAlreadyLocked: vi.fn(),
-    appendAuditEvent: actual.appendAuditEvent,
-    readAuditTrail: actual.readAuditTrail,
   };
 });
 
 import { PluginWorkspaceImpl, type WorkspaceDeps } from './plugin-workspace.js';
 import type { MutableChainState } from './plugin-workspace.js';
 import { recordAssuranceWithAudit, type AssuranceAuditDeps } from './review/shared-helpers.js';
+import { makeState } from '../fixtures.js';
 
 function fakeDeps(overrides?: Partial<WorkspaceDeps>): WorkspaceDeps {
   return { auditWorktree: undefined, ...overrides };
@@ -70,10 +69,14 @@ describe('integration/plugin-workspace', () => {
 
       it('invalidateChainState removes session state', () => {
         const ws = new PluginWorkspaceImpl(fakeDeps());
-        ws.getChainState('session-1');
+        const beforeInvalidate = ws.getChainState('session-1');
+        beforeInvalidate.initialized = true;
+        beforeInvalidate.lastHash = 'old-chain-hash';
         ws.invalidateChainState('session-1');
         const afterInvalidate = ws.getChainState('session-1');
+        expect(afterInvalidate).not.toBe(beforeInvalidate);
         expect(afterInvalidate.initialized).toBe(false);
+        expect(afterInvalidate.lastHash).toBeNull();
       });
 
       it('resolveFingerprint returns null when no auditWorktree', async () => {
@@ -137,6 +140,11 @@ describe('integration/plugin-workspace', () => {
 
         await Promise.all([p1, p2]);
         expect(order).toEqual([1, 2]);
+        expect(
+          (ws as unknown as { _sessionQueues: Map<string, Promise<void>> })._sessionQueues.has(
+            's1',
+          ),
+        ).toBe(false);
       });
 
       it('different sessions run in parallel', async () => {
@@ -162,8 +170,7 @@ describe('integration/plugin-workspace', () => {
       it('initChain uses GENESIS_HASH when sessDir is null', async () => {
         const ws = new PluginWorkspaceImpl(fakeDeps());
         const hash = await ws.initChain(null, 's1');
-        expect(hash).toBeTruthy();
-        expect(typeof hash).toBe('string');
+        expect(hash).toBe('genesis');
       });
 
       it('initChain returns same hash when called twice with same session', async () => {
@@ -181,73 +188,34 @@ describe('integration/plugin-workspace', () => {
 function mockAssuranceDeps(overrides?: Partial<AssuranceAuditDeps>): AssuranceAuditDeps {
   return {
     updateReviewAssurance: vi.fn(),
-    appendReviewAuditEvent: vi.fn(),
-    logError: vi.fn(),
     ...overrides,
   };
 }
 
 describe('recordAssuranceWithAudit', () => {
-  it('HAPPY: state and audit both succeed', async () => {
+  it('commits the semantic audit intent with the state mutation', async () => {
     const updateReviewAssurance = vi.fn();
-    const appendReviewAuditEvent = vi.fn();
-    const deps = mockAssuranceDeps({ updateReviewAssurance, appendReviewAuditEvent });
+    const deps = mockAssuranceDeps({ updateReviewAssurance });
     const result = await recordAssuranceWithAudit(deps, {
       sessDir: '/tmp/sess',
-      sessionId: 's1',
-      phase: 'PLAN',
       stateMutation: () => ({ phase: 'PLAN' }) as never,
       auditEventName: 'review:obligation_blocked',
       auditDetail: { code: 'X' },
-      auditFailureBehavior: 'block',
     });
     expect(result.auditOk).toBe(true);
     expect(updateReviewAssurance).toHaveBeenCalled();
-    expect(appendReviewAuditEvent).toHaveBeenCalled();
-    // State is committed first, then audit is appended
-    expect(updateReviewAssurance.mock.invocationCallOrder[0]!).toBeLessThan(
-      appendReviewAuditEvent.mock.invocationCallOrder[0]!,
-    );
-  });
-
-  it('BAD: audit failure blocks with auditFailureBehavior: block', async () => {
-    const deps = mockAssuranceDeps({
-      appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
-    });
-    const result = await recordAssuranceWithAudit(deps, {
-      sessDir: '/tmp/sess',
-      sessionId: 's1',
-      phase: 'PLAN',
-      stateMutation: () => ({ phase: 'PLAN' }) as never,
-      auditEventName: 'review:obligation_blocked',
-      auditDetail: { code: 'X' },
-      auditFailureBehavior: 'block',
-    });
-    expect(result.auditOk).toBe(false);
-    expect(result.block).toBe(true);
-    expect(result.code).toBe('AUDIT_PERSISTENCE_FAILED');
-    expect(deps.logError).toHaveBeenCalled();
-    // State was committed despite audit failure
-    expect(deps.updateReviewAssurance).toHaveBeenCalled();
-  });
-
-  it('BAD: audit failure warns with auditFailureBehavior: warn', async () => {
-    const deps = mockAssuranceDeps({
-      appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
-    });
-    const result = await recordAssuranceWithAudit(deps, {
-      sessDir: '/tmp/sess',
-      sessionId: 's1',
-      phase: 'PLAN',
-      stateMutation: () => ({ phase: 'PLAN' }) as never,
-      auditEventName: 'review:obligation_blocked',
-      auditDetail: { code: 'X' },
-      auditFailureBehavior: 'warn',
-    });
-    expect(result.auditOk).toBe(false);
-    expect(result.block).toBeUndefined();
-    expect(deps.logError).toHaveBeenCalled();
-    expect(deps.updateReviewAssurance).toHaveBeenCalled();
+    const intentFactory = updateReviewAssurance.mock.calls[0]![2] as (
+      state: { phase: string },
+      now: string,
+    ) => unknown[];
+    expect(intentFactory({ phase: 'PLAN' }, '2026-01-01T00:00:00.000Z')).toEqual([
+      {
+        phase: 'PLAN',
+        event: 'review:obligation_blocked',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+        detail: { code: 'X' },
+      },
+    ]);
   });
 
   it('BAD: state failure propagates and prevents audit write', async () => {
@@ -257,32 +225,21 @@ describe('recordAssuranceWithAudit', () => {
     await expect(
       recordAssuranceWithAudit(deps, {
         sessDir: '/tmp/sess',
-        sessionId: 's1',
-        phase: 'PLAN',
         stateMutation: () => ({ phase: 'PLAN' }) as never,
         auditEventName: 'review:obligation_blocked',
         auditDetail: { code: 'X' },
-        auditFailureBehavior: 'block',
       }),
     ).rejects.toThrow('LOCK_TIMEOUT');
-    // Audit must NOT be called when state fails
-    expect(deps.appendReviewAuditEvent).not.toHaveBeenCalled();
   });
 
-  it('CALL-SITE: blockReviewOutcome produces AUDIT_PERSISTENCE_FAILED when audit write fails', async () => {
-    // Setup mocks: state reads work, lock runs callback, audit throws
-    const mockState = {
-      reviewAssurance: { obligations: [] },
-      phase: 'PLAN',
-      policySnapshot: { mode: 'regulated', effectiveGateBehavior: 'human_gated' },
-    };
+  it('CALL-SITE: blockReviewOutcome commits a recoverable semantic intent', async () => {
+    const mockState = makeState('PLAN');
     mockReadState.mockResolvedValue(mockState);
     mockWithSessionWriteLock.mockImplementation(async (_dir: string, fn: () => Promise<void>) =>
       fn(),
     );
-    mockAppendReviewAudit.mockRejectedValue(new Error('ENOSPC'));
 
-    const ws = new PluginWorkspaceImpl({ auditWorktree: '/tmp' } as WorkspaceDeps);
+    const ws = new PluginWorkspaceImpl({ auditWorktree: '/tmp' });
     const output: { output: string } = { output: '' };
 
     await ws.blockReviewOutcome(
@@ -293,8 +250,8 @@ describe('recordAssuranceWithAudit', () => {
       output,
     );
 
-    expect(output.output).toContain('AUDIT_PERSISTENCE_FAILED');
-    expect(output.output).not.toContain('SUBAGENT_REVIEW_NOT_INVOKED');
+    expect(output.output).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
+    expect(mockReadState).toHaveBeenCalled();
   });
 
   it('REGISTRY: AUDIT_PERSISTENCE_FAILED is centrally registered with recovery', async () => {

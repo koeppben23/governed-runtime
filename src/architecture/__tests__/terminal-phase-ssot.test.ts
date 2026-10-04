@@ -2,7 +2,7 @@
  * @module architecture/terminal-phase-ssot.test
  * @description Anti-drift guard (#434, finding H4): terminal-phase membership
  * has exactly ONE authority — `TERMINAL` / `isTerminalPhase` in
- * `machine/topology.ts` (the set {COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE}).
+ * `machine/topology.ts` (the set {COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE}).
  * The H4 defect was `abort.ts` using a literal `=== 'COMPLETE'` that silently
  * excluded the other two terminals, letting abort overwrite a terminal phase.
  *
@@ -21,9 +21,11 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { repoRelative } from './repo-path.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -54,12 +56,18 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     reason: 'flow-specific finalization: MADR on ARCH_COMPLETE, regulated artifact on COMPLETE',
   },
   {
+    file: 'integration/proofgraph/materialize-architecture.ts',
+    max: 1,
+    reason:
+      'validates that an ADR approval certificate belongs to the architecture-flow terminal only',
+  },
+  {
     file: 'integration/plugin-audit.ts',
     max: 1,
     reason: 'detects the ticket-flow COMPLETE transition specifically (not terminal membership)',
   },
   {
-    file: 'integration/tools/architecture-review.ts',
+    file: 'integration/tools/architecture/architecture-review.ts',
     max: 2,
     reason: 'architecture-flow completion checks tied to ARCH_COMPLETE only',
   },
@@ -73,11 +81,29 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     max: 4,
     reason: 'flow-specific decision-slot topology invariants (COMPLETE vs ARCH_COMPLETE)',
   },
+  {
+    file: 'adapters/workspace/archive-verify-regulated.ts',
+    max: 1,
+    reason:
+      'flow-specific completion contract: only the ticket-flow COMPLETE terminal is a valid regulated evidence-review completion (ARCH_COMPLETE/PEER_REVIEW_COMPLETE are out of scope)',
+  },
+  {
+    file: 'integration/services/regulated-completion-decision.ts',
+    max: 2,
+    reason:
+      'flow-specific completion contract: recovery/resume must select only the ticket-flow COMPLETE terminal (phase AND transition target) and never touch regulated ARCH/PEER_REVIEW completions',
+  },
+  {
+    file: 'integration/tools/simple/export-tool.ts',
+    max: 1,
+    reason:
+      'flow-specific contention re-read: the export rail can only have produced the ticket-flow COMPLETE position after materialization',
+  },
 ];
 
 /** Quoted terminal literal adjacent to an equality operator (a comparison). */
 const TERMINAL_CMP =
-  /(?:(?:===|!==)\s*'(COMPLETE|ARCH_COMPLETE|REVIEW_COMPLETE)')|(?:'(COMPLETE|ARCH_COMPLETE|REVIEW_COMPLETE)'\s*(?:===|!==))/g;
+  /(?:(?:===|!==)\s*'(COMPLETE|ARCH_COMPLETE|PEER_REVIEW_COMPLETE)')|(?:'(COMPLETE|ARCH_COMPLETE|PEER_REVIEW_COMPLETE)'\s*(?:===|!==))/g;
 
 interface SourceFile {
   readonly rel: string;
@@ -101,7 +127,7 @@ function collectProductionFiles(dir: string, acc: SourceFile[]): void {
     }
     if (!entry.isFile() || !full.endsWith('.ts') || full.endsWith('.test.ts')) continue;
     acc.push({
-      rel: relative(SRC_ROOT, full).split(sep).join('/'),
+      rel: repoRelative(SRC_ROOT, full),
       content: readFileSync(full, 'utf8'),
     });
   }

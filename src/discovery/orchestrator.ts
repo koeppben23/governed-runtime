@@ -20,29 +20,34 @@ import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry/index.js';
 import type {
+  CodeSurfacesInfo,
   CollectorDiagnostic,
   CollectorInput,
-  CollectorStatus,
+  DetectedItem,
+  DiscoveryResult,
+  DomainSignals,
+  RepoMetadata,
+  StackInfo,
+  SurfacesInfo,
+  TopologyInfo,
+} from './types.js';
+import { DISCOVERY_SCHEMA_VERSION } from './types.js';
+import type {
   DetectedStack,
   DetectedStackItem,
   DetectedStackTarget,
   DetectedStackTargetEntry,
-  DetectedStackVersion,
-  DiscoveryResult,
   DiscoverySummary,
-  StackInfo,
-  TopologyInfo,
-  ValidationHints,
-} from './types.js';
-import { DISCOVERY_SCHEMA_VERSION } from './types.js';
+} from '../state/discovery-schemas.js';
 import { collectRepoMetadata } from './collectors/repo-metadata.js';
+import type { DiscoveryIoPort } from './io-port.js';
 import { collectStack } from './collectors/stack-detection.js';
 import { collectTopology } from './collectors/topology.js';
 import { collectSurfaces } from './collectors/surface-detection.js';
 import { collectCodeSurfaces } from './collectors/code-surface-analysis.js';
 import { collectDomainSignals } from './collectors/domain-signals.js';
 import { extractScopedStack } from './scoped-stack.js';
-import { runCollectorWithDiagnostics } from './collector-runner.js';
+import { runCollectorWithDiagnostics, type CollectorRunResult } from './collector-runner.js';
 
 export { computeDiscoveryDigest } from './discovery-digest.js';
 
@@ -89,20 +94,124 @@ function createDefaultReadFile(
  */
 export async function runDiscovery(
   input: CollectorInput,
+  io: DiscoveryIoPort,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
   return withSpan(
     'discovery.run',
     async () => {
       addFingerprint(input.fingerprint);
-      return runDiscoveryImpl(input, timeoutMs);
+      return runDiscoveryImpl(input, io, timeoutMs);
     },
     { 'flowguard.fingerprint': input.fingerprint },
   );
 }
 
+function runRepoMetadataCollector(
+  input: CollectorInput,
+  io: DiscoveryIoPort,
+  timeoutMs: number,
+): Promise<CollectorRunResult<RepoMetadata>> {
+  return runCollectorWithDiagnostics('repo-metadata', collectRepoMetadata(input, io), timeoutMs, {
+    defaultBranch: null,
+    headCommit: null,
+    isDirty: true,
+    worktreePath: input.worktreePath,
+    canonicalRemote: null,
+    fingerprint: input.fingerprint,
+  });
+}
+
+function runStackCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<StackInfo>> {
+  return runCollectorWithDiagnostics('stack-detection', collectStack(input), timeoutMs, {
+    languages: [],
+    frameworks: [],
+    buildTools: [],
+    testFrameworks: [],
+    runtimes: [],
+    tools: [],
+    qualityTools: [],
+    databases: [],
+  });
+}
+
+function runTopologyCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<TopologyInfo>> {
+  return runCollectorWithDiagnostics('topology', collectTopology(input), timeoutMs, {
+    kind: 'unknown' as const,
+    modules: [],
+    entryPoints: [],
+    rootConfigs: [],
+    ignorePaths: [],
+  });
+}
+
+function runSurfaceCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<SurfacesInfo>> {
+  return runCollectorWithDiagnostics('surface-detection', collectSurfaces(input), timeoutMs, {
+    api: [],
+    persistence: [],
+    cicd: [],
+    security: [],
+    layers: [],
+  });
+}
+
+function runCodeSurfaceCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<CodeSurfacesInfo>> {
+  return runCollectorWithDiagnostics(
+    'code-surface-analysis',
+    collectCodeSurfaces(input),
+    timeoutMs,
+    {
+      status: 'failed' as const,
+      endpoints: [],
+      authBoundaries: [],
+      dataAccess: [],
+      integrations: [],
+      budget: {
+        scannedFiles: 0,
+        scannedBytes: 0,
+        maxFiles: 200,
+        maxBytesPerFile: 64 * 1024,
+        maxTotalBytes: 2 * 1024 * 1024,
+        timedOut: false,
+      },
+    },
+  );
+}
+
+function runDomainSignalsCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<DomainSignals>> {
+  return runCollectorWithDiagnostics('domain-signals', collectDomainSignals(input), timeoutMs, {
+    keywords: [],
+    glossarySources: [],
+  });
+}
+
+type DiscoveryDiagnostic = DiscoveryResult['diagnostics'][number];
+
+function namedDiagnostic(
+  name: DiscoveryDiagnostic['name'],
+  diagnostic: CollectorDiagnostic,
+): DiscoveryDiagnostic {
+  return { ...diagnostic, name };
+}
+
 async function runDiscoveryImpl(
   input: CollectorInput,
+  io: DiscoveryIoPort,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
   // Enrich input with default readFile if not provided by caller
@@ -112,87 +221,27 @@ async function runDiscoveryImpl(
 
   // Run all collectors in parallel with timeout budget and diagnostics
   const [metaRun, stackRun, topoRun, surfaceRun, codeSurfaceRun, domainRun] = await Promise.all([
-    runCollectorWithDiagnostics('repo-metadata', collectRepoMetadata(enrichedInput), timeoutMs, {
-      defaultBranch: null,
-      headCommit: null,
-      isDirty: true,
-      worktreePath: input.worktreePath,
-      canonicalRemote: null,
-      fingerprint: input.fingerprint,
-    }),
-    runCollectorWithDiagnostics('stack-detection', collectStack(enrichedInput), timeoutMs, {
-      languages: [],
-      frameworks: [],
-      buildTools: [],
-      testFrameworks: [],
-      runtimes: [],
-      tools: [],
-      qualityTools: [],
-      databases: [],
-    }),
-    runCollectorWithDiagnostics('topology', collectTopology(enrichedInput), timeoutMs, {
-      kind: 'unknown' as const,
-      modules: [],
-      entryPoints: [],
-      rootConfigs: [],
-      ignorePaths: [],
-    }),
-    runCollectorWithDiagnostics('surface-detection', collectSurfaces(enrichedInput), timeoutMs, {
-      api: [],
-      persistence: [],
-      cicd: [],
-      security: [],
-      layers: [],
-    }),
-    runCollectorWithDiagnostics(
-      'code-surface-analysis',
-      collectCodeSurfaces(enrichedInput),
-      timeoutMs,
-      {
-        status: 'failed' as const,
-        endpoints: [],
-        authBoundaries: [],
-        dataAccess: [],
-        integrations: [],
-        budget: {
-          scannedFiles: 0,
-          scannedBytes: 0,
-          maxFiles: 200,
-          maxBytesPerFile: 64 * 1024,
-          maxTotalBytes: 2 * 1024 * 1024,
-          timedOut: false,
-        },
-      },
-    ),
-    runCollectorWithDiagnostics('domain-signals', collectDomainSignals(enrichedInput), timeoutMs, {
-      keywords: [],
-      glossarySources: [],
-    }),
+    runRepoMetadataCollector(enrichedInput, io, timeoutMs),
+    runStackCollector(enrichedInput, timeoutMs),
+    runTopologyCollector(enrichedInput, timeoutMs),
+    runSurfaceCollector(enrichedInput, timeoutMs),
+    runCodeSurfaceCollector(enrichedInput, timeoutMs),
+    runDomainSignalsCollector(enrichedInput, timeoutMs),
   ]);
 
   // Collect diagnostics
-  const diagnostics: CollectorDiagnostic[] = [
-    metaRun.diagnostic,
-    stackRun.diagnostic,
-    topoRun.diagnostic,
-    surfaceRun.diagnostic,
-    codeSurfaceRun.diagnostic,
-    domainRun.diagnostic,
+  const diagnostics: DiscoveryResult['diagnostics'] = [
+    namedDiagnostic('repo-metadata', metaRun.diagnostic),
+    namedDiagnostic('stack-detection', stackRun.diagnostic),
+    namedDiagnostic('topology', topoRun.diagnostic),
+    namedDiagnostic('surface-detection', surfaceRun.diagnostic),
+    namedDiagnostic('code-surface-analysis', codeSurfaceRun.diagnostic),
+    namedDiagnostic('domain-signals', domainRun.diagnostic),
   ];
-
-  // Derive legacy collectors map from diagnostics
-  const collectors: Record<string, CollectorStatus> = {};
-  for (const diag of diagnostics) {
-    collectors[diag.name] = diag.status;
-  }
-
-  // Derive validation hints from stack + topology
-  const validationHints = deriveValidationHints(stackRun.data, topoRun.data, input);
 
   return {
     schemaVersion: DISCOVERY_SCHEMA_VERSION,
     collectedAt: new Date().toISOString(),
-    collectors,
     diagnostics,
     repoMetadata: metaRun.data,
     stack: stackRun.data,
@@ -200,7 +249,6 @@ async function runDiscoveryImpl(
     surfaces: surfaceRun.data,
     codeSurfaces: codeSurfaceRun.data,
     domainSignals: domainRun.data,
-    validationHints,
   };
 }
 
@@ -244,7 +292,6 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
  *
  * Produces a deterministic, sorted projection:
  * - items[] sorted by category order (language → framework → ...)
- * - versions[] sorted by category order
  * - `summary` uses `id=version` for versioned items, `id` for unversioned.
  *
  * If allFiles is provided, also extracts module-scoped stack items for monorepos.
@@ -255,225 +302,109 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
  *
  * Returns null when no items are detected at all (empty input).
  */
+function collectDetectedStackItems(
+  stack: StackInfo,
+  items: DetectedStackItem[],
+  targets: DetectedStackTargetEntry[],
+): void {
+  const categories: ReadonlyArray<{
+    readonly items: readonly DetectedItem[];
+    readonly target: DetectedStackTarget;
+  }> = [
+    { items: stack.languages, target: 'language' },
+    { items: stack.frameworks, target: 'framework' },
+    { items: stack.runtimes, target: 'runtime' },
+    { items: stack.buildTools, target: 'buildTool' },
+    { items: stack.tools, target: 'tool' },
+    { items: stack.testFrameworks, target: 'testFramework' },
+    { items: stack.qualityTools, target: 'qualityTool' },
+    { items: stack.databases, target: 'database' },
+  ];
+
+  for (const { items: categoryItems, target } of categories) {
+    for (const item of categoryItems) {
+      pushDetectedStackItem(item, target, items, targets);
+    }
+  }
+}
+
+function pushDetectedStackItem(
+  item: DetectedItem,
+  target: DetectedStackTarget,
+  items: DetectedStackItem[],
+  targets: DetectedStackTargetEntry[],
+): void {
+  // Pick one evidence string: versionEvidence > evidence[0]
+  const ev = item.versionEvidence ?? item.evidence[0];
+
+  // All items go into items[] — version optional
+  items.push({
+    kind: target,
+    id: item.id,
+    ...(item.version ? { version: item.version } : {}),
+    ...(ev ? { evidence: ev } : {}),
+  });
+
+  // Compiler targets go into targets[]
+  if (item.compilerTarget) {
+    targets.push({
+      kind: 'compilerTarget',
+      id: item.id,
+      value: item.compilerTarget,
+      ...(item.compilerTargetEvidence ? { evidence: item.compilerTargetEvidence } : {}),
+    });
+  }
+}
+
+// Deterministic sort helper
+function sortByTargetThenId<T extends { id: string }>(
+  arr: T[],
+  getTarget: (item: T) => DetectedStackTarget,
+): void {
+  arr.sort((a, b) => {
+    const orderDiff = TARGET_ORDER[getTarget(a)] - TARGET_ORDER[getTarget(b)];
+    if (orderDiff !== 0) return orderDiff;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+// Summary: versioned "id=version", unversioned "id"
+function buildDetectedStackSummary(items: readonly DetectedStackItem[]): string {
+  return items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
+}
+
+// allFiles is passed as second parameter, readFile as third (optional)
+// When called from hydrate.ts: extractDetectedStack(result, repoSignals.files)
+async function resolveScopedStack(
+  allFiles: readonly string[] | undefined,
+  stack: StackInfo,
+  readFile: ((path: string) => Promise<string | undefined>) | undefined,
+): Promise<Awaited<ReturnType<typeof extractScopedStack>> | undefined> {
+  if (!allFiles || allFiles.length === 0) return undefined;
+  return extractScopedStack(allFiles, stack, readFile);
+}
+
 export async function extractDetectedStack(
   result: DiscoveryResult,
   allFiles?: readonly string[],
   readFile?: (path: string) => Promise<string | undefined>,
 ): Promise<DetectedStack | null> {
   const items: DetectedStackItem[] = [];
-  const versionEntries: DetectedStackVersion[] = [];
   const targets: DetectedStackTargetEntry[] = [];
 
-  const categories: Array<{ items: typeof result.stack.languages; target: DetectedStackTarget }> = [
-    { items: result.stack.languages, target: 'language' },
-    { items: result.stack.frameworks, target: 'framework' },
-    { items: result.stack.runtimes, target: 'runtime' },
-    { items: result.stack.buildTools, target: 'buildTool' },
-    { items: result.stack.tools ?? [], target: 'tool' },
-    { items: result.stack.testFrameworks, target: 'testFramework' },
-    { items: result.stack.qualityTools ?? [], target: 'qualityTool' },
-    { items: result.stack.databases ?? [], target: 'database' },
-  ];
-
-  for (const { items: categoryItems, target } of categories) {
-    for (const item of categoryItems) {
-      // Pick one evidence string: versionEvidence > evidence[0]
-      const ev = item.versionEvidence ?? item.evidence[0];
-
-      // All items go into items[] — version optional
-      items.push({
-        kind: target,
-        id: item.id,
-        ...(item.version ? { version: item.version } : {}),
-        ...(ev ? { evidence: ev } : {}),
-      });
-
-      // Only versioned items go into versions[] (backward compat)
-      if (item.version) {
-        versionEntries.push({
-          id: item.id,
-          version: item.version,
-          target,
-          ...(item.versionEvidence ? { evidence: item.versionEvidence } : {}),
-        });
-      }
-
-      // Compiler targets go into targets[]
-      if (item.compilerTarget) {
-        targets.push({
-          kind: 'compilerTarget',
-          id: item.id,
-          value: item.compilerTarget,
-          ...(item.compilerTargetEvidence ? { evidence: item.compilerTargetEvidence } : {}),
-        });
-      }
-    }
-  }
+  collectDetectedStackItems(result.stack, items, targets);
 
   if (items.length === 0) return null;
 
-  // Deterministic sort helper
-  const sortByTargetThenId = <T extends { id: string }>(
-    arr: T[],
-    getTarget: (item: T) => DetectedStackTarget,
-  ): void => {
-    arr.sort((a, b) => {
-      const orderDiff = TARGET_ORDER[getTarget(a)] - TARGET_ORDER[getTarget(b)];
-      if (orderDiff !== 0) return orderDiff;
-      return a.id.localeCompare(b.id);
-    });
-  };
-
   sortByTargetThenId(items, (i) => i.kind);
-  sortByTargetThenId(versionEntries, (v) => v.target);
 
-  // Summary: versioned "id=version", unversioned "id"
-  const summary = items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
-
-  // allFiles is passed as second parameter, readFile as third (optional)
-  // When called from hydrate.ts: extractDetectedStack(result, repoSignals.files)
-  const scopes =
-    allFiles && allFiles.length > 0
-      ? await extractScopedStack(allFiles, result.stack, readFile)
-      : undefined;
+  const summary = buildDetectedStackSummary(items);
+  const scopes = await resolveScopedStack(allFiles, result.stack, readFile);
 
   return {
     summary,
     items,
-    versions: versionEntries,
     ...(targets.length > 0 ? { targets } : {}),
     ...(scopes && scopes.length > 0 ? { scopes } : {}),
   };
-}
-
-/**
- * Derive validation hints from stack and topology analysis.
- *
- * @deprecated Internal derivation for discovery digest stability.
- * Agent-facing verification commands come from planVerificationCandidates.
- */
-function deriveValidationHints(
-  stack: StackInfo,
-  topology: TopologyInfo,
-  input: CollectorInput,
-): ValidationHints {
-  const commands: ValidationHints['commands'] = [];
-  const lintTools: ValidationHints['lintTools'] = [];
-
-  // Detect build/test commands from build tools
-  const buildToolIds = new Set(stack.buildTools.map((t) => t.id));
-
-  if (buildToolIds.has('npm')) {
-    commands.push(
-      {
-        kind: 'build',
-        command: 'npm run build',
-        confidence: 0.7,
-        classification: 'derived_signal',
-      },
-      { kind: 'test', command: 'npm test', confidence: 0.8, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('maven')) {
-    commands.push(
-      { kind: 'build', command: 'mvn compile', confidence: 0.8, classification: 'derived_signal' },
-      { kind: 'test', command: 'mvn test', confidence: 0.8, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('gradle') || buildToolIds.has('gradle-kotlin')) {
-    commands.push(
-      { kind: 'build', command: 'gradle build', confidence: 0.8, classification: 'derived_signal' },
-      { kind: 'test', command: 'gradle test', confidence: 0.8, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('cargo')) {
-    commands.push(
-      { kind: 'build', command: 'cargo build', confidence: 0.9, classification: 'derived_signal' },
-      { kind: 'test', command: 'cargo test', confidence: 0.9, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('go-modules')) {
-    commands.push(
-      {
-        kind: 'build',
-        command: 'go build ./...',
-        confidence: 0.9,
-        classification: 'derived_signal',
-      },
-      { kind: 'test', command: 'go test ./...', confidence: 0.9, classification: 'derived_signal' },
-    );
-  }
-
-  // Detect typecheck commands
-  const configSet = new Set(input.configFiles);
-  if (configSet.has('tsconfig.json')) {
-    commands.push({
-      kind: 'typecheck',
-      command: 'npx tsc --noEmit',
-      confidence: 0.85,
-      classification: 'derived_signal',
-    });
-  }
-
-  // Detect test frameworks as lint/check tools
-  for (const tf of stack.testFrameworks) {
-    if (tf.id === 'vitest') {
-      commands.push({
-        kind: 'test',
-        command: 'npx vitest run',
-        confidence: 0.9,
-        classification: 'derived_signal',
-      });
-    }
-    if (tf.id === 'jest') {
-      commands.push({
-        kind: 'test',
-        command: 'npx jest',
-        confidence: 0.85,
-        classification: 'derived_signal',
-      });
-    }
-  }
-
-  // Detect lint tools from config files
-  const eslintConfigs = [
-    '.eslintrc',
-    '.eslintrc.js',
-    '.eslintrc.json',
-    '.eslintrc.yml',
-    'eslint.config.js',
-    'eslint.config.mjs',
-  ];
-  if (eslintConfigs.some((c) => configSet.has(c))) {
-    lintTools.push({
-      id: 'eslint',
-      confidence: 0.9,
-      classification: 'fact',
-      evidence: eslintConfigs.filter((c) => configSet.has(c)),
-    });
-    commands.push({
-      kind: 'lint',
-      command: 'npx eslint .',
-      confidence: 0.7,
-      classification: 'derived_signal',
-    });
-  }
-
-  const prettierConfigs = ['.prettierrc', '.prettierrc.json'];
-  if (prettierConfigs.some((c) => configSet.has(c))) {
-    lintTools.push({
-      id: 'prettier',
-      confidence: 0.9,
-      classification: 'fact',
-      evidence: prettierConfigs.filter((c) => configSet.has(c)),
-    });
-    commands.push({
-      kind: 'format',
-      command: 'npx prettier --check .',
-      confidence: 0.7,
-      classification: 'derived_signal',
-    });
-  }
-
-  return { commands, lintTools };
 }

@@ -19,7 +19,7 @@
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -29,8 +29,22 @@ import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
  * v2 (breaking, no legacy path): folds integrity-relevant metadata (policy mode,
  * audit head/count, identity) into the content digest and adds the audit
  * truncation anchor. v1 archives fail closed via schema validation.
+ *
+ * v3 (breaking, no legacy path): the content digest integrity header is
+ * serialized with the canonical JSON authority (sorted keys at every depth)
+ * instead of literal insertion order, and multi-part input is length-framed.
+ * This intentionally changes the digest bytes, so v2 archives fail closed via
+ * schema validation. There is no dual-formula compatibility path.
+ *
+ * v4 (breaking, no legacy path): the regulated completion verifier accepts
+ * exactly one decision-receipt actor representation — the frozen policy
+ * classification for the decision tool, with the `system` fallback when the
+ * classification map omits it. The pre-classification actor-id form is
+ * rejected. Because `schemaVersion` is integrity-covered, v4 digests differ
+ * from v3; v3 archives fail closed via schema validation.
  */
-export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v2' as const;
+export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v4' as const;
+export const ARCHIVE_LAYOUT_VERSION = 2 as const;
 
 /**
  * Manifest policy mode value — a closed, fail-closed vocabulary.
@@ -76,12 +90,22 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  * - archive_checksum_mismatch: archive file hash doesn't match sidecar
  * - audit_chain_invalid: current-format audit trail hash-chain verification failed
  *   because the v2 chain was tampered, reordered, inserted, or deleted
- * - audit_chain_legacy_format: chained pre-v2 audit trail requires migration or
- *   explicit weak legacy verification and is not v2 tamper evidence
+ * - audit_chain_invalid_event: a record violates the canonical audit-chain.v3
+ *   event envelope (the trust boundary never classifies legacy formats)
  * - audit_chain_unsupported_format: audit trail declares an unknown chain format
  * - snapshot_missing: discovery or profile-resolution snapshot not found
  * - state_missing: session-state.json not found in archive
  * - state_invalid: session-state.json exists but cannot be parsed or validated
+ * - policy_state_unresolved: trusted policy state cannot determine verification strictness
+ * - archive_inventory_inconclusive: archive payload inventory could not be read completely
+ * - archive_publication_unbound: published archive has no exact external audit binding
+ * - archive_publication_binding_invalid: external binding audit trail is unreadable or invalid
+ * - timestamp_unanchored: critical events lack timestamp assurance evidence
+ * - tsa_verification_failed: TSA token verification failed
+ * - tsa_evidence_downgraded: stronger TSA evidence payload exists but the
+ *   recorded status was downgraded (AC2)
+ * - tsa_token_required_by_policy: tsa_critical policy requires an external TSA
+ *   token for a critical event; internal-imprint evidence does not satisfy it
  */
 export const ArchiveFindingCodeSchema = z.enum([
   'missing_manifest',
@@ -95,15 +119,26 @@ export const ArchiveFindingCodeSchema = z.enum([
   'archive_checksum_missing',
   'archive_checksum_mismatch',
   'audit_chain_invalid',
-  'audit_chain_legacy_format',
+  'audit_chain_invalid_event',
   'audit_chain_unsupported_format',
   'snapshot_missing',
   'state_missing',
   'state_invalid',
+  'policy_state_unresolved',
+  'archive_inventory_inconclusive',
+  'archive_publication_unbound',
+  'archive_publication_binding_invalid',
   'timestamp_unanchored',
   'tsa_verification_failed',
+  'tsa_evidence_downgraded',
+  'tsa_token_required_by_policy',
   'artifact_binding_missing',
   'artifact_binding_mismatch',
+  'regulated_audit_outbox_unreconciled',
+  'regulated_terminal_transition_missing',
+  'regulated_terminal_decision_invalid',
+  'regulated_completion_lifecycle_invalid',
+  'regulated_completion_order_invalid',
 ]);
 export type ArchiveFindingCode = z.infer<typeof ArchiveFindingCodeSchema>;
 
@@ -136,8 +171,10 @@ export type ArchiveFinding = z.infer<typeof ArchiveFindingSchema>;
  * - includedFiles: sorted list of relative paths in the archive
  * - fileDigests: SHA-256 of each file's content, keyed by relative path
  * - contentDigest: SHA-256 over the sorted file digests AND an integrity header
- *   of security-relevant metadata (policy mode, audit head/count, identity).
- *   See {@link ./content-digest.ts} for the canonical formula.
+ *   of security-relevant metadata (policy mode, audit head/count, identity)
+ *   serialized by the canonical JSON authority and hashed through the shared
+ *   length-framed primitive. See {@link ./content-digest.ts} for the canonical
+ *   formula.
  *
  * Distinction:
  * - contentDigest = hash over file digests + integrity header (inside manifest)
@@ -145,12 +182,14 @@ export type ArchiveFinding = z.infer<typeof ArchiveFindingSchema>;
  */
 export const ArchiveManifestSchema = z.object({
   schemaVersion: z.literal(ARCHIVE_MANIFEST_SCHEMA_VERSION),
+  /** Breaking archive payload layout contract for raw-evidence and redacted-sharing packages. */
+  layoutVersion: z.literal(ARCHIVE_LAYOUT_VERSION),
   createdAt: z.string().datetime(),
   // Session id as recorded by archiveSession (validateSessionId). OpenCode
   // provides opaque ids like "ses_...", not UUIDs, so the manifest must accept
   // any non-empty id — NOT z.string().uuid(), which rejected every real
   // OpenCode session and made verifyArchive emit manifest_parse_error ->
-  // archiveStatus:"failed" on otherwise-valid archives. Path-traversal safety
+  // regulatedArchiveStatus:"failed" on otherwise-valid archives. Path-traversal safety
   // is enforced by validateSessionId at write time, not by this schema.
   sessionId: z.string().min(1),
   fingerprint: z.string().regex(FINGERPRINT_PATTERN),
@@ -173,7 +212,7 @@ export const ArchiveManifestSchema = z.object({
   /** SHA-256 over the sorted file digests plus the integrity header (see content-digest.ts). */
   contentDigest: z.string(),
   /** Export redaction mode used while creating archive artifacts. */
-  redactionMode: z.enum(['none', 'basic', 'strict']).optional(),
+  redactionMode: z.enum(['none', 'basic', 'pseudonymous']).optional(),
   /** Whether raw (non-redacted) artifacts were included in archive export. */
   rawIncluded: z.boolean().optional(),
   /** Artifact paths generated as redacted export surfaces. */

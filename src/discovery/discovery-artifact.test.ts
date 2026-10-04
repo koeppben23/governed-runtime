@@ -21,17 +21,18 @@ import * as path from 'node:path';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
-  DiscoverySummarySchema,
   DetectedItemSchema,
-  DetectedStackSchema,
-  DetectedStackVersionSchema,
-  DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
 } from './types.js';
+import {
+  DetectedStackSchema,
+  DetectedStackTargetSchema,
+  DiscoverySummarySchema,
+} from '../state/discovery-schemas.js';
 import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
@@ -65,14 +66,31 @@ vi.mock('../adapters/git', () => ({
 
 const gitMock = await import('../adapters/git.js');
 
+import type { DiscoveryIoPort } from './io-port.js';
+
+const EMPTY_SIGNALS = {
+  files: [] as string[],
+  packageFilePaths: [] as string[],
+  configFilePaths: [] as string[],
+};
+
+const DISCOVERY_IO: DiscoveryIoPort = {
+  readPersistedDiscovery: async () => null,
+  listRepoSignals: async () => EMPTY_SIGNALS,
+  defaultBranch: gitMock.defaultBranch,
+  headCommit: gitMock.headCommit,
+  isClean: gitMock.isClean,
+  remoteOriginUrl: gitMock.remoteOriginUrl,
+};
+
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
 const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -96,8 +114,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -116,8 +134,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -139,8 +157,8 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       worktreePath: '/test/repo',
       fingerprint: 'abcdef0123456789abcdef01',
       allFiles: overrides?.allFiles ?? ['src/main/java/App.java', 'pom.xml'],
-      packageFiles: overrides?.packageFiles ?? ['pom.xml'],
-      configFiles: overrides?.configFiles ?? [],
+      packageFilePaths: overrides?.packageFilePaths ?? ['pom.xml'],
+      configFilePaths: overrides?.configFilePaths ?? [],
       readFile: mockReadFile(files),
     };
   }
@@ -340,7 +358,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle.kts'],
-          packageFiles: ['build.gradle.kts'],
+          packageFilePaths: ['build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -359,7 +377,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle.kts'],
-          packageFiles: ['build.gradle.kts'],
+          packageFilePaths: ['build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -378,7 +396,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle'],
-          packageFiles: ['build.gradle'],
+          packageFilePaths: ['build.gradle'],
         },
       );
       const result = await collectStack(input);
@@ -397,7 +415,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle.kts'],
-          packageFiles: ['build.gradle.kts'],
+          packageFilePaths: ['build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -412,7 +430,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         { 'build.gradle': "apply plugin: 'checkstyle'" },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle'],
-          packageFiles: ['build.gradle'],
+          packageFilePaths: ['build.gradle'],
         },
       );
       const result = await collectStack(input);
@@ -429,7 +447,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle'],
-          packageFiles: ['build.gradle'],
+          packageFilePaths: ['build.gradle'],
         },
       );
       const result = await collectStack(input);
@@ -446,8 +464,8 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         worktreePath: '/test/repo',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/main/java/App.java', 'pom.xml'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       };
       const result = await collectStack(input);
       expect(result.data.tools).toHaveLength(0);
@@ -563,7 +581,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml', 'build.gradle.kts'],
-          packageFiles: ['pom.xml', 'build.gradle.kts'],
+          packageFilePaths: ['pom.xml', 'build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -632,7 +650,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -650,7 +668,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle.kts'],
-          packageFiles: ['build.gradle.kts'],
+          packageFilePaths: ['build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -721,7 +739,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       expect(result.success).toBe(true);
     });
 
-    it('StackInfoSchema defaults tools and qualityTools when absent (backward compat)', () => {
+    it('StackInfoSchema rejects missing current stack arrays', () => {
       const result = StackInfoSchema.safeParse({
         languages: [],
         frameworks: [],
@@ -729,16 +747,11 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         testFrameworks: [],
         runtimes: [],
       });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.tools).toEqual([]);
-        expect(result.data.qualityTools).toEqual([]);
-        expect(result.data.databases).toEqual([]);
-      }
+      expect(result.success).toBe(false);
     });
 
     it('extractDetectedStack includes tool, qualityTool, and database categories', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       // Inject synthetic items with versions
       result.stack.languages = [
         { id: 'java', confidence: 0.9, classification: 'fact', evidence: [], version: '21' },
@@ -785,7 +798,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions.map((v) => v.target)).toEqual([
+      expect(ds!.items.map((item) => item.kind)).toEqual([
         'language',
         'tool',
         'testFramework',
@@ -797,12 +810,11 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       );
     });
 
-    it('DetectedStackVersion validates new target types', () => {
+    it('DetectedStack items validate new target types', () => {
       for (const target of ['tool', 'testFramework', 'qualityTool', 'database']) {
-        const result = DetectedStackVersionSchema.safeParse({
-          id: 'test-item',
-          version: '1.0.0',
-          target,
+        const result = DetectedStackSchema.safeParse({
+          summary: 'test-item=1.0.0',
+          items: [{ id: 'test-item', version: '1.0.0', kind: target }],
         });
         expect(result.success).toBe(true);
       }

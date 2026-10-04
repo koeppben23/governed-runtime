@@ -4,7 +4,7 @@
  *
  * The base AuditEvent schema (evidence.ts) stores generic `event` and `detail` fields.
  * This module adds semantic structure:
- * - Closed set of event kinds (transition, tool_call, error, lifecycle)
+ * - Closed set of event kinds (transition, state_write, tool_call, error, lifecycle)
  * - Typed detail payloads per kind
  * - Factory functions that produce valid AuditEvent objects
  *
@@ -19,545 +19,71 @@
  * Using a free-form `event` string + `detail` record keeps the base schema stable.
  * Type safety is enforced at creation time via these factory functions.
  *
- * @version v1
- */
-
-import * as crypto from 'node:crypto';
-import { hashText } from '../shared/hashing.js';
-import type { Phase, Event } from '../state/schema.js';
-import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
-import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
-
-// P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
-// Re-exported here for backward compatibility — all existing consumers continue to work.
-import type { ActorInfo, ActorVerificationMeta } from '../state/evidence.js';
-export type { ActorInfo, ActorVerificationMeta };
-
-// ─── Event Kind ───────────────────────────────────────────────────────────────
-
-/**
- * Closed set of audit event kinds.
- * Each kind has a specific detail payload structure.
- */
-export type AuditEventKind = 'transition' | 'tool_call' | 'error' | 'lifecycle' | 'decision';
-
-export type AuditFormatVersion = 'audit-chain.v1' | 'audit-chain.v2';
-
-export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v2';
-
-// ─── Detail Payloads (typed, but stored as Record<string, unknown>) ──────────
-
-/** Detail payload for transition events. */
-export interface TransitionDetail {
-  kind: 'transition';
-  from: Phase;
-  to: Phase;
-  event: Event;
-  /** Whether this transition was part of an autoAdvance chain. */
-  autoAdvanced: boolean;
-  /** Position in the autoAdvance chain (0-based). -1 if not auto-advanced. */
-  chainIndex: number;
-}
-
-/** Detail payload for tool call events. */
-export interface ToolCallDetail {
-  kind: 'tool_call';
-  tool: string;
-  /** Summarized args (no sensitive data — just keys and scalar values). */
-  argsSummary: Record<string, string>;
-  /** Whether the tool call succeeded. */
-  success: boolean;
-  /** Error message if failed. */
-  errorMessage?: string;
-  /** Number of transitions triggered by this tool call. */
-  transitionCount: number;
-}
-
-/** Detail payload for error events. */
-export interface ErrorDetail {
-  kind: 'error';
-  code: string;
-  message: string;
-  recoveryHint: string;
-  /** The phase where the error occurred. */
-  errorPhase: Phase;
-}
-
-/** Detail payload for lifecycle events. */
-export interface LifecycleDetail {
-  kind: 'lifecycle';
-  action: 'session_created' | 'session_completed' | 'session_aborted';
-  /** Final phase at lifecycle event. */
-  finalPhase: Phase;
-  /** Optional reason (e.g., abort reason). */
-  reason?: string;
-}
-
-/** Detail payload for decision receipt events. */
-export interface DecisionDetail {
-  kind: 'decision';
-  decisionId: string;
-  decisionSequence: number;
-  gatePhase: Phase;
-  verdict: ReviewVerdict;
-  rationale: string;
-  decidedBy: string;
-  decidedAt: string;
-  fromPhase: Phase;
-  toPhase: Phase;
-  transitionEvent: Event;
-  policyMode: string;
-}
-
-/** Union of all typed detail payloads. */
-export type TypedDetail =
-  TransitionDetail | ToolCallDetail | ErrorDetail | LifecycleDetail | DecisionDetail;
-
-// ─── Actor Identity ──────────────────────────────────────────────────────────
-// P2b: ActorInfo and ActorVerificationMeta are canonically defined in
-// state/evidence.ts (Zod schema SSOT). Imported and re-exported above.
-// All factory functions, ChainedAuditEvent, and external consumers use
-// the same canonical type — no drift possible.
-
-// ─── Audit Event with Chain Hash ─────────────────────────────────────────────
-
-/**
- * Extended audit event with hash chain fields.
- * These fields are added by the factory functions and stored in the JSONL trail.
+ * This module is the canonical import surface: the implementation is split along
+ * cohesive boundaries into `event-core` (schema + hash + finalization),
+ * `event-details` (typed payloads), and `event-builders` (body builders and
+ * factories), and re-exported here so existing consumers keep one import path.
  *
- * Hash chain integrity:
- * - `prevHash`: hash of the previous event (or "genesis" for the first event)
- * - `chainHash`: SHA-256(prevHash + JSON(this event without chainHash))
- * - To verify: recompute chainHash from prevHash + event data, compare
- *
- * Actor identity (P27):
- * - `actor`: Classification label — "human", "machine", or "system" (backward-compat string)
- * - `actorInfo`: Optional structured identity (id, email, source). Present on
- *   human-influenced events (lifecycle, tool_call, decision). Absent on
- *   machine-only events (transition, error). When absent, JSON.stringify
- *   omits the field — chain hash stays identical for pre-P27 events.
+ * @version v2
  */
-export interface ChainedAuditEvent {
-  readonly id: string;
-  readonly sessionId: string;
-  readonly phase: string;
-  readonly event: string;
-  readonly timestamp: string;
-  readonly actor: string;
-  readonly auditFormatVersion: AuditFormatVersion;
-  readonly actorInfo?: ActorInfo;
-  readonly detail: Readonly<Record<string, unknown>>;
-  readonly prevHash: string;
-  readonly chainHash: string;
-  /** SHA-256 of event without timestampEvidence and chainHash. TSA anchoring. */
-  readonly canonicalEventDigest?: string;
-  /** Timestamp assurance evidence (NTP offset, TSA token, verification status). */
-  readonly timestampEvidence?: TimestampEvidence;
-  /**
-   * Enforcement level active when this event was recorded.
-   * Optional for backward compatibility: pre-HAI events omit this field.
-   * @since v1.3.0 (HAI #242)
-   */
-  readonly enforcementLevel?: 'synchronous' | 'hook_gated' | 'advisory';
-}
 
-// ─── Genesis Constant ─────────────────────────────────────────────────────────
+// ─── Event Kind, Schema, Hash, Finalization ──────────────────────────────────
 
-/** The prevHash value for the first event in a chain. */
-export const GENESIS_HASH = 'genesis';
+export {
+  AUDIT_EVENT_KINDS,
+  STATE_WRITE_EVENT_NAME,
+  ENFORCEMENT_DENIED_EVENT_NAME,
+  CURRENT_AUDIT_FORMAT_VERSION,
+  GENESIS_HASH,
+  computeChainHash,
+  finalizeWithTimestampEvidence,
+  type AuditEventKind,
+  type AuditFormatVersion,
+  type ChainedAuditEvent,
+  type EventBody,
+} from './event-core.js';
 
-// ─── Hash Computation ─────────────────────────────────────────────────────────
+// ─── Typed Detail Payloads ────────────────────────────────────────────────────
 
-/**
- * Compute the chain hash for an event.
- * Hash = SHA-256(prevHash + canonical JSON of event without chainHash).
- *
- * Canonical JSON: keys sorted alphabetically, no whitespace.
- * This ensures deterministic hashing regardless of object key insertion order.
- */
-export function computeChainHash(
-  prevHash: string,
-  event: Omit<ChainedAuditEvent, 'chainHash'>,
-): string {
-  const canonical = canonicalJsonStringify(event);
-  const input = prevHash + canonical;
-  return hashText(input);
-}
+export type {
+  TransitionDetail,
+  StateWriteDetail,
+  EnforcementDeniedDetail,
+  ToolCallDetail,
+  ErrorDetail,
+  LifecycleDetail,
+  DecisionDetail,
+  TypedDetail,
+} from './event-details.js';
 
-/**
- * Finalize an event body with optional timestamp evidence.
- *
- * Two-digest architecture:
- * 1. canonicalEventDigest = SHA-256(event body WITHOUT evidence, chainHash, digest)
- *    Uses preComputedDigest if provided (from external TSA resolution path),
- *    otherwise computes it internally.
- * 2. If evidence provided: attaches canonicalEventDigest + timestampEvidence.
- *    Ensures tsa.messageImprint matches canonicalEventDigest when TSA data exists.
- * 3. chainHash = SHA-256(prevHash + full event WITHOUT chainHash).
- *
- * @param body - Event body without chainHash, canonicalEventDigest, or timestampEvidence.
- * @param prevHash - Hash of the previous event (or GENESIS_HASH).
- * @param timestampEvidence - Optional timestamp assurance evidence.
- * @param preComputedDigest - Optional pre-computed canonical digest. Must match
- *   computeCanonicalEventDigest(body). Required when evidence was resolved externally.
- */
-export function finalizeWithTimestampEvidence(
-  body: Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'>,
-  prevHash: string,
-  timestampEvidence?: TimestampEvidence,
-  preComputedDigest?: string,
-): ChainedAuditEvent {
-  if (!timestampEvidence) {
-    const base: Omit<ChainedAuditEvent, 'chainHash'> = body;
-    return { ...base, chainHash: computeChainHash(prevHash, base) };
-  }
-  const canonicalDigest = preComputedDigest ?? computeCanonicalEventDigest(body);
-  const evidence: TimestampEvidence = timestampEvidence.tsa
-    ? {
-        ...timestampEvidence,
-        tsa: {
-          ...timestampEvidence.tsa,
-          messageImprint: canonicalDigest,
-          digestAlgorithm: timestampEvidence.tsa.digestAlgorithm ?? 'sha256',
-        },
-      }
-    : timestampEvidence;
-  const base: Omit<ChainedAuditEvent, 'chainHash'> = {
-    ...body,
-    canonicalEventDigest: canonicalDigest,
-    timestampEvidence: evidence,
-  };
-  return { ...base, chainHash: computeChainHash(prevHash, base) };
-}
+// ─── Body Builders & Factories ────────────────────────────────────────────────
 
-// ─── Detail Conversion ────────────────────────────────────────────────────────
-
-/**
- * Type-safe conversion from typed detail payload to generic record.
- * Replaces dangerous `as unknown as Record<string, unknown>` double-casts.
- *
- * The function boundary enforces that only valid TypedDetail payloads are accepted.
- * The widening to Record<string, unknown> is safe because all TypedDetail property
- * values (string, boolean, number, Phase, Event) are subtypes of `unknown`.
- */
-function toDetailRecord(detail: TypedDetail): Record<string, unknown> {
-  // Iterative copy: zero casts, fully type-safe.
-  const record: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(detail)) {
-    record[key] = value;
-  }
-  return record;
-}
-
-// ─── Factory Functions ────────────────────────────────────────────────────────
-
-/** Body type used by build helpers — no hash, no timestamp evidence. */
-export type EventBody = Omit<
-  ChainedAuditEvent,
-  'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'
->;
-
-/**
- * Build a transition event body (no chainHash, no canonical digest, no evidence).
- */
-export function buildTransitionBody(
-  sessionId: string,
-  phase: Phase,
-  detail: Omit<TransitionDetail, 'kind'>,
-  timestamp: string,
-  prevHash: string,
-): EventBody {
-  return {
-    id: crypto.randomUUID(),
-    sessionId,
-    phase,
-    event: `transition:${detail.event}`,
-    timestamp,
-    actor: 'machine',
-    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-    detail: toDetailRecord({ ...detail, kind: 'transition' }),
-    prevHash,
-  };
-}
-
-/**
- * Input object for createTransitionEvent.
- */
-export interface TransitionEventInput {
-  readonly sessionId: string;
-  readonly phase: Phase;
-  readonly detail: Omit<TransitionDetail, 'kind'>;
-  readonly timestamp: string;
-  readonly prevHash: string;
-  readonly timestampEvidence?: TimestampEvidence;
-}
-
-/**
- * Create a transition audit event.
- * One event per state machine transition. autoAdvance may produce multiple.
- */
-export function createTransitionEvent(
-  ...args:
-    | [input: TransitionEventInput]
-    | [
-        sessionId: string,
-        phase: Phase,
-        detail: Omit<TransitionDetail, 'kind'>,
-        timestamp: string,
-        prevHash: string,
-        timestampEvidence?: TimestampEvidence,
-      ]
-): ChainedAuditEvent {
-  const input = normalizeTransitionEventInput(args);
-  return finalizeWithTimestampEvidence(
-    buildTransitionBody(
-      input.sessionId,
-      input.phase,
-      input.detail,
-      input.timestamp,
-      input.prevHash,
-    ),
-    input.prevHash,
-    input.timestampEvidence,
-  );
-}
-
-function normalizeTransitionEventInput(
-  args:
-    | [input: TransitionEventInput]
-    | [
-        sessionId: string,
-        phase: Phase,
-        detail: Omit<TransitionDetail, 'kind'>,
-        timestamp: string,
-        prevHash: string,
-        timestampEvidence?: TimestampEvidence,
-      ],
-): TransitionEventInput {
-  if (args.length === 1) return args[0];
-  const [sessionId, phase, detail, timestamp, prevHash, timestampEvidence] = args;
-  return { sessionId, phase, detail, timestamp, prevHash, timestampEvidence };
-}
-
-/**
- * Input object for createToolCallEvent.
- */
-export interface ToolCallEventInput {
-  readonly sessionId: string;
-  readonly phase: string;
-  readonly detail: Omit<ToolCallDetail, 'kind'>;
-  readonly timestamp: string;
-  readonly actor: string;
-  readonly prevHash: string;
-  readonly actorInfo?: ActorInfo;
-  readonly timestampEvidence?: TimestampEvidence;
-}
-
-/**
- * Create a tool call audit event.
- * One event per FlowGuard tool invocation.
- */
-/**
- * Build a tool call event body (no chainHash, no canonical digest, no evidence).
- */
-export function buildToolCallBody(input: Omit<ToolCallEventInput, 'timestampEvidence'>): EventBody {
-  const { sessionId, phase, detail, timestamp, actor, prevHash, actorInfo } = input;
-  return {
-    id: crypto.randomUUID(),
-    sessionId,
-    phase,
-    event: `tool_call:${detail.tool}`,
-    timestamp,
-    actor,
-    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-    ...(actorInfo ? { actorInfo } : {}),
-    detail: toDetailRecord({ ...detail, kind: 'tool_call' }),
-    prevHash,
-  };
-}
-
-/**
- * Create a tool call audit event.
- * One event per FlowGuard tool invocation.
- */
-export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEvent {
-  return finalizeWithTimestampEvidence(
-    buildToolCallBody(input),
-    input.prevHash,
-    input.timestampEvidence,
-  );
-}
-
-/**
- * Create an error audit event.
- * Emitted when the state machine enters an error state.
- */
-/**
- * Build an error event body (no chainHash, no canonical digest, no evidence).
- */
-export function buildErrorBody(
-  sessionId: string,
-  detail: Omit<ErrorDetail, 'kind'>,
-  timestamp: string,
-  prevHash: string,
-): EventBody {
-  return {
-    id: crypto.randomUUID(),
-    sessionId,
-    phase: detail.errorPhase,
-    event: `error:${detail.code}`,
-    timestamp,
-    actor: 'machine',
-    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-    detail: toDetailRecord({ ...detail, kind: 'error' }),
-    prevHash,
-  };
-}
-
-/**
- * Create an error audit event.
- * Emitted when the state machine enters an error state.
- */
-export function createErrorEvent(
-  sessionId: string,
-  detail: Omit<ErrorDetail, 'kind'>,
-  timestamp: string,
-  prevHash: string,
-  timestampEvidence?: TimestampEvidence,
-): ChainedAuditEvent {
-  return finalizeWithTimestampEvidence(
-    buildErrorBody(sessionId, detail, timestamp, prevHash),
-    prevHash,
-    timestampEvidence,
-  );
-}
-
-/**
- * Input object for createLifecycleEvent.
- */
-export interface LifecycleEventInput {
-  readonly sessionId: string;
-  readonly detail: Omit<LifecycleDetail, 'kind'>;
-  readonly timestamp: string;
-  readonly actor: string;
-  readonly prevHash: string;
-  readonly actorInfo?: ActorInfo;
-  readonly timestampEvidence?: TimestampEvidence;
-}
-
-/**
- * Create a lifecycle audit event.
- * Emitted on session creation, completion, or abortion.
- */
-/**
- * Build a lifecycle event body (no chainHash, no canonical digest, no evidence).
- */
-export function buildLifecycleBody(
-  input: Omit<LifecycleEventInput, 'timestampEvidence'>,
-): EventBody {
-  const { sessionId, detail, timestamp, actor, prevHash, actorInfo } = input;
-  return {
-    id: crypto.randomUUID(),
-    sessionId,
-    phase: detail.finalPhase,
-    event: `lifecycle:${detail.action}`,
-    timestamp,
-    actor,
-    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-    ...(actorInfo ? { actorInfo } : {}),
-    detail: toDetailRecord({ ...detail, kind: 'lifecycle' }),
-    prevHash,
-  };
-}
-
-/**
- * Create a lifecycle audit event.
- * Emitted on session creation, completion, or abortion.
- */
-export function createLifecycleEvent(input: LifecycleEventInput): ChainedAuditEvent {
-  return finalizeWithTimestampEvidence(
-    buildLifecycleBody(input),
-    input.prevHash,
-    input.timestampEvidence,
-  );
-}
-
-/**
- * Input object for createDecisionEvent.
- */
-export interface DecisionEventInput {
-  readonly sessionId: string;
-  readonly gatePhase: Phase;
-  readonly detail: Omit<DecisionDetail, 'kind' | 'gatePhase'>;
-  readonly timestamp: string;
-  readonly actor: string;
-  readonly prevHash: string;
-  readonly actorInfo?: ActorInfo;
-  readonly timestampEvidence?: TimestampEvidence;
-}
-
-/**
- * Create a decision receipt audit event.
- * One event per successful /review-decision execution.
- */
-/**
- * Build a decision event body (no chainHash, no canonical digest, no evidence).
- */
-export function buildDecisionBody(input: Omit<DecisionEventInput, 'timestampEvidence'>): EventBody {
-  const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo } = input;
-  return {
-    id: crypto.randomUUID(),
-    sessionId,
-    phase: gatePhase,
-    event: `decision:${detail.decisionId}`,
-    timestamp,
-    actor,
-    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-    ...(actorInfo ? { actorInfo } : {}),
-    detail: toDetailRecord({ ...detail, gatePhase, kind: 'decision' }),
-    prevHash,
-  };
-}
-
-/**
- * Create a decision receipt audit event.
- * One event per successful /review-decision execution.
- */
-export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEvent {
-  return finalizeWithTimestampEvidence(
-    buildDecisionBody(input),
-    input.prevHash,
-    input.timestampEvidence,
-  );
-}
+export {
+  buildTransitionBody,
+  buildStateWriteBody,
+  buildEnforcementDeniedBody,
+  buildToolCallBody,
+  buildErrorBody,
+  buildLifecycleBody,
+  buildDecisionBody,
+  createTransitionEvent,
+  createToolCallEvent,
+  createErrorEvent,
+  createLifecycleEvent,
+  createDecisionEvent,
+  completionLifecycleEventId,
+  type TransitionBodyInput,
+  type StateWriteBodyInput,
+  type EnforcementDeniedBodyInput,
+  type TransitionEventInput,
+  type ToolCallEventInput,
+  type ErrorEventInput,
+  type LifecycleEventInput,
+  type DecisionEventInput,
+} from './event-builders.js';
 
 // ─── Arg Summarizer ───────────────────────────────────────────────────────────
 
-/** Maximum string length before truncation in arg summaries. */
-const ARG_SUMMARY_TRUNCATION_LIMIT = 100;
-
-/**
- * Summarize tool args for audit (no sensitive data).
- * Only includes keys and scalar values (strings truncated to ARG_SUMMARY_TRUNCATION_LIMIT chars).
- * Objects/arrays are replaced with type indicator.
- */
-export function summarizeArgs(args: Record<string, unknown>): Record<string, string> {
-  const summary: Record<string, string> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (value === null || value === undefined) {
-      summary[key] = 'null';
-    } else if (typeof value === 'string') {
-      summary[key] =
-        value.length > ARG_SUMMARY_TRUNCATION_LIMIT
-          ? value.slice(0, ARG_SUMMARY_TRUNCATION_LIMIT) + '...'
-          : value;
-    } else if (typeof value === 'number' || typeof value === 'boolean') {
-      summary[key] = String(value);
-    } else if (Array.isArray(value)) {
-      summary[key] = `[Array(${value.length})]`;
-    } else {
-      summary[key] = '[Object]';
-    }
-  }
-  return summary;
-}
+// Extracted to audit/arg-summary.ts (file-size budget); re-exported here so
+// existing consumers keep importing from the canonical audit types module.
+export { summarizeArgs } from './arg-summary.js';

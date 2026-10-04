@@ -17,6 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { HOST_IDS } from '../shared/hosts.js';
 
 describe('FlowGuardConfigSchema', () => {
   // ── HAPPY ──────────────────────────────────────────────────────────────
@@ -30,8 +31,24 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.policy).toEqual({});
       expect(result.data.profile).toEqual({});
       expect(result.data.host).toEqual({});
-      expect(result.data.archive.redaction.mode).toBe('basic');
-      expect(result.data.archive.redaction.includeRaw).toBe(false);
+      expect(result.data.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+      expect(result.data.archive.redaction.allowRawExport).toBe(false);
+      expect(result.data.archive.redaction.maxAuditEvents).toBe(10_000);
+    }
+  });
+
+  it('parses an empty archive object and defaults redaction', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      archive: {},
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.archive.redaction).toEqual({
+        allowedModes: ['none', 'basic', 'pseudonymous'],
+        allowRawExport: false,
+        maxAuditEvents: 10_000,
+      });
     }
   });
 
@@ -41,10 +58,8 @@ describe('FlowGuardConfigSchema', () => {
       logging: { level: 'debug' },
       policy: {
         defaultMode: 'regulated',
-        maxSelfReviewIterations: 5,
-        maxImplReviewIterations: 7,
+        reviewBudget: { plan: 5, architecture: 6, implementation: 7 },
         enforceRiskClassification: true,
-        allowRiskDowngradeOverride: false,
         allowReducedCeremony: true,
       },
       profile: {
@@ -56,8 +71,9 @@ describe('FlowGuardConfigSchema', () => {
       },
       archive: {
         redaction: {
-          mode: 'strict',
-          includeRaw: true,
+          allowedModes: ['basic', 'pseudonymous'],
+          allowRawExport: true,
+          maxAuditEvents: 5000,
         },
       },
     };
@@ -66,10 +82,12 @@ describe('FlowGuardConfigSchema', () => {
     if (result.success) {
       expect(result.data.logging.level).toBe('debug');
       expect(result.data.policy.defaultMode).toBe('regulated');
-      expect(result.data.policy.maxSelfReviewIterations).toBe(5);
-      expect(result.data.policy.maxImplReviewIterations).toBe(7);
+      expect(result.data.policy.reviewBudget).toEqual({
+        plan: 5,
+        architecture: 6,
+        implementation: 7,
+      });
       expect(result.data.policy.enforceRiskClassification).toBe(true);
-      expect(result.data.policy.allowRiskDowngradeOverride).toBe(false);
       expect(result.data.policy.allowReducedCeremony).toBe(true);
       expect(result.data.profile.defaultId).toBe('typescript');
       expect(result.data.profile.activeChecks).toEqual([
@@ -78,8 +96,9 @@ describe('FlowGuardConfigSchema', () => {
         'type_coverage',
       ]);
       expect(result.data.host.defaultHost).toBe('claude-code');
-      expect(result.data.archive.redaction.mode).toBe('strict');
-      expect(result.data.archive.redaction.includeRaw).toBe(true);
+      expect(result.data.archive.redaction.allowedModes).toEqual(['basic', 'pseudonymous']);
+      expect(result.data.archive.redaction.allowRawExport).toBe(true);
+      expect(result.data.archive.redaction.maxAuditEvents).toBe(5000);
     }
   });
 
@@ -91,13 +110,40 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.logging.level).toBe('info');
       // policy defaults to empty object (all fields optional)
       expect(result.data.policy.defaultMode).toBeUndefined();
-      expect(result.data.policy.maxSelfReviewIterations).toBeUndefined();
+      expect(result.data.policy.reviewBudget).toBeUndefined();
       // profile defaults to empty object
       expect(result.data.profile.defaultId).toBeUndefined();
       expect(result.data.profile.activeChecks).toBeUndefined();
       // host defaults to empty object; runtime defaults are resolved by CLI host-resolver
       expect(result.data.host.defaultHost).toBeUndefined();
     }
+  });
+
+  describe('presentation.opencode.glyphProfile', () => {
+    it('defaults to unicode', () => {
+      const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' });
+      expect(result.success).toBe(true);
+      expect(result.data?.presentation.opencode.glyphProfile).toBe('unicode');
+    });
+
+    it('accepts unicode and ascii', () => {
+      for (const glyphProfile of ['unicode', 'ascii'] as const) {
+        const result = FlowGuardConfigSchema.safeParse({
+          schemaVersion: 'v1',
+          presentation: { opencode: { glyphProfile } },
+        });
+        expect(result.success).toBe(true);
+        expect(result.data?.presentation.opencode.glyphProfile).toBe(glyphProfile);
+      }
+    });
+
+    it('rejects an unsupported glyph profile', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        presentation: { opencode: { glyphProfile: 'emoji' } },
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   it('accepts supported host defaults', () => {
@@ -506,42 +552,42 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxSelfReviewIterations out of range (0)', () => {
+  it('rejects a review-budget value out of range (0)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 0 },
+      policy: { reviewBudget: { plan: 0 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxSelfReviewIterations out of range (11)', () => {
+  it('rejects a review-budget value out of range (11)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 11 },
+      policy: { reviewBudget: { architecture: 11 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxImplReviewIterations out of range (0)', () => {
+  it('rejects an implementation review-budget value out of range (0)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxImplReviewIterations: 0 },
+      policy: { reviewBudget: { implementation: 0 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxImplReviewIterations out of range (11)', () => {
+  it('rejects an implementation review-budget value out of range (11)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxImplReviewIterations: 11 },
+      policy: { reviewBudget: { implementation: 11 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects non-integer maxSelfReviewIterations', () => {
+  it('rejects a non-integer review-budget value', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 2.5 },
+      policy: { reviewBudget: { plan: 2.5 } },
     });
     expect(result.success).toBe(false);
   });
@@ -712,15 +758,18 @@ describe('FlowGuardConfigSchema', () => {
 
   // ── CORNER ─────────────────────────────────────────────────────────────
 
-  it('accepts boundary values for iterations (1 and 10)', () => {
+  it('accepts review-budget boundary values (1 and 10)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 1, maxImplReviewIterations: 10 },
+      policy: { reviewBudget: { plan: 1, architecture: 10, implementation: 10 } },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.policy.maxSelfReviewIterations).toBe(1);
-      expect(result.data.policy.maxImplReviewIterations).toBe(10);
+      expect(result.data.policy.reviewBudget).toEqual({
+        plan: 1,
+        architecture: 10,
+        implementation: 10,
+      });
     }
   });
 
@@ -756,10 +805,10 @@ describe('FlowGuardConfigSchema', () => {
   });
 
   it('accepts all redaction modes', () => {
-    for (const mode of ['none', 'basic', 'strict']) {
+    for (const mode of ['none', 'basic', 'pseudonymous']) {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
-        archive: { redaction: { mode } },
+        archive: { redaction: { allowedModes: [mode] } },
       });
       expect(result.success).toBe(true);
     }
@@ -768,7 +817,7 @@ describe('FlowGuardConfigSchema', () => {
   it('rejects invalid redaction mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      archive: { redaction: { mode: 'unsafe' } },
+      archive: { redaction: { allowedModes: ['invalid'] } },
     });
     expect(result.success).toBe(false);
   });
@@ -807,6 +856,22 @@ describe('DEFAULT_CONFIG', () => {
       expect(result.data).toEqual(DEFAULT_CONFIG);
     }
   });
+
+  it('rejects removed requireVerifiedActorsForApproval policy configuration', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: { requireVerifiedActorsForApproval: true },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects removed selfReview policy configuration', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: { selfReview: { subagentEnabled: true } },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 // ══════════════════════════════════════════════════
@@ -823,5 +888,183 @@ describe('Performance', () => {
     }, 1000);
     // Zod parse should be under 5ms p99
     expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.stateSerializeMs);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Boundary and partial-default contracts
+// ═══════════════════════════════════════════════════════════════════
+
+describe('FlowGuardConfigSchema boundaries', () => {
+  const parse = (input: unknown) => FlowGuardConfigSchema.safeParse(input);
+
+  it('applies the nested object defaults when logging is omitted entirely', () => {
+    const result = parse({ schemaVersion: 'v1' });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.logging.rateLimit.enabled).toBe(false);
+    expect(result.data!.logging.enableDynamicLevel).toBe(false);
+    expect(result.data!.logging.otlp.enabled).toBe(false);
+    expect(result.data!.logging.otlp.allowInsecure).toBe(false);
+    expect(result.data!.logging.rateLimit.summaryIntervalMs).toBe(60_000);
+    expect(result.data!.logging.mode).toBe('file');
+  });
+
+  it('bounds logging.retentionDays to 1..90 with a 7-day default', () => {
+    expect(parse({ schemaVersion: 'v1' }).data!.logging.retentionDays).toBe(7);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 1 } }).success).toBe(true);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 90 } }).success).toBe(true);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 0 } }).success).toBe(false);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 91 } }).success).toBe(false);
+  });
+
+  it('applies field-level rate-limit defaults for a partial object', () => {
+    const result = parse({ schemaVersion: 'v1', logging: { rateLimit: {} } });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.logging.rateLimit.enabled).toBe(false);
+    expect(result.data!.logging.rateLimit.summaryIntervalMs).toBe(60000);
+    expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+  });
+
+  it('always exempts error logs from rate limiting', () => {
+    const result = parse({
+      schemaVersion: 'v1',
+      logging: { rateLimit: { exemptLevels: ['warn'] } },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.logging.rateLimit.exemptLevels).toEqual(['warn', 'error']);
+  });
+
+  it('bounds logging.rateLimit.summaryIntervalMs to 10s..10min', () => {
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 10000 } } }).success,
+    ).toBe(true);
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 600000 } } }).success,
+    ).toBe(true);
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 9999 } } }).success,
+    ).toBe(false);
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 600001 } } }).success,
+    ).toBe(false);
+  });
+
+  it('defaults OTLP export to disabled and enforces the https rule', () => {
+    const partial = parse({ schemaVersion: 'v1', logging: { otlp: {} } });
+    expect(partial.success).toBe(true);
+    expect(partial.data!.logging.otlp.enabled).toBe(false);
+    expect(partial.data!.logging.otlp.allowInsecure).toBe(false);
+
+    expect(
+      parse({
+        schemaVersion: 'v1',
+        logging: { otlp: { endpoint: 'https://collector.example.com' } },
+      }).success,
+    ).toBe(true);
+    expect(
+      parse({
+        schemaVersion: 'v1',
+        logging: { otlp: { endpoint: 'http://collector.example.com' } },
+      }).success,
+    ).toBe(false);
+    expect(
+      parse({
+        schemaVersion: 'v1',
+        logging: { otlp: { endpoint: 'http://collector.example.com', allowInsecure: true } },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('defaults human projection telemetry to disabled', () => {
+    expect(parse({ schemaVersion: 'v1' }).data!.humanProjectionTelemetry.enabled).toBe(false);
+    expect(
+      parse({ schemaVersion: 'v1', humanProjectionTelemetry: {} }).data!.humanProjectionTelemetry
+        .enabled,
+    ).toBe(false);
+    expect(
+      parse({ schemaVersion: 'v1', humanProjectionTelemetry: { enabled: true } }).data!
+        .humanProjectionTelemetry.enabled,
+    ).toBe(true);
+  });
+
+  it('keeps partial policy overrides and bounds the review budget', () => {
+    const budget = (value: number) =>
+      parse({
+        schemaVersion: 'v1',
+        policy: { reviewBudget: { plan: value } },
+      });
+
+    expect(budget(1).success).toBe(true);
+    expect(budget(10).success).toBe(true);
+    expect(budget(0).success).toBe(false);
+    expect(budget(11).success).toBe(false);
+
+    const kept = parse({
+      schemaVersion: 'v1',
+      policy: { reviewBudget: { plan: 5, architecture: 2, implementation: 3 } },
+    });
+    expect(kept.success).toBe(true);
+    expect(kept.data!.policy.reviewBudget).toEqual({ plan: 5, architecture: 2, implementation: 3 });
+  });
+
+  it('keeps partial discovery health, validation evidence, profile and host overrides', () => {
+    const result = parse({
+      schemaVersion: 'v1',
+      policy: {
+        discoveryHealth: { enforcement: 'required', onDrift: 'block' },
+        validationEvidence: { allowNoCommands: true },
+      },
+      profile: { defaultId: 'typescript', activeChecks: ['test'] },
+      host: { defaultHost: HOST_IDS[0] },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.policy.discoveryHealth).toEqual({
+      enforcement: 'required',
+      onDrift: 'block',
+    });
+    expect(result.data!.policy.validationEvidence).toEqual({ allowNoCommands: true });
+    expect(result.data!.profile).toEqual({ defaultId: 'typescript', activeChecks: ['test'] });
+    expect(result.data!.host).toEqual({ defaultHost: HOST_IDS[0] });
+  });
+
+  it('bounds the policy retry overrides to 0..5', () => {
+    for (const field of ['maxIncoherentReviewerCaptureRetries', 'maxReviewerAttempts'] as const) {
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: 0 } }).success).toBe(true);
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: 5 } }).success).toBe(true);
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: -1 } }).success).toBe(false);
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: 6 } }).success).toBe(false);
+    }
+  });
+
+  it('requires at least one archive redaction mode', () => {
+    const archive = (value: unknown) => parse({ schemaVersion: 'v1', archive: value });
+
+    expect(archive({ redaction: { allowedModes: ['basic'] } }).success).toBe(true);
+    expect(archive({ redaction: { allowedModes: [] } }).success).toBe(false);
+    expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowedModes).toEqual([
+      'none',
+      'basic',
+      'pseudonymous',
+    ]);
+  });
+
+  it('bounds archive redaction maxAuditEvents and defaults raw export to false', () => {
+    const redaction = (value: unknown) =>
+      parse({ schemaVersion: 'v1', archive: { redaction: value } });
+
+    expect(redaction({ maxAuditEvents: 1 }).success).toBe(true);
+    expect(redaction({ maxAuditEvents: 100_000 }).success).toBe(true);
+    expect(redaction({ maxAuditEvents: 0 }).success).toBe(false);
+    expect(redaction({ maxAuditEvents: 100_001 }).success).toBe(false);
+
+    const partial = redaction({});
+    expect(partial.success).toBe(true);
+    expect(partial.data!.archive.redaction.allowRawExport).toBe(false);
+    expect(partial.data!.archive.redaction.maxAuditEvents).toBe(10_000);
+    expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowRawExport).toBe(false);
   });
 });

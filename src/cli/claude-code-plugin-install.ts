@@ -5,9 +5,9 @@
 
 import { chmod, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { FileOp } from './install-helpers.js';
+import type { FileOp } from './install-types.js';
 import { writeIfAbsent } from './install-helpers.js';
-import { ensureDir } from '../adapters/persistence.js';
+import type { InstallMutationSink } from './install-mutation-types.js';
 import {
   CLAUDE_CODE_PLUGIN_DIR,
   CLAUDE_CODE_PLUGIN_RELATIVE_FILES,
@@ -21,7 +21,6 @@ export function resolveClaudeCodePluginRoot(target: string): string {
 export function claudeCodePluginSnapshotPaths(target: string): string[] {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
   return [
-    pluginRoot,
     join(pluginRoot, 'INSTALL.md'),
     ...CLAUDE_CODE_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath)),
   ];
@@ -31,16 +30,19 @@ export async function installClaudeCodePlugin(
   target: string,
   version: string,
   force: boolean,
+  mutations: InstallMutationSink,
 ): Promise<FileOp[]> {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
   const ops: FileOp[] = [];
 
-  await ensureDir(pluginRoot);
+  await mutations.ensureDir(pluginRoot);
 
   for (const [relativePath, content] of Object.entries(claudeCodePluginFiles(version))) {
     const filePath = join(pluginRoot, relativePath);
-    await ensureDir(dirname(filePath));
-    ops.push(await writeIfAbsent(filePath, content, force));
+    await mutations.ensureDir(dirname(filePath));
+    const op = await writeIfAbsent(filePath, content, force);
+    ops.push(op);
+    if (op.action !== 'skipped') await mutations.recordFile(filePath);
 
     if (relativePath.startsWith('dist/') && ops[ops.length - 1]?.action === 'written') {
       await chmod(filePath, 0o755);
@@ -50,10 +52,9 @@ export async function installClaudeCodePlugin(
   return ops;
 }
 
-export async function writeClaudeCodePluginInstallHint(target: string): Promise<FileOp> {
+export function claudeCodePluginInstallHint(target: string): string {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
-  const hintPath = join(pluginRoot, 'INSTALL.md');
-  const content = `# FlowGuard Claude Code Plugin
+  return `# FlowGuard Claude Code Plugin
 
 Load this plugin in Claude Code with:
 
@@ -65,6 +66,11 @@ The plugin packages FlowGuard MCP tools, hook wiring, workflow skills, and the
 FlowGuard reviewer transport agent. Governance authority remains in the
 FlowGuard runtime MCP tools, hooks, state, policy, and review evidence binding.
 `;
-  await writeFile(hintPath, content, 'utf-8');
+}
+
+export async function writeClaudeCodePluginInstallHint(target: string): Promise<FileOp> {
+  const pluginRoot = resolveClaudeCodePluginRoot(target);
+  const hintPath = join(pluginRoot, 'INSTALL.md');
+  await writeFile(hintPath, claudeCodePluginInstallHint(target), 'utf-8');
   return { path: hintPath, action: 'written' };
 }

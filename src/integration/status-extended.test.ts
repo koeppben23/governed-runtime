@@ -23,16 +23,20 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionState } from '../state/schema.js';
+import { buildStatusProjection } from './status/status.js';
 import {
-  buildStatusProjection,
   buildEvidenceDetailProjection,
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
-} from './status.js';
+} from './status/status-detail-projections.js';
 import { getPolicyPreset } from '../config/policy.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -49,8 +53,8 @@ const ALL_PHASES = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
 ] as const;
 const TICKET_FLOW_PHASES = [
   'READY',
@@ -64,32 +68,20 @@ const TICKET_FLOW_PHASES = [
   'COMPLETE',
 ] as const;
 const ARCH_FLOW_PHASES = ['READY', 'ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE'] as const;
-const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
+const REVIEW_FLOW_PHASES = ['READY', 'PEER_REVIEW', 'PEER_REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {
-    id: 'ses_test_0001',
+    ...makeState(phase),
+    id: '00000000-0000-4000-8000-000000000001',
     phase,
     initiatedBy: 'tester@corp.com',
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    policySnapshot: {
-      mode: 'solo',
-      source: 'default',
-      requestedMode: 'solo',
-      effectiveGateBehavior: 'auto',
-      allowSelfApproval: true,
-      maxSelfReviewIterations: 2,
-      maxImplReviewIterations: 2,
-      requireHumanGates: false,
-      emitTransitions: true,
-      emitToolCalls: true,
-      enableChainHash: true,
-      actorClassification: 'solo',
-      policyDigest: 'testdigest123',
-      policyVersion: 'v1.0.0',
-      validationEvidence: { enforcement: 'off', allowNoCommands: false },
-    },
+    policySnapshot: createPolicySnapshot(
+      getPolicyPreset('solo'),
+      '2026-01-01T00:00:00.000Z',
+      hashText,
+    ),
     detectedStack: null,
     activeProfile: null,
     activeChecks: [],
@@ -102,8 +94,8 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
-    actorInfo: null,
+    regulatedArchiveStatus: null,
+    actorInfo: undefined,
     error: null,
   };
 }
@@ -112,7 +104,13 @@ function makeActorState(
   phase: SessionState['phase'] = 'READY',
   actorInfo: { id: string; source: 'env' | 'git' | 'claim' | 'unknown'; email: string | null },
 ): SessionState {
-  return { ...makeMinimalState(phase), actorInfo };
+  return {
+    ...makeMinimalState(phase),
+    actorInfo: {
+      ...actorInfo,
+      assurance: actorInfo.source === 'claim' ? 'claim_validated' : 'best_effort',
+    },
+  };
 }
 
 describe('buildStatusProjection — E2E', () => {
@@ -135,9 +133,12 @@ describe('buildStatusProjection — E2E', () => {
       const projection = buildStatusProjection(state, policy);
 
       expect(projection.phase).toBe(phase);
-      expect(projection.sessionId).toBe('ses_test_0001');
+      expect(projection.flowguardSessionId).toBe('00000000-0000-4000-8000-000000000001');
       expect(Array.isArray(projection.allowedCommands)).toBe(true);
-      expect(typeof projection.nextAction.summary).toBe('string');
+      expect(projection.directive.code.length).toBeGreaterThan(0);
+      expect(Array.isArray(projection.directive.commands)).toBe(true);
+      expect(Array.isArray(projection.directive.allowedIntents)).toBe(true);
+      expect(projection.conclusion.kind).toBeDefined();
     }
   });
 
@@ -146,7 +147,7 @@ describe('buildStatusProjection — E2E', () => {
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
       policySnapshot: {
-        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot,
         mode: 'regulated' as const,
         allowSelfApproval: false,
         requireHumanGates: true,
@@ -154,9 +155,10 @@ describe('buildStatusProjection — E2E', () => {
       actorInfo: {
         id: 'reviewer@corp.com',
         source: 'claim',
+        assurance: 'claim_validated',
         email: 'reviewer@corp.com',
       },
-      archiveStatus: 'pending',
+      regulatedArchiveStatus: 'pending',
     };
     const projection = buildStatusProjection(state, policy);
 
@@ -170,7 +172,7 @@ describe('buildStatusProjection — E2E', () => {
     const state: SessionState = {
       ...makeMinimalState('READY'),
       policySnapshot: {
-        ...makeMinimalState('READY').policySnapshot!,
+        ...makeMinimalState('READY').policySnapshot,
         mode: 'team' as const,
         degradedReason: 'ci_context_missing',
       },
@@ -192,7 +194,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'java-spring-boot',
         name: 'Java / Spring Boot',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -207,7 +208,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'angular-nx',
         name: 'Angular / Nx',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -222,7 +222,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'typescript-node',
         name: 'TypeScript / Node.js',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -237,7 +236,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'baseline',
         name: 'Baseline',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -263,6 +261,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
         source: 'user',
         digest: 'ticket-digest',
         createdAt: fixedTime,
+        riskDeclaration: { kind: 'absent' },
       },
     };
   }
@@ -271,18 +270,59 @@ describe('status.ts MUTATION_KILL matrix', () => {
     return {
       ...stateWithTicket(phase),
       plan: {
-        current: { text: '## Plan\nShip status tests', digest: 'plan-digest' },
+        current: makePlanRevision({ body: '## Plan\nShip status tests', createdAt: fixedTime }),
         history: [],
+        reviewFindings: [],
+        reviewCompletion: 'pending',
       },
     };
   }
 
   describe('SMOKE buildStatusProjection exact shape', () => {
-    it('projects actor, policy, profile, archive, next action, product next action, and command prefixes', () => {
+    it('projects rework from the marker and append-only implementation findings', () => {
+      const blockingIssue = { category: 'correctness', summary: 'Fix the boundary' };
+      const state = {
+        ...makeMinimalState('IMPLEMENTATION'),
+        implementationRework: { rejectedDigest: 'rejected-digest' },
+        implReviewFindings: [
+          {
+            iteration: 3,
+            overallVerdict: 'changes_requested',
+            blockingIssues: [blockingIssue],
+            majorRisks: [blockingIssue],
+            missingVerification: ['Run focused test'],
+            scopeCreep: ['Unrelated edit'],
+            unknowns: ['Runtime behavior'],
+            challenges: [
+              { challengeId: 'open-challenge', kind: 'implementation_challenge', outcome: 'fail' },
+              {
+                challengeId: 'closed-challenge',
+                kind: 'implementation_challenge',
+                outcome: 'fail',
+              },
+            ],
+            challengeResolutionVerdicts: [{ challengeId: 'closed-challenge', verdict: 'resolved' }],
+          },
+        ],
+      } as unknown as SessionState;
+
+      expect(buildStatusProjection(state, solo).implementationRework).toEqual({
+        rejectedDigest: 'rejected-digest',
+        iteration: 3,
+        blockingIssues: [blockingIssue],
+        majorRisks: [blockingIssue],
+        missingVerification: ['Run focused test'],
+        scopeCreep: ['Unrelated edit'],
+        unknowns: ['Runtime behavior'],
+        openChallengeIds: ['open-challenge'],
+      });
+    });
+
+    it('projects actor, policy, profile, archive, directive, and command prefixes', () => {
       const state: SessionState = {
         ...stateWithTicket('READY'),
-        activeProfile: { id: 'baseline', name: 'Baseline', rules: [], ruleContent: '' },
-        archiveStatus: 'verified',
+        activeProfile: { id: 'baseline', name: 'Baseline', ruleContent: '' },
+        regulatedArchiveStatus: 'verified',
         actorInfo: {
           id: 'actor-1',
           source: 'claim',
@@ -296,7 +336,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(projection).toMatchObject({
         phase: 'READY',
         phaseLabel: 'Ready',
-        sessionId: 'ses_test_0001',
+        flowguardSessionId: '00000000-0000-4000-8000-000000000001',
         policyMode: 'solo',
         profileId: 'baseline',
         archiveStatus: 'verified',
@@ -310,22 +350,29 @@ describe('status.ts MUTATION_KILL matrix', () => {
         expect.arrayContaining(['/ticket', '/architecture', '/review']),
       );
       expect(projection.allowedCommands.every((cmd) => cmd.startsWith('/'))).toBe(true);
-      expect(projection.nextAction.primaryCommand).toBe('/ticket');
-      expect(projection.nextAction.summary).toContain('Choose your workflow');
-      expect(projection.productNextAction.primaryCommand).toBe('/task');
-      expect(projection.productNextAction.summary).toContain('/task');
+      expect(projection.directive).toEqual({
+        kind: 'user_action',
+        code: 'CHOOSE_FLOW',
+        allowedIntents: ['CAPTURE_TASK', 'CREATE_ARCHITECTURE', 'RUN_PEER_REVIEW'],
+        commands: ['/task', '/architecture', '/review'],
+      });
+      expect(projection.directive.commands[0]).toBe('/task');
+      expect(projection.conclusion).toMatchObject({
+        kind: 'next_action',
+        action: { invocation: '/task' },
+      });
     });
 
-    it('BAD falls back to unknown policy mode and none profile without changing phase', () => {
+    it('keeps the canonical policy snapshot while projecting no active profile', () => {
       const state: SessionState = {
         ...makeMinimalState('READY'),
-        policySnapshot: undefined,
+        policySnapshot: makeMinimalState('READY').policySnapshot,
         activeProfile: null,
       };
 
       const projection = buildStatusProjection(state, solo);
 
-      expect(projection.policyMode).toBe('unknown');
+      expect(projection.policyMode).toBe('solo');
       expect(projection.profileId).toBe('none');
       expect(projection.phase).toBe('READY');
       expect(projection.actor).toBeNull();
@@ -334,34 +381,60 @@ describe('status.ts MUTATION_KILL matrix', () => {
   });
 
   describe('HAPPY/CORNER blocker projection', () => {
-    it('pending phases expose a blocker with null reason text and no human action requirement', () => {
-      for (const phase of ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'] as const) {
+    it('pending phases expose blocked=false (no gate block) with null reason text', () => {
+      const PENDING_DIRECTIVES = [
+        { phase: 'READY', code: 'CHOOSE_FLOW', command: '/task' },
+        { phase: 'TICKET', code: 'PLAN_REQUIRED', command: '/plan' },
+        { phase: 'PLAN', code: 'PLAN_REVIEW_IN_PROGRESS', command: null },
+        { phase: 'ARCHITECTURE', code: 'ARCHITECTURE_IN_PROGRESS', command: null },
+      ] as const;
+
+      for (const { phase, code, command } of PENDING_DIRECTIVES) {
         const status = buildStatusProjection(makeMinimalState(phase), solo);
         const blocked = buildBlockedProjection(makeMinimalState(phase), solo);
 
         expect(status.blocker).toEqual({ reasonCode: null, reasonText: null });
-        expect(blocked.blocked).toBe(true);
+        expect(status.directive.kind).not.toBe('blocked');
+        expect(status.directive.code).toBe(code);
+        expect(blocked.blocked).toBe(false);
         expect(blocked.reasonCode).toBeNull();
         expect(blocked.reasonText).toBeNull();
         expect(blocked.humanActionRequired).toBeNull();
-        expect(blocked.recoveryHint).toBeTruthy();
-        expect(blocked.nextResolvableCommand).toMatch(/^\//);
+        // Recovery context is only carried by WORKFLOW_BLOCKED directives.
+        expect(blocked.recoveryHint).toBe(status.directive.context?.recovery ?? null);
+        expect(blocked.recoveryHint).toBeNull();
+        // nextResolvableCommand is the directive's first command, or null for
+        // system-work positions that expose no user-runnable command.
+        expect(blocked.nextResolvableCommand).toBe(command);
+        expect(blocked.nextResolvableCommand).toBe(status.directive.commands[0] ?? null);
       }
     });
 
     it('waiting user gates expose waiting reason and humanActionRequired=true', () => {
+      const GATE_CODES: Record<string, string> = {
+        PLAN_REVIEW: 'PLAN_DECISION_REQUIRED',
+        EVIDENCE_REVIEW: 'IMPLEMENTATION_DECISION_REQUIRED',
+        ARCH_REVIEW: 'ARCHITECTURE_DECISION_REQUIRED',
+      };
+
       for (const phase of USER_GATES) {
         const state = makeMinimalState(phase);
         const status = buildStatusProjection(state, regulated);
         const blocked = buildBlockedProjection(state, regulated);
 
+        expect(status.directive).toEqual({
+          kind: 'human_gate',
+          code: GATE_CODES[phase],
+          allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+          commands: ['/approve', '/request-changes', '/reject'],
+        });
         expect(status.blocker).not.toBeNull();
         expect(status.blocker!.reasonCode).toBeNull();
         expect(status.blocker!.reasonText).toContain('Awaiting');
         expect(blocked.blocked).toBe(true);
         expect(blocked.reasonText).toContain('Awaiting');
         expect(blocked.humanActionRequired).toBe(true);
-        expect(blocked.nextResolvableCommand).toBe('/review-decision');
+        expect(blocked.nextResolvableCommand).toBe('/approve');
       }
     });
 
@@ -392,11 +465,44 @@ describe('status.ts MUTATION_KILL matrix', () => {
     it('reports failed validation detail as hint and complete slots with null hint', () => {
       const state: SessionState = {
         ...stateWithPlan('IMPLEMENTATION'),
-        selfReview: { iteration: 1, maxIterations: 3, verdict: 'approve', revisionDelta: 'none' },
+        selfReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'self-review-digest',
+          verdict: 'accept',
+          revisionDelta: 'none',
+        },
         activeChecks: ['unit', 'lint'],
         validation: [
-          { checkId: 'unit', passed: false, detail: 'unit failed', executedAt: fixedTime },
-          { checkId: 'lint', passed: true, detail: 'lint passed', executedAt: fixedTime },
+          {
+            checkId: 'unit',
+            passed: false,
+            detail: 'unit failed',
+            executedAt: fixedTime,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            executionMs: 1,
+            outputDigest: 'unit-digest',
+            timedOut: false,
+            outcome: 'inconclusive' as const,
+            classificationReason: 'non-zero exit code',
+          },
+          {
+            checkId: 'lint',
+            passed: true,
+            detail: 'lint passed',
+            executedAt: fixedTime,
+            kind: 'lint',
+            command: 'npm run lint',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'lint-digest',
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
         ],
       };
 
@@ -426,7 +532,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('READY'),
         policySnapshot: {
-          ...makeMinimalState('READY').policySnapshot!,
+          ...makeMinimalState('READY').policySnapshot,
           mode: 'team' as const,
           allowSelfApproval: true,
           centralMinimumMode: undefined,
@@ -454,9 +560,9 @@ describe('status.ts MUTATION_KILL matrix', () => {
           assurance: 'idp_verified',
           email: 'reviewer@example.com',
         },
-        archiveStatus: 'pending',
+        regulatedArchiveStatus: 'pending',
         policySnapshot: {
-          ...makeMinimalState('READY').policySnapshot!,
+          ...makeMinimalState('READY').policySnapshot,
           mode: 'regulated' as const,
           allowSelfApproval: false,
           centralMinimumMode: 'team' as const,
@@ -486,11 +592,11 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeMinimalState('PLAN_REVIEW').policySnapshot!,
+          ...makeMinimalState('PLAN_REVIEW').policySnapshot,
           mode: 'regulated' as const,
           requireHumanGates: true,
           allowSelfApproval: false,
-          minimumActorAssuranceForApproval: undefined,
+          minimumActorAssuranceForApproval: 'claim_validated',
         },
       };
 
@@ -505,7 +611,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('READY'),
         policySnapshot: {
-          ...makeMinimalState('READY').policySnapshot!,
+          ...makeMinimalState('READY').policySnapshot,
           mode: 'team' as const,
           minimumActorAssuranceForApproval: 'idp_verified' as const,
         },
@@ -540,67 +646,6 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(buildReadinessProjection(claim, solo).actorKnown).toBe(true);
       expect(buildReadinessProjection(absent, solo).actorKnown).toBe(true);
     });
-
-    it('strict selfReview config produces no warning while each legacy flag does', () => {
-      let strict = makeMinimalState('READY');
-      strict = {
-        ...strict,
-        policySnapshot: {
-          ...strict.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          },
-        },
-      };
-
-      let weakSubagent = makeMinimalState('READY');
-      weakSubagent = {
-        ...weakSubagent,
-        policySnapshot: {
-          ...weakSubagent.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          },
-        },
-      };
-
-      let weakFallback = makeMinimalState('READY');
-      weakFallback = {
-        ...weakFallback,
-        policySnapshot: {
-          ...weakFallback.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: true,
-            strictEnforcement: true,
-          },
-        },
-      };
-
-      let weakStrict = makeMinimalState('READY');
-      weakStrict = {
-        ...weakStrict,
-        policySnapshot: {
-          ...weakStrict.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: false,
-          },
-        },
-      };
-
-      expect(buildReadinessProjection(strict, solo).warnings).toEqual([]);
-      for (const state of [weakSubagent, weakFallback, weakStrict]) {
-        expect(buildReadinessProjection(state, solo).warnings).toEqual([
-          expect.stringContaining('Legacy selfReview config'),
-        ]);
-      }
-    });
   });
 
   describe('E2E status projection lifecycle', () => {
@@ -615,13 +660,31 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(ticketStatus.evidenceSummary.present).toBe(1);
       expect(ticketStatus.evidenceSummary.missing).toBe(0);
       expect(ticketStatus.allowedCommands).toContain('/ticket');
-      expect(ticketStatus.nextAction.primaryCommand).toBe('/plan');
+      expect(ticketStatus.directive).toEqual({
+        kind: 'user_action',
+        code: 'PLAN_REQUIRED',
+        allowedIntents: ['CREATE_PLAN'],
+        commands: ['/plan'],
+      });
+      expect(ticketStatus.conclusion).toMatchObject({
+        kind: 'next_action',
+        action: { invocation: '/plan' },
+      });
 
       expect(planStatus.phase).toBe('PLAN');
       expect(planStatus.evidenceSummary.present).toBe(2);
       expect(planStatus.evidenceSummary.missing).toBe(0);
       expect(planStatus.allowedCommands).toContain('/plan');
-      expect(planStatus.nextAction.primaryCommand).toBe('/continue');
+      expect(planStatus.directive).toEqual({
+        kind: 'system_work',
+        code: 'PLAN_REVIEW_IN_PROGRESS',
+        allowedIntents: [],
+        commands: [],
+      });
+      expect(planStatus.conclusion).toEqual({
+        kind: 'review_pending',
+        message: 'Independent plan review in progress.',
+      });
     });
   });
 
@@ -674,11 +737,10 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('EVIDENCE_REVIEW'),
         policySnapshot: {
-          ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+          ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot,
           mode: 'regulated' as const,
           allowSelfApproval: false,
-          // Intentionally undefined to force the ?? 'best_effort' fallback.
-          minimumActorAssuranceForApproval: undefined,
+          minimumActorAssuranceForApproval: 'claim_validated',
         },
       };
       const ctx = buildContextProjection(state);
@@ -687,7 +749,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
 
     it('fourEyesRelevant tracks allowSelfApproval === false (not just truthy) in regulated mode', () => {
       // Kills L333 ConditionalExpression `true` mutant.
-      const baseSnap = makeMinimalState('EVIDENCE_REVIEW').policySnapshot!;
+      const baseSnap = makeMinimalState('EVIDENCE_REVIEW').policySnapshot;
       const stateAllow: SessionState = {
         ...makeMinimalState('EVIDENCE_REVIEW'),
         policySnapshot: { ...baseSnap, mode: 'regulated' as const, allowSelfApproval: true },
@@ -715,43 +777,15 @@ describe('status.ts MUTATION_KILL matrix', () => {
     it('does not emit a legacy selfReview warning when config is mandatory-strict', () => {
       // Kills L345 ConditionalExpression `true` mutant: warning must NOT appear
       // for the canonical mandatory-strict config.
-      const baseSnap = makeMinimalState('READY').policySnapshot!;
+      const baseSnap = makeMinimalState('READY').policySnapshot;
       const state: SessionState = {
         ...makeMinimalState('READY'),
         policySnapshot: {
           ...baseSnap,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          },
         },
       };
       const readiness = buildReadinessProjection(state, solo);
       expect(readiness.warnings).toEqual([]);
-    });
-
-    it('emits the exact legacy warning text when selfReview config is weakened', () => {
-      // Kills L359 StringLiteral mutant — warning must contain the exact phrase
-      // "Ensure flowguard-reviewer plugin is active." verbatim.
-      const baseSnap = makeMinimalState('READY').policySnapshot!;
-      const state: SessionState = {
-        ...makeMinimalState('READY'),
-        policySnapshot: {
-          ...baseSnap,
-          selfReview: {
-            subagentEnabled: false, // weakened
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          },
-        },
-      };
-      const readiness = buildReadinessProjection(state, solo);
-      expect(readiness.warnings).toHaveLength(1);
-      expect(readiness.warnings[0]).toContain(
-        'Legacy selfReview config detected and normalized to mandatory strict.',
-      );
-      expect(readiness.warnings[0]).toContain('Ensure flowguard-reviewer plugin is active.');
     });
   });
 });

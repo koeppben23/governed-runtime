@@ -1,5 +1,5 @@
 /**
- * @module discovery/collectors/stack-detection
+ * @module discovery/collectors/stack-detection-rules
  * @description Collector: technology stack detection.
  *
  * Detects languages, frameworks, build tools, test frameworks, runtimes,
@@ -336,6 +336,11 @@ export const FRAMEWORK_CONFIG_RULES: ReadonlyArray<{
   {
     id: 'jest',
     configFiles: ['jest.config.js', 'jest.config.ts'],
+    category: 'testFramework',
+  },
+  {
+    id: 'go_test',
+    configFiles: ['go.mod'],
     category: 'testFramework',
   },
   {

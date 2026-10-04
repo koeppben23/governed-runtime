@@ -1,0 +1,49 @@
+name: Human Projection Mutation Testing
+
+on:
+  pull_request:
+    paths:
+      - 'src/presentation/reason-projection.ts'
+      - 'src/presentation/reason-projection.test.ts'
+      - 'src/presentation/claim-resolution.ts'
+      - 'src/presentation/claim-resolution.test.ts'
+      - 'src/presentation/human-verification.ts'
+      - 'src/presentation/human-verification.test.ts'
+      - 'src/presentation/claim-human-projection.ts'
+      - 'src/presentation/claim-human-projection.test.ts'
+      - 'src/presentation/proof-requirement-copy.ts'
+      - 'src/integration/proofgraph/proof-summary-projectors.test.ts'
+      - 'src/presentation/markdown.ts'
+      - 'src/presentation/markdown.test.ts'
+      - 'stryker.human-projection.conf.json'
+      - 'vitest.stryker-human-projection.config.ts'
+      - '.github/workflows/mutation-human-projection.yml'
+      - 'scripts/verify-mutation-admission.mjs'
+      - 'scripts/mutation-profile-registry.json'
+      - 'scripts/stryker-patch.js'
+
+permissions:
+  contents: read
+
+jobs:
+  mutation-human-projection:
+    name: mutation-human-projection
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run human-projection mutation tests
+        run: node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json
+      - name: Write and verify mutation admission manifest
+        run: |
+          node scripts/verify-mutation-admission.mjs --profile human-projection --write-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile human-projection --verify-profile-manifest --require-admitted

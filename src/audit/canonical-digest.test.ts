@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
+import {
+  canonicalJsonStringify,
+  computeCanonicalEventDigest,
+  computeCanonicalEventDigests,
+} from './canonical-digest.js';
 import {
   computeChainHash,
   CURRENT_AUDIT_FORMAT_VERSION,
@@ -7,6 +11,7 @@ import {
   createTransitionEvent,
 } from './types.js';
 import type { ChainedAuditEvent } from './types.js';
+import type { Event, Phase } from '../state/schema.js';
 
 describe('canonicalEventDigest', () => {
   it('produces deterministic digest for same event', () => {
@@ -60,16 +65,35 @@ describe('canonicalEventDigest', () => {
     );
   });
 
-  it('canonicalEventDigest field itself is excluded from computation', () => {
+  it('semanticEventDigest field itself is excluded from computation', () => {
     const base = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
-    const withCanonical = { ...base, canonicalEventDigest: 'different_value' };
-    expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(withCanonical));
+    const withSemantic = { ...base, semanticEventDigest: 'different_value' };
+    expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(withSemantic));
+  });
+
+  it('auditSequence and recordedAt are excluded from computation (positional authority)', () => {
+    const base = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
+    const positional = {
+      ...base,
+      auditSequence: 999,
+      recordedAt: '2027-01-01T00:00:00.000Z',
+    };
+    expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(positional));
   });
 
   it('produces hex-formatted SHA-256', () => {
     const event = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
     const digest = computeCanonicalEventDigest(event);
     expect(/^[0-9a-f]{64}$/.test(digest)).toBe(true);
+  });
+
+  it('multi-algorithm digests are the raw SHA-2 digests of the canonical content', () => {
+    const event = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
+    const digests = computeCanonicalEventDigests(event);
+
+    expect(digests.sha256).toEqual(Buffer.from(computeCanonicalEventDigest(event), 'hex'));
+    expect(digests.sha384).toHaveLength(48);
+    expect(digests.sha512).toHaveLength(64);
   });
 
   it('canonical JSON sorts nested object keys recursively', () => {
@@ -88,17 +112,17 @@ describe('canonicalEventDigest', () => {
 });
 
 function buildEvent(
-  from: string,
-  to: string,
-  eventName: string,
+  from: Phase,
+  to: Phase,
+  eventName: Event,
 ): Omit<ChainedAuditEvent, 'chainHash'> {
   const evt = createTransitionEvent(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    to as Parameters<typeof createTransitionEvent>[1],
+    to,
     {
-      from: from as Parameters<typeof createTransitionEvent>[2]['from'],
-      to: to as Parameters<typeof createTransitionEvent>[2]['to'],
-      event: eventName as Parameters<typeof createTransitionEvent>[2]['event'],
+      from,
+      to,
+      event: eventName,
       autoAdvanced: false,
       chainIndex: -1,
     },
@@ -112,10 +136,13 @@ function buildEvent(
 function buildNestedBody(decision: Record<string, unknown>): Omit<ChainedAuditEvent, 'chainHash'> {
   return {
     id: '22222222-2222-4222-8222-222222222222',
-    sessionId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    flowguardSessionId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     phase: 'PLAN_REVIEW',
     event: 'decision:DEC-001',
-    timestamp: '2026-01-01T00:00:00.000Z',
+    occurredAt: '2026-01-01T00:00:00.000Z',
+    auditSequence: 1,
+    recordedAt: '2026-01-01T00:00:00.000Z',
+    semanticEventDigest: 'd'.repeat(64),
     actor: 'human',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: { decision },

@@ -2,22 +2,12 @@
  * @module integration/test-helpers
  * @description Shared test infrastructure for integration and E2E tests.
  *
- * Provides:
- * - TestToolContext: structural type matching the internal ToolContext in tools.ts
- * - createToolContext(): factory for building tool execution contexts
- * - createTestWorkspace(): tmpDir + OPENCODE_CONFIG_DIR setup with cleanup
- * - isTarAvailable(): capability gate for archive tests
- * - GIT_MOCK_DEFAULTS: default return values for git adapter mocks
- * - parseToolResult(): parse JSON tool output into typed object
- *
- * Design:
- * - TestToolContext is defined structurally (not imported from tools.ts).
- *   This keeps the production API surface unchanged.
- * - All filesystem operations use real temp directories with OPENCODE_CONFIG_DIR
- *   redirection, following the pattern established in workspace.test.ts.
- * - Git adapter functions (remoteOriginUrl, changedFiles, listRepoSignals) are
- *   expected to be mocked via vi.mock() at the test-file level. This module
- *   provides only the default values, not the mock setup itself.
+ * Provides tool contexts, temp-workspace setup, tar capability detection, git
+ * mock defaults, tool-result parsing, strict-review fixtures, and scoped env
+ * mutation. TestToolContext is defined structurally (not imported from
+ * tools.ts) to keep the production API surface unchanged. All filesystem
+ * operations use real temp directories with OPENCODE_CONFIG_DIR redirection;
+ * git adapter functions are mocked at the test-file level.
  *
  * @version v1
  */
@@ -26,20 +16,54 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readState, writeState } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
-import type { ReviewFindings, ReviewObligationType } from '../state/evidence.js';
+import type {
+  ReviewAttempt,
+  ReviewFindings,
+  ReviewObligation,
+  ReviewObligationType,
+} from '../state/evidence.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
   findLatestObligation,
-  hashFindings,
-  hashText,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
+import { hashText } from '../shared/hashing.js';
+import { mintObservationCapabilityIfResolvable } from './review/obligations/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
+import { writeStateWithAuditOperations } from './audit-outbox.js';
+import { buildReviewChallengeContract } from './review/obligations/challenge-contract.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
+
+/**
+ * Structural OpenCode client stub that satisfies plugin boot validation.
+ *
+ * `FlowGuardAuditPlugin` fail-closes at boot unless the client exposes
+ * `session.create`, `session.prompt`, and the agent registry. Tests that only
+ * exercise hook behavior use this base and override the fields they need.
+ */
+export function createBootableHostClient(overrides?: {
+  session?: Record<string, unknown>;
+  app?: Record<string, unknown>;
+}): { session: Record<string, unknown>; app: Record<string, unknown> } {
+  return {
+    session: {
+      create: async () => ({}),
+      prompt: async () => ({}),
+      ...(overrides?.session ?? {}),
+    },
+    app: {
+      log: async () => {},
+      agents: async () => ({ data: [] }),
+      ...(overrides?.app ?? {}),
+    },
+  };
+}
 
 /**
  * Assert that OPENCODE_CONFIG_DIR is set and points to a temporary directory.
@@ -241,8 +265,8 @@ export const GIT_MOCK_DEFAULTS = {
    */
   repoSignals: {
     files: ['tsconfig.json', 'package.json', 'src/index.ts'],
-    packageFiles: ['package.json'],
-    configFiles: ['tsconfig.json'],
+    packageFilePaths: ['package.json'],
+    configFilePaths: ['tsconfig.json'],
   },
 } as const;
 
@@ -307,12 +331,45 @@ export function isBlockedResult(result: Record<string, unknown>): boolean {
   return result.error === true && typeof result.code === 'string';
 }
 
+export async function freezeRepositoryReviewObligation(
+  sessDir: string,
+  obligationId: string,
+): Promise<void> {
+  const state = await readState(sessDir);
+  if (!state) throw new Error('No test session state found');
+  // Frozen obligation attributes are authority state: use the full prepare
+  // path, not the metadata-only direct channel. The dynamic import keeps the
+  // workspace/artifact module graph out of this helper's static imports.
+  const { writeStateWithArtifactsAndAuditOperations } = await import('./tools/helpers.js');
+  await writeStateWithArtifactsAndAuditOperations(sessDir, {
+    ...state,
+    reviewAssurance: {
+      ...state.reviewAssurance!,
+      obligations: state.reviewAssurance!.obligations.map((obligation) =>
+        obligation.obligationId === obligationId
+          ? {
+              ...obligation,
+              reviewSubjectScope: {
+                kind: 'repository_change',
+                paths: ['docs/test.md'],
+                revisions: ['base', 'head'],
+              },
+              repositoryRevisionProvenance: {
+                kind: 'available',
+                headSha: 'a'.repeat(40),
+                baseSha: 'b'.repeat(40),
+              },
+            }
+          : obligation,
+      ),
+    },
+  });
+}
+
 /**
  * Fulfill a strict independent-review obligation in tool execution tests.
- *
- * Production fulfillment is performed by the OpenCode plugin orchestrator. Direct
- * tool tests do not run plugin hooks, so they use this helper to set the same
- * mandate-bound evidence before submitting ReviewFindings to the tool.
+ * Production fulfillment runs through the OpenCode plugin orchestrator; direct
+ * tool tests use this helper to set the same mandate-bound evidence.
  */
 export async function fulfillStrictReviewObligation(
   sessDir: string,
@@ -320,14 +377,27 @@ export async function fulfillStrictReviewObligation(
     obligationType: ReviewObligationType;
     iteration: number;
     planVersion: number;
-    overallVerdict?: 'accept' | 'changes_requested';
+    overallVerdict?: ReviewFindings['overallVerdict'];
     childSessionId?: string;
+    /** Bind this exact attempt; defaults to the obligation's first attempt. */
+    attemptId?: string;
+    /**
+     * Number of blocking issues carried by the captured findings. Paired with
+     * `overallVerdict: 'accept'` this constructs the F12 incoherent-capture
+     * fixture.
+     */
+    blockingIssueCount?: number;
   },
 ): Promise<ReviewFindings> {
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
-
-  const assurance = state.reviewAssurance ?? { obligations: [], invocations: [] };
+  const assurance = state.reviewAssurance ?? {
+    assuranceSchemaVersion: 'review-assurance.v7' as const,
+    obligations: [],
+    invocations: [],
+    attempts: [],
+    dispatches: [],
+  };
   const obligation = findLatestObligation(
     assurance.obligations,
     input.obligationType,
@@ -336,17 +406,89 @@ export async function fulfillStrictReviewObligation(
   );
   if (!obligation) throw new Error('No matching review obligation found');
 
+  // Canonical evidence refs from the obligation's frozen challenge contract:
+  // host-observed identity must match exactly, including artifact section paths.
+  const canonicalRefs = buildReviewChallengeContract(state, obligation)?.evidenceRefs as
+    ReviewFindings['challenges'][number]['evidenceRefs'] | undefined;
+  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, () => {
+    const challengeId = crypto.randomUUID();
+    if (obligation.requiredChallengeKind === 'implementation_challenge') {
+      return {
+        challengeId,
+        obligationId: obligation.obligationId,
+        scenario: 'Exercise the changed behavior against its implementation evidence.',
+        claim: 'The implementation handles the reviewed scenario.',
+        locations: ['implementation evidence'],
+        kind: 'implementation_challenge' as const,
+        evidenceRefs:
+          canonicalRefs ??
+          ([
+            {
+              kind: 'implementation' as const,
+              implementationDigest: state.implementation?.digest ?? 'missing-implementation-digest',
+            },
+            {
+              kind: 'validation_attempt' as const,
+              attemptId:
+                state.validationAttempts.find(
+                  (a) => a.scope === 'implementation' && a.result.passed,
+                )?.attemptId ??
+                state.validationAttempts[0]?.attemptId ??
+                crypto.randomUUID(),
+            },
+          ] satisfies ReviewFindings['challenges'][number]['evidenceRefs']),
+        outcome: 'pass' as const,
+      };
+    }
+    return {
+      challengeId,
+      obligationId: obligation.obligationId,
+      scenario: 'Exercise the reviewed design against its canonical section.',
+      claim: 'The design addresses the reviewed scenario.',
+      locations: ['plan section'],
+      kind: 'design_challenge' as const,
+      evidenceRefs:
+        (canonicalRefs as
+          | Extract<
+              ReviewFindings['challenges'][number],
+              { kind: 'design_challenge' }
+            >['evidenceRefs']
+          | undefined) ??
+        ([
+          {
+            kind: 'plan_adr_section' as const,
+            artifactKind: 'plan' as const,
+            artifactDigest: state.plan?.current.digest ?? 'missing-plan-digest',
+            sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+            excerptDigest: state.plan?.current.digest ?? 'missing-plan-digest',
+          },
+        ] satisfies ReviewFindings['challenges'][number]['evidenceRefs']),
+      outcome: 'supported' as const,
+    };
+  }) as ReviewFindings['challenges'];
+
   const findings: ReviewFindings = {
     iteration: input.iteration,
     planVersion: input.planVersion,
     reviewMode: 'subagent',
     overallVerdict: input.overallVerdict ?? 'accept',
-    blockingIssues: [],
+    blockingIssues: Array.from({ length: input.blockingIssueCount ?? 0 }, (_, index) => ({
+      severity: 'major' as const,
+      category: 'correctness' as const,
+      message: `captured incoherent finding ${String(index + 1)}`,
+      relation: {
+        subjectAnchors: [{ kind: 'content' as const, subjectDigest: obligation.subjectDigest }],
+        evidenceLocations: [],
+      },
+    })),
     majorRisks: [],
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: input.childSessionId ?? `ses_${input.obligationType}_reviewer` },
+    reviewedBy: {
+      sessionId:
+        input.childSessionId ?? `ses_${input.obligationType}_reviewer_${obligation.obligationId}`,
+    },
     reviewedAt: new Date().toISOString(),
     attestation: {
       mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -356,46 +498,58 @@ export async function fulfillStrictReviewObligation(
       planVersion: input.planVersion,
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
+    challenges,
   };
 
-  const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
+  const boundAttempt = bindHostTaskAttempt(
+    assurance.attempts,
+    obligation,
+    findings.reviewedBy.sessionId,
+    input.attemptId,
+  );
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
-    parentSessionId: state.binding.sessionId,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
+    parentSessionId: state.binding.hostSessionId,
     childSessionId: findings.reviewedBy.sessionId,
-    invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
-    hostVisible: isHostTask,
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
-    // BUG-17 Batch 10: host_task_required mode resolves findings from invocation
-    // evidence (capturedRawFindings) rather than from agent-submitted args.
-    // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
-    ...(isHostTask ? { capturedRawFindings: findings } : {}),
+    attemptId: boundAttempt.attemptId,
+    // Host-observed contract: the structured capture is the only findings
+    // authority; the captured verdict is derived from it by the builder.
+    capturedRawFindings: findings,
   });
-  const obligationAcceptedByReviewer = !isHostTask;
+  const obligationAcceptedByReviewer = true;
 
-  await writeState(sessDir, {
+  await writeStateWithAuditOperations(sessDir, {
     ...state,
     reviewAssurance: {
+      ...assurance,
       obligations: assurance.obligations.map((item) =>
         item.obligationId === obligation.obligationId
           ? {
               ...item,
               pluginHandshakeAt: new Date().toISOString(),
               status: obligationAcceptedByReviewer ? ('fulfilled' as const) : item.status,
-              invocationId: obligationAcceptedByReviewer
-                ? invocation.invocationId
-                : item.invocationId,
-              fulfilledAt: obligationAcceptedByReviewer
-                ? new Date().toISOString()
-                : item.fulfilledAt,
+              // Canonical linkage mirrors production: the plugin fulfills the
+              // obligation with the invocation id (fulfillObligation) before
+              // the tool consumes it. Without this, consumed obligations stay
+              // linkage-less and the strict resolver fails closed.
+              invocationId: invocation.invocationId,
+              fulfilledAt: new Date().toISOString(),
             }
           : item,
       ),
       invocations: [...assurance.invocations, invocation],
+      attempts: [
+        ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
+        boundAttempt,
+      ],
+      dispatches: [...assurance.dispatches, completedDispatchForInvocation(invocation)],
     },
   });
 
@@ -403,11 +557,105 @@ export async function fulfillStrictReviewObligation(
 }
 
 /**
- * Add strict subagent ReviewFindings to direct tool-test verdict calls.
+ * Canonical repository Discovery context for repository-governed attempts.
+ * Attempts with a repository Discovery variant MUST carry an observation
+ * capability; callers mint it via `mintObservationCapability()`.
+ */
+export function repositoryDiscoveryContext(
+  observedAt: string = new Date().toISOString(),
+): ReviewAttempt['repositoryDiscovery'] {
+  return {
+    kind: 'repository',
+    snapshot: {
+      observedAt,
+      discoveryDigest: null,
+      workspaceFingerprint: null,
+      health: {
+        status: 'available',
+        healthy: true,
+        failedCollectorNames: [],
+        hasBudgetExhaustion: false,
+        ageWarning: null,
+        notVerified: [],
+      },
+      drift: {
+        status: 'not_assessed',
+        drifted: false,
+        changedContributorNames: [],
+        notVerified: [],
+      },
+      detectedStack: null,
+      verificationCandidates: [],
+      riskSurfaces: [],
+      warnings: [],
+      notVerified: [],
+    },
+  };
+}
+
+function attemptRepositoryDiscovery(obligation: {
+  readonly repositoryAuthority?: ReviewObligation['repositoryAuthority'];
+}): ReviewAttempt['repositoryDiscovery'] {
+  if (!obligation.repositoryAuthority) return { kind: 'not_applicable' };
+  const context = repositoryDiscoveryContext();
+  if (context.kind !== 'repository') return { kind: 'not_applicable' };
+  return {
+    ...context,
+    snapshot: {
+      ...context.snapshot,
+      health: { ...context.snapshot.health, status: 'unavailable', healthy: false },
+    },
+  };
+}
+
+function bindHostTaskAttempt(
+  attempts: readonly ReviewAttempt[],
+  obligation: ReviewObligation,
+  childSessionId: string,
+  attemptId?: string,
+): ReviewAttempt {
+  const now = new Date().toISOString();
+  const existing = attemptId
+    ? attempts.find((attempt) => attempt.attemptId === attemptId)
+    : attempts.find((attempt) => attempt.obligationId === obligation.obligationId);
+  if (attemptId && !existing) {
+    throw new Error(`No matching review attempt found: ${attemptId}`);
+  }
+  const attempt = existing ?? {
+    attemptId: crypto.randomUUID(),
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: attempts.length,
+    childSessionId,
+    status: 'bound' as const,
+    origin: { kind: 'initial' as const },
+    repositoryDiscovery: attemptRepositoryDiscovery(obligation),
+    ...(obligation.repositoryAuthority
+      ? { observationCapability: mintObservationCapabilityIfResolvable(obligation) ?? undefined }
+      : {}),
+    observations: [],
+    createdAt: now,
+    completedAt: now,
+  };
+  return {
+    ...attempt,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    childSessionId,
+    status: 'bound',
+    completedAt: attempt.completedAt ?? now,
+  };
+}
+
+/**
+ * Bind strict host-captured review evidence to direct tool-test verdict calls.
  *
  * Production evidence is injected by plugin hooks. Direct integration tests call
- * tools without those hooks, so tests that drive unrelated lifecycle behavior
- * use this helper to satisfy the same strict obligation contract.
+ * tools without those hooks, so tests that drive unrelated lifecycle behavior use
+ * this helper to satisfy the same strict obligation contract. The tool resolves
+ * the captured evidence itself; the caller keeps submitting ONLY the verdict.
  */
 function findPendingObligation(
   allObligations: Array<{
@@ -437,7 +685,6 @@ function isValidVerdict(v: unknown): boolean {
 export async function withStrictReviewFindings(sessDir: string, args: unknown): Promise<unknown> {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
   const record = args as Record<string, unknown>;
-  if (record.reviewFindings) return args;
   if (!isValidVerdict(record.reviewVerdict)) return args;
   const verdict = String(record.reviewVerdict);
 
@@ -448,7 +695,7 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
   const pending = findPendingObligation(allObligations);
   if (!pending) return args;
 
-  const reviewFindings = await fulfillStrictReviewObligation(sessDir, {
+  await fulfillStrictReviewObligation(sessDir, {
     obligationType: pending.obligationType as Parameters<
       typeof fulfillStrictReviewObligation
     >[1]['obligationType'],
@@ -457,7 +704,7 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
     overallVerdict: verdict as 'accept' | 'changes_requested',
   });
 
-  return { ...record, reviewFindings };
+  return args;
 }
 
 // ─── Scoped Env Mutation ─────────────────────────────────────────────────────

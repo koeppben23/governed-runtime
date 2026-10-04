@@ -4,6 +4,15 @@
  *
  * This module interprets already-collected ExecutionEvidence. It never executes
  * commands, never changes pass/fail, and never contributes to outputDigest.
+ *
+ * The outcome parameter controls diagnostic authority:
+ *  - supported:   no guidance needed (passed)
+ *  - falsified:   the check found explicit claim-relevant falsification —
+ *                 standard category-based repair guidance applies
+ *  - inconclusive: the check failed but produced nothing claim-relevant —
+ *                 diagnostic only, explicitly NOT_VERIFIED
+ *  - blocked:     the check could not execute (timeout, crash, no output) —
+ *                 provider-recovery diagnostics only, no implementation change
  */
 
 import type { ExecutionEvidence } from './executor.js';
@@ -13,6 +22,7 @@ import type {
   RepairGuidanceConfidence,
   RepairGuidanceEvidenceExcerpt,
   RepairGuidanceLocation,
+  ValidationOutcome,
 } from '../state/evidence-validation.js';
 
 const MAX_PARSE_CHARS = 8_192;
@@ -36,15 +46,35 @@ interface StreamLine {
   readonly text: string;
 }
 
-export function deriveRepairGuidance(evidence: ExecutionEvidence): RepairGuidance {
+export function deriveRepairGuidance(
+  evidence: ExecutionEvidence,
+  outcome: ValidationOutcome,
+): RepairGuidance {
   const excerpts = collectEvidenceExcerpts(evidence);
 
-  if (evidence.passed) {
+  if (outcome === 'supported') {
     return unavailable('passed', excerpts, [
       'No repair action is recommended for a passing check.',
     ]);
   }
 
+  if (outcome === 'blocked') {
+    return unavailable('insufficient_confidence', excerpts, [
+      'The check could not produce answerative output (timeout, crash, or empty output).',
+      'Inspect the check command for portability, resource limits, or silent failures in the execution environment.',
+      'Rerun the check after reducing scope or increasing the configured timeout through normal project configuration.',
+    ]);
+  }
+
+  if (outcome === 'inconclusive') {
+    return unavailable('insufficient_confidence', excerpts, [
+      'The check produced output that was not claim-relevant and does not establish a reliable repair category.',
+      'Inspect the bounded stdout/stderr excerpts for transient or environmental issues.',
+      'Consider rerunning the check; do not assume the root cause is an implementation defect without further explicit evidence.',
+    ]);
+  }
+
+  // outcome === 'falsified': explicit claim-relevant failure — standard analysis applies
   if (evidence.timedOut) {
     return available('timeout', 'high', [], excerpts, [
       'Inspect whether the command hangs, exceeds the configured timeout, or needs a narrower verification target.',
@@ -72,7 +102,7 @@ export function deriveRepairGuidance(evidence: ExecutionEvidence): RepairGuidanc
   );
 }
 
-function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
+export function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
   const lines = outputLines(evidence);
   const hasMeaningfulOutput = lines.some((line) => line.text.length > 0);
   const locations = collectLocations(lines);
@@ -92,45 +122,53 @@ function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
   };
 }
 
+interface CategoryMatcher {
+  readonly category: RepairGuidanceCategory;
+  readonly pattern: RegExp;
+}
+
+const CATEGORY_MATCHERS: readonly CategoryMatcher[] = [
+  { category: 'typecheck', pattern: /\bTS\d{4}\b|Type '.*' is not assignable|tsc/i },
+  {
+    category: 'lint',
+    pattern: /\beslint\b|\bno-unused-vars\b|\bprefer-const\b|\berror\s+[^\n]+\s+\w[\w/-]+/i,
+  },
+  {
+    category: 'test',
+    pattern: /\bFAIL\b|AssertionError|\bExpected\b|\btest failed\b|\bTests?\s+failed\b/i,
+  },
+  { category: 'format', pattern: /prettier|formatting|Code style issues found|not formatted/i },
+  {
+    category: 'security',
+    pattern: /\b(CVE|GHSA)-[\w-]+\b|\bvulnerabilit(?:y|ies)\b|\bseverity\b|npm audit/i,
+  },
+  {
+    category: 'coverage',
+    pattern: /coverage threshold|Statements\s*:\s*\d|Branches\s*:\s*\d|coverage.*failed/i,
+  },
+  {
+    category: 'build',
+    pattern:
+      /\bbuild failed\b|\bModule not found\b|\bCannot find module\b|\bwebpack\b|\bvite\b|\brollup\b/i,
+  },
+];
+
+function firstMatchingCategory(combined: string): RepairGuidanceCategory | null {
+  for (const matcher of CATEGORY_MATCHERS) {
+    if (matcher.pattern.test(combined)) return matcher.category;
+  }
+  return null;
+}
+
 function detectCategory(
   evidence: ExecutionEvidence,
   lines: readonly StreamLine[],
 ): RepairGuidanceCategory | null {
   const combined = lines.map((line) => line.text).join('\n');
-  const kind = evidence.kind;
-
-  const typeCheckMatch = /\bTS\d{4}\b|Type '.*' is not assignable|tsc/i.test(combined);
-  const lintMatch =
-    /\beslint\b|\bno-unused-vars\b|\bprefer-const\b|\berror\s+[^\n]+\s+\w[\w/-]+/i.test(combined);
-  const testMatch =
-    /\bFAIL\b|AssertionError|\bExpected\b|\btest failed\b|\bTests?\s+failed\b/i.test(combined);
-  const formatMatch = /prettier|formatting|Code style issues found|not formatted/i.test(combined);
-  const securityMatch =
-    /\b(CVE|GHSA)-[\w-]+\b|\bvulnerabilit(?:y|ies)\b|\bseverity\b|npm audit/i.test(combined);
-  const coverageMatch =
-    /coverage threshold|Statements\s*:\s*\d|Branches\s*:\s*\d|coverage.*failed/i.test(combined);
-  const buildMatch =
-    /\bbuild failed\b|\bModule not found\b|\bCannot find module\b|\bwebpack\b|\bvite\b|\brollup\b/i.test(
-      combined,
-    );
-
-  if (kind === 'typecheck' && typeCheckMatch) return 'typecheck';
-  if (kind === 'lint' && lintMatch) return 'lint';
-  if (kind === 'test' && testMatch) return 'test';
-  if (kind === 'format' && formatMatch) return 'format';
-  if (kind === 'security' && securityMatch) return 'security';
-  if (kind === 'coverage' && coverageMatch) return 'coverage';
-  if (kind === 'build' && buildMatch) return 'build';
-
-  if (typeCheckMatch) return 'typecheck';
-  if (lintMatch) return 'lint';
-  if (testMatch) return 'test';
-  if (formatMatch) return 'format';
-  if (securityMatch) return 'security';
-  if (coverageMatch) return 'coverage';
-  if (buildMatch) return 'build';
-
-  return null;
+  const kindMatcher = CATEGORY_MATCHERS.find(
+    (matcher) => matcher.category === evidence.kind && matcher.pattern.test(combined),
+  );
+  return kindMatcher ? kindMatcher.category : firstMatchingCategory(combined);
 }
 
 function recommendedActions(category: RepairGuidanceCategory): string[] {
@@ -306,7 +344,7 @@ function boundedLines(stream: 'stdout' | 'stderr', output: string): StreamLine[]
 function sanitizeLine(line: string): string {
   return (
     line
-      // eslint-disable-next-line no-control-regex
+      // eslint-disable-next-line no-control-regex -- sanitizes raw CLI output before it becomes review evidence
       .replace(/[\x00-\x1f\x7f]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()

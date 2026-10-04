@@ -26,9 +26,11 @@
 
 import type { SessionState } from '../state/schema.js';
 
-/** Reason codes surfaced by the validation-evidence authority (#400). */
+/** Reason codes surfaced by the validation-evidence authority (#400, F4). */
 export type ValidationEvidenceReasonCode =
-  'VALIDATION_EVIDENCE_REQUIRED' | 'VALIDATION_EVIDENCE_UNVERIFIED';
+  | 'VALIDATION_EVIDENCE_REQUIRED'
+  | 'VALIDATION_EVIDENCE_UNVERIFIED'
+  | 'VALIDATION_EVIDENCE_STACK_NO_COMMANDS';
 
 /** Outcome of a validation-evidence evaluation. Pure value object. */
 export interface ValidationEvidenceDecision {
@@ -84,6 +86,27 @@ export function hasTrustworthyDiscoveryForVerification(state: SessionState): boo
 }
 
 /**
+ * Whether Discovery detected a technology stack for this session.
+ *
+ * A detected stack means the repository is a recognized, real codebase — so an
+ * EMPTY active-check list is a *mis-detection hazard* (a stack exists but no
+ * verification commands were derived), NOT a verified "this repo has no commands"
+ * property. Signals, in priority order:
+ *  - `detectedStack.items` is non-empty (the direct, authoritative signal); or
+ *  - `discoverySummary` reports primary languages or frameworks (coarser fallback).
+ *
+ * Reused exclusively by `evaluateValidationEvidence`. Exported for negative-path
+ * test coverage of each detection edge.
+ */
+export function hasDetectedStack(state: SessionState): boolean {
+  if (state.detectedStack != null && state.detectedStack.items.length > 0) {
+    return true;
+  }
+  const summary = state.discoverySummary;
+  return summary != null && (summary.primaryLanguages.length > 0 || summary.frameworks.length > 0);
+}
+
+/**
  * Decide whether progressing past VALIDATION without verification evidence is
  * admissible, purely from SessionState.
  *
@@ -91,8 +114,13 @@ export function hasTrustworthyDiscoveryForVerification(state: SessionState): boo
  * active-check list is governed by the normal pass/fail check evaluation and is
  * never blocked here):
  *
- * - enforcement 'off' / 'advisory' : never blocks (legacy/observe-only). Preserves
- *   the historical vacuous-pass behavior for low-risk modes.
+ * - LENIENT enforcement 'off' / 'advisory' (required === false):
+ *     - a technology stack WAS detected → VALIDATION_EVIDENCE_STACK_NO_COMMANDS.
+ *       A detected stack with zero active checks is a mis-detection hazard; the
+ *       runtime refuses to pass vacuously. The ONLY opt-out is the explicit
+ *       `allowNoCommands` policy flag.
+ *     - no stack detected → never blocks (genuine low-risk / empty repo; the
+ *       historical vacuous-pass behavior is preserved).
  * - enforcement 'required' + allowNoCommands===true : explicit, policy-backed
  *   exception. Never blocks. This is the ONLY sanctioned opt-out.
  * - enforcement 'required' + allowNoCommands===false (the fail-closed default for
@@ -109,6 +137,17 @@ export function evaluateValidationEvidence(state: SessionState): ValidationEvide
   // Non-empty active checks: ordinary check evaluation governs; not this authority.
   if (state.activeChecks.length > 0) {
     return { blocked: false, required, code: null };
+  }
+
+  // Stack-detected-but-no-commands (F4, fail-closed under lenient enforcement).
+  // When enforcement is NOT 'required' (off/advisory), an empty active-check list
+  // would historically pass vacuously. If Discovery just detected a real stack,
+  // that empty list is a mis-detection hazard, so block — UNLESS the sanctioned
+  // `allowNoCommands` opt-out is set. This branch is intentionally gated on
+  // `!required` so it never pre-empts the stricter required path below, which owns
+  // its own REQUIRED/UNVERIFIED trust semantics.
+  if (!required && policy.allowNoCommands !== true && hasDetectedStack(state)) {
+    return { blocked: true, required, code: 'VALIDATION_EVIDENCE_STACK_NO_COMMANDS' };
   }
 
   if (!required) {

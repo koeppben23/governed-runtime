@@ -2,51 +2,60 @@
  * @module architecture/dependency-rules
  * @description Clean Architecture dependency boundary enforcement.
  *
- * This test statically analyzes all production TypeScript import and
- * re-export edges and enforces layer dependency rules. Violations
- * surface as test failures. The regex-based parser may miss
- * dynamically-constructed imports; for those, an explicit exception
- * comment is required.
+ * This test statically analyzes all production TypeScript import and re-export
+ * edges. Two authorities govern the result:
  *
- * ARCHITECTURE RULES (verified by these tests):
+ * 1. TOP-LEVEL MODULE DIRECTION: `MODULE_DEPENDENCY_POLICY`
+ *    (`module-dependency-policy.ts`) is the single positive authority — the
+ *    exact set of governed modules that each governed module may import.
+ *    Observed and declared edges must match in both directions, so both an
+ *    unapproved direction and a stale policy edge fail. This replaces the
+ *    historical distributed deny lists and the per-module allow-lists.
+ * 2. FINE-GRAINED BOUNDARIES inside an allowed edge stay here: state may only
+ *    use the listed shared primitives and owns its evidence discriminators,
+ *    archive/types and discovery/types are leaves, rails must not use Node I/O
+ *    builtins directly, integration/tools must not import plugin-* modules, and
+ *    entry / test-support / unclassified imports stay default-deny.
  *
- * 1. LEAF MODULES: Inner layers must NOT import from outer layers
- *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/, shared/
- *    - state/ owns evidence-level discriminators in state/evidence-identifiers.ts
- *      (FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE);
- *      shared/flowguard-identifiers.ts re-exports them for backward compatibility
- *    - archive/types.ts must not import from any other FF module
- *    - discovery/types.ts must not import from any other FF module
+ * MODULE-LEVEL CYCLES are prohibited outright: `module-graph.ts` detects
+ * strongly connected components and cyclic directed edges, and the observed
+ * graph must contain none. There is no debt baseline or lineage grandfathering.
+ * FILE-LEVEL cycles remain rejected outright by Rule 8.
  *
- * 2. MACHINE LAYER: machine/ may only import from state/
- *    - machine/ must not import from rails/, adapters/, integration/, config/, audit/, discovery/, archive/, logging/, cli/, diagnostics/
+ * Module specifiers are extracted by the shared AST collector
+ * (`import-specifiers.ts`). Computed module paths are not statically
+ * resolvable; for those, an explicit exception comment is required.
  *
- * 3. RAILS LAYER: rails/ must NOT import from integration/ (prevents circular dependencies)
- *    - rails/ may import from config/, audit/, discovery/types, state/, machine/
- *
- * 4. RAILS LAYER: rails/ must NOT import Node I/O builtins directly
- *    - fs, path, crypto, child_process should be in adapters/
- *    - This is a hard rule enforced by this test
- *
- * 5. INWARD IMPORTS: Outer layers MAY import from inner layers (entry-point pattern)
- *    - integration/ may import rails/, adapters/, machine/, state/, etc.
- *    - adapters/ may import config/, discovery/, archive/, state/, machine/, rails/
- *    - adapters/ must NOT import integration/ (HAI boundary: adapters/ defines the
- *      host-agnostic interface, integration/ implements it)
- *
- * The key inversion rule is:
- * - Inner layers (state, machine) are PROHIBITED from importing outer layers
- * - Outer layers (integration, adapters) MAY import inner layers
- *
- * @version v1
+ * @version v2
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
+import {
+  isTestSourcePath,
+  MODULE_CLASSIFICATION,
+  MODULE_CLASSIFICATION_BY_NAME,
+} from './module-classification.js';
+import { INTEGRATION_OWNERS } from './integration-placement-manifest.js';
+import {
+  isRootCompositionFile,
+  isRootHostRuntimeFile,
+  isToolCommandContextFile,
+  placementOwnerOf,
+} from './integration-placement-analyzer.js';
+import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
+import { collectImportSpecifiers } from './import-specifiers.js';
+import {
+  cycleParticipatingEdges,
+  cyclicStronglyConnectedComponents,
+  edgeKey,
+  moduleEdgeSet,
+  type ModuleEdge,
+} from './module-graph.js';
+import { normalizeRepoPath, repoRelative } from './repo-path.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
@@ -146,21 +155,14 @@ const NODE_BUILTIN_PREFIXES = [
   'node:perf_hooks',
 ];
 
-/**
- * Normalize a file path to use forward slashes.
- * Ensures `.includes("/state/")` etc. work on all platforms
- * (Windows `path.join()` produces backslash separators).
- */
-function normalizeSep(p: string): string {
-  return p.replace(/\\/g, '/');
-}
-
 interface ImportInfo {
   module: string;
   raw: string;
   isNodeBuiltin: boolean;
+  isRelative: boolean;
   isFFModule: boolean;
   targetModule: string | null;
+  targetResolved: boolean;
 }
 
 interface FileAnalysis {
@@ -174,6 +176,15 @@ interface ImportViolation {
   rule: string;
   message: string;
   imports?: string[];
+  /** Concrete repair step for this rule. */
+  hint?: string;
+}
+
+function formatViolation(violation: ImportViolation): string {
+  return (
+    `  - ${violation.file}: ${violation.message}` +
+    (violation.hint ? `\n      fix: ${violation.hint}` : '')
+  );
 }
 
 function mockImport(module: string): ImportInfo {
@@ -181,8 +192,10 @@ function mockImport(module: string): ImportInfo {
     module,
     raw: `import '${module}'`,
     isNodeBuiltin: false,
+    isRelative: module.startsWith('.'),
     isFFModule: false,
     targetModule: null,
+    targetResolved: false,
   };
 }
 
@@ -193,72 +206,59 @@ function isNodeBuiltinImport(module: string): boolean {
   return false;
 }
 
-function getTargetModule(importPath: string): string | null {
-  // Strip all leading ../ segments (supports nested subdirectories like integration/tools/)
-  const normalized = importPath.replace(/^(\.\.\/)+/, '').replace(/^\.\//, '');
-  const first = normalized.split('/')[0];
-  return first || null;
+const CLASSIFIED_ENTRIES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.map((entry) => entry.name),
+);
+const GOVERNED_MODULES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'governed').map((entry) => entry.name),
+);
+const TEST_SUPPORT_ENTRIES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'test-support').map((entry) => entry.name),
+);
+const ENTRY_ENTRIES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'entry').map((entry) => entry.name),
+);
+
+/**
+ * Resolve a relative import specifier to its classified top-level entry: the
+ * first path segment under `src/` (a module directory or a root-level file).
+ * Returns null when the specifier does not resolve to an existing source under
+ * `src/` — under default-deny that is a violation, never a silent non-match.
+ */
+function resolveTargetEntry(importerDir: string, specifier: string): string | null {
+  const resolved = resolveImportPath(importerDir, specifier);
+  if (!resolved) return null;
+  const relToSrc = repoRelative(SRC_DIR, resolved);
+  if (relToSrc.startsWith('..')) return null;
+  return relToSrc.split('/')[0] || null;
 }
 
-const FF_MODULES = new Set([
-  'state',
-  'machine',
-  'rails',
-  'adapters',
-  'integration',
-  'config',
-  'audit',
-  'discovery',
-  'archive',
-  'logging',
-  'cli',
-  'identity',
-  'telemetry',
-  'presentation',
-  'diagnostics',
-  'hooks',
-  'mcp-server',
-]);
-
-function isFFModuleImport(module: string): boolean {
-  if (!module.startsWith('../')) return false;
-  const target = getTargetModule(module);
-  return target !== null && FF_MODULES.has(target);
-}
-
-function parseImports(fileContent: string): ImportInfo[] {
+function parseImports(
+  fileContent: string,
+  importerDir: string,
+  importerModule: string,
+): ImportInfo[] {
   const imports: ImportInfo[] = [];
 
-  const importRegex =
-    /^import\s+(?:(?:type\s+)?(?:\{[^}]*\}|[^;{}]+)\s+from\s+)?['"]([^'"]+)['"]|^import\s+['"]([^'"]+)['"]|^export\s+(?:\{[^}]*\}|[^;{}]+)\s+from\s+['"]([^'"]+)['"]|^export\s+from\s+['"]([^'"]+)['"]|^export\s+\*\s+as\s+\w+\s+from\s+['"]([^'"]+)['"]|^require\s*\(['"]([^'"]+)['"]\)/gm;
-
-  let match;
-  while ((match = importRegex.exec(fileContent)) !== null) {
-    const module = match[1] || match[2] || match[3] || match[4] || match[5] || match[6];
-    if (!module) continue;
-
-    imports.push({
+  const toImportInfo = (module: string, raw: string): ImportInfo => {
+    const isRelative = module.startsWith('.');
+    const targetModule = isRelative ? resolveTargetEntry(importerDir, module) : null;
+    return {
       module,
-      raw: match[0],
+      raw,
       isNodeBuiltin: isNodeBuiltinImport(module),
-      isFFModule: isFFModuleImport(module),
-      targetModule: isFFModuleImport(module) ? getTargetModule(module) : null,
-    });
-  }
+      isRelative,
+      isFFModule:
+        targetModule !== null &&
+        GOVERNED_MODULES.has(targetModule) &&
+        targetModule !== importerModule,
+      targetModule,
+      targetResolved: isRelative && targetModule !== null,
+    };
+  };
 
-  // Dynamic imports: await import('./foo.js'), import('./foo.js')
-  const dynamicImportRegex = /(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-  while ((match = dynamicImportRegex.exec(fileContent)) !== null) {
-    const module = match[1];
-    if (!module) continue;
-
-    imports.push({
-      module,
-      raw: match[0],
-      isNodeBuiltin: isNodeBuiltinImport(module),
-      isFFModule: isFFModuleImport(module),
-      targetModule: isFFModuleImport(module) ? getTargetModule(module) : null,
-    });
+  for (const specifier of collectImportSpecifiers(fileContent)) {
+    imports.push(toImportInfo(specifier.module, specifier.raw));
   }
 
   return imports;
@@ -266,12 +266,13 @@ function parseImports(fileContent: string): ImportInfo[] {
 
 async function analyzeFile(filePath: string): Promise<FileAnalysis> {
   const content = await fs.readFile(filePath, 'utf-8');
-  const relativePath = path.relative(SRC_DIR, filePath);
-  const imports = parseImports(content);
+  const relativePath = repoRelative(SRC_DIR, filePath);
+  const importerModule = relativePath.split('/')[0]!;
+  const imports = parseImports(content, path.dirname(filePath), importerModule);
 
   return {
-    filePath: normalizeSep(filePath),
-    relativePath: normalizeSep(relativePath),
+    filePath: normalizeRepoPath(filePath),
+    relativePath,
     imports,
   };
 }
@@ -282,10 +283,15 @@ async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory() && !entry.name.includes('__') && !entry.name.includes('node_modules')) {
-      const subFiles = await collectFiles(fullPath, pattern);
-      files.push(...subFiles);
-    } else if (entry.isFile() && pattern.test(entry.name) && !entry.name.includes('.test.')) {
+    if (entry.name === 'node_modules') continue;
+    const relativeFromSrc = repoRelative(SRC_DIR, fullPath);
+    if (entry.isDirectory()) {
+      // Semantic test classification only — a directory whose name merely
+      // contains `__` is analyzed like any other production surface.
+      if (isTestSourcePath(relativeFromSrc)) continue;
+      files.push(...(await collectFiles(fullPath, pattern)));
+    } else if (entry.isFile() && pattern.test(entry.name)) {
+      if (isTestSourcePath(relativeFromSrc)) continue;
       files.push(fullPath);
     }
   }
@@ -293,192 +299,71 @@ async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
   return files;
 }
 
+/**
+ * The importer's governed top-level module, derived from the single
+ * classification authority. It is the FIRST path segment under `src/` — never
+ * a nested directory that merely shares a governed module's name, which would
+ * otherwise let a nested path escape its module's rules (for example
+ * `providers/state/foo.ts` is `providers`, not `state`).
+ */
 function getLayerFromPath(filePath: string): string | null {
-  if (filePath.includes('/state/')) return 'state';
-  if (filePath.includes('/machine/')) return 'machine';
-  if (filePath.includes('/rails/')) return 'rails';
-  if (filePath.includes('/adapters/')) return 'adapters';
-  if (filePath.includes('/integration/')) return 'integration';
-  if (filePath.includes('/config/')) return 'config';
-  if (filePath.includes('/audit/')) return 'audit';
-  if (filePath.includes('/discovery/')) return 'discovery';
-  if (filePath.includes('/archive/')) return 'archive';
-  if (filePath.includes('/logging/')) return 'logging';
-  if (filePath.includes('/cli/')) return 'cli';
-  if (filePath.includes('/presentation/')) return 'presentation';
-  if (filePath.includes('/diagnostics/')) return 'diagnostics';
-  if (filePath.includes('/mcp-server/')) return 'mcp-server';
-  if (filePath.includes('/hooks/')) return 'hooks';
-  return null;
+  const relativePath = repoRelative(SRC_DIR, filePath);
+  const topLevel = relativePath.split('/')[0];
+  if (topLevel === undefined || topLevel.length === 0) return null;
+  return MODULE_CLASSIFICATION_BY_NAME.get(topLevel)?.kind === 'governed' ? topLevel : null;
 }
 
 function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
   const allViolations: ImportViolation[] = [];
 
+  // Default-deny: every relative import in production code must resolve to a
+  // classified entry, and test-support entries are closed to production
+  // importers. Unclassified targets are violations, never silent non-matches.
   for (const [, analysis] of analyses) {
     if (analysis.filePath.includes('.test.')) continue;
-    const layer = getLayerFromPath(analysis.filePath);
-    if (!layer) continue;
-
-    const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
-
-    if (layer === 'state') {
-      const forbidden = new Set([
-        'machine',
-        'rails',
-        'adapters',
-        'integration',
-        'config',
-        'audit',
-        'archive',
-        'logging',
-        'cli',
-        'diagnostics',
-      ]);
-      for (const imp of ffImports) {
-        if (imp.targetModule && forbidden.has(imp.targetModule)) {
-          allViolations.push({
-            file: analysis.relativePath,
-            rule: `leaf-${layer}`,
-            message: `${layer}/ is a leaf module but imports: ${imp.targetModule}`,
-          });
-        }
-      }
-    }
-
-    if (layer === 'machine') {
-      const forbidden = new Set([
-        'rails',
-        'adapters',
-        'integration',
-        'config',
-        'audit',
-        'discovery',
-        'archive',
-        'logging',
-        'cli',
-        'diagnostics',
-      ]);
-      for (const imp of ffImports) {
-        if (imp.targetModule && forbidden.has(imp.targetModule)) {
-          allViolations.push({
-            file: analysis.relativePath,
-            rule: 'machine-only-state',
-            message: `machine/ may only import state/ but imports: ${imp.targetModule}`,
-          });
-        }
-      }
-    }
-
-    if (layer === 'logging') {
-      // logging/ owns its own LogLevel type and must not import from config/.
-      // The dependency flows config -> logging only, breaking the prior
-      // config<->logging module-group coupling.
-      for (const imp of ffImports) {
-        if (imp.targetModule === 'config') {
-          allViolations.push({
-            file: analysis.relativePath,
-            rule: 'logging-no-config',
-            message: `logging/ must not import config/ but imports: ${imp.targetModule}`,
-          });
-        }
-      }
-    }
-
-    if (layer === 'rails' && analysis.filePath.includes('/rails/')) {
-      const integrationImports = ffImports.filter((i) => i.targetModule === 'integration');
-      for (const imp of integrationImports) {
+    const importerKind = MODULE_CLASSIFICATION_BY_NAME.get(
+      analysis.relativePath.split('/')[0]!,
+    )?.kind;
+    for (const imp of analysis.imports) {
+      if (!imp.isRelative) continue;
+      const label = `imports '${imp.module}'`;
+      if (!imp.targetResolved || imp.targetModule === null) {
         allViolations.push({
           file: analysis.relativePath,
-          rule: 'rails-no-integration',
-          message: 'rails/ must not import integration/',
+          rule: 'unclassified-import-target',
+          message: `${label} — does not resolve to a source under src/`,
+          hint: 'Fix the relative specifier or add the target file under src/ so the import resolves.',
         });
+        continue;
       }
-
-      const FORBIDDEN_NODE_BUILTINS = new Set([
-        'fs',
-        'path',
-        'crypto',
-        'child_process',
-        'process',
-        'os',
-        'events',
-        'stream',
-        'buffer',
-        'util',
-        'url',
-        'http',
-        'https',
-        'node:fs',
-        'node:path',
-        'node:crypto',
-        'node:child_process',
-        'node:process',
-        'node:os',
-        'node:events',
-        'node:stream',
-      ]);
-      const builtinImports = analysis.imports.filter(
-        (i) => i.isNodeBuiltin && FORBIDDEN_NODE_BUILTINS.has(i.module),
-      );
-      for (const imp of builtinImports) {
+      if (!CLASSIFIED_ENTRIES.has(imp.targetModule)) {
         allViolations.push({
           file: analysis.relativePath,
-          rule: 'rails-no-builtins',
-          message: `rails/ must not import Node builtin: ${imp.module}`,
+          rule: 'unclassified-module',
+          message: `${label} — '${imp.targetModule}' is not a classified top-level module`,
+          hint: `Add '${imp.targetModule}' to MODULE_CLASSIFICATION (module-classification.ts) and declare its direction in MODULE_DEPENDENCY_POLICY.`,
         });
+        continue;
       }
-    }
-
-    if (layer === 'adapters' && analysis.filePath.includes('/adapters/')) {
-      const forbidden = new Set(['integration']);
-      for (const imp of ffImports) {
-        if (imp.targetModule && forbidden.has(imp.targetModule)) {
-          allViolations.push({
-            file: analysis.relativePath,
-            rule: 'adapters-no-integration',
-            message: `adapters/ must not import integration/ (HAI boundary): ${imp.module}`,
-          });
-        }
+      if (TEST_SUPPORT_ENTRIES.has(imp.targetModule) && !isTestSourcePath(analysis.relativePath)) {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'test-support-import',
+          message: `${label} — production code must not import test-support entry '${imp.targetModule}'`,
+          hint: 'Import the production authority instead of a test-support entry.',
+        });
+        continue;
       }
-    }
-
-    if (layer === 'hooks' && analysis.filePath.includes('/hooks/')) {
-      const forbidden = new Set(['cli', 'mcp-server']);
-      for (const imp of ffImports) {
-        if (imp.targetModule && forbidden.has(imp.targetModule)) {
-          allViolations.push({
-            file: analysis.relativePath,
-            rule: 'hooks-no-cli-mcp',
-            message: `hooks/ must not import ${imp.targetModule}/ (separate entry points): ${imp.module}`,
-          });
-        }
-      }
-    }
-
-    if (layer === 'mcp-server' && analysis.filePath.includes('/mcp-server/')) {
-      const forbidden = new Set(['cli']);
-      for (const imp of ffImports) {
-        if (imp.targetModule && forbidden.has(imp.targetModule)) {
-          allViolations.push({
-            file: analysis.relativePath,
-            rule: 'mcp-server-no-cli',
-            message: `mcp-server/ must not import cli/ (separate entry points): ${imp.module}`,
-          });
-        }
-      }
-    }
-
-    if (layer === 'presentation') {
-      const forbidden = new Set(['integration', 'rails', 'cli', 'audit', 'archive']);
-      for (const imp of ffImports) {
-        if (imp.targetModule && forbidden.has(imp.targetModule)) {
-          allViolations.push({
-            file: analysis.relativePath,
-            rule: 'presentation-deny',
-            message: `presentation/ imports from forbidden module: ${imp.targetModule}`,
-          });
-        }
+      // Entry points are outbound-only: they compose governed modules broadly,
+      // but a governed module importing an entry point would bypass every
+      // layer rule through the barrel's re-exports.
+      if (ENTRY_ENTRIES.has(imp.targetModule) && importerKind === 'governed') {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'entry-import',
+          message: `${label} — governed modules must not import entry point '${imp.targetModule}'; entry points are outbound-only`,
+          hint: 'Import the concrete governed module, not the entry-point barrel.',
+        });
       }
     }
   }
@@ -486,10 +371,142 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
   return allViolations;
 }
 
+/**
+ * Resolve a relative import to its canonical path relative to `src/`, or null
+ * when the specifier is bare or does not resolve to a source under `src/`.
+ */
+function resolveSrcTarget(analysis: FileAnalysis, imp: ImportInfo): string | null {
+  if (!imp.isRelative) return null;
+  const resolved = resolveImportPath(path.dirname(analysis.filePath), imp.module);
+  if (!resolved) return null;
+  const relToSrc = repoRelative(SRC_DIR, resolved);
+  if (relToSrc.startsWith('..')) return null;
+  return relToSrc;
+}
+
+/**
+ * #922 boundary: files in `integration/tools/**` must not import plugin
+ * composition (index.ts, plugin.ts, plugin-* lifecycle).
+ */
+function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.relativePath.startsWith('integration/tools/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+    for (const imp of analysis.imports) {
+      const target = resolveSrcTarget(analysis, imp);
+      if (target !== null && isRootCompositionFile(target)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'tools-no-composition',
+          message: `integration/tools/ imports integration composition (bridge bypass): ${target}`,
+          imports: [imp.module],
+          hint: 'Import the concrete plugin authority instead of plugin composition from integration/tools/.',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * Integration owners that review/** may consume: every review owner projected
+ * from the placement authority (targetZone `review` or `review/**`), plus the
+ * explicit external grant for integration root authorities. Deriving the
+ * review-owned subset keeps the boundary aligned with the placement authority
+ * instead of maintaining a second owner list.
+ */
+const REVIEW_ALLOWED_INTEGRATION_OWNERS: ReadonlySet<string> = new Set([
+  ...INTEGRATION_OWNERS.filter(
+    (owner) => owner.targetZone === 'review' || owner.targetZone.startsWith('review/'),
+  ).map((owner) => owner.id),
+  'root-authority',
+]);
+
+/**
+ * Lower layers that review/** may consume. This is an explicit, default-deny
+ * set: adding a layer here is a deliberate contract change.
+ */
+const REVIEW_LOWER_LAYERS: ReadonlySet<string> = new Set([
+  'adapters',
+  'config',
+  'shared',
+  'state',
+  'templates',
+]);
+
+/**
+ * #922 boundary (default-deny): review/** may import ONLY review-owned
+ * integration targets (derived from the placement authority), integration root
+ * authorities, and the explicit lower layers. Plugin composition, host/runtime
+ * wiring, tools/**, and every sibling integration context (status, discovery,
+ * proofgraph, ...) are violations.
+ */
+function detectReviewBoundaryViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.relativePath.startsWith('integration/review/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+    for (const imp of analysis.imports) {
+      const target = resolveSrcTarget(analysis, imp);
+      if (target === null) continue;
+      if (target.startsWith('integration/')) {
+        const owner = placementOwnerOf(target);
+        if (owner !== null && REVIEW_ALLOWED_INTEGRATION_OWNERS.has(owner)) continue;
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'review-boundary',
+          message: `review/ imports integration target outside its contract: '${target}' (owner ${owner ?? 'unclassified'})`,
+          imports: [imp.module],
+          hint: 'Allowed are review-owned integration targets, integration root authorities, and the explicit lower layers (review-zone-policy.ts and REVIEW_LOWER_LAYERS).',
+        });
+        continue;
+      }
+      const topLevel = target.split('/')[0] ?? '';
+      if (!REVIEW_LOWER_LAYERS.has(topLevel)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'review-boundary',
+          message: `review/ imports non-lower-layer target '${target}'`,
+          imports: [imp.module],
+          hint: 'Allowed lower layers: adapters, config, shared, state, templates (REVIEW_LOWER_LAYERS); route anything else through injected ports.',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * #922 boundary: production code outside `integration/tools/**` may not
+ * deep-import a tool command context (tools/<context>/**). The single external
+ * entry into the tool layer is `integration/tools/index.ts`.
+ */
+function detectExternalToolContextImports(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (analysis.relativePath.startsWith('integration/tools/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+    for (const imp of analysis.imports) {
+      const target = resolveSrcTarget(analysis, imp);
+      if (target !== null && isToolCommandContextFile(target)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'external-tool-context-import',
+          message: `deep import into a tool command context: ${target}`,
+          imports: [imp.module],
+          hint: 'Import from integration/tools/index.ts (the single tool-layer entry), not a command context.',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
 function resolveImportPath(importerDir: string, importPath: string): string {
   if (!importPath.startsWith('.')) return '';
 
-  const resolved = normalizeSep(path.resolve(importerDir, importPath));
+  const resolved = normalizeRepoPath(path.resolve(importerDir, importPath));
 
   if (existsSync(resolved)) return resolved;
   if (existsSync(resolved + '.ts')) return resolved + '.ts';
@@ -498,7 +515,7 @@ function resolveImportPath(importerDir: string, importPath: string): string {
   if (withoutJs !== resolved && existsSync(withoutJs + '.ts')) return withoutJs + '.ts';
 
   const indexPath = path.join(resolved, 'index.ts');
-  if (existsSync(indexPath)) return normalizeSep(indexPath);
+  if (existsSync(indexPath)) return normalizeRepoPath(indexPath);
 
   return '';
 }
@@ -517,27 +534,42 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
         targets.add(resolved);
       }
     }
-    adjacency.set(normalizeSep(filePath), targets);
+    adjacency.set(normalizeRepoPath(filePath), targets);
   }
 
   // DFS from each node. Do not use a global visited set: a node can participate
   // in multiple independent cycles and must remain explorable from other paths.
+  //
+  // Complexity guard: the naive path-enumeration DFS is exponential on dense
+  // DAGs and drove CI past the 60s test timeout (base run already spent
+  // ~59.6s). A `fullyExplored` set makes the exploration O(V+E) while
+  // preserving the exact result set: a subtree that completed without finding
+  // a cycle cannot contain one from any later entry point (cycle membership is
+  // a graph property, not a path property), and nodes explored during a run
+  // that DID find a cycle are simply re-explored by the next root.
   const sorted = [...adjacency.keys()].sort();
+  const fullyExplored = new Set<string>();
   for (const node of sorted) {
+    if (fullyExplored.has(node)) continue;
+    const rootVisited = new Set<string>();
     const dfsPath: string[] = [];
     const visiting = new Set<string>();
+    let foundCycle = false;
 
     function dfs(current: string): void {
+      if (fullyExplored.has(current)) return;
       if (visiting.has(current)) {
         // Cycle found via visiting -> extract the cycle substring
         const idx = dfsPath.indexOf(current);
         if (idx >= 0) {
+          foundCycle = true;
           cycleKey(current, dfsPath.slice(idx));
         }
         return;
       }
 
       visiting.add(current);
+      rootVisited.add(current);
       dfsPath.push(current);
 
       const targets = adjacency.get(current);
@@ -557,15 +589,20 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
       const orderedCycle = [...cyclePath];
       let minIdx = 0;
       for (let i = 1; i < orderedCycle.length; i++) {
-        if (orderedCycle[i] < orderedCycle[minIdx]) minIdx = i;
+        if (orderedCycle[i]! < orderedCycle[minIdx]!) minIdx = i;
       }
       const rotated = [...orderedCycle.slice(minIdx), ...orderedCycle.slice(0, minIdx)];
-      const normalized = [...rotated, rotated[0]];
-      const key = normalized.map((f) => path.relative(PROJECT_ROOT, f)).join(' -> ');
+      const normalized = [...rotated, rotated[0]!];
+      const key = normalized.map((f) => repoRelative(PROJECT_ROOT, f)).join(' -> ');
       cycles.push(key);
     }
 
     dfs(node);
+
+    // Only a cycle-free exploration may prune later roots.
+    if (!foundCycle) {
+      for (const visited of rootVisited) fullyExplored.add(visited);
+    }
   }
 
   return [...new Set(cycles)].sort();
@@ -583,51 +620,66 @@ describe('Layer Dependency Rules', () => {
     }
   });
 
-  describe('Rule 1: state/ is a leaf module with explicit schema-only exceptions', () => {
+  describe('Rule 1: state/ shared-primitive boundary (fine-grained)', () => {
     const stateViolations: ImportViolation[] = [];
-    const forbiddenFromState = new Set([
-      'machine',
-      'rails',
-      'adapters',
-      'integration',
-      'config',
-      'audit',
-      'archive',
-      'logging',
-      'cli',
-      'discovery',
-      'telemetry',
-      'diagnostics',
+    const allowedStateSharedImports = new Set([
+      '../shared/actor-assurance.js',
+      '../shared/canonical-json.js',
+      '../shared/hashing.js',
+      '../shared/policy-idp-config.js',
+      '../shared/repository-fingerprint.js',
+      // The canonical review-continuation authority (state/review-continuation.ts)
+      // verifies frozen review material itself and reuses the single content
+      // normalization/digest authority instead of duplicating it in state.
+      '../shared/review-subject.js',
     ]);
-    // state/evidence-policy.ts imports IdpConfigSchema from ./policy-idp-config.js
-    // — state now owns the IdP config schemas it persists. No explicit identity/
-    // exception needed.
-    const allowedForState = new Set<string>();
+
+    it('keeps identifier authorities separated', async () => {
+      const identifiers = await fs.readFile(
+        path.join(SRC_DIR, 'shared', 'flowguard-identifiers.ts'),
+        'utf-8',
+      );
+      expect(identifiers).not.toMatch(
+        /export\s*\{[^}]*\b(?:REVIEW_REPORT_SCHEMA_ID|POLICY_DIGEST_VERSION|POLICY_DIGEST_PATTERN)\b/,
+      );
+      expect(identifiers).toMatch(
+        /export\s+const\s+REVIEWER_SUBAGENT_TYPE\s*=\s*'flowguard-reviewer'/,
+      );
+      const evidenceIdentifiers = await fs.readFile(
+        path.join(SRC_DIR, 'state', 'evidence-identifiers.ts'),
+        'utf-8',
+      );
+      expect(evidenceIdentifiers).not.toMatch(/\bFINGERPRINT_PATTERN\b/);
+      const repositoryFingerprint = await fs.readFile(
+        path.join(SRC_DIR, 'shared', 'repository-fingerprint.ts'),
+        'utf-8',
+      );
+      expect(repositoryFingerprint).toMatch(/export\s+const\s+FINGERPRINT_PATTERN\s*=/);
+    });
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
         if (!analysis.filePath.includes('/state/')) continue;
         if (analysis.filePath.includes('.test.')) continue;
 
-        const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
-        for (const imp of ffImports) {
-          if (imp.targetModule && forbiddenFromState.has(imp.targetModule)) {
-            stateViolations.push({
-              file: analysis.relativePath,
-              rule: 'state-leaf',
-              message: `state/ imports from forbidden module: ${imp.targetModule}`,
-              imports: [imp.module],
-            });
-          }
+        // The top-level direction (state -> shared only) is governed by
+        // MODULE_DEPENDENCY_POLICY; this rule is STRICTER inside the allowed
+        // edge: state may only use the listed shared primitives.
+        const sharedImports = analysis.imports.filter(
+          (imp) => imp.isFFModule && imp.targetModule === 'shared',
+        );
+        for (const imp of sharedImports) {
           if (
-            imp.targetModule &&
-            !allowedForState.has(imp.targetModule) &&
-            !forbiddenFromState.has(imp.targetModule)
+            !allowedStateSharedImports.has(imp.module) &&
+            !(
+              imp.module === '../shared/flowguard-identifiers.js' &&
+              /import\s*\{\s*REVIEWER_SUBAGENT_TYPE\s*\}\s*from/.test(imp.raw)
+            )
           ) {
             stateViolations.push({
               file: analysis.relativePath,
-              rule: 'state-leaf',
-              message: `state/ imports from unexpected module: ${imp.targetModule}`,
+              rule: 'state-shared-primitive',
+              message: `state/ imports an unapproved shared primitive: ${imp.module}`,
               imports: [imp.module],
             });
           }
@@ -644,10 +696,7 @@ describe('Layer Dependency Rules', () => {
 
     it('should have no violations', () => {
       if (stateViolations.length > 0) {
-        console.error(
-          '\nstate/ violations:\n' +
-            stateViolations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
+        console.error('\nstate/ violations:\n' + stateViolations.map(formatViolation).join('\n'));
       }
       expect(stateViolations).toHaveLength(0);
     });
@@ -665,7 +714,6 @@ describe('Layer Dependency Rules', () => {
       'discovery',
       'state',
     ]);
-
     beforeAll(() => {
       for (const [, analysis] of analyses) {
         if (!analysis.filePath.includes('/archive/types')) continue;
@@ -694,10 +742,7 @@ describe('Layer Dependency Rules', () => {
 
     it('should have no violations', () => {
       if (violations.length > 0) {
-        console.error(
-          '\narchive/types violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
+        console.error('\narchive/types violations:\n' + violations.map(formatViolation).join('\n'));
       }
       expect(violations).toHaveLength(0);
     });
@@ -747,187 +792,7 @@ describe('Layer Dependency Rules', () => {
     it('should have no violations', () => {
       if (violations.length > 0) {
         console.error(
-          '\ndiscovery/types violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 3b: presentation/ deny-list — no imports from integration, rails, cli, audit, archive', () => {
-    const violations: ImportViolation[] = [];
-    const forbiddenFromPresentation = new Set(['integration', 'rails', 'cli', 'audit', 'archive']);
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/presentation/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
-        for (const imp of ffImports) {
-          if (imp.targetModule && forbiddenFromPresentation.has(imp.targetModule)) {
-            violations.push({
-              file: analysis.relativePath,
-              rule: 'presentation-deny',
-              message: `presentation/ imports from forbidden module: ${imp.targetModule}`,
-              imports: [imp.module],
-            });
-          }
-        }
-      }
-    });
-
-    it('should have presentation files', () => {
-      const files = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/presentation/') && !a.filePath.includes('.test.'),
-      );
-      expect(files.length).toBeGreaterThan(0);
-    });
-
-    it('should have no violations', () => {
-      if (violations.length > 0) {
-        console.error(
-          '\npresentation/ violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 3c: diagnostics/ is outbound-only presentation, never authority input', () => {
-    const violations: ImportViolation[] = [];
-    const authorityPaths = [
-      '/state/',
-      '/config/',
-      '/machine/',
-      '/rails/',
-      '/audit/',
-      '/integration/tools/review-validation.ts',
-      '/integration/plugin-task-evidence.ts',
-      '/integration/review/',
-    ];
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (analysis.filePath.includes('.test.')) continue;
-        if (!authorityPaths.some((authorityPath) => analysis.filePath.includes(authorityPath))) {
-          continue;
-        }
-
-        const diagnosticsImports = analysis.imports.filter(
-          (i) => i.isFFModule && i.targetModule === 'diagnostics',
-        );
-        for (const imp of diagnosticsImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'diagnostics-outbound-only',
-            message: `${analysis.relativePath} imports outbound-only diagnostics module`,
-            imports: [imp.module],
-          });
-        }
-      }
-    });
-
-    it('should have no authority imports from diagnostics', () => {
-      if (violations.length > 0) {
-        console.error(
-          '\ndiagnostics authority import violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 4: machine/ may only import from state/', () => {
-    const violations: ImportViolation[] = [];
-    const forbiddenFromMachine = new Set([
-      'rails',
-      'adapters',
-      'integration',
-      'config',
-      'audit',
-      'discovery',
-      'archive',
-      'logging',
-      'cli',
-      'diagnostics',
-    ]);
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/machine/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
-        for (const imp of ffImports) {
-          if (imp.targetModule && forbiddenFromMachine.has(imp.targetModule)) {
-            violations.push({
-              file: analysis.relativePath,
-              rule: 'machine-only-state',
-              message: `machine/ imports from forbidden module: ${imp.targetModule}`,
-              imports: [imp.module],
-            });
-          }
-        }
-      }
-    });
-
-    it('should have machine files', () => {
-      const machineFiles = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/machine/') && !a.filePath.includes('.test.'),
-      );
-      expect(machineFiles.length).toBeGreaterThan(0);
-    });
-
-    it('should have no violations', () => {
-      if (violations.length > 0) {
-        console.error(
-          '\nmachine/ violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 5: rails/ must NOT import from integration/', () => {
-    const violations: ImportViolation[] = [];
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/rails/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const integrationImports = analysis.imports.filter(
-          (i) => i.isFFModule && i.targetModule === 'integration',
-        );
-
-        for (const imp of integrationImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'rails-no-integration',
-            message: `rails/ imports from integration/: ${imp.module}`,
-            imports: [imp.module],
-          });
-        }
-      }
-    });
-
-    it('should have rails files', () => {
-      const railsFiles = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/rails/') && !a.filePath.includes('.test.'),
-      );
-      expect(railsFiles.length).toBeGreaterThan(0);
-    });
-
-    it('should have no rails -> integration imports', () => {
-      if (violations.length > 0) {
-        console.error(
-          '\nrails/ -> integration/ violations:\n' +
-            violations.map((v) => `  - ${v.file}`).join('\n'),
+          '\ndiscovery/types violations:\n' + violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toHaveLength(0);
@@ -992,160 +857,18 @@ describe('Layer Dependency Rules', () => {
     it('should have no rails -> Node builtin imports', () => {
       if (violations.length > 0) {
         console.error(
-          '\nrails/ -> Node builtin violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+          '\nrails/ -> Node builtin violations:\n' + violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toHaveLength(0);
     });
   });
 
-  describe('Rule 5c: adapters/ must NOT import from integration/ (HAI boundary)', () => {
+  describe('Rule 5g: integration/tools/ must NOT import integration composition', () => {
     const violations: ImportViolation[] = [];
 
     beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/adapters/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const integrationImports = analysis.imports.filter(
-          (i) => i.isFFModule && i.targetModule === 'integration',
-        );
-
-        for (const imp of integrationImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'adapters-no-integration',
-            message: `adapters/ imports from integration/ (HAI boundary violation): ${imp.module}`,
-            imports: [imp.module],
-          });
-        }
-      }
-    });
-
-    it('should have adapters files', () => {
-      const adapterFiles = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/adapters/') && !a.filePath.includes('.test.'),
-      );
-      expect(adapterFiles.length).toBeGreaterThan(0);
-    });
-
-    it('should have no adapters -> integration imports', () => {
-      if (violations.length > 0) {
-        console.error(
-          '\nadapters/ -> integration/ violations (HAI boundary):\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 5e: config/ must NOT import from outer layers', () => {
-    const violations: ImportViolation[] = [];
-    const forbiddenFromConfig = new Set(['adapters', 'integration', 'cli', 'rails', 'audit']);
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/config/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const forbiddenImports = analysis.imports.filter(
-          (i) => i.isFFModule && i.targetModule && forbiddenFromConfig.has(i.targetModule),
-        );
-
-        for (const imp of forbiddenImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'config-no-upward',
-            message: `config/ imports from outer layer: ${imp.targetModule}`,
-            imports: [imp.module],
-          });
-        }
-      }
-    });
-
-    it('should have config files', () => {
-      const configFiles = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/config/') && !a.filePath.includes('.test.'),
-      );
-      expect(configFiles.length).toBeGreaterThan(0);
-    });
-
-    it('should have no config -> outer layer imports', () => {
-      if (violations.length > 0) {
-        console.error(
-          '\nconfig/ -> outer layer violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 5f: identity/ must NOT import from outer layers', () => {
-    const violations: ImportViolation[] = [];
-    const forbiddenFromIdentity = new Set(['adapters', 'integration', 'cli', 'rails']);
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/identity/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const forbiddenImports = analysis.imports.filter(
-          (i) => i.isFFModule && i.targetModule && forbiddenFromIdentity.has(i.targetModule),
-        );
-
-        for (const imp of forbiddenImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'identity-no-upward',
-            message: `identity/ imports from outer layer: ${imp.targetModule}`,
-            imports: [imp.module],
-          });
-        }
-      }
-    });
-
-    it('should have identity files', () => {
-      const identityFiles = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/identity/') && !a.filePath.includes('.test.'),
-      );
-      expect(identityFiles.length).toBeGreaterThan(0);
-    });
-
-    it('should have no identity -> outer layer imports', () => {
-      if (violations.length > 0) {
-        console.error(
-          '\nidentity/ -> outer layer violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 5g: integration/tools/ must NOT import from plugin-* modules', () => {
-    const violations: ImportViolation[] = [];
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/integration/tools/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const pluginImports = analysis.imports.filter(
-          (i) => i.module.startsWith('../plugin-') || i.module.startsWith('./plugin-'),
-        );
-
-        for (const imp of pluginImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'tools-no-plugin',
-            message: `integration/tools/ imports from plugin-* module (bridge bypass): ${imp.module}`,
-            imports: [imp.module],
-          });
-        }
-      }
+      violations.push(...detectToolsCompositionImports(analyses));
     });
 
     it('should have integration/tools files', () => {
@@ -1155,110 +878,205 @@ describe('Layer Dependency Rules', () => {
       expect(toolsFiles.length).toBeGreaterThan(0);
     });
 
-    it('should have no tools -> plugin-* imports', () => {
+    it('should have no tools -> composition imports', () => {
       if (violations.length > 0) {
         console.error(
-          '\nintegration/tools/ -> plugin-* violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+          '\nintegration/tools/ -> composition violations:\n' +
+            violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toHaveLength(0);
+    });
+
+    it('detects a deep tools -> plugin composition import, depth-independently', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/tools/plan/probe.ts')),
+        relativePath: 'integration/tools/plan/probe.ts',
+        imports: [mockImport('../../plugin-risk.js')],
+      };
+      const detected = detectToolsCompositionImports(
+        new Map([['integration/tools/plan/probe.ts', probe]]),
+      );
+      expect(detected.map((violation) => violation.rule)).toEqual(['tools-no-composition']);
+    });
+
+    it('detects a deep tools -> plugin-helpers composition import', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/tools/plan/probe.ts')),
+        relativePath: 'integration/tools/plan/probe.ts',
+        imports: [mockImport('../../plugin-helpers.js')],
+      };
+      const detected = detectToolsCompositionImports(
+        new Map([['integration/tools/plan/probe.ts', probe]]),
+      );
+      expect(detected.map((violation) => violation.rule)).toEqual(['tools-no-composition']);
     });
   });
 
-  describe('Rule 5d: mcp-server/ must NOT import from cli/ (separate entry points)', () => {
-    const violations: ImportViolation[] = [];
-
-    beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/mcp-server/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const cliImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule === 'cli');
-
-        for (const imp of cliImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'mcp-server-no-cli',
-            message: `mcp-server/ imports from cli/ (separate entry points): ${imp.module}`,
-            imports: [imp.module],
-          });
-        }
-      }
-    });
-
-    it('should have mcp-server files', () => {
-      const mcpFiles = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/mcp-server/') && !a.filePath.includes('.test.'),
-      );
-      expect(mcpFiles.length).toBeGreaterThan(0);
-    });
-
-    it('should have no mcp-server -> cli imports', () => {
+  describe('Integration tool-context boundary (#922)', () => {
+    it('production outside tools/** does not deep-import a tool command context', () => {
+      const violations = detectExternalToolContextImports(analyses);
       if (violations.length > 0) {
         console.error(
-          '\nmcp-server/ -> cli/ violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+          '\nexternal tool-context deep imports:\n' + violations.map(formatViolation).join('\n'),
         );
       }
-      expect(violations).toHaveLength(0);
-    });
-  });
-
-  describe('Rule 7: hooks/ must NOT import from cli/ or mcp-server/ (separate entry points)', () => {
-    it('should have hooks files', () => {
-      const hooksFiles = Array.from(analyses.values()).filter(
-        (a) => a.filePath.includes('/hooks/') && !a.filePath.includes('.test.'),
-      );
-      expect(hooksFiles.length).toBeGreaterThan(0);
+      expect(violations).toEqual([]);
     });
 
-    it('should have no hooks -> cli imports', () => {
-      const violations: ImportViolation[] = [];
+    it('is non-vacuous and still permits tool infrastructure imports', () => {
+      const contextTargets = new Set<string>();
+      const infrastructureImporters: string[] = [];
       for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/hooks/')) continue;
         if (analysis.filePath.includes('.test.')) continue;
-        for (const imp of analysis.imports.filter((i) => i.isFFModule)) {
-          if (imp.targetModule === 'cli') {
-            violations.push({
-              file: analysis.relativePath,
-              rule: 'hooks-no-cli',
-              message: `hooks/ imports from cli/ (separate entry points): ${imp.module}`,
-            });
+        for (const imp of analysis.imports) {
+          const target = resolveSrcTarget(analysis, imp);
+          if (target === null) continue;
+          if (isToolCommandContextFile(target)) contextTargets.add(target);
+          if (
+            !analysis.relativePath.startsWith('integration/tools/') &&
+            target.startsWith('integration/tools/') &&
+            !isToolCommandContextFile(target)
+          ) {
+            infrastructureImporters.push(`${analysis.relativePath} -> ${target}`);
           }
         }
       }
-      if (violations.length > 0) {
-        console.error(
-          '\nhooks/ -> cli/ violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
+      expect(contextTargets.size).toBeGreaterThan(0);
+      expect(infrastructureImporters.length).toBeGreaterThan(0);
     });
 
-    it('should have no hooks -> mcp-server imports', () => {
-      const violations: ImportViolation[] = [];
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/hooks/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-        for (const imp of analysis.imports.filter((i) => i.isFFModule)) {
-          if (imp.targetModule === 'mcp-server') {
-            violations.push({
-              file: analysis.relativePath,
-              rule: 'hooks-no-mcp-server',
-              message: `hooks/ imports from mcp-server/ (separate entry points): ${imp.module}`,
-            });
-          }
-        }
+    it('detects an external deep import into a command context', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/plugin-probe.ts')),
+        relativePath: 'integration/plugin-probe.ts',
+        imports: [mockImport('./tools/plan/plan.js')],
+      };
+      const detected = detectExternalToolContextImports(
+        new Map([['integration/plugin-probe.ts', probe]]),
+      );
+      expect(detected.map((violation) => violation.rule)).toEqual(['external-tool-context-import']);
+    });
+
+    it('permits an external import of the tool barrel (negative fixture)', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/index.ts')),
+        relativePath: 'integration/index.ts',
+        imports: [mockImport('./tools/index.js')],
+      };
+      expect(detectExternalToolContextImports(new Map([['integration/index.ts', probe]]))).toEqual(
+        [],
+      );
+    });
+
+    it('detects review imports of tools or composition, and permits authorities', () => {
+      const rulesFor = (spec: string): string[] => {
+        const probe: FileAnalysis = {
+          filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/review/probe.ts')),
+          relativePath: 'integration/review/probe.ts',
+          imports: [mockImport(spec)],
+        };
+        return detectReviewBoundaryViolations(
+          new Map([['integration/review/probe.ts', probe]]),
+        ).map((violation) => violation.rule);
+      };
+      expect(rulesFor('../tools/implementation-review-activation.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../plugin-risk.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../runtime-lease.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../discovery/discovery-drift-status.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../status/status.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../proofgraph/refresh.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../tool-names.js')).toEqual([]);
+      expect(rulesFor('../../state/evidence.js')).toEqual([]);
+      expect(rulesFor('../../discovery/discovery-health.js')).toEqual(['review-boundary']);
+    });
+
+    it('gives every instrumented import violation a concrete repair hint', () => {
+      const probe = (relativePath: string, imports: ImportInfo[]): FileAnalysis => ({
+        filePath: normalizeRepoPath(path.join(SRC_DIR, relativePath)),
+        relativePath,
+        imports,
+      });
+      const resolvedImport = (module: string, targetModule: string): ImportInfo => ({
+        ...mockImport(module),
+        targetModule,
+        targetResolved: true,
+      });
+
+      const violations: ImportViolation[] = [
+        ...detectViolations(
+          new Map([
+            [
+              'state/probe-a.ts',
+              probe('state/probe-a.ts', [
+                { ...mockImport('../../scripts/not-a-module.js'), targetModule: null },
+              ]),
+            ],
+            [
+              'state/probe-b.ts',
+              probe('state/probe-b.ts', [
+                resolvedImport('../../scripts/not-a-module.js', 'not-a-module'),
+              ]),
+            ],
+            [
+              'state/probe-c.ts',
+              probe('state/probe-c.ts', [resolvedImport('../../fixtures.js', 'fixtures')]),
+            ],
+            [
+              'state/probe-d.ts',
+              probe('state/probe-d.ts', [resolvedImport('../../index.js', 'index.ts')]),
+            ],
+          ]),
+        ),
+        ...detectToolsCompositionImports(
+          new Map([
+            [
+              'integration/tools/plan/probe.ts',
+              probe('integration/tools/plan/probe.ts', [mockImport('../../plugin-risk.js')]),
+            ],
+          ]),
+        ),
+        ...detectExternalToolContextImports(
+          new Map([
+            [
+              'integration/plugin-probe.ts',
+              probe('integration/plugin-probe.ts', [mockImport('./tools/plan/plan.js')]),
+            ],
+          ]),
+        ),
+        ...detectReviewBoundaryViolations(
+          new Map([
+            [
+              'integration/review/probe-a.ts',
+              probe('integration/review/probe-a.ts', [mockImport('../plugin-risk.js')]),
+            ],
+            [
+              'integration/review/probe-b.ts',
+              probe('integration/review/probe-b.ts', [
+                mockImport('../../discovery/discovery-health.js'),
+              ]),
+            ],
+          ]),
+        ),
+      ];
+
+      expect(new Set(violations.map((violation) => violation.rule))).toEqual(
+        new Set([
+          'unclassified-import-target',
+          'unclassified-module',
+          'test-support-import',
+          'entry-import',
+          'tools-no-composition',
+          'external-tool-context-import',
+          'review-boundary',
+        ]),
+      );
+      for (const violation of violations) {
+        expect(
+          (violation.hint ?? '').length,
+          `${violation.rule}: ${violation.file}`,
+        ).toBeGreaterThan(0);
       }
-      if (violations.length > 0) {
-        console.error(
-          '\nhooks/ -> mcp-server/ violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
-      }
-      expect(violations).toHaveLength(0);
     });
   });
 
@@ -1280,40 +1098,93 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
-  describe('Performance', () => {
-    it(`should analyze all files in < ${PERF_BUDGETS.architectureAnalyzeAllMs}ms (p95)`, async () => {
-      const { p95Ms } = await benchmarkAsync(
-        async () => {
-          const tsFiles = await collectFiles(SRC_DIR, /\.ts$/);
-          for (const file of tsFiles) {
-            await analyzeFile(file);
-          }
-        },
-        5,
-        1,
-      );
+  describe('Module graph governance (positive policy, zero cycles)', () => {
+    const governedNames = [...GOVERNED_MODULES];
 
-      expect(p95Ms).toBeLessThan(PERF_BUDGETS.architectureAnalyzeAllMs);
+    function observedModuleEdges(): ModuleEdge[] {
+      const edges: ModuleEdge[] = [];
+      for (const [, analysis] of analyses) {
+        if (analysis.filePath.includes('.test.')) continue;
+        const from = getLayerFromPath(analysis.filePath);
+        if (from === null) continue;
+        for (const imp of analysis.imports) {
+          if (!imp.isFFModule || imp.targetModule === null) continue;
+          if (!GOVERNED_MODULES.has(imp.targetModule)) continue;
+          if (imp.targetModule === from) continue;
+          edges.push({ from, to: imp.targetModule });
+        }
+      }
+      return edges;
+    }
+
+    const observed: ModuleEdge[] = [];
+    const observedEdgeSet = new Set<string>();
+    beforeAll(() => {
+      observed.push(...observedModuleEdges());
+      for (const key of moduleEdgeSet(observed)) observedEdgeSet.add(key);
+    });
+    const policyEdges: ModuleEdge[] = [];
+    for (const [from, targets] of Object.entries(MODULE_DEPENDENCY_POLICY)) {
+      for (const to of targets) policyEdges.push({ from, to });
+    }
+    const policyEdgeSet = moduleEdgeSet(policyEdges);
+
+    function describeEdges(keys: readonly string[]): string {
+      return (
+        keys
+          .map((key) => key.replace('\u0000', ' -> '))
+          .sort()
+          .join(', ') || '(none)'
+      );
+    }
+
+    it('observed module directions equal the positive policy exactly (deduplicated)', () => {
+      const unapproved = [...observedEdgeSet].filter((key) => !policyEdgeSet.has(key));
+      const stale = [...policyEdgeSet].filter((key) => !observedEdgeSet.has(key));
+      expect(unapproved, `unapproved module edges: ${describeEdges(unapproved)}`).toEqual([]);
+      expect(stale, `stale policy edges: ${describeEdges(stale)}`).toEqual([]);
+      // Deduplication contract: many files of one direction are one edge.
+      expect(observedEdgeSet.size).toBeLessThanOrEqual(observed.length);
     });
 
-    it('should handle files with many imports efficiently', async () => {
-      const largeFiles = Array.from(analyses.entries())
-        .filter(([, a]) => a.imports.length > 30)
-        .slice(0, 5);
+    // The module graph is acyclic by contract. There is deliberately NO debt
+    // baseline: any cyclic SCC or cyclic edge fails closed and must be
+    // dissolved, not grandfathered.
+    it('classifies the real module graph as acyclic (no cyclic SCCs)', () => {
+      const sccs = cyclicStronglyConnectedComponents(governedNames, observed);
+      expect(sccs, `cyclic SCCs: ${JSON.stringify(sccs)}`).toEqual([]);
+    });
 
-      if (largeFiles.length > 0) {
-        const start = performance.now();
-        for (const [file] of largeFiles) {
-          await analyzeFile(file);
-        }
-        const duration = performance.now() - start;
-
-        expect(duration).toBeLessThan(50);
-      }
+    it('contains no cyclic module edges', () => {
+      const cyclic = cycleParticipatingEdges(governedNames, observed);
+      expect(cyclic, `cyclic module edges: ${describeEdges([...moduleEdgeSet(cyclic)])}`).toEqual(
+        [],
+      );
     });
   });
 
   describe('Edge Cases', () => {
+    it('detects comment-separated imports and ignores commented-out pseudo imports', () => {
+      const commentSeparated = parseImports(
+        `import { x } from /* c */ '../state/schema.js';\n`,
+        path.join(SRC_DIR, 'rails'),
+        'rails',
+      );
+      expect(commentSeparated.map((imp) => imp.module)).toEqual(['../state/schema.js']);
+      expect(commentSeparated[0]?.targetModule).toBe('state');
+
+      const commentedOut = parseImports(
+        [
+          `// import { x } from '../state/schema.js';`,
+          `/* export * from '../state/evidence.js'; */`,
+          `const text = "import { y } from '../machine/commands.js'";`,
+        ].join('\n'),
+        path.join(SRC_DIR, 'rails'),
+        'rails',
+      );
+      expect(commentedOut).toEqual([]);
+    });
+
     it('should handle files with no imports', () => {
       const noImportFiles = Array.from(analyses.values()).filter((a) => a.imports.length === 0);
 
@@ -1356,54 +1227,56 @@ describe('Layer Dependency Rules', () => {
   });
 
   describe('Negative Fixture — proves violations are detected', () => {
-    it('detects a prohibited state → integration import edge', () => {
-      const fakeFile = 'state/deliberate-violation.ts';
+    const policyEdgeSet = moduleEdgeSet(
+      Object.entries(MODULE_DEPENDENCY_POLICY).flatMap(([from, targets]) =>
+        [...targets].map((to) => ({ from, to })),
+      ),
+    );
+
+    it('detects an unapproved module edge against the positive policy', () => {
+      const observed = moduleEdgeSet([{ from: 'state', to: 'integration' }]);
+      const unapproved = [...observed].filter((key) => !policyEdgeSet.has(key));
+      expect(unapproved).toEqual([edgeKey('state', 'integration')]);
+    });
+
+    it('detects a stale policy edge that the code no longer observes', () => {
+      const observed = moduleEdgeSet([{ from: 'state', to: 'shared' }]);
+      const stale = [...policyEdgeSet].filter((key) => !observed.has(key));
+      expect(stale).toContain(edgeKey('machine', 'state'));
+      expect(stale).not.toContain(edgeKey('state', 'shared'));
+    });
+
+    it('detects a cyclic SCC in a synthetic graph (zero-cycle guard fires)', () => {
+      const synthetic: ModuleEdge[] = [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'a' },
+      ];
+      expect(cyclicStronglyConnectedComponents(['a', 'b'], synthetic)).toEqual([['a', 'b']]);
+      expect(moduleEdgeSet(cycleParticipatingEdges(['a', 'b'], synthetic))).toEqual(
+        moduleEdgeSet(synthetic),
+      );
+    });
+
+    it('still rejects unclassified, test-support, and entry imports (default-deny)', () => {
       const fakeAnalysis: FileAnalysis = {
-        filePath: normalizeSep(path.join(SRC_DIR, fakeFile)),
-        relativePath: fakeFile,
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'state/deliberate-violation.ts')),
+        relativePath: 'state/deliberate-violation.ts',
         imports: [
           {
-            module: '../../integration/plugin.js',
-            raw: "import { x } from '../../integration/plugin.js';",
+            module: '../../scripts/not-a-module.js',
+            raw: "import { x } from '../../scripts/not-a-module.js';",
             isNodeBuiltin: false,
-            isFFModule: true,
-            targetModule: 'integration',
+            isRelative: true,
+            isFFModule: false,
+            targetModule: null,
+            targetResolved: false,
           },
         ],
       };
-
       const violations = detectViolations(
         new Map([['state/deliberate-violation.ts', fakeAnalysis]]),
       );
-
-      expect(violations).toHaveLength(1);
-      expect(violations[0]!.message).toContain('integration');
-      expect(violations[0]!.rule).toBe('leaf-state');
-    });
-
-    it('detects prohibited presentation → integration re-export edge', () => {
-      const fakeFile = 'presentation/deliberate-violation.ts';
-      const fakeAnalysis: FileAnalysis = {
-        filePath: normalizeSep(path.join(SRC_DIR, fakeFile)),
-        relativePath: fakeFile,
-        imports: [
-          {
-            module: '../../integration/plugin.js',
-            raw: "export { x } from '../../integration/plugin.js';",
-            isNodeBuiltin: false,
-            isFFModule: true,
-            targetModule: 'integration',
-          },
-        ],
-      };
-
-      const violations = detectViolations(
-        new Map([['presentation/deliberate-violation.ts', fakeAnalysis]]),
-      );
-
-      expect(violations).toHaveLength(1);
-      expect(violations[0]!.message).toContain('integration');
-      expect(violations[0]!.rule).toBe('presentation-deny');
+      expect(violations.map((violation) => violation.rule)).toEqual(['unclassified-import-target']);
     });
   });
 
@@ -1421,87 +1294,87 @@ describe('Layer Dependency Rules', () => {
       ).toBe(true);
     });
 
-    it('review/ has a barrel index.ts', () => {
+    it('review/ has no barrel index.ts (ADR-005 removal guard)', () => {
       const barrel = path.join(SRC_DIR, 'integration', 'review', 'index.ts');
-      expect(existsSync(barrel), 'Expected integration/review/index.ts barrel').toBe(true);
+      expect(existsSync(barrel), 'integration/review/index.ts must stay removed').toBe(false);
     });
 
-    it('review/ must NOT import from plugin-* files (inward dependency only)', async () => {
-      const reviewDir = path.join(SRC_DIR, 'integration', 'review');
-      const reviewFiles = await collectFiles(reviewDir, /\.ts$/);
-      const violations: string[] = [];
-
-      for (const filePath of reviewFiles) {
-        const content = await fs.readFile(filePath, 'utf-8');
-        const imports = parseImports(content);
-        for (const imp of imports) {
-          // plugin-helpers is a pure stateless utility (no lifecycle coupling),
-          // so it's allowed as an inward dependency for review/
-          if (imp.module.includes('plugin-helpers')) continue;
-          if (imp.module.includes('plugin-') || imp.module.includes('/plugin.')) {
-            violations.push(
-              `${normalizeSep(path.relative(SRC_DIR, filePath))}: imports ${imp.module}`,
-            );
-          }
-        }
+    it('review/ imports stay inside the review boundary', () => {
+      const violations = detectReviewBoundaryViolations(analyses);
+      if (violations.length > 0) {
+        console.error(
+          '\nreview/ boundary violations:\n' + violations.map(formatViolation).join('\n'),
+        );
       }
-
-      expect(violations, 'review/ must not import from plugin-* files').toEqual([]);
+      expect(violations).toEqual([]);
     });
 
-    it('no review-* files remain at integration/ root level', async () => {
-      const integrationDir = path.join(SRC_DIR, 'integration');
-      const entries = await fs.readdir(integrationDir);
-      const staleReviewFiles = entries.filter(
-        (e) =>
-          e.startsWith('review-') &&
-          e.endsWith('.ts') &&
-          !e.endsWith('.test.ts') &&
-          e !== 'review-validation.ts' &&
-          e !== 'review-summary.ts',
+    it('review/ boundary is non-vacuous: review files import root authorities', () => {
+      const reviewFiles = Array.from(analyses.values()).filter(
+        (analysis) =>
+          analysis.relativePath.startsWith('integration/review/') &&
+          !analysis.filePath.includes('.test.'),
       );
-
-      expect(
-        staleReviewFiles,
-        'All review-* source files should be in review/ subdirectory',
-      ).toEqual([]);
-    });
-
-    it('no plugin-review-* files remain at integration/ root level', async () => {
-      const integrationDir = path.join(SRC_DIR, 'integration');
-      const entries = await fs.readdir(integrationDir);
-      const stalePluginReviewFiles = entries.filter(
-        (e) => e.startsWith('plugin-review-') && e.endsWith('.ts') && !e.endsWith('.test.ts'),
+      expect(reviewFiles.length).toBeGreaterThan(0);
+      const rootAuthorityImports = reviewFiles.flatMap((analysis) =>
+        analysis.imports
+          .map((imp) => resolveSrcTarget(analysis, imp))
+          .filter(
+            (target): target is string =>
+              target !== null && !isRootCompositionFile(target) && !isRootHostRuntimeFile(target),
+          ),
       );
-
-      expect(
-        stalePluginReviewFiles,
-        'plugin-review-state.ts and plugin-review-audit.ts should be in review/ subdirectory (FG-QUAL-003)',
-      ).toEqual([]);
+      expect(rootAuthorityImports).toContain('integration/tool-names.ts');
     });
 
     it('review/ obligation-state.ts and audit-events.ts exist', () => {
-      const obligationState = path.join(SRC_DIR, 'integration', 'review', 'obligation-state.ts');
-      const auditEvents = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
-      expect(existsSync(obligationState), 'Expected review/obligation-state.ts').toBe(true);
-      expect(existsSync(auditEvents), 'Expected review/audit-events.ts').toBe(true);
+      const obligationState = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'obligations',
+        'obligation-state.ts',
+      );
+      const auditEvents = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'evidence',
+        'audit-events.ts',
+      );
+      expect(existsSync(obligationState), 'Expected review/obligations/obligation-state.ts').toBe(
+        true,
+      );
+      expect(existsSync(auditEvents), 'Expected review/evidence/audit-events.ts').toBe(true);
     });
 
-    it('review/ barrel exports updateObligation, blockObligation, and appendReviewAuditEvent', async () => {
-      const barrelPath = path.join(SRC_DIR, 'integration', 'review', 'index.ts');
-      const content = await fs.readFile(barrelPath, 'utf-8');
-      expect(content).toContain('updateObligation');
-      expect(content).toContain('blockObligation');
-      expect(content).toContain('appendReviewAuditEvent');
+    it('review subzone authorities still export the obligation and audit entry points', async () => {
+      const obligationState = await fs.readFile(
+        path.join(SRC_DIR, 'integration', 'review', 'obligations', 'obligation-state.ts'),
+        'utf-8',
+      );
+      const auditEvents = await fs.readFile(
+        path.join(SRC_DIR, 'integration', 'review', 'evidence', 'audit-events.ts'),
+        'utf-8',
+      );
+      expect(obligationState).toContain('updateObligation');
+      expect(obligationState).toContain('blockObligation');
+      expect(auditEvents).toContain('appendReviewAuditEvent');
     });
 
     it('review/ adapters/persistence dependency is allowed (audit trail I/O)', async () => {
       // audit-events.ts imports from adapters/persistence — this is an intentional
       // architectural decision documented in the barrel header. Verify it compiles
       // and the import is to adapters/ only, not to plugin-* or tools/.
-      const auditEventsPath = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
+      const auditEventsPath = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'evidence',
+        'audit-events.ts',
+      );
       const content = await fs.readFile(auditEventsPath, 'utf-8');
-      const imports = parseImports(content);
+      const imports = parseImports(content, path.dirname(auditEventsPath), 'integration');
       const adapterImports = imports.filter((i) => i.module.includes('adapters/'));
       const pluginImports = imports.filter(
         (i) => i.module.includes('plugin-') || i.module.includes('/plugin.'),
@@ -1575,9 +1448,9 @@ describe('Layer Dependency Rules', () => {
     it('reports cycles in real import-edge order', async () => {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-cycle-test-'));
       try {
-        const a = normalizeSep(path.join(dir, 'a.ts'));
-        const b = normalizeSep(path.join(dir, 'b.ts'));
-        const c = normalizeSep(path.join(dir, 'c.ts'));
+        const a = normalizeRepoPath(path.join(dir, 'a.ts'));
+        const b = normalizeRepoPath(path.join(dir, 'b.ts'));
+        const c = normalizeRepoPath(path.join(dir, 'c.ts'));
         await Promise.all([
           fs.writeFile(a, "import './c.js';\n", 'utf-8'),
           fs.writeFile(b, "import './a.js';\n", 'utf-8'),
@@ -1589,7 +1462,7 @@ describe('Layer Dependency Rules', () => {
             a,
             {
               filePath: a,
-              relativePath: path.relative(PROJECT_ROOT, a),
+              relativePath: repoRelative(PROJECT_ROOT, a),
               imports: [mockImport('./c.js')],
             },
           ],
@@ -1597,7 +1470,7 @@ describe('Layer Dependency Rules', () => {
             b,
             {
               filePath: b,
-              relativePath: path.relative(PROJECT_ROOT, b),
+              relativePath: repoRelative(PROJECT_ROOT, b),
               imports: [mockImport('./a.js')],
             },
           ],
@@ -1605,21 +1478,21 @@ describe('Layer Dependency Rules', () => {
             c,
             {
               filePath: c,
-              relativePath: path.relative(PROJECT_ROOT, c),
+              relativePath: repoRelative(PROJECT_ROOT, c),
               imports: [mockImport('./b.js')],
             },
           ],
         ]);
 
         expect(detectCycles(fakeAnalyses)).toContain(
-          [a, c, b, a].map((f) => path.relative(PROJECT_ROOT, f)).join(' -> '),
+          [a, c, b, a].map((f) => repoRelative(PROJECT_ROOT, f)).join(' -> '),
         );
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
     });
 
-    it('should have no circular imports between source files', () => {
+    it('should have no circular imports between source files', { timeout: 60000 }, () => {
       const cycles = detectCycles(analyses);
       if (cycles.length > 0) {
         console.error(
@@ -1644,12 +1517,160 @@ describe('Layer Dependency Rules', () => {
       const violations = detectViolations(analyses);
 
       if (violations.length > 0) {
-        const summary = violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n');
+        const summary = violations.map(formatViolation).join('\n');
         console.error('\nCritical architecture violations:\n' + summary);
       }
 
       expect(violations).toHaveLength(0);
     });
+  });
+});
+
+// ─── Module classification (default-deny) ────────────────────────────────────
+
+describe('Module classification (default-deny)', () => {
+  it('classifies every top-level entry under src/ (ratchet)', () => {
+    const entries = readdirSync(SRC_DIR, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isDirectory() ||
+          (entry.isFile() && entry.name.endsWith('.ts') && !isTestSourcePath(entry.name)),
+      )
+      .map((entry) => entry.name)
+      .sort();
+
+    const unclassified = entries.filter((name) => !CLASSIFIED_ENTRIES.has(name));
+    expect(unclassified).toEqual([]);
+
+    // Non-vacuity: the enumeration sees directories and root-level files.
+    expect(entries).toContain('state');
+    expect(entries).toContain('index.ts');
+  });
+
+  it('every governed module is recognized by the path classifier', () => {
+    for (const name of GOVERNED_MODULES) {
+      const synthetic = normalizeRepoPath(path.join(SRC_DIR, name, 'probe.ts'));
+      expect(getLayerFromPath(synthetic), `${name} must map to its own layer`).toBe(name);
+    }
+  });
+
+  it('classifies by the top-level module, not nested names shadowing another module', () => {
+    expect(
+      getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'providers', 'state', 'probe.ts'))),
+    ).toBe('providers');
+    expect(
+      getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'integration', 'shared', 'probe.ts'))),
+    ).toBe('integration');
+    // Root-level entries are not layers.
+    expect(getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'index.ts')))).toBeNull();
+    expect(getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'shared.ts')))).toBeNull();
+  });
+
+  function violationForImport(
+    imp: ImportInfo,
+    relativePath = 'state/deliberate-violation.ts',
+  ): ImportViolation[] {
+    const fakeAnalysis: FileAnalysis = {
+      filePath: normalizeRepoPath(path.join(SRC_DIR, relativePath)),
+      relativePath,
+      imports: [imp],
+    };
+    return detectViolations(new Map([[relativePath, fakeAnalysis]]));
+  }
+
+  it('flags an import of an unclassified top-level module', () => {
+    const violations = violationForImport({
+      module: '../newmodule/x.js',
+      raw: "import { x } from '../newmodule/x.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: 'newmodule',
+      targetResolved: true,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('unclassified-module');
+  });
+
+  it('flags production imports of test-support entries', () => {
+    const violations = violationForImport({
+      module: '../fixtures.js',
+      raw: "import { makeState } from '../fixtures.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: 'fixtures.ts',
+      targetResolved: true,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('test-support-import');
+  });
+
+  it('flags an unresolved relative import target', () => {
+    const violations = violationForImport({
+      module: '../missing/gone.js',
+      raw: "import { x } from '../missing/gone.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: null,
+      targetResolved: false,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('unclassified-import-target');
+  });
+
+  it('does not flag a classified, allowed cross-module import', () => {
+    const violations = violationForImport({
+      module: '../shared/hashing.js',
+      raw: "import { hashText } from '../shared/hashing.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: true,
+      targetModule: 'shared',
+      targetResolved: true,
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it('flags a governed module importing an entry point (barrel bypass)', () => {
+    const violations = violationForImport({
+      module: '../index.js',
+      raw: "import { evaluate } from '../index.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: 'index.ts',
+      targetResolved: true,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('entry-import');
+  });
+
+  it('does not flag an entry point composing governed modules', () => {
+    const violations = violationForImport(
+      {
+        module: './state/schema.js',
+        raw: "export * from './state/schema.js';",
+        isNodeBuiltin: false,
+        isRelative: true,
+        isFFModule: true,
+        targetModule: 'state',
+        targetResolved: true,
+      },
+      'index.ts',
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('classifies test code semantically, not by `__` directory names', () => {
+    expect(isTestSourcePath('state/probe.ts')).toBe(false);
+    expect(isTestSourcePath('state/__internal__/escape.ts')).toBe(false);
+    expect(isTestSourcePath('state/__tests__/probe.ts')).toBe(true);
+    expect(isTestSourcePath('audit/__fixtures__/rfc3161.ts')).toBe(true);
+    expect(isTestSourcePath('architecture/mutation-authority-inventory.ts')).toBe(true);
+    expect(isTestSourcePath('state/probe.test.ts')).toBe(true);
+    expect(isTestSourcePath('state/probe.spec.ts')).toBe(true);
   });
 });
 

@@ -49,6 +49,12 @@ describe('canonicalJsonStringify', () => {
     expect(canonicalJsonStringify([undefined])).toBe('[null]');
   });
 
+  it('converts sparse array holes to null', () => {
+    const sparse: number[] = [1];
+    sparse[2] = 3;
+    expect(canonicalJsonStringify({ arr: sparse })).toBe('{"arr":[1,null,3]}');
+  });
+
   it('handles nested undefined inside array-of-objects', () => {
     expect(canonicalJsonStringify({ k: [{ b: undefined, a: 1 }] })).toBe('{"k":[{"a":1}]}');
   });

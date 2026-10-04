@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import { readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import {
@@ -20,17 +20,20 @@ import {
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
 import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
-import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
-import { blockObligation } from './review/obligation-state.js';
-import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { resolveDecisionSequence } from './services/decision-audit-intent.js';
+import { blockObligation } from './review/obligations/obligation-state.js';
 import type { SessionState } from '../state/schema.js';
-import { strictBlockedOutput } from './plugin-helpers.js';
+import { strictBlockedOutput } from './blocked-result.js';
+
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
-import type { SessionEnforcementState } from './review/enforcement/types.js';
+import type { SessionEnforcementState } from './review/types.js';
 import type { ReviewSessionContext } from './review/pipeline-types.js';
 import { recordAssuranceWithAudit } from './review/shared-helpers.js';
+import {
+  type SemanticAuditIntent,
+  writeStateWithAuditOperationsAlreadyLocked,
+} from './audit-outbox.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {
@@ -47,6 +50,15 @@ export interface WorkspaceDeps {
 export interface PluginWorkspace {
   resolveFingerprint(): Promise<string | null>;
   getSessionDir(sessionId: string): string | null;
+  /**
+   * Canonical worktree + sessionId → sessionDir resolution, independent of the
+   * cached fingerprint state. Returns a discriminated outcome so callers can
+   * distinguish a positively resolved directory from an unavailable
+   * resolution authority — unavailable must never be treated as absent.
+   */
+  resolveCanonicalSessionDir(
+    sessionId: string,
+  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }>;
   getChainState(sessionId: string): MutableChainState;
   invalidateChainState(sessionId: string): void;
   initChain(sessDir: string | null, sessionId: string): Promise<string>;
@@ -59,6 +71,7 @@ export interface PluginWorkspace {
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void>;
   blockReviewOutcome(
     ctx: ReviewSessionContext,
@@ -85,7 +98,6 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   private _cachedWsDir: string | null = null;
   private readonly _chainStates = new Map<string, MutableChainState>();
   private readonly _sessionQueues = new Map<string, Promise<void>>();
-  private readonly _decisionSequenceCache = new Map<string, number>();
   private readonly _enforcementStates = new Map<string, SessionEnforcementState>();
 
   constructor(private readonly _deps: WorkspaceDeps) {}
@@ -122,6 +134,18 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     }
   }
 
+  async resolveCanonicalSessionDir(
+    sessionId: string,
+  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }> {
+    if (!this._deps.auditWorktree) return { status: 'unavailable' };
+    try {
+      const result = await computeFingerprint(this._deps.auditWorktree);
+      return { status: 'resolved', sessDir: resolveSessionDir(result.fingerprint, sessionId) };
+    } catch {
+      return { status: 'unavailable' };
+    }
+  }
+
   // ── Chain state ─────────────────────────────────────────────────────────
 
   getChainState(sessionId: string): MutableChainState {
@@ -147,7 +171,7 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       cs.initialized = true;
       return cs.lastHash;
     }
-    const { events } = await readAuditTrail(sessDir);
+    const events = await readAuditTrail(sessDir);
     cs.lastHash = getLastChainHash(events);
     cs.initialized = true;
     return cs.lastHash;
@@ -168,13 +192,14 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   async updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void> {
     await withSessionWriteLock(sessDir, async () => {
       const current = await readState(sessDir);
       if (!current) return;
       const now = new Date().toISOString();
       const next = update(current, now);
-      await writeStateAlreadyLocked(sessDir, next);
+      await writeStateWithAuditOperationsAlreadyLocked(sessDir, next, semanticIntents?.(next, now));
     });
   }
 
@@ -187,19 +212,14 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   ): Promise<void> {
     const result = await recordAssuranceWithAudit(
       {
-        updateReviewAssurance: (sessDir, update) => this.updateReviewAssurance(sessDir, update),
-        appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail2) =>
-          appendReviewAuditEvent(sessDir, sessionId, phase, event, detail2),
-        logError: (msg, err) => getAdapterLogger().error('workspace', msg, { error: String(err) }),
+        updateReviewAssurance: (sessDir, update, semanticIntents) =>
+          this.updateReviewAssurance(sessDir, update, semanticIntents),
       },
       {
         sessDir: ctx.sessDir,
-        sessionId: ctx.sessionId,
-        phase: ctx.phase,
         stateMutation: (s) => blockObligation(s, obligationId, code),
         auditEventName: 'review:obligation_blocked',
         auditDetail: { obligationId, code },
-        auditFailureBehavior: 'block',
       },
     );
 
@@ -216,18 +236,14 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   // ── Session helpers ─────────────────────────────────────────────────────
 
   async nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
-    const cached = this._decisionSequenceCache.get(sessionId);
-    if (cached !== undefined) {
-      const next = cached + 1;
-      this._decisionSequenceCache.set(sessionId, next);
-      return next;
-    }
-    const { events } = await readAuditTrail(sessDir);
-    const receipts = decisionReceipts(events).filter((r) => r.sessionId === sessionId);
-    const maxSequence = receipts.reduce((max, r) => Math.max(max, r.decisionSequence), 0);
-    const next = maxSequence + 1;
-    this._decisionSequenceCache.set(sessionId, next);
-    return next;
+    const events = await readAuditTrail(sessDir);
+    const state = await readState(sessDir);
+    return resolveDecisionSequence(
+      events.filter(
+        (event) => event.hostSessionId === sessionId || event.flowguardSessionId === sessionId,
+      ),
+      state?.pendingAuditOperations ?? [],
+    );
   }
 
   async runSerializedForSession(sessionId: string, task: () => Promise<void>): Promise<void> {
@@ -259,11 +275,13 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
   return {
     resolveFingerprint: () => impl.resolveFingerprint(),
     getSessionDir: (sid) => impl.getSessionDir(sid),
+    resolveCanonicalSessionDir: (sid) => impl.resolveCanonicalSessionDir(sid),
     getChainState: (sid) => impl.getChainState(sid),
     invalidateChainState: (sid) => impl.invalidateChainState(sid),
     initChain: (sd, sid) => impl.initChain(sd, sid),
     appendAndTrack: (e, sd, tc, sid) => impl.appendAndTrack(e, sd, tc, sid),
-    updateReviewAssurance: (sd, u) => impl.updateReviewAssurance(sd, u),
+    updateReviewAssurance: (sd, u, semanticIntents) =>
+      impl.updateReviewAssurance(sd, u, semanticIntents),
     blockReviewOutcome: (ctx, oid, code, detail, out) =>
       impl.blockReviewOutcome(ctx, oid, code, detail, out),
     nextDecisionSequence: (sd, sid) => impl.nextDecisionSequence(sd, sid),

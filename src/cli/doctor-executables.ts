@@ -10,8 +10,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolvePackageRoot, SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
-import type { DoctorCheck } from './install-types.js';
+import { resolvePackageRoot, SHIPPED_EXECUTABLE_CHECK, type DoctorCheck } from './install-types.js';
 
 /** Node shebang every shipped FlowGuard executable must begin with. */
 const EXPECTED_EXECUTABLE_SHEBANG = '#!/usr/bin/env node';

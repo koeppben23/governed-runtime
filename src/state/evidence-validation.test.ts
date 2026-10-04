@@ -8,8 +8,14 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 import { describe, it, expect } from 'vitest';
-import { ValidationResult } from './evidence-validation.js';
-import { FIXED_TIME } from './evidence-test-constants.js';
+import {
+  ValidationAttempt,
+  ValidationExecutionObservation,
+  ValidationResult,
+  classifyValidationDisposition,
+  isExecutionError,
+} from './evidence-validation.js';
+import { FIXED_TIME, TEST_EXECUTION_OBSERVATION } from './evidence-test-constants.js';
 
 const VALID_DIGEST = 'a'.repeat(64);
 
@@ -27,6 +33,7 @@ describe('evidence-validation', () => {
         executionMs: 1500,
         outputDigest: VALID_DIGEST,
         timedOut: false,
+        outcome: 'supported' as const,
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
@@ -43,6 +50,7 @@ describe('evidence-validation', () => {
         executionMs: 800,
         outputDigest: VALID_DIGEST,
         timedOut: false,
+        outcome: 'inconclusive' as const,
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
@@ -59,6 +67,7 @@ describe('evidence-validation', () => {
         executionMs: 300000,
         outputDigest: VALID_DIGEST,
         timedOut: true,
+        outcome: 'blocked' as const,
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
@@ -85,9 +94,44 @@ describe('evidence-validation', () => {
           executionMs: 100,
           outputDigest: VALID_DIGEST,
           timedOut: false,
+          outcome: 'supported' as const,
         };
         expect(() => ValidationResult.parse(result)).not.toThrow();
       }
+    });
+
+    it('ValidationAttempt binds a baseline result to the plan digest', () => {
+      const result = ValidationAttempt.parse({
+        attemptId: '00000000-0000-4000-8000-000000000001',
+        scope: 'baseline',
+        planDigest: 'plan-digest',
+        executionObservation: TEST_EXECUTION_OBSERVATION,
+        result: {
+          checkId: 'test',
+          passed: true,
+          detail: 'All tests pass',
+          executedAt: FIXED_TIME,
+          kind: 'test',
+          command: 'npm test',
+          exitCode: 0,
+          executionMs: 1500,
+          outputDigest: VALID_DIGEST,
+          timedOut: false,
+          outcome: 'supported' as const,
+        },
+      });
+      expect(result.scope).toBe('baseline');
+      if (result.scope !== 'baseline') throw new Error('Expected baseline validation attempt');
+      expect(result.planDigest).toBe('plan-digest');
+      expect(result.executionObservation).toEqual(TEST_EXECUTION_OBSERVATION);
+    });
+
+    it('ValidationExecutionObservation accepts two distinct 64-hex state digests', () => {
+      const observation = {
+        executionObservedStateDigest: 'b'.repeat(64),
+        preCommitStateDigest: 'c'.repeat(64),
+      };
+      expect(ValidationExecutionObservation.parse(observation)).toEqual(observation);
     });
   });
 
@@ -176,6 +220,71 @@ describe('evidence-validation', () => {
         }),
       ).toThrow();
     });
+
+    it('rejects an implementation scope with a baseline digest binding', () => {
+      expect(() =>
+        ValidationAttempt.parse({
+          attemptId: '00000000-0000-4000-8000-000000000001',
+          scope: 'implementation',
+          planDigest: 'plan-digest',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: {
+            checkId: 'test',
+            passed: true,
+            detail: 'All tests pass',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1500,
+            outputDigest: VALID_DIGEST,
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects a validation attempt without the execution observation', () => {
+      expect(() =>
+        ValidationAttempt.parse({
+          attemptId: '00000000-0000-4000-8000-000000000001',
+          scope: 'baseline',
+          planDigest: 'plan-digest',
+          result: {
+            checkId: 'test',
+            passed: true,
+            detail: 'All tests pass',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1500,
+            outputDigest: VALID_DIGEST,
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an execution observation with a malformed state digest', () => {
+      expect(() =>
+        ValidationExecutionObservation.parse({
+          executionObservedStateDigest: 'not-hex',
+          preCommitStateDigest: 'c'.repeat(64),
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an execution observation with unknown fields', () => {
+      expect(() =>
+        ValidationExecutionObservation.parse({
+          ...TEST_EXECUTION_OBSERVATION,
+          stateChangedDuringExecution: false,
+        }),
+      ).toThrow();
+    });
   });
 
   describe('CORNER', () => {
@@ -205,6 +314,104 @@ describe('evidence-validation', () => {
           timedOut: false,
         }),
       ).toThrow();
+    });
+  });
+
+  describe('isExecutionError (F5)', () => {
+    it('true when timedOut', () => {
+      expect(isExecutionError({ timedOut: true, exitCode: 124 })).toBe(true);
+    });
+    it('true for exit 124 even if timedOut flag is false', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 124 })).toBe(true);
+    });
+    it('true for exit 127 (command not found)', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 127 })).toBe(true);
+    });
+    it('false for a passing check (exit 0)', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 0 })).toBe(false);
+    });
+    it('false for an ordinary failure (exit 1)', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 1 })).toBe(false);
+    });
+  });
+
+  describe('classifyValidationDisposition', () => {
+    it('supported only for a passed supported result', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: true,
+          outcome: 'supported',
+          timedOut: false,
+          exitCode: 0,
+        }),
+      ).toBe('supported');
+    });
+
+    it('artifact_failure for a genuine non-passing result (exit 1, inconclusive)', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+        }),
+      ).toBe('artifact_failure');
+    });
+
+    it('technical_block for a blocked outcome even when the process succeeded (subject drift)', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'blocked',
+          timedOut: false,
+          exitCode: 0,
+        }),
+      ).toBe('technical_block');
+    });
+
+    it('artifact_failure for a trustworthy extraction of a non-passing artifact', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: { status: 'extracted' },
+        }),
+      ).toBe('artifact_failure');
+    });
+
+    it('technical_block when the assertion extraction itself is inconclusive', () => {
+      // A missing/unparseable/ambiguous report is lack of trustworthy evidence,
+      // not proof that the artifact failed.
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: { status: 'inconclusive' },
+        }),
+      ).toBe('technical_block');
+    });
+
+    it('technical_block for timeouts and command-not-found', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'blocked',
+          timedOut: true,
+          exitCode: 124,
+        }),
+      ).toBe('technical_block');
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 127,
+        }),
+      ).toBe('technical_block');
     });
   });
 });

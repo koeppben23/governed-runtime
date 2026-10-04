@@ -1,0 +1,832 @@
+/**
+ * @module integration/mutation-episode-e2e
+ * @description End-to-end host mutation provenance through the REAL plugin
+ *              runtime: durable Before-hook dispatch authorization, an actual
+ *              worktree mutation between the hooks, After-hook completion
+ *              binding, replay protection, crash recovery, and the
+ *              unknown-outcome revalidation contract.
+ *
+ * This is the exact-head CI gate for the Assurance host contract:
+ *
+ *   real plugin tool.execute.before(callID)
+ *   -> durable MutationEpisode (dispatch_authorized)
+ *   -> actual host mutation (write/edit/apply_patch/bash)
+ *   -> tool.execute.after(same callID)
+ *   -> /implement binding / crash recovery
+ *
+ * No part of the plugin, persistence, or hook pipeline is mocked.
+ */
+
+import { describe, expect, it, vi } from 'vitest';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { FlowGuardAuditPlugin } from './plugin.js';
+import {
+  createBootableHostClient,
+  createTestWorkspace,
+  createToolContext,
+  parseToolResult,
+} from './test-helpers.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { writeStateWithArtifacts } from './tools/helpers.js';
+import { FROZEN_IMPLEMENTATION_BASE, IMPL_EVIDENCE, makeProgressedState } from '../fixtures.js';
+import {
+  decision,
+  implement,
+  review_implementation,
+  reconcile_mutation_episode,
+  export as exportTool,
+} from './tools/index.js';
+import {
+  hasUnresolvedMutationEpisodes,
+  hasUnboundMutationEpisodes,
+} from '../state/evidence-mutation-episode.js';
+import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
+import { recordUserDecisionIntent } from './user-decision-intent.js';
+import { computeGitControlPlaneMarker } from './git-control-plane.js';
+
+// The plugin/persistence/hook pipeline itself is unmocked; only the git
+// ADAPTER (external system boundary) is mocked: the test workspace carries a
+// fake `.git` marker rather than a real repository. The git prerequisite gate
+// is exercised for real in the dedicated non-Git regression below, which
+// overrides this default with mockResolvedValueOnce(false).
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
+  };
+});
+
+/** Simulate the death of the lease holder (a real dead process fails PID liveness). */
+async function killLeaseHolder(sessDir: string): Promise<void> {
+  const state = await readState(sessDir);
+  if (!state?.runtimeLease) throw new Error('no runtime lease recorded in session state');
+  await writeState(sessDir, {
+    ...state,
+    runtimeLease: { ...state.runtimeLease, holderPid: 999999 },
+  });
+}
+
+function createMockInput(overrides: Record<string, unknown> = {}) {
+  return {
+    project: {} as unknown,
+    client: createBootableHostClient() as unknown,
+    $: {} as unknown,
+    directory: '/tmp/mock-dir',
+    worktree: '/tmp/mock-worktree',
+    serverUrl: new URL('http://localhost:3000'),
+    ...overrides,
+  } as Parameters<typeof FlowGuardAuditPlugin>[0];
+}
+
+async function recordMutationOutcome(
+  tool: 'bash' | 'write' | 'edit' | 'apply_patch',
+  metadata: Record<string, unknown>,
+  output: string,
+): Promise<'success' | 'failure' | 'unknown' | null> {
+  const ws = await createTestWorkspace();
+  try {
+    const sessionID = crypto.randomUUID();
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+    const hooks = await FlowGuardAuditPlugin(
+      createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+    );
+    const callID = crypto.randomUUID();
+    await hooks['tool.execute.before']!({ tool, sessionID, callID }, { args: {} });
+    await hooks['tool.execute.after']!(
+      { tool, sessionID, callID, args: {} },
+      { title: tool, output, metadata },
+    );
+    return (await readState(sessDir))!.mutationEpisodes[0]?.outcome ?? null;
+  } finally {
+    await ws.cleanup();
+  }
+}
+
+describe('mutation episode end-to-end (real plugin runtime)', () => {
+  it('authorizes durably, binds the completed host mutation, and blocks replay', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+
+      const callID = crypto.randomUUID();
+      await expect(
+        beforeHook(
+          { tool: 'bash', sessionID, callID },
+          { args: { command: 'echo host-mutation' } },
+        ),
+      ).resolves.toBeUndefined();
+
+      // The dispatch authorization is DURABLE before the host may execute.
+      const authorized = await readState(sessDir);
+      expect(
+        authorized!.mutationEpisodes.find((episode) => episode.hostCallId === callID),
+      ).toMatchObject({
+        hostCallId: callID,
+        toolName: 'bash',
+        status: 'dispatch_authorized',
+        evidenceStatus: 'ineligible',
+      });
+
+      // Replaying the same hostCallId is never idempotent success — blocked.
+      await expect(
+        beforeHook({ tool: 'bash', sessionID, callID }, { args: { command: 'echo replay' } }),
+      ).rejects.toThrow('MUTATION_EPISODE_REPLAY_BLOCKED');
+      const afterReplay = await readState(sessDir);
+      expect(afterReplay!.mutationEpisodes).toHaveLength(1);
+
+      // The host performs its actual mutation between the hooks.
+      await fs.writeFile(path.join(ws.tmpDir, 'host-mutation.txt'), 'changed by host', 'utf-8');
+
+      // The After-hook completes the episode with the observed outcome.
+      await afterHook(
+        { tool: 'bash', sessionID, callID, args: { command: 'echo host-mutation' } },
+        { title: 'bash', output: 'host-mutation', metadata: { exit: 0 } },
+      );
+      const completed = await readState(sessDir);
+      expect(
+        completed!.mutationEpisodes.find((episode) => episode.hostCallId === callID),
+      ).toMatchObject({
+        status: 'completed',
+        outcome: 'success',
+      });
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('recognizes the real apply_patch success payload', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+      const callID = crypto.randomUUID();
+
+      await beforeHook(
+        { tool: 'apply_patch', sessionID, callID },
+        { args: { patchText: '*** Begin Patch\n*** End Patch' } },
+      );
+      await afterHook(
+        {
+          tool: 'apply_patch',
+          sessionID,
+          callID,
+          args: { patchText: '*** Begin Patch\n*** End Patch' },
+        },
+        {
+          title: 'Success. Updated the following files:\nM example.ts',
+          output: 'Success. Updated the following files:\nM example.ts',
+          metadata: { files: [{ filePath: '/repo/example.ts', relativePath: 'example.ts' }] },
+        },
+      );
+
+      expect(
+        (await readState(sessDir))!.mutationEpisodes.find(
+          (episode) => episode.hostCallId === callID,
+        ),
+      ).toMatchObject({ status: 'completed', outcome: 'success' });
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('recognizes the exact OpenCode success contracts for every canonical mutator', async () => {
+    const cases = [
+      ['bash', { exit: 0 }, 'command output'],
+      [
+        'apply_patch',
+        { files: [], diff: '', diagnostics: [] },
+        'Success. Updated the following files:',
+      ],
+      [
+        'write',
+        { filepath: '/repo/example.ts', exists: false, diagnostics: {} },
+        'Wrote file successfully.',
+      ],
+      [
+        'edit',
+        {
+          diff: '--- a/example.ts',
+          filediff: {
+            file: '/repo/example.ts',
+            patch: '@@ -1 +1 @@',
+            additions: 1,
+            deletions: 1,
+          },
+          diagnostics: {},
+        },
+        'Edit applied successfully.',
+      ],
+    ] as const;
+
+    for (const [tool, metadata, output] of cases) {
+      await expect(recordMutationOutcome(tool, metadata, output)).resolves.toBe('success');
+    }
+  });
+
+  it('keeps incomplete canonical-mutator payloads unknown', async () => {
+    const cases = [
+      ['bash', 'command output'],
+      ['apply_patch', 'Success. Updated the following files:'],
+      ['write', 'Wrote file successfully.'],
+      ['edit', 'Edit applied successfully.'],
+    ] as const;
+
+    for (const [tool, output] of cases) {
+      await expect(recordMutationOutcome(tool, {}, output)).resolves.toBe('unknown');
+    }
+  });
+
+  it('keeps malformed write and edit success metadata unknown', async () => {
+    await expect(
+      recordMutationOutcome(
+        'write',
+        { filepath: '/repo/example.ts', exists: false, diagnostics: [] },
+        'Wrote file successfully.',
+      ),
+    ).resolves.toBe('unknown');
+    await expect(
+      recordMutationOutcome(
+        'edit',
+        { diff: '--- a/example.ts', filediff: 'example.ts', diagnostics: {} },
+        'Edit applied successfully.',
+      ),
+    ).resolves.toBe('unknown');
+  });
+
+  it('does not complete an episode from a different mutating tool', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+      const callID = crypto.randomUUID();
+
+      await beforeHook({ tool: 'bash', sessionID, callID }, { args: { command: 'echo governed' } });
+      await afterHook(
+        { tool: 'apply_patch', sessionID, callID, args: { patchText: '*** Begin Patch' } },
+        { title: 'Success', output: 'Success', metadata: { files: [] } },
+      );
+
+      expect(
+        (await readState(sessDir))!.mutationEpisodes.find(
+          (episode) => episode.hostCallId === callID,
+        ),
+      ).toMatchObject({ status: 'dispatch_authorized', outcome: null });
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('blocks the first mutating host operation in a non-Git worktree (NOT_GIT_REPO) without authorizing a dispatch', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+
+      // Non-Git worktree: the git prerequisite gate must fail closed BEFORE the
+      // dispatch is authorized — no MutationEpisode, no repository mutation.
+      const gitAdapter = await import('../adapters/git.js');
+      vi.mocked(gitAdapter.isGitRepoStrict).mockResolvedValueOnce(false);
+
+      const callID = crypto.randomUUID();
+      await expect(
+        beforeHook(
+          { tool: 'bash', sessionID, callID },
+          { args: { command: 'echo blocked-mutation' } },
+        ),
+      ).rejects.toThrow('NOT_GIT_REPO');
+
+      const persisted = await readState(sessDir);
+      expect(persisted!.mutationEpisodes).toHaveLength(0);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('refuses to bind a mutation episode when the git control plane diverged from the hydrate baseline (#852)', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      // A REAL git repository: the marker resolves the control-plane layout
+      // through git itself, so the fake `.git` marker dir cannot serve.
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const execFileAsync = promisify(execFile);
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      await execFileAsync('git', ['config', 'user.email', 'test@example.com'], {
+        cwd: ws.tmpDir,
+      });
+      await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: ws.tmpDir });
+
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+
+      // Baseline frozen at hydrate with the control-plane marker of the
+      // pristine worktree.
+      const baselineMarker = await computeGitControlPlaneMarker(ws.tmpDir);
+      await writeStateWithArtifacts(sessDir, {
+        ...makeProgressedState('IMPLEMENTATION'),
+        implementationBaseline: {
+          dirtyFiles: [],
+          capturedAt: '2026-01-01T00:00:00.000Z',
+          controlPlaneMarker: baselineMarker,
+        },
+      });
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+
+      // A governed host mutation runs against the git control plane itself —
+      // invisible to `git status`, invisible to the reviewer subject.
+      const callID = crypto.randomUUID();
+      await beforeHook(
+        { tool: 'bash', sessionID, callID },
+        { args: { command: 'git config core.hooksPath .malicious-hooks' } },
+      );
+      await fs.mkdir(path.join(ws.tmpDir, '.git'), { recursive: true });
+      await fs.writeFile(
+        path.join(ws.tmpDir, '.git', 'config'),
+        '[core]\n\thooksPath = .malicious-hooks\n',
+        'utf8',
+      );
+      await afterHook(
+        { tool: 'bash', sessionID, callID, args: { command: 'git config' } },
+        { title: 'bash', output: 'git config', metadata: { exit: 0 } },
+      );
+
+      // Recording must fail closed: the control-plane mutation cannot be part
+      // of the implementation subject, so no digest may be certified over it.
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+      const blockedResult = parseToolResult<{ code?: string }>(await implement.execute({}, ctx));
+      expect(blockedResult.code).toBe('MUTATION_EPISODE_CONTROL_PLANE_MUTATED');
+
+      // The episode stays unbound: it can never pass the final evidence gate.
+      const persisted = await readState(sessDir);
+      const episode = persisted!.mutationEpisodes.find((e) => e.hostCallId === callID)!;
+      expect(episode.implementationDigest).toBeNull();
+      expect(episode.evidenceStatus).toBe('ineligible');
+      expect(
+        hasUnboundMutationEpisodes(
+          persisted!.mutationEpisodes,
+          persisted!.mutationEpisodeResolutions,
+        ),
+      ).toBe(true);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it.each(['EVIDENCE_REVIEW', 'COMPLETE'] as const)(
+    'blocks apply_patch before dispatch in %s without recording a mutation episode',
+    async (phase) => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        const implementationState = makeProgressedState('IMPLEMENTATION');
+        await writeStateWithArtifacts(sessDir, { ...implementationState, phase });
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        await expect(
+          beforeHook(
+            { tool: 'apply_patch', sessionID, callID: crypto.randomUUID() },
+            { args: { patch: '*** Begin Patch\n*** End Patch' } },
+          ),
+        ).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+
+        const persisted = await readState(sessDir);
+        expect(persisted!.mutationEpisodes).toHaveLength(0);
+      } finally {
+        await ws.cleanup();
+      }
+    },
+  );
+
+  it('keeps a crashed dispatch fail-closed and recovers only after a fenced runtime restart', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      // Fresh runtime identity for this test (simulates a fresh process).
+      resetRuntimeInstanceIdForTest();
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+      const afterHook = hooks['tool.execute.after']!;
+
+      const crashedCallID = crypto.randomUUID();
+      await beforeHook(
+        { tool: 'apply_patch', sessionID, callID: crashedCallID },
+        { args: { patch: 'x' } },
+      );
+      // Simulate the crash: no After-hook ever runs.
+
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+
+      const blockedResult = parseToolResult<{ code?: string }>(await implement.execute({}, ctx));
+      expect(blockedResult.code).toBe('MUTATION_EPISODE_UNRESOLVED');
+
+      // Recovery Authority boundary: the CURRENT runtime holds the SAME lease
+      // generation that authorized the dispatch — the authorizing epoch is
+      // not provably over.
+      const sameEpochResolution = parseToolResult<{ code?: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx),
+      );
+      expect(sameEpochResolution.code).toBe('MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE');
+      const afterEpochBlock = await readState(sessDir);
+      expect(afterEpochBlock!.mutationEpisodeResolutions).toHaveLength(0);
+
+      // A CONCURRENT instance cannot acquire the live lease at all — even a
+      // different process identity proves nothing about the authorizing epoch.
+      resetRuntimeInstanceIdForTest();
+      const concurrentInstance = parseToolResult<{ code?: string; message?: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx),
+      );
+      expect(concurrentInstance.code).toBe('MUTATION_EPISODE_LEASE_UNAVAILABLE');
+      expect(concurrentInstance.message).toBeDefined();
+      expect(concurrentInstance.message).not.toContain('{');
+      const afterConcurrentBlock = await readState(sessDir);
+      expect(afterConcurrentBlock!.mutationEpisodeResolutions).toHaveLength(0);
+
+      // Restart with fencing: the holder DIES, and the new instance acquires a
+      // LATER lease generation — the provable end of the authorizing epoch.
+      await killLeaseHolder(sessDir);
+      const resolvedResult = parseToolResult<{ code?: string; error?: boolean }>(
+        await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx),
+      );
+      expect(resolvedResult.code).toBe('MUTATION_EPISODE_RESOLVED');
+      expect(resolvedResult.error).toBe(false);
+
+      const resolved = await readState(sessDir);
+      expect(resolved!.mutationEpisodeResolutions).toHaveLength(1);
+      // The resolution DURABLY binds the fencing authority: the resolving
+      // runtime instance and a LATER lease generation than the authorizing one.
+      const resolution = resolved!.mutationEpisodeResolutions[0]!;
+      expect(resolution).toMatchObject({
+        hostCallId: crashedCallID,
+        status: 'reconciled_after_unknown_outcome',
+        basis: 'worktree_recapture',
+      });
+      const resolvedEpisode = resolved!.mutationEpisodes.find(
+        (episode) => episode.hostCallId === crashedCallID,
+      )!;
+      expect(resolution.resolvingRuntimeInstanceId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      expect(resolution.resolvingLeaseGeneration).toBeGreaterThan(resolvedEpisode.leaseGeneration);
+      // The episode itself stays dispatch_authorized forever — only the
+      // resolution makes it non-blocking.
+      expect(
+        resolved!.mutationEpisodes.find((episode) => episode.hostCallId === crashedCallID)?.status,
+      ).toBe('dispatch_authorized');
+
+      // Delayed host delivery is historical after fenced recovery. It cannot
+      // rewrite the episode and invalidate the append-only resolution.
+      await afterHook(
+        { tool: 'apply_patch', sessionID, callID: crashedCallID, args: { patch: 'x' } },
+        { title: 'Success', output: 'Success', metadata: { files: [] } },
+      );
+      expect(
+        (await readState(sessDir))!.mutationEpisodes.find(
+          (episode) => episode.hostCallId === crashedCallID,
+        )?.status,
+      ).toBe('dispatch_authorized');
+      expect(
+        hasUnresolvedMutationEpisodes(
+          resolved!.mutationEpisodes,
+          resolved!.mutationEpisodeResolutions,
+        ),
+      ).toBe(false);
+
+      // /implement is no longer blocked by the unresolved episode.
+      const afterRecovery = parseToolResult<{ code?: string }>(await implement.execute({}, ctx));
+      expect(afterRecovery.code).not.toBe('MUTATION_EPISODE_UNRESOLVED');
+
+      // A double resolution is a no-op, never a rewrite (append-only).
+      const doubleResult = parseToolResult<{ code?: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx),
+      );
+      expect(doubleResult.code).toBe('MUTATION_EPISODE_ALREADY_RESOLVED');
+      const afterDouble = await readState(sessDir);
+      expect(afterDouble!.mutationEpisodeResolutions).toHaveLength(1);
+    } finally {
+      resetRuntimeInstanceIdForTest();
+      await ws.cleanup();
+    }
+  });
+
+  it('requires fresh implementation evidence after an unknown-outcome resolution', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      resetRuntimeInstanceIdForTest();
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      const reviewState = makeProgressedState('IMPL_REVIEW');
+      await writeStateWithArtifacts(sessDir, { ...reviewState, phase: 'IMPLEMENTATION' });
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const beforeHook = hooks['tool.execute.before']!;
+
+      const crashedCallID = crypto.randomUUID();
+      await beforeHook(
+        { tool: 'edit', sessionID, callID: crashedCallID },
+        { args: { filePath: 'x.ts', old: 'a', new: 'b' } },
+      );
+
+      // Model a host crash after dispatch while the workflow has moved to the
+      // review stage. The recovery gate must still reject the stale evidence.
+      const dispatched = await readState(sessDir);
+      await writeState(sessDir, { ...dispatched!, phase: 'IMPL_REVIEW' });
+
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+
+      // Simulate the fenced restart: the previous holder DIES, and the new
+      // runtime instance acquires a later lease generation.
+      await killLeaseHolder(sessDir);
+      resetRuntimeInstanceIdForTest();
+      await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx);
+
+      // IMPL_EVIDENCE was recorded at the fixed 2026-01-01 fixture time —
+      // before the resolution — so the review verdict must be rejected.
+      const verdictResult = parseToolResult<{ code?: string }>(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(verdictResult.code).toBe('MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED');
+
+      // Implementation evidence recorded AFTER the resolution passes the gate.
+      const revalidatedState = await readState(sessDir);
+      const freshEvidence = {
+        ...IMPL_EVIDENCE,
+        digest: 'digest-of-fresh-recapture',
+        executedAt: new Date().toISOString(),
+      };
+      await writeState(sessDir, {
+        ...revalidatedState!,
+        implementation: freshEvidence,
+      });
+      const freshVerdict = parseToolResult<{ code?: string }>(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(freshVerdict.code).not.toBe('MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED');
+    } finally {
+      resetRuntimeInstanceIdForTest();
+      await ws.cleanup();
+    }
+  });
+
+  it('allows a fenced recovered session with fresh evidence to complete', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      const recoveredState = makeProgressedState('EVIDENCE_REVIEW');
+      await writeStateWithArtifacts(sessDir, {
+        ...recoveredState,
+        implementation: {
+          ...recoveredState.implementation!,
+          executedAt: '2026-02-01T00:00:00.000Z',
+        },
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'crashed-host-edit',
+            toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [
+          {
+            resolutionId: crypto.randomUUID(),
+            hostCallId: 'crashed-host-edit',
+            status: 'reconciled_after_unknown_outcome',
+            basis: 'worktree_recapture',
+            resolvedAt: '2026-01-15T00:00:00.000Z',
+            resolvingRuntimeInstanceId: crypto.randomUUID(),
+            resolvingLeaseGeneration: 2,
+          },
+        ],
+      });
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+      recordUserDecisionIntent({
+        sessionId: sessionID,
+        command: '/approve',
+        expectedVerdict: 'approve',
+      });
+
+      const approval = parseToolResult<{ code?: string }>(
+        await decision.execute({ verdict: 'approve', rationale: 'fresh recovery evidence' }, ctx),
+      );
+
+      expect(approval.code).not.toBe('MUTATION_EPISODE_BINDING_REQUIRED');
+      // Approval stops at EXPORT_READY; the canonical export materializes the
+      // completion package and only then reaches COMPLETE.
+      expect((await readState(sessDir))!.phase).toBe('EXPORT_READY');
+      const completion = parseToolResult<{ code?: string; error?: boolean }>(
+        await exportTool.execute({}, ctx),
+      );
+      expect(completion.error).not.toBe(true);
+      expect((await readState(sessDir))!.phase).toBe('COMPLETE');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+});
+
+describe('reconcile mutation episode fail-closed branches', () => {
+  it('blocks unknown, already observed and already resolved episodes', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      const base = makeProgressedState('IMPLEMENTATION');
+      await writeStateWithArtifacts(sessDir, {
+        ...base,
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'observed-success',
+            toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'completed',
+            completedAt: '2026-01-01T00:01:00.000Z',
+            outcome: 'success',
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'completed-unknown',
+            toolName: 'bash',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'completed',
+            completedAt: '2026-01-01T00:01:00.000Z',
+            outcome: 'unknown',
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'unresolved-dispatch',
+            toolName: 'bash',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'resolved-before',
+            toolName: 'apply_patch',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [
+          {
+            resolutionId: crypto.randomUUID(),
+            hostCallId: 'resolved-before',
+            status: 'reconciled_after_unknown_outcome',
+            basis: 'worktree_recapture',
+            resolvedAt: '2026-01-15T00:00:00.000Z',
+            resolvingRuntimeInstanceId: crypto.randomUUID(),
+            resolvingLeaseGeneration: 2,
+          },
+        ],
+      });
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+
+      const unknown = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'missing-call' }, ctx),
+      );
+      expect(unknown.code).toBe('MUTATION_EPISODE_NOT_FOUND');
+      expect(unknown.message).toContain('missing-call');
+
+      const observed = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'observed-success' }, ctx),
+      );
+      expect(observed.code).toBe('MUTATION_EPISODE_ALREADY_COMPLETED');
+      expect(observed.message).toContain('success');
+
+      const resolved = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'resolved-before' }, ctx),
+      );
+      expect(resolved.code).toBe('MUTATION_EPISODE_ALREADY_RESOLVED');
+      expect(resolved.message).toContain('resolved-before');
+
+      // A completed episode with an UNKNOWN outcome is just as unobservable as
+      // a dispatch whose After-hook never ran: it must proceed past the
+      // completion gate into the fencing check, never report ALREADY_COMPLETED.
+      const completedUnknown = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'completed-unknown' }, ctx),
+      );
+      expect(completedUnknown.code).not.toBe('MUTATION_EPISODE_ALREADY_COMPLETED');
+      expect(completedUnknown.code).toBe('MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE');
+      expect(completedUnknown.message).not.toContain('{');
+
+      // An unresolved dispatch without a resolution record must not be treated
+      // as already resolved; the fencing check blocks it instead.
+      const unresolved = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'unresolved-dispatch' }, ctx),
+      );
+      expect(unresolved.code).not.toBe('MUTATION_EPISODE_ALREADY_RESOLVED');
+      expect(unresolved.code).toBe('MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE');
+      expect(unresolved.message).not.toContain('{');
+
+      const schema = reconcile_mutation_episode.args['hostCallId']!;
+      expect(schema.safeParse('').success).toBe(false);
+      expect(schema.safeParse('host-call-1').success).toBe(true);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+});

@@ -71,12 +71,12 @@ describe('writeDeny', () => {
 
   it('writes deny JSON to stdout on success', async () => {
     let written = '';
-    process.stdout.write = ((chunk: unknown, encOrCb?: unknown, cb?: unknown): boolean => {
+    process.stdout.write = (chunk: unknown, encOrCb?: unknown, cb?: unknown): boolean => {
       written = typeof chunk === 'string' ? chunk : Buffer.from(chunk as Uint8Array).toString();
       const callback = typeof encOrCb === 'function' ? encOrCb : cb;
       if (typeof callback === 'function') (callback as (err?: Error | null) => void)(null);
       return true;
-    }) as typeof process.stdout.write;
+    };
 
     const stdoutOnce = vi.spyOn(process.stdout, 'once').mockImplementation(() => process.stdout);
     const stdoutOff = vi.spyOn(process.stdout, 'off').mockImplementation(() => process.stdout);
@@ -92,9 +92,9 @@ describe('writeDeny', () => {
   });
 
   it('sets exitCode=2 and writes to stderr when stdout write throws synchronously', async () => {
-    process.stdout.write = (() => {
+    process.stdout.write = () => {
       throw new Error('stdout broken');
-    }) as unknown as typeof process.stdout.write;
+    };
 
     const stdoutOnce = vi.spyOn(process.stdout, 'once').mockImplementation(() => process.stdout);
     const stdoutOff = vi.spyOn(process.stdout, 'off').mockImplementation(() => process.stdout);
@@ -108,12 +108,12 @@ describe('writeDeny', () => {
   });
 
   it('sets exitCode=2 when stdout write calls back with error', async () => {
-    process.stdout.write = ((_chunk: unknown, encOrCb?: unknown, _cb?: unknown): boolean => {
+    process.stdout.write = (_chunk: unknown, encOrCb?: unknown, _cb?: unknown): boolean => {
       const callback = typeof encOrCb === 'function' ? encOrCb : undefined;
       if (typeof callback === 'function')
         (callback as (err?: Error | null) => void)(new Error('write failed'));
       return false;
-    }) as typeof process.stdout.write;
+    };
 
     const stdoutOnce = vi.spyOn(process.stdout, 'once').mockImplementation(() => process.stdout);
     const stdoutOff = vi.spyOn(process.stdout, 'off').mockImplementation(() => process.stdout);

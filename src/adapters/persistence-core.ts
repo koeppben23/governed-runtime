@@ -9,9 +9,11 @@ export type PersistenceErrorCode =
   | 'WRITE_FAILED'
   | 'PARSE_FAILED'
   | 'SCHEMA_VALIDATION_FAILED'
+  | 'SESSION_STATE_INCOMPATIBLE'
+  | 'DIRECT_WRITE_REQUIRES_PREPARE'
+  | 'OUTBOX_ORDER_CONFLICT'
   | 'LOCK_TIMEOUT'
-  | 'LOCK_TIMEOUT_EXHAUSTED'
-  | 'MISSING_FILE_DIGEST';
+  | 'LOCK_TIMEOUT_EXHAUSTED';
 
 /**
  * Typed persistence error shared by adapter persistence modules.
@@ -33,10 +35,5 @@ export async function ensureDir(dir: string): Promise<void> {
 
 /** Type-safe ENOENT check. Shared by persistence and git adapters. */
 export function isEnoent(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code: unknown }).code === 'ENOENT'
-  );
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
 }

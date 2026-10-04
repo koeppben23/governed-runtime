@@ -1,0 +1,542 @@
+/**
+ * @module presentation/markdown
+ * @description Deterministic Markdown renderer for PresentationDocument.
+ *
+ * Produces a single Markdown string from a typed PresentationDocument.
+ * No UI dependency, no external libraries, no trailing whitespace,
+ * no triple-newlines between structural blocks.
+ *
+ * Invariants:
+ * - No leading newline at document start.
+ * - No trailing newline at document end.
+ * - Exactly \n\n between non-empty sections.
+ * - No trailing whitespace on any line.
+ * - No \n\n\n between structural blocks (code-fence content is exempt;
+ *   EmbeddedMarkdownSection internal content is opaque and may contain
+ *   internal blank lines — triple-newline rule applies only to structural
+ *   section joins).
+ * - EmbeddedMarkdownSection preserves internal content exactly except for
+ *   leading/trailing newlines at the section boundary.
+ *
+ * The renderer constructs output so that these invariants are structurally
+ * impossible to violate — no post-processing, no silent repair.
+ *
+ * @version v2
+ */
+
+import type {
+  PresentationDocument,
+  PresentationSection,
+  PresentationAction,
+  KeyValueItem,
+  TitleSection,
+  BlockerSection,
+  ChecklistSection,
+  CodeSection,
+  FindingGroup,
+  FindingItem,
+  NoticeSection,
+  ArtifactItem,
+  TextSection,
+  BulletListSection,
+  GuidanceSection,
+  GuidanceStatus,
+  DetailedCommandItem,
+  DetailedCommandListSection,
+  HelpSummarySection,
+  HelpArtifactSection,
+  EmbeddedMarkdownSection,
+} from './model.js';
+import {
+  formatFindingAffected,
+  formatFindingEvidence,
+  formatFindingLocation,
+  formatFindingSubject,
+} from './finding-relation.js';
+import { validateCodeLanguage, PresentationContractError } from './model.js';
+import { validateDocumentContract } from './markdown-contract.js';
+import { normalizeEmbeddedContent } from './markdown-embedded.js';
+import { renderAction, renderConclusion } from './markdown-conclusion.js';
+import { GUIDANCE_STATUS_LABELS } from './labels.js';
+import { renderProofGraphMarkdown } from './proof-summary.js';
+import {
+  presentationGlyphs,
+  type PresentationGlyphs,
+  type PresentationRenderOptions,
+} from './glyph-profile.js';
+
+// ─── Document Renderer ─────────────────────────────────────────────────────────
+
+/**
+ * Render a PresentationDocument to deterministic Markdown.
+ */
+export function renderMarkdown(
+  document: PresentationDocument,
+  options: PresentationRenderOptions = {},
+): string {
+  validateDocumentContract(document);
+  const glyphs = presentationGlyphs(options);
+  const renderedSections = document.sections
+    .map((section) => renderSection(section, glyphs))
+    .filter((s): s is string => s.length > 0);
+
+  const body = renderedSections.join('\n\n');
+
+  const conclusionBlock =
+    document.conclusion && document.conclusion.kind !== undefined
+      ? renderConclusion(document.conclusion, glyphs)
+      : '';
+
+  const parts = [body, conclusionBlock].filter((p) => p.length > 0);
+  return parts.join('\n\n');
+}
+
+// ─── Section Dispatcher ────────────────────────────────────────────────────────
+
+function sectionHeading(section: { readonly heading?: string }): string {
+  return section.heading && section.heading.length > 0 ? `## ${section.heading}\n\n` : '';
+}
+
+/** Card sections that render their body without an extra heading level. */
+type CorePresentationSection = Extract<
+  PresentationSection,
+  {
+    kind:
+      'title' | 'keyValue' | 'commandList' | 'blocker' | 'artifactList' | 'findings' | 'checklist';
+  }
+>;
+
+/** Help/diagnostic and free-form sections rendered below the core card body. */
+type SupportPresentationSection = Exclude<PresentationSection, CorePresentationSection>;
+
+const CORE_SECTION_KINDS: ReadonlySet<PresentationSection['kind']> = new Set([
+  'title',
+  'keyValue',
+  'commandList',
+  'blocker',
+  'artifactList',
+  'findings',
+  'checklist',
+]);
+
+function isCoreSection(section: PresentationSection): section is CorePresentationSection {
+  return CORE_SECTION_KINDS.has(section.kind);
+}
+
+function renderSection(section: PresentationSection, glyphs: PresentationGlyphs): string {
+  return isCoreSection(section)
+    ? renderCoreSection(section, glyphs)
+    : renderSupportSection(section, glyphs);
+}
+
+function renderCoreSection(section: CorePresentationSection, glyphs: PresentationGlyphs): string {
+  switch (section.kind) {
+    case 'title':
+      return renderTitle(section);
+    case 'keyValue':
+      return sectionHeading(section) + renderKeyValue(section.items);
+    case 'commandList':
+      return sectionHeading(section) + renderCommandList(section.items, glyphs);
+    case 'blocker':
+      return sectionHeading(section) + renderBlocker(section, glyphs.warning);
+    case 'artifactList':
+      return sectionHeading(section) + renderArtifactList(section.items, glyphs);
+    case 'findings':
+      return sectionHeading(section) + renderFindings(section.groups, section.detail ?? 'compact');
+    case 'checklist':
+      return sectionHeading(section) + renderChecklist(section);
+  }
+}
+
+function renderSupportSection(
+  section: SupportPresentationSection,
+  glyphs: PresentationGlyphs,
+): string {
+  switch (section.kind) {
+    case 'text':
+      return sectionHeading(section) + renderText(section);
+    case 'proofGraph':
+      return renderProofGraphMarkdown(section.proof, {
+        detail: section.detail,
+        humanSummary: section.humanSummary,
+      });
+    case 'code':
+      return sectionHeading(section) + renderCode(section);
+    case 'notice':
+      return sectionHeading(section) + renderNotice(section, glyphs);
+    case 'bulletList':
+      return sectionHeading(section) + renderBulletList(section);
+    case 'guidance':
+      return sectionHeading(section) + renderGuidance(section);
+    case 'detailedCommandList':
+      return sectionHeading(section) + renderDetailedCommandList(section);
+    case 'helpSummary':
+      return sectionHeading(section) + renderHelpSummary(section, glyphs);
+    case 'helpArtifact':
+      return sectionHeading(section) + renderHelpArtifact(section);
+    case 'embeddedMarkdown':
+      return sectionHeading(section) + renderEmbeddedMarkdown(section);
+  }
+}
+
+// ─── Section Renderers ─────────────────────────────────────────────────────────
+
+function renderTitle(section: TitleSection): string {
+  if (section.text.trim().length === 0) {
+    throw new PresentationContractError('TitleSection: text must not be empty');
+  }
+  return `# ${section.text}`;
+}
+
+function renderKeyValue(items: readonly KeyValueItem[]): string {
+  return items
+    .map((item) => `**${item.label}:**${item.value.length > 0 ? ` ${item.value}` : ''}`)
+    .join('\n');
+}
+
+function renderCommandList(
+  items: readonly PresentationAction[],
+  glyphs: PresentationGlyphs,
+): string {
+  return items.map((item) => renderAction(item, glyphs)).join('\n');
+}
+
+function renderBlocker(section: BlockerSection, warning: string): string {
+  const symbol = warning;
+  // Migrated codes carry human projection detail fields (canonicalMessage /
+  // explanation); the reason code is diagnostic identity and moves out of the
+  // primary Blocked line into Details. Unmigrated sections keep the baseline
+  // layout byte-for-byte.
+  if (section.explanation || section.canonicalMessage) {
+    const lines: string[] = [`${symbol} **Blocked:** ${section.text}`];
+    if (section.recovery) {
+      lines.push(`**Recovery:** ${section.recovery}`);
+    }
+    if (section.explanation) {
+      lines.push(`**Why:** ${section.explanation}`);
+    }
+    if (section.impact) {
+      lines.push(`**Impact:** ${section.impact}`);
+    }
+    if (section.canonicalMessage || section.code) {
+      lines.push('**Details:**');
+      if (section.code) {
+        lines.push(`\`${section.code}\``);
+      }
+      if (section.canonicalMessage) {
+        lines.push(section.canonicalMessage);
+      }
+    }
+    return lines.join('\n');
+  }
+  const codeBlock = section.code ? ` \`${section.code}\`` : '';
+  const lines: string[] = [`${symbol} **Blocked:**${codeBlock} — ${section.text}`];
+  if (section.recovery) {
+    lines.push(`**Recovery:** ${section.recovery}`);
+  }
+  return lines.join('\n');
+}
+
+function renderArtifactList(items: readonly ArtifactItem[], glyphs: PresentationGlyphs): string {
+  return items
+    .map((item) => {
+      const statusSymbol = artifactStatusSymbol(item.status, glyphs);
+      const required = item.required ? ' (required)' : '';
+      const hint = item.hint ? ` — ${item.hint}` : '';
+      return `**${item.slot}:** ${statusSymbol} ${item.label}${required}${hint}`;
+    })
+    .join('\n');
+}
+
+function artifactStatusSymbol(status: ArtifactItem['status'], glyphs: PresentationGlyphs): string {
+  switch (status) {
+    case 'complete':
+      return glyphs.verified;
+    case 'missing':
+      return glyphs.failed;
+    case 'not_yet_required':
+      return glyphs.notApplicable;
+    case 'failed':
+      return glyphs.failed;
+  }
+}
+
+function renderFindings(groups: readonly FindingGroup[], detail: 'compact' | 'expanded'): string {
+  const blocks: string[] = [];
+  for (const group of groups) {
+    if (group.items.length === 0) continue;
+    const lines: string[] = [`### ${group.label} (${group.items.length})`];
+    for (const item of group.items) {
+      lines.push(renderFindingItem(item, detail));
+    }
+    blocks.push(lines.join('\n'));
+  }
+  // Separate consecutive severity groups with a blank line so each `###` group
+  // heading is a cleanly delimited block (consistent with `\n\n`-spaced sections).
+  return blocks.join('\n\n');
+}
+
+function renderFindingItem(item: FindingItem, detail: 'compact' | 'expanded'): string {
+  const heading = `- **${item.category}:** ${item.message}`;
+  if (item.subjects === undefined && item.evidence === undefined) return heading;
+
+  const lines = [heading];
+  const subjects = item.subjects ?? [];
+  const evidence = item.evidence ?? [];
+  lines.push(`  ${formatFindingAffected(subjects)} · ${formatFindingEvidence(evidence)}`);
+  if (detail === 'expanded') {
+    lines.push(...subjects.map((subject) => `  - ${formatFindingSubject(subject)}`));
+    lines.push(...evidence.map((location) => `  - ${formatFindingLocation(location)}`));
+  }
+  return lines.join('\n');
+}
+
+function renderChecklist(section: ChecklistSection): string {
+  const lines: string[] = [];
+  if (section.label) {
+    lines.push(`**${section.label}:**`);
+  }
+  for (const item of section.items) {
+    lines.push(`- [${item.checked ? 'x' : ' '}] ${item.text}`);
+  }
+  return lines.join('\n');
+}
+
+function renderText(section: TextSection): string {
+  return section.content;
+}
+
+function renderCode(section: CodeSection): string {
+  const lang = validateCodeLanguage(section.language);
+  const maxRun = longestBacktickRun(section.content);
+  const fence = maxRun >= 3 ? '`'.repeat(maxRun + 1) : '```';
+  return `${fence}${lang}\n${section.content}\n${fence}`;
+}
+
+function renderNotice(section: NoticeSection, glyphs: PresentationGlyphs): string {
+  if (section.message.trim().length === 0) {
+    throw new PresentationContractError('NoticeSection: message must not be empty');
+  }
+  const symbol = noticeSymbol(section.level, glyphs);
+  const lines: string[] = [];
+  lines.push(`${symbol} ${section.message}`);
+  for (const msg of section.additionalMessages ?? []) {
+    if (msg.trim().length === 0) {
+      throw new PresentationContractError(
+        'NoticeSection: additionalMessages must not contain empty strings',
+      );
+    }
+    lines.push(`${symbol} ${msg}`);
+  }
+  for (const detail of section.details) {
+    lines.push(`**${detail.label}:** ${detail.value}`);
+  }
+  return lines.join('\n');
+}
+
+function renderBulletList(section: BulletListSection): string {
+  for (const item of section.items) {
+    if (item.trim().length === 0) {
+      throw new PresentationContractError('BulletListSection: items must not be empty');
+    }
+  }
+  return section.items.map((t) => `- ${t}`).join('\n');
+}
+
+function renderGuidance(section: GuidanceSection): string {
+  if (section.items.length === 0) {
+    throw new PresentationContractError('GuidanceSection: items must not be empty');
+  }
+  const lines: string[] = [];
+  for (const item of section.items) {
+    if (item.action.trim().length === 0) {
+      throw new PresentationContractError('GuidanceItem: action must not be empty');
+    }
+    if (item.reason.trim().length === 0) {
+      throw new PresentationContractError('GuidanceItem: reason must not be empty');
+    }
+    const sym = guidanceSymbol(item.status);
+    const label = GUIDANCE_STATUS_LABELS[item.status];
+    lines.push(`${sym} **${item.action}:** ${label} — ${item.reason}`);
+  }
+  return lines.join('\n');
+}
+
+function guidanceSymbol(_status: GuidanceStatus): string {
+  return '-';
+}
+
+function noticeSymbol(level: NoticeSection['level'], glyphs: PresentationGlyphs): string {
+  switch (level) {
+    case 'warning':
+      return glyphs.warning;
+    case 'not_verified':
+      return glyphs.notVerified;
+    case 'info':
+      return '-';
+  }
+}
+
+// ─── Help/Diagnostics Renderers ────────────────────────────────────────────────
+
+function renderDetailedCommandList(section: DetailedCommandListSection): string {
+  const lines: string[] = [];
+  // A `## heading` (emitted centrally by the section dispatcher) supersedes the
+  // inline `**label:**`. Only render the label when no heading is set.
+  const hasHeading = section.heading !== undefined && section.heading.length > 0;
+  if (!hasHeading && section.label) {
+    lines.push(`**${section.label}:**`);
+  }
+  for (const item of section.items) {
+    validateDetailedCommandItem(item);
+    const sym = detailedCommandSymbol(item.visibility);
+    const aliases =
+      item.aliases.length > 0
+        ? ` (aliases: ${item.aliases.map((a) => `\`${a}\``).join(', ')})`
+        : '';
+    const inv =
+      item.visibility === 'recommended' ? `**\`${item.invocation}\`**` : `\`${item.invocation}\``;
+    lines.push(`  ${sym} ${inv} — ${item.description}${aliases}`);
+    appendDetailedCommandPreflight(lines, item);
+  }
+  return lines.join('\n');
+}
+
+function validateDetailedCommandItem(item: DetailedCommandItem): void {
+  if (item.invocation.trim().length === 0) {
+    throw new PresentationContractError('DetailedCommandItem: invocation must not be empty');
+  }
+  if (item.description.trim().length === 0) {
+    throw new PresentationContractError('DetailedCommandItem: description must not be empty');
+  }
+  for (const alias of item.aliases) {
+    if (alias.trim().length === 0) {
+      throw new PresentationContractError(
+        'DetailedCommandItem: aliases must not contain empty strings',
+      );
+    }
+  }
+}
+
+function appendDetailedCommandPreflight(lines: string[], item: DetailedCommandItem): void {
+  if (item.preflight.status !== 'blocked') return;
+  const p = item.preflight;
+  if (p.message) lines.push(`    blocked: ${p.message}`);
+  if (p.reasonCode) lines.push(`    code: ${p.reasonCode}`);
+  if (p.recovery) lines.push(`    recovery: ${p.recovery}`);
+}
+
+function detailedCommandSymbol(
+  _visibility: DetailedCommandListSection['items'][number]['visibility'],
+): string {
+  return '-';
+}
+
+function renderHelpSummary(section: HelpSummarySection, glyphs: PresentationGlyphs): string {
+  const lines: string[] = [];
+
+  if (section.phase) {
+    lines.push(`**Phase:** ${section.phase}`);
+  } else {
+    lines.push('**No active FlowGuard session.**');
+  }
+
+  if (section.readiness && section.readiness !== 'none') {
+    lines.push(`**Readiness:** ${section.readiness}`);
+  }
+
+  if (section.blocker) {
+    const parts: string[] = [];
+    if (section.blocker.message) {
+      parts.push(section.blocker.message);
+    }
+    if (section.blocker.reasonCode) {
+      parts.push(`[${section.blocker.reasonCode}]`);
+    }
+    if (parts.length > 0) {
+      lines.push(`${glyphs.warning} **Why blocked:** ${parts.join(' ')}`);
+    }
+  }
+
+  if (section.directive) {
+    if ('invocation' in section.directive) {
+      lines.push(
+        `**Next:** \`${section.directive.invocation}\` — ${section.directive.description}`,
+      );
+    } else {
+      lines.push(`**Next:** ${section.directive.summary}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function renderHelpArtifact(section: HelpArtifactSection): string {
+  if (section.label.trim().length === 0) {
+    throw new PresentationContractError('HelpArtifactSection: label must not be empty');
+  }
+  const lines: string[] = [];
+  lines.push(`**${section.label}:**`);
+  for (const item of section.items) {
+    if (item.label.trim().length === 0) {
+      throw new PresentationContractError('HelpArtifactSection: item label must not be empty');
+    }
+    const pv = item.preview ? ` "${item.preview}"` : '';
+    const dg = item.digest ? ` (digest: ${item.digest.slice(0, 8)}...)` : '';
+    if (item.status === 'available') {
+      lines.push(`  ${item.label}: available${pv}${dg}`);
+    } else {
+      lines.push(`  ${item.label}: not verified`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
+  if (section.label !== undefined && section.label.trim().length === 0) {
+    throw new PresentationContractError('EmbeddedMarkdownSection: label must not be empty');
+  }
+
+  // Embedded content is authored outside the presentation layer (agent plan/ADR
+  // bodies, ticket text). It is the one untrusted input path in the renderer,
+  // so it is normalised here — the single shared boundary — rather than by each
+  // embedder. Two concerns are handled:
+  //  1. Structural sanitisation: strip trailing whitespace and collapse
+  //     triple+ newlines so the document invariants hold (code-fence content is
+  //     exempt and preserved verbatim).
+  //  2. Heading demotion: no embedded heading may be shallower than the section
+  //     that owns it. A section with a `heading` renders it as `## heading`, so
+  //     the body must start at `###` (H3) or deeper; a label-only embed sits at
+  //     document level (next to the document H1 title) and must start at `##`.
+  //     This prevents a second document-level H1 and H1-under-H2 inversions.
+  const minLevel = section.heading !== undefined ? 3 : 2;
+  const normalized = normalizeEmbeddedContent(section.content, minLevel);
+
+  if (normalized.length === 0) {
+    throw new PresentationContractError(
+      'EmbeddedMarkdownSection: content must not be empty after boundary normalization',
+    );
+  }
+
+  return section.label !== undefined ? `**${section.label}:**\n${normalized}` : normalized;
+}
+
+// ─── Code Fence Helper ─────────────────────────────────────────────────────────
+
+/**
+ * Compute the longest consecutive backtick run in a string.
+ * Used to select a safe fence length for code blocks.
+ */
+function longestBacktickRun(content: string): number {
+  let maxRun = 0;
+  let currentRun = 0;
+  for (const char of content) {
+    if (char === '`') {
+      currentRun++;
+      if (currentRun > maxRun) maxRun = currentRun;
+    } else {
+      currentRun = 0;
+    }
+  }
+  return maxRun;
+}

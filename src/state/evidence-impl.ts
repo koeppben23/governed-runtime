@@ -11,9 +11,29 @@ import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
 /** Evidence produced by /implement — what files were changed. */
 export const ImplEvidence = z
   .object({
+    /**
+     * Unique execution identity of this `/implement` recording. Content alone
+     * cannot distinguish a resubmission with identical bytes from a fresh
+     * implementation: post-implementation attempts and reduced-ceremony
+     * decisions bind this id, so a re-recorded identical revision still
+     * requires fresh checks.
+     */
+    implementationId: z.string().uuid(),
     changedFiles: z.array(z.string()),
     domainFiles: z.array(z.string()),
+    /**
+     * Content-bound digest of the change: hashes the CURRENT content of each changed
+     * file (path + git blob hash), so two different edits to the same file set produce
+     * different digests. (Legacy sessions hashed only the sorted file-name list.)
+     */
     digest: z.string().min(1),
+    /**
+     * Optional content digest of the captured unified diff (`implementation-diff.*.patch`).
+     * Binds the human-readable change artifact into the evidence. Optional for
+     * backward compatibility: sessions recorded before this field, or where no diff
+     * could be captured, omit it.
+     */
+    diffDigest: z.string().min(1).optional(),
     executedAt: z.string().datetime(),
   })
   .readonly();
@@ -22,10 +42,18 @@ export type ImplEvidence = z.infer<typeof ImplEvidence>;
 /**
  * Result of an implementation review iteration (IMPL_REVIEW phase).
  * Same convergence logic as SelfReviewLoop: digest-stop.
+ *
+ * `reviewCycle` is the human-cycle identity of this projection: the active
+ * `SessionState.reviewCycles.implementation` at creation. A human
+ * `changes_requested` decision at EVIDENCE_REVIEW restarts `iteration` at 1;
+ * `reviewCycle` keeps distinct human cycles distinguishable in persisted
+ * evidence and audit.
  */
 export const ImplReviewResult = z
   .object({
     iteration: z.number().int().nonnegative(),
+    /** Human review cycle this projection belongs to (positive, from state.reviewCycles). */
+    reviewCycle: z.number().int().positive(),
     maxIterations: z.number().int().positive(),
     prevDigest: z.string().nullable(),
     currDigest: z.string().min(1),

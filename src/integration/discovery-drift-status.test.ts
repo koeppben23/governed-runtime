@@ -9,7 +9,7 @@ import type { DriftResult } from '../discovery/drift.js';
 import {
   buildDiscoveryDriftStatus,
   notCheckedDiscoveryDriftStatus,
-} from './discovery-drift-status.js';
+} from './discovery/discovery-drift-status.js';
 
 const CLEAN_DRIFT: DriftResult = {
   drifted: false,
@@ -49,13 +49,33 @@ describe('buildDiscoveryDriftStatus', () => {
         drifted: true,
         currentDigest: 'new-digest',
         persistedDigest: 'old-digest',
-        changedCollectors: ['stack-detection'],
+        changedContributors: ['stack-detection'],
       }),
     });
 
     expect(projection.status).toBe('drifted');
     expect(projection.drifted).toBe(true);
-    expect(projection.changedCollectorNames).toEqual(['stack-detection']);
+    expect(projection.changedContributorNames).toEqual(['stack-detection']);
+  });
+
+  it('makes drift with no contributor attribution explicit', async () => {
+    const projection = await buildDiscoveryDriftStatus({
+      workspaceDir: '/workspace',
+      worktree: '/repo',
+      fingerprint: 'a1b2c3d4e5f6a1b2c3d4e5f6',
+      check: async () => ({
+        drifted: true,
+        currentDigest: 'new-digest',
+        persistedDigest: 'old-digest',
+        attributionStatus: 'unavailable',
+      }),
+    });
+
+    expect(projection.status).toBe('drifted');
+    expect(projection.warnings).toContainEqual(
+      expect.objectContaining({ code: 'discovery_drift_attribution_incomplete' }),
+    );
+    expect(projection.notVerified.join('\n')).toContain('attribution is incomplete');
   });
 
   it('projects missing persisted discovery explicitly', async () => {

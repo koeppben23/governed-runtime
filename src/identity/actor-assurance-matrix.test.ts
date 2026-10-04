@@ -10,9 +10,10 @@ import { executeReviewDecision } from '../rails/review-decision.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveActorForPolicy } from '../adapters/actor-context.js';
 import { makeProgressedState } from '../fixtures.js';
+import { ACTOR_ASSURANCE_TIERS, type ActorAssurance } from '../shared/actor-assurance.js';
 
-type RequiredTier = 'best_effort' | 'claim_validated' | 'idp_verified';
-type ActualTier = 'best_effort' | 'claim_validated' | 'idp_verified' | 'unknown';
+type RequiredTier = ActorAssurance;
+type ActualTier = ActorAssurance | 'unknown';
 
 const NOW = '2026-04-29T00:00:00.000Z';
 
@@ -20,15 +21,11 @@ function makeDecisionInput(actual: ActualTier) {
   return {
     verdict: 'approve' as const,
     rationale: 'matrix enforcement',
-    decidedBy: 'reviewer-1',
     decisionIdentity: {
       actorId: 'reviewer-1',
       actorEmail: 'reviewer@example.com',
       actorSource: actual === 'unknown' ? ('unknown' as const) : ('claim' as const),
-      actorAssurance:
-        actual === 'unknown'
-          ? ('unknown' as unknown as 'best_effort' | 'claim_validated' | 'idp_verified')
-          : actual,
+      actorAssurance: actual === 'unknown' ? ('unknown' as unknown as ActorAssurance) : actual,
     },
   };
 }
@@ -73,8 +70,8 @@ describe('actor assurance matrix', () => {
   });
 
   describe('HAPPY/BAD/CORNER — required x actual matrix via decision enforcement', () => {
-    const requiredTiers: RequiredTier[] = ['best_effort', 'claim_validated', 'idp_verified'];
-    const actualTiers: ActualTier[] = ['best_effort', 'claim_validated', 'idp_verified', 'unknown'];
+    const requiredTiers: RequiredTier[] = [...ACTOR_ASSURANCE_TIERS];
+    const actualTiers: ActualTier[] = [...ACTOR_ASSURANCE_TIERS, 'unknown'];
 
     const expected: Record<RequiredTier, Record<ActualTier, 'allow' | 'block'>> = {
       best_effort: {
@@ -108,7 +105,6 @@ describe('actor assurance matrix', () => {
               ...getPolicyPreset('regulated'),
               allowSelfApproval: false,
               minimumActorAssuranceForApproval: required,
-              requireVerifiedActorsForApproval: false,
             },
           });
 
@@ -147,7 +143,6 @@ describe('actor assurance matrix', () => {
       const policy = {
         ...getPolicyPreset('regulated'),
         identityProviderMode: 'required' as const,
-        identityProvider: undefined,
       };
       await expect(resolveActorForPolicy('/tmp/worktree', policy)).rejects.toMatchObject({
         code: 'ACTOR_IDP_CONFIG_REQUIRED',
@@ -172,7 +167,7 @@ describe('actor assurance matrix', () => {
         identityProvider: {
           mode: 'static' as const,
           issuer: 'https://issuer.example.com',
-          audience: 'flowguard',
+          audience: ['flowguard'],
           claimMapping: {
             subjectClaim: 'sub',
             emailClaim: 'email',
@@ -201,7 +196,7 @@ describe('actor assurance matrix', () => {
         identityProvider: {
           mode: 'static' as const,
           issuer: 'https://issuer.example.com',
-          audience: 'flowguard',
+          audience: ['flowguard'],
           claimMapping: {
             subjectClaim: 'sub',
             emailClaim: 'email',
@@ -254,7 +249,7 @@ describe('actor assurance matrix', () => {
         identityProvider: {
           mode: 'static' as const,
           issuer,
-          audience,
+          audience: [audience],
           claimMapping: {
             subjectClaim: 'sub',
             emailClaim: 'email',

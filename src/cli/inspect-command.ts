@@ -58,7 +58,10 @@ export function parseInspectArgs(
     }
   }
 
-  return { ok: true, args: { sessionId, json } };
+  return {
+    ok: true,
+    args: { json, ...(sessionId !== undefined ? { sessionId } : {}) },
+  };
 }
 
 export function getInspectUsage(): string {
@@ -73,7 +76,10 @@ Modes:
 Options:
   --session <id>  Session ID to inspect
   --json          Output ComplianceSummary as JSON (requires --session)
-  -h, --help      Show this help`;
+  -h, --help      Show this help
+
+inspect operates on the current repository and does not accept
+installation-target or host-selection flags.`;
 }
 
 // ─── Session Discovery ────────────────────────────────────────────────────────
@@ -278,27 +284,22 @@ async function inspectSingleSessionMode(
 ): Promise<number> {
   const sd = sessionDir(fingerprint, sessionId);
 
-  let trailResult: Awaited<ReturnType<typeof readAuditTrail>>;
+  let events: Awaited<ReturnType<typeof readAuditTrail>>;
   try {
-    trailResult = await readAuditTrail(sd);
+    events = await readAuditTrail(sd);
   } catch (err) {
     return exitWithError(
       `Cannot read audit trail: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
-  if (trailResult.events.length === 0) {
+  if (events.length === 0) {
     console.log('No audit events recorded for this session.');
     return 1;
   }
 
-  const chain = verifyChain(trailResult.events, { strict: true });
-  const summary = generateComplianceSummary(
-    trailResult.events,
-    sessionId,
-    chain,
-    new Date().toISOString(),
-  );
+  const chain = verifyChain(events);
+  const summary = generateComplianceSummary(events, sessionId, chain, new Date().toISOString());
 
   if (json) {
     console.log(JSON.stringify(summary, null, 2));

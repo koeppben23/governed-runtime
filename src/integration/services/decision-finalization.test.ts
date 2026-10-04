@@ -27,6 +27,7 @@ import {
   ARCHITECTURE_DECISION,
 } from '../../fixtures.js';
 import type { RailResult } from '../../rails/types.js';
+import type { AuditDeps } from '../plugin-audit.js';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -37,12 +38,32 @@ vi.mock('../artifacts/madr-writer.js', () => ({
 vi.mock('./regulated-completion.js', () => ({
   executeRegulatedCompletion: vi.fn().mockImplementation(async (_s, _f, _id, state) => ({
     ...state,
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
   })),
 }));
 
 import { writeMadrArtifact } from '../artifacts/madr-writer.js';
 import { executeRegulatedCompletion } from './regulated-completion.js';
+
+function completionDeps(): AuditDeps {
+  return {
+    resolveFingerprint: vi.fn(async () => 'fp'),
+    getSessionDir: vi.fn(() => '/sess'),
+    resolveSessionPolicy: vi.fn(),
+    initChain: vi.fn(),
+    invalidateChainState: vi.fn(),
+    appendAndTrack: vi.fn(),
+    nextDecisionSequence: vi.fn(async () => 1),
+    log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    logError: vi.fn(),
+    cachedFingerprint: 'fp',
+    mode: 'regulated',
+  };
+}
+
+function finalizeInput(input: Omit<Parameters<typeof finalizeDecision>[0], 'auditDeps'>) {
+  return { ...input, auditDeps: completionDeps() };
+}
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -70,7 +91,7 @@ function makeOkResult(state: ReturnType<typeof makeState>): RailResult {
   return {
     kind: 'ok',
     state,
-    evalResult: { kind: 'awaiting_input', phase: state.phase, prompt: '' },
+    evalResult: { kind: 'waiting', phase: state.phase, reason: 'test fixture' },
     transitions: [],
   };
 }
@@ -87,39 +108,42 @@ describe('finalizeDecision', () => {
       });
       const result = makeOkResult(state);
 
-      await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'ARCH_REVIEW',
-        verdict: 'approve',
-        result,
-      });
+      await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'ARCH_REVIEW',
+          verdict: 'approve',
+          result,
+        }),
+      );
 
       expect(writeMadrArtifact).toHaveBeenCalledOnce();
       expect(writeMadrArtifact).toHaveBeenCalledWith('/sess', state.architecture);
     });
   });
 
-  describe('HAPPY: regulated completion on EVIDENCE_REVIEW + approve', () => {
-    it('triggers regulated completion for regulated mode', async () => {
+  describe('HAPPY: final approval defers completion to export', () => {
+    it('does not trigger regulated completion before export materialization', async () => {
       const state = makeCompleteState({ regulated: true });
       const result = makeOkResult(state);
 
-      const finalResult = await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'EVIDENCE_REVIEW',
-        verdict: 'approve',
-        result,
-      });
+      const finalResult = await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          result,
+        }),
+      );
 
-      expect(executeRegulatedCompletion).toHaveBeenCalledOnce();
-      expect(executeRegulatedCompletion).toHaveBeenCalledWith('/sess', 'fp', 'sid', state);
+      expect(executeRegulatedCompletion).not.toHaveBeenCalled();
       expect(finalResult.kind).toBe('ok');
       if (finalResult.kind === 'ok') {
-        expect(finalResult.state.archiveStatus).toBe('verified');
+        expect(finalResult.state).toBe(state);
       }
     });
   });
@@ -132,14 +156,16 @@ describe('finalizeDecision', () => {
         reason: 'test',
       };
 
-      const result = await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'EVIDENCE_REVIEW',
-        verdict: 'approve',
-        result: blocked,
-      });
+      const result = await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          result: blocked,
+        }),
+      );
 
       expect(result).toBe(blocked);
       expect(writeMadrArtifact).not.toHaveBeenCalled();
@@ -152,14 +178,16 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: true });
       const result = makeOkResult(state);
 
-      await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'PLAN_REVIEW',
-        verdict: 'approve',
-        result,
-      });
+      await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'PLAN_REVIEW',
+          verdict: 'approve',
+          result,
+        }),
+      );
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -168,14 +196,16 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: true });
       const result = makeOkResult(state);
 
-      await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'EVIDENCE_REVIEW',
-        verdict: 'changes_requested',
-        result,
-      });
+      await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'EVIDENCE_REVIEW',
+          verdict: 'changes_requested',
+          result,
+        }),
+      );
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -184,14 +214,16 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: false });
       const result = makeOkResult(state);
 
-      await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'EVIDENCE_REVIEW',
-        verdict: 'approve',
-        result,
-      });
+      await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          result,
+        }),
+      );
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -200,14 +232,16 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: true, error: true });
       const result = makeOkResult(state);
 
-      await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'EVIDENCE_REVIEW',
-        verdict: 'approve',
-        result,
-      });
+      await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          result,
+        }),
+      );
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -223,14 +257,16 @@ describe('finalizeDecision', () => {
       });
       const result = makeOkResult(state);
 
-      await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'EVIDENCE_REVIEW',
-        verdict: 'approve',
-        result,
-      });
+      await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          result,
+        }),
+      );
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -244,14 +280,16 @@ describe('finalizeDecision', () => {
       });
       const result = makeOkResult(state);
 
-      await finalizeDecision({
-        sessDir: '/sess',
-        fingerprint: 'fp',
-        sessionID: 'sid',
-        priorPhase: 'ARCH_REVIEW',
-        verdict: 'approve',
-        result,
-      });
+      await finalizeDecision(
+        finalizeInput({
+          sessDir: '/sess',
+          fingerprint: 'fp',
+          sessionID: 'sid',
+          priorPhase: 'ARCH_REVIEW',
+          verdict: 'approve',
+          result,
+        }),
+      );
 
       expect(writeMadrArtifact).not.toHaveBeenCalled();
     });

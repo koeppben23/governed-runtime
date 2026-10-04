@@ -11,10 +11,12 @@
  * - Failure is explicit (throws), never silently passes.
  */
 
-import { computeStableDriftDigest } from './discovery-digest.js';
+import {
+  computeStableDiscoveryContributorDigests,
+  computeStableDriftDigest,
+} from './discovery-digest.js';
 import { runDiscovery } from './orchestrator.js';
-import { readDiscovery } from '../adapters/persistence-discovery.js';
-import { listRepoSignals } from '../adapters/git.js';
+import type { DiscoveryIoPort } from './io-port.js';
 import type { CollectorDiagnostic } from './types.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -27,8 +29,10 @@ export interface DriftResult {
   readonly currentDigest: string;
   /** SHA-256 digest from the persisted discovery.json. Null if no persisted discovery. */
   readonly persistedDigest: string | null;
-  /** Collectors whose status changed (if drifted). */
-  readonly changedCollectors?: string[];
+  /** Semantic Discovery contributors whose canonical content changed (if drifted). */
+  readonly changedContributors?: string[];
+  /** Whether a global drift digest can be attributed to named semantic contributors. */
+  readonly attributionStatus?: 'complete' | 'unavailable';
   /** Per-collector diagnostics from the fresh discovery run. */
   readonly diagnostics?: CollectorDiagnostic[];
 }
@@ -54,48 +58,48 @@ export async function checkDiscoveryDrift(
   workspaceDir: string,
   worktree: string,
   fingerprint: string,
+  io: DiscoveryIoPort,
 ): Promise<DriftResult> {
   // Read existing persisted discovery (may not exist for first-run)
-  const persisted = await readDiscovery(workspaceDir);
+  const persisted = await io.readPersistedDiscovery(workspaceDir);
   const persistedDigest = persisted ? computeStableDriftDigest(persisted) : null;
 
   // Re-run discovery (read-only — we never write)
-  const repoSignals = await listRepoSignals(worktree);
-  const freshResult = await runDiscovery({
-    worktreePath: worktree,
-    fingerprint,
-    allFiles: repoSignals.files,
-    packageFiles: repoSignals.packageFiles,
-    configFiles: repoSignals.configFiles,
-    packageFilePaths: repoSignals.packageFilePaths,
-    configFilePaths: repoSignals.configFilePaths,
-  });
+  const repoSignals = await io.listRepoSignals(worktree);
+  const freshResult = await runDiscovery(
+    {
+      worktreePath: worktree,
+      fingerprint,
+      allFiles: repoSignals.files,
+      packageFilePaths: repoSignals.packageFilePaths,
+      configFilePaths: repoSignals.configFilePaths,
+    },
+    io,
+  );
 
   const currentDigest = computeStableDriftDigest(freshResult);
   const drifted = persistedDigest !== null && currentDigest !== persistedDigest;
 
-  // Identify which collectors changed status
-  let changedCollectors: string[] | undefined;
+  // Compare the same canonicalized semantic content as the global digest,
+  // partitioned into named producers for actionable diagnostics.
+  let changedContributors: string[] | undefined;
+  let attributionStatus: DriftResult['attributionStatus'];
   if (drifted && persisted) {
-    changedCollectors = [];
-    for (const [name, status] of Object.entries(freshResult.collectors)) {
-      if (persisted.collectors[name] !== status) {
-        changedCollectors.push(name);
-      }
-    }
-    // Also check for new collectors not in persisted
-    for (const name of Object.keys(persisted.collectors)) {
-      if (!(name in freshResult.collectors)) {
-        changedCollectors.push(name);
-      }
-    }
+    const persistedContributors = computeStableDiscoveryContributorDigests(persisted);
+    const freshContributors = computeStableDiscoveryContributorDigests(freshResult);
+    const names = new Set([...persistedContributors.keys(), ...freshContributors.keys()]);
+    changedContributors = [...names]
+      .filter((name) => persistedContributors.get(name) !== freshContributors.get(name))
+      .sort();
+    attributionStatus = changedContributors.length > 0 ? 'complete' : 'unavailable';
   }
 
   return {
     drifted,
     currentDigest,
     persistedDigest,
-    ...(changedCollectors && changedCollectors.length > 0 ? { changedCollectors } : {}),
+    ...(changedContributors && changedContributors.length > 0 ? { changedContributors } : {}),
+    ...(attributionStatus ? { attributionStatus } : {}),
     ...(freshResult.diagnostics ? { diagnostics: freshResult.diagnostics } : {}),
   };
 }

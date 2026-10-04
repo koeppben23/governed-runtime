@@ -23,13 +23,13 @@ describe('evidence-identity', () => {
       expect(DecisionIdentity.parse(identity)).toEqual(identity);
     });
 
-    it('DecisionIdentity defaults actorAssurance to best_effort', () => {
+    it('DecisionIdentity requires explicit actorAssurance', () => {
       const identity = {
         actorId: 'user-1',
         actorEmail: null,
         actorSource: 'git' as const,
       };
-      expect(DecisionIdentity.parse(identity).actorAssurance).toBe('best_effort');
+      expect(DecisionIdentity.safeParse(identity).success).toBe(false);
     });
 
     it('ActorInfoSchema parses full identity with verification meta', () => {
@@ -110,6 +110,7 @@ describe('evidence-identity', () => {
         actorId: 'user-1',
         actorEmail: null,
         actorSource: 'env' as const,
+        actorAssurance: 'best_effort' as const,
       };
       expect(DecisionIdentity.parse(identity)).toMatchObject(identity);
     });
@@ -119,6 +120,7 @@ describe('evidence-identity', () => {
         id: 'user-1',
         email: null,
         source: 'env' as const,
+        assurance: 'best_effort' as const,
       };
       expect(ActorInfoSchema.parse(actor)).toMatchObject(actor);
     });

@@ -26,17 +26,37 @@ no exceptions. Each principle below is either enforced by an automated guard
 
 - **Single Responsibility Principle** — Every module, file, and function MUST
   have exactly one reason to change. No god-files, no god-functions.
-  (Enforced: `eslint` complexity/max-lines.)
-- **Layer Isolation** — Code MUST respect FlowGuard's documented layer boundaries
-  (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`). No upward
-  imports, no layer bypass. (Enforced: `architecture/__tests__/dependency-rules.test.ts`.)
+  (Enforced: ESLint metrics `complexity:12`, `max-lines-per-function:80`,
+  `max-params:5` under `lint:strict` = `--max-warnings=0`.)
+
+Maintainability limits:
+
+- The enforced limits are `complexity:12`, `max-lines-per-function:80`,
+  `max-params:5` for every production file.
+- The former monotonic maintainability ratchet and its baseline were removed
+  after the debt reached zero. `lint:strict` is the single enforcement
+  authority; `architecture/__tests__/type-aware-lint-scope.test.ts` pins the
+  values and the production file-class scope against the effective ESLint
+  config, so weakening either requires a deliberate guard change.
+- Metric `eslint-disable` suppressions are not part of the model: the tree
+  contains none, and a new suppression fails `lint:strict`.
+- **Layer Isolation** — Top-level module imports MUST match
+  `MODULE_DEPENDENCY_POLICY`
+  (`architecture/__tests__/module-dependency-policy.ts`) exactly; imports outside
+  that positive policy are forbidden. The historical linear layering
+  (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`) is the target
+  direction for new code. The top-level module graph MUST be acyclic: zero
+  cyclic directed edges and zero cyclic strongly connected components, with no
+  baseline or grandfathering. (Enforced:
+  `architecture/__tests__/dependency-rules.test.ts`.)
 - **Extract, Don't Accumulate** — Split files along domain boundaries within the
-  size budget. The canonical budget and its enforced blocker thresholds (750 LOC
+  size budget. The canonical budget and its enforced blocker thresholds (650 LOC
   production, 2000 LOC tests) live in CONTRIBUTING.md and are enforced by
   `architecture/__tests__/file-size.test.ts`. Do not let files grow unbounded.
 - **No Duplicate Authority** — Every concept MUST have exactly one canonical
   implementation. No duplicated logic, no parallel pipelines with identical
-  algorithms. (Enforced: SSOT guards, e.g. `audit-canonicalization-ssot.test.ts`.)
+  algorithms. (Enforced: SSOT guards, e.g. `canonical-json-ssot.test.ts` and
+  `digest-authority-ssot.test.ts` for serialization and hash primitives.)
 - **Separation Of Content And Logic** — Template content and rendering/assembly
   logic MUST live in separate modules. Content files define what; renderer files
   define how.
@@ -61,7 +81,7 @@ Definition Of "100% Clean Code" checklist in CONTRIBUTING.md.
 
 ## Definition Of Done
 
-- Clean conventional branch created from current `main`
+- Clean conventional branch created according to [CONTRIBUTING.md](../CONTRIBUTING.md#branch-model)
 - Change is scoped to the ticket
 - Conventional commit and PR title used
 - Tests added or updated where needed
@@ -141,20 +161,7 @@ High-risk work must include:
 
 ## Branch And PR Contract
 
-- Start from current `main`
-- Create a clean conventional branch before making changes
-- Do not work directly on `main`
-- Keep the change scoped to the ticket
-- Use a conventional commit and PR title
-- Open a PR to `main`
-- Merge only after required checks pass
-
-Branch examples:
-
-- `fix/<short-description>`
-- `feat/<short-description>`
-- `test/<short-description>`
-- `refactor/<short-description>`
-- `docs/<short-description>`
-- `chore/<short-description>`
-- `release/vX.Y.Z`
+Branch names, base branches, PR targets, merge requirements, and release
+exceptions are owned by [CONTRIBUTING.md](../CONTRIBUTING.md#branch-model).
+Create a clean conventional branch before making changes, keep the change scoped
+to the ticket, and record the required verification in the PR.

@@ -10,12 +10,13 @@
  * - Active plan is indicated
  * - Errors are caught and logged (fail-safe)
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE ÔÇö all categories present.
+ * @test-policy HAPPY, BAD, CORNER, EDGE ÔÇö all applicable categories present.
  * @version v1
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
+import { makeState } from '../fixtures.js';
 
 // ÔöÇÔöÇÔöÇ Mock readState ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
@@ -48,15 +49,7 @@ function createMockDeps(sessionDirMap: Record<string, string> = {}): CompactionD
 }
 
 function createMockState(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'test-session-id',
-    phase: 'PLAN',
-    policySnapshot: { mode: 'team' },
-    ticket: null,
-    plan: null,
-    reviewAssurance: { obligations: [] },
-    ...overrides,
-  };
+  return Object.assign(makeState('PLAN'), overrides);
 }
 
 // ÔöÇÔöÇÔöÇ Tests ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
@@ -115,6 +108,32 @@ describe('integration/plugin-compaction', () => {
 
       expect(result).toContain('**Pending review obligations**: 2');
       expect(result).toContain('WARNING: Do not skip pending reviews');
+    });
+
+    it('does not claim completion when compaction happens during an in-flight review', async () => {
+      const deps = createMockDeps({ 'sess-inflight': '/tmp/sess/inflight' });
+      mockReadState.mockResolvedValueOnce(
+        createMockState({
+          phase: 'IMPL_REVIEW',
+          reviewAssurance: {
+            obligations: [
+              {
+                status: 'pending',
+                obligationId: 'obligation-1',
+                obligationType: 'implementation_review',
+              },
+            ],
+          },
+          implementationRework: { active: true },
+        }),
+      );
+
+      const result = await buildCompactionContext(deps, 'sess-inflight');
+
+      expect(result).toContain('**Phase**: Implementation review in progress (IMPL_REVIEW)');
+      expect(result).toContain('**Pending review obligations**: 1');
+      expect(result).not.toContain('PEER_REVIEW_COMPLETE');
+      expect(result).not.toContain('**Phase**: Complete');
     });
 
     it('indicates active plan exists', async () => {
@@ -176,8 +195,8 @@ describe('integration/plugin-compaction', () => {
 
       expect(result).toBeNull();
       expect(deps.warnings).toHaveLength(1);
-      expect(deps.warnings[0].message).toBe('failed to build compaction context');
-      expect(deps.warnings[0].extra.error).toMatchObject({
+      expect(deps.warnings[0]?.message).toBe('failed to build compaction context');
+      expect(deps.warnings[0]?.extra.error).toMatchObject({
         name: 'Error',
         message: 'disk failure',
       });
@@ -190,7 +209,7 @@ describe('integration/plugin-compaction', () => {
       const result = await buildCompactionContext(deps, 'sess-str');
 
       expect(result).toBeNull();
-      expect(deps.warnings[0].extra.error).toMatchObject({
+      expect(deps.warnings[0]?.extra.error).toMatchObject({
         name: 'Error',
         message: 'string error',
       });

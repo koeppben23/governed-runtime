@@ -9,6 +9,8 @@
  */
 export type PolicyConfigurationErrorCode =
   | 'EXISTING_POLICY_WEAKER_THAN_CENTRAL'
+  | 'INVALID_POLICY_DIGEST'
+  | 'INVALID_POLICY_DIGEST_VERSION'
   | 'INVALID_POLICY_MODE'
   | 'CENTRAL_POLICY_INVALID_MODE'
   | 'CENTRAL_POLICY_INVALID_JSON'
@@ -39,6 +41,6 @@ export class PolicyConfigurationError extends Error {
     super(message);
     this.name = 'PolicyConfigurationError';
     this.code = code;
-    this.details = details;
+    if (details !== undefined) this.details = details;
   }
 }

@@ -11,9 +11,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { handleAdrReview } from './architecture-review.js';
-import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
+import { handleAdrReview } from './architecture/architecture-review.js';
+import type { ArchitectureArgs, ArchitectureSession } from './architecture/architecture-shared.js';
 import type { ToolContext } from './helpers.js';
+
+const FIXED_NOW = '2026-01-01T00:00:00.000Z';
 
 function parseJSON(s: string): Record<string, unknown> {
   return JSON.parse(s);
@@ -35,13 +37,9 @@ function baseSession(stateOverrides: Record<string, unknown> = {}): Architecture
       selfReview: { iteration: 1 },
       ...stateOverrides,
     },
-    policy: {
-      selfReview: { strictEnforcement: false },
-      reviewInvocationPolicy: 'host_task_preferred',
-      maxSelfReviewIterations: 3,
-    },
-    ctx: {},
-  } as ArchitectureSession;
+    policy: { reviewBudget: { architecture: 3 } },
+    ctx: { now: () => FIXED_NOW },
+  } as unknown as ArchitectureSession;
 }
 
 const baseContext = { sessionID: 'test-session' } as ToolContext;
@@ -78,6 +76,6 @@ describe('handleAdrReview', () => {
       ),
     );
     expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+    expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 });

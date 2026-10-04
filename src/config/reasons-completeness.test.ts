@@ -17,12 +17,61 @@ import { defaultReasonRegistry } from './reasons.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 const CODE_LITERAL_PATTERN = /code:\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
+// Reason codes are also emitted positionally via helper calls such as
+// `formatBlocked('CODE')` / `strictBlockedOutput('CODE')`. These are NOT
+// `code:` object properties, so the property pattern above misses them. Guard
+// them explicitly to prevent unregistered-code regressions on those paths.
+const BLOCK_HELPER_PATTERN = /(?:formatBlocked|strictBlockedOutput)\(\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
+// ProofGraph enforcement mapping (audit/proofgraph/reason-code-mapping.ts)
+// emits registry codes as OBJECT-MAP VALUES and switch RETURNS — e.g.
+// `evidence_missing: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING'` or
+// `return 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED'`. These are neither `code:`
+// properties nor formatBlocked('CODE') calls, so both patterns above miss
+// them. Scan mapping-value literals explicitly so the F1 guard also covers
+// ProofGraph enforcement outputs (gate and status consume this mapping).
+const MAPPING_CODE_PATTERN = /['"]([A-Z][A-Z0-9_]+)['"]/g;
+const PROOFGRAPH_MAPPING_FILE = 'reason-code-mapping.ts';
 
 // These codes are NOT registry codes — they are CRITICAL/error severities,
 // audit event codes, or external library codes. Excluded explicitly.
 const EXCLUDED_CODES: ReadonlySet<string> = new Set([
-  'CRITICAL', // severity tag in error fixtures, not a registry reason
-  'REVIEW_FAILED', // audit-test fixture, not a runtime block
+  'CRITICAL',
+  'REVIEW_FAILED',
+  'STATUS_ACTION_PROJECTION_MISSING_METADATA',
+  'STATUS_DECISION_PROJECTION_EMPTY',
+  'WHY_DECISION_PROJECTION_EMPTY',
+  'WHY_ACTION_PROJECTION_EMPTY',
+  'WHY_TERMINAL_PROJECTION_EMPTY',
+  'FINISH_TERMINAL_PROJECTION_EMPTY',
+  'RAIL_DECISION_PROJECTION_EMPTY',
+  'RAIL_TERMINAL_PROJECTION_EMPTY',
+  // CLI error codes — not reason registry codes
+  'TARBALL_CHECKSUMS_UNREADABLE',
+  'TARBALL_DUPLICATE_ENTRY',
+  'TARBALL_NOT_FOUND',
+  'TARBALL_SHA256_MISMATCH',
+  'TARBALL_NAME_INVALID',
+  'TARBALL_VERSION_MISMATCH',
+  'TARBALL_INTEGRITY_FAILED',
+  'MISSING_CORE_TARBALL',
+  'CONFIG_INCOMPATIBLE_FLAGS',
+  'ALREADY_INSTALLED',
+  'DEPENDENCY_INSTALL_FAILED',
+  'INSTALL_LOCK_CONFLICT',
+  'REVIEWER_CONFIG_REJECTED',
+  'REVIEWER_CONFIG_INVALID',
+  'REVIEWER_TUNING_UNSUPPORTED',
+  // Diagnostic-only host-capability log code (diagnosticLog.warn), not a
+  // governance reason code — mirrors the CRITICAL/error-severity exclusions above.
+  'HOST_CAPABILITY_MISMATCH',
+  // Diagnostic-only boot log code emitted when only part of the advertised
+  // host capability set is runtime-verified. Never blocks a governance path.
+  'HOST_CAPABILITY_UNVERIFIED',
+  // Pass-state registry code derived by reason-code-mapping.ts for PROVEN
+  // claims (ClaimEnforcementState.registryCode). Never a blocking reason:
+  // blockingStateFor('PROVEN') is null, so this code can never surface as a
+  // blocked recovery path. Excluded from the registration guard deliberately.
+  'PROOFGRAPH_EVIDENCE_PROVEN',
 ]);
 
 /**
@@ -41,6 +90,10 @@ function collectCodeLiterals(dir: string, acc: Set<string>): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
+      // Skip __tests__/ trees: non-.test.ts helpers there (e.g. probe
+      // harnesses) carry diagnostic-only outcome codes, not governance
+      // reason codes, and must not be held to registry completeness.
+      if (entry.name === '__tests__') continue;
       collectCodeLiterals(fullPath, acc);
       continue;
     }
@@ -48,12 +101,32 @@ function collectCodeLiterals(dir: string, acc: Set<string>): void {
     if (!fullPath.endsWith('.ts')) continue;
     if (fullPath.endsWith('.test.ts')) continue;
     if (fullPath.endsWith('reasons.ts')) continue; // registry self-reference
+    // Directive codes (WorkflowDirectiveCode in src/machine/workflow-directive.ts)
+    // are a separate canonical vocabulary owned by the machine layer. They are
+    // projected through directive-copy.ts and never formatted through the reason
+    // registry, so they are not reason-registry codes and must not be held to
+    // SEED_REASONS completeness.
+    if (fullPath.endsWith('workflow-directive.ts')) continue;
     const content = readFileSync(fullPath, 'utf8');
     let match: RegExpExecArray | null;
     while ((match = CODE_LITERAL_PATTERN.exec(content)) !== null) {
       const code = match[1];
       if (code !== undefined && !EXCLUDED_CODES.has(code)) {
         acc.add(code);
+      }
+    }
+    while ((match = BLOCK_HELPER_PATTERN.exec(content)) !== null) {
+      const code = match[1];
+      if (code !== undefined && !EXCLUDED_CODES.has(code)) {
+        acc.add(code);
+      }
+    }
+    if (fullPath.endsWith(PROOFGRAPH_MAPPING_FILE)) {
+      while ((match = MAPPING_CODE_PATTERN.exec(content)) !== null) {
+        const code = match[1];
+        if (code !== undefined && !EXCLUDED_CODES.has(code)) {
+          acc.add(code);
+        }
       }
     }
   }
@@ -84,46 +157,69 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
 
 // P10c: reason code split validation
 describe('P10c — reason code split', () => {
-  it('all 145 codes from split arrays are registered exactly once (no duplicates)', async () => {
+  it('all 286 codes from split arrays are registered exactly once (no duplicates)', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
+    const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
     const { INFRA_REASONS } = await import('./reasons-infra.js');
+    const { PROOFGRAPH_REASONS } = await import('./reasons-proofgraph.js');
+    const { MUTATION_REASONS } = await import('./reasons-mutation.js');
 
     const allSplitCodes = [
       ...PRECONDITION_REASONS.map((r: { code: string }) => r.code),
+      ...ARCHITECTURE_REASONS.map((r: { code: string }) => r.code),
       ...VALIDATION_REASONS.map((r: { code: string }) => r.code),
       ...INFRA_REASONS.map((r: { code: string }) => r.code),
+      ...PROOFGRAPH_REASONS.map((r: { code: string }) => r.code),
+      ...MUTATION_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(147);
-    // No duplicates across the 3 arrays
-    expect(new Set(allSplitCodes).size).toBe(147);
+    expect(allSplitCodes).toHaveLength(286);
+    // No duplicates across the six arrays.
+    expect(new Set(allSplitCodes).size).toBe(286);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
     }
   });
 
-  it('PRECONDITION_REASONS has exactly 45 entries', async () => {
+  it('PRECONDITION_REASONS has exactly 78 entries', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
-    expect(PRECONDITION_REASONS.length).toBe(45);
+    expect(PRECONDITION_REASONS.length).toBe(78);
     for (const r of PRECONDITION_REASONS) {
       expect(r.category).toBe('precondition');
     }
   });
 
-  it('VALIDATION_REASONS has exactly 65 entries', async () => {
+  it('MUTATION_REASONS has exactly 12 entries', async () => {
+    const { MUTATION_REASONS } = await import('./reasons-mutation.js');
+    expect(MUTATION_REASONS.length).toBe(12);
+    for (const r of MUTATION_REASONS) {
+      expect(r.category).toBe('precondition');
+    }
+  });
+
+  it('ARCHITECTURE_REASONS has exactly 9 entries', async () => {
+    const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
+    expect(ARCHITECTURE_REASONS.length).toBe(9);
+    for (const r of ARCHITECTURE_REASONS) {
+      expect(r.category).toBe('precondition');
+    }
+  });
+
+  it('VALIDATION_REASONS has exactly 119 entries', async () => {
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
-    expect(VALIDATION_REASONS.length).toBe(65);
+    expect(VALIDATION_REASONS.length).toBe(119);
     const allowed = new Set(['input', 'state', 'config', 'admissibility']);
     for (const r of VALIDATION_REASONS) {
       expect(allowed.has(r.category)).toBe(true);
     }
   });
 
-  it('INFRA_REASONS has exactly 37 entries', async () => {
+  it('INFRA_REASONS has exactly 43 entries', async () => {
     const { INFRA_REASONS } = await import('./reasons-infra.js');
-    expect(INFRA_REASONS.length).toBe(37);
+    const { PROOFGRAPH_REASONS } = await import('./reasons-proofgraph.js');
+    expect(INFRA_REASONS.length).toBe(43);
     const allowed = new Set(['adapter', 'identity']);
     for (const r of INFRA_REASONS) {
       expect(allowed.has(r.category)).toBe(true);

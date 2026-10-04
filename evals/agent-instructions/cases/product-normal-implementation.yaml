@@ -1,0 +1,21 @@
+id: product-normal-implementation
+description: Product agent plans a bounded multi-file implementation with targeted verification
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  A parser bug requires a bounded fix in the parser, its public adapter, and the existing unit test. No schema or persistence contract changes.
+  State the implementation and verification approach.
+assertions:
+  - type: output_contains
+    severity: advisory
+    description: Agent keeps implementation bounded to the affected behavior
+    value: parser
+  - type: output_contains
+    severity: hard
+    description: Agent includes targeted verification
+    value: test
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not escalate a bounded change into a redesign
+    value: rewrite the architecture

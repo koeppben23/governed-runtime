@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 import {
   TOOL_FLOWGUARD_STATUS,
@@ -15,14 +16,19 @@ import {
   TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_EXPORT,
+  TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
+import { TOOL_WRAPPER } from '../wrappers/index.js';
 
 const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_STATUS,
@@ -32,12 +38,16 @@ const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_EXPORT,
+  TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 ]);
 
 const TOOL_REFERENCE_PATTERN = /flowguard_[a-z_]+/g;
@@ -63,45 +73,21 @@ describe('command templates: tool reference integrity', () => {
     expect(body).toBeDefined();
     expect(body).toContain('flowguard_continue');
   });
-});
 
-/**
- * OpenCode SDK conformity guard: commands that invoke the review orchestration
- * pipeline (which spawns flowguard-reviewer via Task tool) MUST pin `agent: build`
- * in their frontmatter. Without this, running the command under a different primary
- * agent (e.g. plan) would bypass agent.build.permission.task restrictions.
- *
- * See: https://opencode.ai/docs/commands/#agent
- */
-describe('command templates: agent pinning for review-orchestration commands', () => {
-  const COMMANDS_REQUIRING_BUILD_AGENT = [
-    'plan.md',
-    'implement.md',
-    'review.md',
-    'architecture.md',
-  ] as const;
-
-  for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
-    it(`${cmd} must pin agent: build in frontmatter`, () => {
-      const body = COMMANDS[cmd];
-      expect(body).toBeDefined();
-      // Frontmatter is between --- delimiters
-      const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
-      expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch![1];
-      expect(frontmatter).toMatch(/^agent:\s*build$/m);
-    });
-  }
-
-  it('commands without review orchestration do NOT require agent pinning', () => {
-    // Smoke test: status.md should work without agent pin
-    const body = COMMANDS['status.md'];
-    expect(body).toBeDefined();
-    const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
-    expect(frontmatterMatch).not.toBeNull();
-    const frontmatter = frontmatterMatch![1];
-    // status.md does NOT need agent: build (it only calls flowguard_status)
-    expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
+  it('every command-referenced tool is exported by the installed OpenCode wrapper', () => {
+    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
+    expect(exportBlock).not.toBeNull();
+    const exports = new Set(
+      exportBlock![1]!
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    );
+    const missing = [...REGISTERED_TOOLS]
+      .filter((tool) => Object.values(COMMANDS).some((body) => body.includes(tool)))
+      .map((tool) => tool.replace(/^flowguard_/, ''))
+      .filter((name) => !exports.has(name));
+    expect(missing).toEqual([]);
   });
 });
 
@@ -119,16 +105,18 @@ describe('command templates: agent pinning for review-orchestration commands', (
     'implement.md',
     'review.md',
     'architecture.md',
+    'check.md',
   ] as const;
 
   for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
     it(`${cmd} must pin agent: build in frontmatter`, () => {
       const body = COMMANDS[cmd];
-      expect(body).toBeDefined();
+      if (!body) throw new TypeError(`missing ${cmd} template`);
       // Frontmatter is between --- delimiters
-      const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
+      const frontmatterMatch = body.match(/^---\n([\s\S]*?)\n---/);
       expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch![1];
+      const frontmatter = frontmatterMatch?.[1];
+      if (!frontmatter) throw new TypeError(`missing ${cmd} frontmatter`);
       expect(frontmatter).toMatch(/^agent:\s*build$/m);
     });
   }
@@ -136,12 +124,59 @@ describe('command templates: agent pinning for review-orchestration commands', (
   it('commands without review orchestration do NOT require agent pinning', () => {
     // Smoke test: status.md should work without agent pin
     const body = COMMANDS['status.md'];
-    expect(body).toBeDefined();
-    const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
+    if (!body) throw new TypeError('missing status template');
+    const frontmatterMatch = body.match(/^---\n([\s\S]*?)\n---/);
     expect(frontmatterMatch).not.toBeNull();
-    const frontmatter = frontmatterMatch![1];
+    const frontmatter = frontmatterMatch?.[1];
+    if (!frontmatter) throw new TypeError('missing status frontmatter');
     // status.md does NOT need agent: build (it only calls flowguard_status)
     expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
+  });
+});
+
+/**
+ * OpenCode parses command frontmatter with gray-matter, which only recognizes the
+ * opening `---` fence at byte 0. A leading blank line silently disables the
+ * description and agent pinning and leaks the raw frontmatter into the prompt.
+ */
+describe('command templates: OpenCode frontmatter contract', () => {
+  it('every command starts with frontmatter at byte 0 and a FlowGuard description', () => {
+    for (const [name, body] of Object.entries(COMMANDS)) {
+      expect(body.startsWith('---\n'), `${name} must start with frontmatter`).toBe(true);
+      const frontmatterMatch = body.match(/^---\n([\s\S]*?)\n---\n/);
+      expect(frontmatterMatch, `${name} must close frontmatter`).not.toBeNull();
+      const frontmatter = frontmatterMatch?.[1];
+      if (!frontmatter) throw new TypeError(`missing ${name} frontmatter`);
+      const data = parseYaml(frontmatter) as { description?: unknown };
+      expect(typeof data.description, `${name} must declare a description`).toBe('string');
+      expect(data.description, `${name} description must be FlowGuard-branded`).toMatch(
+        /^FlowGuard — /,
+      );
+    }
+  });
+});
+
+describe('check command: implementation review orchestration', () => {
+  it('starts and submits mandatory review after checks enter IMPL_REVIEW', () => {
+    const body = COMMANDS['check.md'];
+    if (!body) throw new TypeError('missing check command template');
+
+    expect(body).toContain('If its phase is `IMPL_REVIEW`');
+    expect(body).toContain('FlowGuard performs and binds the independent review');
+    expect(body).toContain('Do not invoke a reviewer, construct reviewer context, or submit');
+    expect(body).toContain('`flowguard_review_implementation({ reviewVerdict })`');
+    expect(body).toContain('Never make the subsequent human approval decision.');
+  });
+
+  it('stops after baseline validation reaches IMPLEMENTATION', () => {
+    const body = COMMANDS['check.md'];
+    if (!body) throw new TypeError('missing check command template');
+
+    expect(body).toContain('If its phase is `IMPLEMENTATION`');
+    expect(body).toContain(
+      'Only a new, explicit user `/implement` command may start implementation.',
+    );
+    expect(body).toContain('Do not call `read`, `glob`, `grep`, `bash`, `write`, `edit`');
   });
 });
 
@@ -187,5 +222,80 @@ describe('command templates: third LoopVerdict narrative drift guard', () => {
     const body = COMMANDS['architecture.md'];
     expect(body).toBeDefined();
     expect(body).toContain('SUBAGENT_UNABLE_TO_REVIEW');
+  });
+});
+
+describe('implement command: validation-gate contract', () => {
+  it('auto-chains through IMPL_VALIDATION and the review loop', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('IMPL_VALIDATION');
+    expect(body).toContain('flowguard_status');
+    expect(body).toContain('activeChecks');
+    expect(body).toContain('verificationCandidates');
+    expect(body).toContain('flowguard_run_check({ kind: "<kind>" })');
+    expect(body).toContain('IMPL_REVIEW');
+    expect(body).toContain('flowguard_review_implementation');
+  });
+
+  it('does not call flowguard_run_check without a kind argument', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('flowguard_run_check({})');
+  });
+
+  it('does not skip empty-check gate into review loop', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('skip to Phase 5');
+  });
+
+  it('dispatches on the actual returned phase instead of an assumed sequence (#852)', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('Dispatch on the RETURNED `phase` field');
+    expect(body).toContain('never an assumed sequence');
+    // Zero-check: the machine may land in IMPL_REVIEW within the record call.
+    expect(body).toContain('Go DIRECTLY to Phase 5');
+    // Reduced ceremony: the machine may land in EVIDENCE_REVIEW within the call.
+    expect(body).toContain('No checks, no reviewer, no further steps');
+    // Terminal: a policy-permitted automatic approval may land in COMPLETE.
+    expect(body).toContain('`COMPLETE`: terminal');
+    // Shared review loop is policy-neutral about the convergence target.
+    expect(body).toContain("the policy's terminal gate");
+    // No invented phase transition.
+    expect(body).toContain('never invent the next phase');
+    expect(body).not.toContain('The session advances to IMPL_VALIDATION');
+  });
+
+  it('never claims the IMPL_REVIEW gate is unreachable without checks (#852)', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('cannot be reached');
+  });
+
+  it('dispatches on the confirming runtime response before entering IMPL_REVIEW or EVIDENCE_REVIEW', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('never assume a phase without a confirming runtime response');
+    expect(body).toContain('`IMPL_REVIEW`: proceed to Phase 5');
+    expect(body).toContain(
+      '`EVIDENCE_REVIEW`: reduced ceremony waived only the independent IMPL_REVIEW',
+    );
+  });
+
+  it('does not skip IMPL_VALIDATION into IMPL_REVIEW directly', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(body).not.toContain('`next`');
+  });
+
+  it('limits executor retry to exactly once before failing', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('retry');
+    expect(body).not.toContain('retry in place');
+  });
+
+  it('treats approved outcomes and contracts, not implementation mechanics, as binding', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('Local implementation mechanics are not independently authoritative');
+    expect(body).toContain('implementation mechanics may adapt locally');
+    expect(body).toContain('approved outcomes, contracts, authority decisions, scope');
+    expect(body).not.toContain('Complete every approved plan obligation');
+    expect(body).not.toContain('changes the plan requires');
   });
 });

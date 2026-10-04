@@ -1,13 +1,12 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
   DISCOVERY_REVIEW_DONE_WHEN,
 } from './shared-review-loop.js';
 
-export const IMPLEMENT_COMMAND = `
----
-description: Implement the approved plan and review the implementation.
+export const IMPLEMENT_COMMAND = `---
+description: FlowGuard — Implement the approved plan and review the implementation.
 agent: build
 ---
 
@@ -27,36 +26,105 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Implement
 
-2. Use the approved plan authored in the /plan step as the source of truth. Identify the numbered steps and files to modify. (The plan body is NOT included in the flowguard_status response — status only confirms \`hasPlan\`/\`planVersion\` and the phase. Use the plan you produced during /plan; the persisted plan is also written to \`<sessionDir>/artifacts/plan.v<N>.md\` if you need to re-read it.)
-3. Execute each step in order:
+2. Use the approved plan authored in the /plan step as the source of truth. Its scope,
+   acceptance criteria, contracts, authority decisions, and required outcomes are binding.
+   Local implementation mechanics are not independently authoritative: choose the smallest
+   correct mechanics that satisfy every approved obligation. If correctness requires a material
+   change to approved scope, behavior, authority, or acceptance criteria, do not silently diverge;
+   stop and return to the plan gate. (The plan body is NOT included in the flowguard_status
+   response — status only confirms \`hasPlan\`/\`planVersion\` and the phase. If the plan text is
+   no longer available in this conversation context, run \`/help\` first to verify the session
+   state and artifact digest, then call
+   \`flowguard_help({ view: "context", includeArtifactContent: true })\` to retrieve the complete
+   canonical plan content. Use ONLY the returned content — do not reconstruct or infer plan
+   details from metadata alone.)
+3. Satisfy every approved outcome, contract, authority decision, scope boundary, and acceptance
+   criterion while preserving dependencies and validation boundaries:
+   - FIRST confirm this is a git repository (e.g. \`git rev-parse --is-inside-work-tree\` in the
+     worktree). Implementation evidence is git-derived: the runtime blocks every mutating host tool
+     with \`NOT_GIT_REPO\` in a non-Git worktree, and \`flowguard_implement\` cannot record evidence
+     there. If this is not a git repository, STOP and report it — the user must initialize git
+     OUTSIDE this session and start a fresh \`/hydrate\` (establishing a new implementation baseline)
+     before implementation can proceed. Do NOT run \`git init\` inside this session: a session
+     hydrated without git has no baseline, and recording afterwards would attribute the entire
+     pre-existing project to this implementation.
    - Use \`read\` to examine existing files before modifying.
    - Use \`write\` or \`edit\` to create or modify files.
    - Use \`bash\` for commands (install dependencies, run formatters, etc.).
-   - Follow the plan steps exactly — add nothing beyond what the plan specifies.
-4. After completing ALL plan steps, call \`flowguard_implement({})\` with no arguments.
-   - The tool auto-detects changed files via git and records evidence.
+   - Do not add behavior, authority, scope, or acceptance criteria beyond the approved plan.
+  4. After satisfying all approved outcomes, contracts, authority decisions, scope boundaries, and
+     acceptance criteria, call \`flowguard_implement({})\` with no arguments.
+    - The tool records evidence and auto-advances the state machine. It never skips
+      post-implementation verification and never skips the human evidence gate: after
+      \`/implement\` the phase is usually \`IMPL_VALIDATION\`; a policy-permitted zero-check
+      transition can advance straight to \`IMPL_REVIEW\`.
+    - Dispatch on the RETURNED \`phase\` field of the tool response; the returned phase is
+      authoritative, never an assumed sequence:
+      - \`EVIDENCE_REVIEW\`: display \`presentation.markdown\` (or the host-compatible fallback \`reviewCard\`)
+        verbatim and STOP. No checks, no reviewer, no further steps — this is the user gate.
+        Reduced ceremony waives only the independent IMPL_REVIEW, never this gate.
+      - \`EXPORT_READY\`: the policy auto-approved the evidence gate; \`/export\` remains an
+        explicit step. Display any returned presentation verbatim and STOP.
+      - \`COMPLETE\`: terminal — display any returned presentation verbatim and STOP.
+      - \`IMPL_REVIEW\`: validation already passed. Go DIRECTLY to Phase 5 (review loop) and
+        continue automatically — do not stop and do not treat the session as IMPL_VALIDATION.
+      - \`IMPLEMENTATION\` or \`error\`/\`blocked\`: follow the exact recovery in the tool
+        response and STOP; never invent the next phase.
+      - \`IMPL_VALIDATION\`: continue to Phase 3.
 
-### Phase 3: Record Verification Evidence
+### Phase 3: Post-Implementation Validation
 
-5. Write a \`## Verification Evidence\` section distinguishing:
-   - **Planned checks**: Each check from the plan's Verification Plan.
-   - **Executed checks**: Only checks actually run. Mark unexecuted checks as NOT_VERIFIED.
+ 5. Only when the returned phase is \`IMPL_VALIDATION\`: call \`flowguard_status\` with NO focused
+    flags (no whyBlocked/evidence/context/readiness) to get the full projection, then read
+    \`activeChecks\` (equivalently \`remainingChecks\` in IMPL_VALIDATION) and
+    \`verificationCandidates\`.
+    - If both \`activeChecks\`/\`remainingChecks\` and \`verificationCandidates\` are empty:
+      report no active checks and stop without calling \`flowguard_run_check\`. The MACHINE
+      itself decides a vacuous transition — read the canonical \`directive\` and the actual
+      phase from the tool response; never claim the IMPL_REVIEW gate is unreachable and never
+      invent a transition path.
+    - If \`activeChecks\`/\`remainingChecks\` is non-empty: for each kind, call
+      \`flowguard_run_check({ kind: "<kind>" })\`.
+    - If \`activeChecks\`/\`remainingChecks\` is empty but \`verificationCandidates\` is non-empty:
+      for each kind in \`verificationCandidates\`, call
+      \`flowguard_run_check({ kind: "<kind>" })\` — it validates the kind against canonical
+      state, not against the status output.
+    - After running all checks, dispatch on the FINAL \`flowguard_run_check\` response phase —
+      never assume a phase without a confirming runtime response:
+      - \`IMPL_REVIEW\`: proceed to Phase 5 (independent review loop).
+      - \`EVIDENCE_REVIEW\`: reduced ceremony waived only the independent IMPL_REVIEW. Display
+        \`presentation.markdown\` verbatim and STOP — this is the mandatory user gate.
+      - anything else (\`IMPLEMENTATION\`/error/blocked): follow the exact recovery in the
+        response and STOP.
+    - Any check fails → routes back to IMPLEMENTATION. Fix the code, then call
+      \`flowguard_implement({})\` again to re-record evidence (return to Phase 2 step 4).
+    - Executor timeout/error on a single check → retry that \`flowguard_run_check({ kind })\`
+      exactly once. If it fails again, stop and report the error — do not retry unbounded.
 
-### Phase 4: Implementation Review Loop
+### Phase 4: Record Verification Evidence
 
-6. Read the \`next\` field from the tool response and follow its instructions exactly:
+ 6. Write a \`## Verification Evidence\` section distinguishing:
+    - **Planned checks**: Each check from the plan's Verification Plan.
+    - **Executed checks**: Only checks actually run. Mark unexecuted checks as NOT_VERIFIED.
+
+### Phase 5: Implementation Review Loop
+
+7. Follow the review-dispatch contract from the tool response (\`reviewDispatch\`, \`reviewInvocation\`, \`agentInstruction\`, \`directive\`) exactly:
+   - If prior failing implementation challenges are open, before the independent reviewer runs you MUST
+     record each one with \`flowguard_resolve_implementation_challenge({ challengeId, validationAttemptIds })\`.
+     Use only post-implementation validation attempt IDs for the current digest. This is advisory
+     \`NOT_VERIFIED\` evidence and never changes reviewer acceptance or the user gate.
 ${SHARED_REVIEW_LOOP({
   toolName: 'flowguard_implement',
   verdictToolName: 'flowguard_review_implementation',
   artifactName: 'implementation',
   reviseParams: '',
   changesRequestedExtra:
-    '\n       Then make the code changes based on blockingIssues, then call flowguard_implement({}) again to re-record.',
-  strictRecoveryCall: 'flowguard_implement({})',
-  strictRecoveryVerb: 'Re-record',
-  strictRecoveryNoun: 're-recordings',
+    '\n         Then run the repair-recheck cycle: make the code changes based on blockingIssues, call flowguard_implement({}) again to re-record, dispatch on the returned phase again (step 4), run the post-recording checks only while the machine is still in IMPL_VALIDATION, record resolutions for any open implementation challenges (first bullet of step 7), then continue the review loop automatically from step 7.',
+  changesRequestedVerdictFirst: true,
+  recoveryCall: 'flowguard_implement({})',
   iterationNote: '(max 3 iterations)',
-  repeatStep: 6,
+  repeatStep: 7,
   subagentExtra: '',
   fallbackExtra: '',
   unableDescription:
@@ -65,47 +133,71 @@ ${SHARED_REVIEW_LOOP({
   unableRecoveryB:
     'record substantially-new implementation evidence (new flowguard_implement({}) call after additional code changes, which starts a fresh review obligation)',
 })}
+   - The changes_requested branch is an INTERNAL continuation, not a terminal result: FlowGuard returns no presentation card while the review loop is still active. Never render an intermediate outcome as final, and never stop for user input between iterations. Only the loop's terminal responses — converged acceptance (EVIDENCE_REVIEW), exhausted budget (EVIDENCE_REVIEW override gate: \`/override-approve\`, \`/request-changes\`, or \`/reject\`), or a BLOCKED code — end the loop and carry a presentation card to display verbatim.
 
 ## Rules
 
-- Follow the approved plan exactly — no deviations or additions.
-- Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE submitting the review verdict with \`flowguard_review_implementation({ reviewVerdict })\` — these are separate single-purpose tools.
-- Always complete the independent review (plugin findings or reviewer subagent).
-- When changes are requested: make the actual code changes, then re-record with flowguard_implement({}).
+- The approved plan's scope, acceptance criteria, contracts, authority decisions, and required outcomes are binding; implementation mechanics may adapt locally inside those boundaries.
+- Make only changes necessary to satisfy the approved scope, outcomes, contracts, authority decisions, and acceptance criteria: no speculative flexibility, no defensive handling for scenarios that cannot occur, no unrequested refactors of untouched code (see AP-B11 Over-Engineering).
+- If a materially different solution is required for correctness, stop and return to /plan rather than silently changing approved scope or behavior.
+- Solve the problem generally; never special-case test inputs or hardcode values to make checks pass (see AP-B12 Test-Fitting). If a test looks wrong, surface it instead of fitting to it.
+- Use the standard project tools; do not build helper-script workarounds to shortcut a task. Remove any temporary files or scaffolding created for iteration before finishing.
+- Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE starting the review loop.
+- After every \`flowguard_implement({})\`, dispatch on the returned phase (step 4) and run
+  \`flowguard_run_check\` only while the machine is still in IMPL_VALIDATION with checks to run.
+- When changes are requested in the review loop: make the actual code changes, then re-record
+  with \`flowguard_implement({})\` and dispatch on the returned phase again.
 - In Verification Evidence, list only checks that were actually executed. Mark all others as NOT_VERIFIED.
 - Follow profile rules from \`flowguard_status\` when implementing.
-- Do not call flowguard_plan during /implement — planning is complete.
+- Do not call flowguard_plan during /implement — planning is complete unless a material approved-contract change is required, in which case stop and return control to the user.
 - Do not auto-chain into /review-decision after implementation — the user decides.
 
 ## Example (correct tool sequences)
 
-Happy path:
+Happy path (checks exist):
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
-2. (execute plan steps: read/write/edit/bash)
-3. \`flowguard_implement({})\` → records evidence, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-4. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
+2. (satisfy approved outcomes, contracts, authority decisions, scope, and acceptance criteria using the smallest correct implementation mechanics)
+3. \`flowguard_implement({})\` → returns phase: IMPL_VALIDATION
+4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
+5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
+6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
+
+Zero-check path (machine advances within the record call):
+1. \`flowguard_implement({})\` → returns phase: IMPL_REVIEW (policy-permitted vacuous validation)
+2. go DIRECTLY to the review loop — no status re-read, no invented IMPL_VALIDATION step
+
+Reduced-ceremony path (policy-enabled, post-implementation only):
+1. \`flowguard_implement({})\` → returns phase: IMPL_VALIDATION
+2. run every active check (Phase 3); when all checks pass against the frozen implementation
+   and the runtime ceremony decision is valid, the machine advances directly to
+   EVIDENCE_REVIEW — waiving only IMPL_REVIEW, never post-implementation verification
+3. display \`presentation.markdown\` verbatim and STOP — the human evidence gate remains mandatory
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\`
+1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\` → routes back to IMPLEMENTATION
 2. (fix code based on blockingIssues)
-3. \`flowguard_implement({})\` → re-records evidence, new review starts
-4. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER decides via /review-decision)
+3. \`flowguard_implement({})\` → dispatch on the returned phase (step 4)
+4. While still IMPL_VALIDATION: \`flowguard_status\` (unfocused) → read \`activeChecks\`
+5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
+6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Presentation
 
-- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
-- The reviewCard contains the formatted implementation review with findings, verdict, and next actions.
+- If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
+- Only when \`presentation.markdown\` is absent, display the host-compatible fallback \`reviewCard\` field verbatim.
 - This is mandatory output: the user relies on it to make their review decision.
 
 ## Done-when
 
-- All plan steps are implemented as code changes.
+- Every approved outcome, contract, authority decision, scope boundary, and acceptance criterion is satisfied without material drift.
 - Verification Evidence distinguishes Planned from Executed checks.
 - Implementation evidence is recorded via flowguard_implement.
-- Independent review loop has converged.
+- The independent review loop has converged, OR the runtime recorded a valid reduced-ceremony
+  waiver (completeness reports the implementation review as waived) with every active check
+  passing against the frozen implementation.
 ${DISCOVERY_REVIEW_DONE_WHEN}
-- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
-- On the converged path: phase has advanced to EVIDENCE_REVIEW and the response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the fallback \`reviewCard\` is displayed verbatim.
+- On the converged path: phase has advanced to EVIDENCE_REVIEW and the canonical presentation conclusion is the only visible next action.
 - On a blocked path (review not converged, reviewer unavailable, or a FlowGuard error code): no \`/review-decision\` next action is emitted; the response surfaces the FlowGuard blocker and its recovery instead.
 `;

@@ -23,7 +23,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 | Category                    | Description                             | Example                                               |
 | --------------------------- | --------------------------------------- | ----------------------------------------------------- |
 | **Technically Enforced**    | Properties guaranteed by implementation | Fail-closed, Hash-Chain integrity, Phase gates        |
-| **Currently Delivered**     | Available in current release            | 14 phases (3 flows), 3 profiles, archive verification |
+| **Currently Delivered**     | Available in current release            | 18 phases (3 flows), 4 profiles, archive verification |
 | **Optional**                | Can be enabled, not default             | Regulated mode, custom profiles                       |
 | **Not Covered**             | Intentionally not implemented           | Multi-user, CI-native, compliance certification       |
 | **Customer Responsibility** | Customer must handle                    | Backup, network segmentation, compliance mapping      |
@@ -98,6 +98,29 @@ codex --non-interactive --prompt "Run /status"
 **Note:** Selecting `codex` or `claude-code` for `flowguard run` selects the host process and argument shape only. It does not prove native plugin load, hook trust, MCP activation, or governance enforcement unless those checks are verified separately.
 
 **Headless ambiguity handling:** In non-interactive automation (`flowguard run`, `flowguard serve`, `opencode run`, API-driven execution), operators must provide all required inputs up front. Missing safety-critical input returns `BLOCKED`; there is no follow-up question loop in headless mode.
+
+### HTTP API Mode (opencode serve)
+
+Start the OpenCode HTTP server for API access, optionally with basic auth:
+
+```bash
+OPENCODE_SERVER_PASSWORD=secret opencode serve --port 4096
+```
+
+Create a session and send a governed message through the API:
+
+```bash
+curl -u opencode:secret -X POST http://localhost:4096/session \
+  -H "Content-Type: application/json" \
+  -d '{"title": "flowguard-session"}'
+
+curl -u opencode:secret -X POST http://localhost:4096/session/{sessionId}/message \
+  -H "Content-Type: application/json" \
+  -d '{"parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}'
+```
+
+See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for
+the full API reference.
 
 ### ACP Mode (Experimental)
 
@@ -281,5 +304,5 @@ or invoked.
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-15_

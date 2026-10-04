@@ -26,6 +26,11 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { TicketEvidence, PlanEvidence, LoopVerdict } from '../state/evidence.js';
+import {
+  carriedPlanReviewFindings,
+  computeRecordDigest,
+  resolvePlanReviewCompletion,
+} from '../state/evidence-plan.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import {
@@ -37,6 +42,7 @@ import {
 } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { projectMarkdownHeadings } from '../shared/markdown-sections.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -65,17 +71,65 @@ export interface PlanInput {
   readonly text?: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Rail ─────────────────────────────────────────────────────────────────────
 
-/** Extract markdown section headers from plan text. */
-function extractSections(body: string): string[] {
-  return body
-    .split('\n')
-    .filter((line) => /^#{1,3}\s/.test(line))
-    .map((line) => line.replace(/^#+\s*/, '').trim());
+/** Plan evidence for a first submission (version 1, no predecessor). */
+function initialPlanEvidence(planBody: string, ctx: RailContext): PlanEvidence {
+  const contentDigest = ctx.digest(planBody);
+  const revisionId = crypto.randomUUID();
+  return {
+    body: planBody,
+    digest: contentDigest,
+    sections: projectMarkdownHeadings(planBody),
+    createdAt: ctx.now(),
+    revisionId,
+    recordDigest: computeRecordDigest({
+      contentDigest,
+      planVersion: 1,
+      supersedesRecordDigest: null,
+      originatingReviewObligationId: null,
+      revisionReason: null,
+      revisionId,
+    }),
+    planVersion: 1,
+    supersedesRecordDigest: null,
+    originatingReviewObligationId: null,
+    revisionReason: null,
+    lineageStatus: 'verified' as const,
+  };
 }
 
-// ─── Rail ─────────────────────────────────────────────────────────────────────
+/** Plan evidence for a revision chained to its predecessor (same lineage). */
+function revisedPlanEvidence(
+  predecessor: PlanEvidence,
+  revisedBody: string,
+  ctx: RailContext,
+  revisionReason = 'Review requested changes',
+): PlanEvidence {
+  const contentDigest = ctx.digest(revisedBody);
+  const planVersion = (predecessor.planVersion ?? 1) + 1;
+  const revisionId = crypto.randomUUID();
+  return {
+    body: revisedBody,
+    digest: contentDigest,
+    sections: projectMarkdownHeadings(revisedBody),
+    createdAt: ctx.now(),
+    revisionId,
+    recordDigest: computeRecordDigest({
+      contentDigest,
+      planVersion,
+      supersedesRecordDigest: predecessor.recordDigest,
+      originatingReviewObligationId: null,
+      revisionReason,
+      revisionId,
+    }),
+    planVersion,
+    supersedesRecordDigest: predecessor.recordDigest,
+    originatingReviewObligationId: null,
+    revisionReason,
+    lineageStatus: 'verified' as const,
+  };
+}
 
 export async function executePlan(
   state: SessionState,
@@ -103,20 +157,19 @@ export async function executePlan(
     return blocked('EMPTY_PLAN');
   }
 
-  // 4. Create initial plan evidence
-  const currentPlan: PlanEvidence = {
-    body: planBody,
-    digest: ctx.digest(planBody),
-    sections: extractSections(planBody),
-    createdAt: ctx.now(),
-  };
+  // 4. First plan creates the lineage root; a re-plan is a REVISION of the
+  // same lineage, never a fresh v1 mixed with the previous lineage's history
+  // (the PlanRecord authority requires one contiguous, chained lineage).
+  const currentPlan = state.plan
+    ? revisedPlanEvidence(state.plan.current, planBody, ctx, 'Replan')
+    : initialPlanEvidence(planBody, ctx);
 
   // 5. Preserve version history
   const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
 
   // 6. Self-review loop (digest-stop)
   // maxIterations from policy (SOLO=1, TEAM/REGULATED=3)
-  const maxIterations = ctx.policy?.maxSelfReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  const maxIterations = ctx.policy?.reviewBudget.plan ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runConvergenceLoop(currentPlan, maxIterations, async (plan, iter) => {
     const review = await executors.selfReview(plan, iter);
@@ -124,12 +177,7 @@ export async function executePlan(
       history.unshift(plan);
       return {
         verdict: review.verdict,
-        updated: {
-          body: review.revisedBody,
-          digest: ctx.digest(review.revisedBody),
-          sections: extractSections(review.revisedBody),
-          createdAt: ctx.now(),
-        },
+        updated: revisedPlanEvidence(plan, review.revisedBody, ctx),
       };
     }
     return { verdict: review.verdict };
@@ -150,8 +198,18 @@ export async function executePlan(
   // 7. Build final state
   const nextState: SessionState = {
     ...state,
-    plan: { current: loop.artifact, history },
-    selfReview: buildSelfReviewState(loop),
+    plan: {
+      current: loop.artifact,
+      history,
+      reviewFindings: carriedPlanReviewFindings(state.plan),
+      reviewCompletion: resolvePlanReviewCompletion(
+        loop.iteration,
+        loop.maxIterations,
+        loop.revisionDelta,
+        loop.verdict,
+      ),
+    },
+    selfReview: buildSelfReviewState(loop, state.reviewCycles.plan),
     error: null,
   };
 

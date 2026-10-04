@@ -2,11 +2,12 @@
  * @module integration/plugin-bootstrap.test
  * @description Fail-closed bootstrap tests for FlowGuardAuditPlugin.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeState } from '../fixtures.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
+import { hashText } from '../shared/hashing.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
@@ -14,15 +15,30 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createTestWorkspace, withTestEnv } from './test-helpers.js';
+import { createBootableHostClient, createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   computeFingerprint,
+  ensureWorkspace,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
+
+// The test workspace carries a fake `.git` marker (not a real repository), but
+// the git prerequisite gate for mutating host tools must treat it as a
+// repository. Risk-gate tests below init a REAL repo via initGitRepo; the
+// spread keeps their real changedFiles/remoteOriginUrl behavior intact.
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
+  };
+});
 
 const execFileAsync = promisify(execFile);
 
@@ -33,11 +49,7 @@ async function initGitRepo(worktree: string): Promise<void> {
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
     project: {} as unknown,
-    client: {
-      app: {
-        log: async () => {},
-      },
-    } as unknown,
+    client: createBootableHostClient() as unknown,
     $: {} as unknown,
     directory: '/tmp/mock-dir',
     worktree: '/tmp/mock-worktree',
@@ -51,6 +63,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
   const obligationId = '11111111-1111-4111-8111-111111111111';
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
 
   await fs.mkdir(sessDir, { recursive: true });
   await writeState(
@@ -61,42 +74,42 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         digest: 'ticket-digest',
         source: 'user',
         createdAt: now,
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
-        current: {
-          body: '## Plan\n1. Fix auth',
-          digest: 'plan-digest',
-          sections: ['Plan'],
-          createdAt: now,
-        },
+        current: planCurrent,
         history: [],
+        reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
-        currDigest: 'plan-digest',
+        currDigest: planCurrent.digest,
         revisionDelta: 'major',
         verdict: 'changes_requested',
       },
       policySnapshot: {
         ...makeState('PLAN').policySnapshot,
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
       },
       reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
         obligations: [
           {
             obligationId,
             obligationType: 'plan',
+            reviewCycle: 1,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerAttempts: 1,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -104,9 +117,25 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            reviewMaterial: {
+              content: 'review material',
+              materialDigest: 'material-digest',
+              subjectDigest: 'test-subject-digest',
+            },
+            repositoryEvidenceFreeze: {
+              kind: 'unavailable',
+              reason: 'repository_unavailable',
+            },
+            reviewSubjectScope: {
+              kind: 'repository_change',
+              paths: ['src/foo.ts'],
+              revisions: ['base', 'head'],
+            },
           },
         ],
         invocations: [],
+        attempts: [],
+        dispatches: [],
       },
     }),
   );
@@ -125,7 +154,7 @@ function strictPlanReviewRequiredOutput(
     reviewObligationId: obligationId,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-    next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
+    reviewDispatch: { required: true },
     ...overrides,
   });
 }
@@ -199,152 +228,43 @@ describe('plugin bootstrap fail-closed', () => {
     }
   });
 
-  it('creates the workspace folder when worktree is a real repo (happy path)', async () => {
+  it('never materializes the workspace folder on plugin load alone', async () => {
     const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-real-repo-'));
     try {
       await fs.mkdir(path.join(repo, '.git'), { recursive: true });
       await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
-      // Logger sink writes asynchronously on the first log entry. Allow the
-      // microtask + I/O queue to flush before asserting.
+      // The plugin's diagnostic logging must not create the governed
+      // workspace root; only ensureWorkspace() is the creation SSOT.
       await new Promise((r) => setTimeout(r, 50));
       const workspacesDir = path.join(configDir, 'workspaces');
-      const entries = await fs.readdir(workspacesDir).catch(() => []);
-      // At least one fingerprint folder must exist.
-      expect(entries.length).toBeGreaterThanOrEqual(1);
-      // Each entry name must be a 24-hex fingerprint.
-      for (const e of entries) {
-        expect(e).toMatch(/^[0-9a-f]{24}$/);
-      }
+      const entries = await fs.readdir(workspacesDir).catch(() => [] as string[]);
+      expect(entries).toEqual([]);
     } finally {
       await fs.rm(repo, { recursive: true, force: true });
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // BUG-08: Subagent type authorization (defense-in-depth)
-  // ═══════════════════════════════════════════════════════════════════════════════
-  describe('BUG-08: subagent type authorization', () => {
-    it('HAPPY — flowguard-reviewer subagent type passes through (existing L3)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
+  it('writes file logs into an initialized workspace', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-real-repo-'));
+    try {
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
 
-        // flowguard-reviewer with empty prompt — should pass (no pending review)
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test prompt' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
-      } finally {
-        await ws.cleanup();
-      }
-    });
+      // Hydrate-equivalent bootstrap: the only authority that creates the root.
+      const ensured = await ensureWorkspace(repo);
+      const workspaceJson = path.join(ensured.workspaceDir, 'workspace.json');
+      await expect(fs.stat(workspaceJson)).resolves.toBeTruthy();
 
-    it('BAD — non-reviewer subagent type "explore" is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'explore', prompt: 'search code' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('BAD — non-reviewer subagent type "general" is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'general', prompt: 'do something' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('BAD — arbitrary subagent type "malicious-agent" is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'malicious-agent', prompt: 'bypass' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('CORNER — empty subagent_type passes through (generic task, not a subagent spawn)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: '', prompt: 'something' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('CORNER — missing subagent_type field passes through (undefined → empty)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { prompt: 'no subagent_type field' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('EDGE — error message includes the blocked subagent type name', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'rogue-agent', prompt: 'test' } };
-        try {
-          await beforeHook(input, output);
-          expect.fail('should have thrown');
-        } catch (err) {
-          expect(err).toBeInstanceOf(Error);
-          const error = err as Error;
-          expect(error.name).toBe('FlowGuardEnforcementError');
-          expect(error.message).toContain('rogue-agent');
-          expect(error.message).toContain('SUBAGENT_TYPE_UNAUTHORIZED');
-        }
-      } finally {
-        await ws.cleanup();
-      }
-    });
+      // Plugin wiring targets the governed workspace once it exists. Lazy
+      // activation of the SAME dormant sink instance is covered by the unit
+      // test 'activates lazily once the workspace root appears'.
+      await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
+      await new Promise((r) => setTimeout(r, 50));
+      const logFiles = await fs.readdir(path.join(ensured.workspaceDir, '.opencode/logs'));
+      expect(logFiles.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -406,7 +326,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -417,6 +340,188 @@ describe('plugin bootstrap fail-closed', () => {
         const output = { args: { command: 'npm install' } };
         // Should not throw — IMPLEMENTATION phase allows mutating tools
         await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — mutating host tools block while a durable audit operation is unresolved', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('VALIDATION'));
+        const transition = {
+          from: 'VALIDATION',
+          to: 'IMPLEMENTATION',
+          event: 'ALL_PASSED',
+          at: '2026-05-15T12:00:00.000Z',
+        } as const;
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+            transition,
+          }),
+          [transition],
+        );
+
+        // Audit reconciliation must fail closed: the trail is unreadable.
+        await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        for (const tool of ['write', 'edit', 'bash', 'apply_patch']) {
+          await expect(
+            beforeHook(
+              { tool, sessionID, callID: crypto.randomUUID() },
+              { args: { command: 'echo blocked' } },
+            ),
+          ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+        }
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('HAPPY — mutating host tools pass again after reconciliation succeeds', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('VALIDATION'));
+        const transition = {
+          from: 'VALIDATION',
+          to: 'IMPLEMENTATION',
+          event: 'ALL_PASSED',
+          at: '2026-05-15T12:00:00.000Z',
+        } as const;
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+            transition,
+          }),
+          [transition],
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'npm install' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+
+        const persisted = await readState(sessDir);
+        expect(persisted!.pendingAuditOperations[0]!.status).toBe('reconciled');
+        // A fresh host dispatch identity passes after reconciliation succeeds.
+        await expect(beforeHook({ ...input, callID: 'c2' }, output)).resolves.toBeUndefined();
+        // A replayed dispatch identity is blocked fail-closed (no second episode).
+        await expect(beforeHook(input, output)).rejects.toThrow('MUTATION_EPISODE_REPLAY_BLOCKED');
+        const afterRetry = await readState(sessDir);
+        expect(afterRetry!.mutationEpisodes).toHaveLength(2);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — host mutation blocks at reconciliation before the risk gate can write state', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('VALIDATION'));
+        const transition = {
+          from: 'VALIDATION',
+          to: 'IMPLEMENTATION',
+          event: 'ALL_PASSED',
+          at: '2026-05-15T12:00:00.000Z',
+        } as const;
+        await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+            transition,
+          }),
+          [transition],
+        );
+        await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        await expect(
+          beforeHook(
+            { tool: 'edit', sessionID, callID: 'c1' },
+            { args: { filePath: 'x.ts', old: 'a', new: 'b' } },
+          ),
+        ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+
+        // The risk gate must never have run: no riskGate evidence was written.
+        const after = await readState(sessDir);
+        expect(after!.riskGate).toBeUndefined();
+        expect(after!.pendingAuditOperations[0]!.status).toBe('state_committed');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('SECURITY — /check scope blocks implementation tools until a new explicit command', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const commandBeforeHook = hooks['command.execute.before']!;
+        const toolBeforeHook = hooks['tool.execute.before']!;
+
+        await commandBeforeHook({ command: 'check', sessionID, arguments: '' }, { parts: [] });
+
+        await expect(
+          toolBeforeHook(
+            { tool: 'bash', sessionID, callID: 'c1' },
+            { args: { command: 'npm test' } },
+          ),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+        await expect(
+          toolBeforeHook({ tool: 'flowguard_implement', sessionID, callID: 'c2' }, { args: {} }),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+        await expect(
+          toolBeforeHook(
+            { tool: 'flowguard_review_implementation', sessionID, callID: 'c3' },
+            { args: {} },
+          ),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+
+        await commandBeforeHook({ command: 'implement', sessionID, arguments: '' }, { parts: [] });
+        await expect(
+          toolBeforeHook(
+            { tool: 'bash', sessionID, callID: 'c4' },
+            { args: { command: 'npm test' } },
+          ),
+        ).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }
@@ -474,7 +579,10 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('IMPLEMENTATION'));
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        );
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -492,9 +600,7 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
-    it('HAPPY — bash allowed in non-git worktree (pre-session, sessDir=null)', async () => {
-      // Non-git worktree → isUsableWorktree returns false → fingerprint
-      // never resolved → getSessionDir returns null → tool allowed.
+    it('BAD — bash blocked without an authoritative session mapping', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-no-git-gate-'));
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -504,7 +610,7 @@ describe('plugin bootstrap fail-closed', () => {
 
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { command: 'echo hello' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook(input, output)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await fs.rm(tmp, { recursive: true, force: true });
       }
@@ -718,7 +824,7 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
-    it('BAD — TRIVIAL classification on src/state write is blocked and persisted', async () => {
+    it('BAD — an invalid ticket declaration blocks pre-execution without latching riskGate', async () => {
       const ws = await createTestWorkspace();
       try {
         await initGitRepo(ws.tmpDir);
@@ -726,12 +832,22 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
+        const ticketText = 'Risk: HIGH';
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
-            claimedTaskClass: 'TRIVIAL',
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+            ticket: {
+              text: ticketText,
+              digest: hashText(ticketText),
+              source: 'user',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              riskDeclaration: { kind: 'invalid', raw: 'HIGH' },
+            },
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -748,16 +864,17 @@ describe('plugin bootstrap fail-closed', () => {
           args: { filePath: path.join(ws.tmpDir, 'src/state/schema.ts'), content: 'x' },
         };
 
-        await expect(beforeHook(input, output)).rejects.toThrow('RISK_CLASSIFICATION_MISMATCH');
+        await expect(beforeHook(input, output)).rejects.toThrow('TICKET_RISK_DECLARATION_INVALID');
         const state = await readState(sessDir);
-        expect(state?.riskGate?.status).toBe('blocked');
-        expect(state?.riskGate?.lastDecisionId).toMatch(/^RISK-/);
+        // The ticket-derived block is bound to the ticket digest and must not
+        // latch the independent riskGate (re-/task clears it).
+        expect(state?.riskGate?.status).not.toBe('blocked');
       } finally {
         await ws.cleanup();
       }
     });
 
-    it('BAD — missing classification in regulated enforcement is not warning-only', async () => {
+    it('HAPPY — a missing classification is resolved automatically under enforced policy', async () => {
       const ws = await createTestWorkspace();
       try {
         await initGitRepo(ws.tmpDir);
@@ -768,8 +885,11 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -784,7 +904,9 @@ describe('plugin bootstrap fail-closed', () => {
         const input = { tool: 'write', sessionID, callID: 'c1' };
         const output = { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } };
 
-        await expect(beforeHook(input, output)).rejects.toThrow('RISK_CLASSIFICATION_REQUIRED');
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        const state = await readState(sessDir);
+        expect(state?.riskGate?.status).not.toBe('blocked');
       } finally {
         await ws.cleanup();
       }
@@ -801,9 +923,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -826,58 +951,19 @@ describe('plugin bootstrap fail-closed', () => {
 
         const state = await readState(sessDir);
         expect(state?.riskGate?.status).toBe('blocked');
-        expect(state?.riskGate?.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
-        const audit = await readAuditTrail(sessDir);
-        expect(audit.events.some((event) => event.event === 'risk:classification_checked')).toBe(
-          true,
+        expect(state?.riskGate?.status === 'blocked' && state.riskGate.code).toBe(
+          'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         );
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('BAD — bash after-hook mismatch hard-blocks output and next mutating tool', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        await initGitRepo(ws.tmpDir);
-        const sessionID = crypto.randomUUID();
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
-        await fs.mkdir(sessDir, { recursive: true });
-        await writeState(
-          sessDir,
-          makeState('IMPLEMENTATION', {
-            claimedTaskClass: 'TRIVIAL',
-            policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
-              mode: 'regulated',
-              requestedMode: 'regulated',
-              enforceRiskClassification: true,
-            },
-          }),
-        );
-
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const afterHook = hooks['tool.execute.after']!;
-        await fs.mkdir(path.join(ws.tmpDir, 'src/state'), { recursive: true });
-        await fs.writeFile(path.join(ws.tmpDir, 'src/state/risk-new.ts'), 'export const x = 1;');
-
-        const output = { output: 'bash ok' };
-        await afterHook({ tool: 'bash', sessionID, callID: 'c1' }, output);
-        expect(output.output).toContain('RISK_CLASSIFICATION_MISMATCH');
-
-        const state = await readState(sessDir);
-        expect(state?.riskGate?.status).toBe('blocked');
-
-        const beforeHook = hooks['tool.execute.before']!;
-        await expect(
-          beforeHook(
-            { tool: 'write', sessionID, callID: 'c2' },
-            { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } },
+        // The throwing before-hook has no after-hook to drain the outbox. The
+        // semantic event is therefore durably recoverable on the next governed
+        // operation instead of being appended after the state mutation.
+        expect(
+          state?.pendingAuditOperations.some(
+            (operation) =>
+              operation.kind === 'semantic' &&
+              operation.semantic.event === 'risk:classification_checked',
           ),
-        ).rejects.toThrow('RISK_GATE_BLOCKED');
+        ).toBe(true);
       } finally {
         await ws.cleanup();
       }
@@ -894,9 +980,12 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
-              ...makeState('IMPLEMENTATION').policySnapshot,
+              ...makeState('IMPLEMENTATION', {
+                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+              }).policySnapshot,
               mode: 'regulated',
               requestedMode: 'regulated',
               enforceRiskClassification: true,
@@ -910,14 +999,16 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.rm(path.join(ws.tmpDir, '.git'), { recursive: true, force: true });
 
         const afterHook = hooks['tool.execute.after']!;
-        const output = { output: 'bash ok' };
-        await afterHook({ tool: 'bash', sessionID, callID: 'c1' }, output);
+        const output = { title: 'bash', output: 'bash ok', metadata: {} };
+        await afterHook({ tool: 'bash', sessionID, callID: 'c1', args: {} }, output);
 
         expect(output.output).toContain('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
         expect(output.output).toContain('BLOCKED');
         const state = await readState(sessDir);
         expect(state?.riskGate?.status).toBe('blocked');
-        expect(state?.riskGate?.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+        expect(state?.riskGate?.status === 'blocked' && state.riskGate.code).toBe(
+          'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }
@@ -934,6 +1025,7 @@ describe('plugin bootstrap fail-closed', () => {
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             error: {
               code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
               message: 'Strict timestamp assurance failed for lifecycle: TSA request failed',

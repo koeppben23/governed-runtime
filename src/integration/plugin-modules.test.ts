@@ -11,19 +11,15 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createPluginLogger } from './plugin-logging.js';
-import {
-  parseToolResult,
-  strictBlockedOutput,
-  getToolOutput,
-  getToolArgs,
-} from './plugin-helpers.js';
-import { updateObligation, blockObligation } from './review/obligation-state.js';
-import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
+import { parseToolResult, strictBlockedOutput } from './blocked-result.js';
+import { getToolOutput, getToolArgs } from './plugin-helpers.js';
+import { updateObligation, blockObligation } from './review/obligations/obligation-state.js';
+import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import * as reviewEnforcement from './review/enforcement/enforcement.js';
+import type { SessionEnforcementState } from './review/types.js';
 
 vi.mock('./review/enforcement/enforcement.js', () => ({
   onFlowGuardToolAfter: vi.fn(),
-  onTaskToolAfter: vi.fn(),
   resolveSessionEnforcementState: vi.fn(),
 }));
 import type { SessionState } from '../state/schema.js';
@@ -122,10 +118,16 @@ describe('plugin-review-state', () => {
     return {
       obligationId: id,
       obligationType: 'plan',
+      reviewCycle: 1,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'design_challenge',
+      challengePolicyVersion: 'challenge-policy.v1',
+      subjectDigest: 'test-subject-digest',
       iteration: 0,
       planVersion: 1,
       criteriaVersion: '2.0.0',
       mandateDigest: 'abc123',
+      maxReviewerAttempts: 1,
       createdAt: '2026-01-01T00:00:00Z',
       pluginHandshakeAt: null,
       status: 'pending',
@@ -133,7 +135,17 @@ describe('plugin-review-state', () => {
       blockedCode: null,
       fulfilledAt: null,
       consumedAt: null,
+      reviewSubjectScope: {
+        kind: 'repository_change',
+        paths: ['src/foo.ts'],
+        revisions: ['base', 'head'],
+      },
       ...overrides,
+      reviewMaterial: overrides?.reviewMaterial ?? {
+        content: 'frozen review material',
+        materialDigest: 'a'.repeat(64),
+        subjectDigest: overrides?.subjectDigest ?? 'test-subject-digest',
+      },
     };
   }
 
@@ -168,30 +180,15 @@ describe('plugin-review-state', () => {
 
 describe('plugin-enforcement-tracking', () => {
   it('trackFlowGuardEnforcement delegates to enforcement module', () => {
-    const eState = {} as NonNullable<
-      ReturnType<typeof reviewEnforcement.resolveSessionEnforcementState>
-    >;
+    const eState = {} as SessionEnforcementState;
     trackFlowGuardEnforcement(
       eState,
-      'flowguard_status',
+      'flowguard_plan',
       { args: {} },
       { output: '{}' },
       new Date().toISOString(),
     );
     expect(reviewEnforcement.onFlowGuardToolAfter).toHaveBeenCalled();
-  });
-
-  it('trackTaskEnforcement delegates to enforcement module', () => {
-    const eState = {} as NonNullable<
-      ReturnType<typeof reviewEnforcement.resolveSessionEnforcementState>
-    >;
-    trackTaskEnforcement(
-      eState,
-      { args: { subagent_type: 'flowguard-reviewer' } },
-      { output: '{}' },
-      new Date().toISOString(),
-    );
-    expect(reviewEnforcement.onTaskToolAfter).toHaveBeenCalled();
   });
 });
 

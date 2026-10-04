@@ -1,8 +1,7 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
-export const ARCHIVE_COMMAND = `
----
-description: Archive a completed FlowGuard session as a compressed tar.gz file.
+export const ARCHIVE_COMMAND = `---
+description: FlowGuard — Archive a completed session as a compressed tar.gz file.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -16,19 +15,33 @@ Archive the current completed FlowGuard session.
 1. Call \`flowguard_status\` to verify a session exists.
    - If no session: report "No session to archive" and stop.
 
-2. Call \`flowguard_archive\` with no arguments.
-   - Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) can be archived.
+2. Call \`flowguard_archive\` with no arguments for the default redacted sharing export
+   (\`redactionMode=basic\`, \`includeRaw=false\`). Ask the user only when they request a
+   non-default export:
+    - \`none\` with \`includeRaw=true\` = raw evidence for auditors (requires allowRawExport=true).
+    - \`pseudonymous\` = stable correlation tokens across redacted events.
+    - Only terminal sessions (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE, REJECTED, ABORTED) can be archived.
    - If not terminal: report the current phase and tell the user to complete or abort first.
 
-3. Report the archive file path and confirmation.
+3. Report the archive result:
+    - Archive file path plus \`packagePurpose\`, \`integrityCapability\`, and
+      \`verificationStatus\`. The default is \`sharing\`, \`not_verifiable\`,
+      and \`not_run\`: its redacted package intentionally excludes raw state and
+      audit evidence, which is not an integrity failure.
+   - Redaction mode used (\`none\`, \`basic\`, or \`pseudonymous\`)
+   - Whether raw evidence is included (\`includeRaw\`)
+   - The \`guidance\` text from the tool response verbatim
+   - If raw evidence is included: warn that the archive contains unredacted secrets.
+     Handle as confidential material.
 
 ## Rules
 
 - Only terminal sessions can be archived.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Session archive created as tar.gz.
-- Archive file path reported.
-- Response ends with \`Next action: run /hydrate to start a new session.\`
+- Redaction parameters, guidance, and archive semantic fields reported to the user.
+- If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

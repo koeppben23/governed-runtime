@@ -38,8 +38,8 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Deterministic Workflow Control
 
-- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance and content-aware review)
-- **14 explicit phases** across three flows, starting from a shared READY entry point
+- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Peer review (peer and content-aware review)
+- **18 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
 - **Explicit orientation surface** — `/status` provides read-only canonical projections for phase, blockers, evidence, context, and readiness
@@ -62,7 +62,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Evidence summary generation** — automated 7-check evidence summary from audit trail
 - **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier minimum actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. Solo, Team, and Team-CI default to `best_effort`; Regulated defaults to `claim_validated`, requiring a valid `FLOWGUARD_ACTOR_CLAIMS_PATH` claim file or stronger IdP-verified identity for approval. IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior (`identityProviderMode: required` blocks mutating decisions; `optional` degrades only on typed IdP errors). JWT verification is implemented with `jose` `jwtVerify` while key authority stays FlowGuard-owned. `/hydrate` resolves actor identity diagnostically, while `/review-decision` enforces the policy snapshot threshold fail-closed. OIDC discovery and stale/last-known-good fallback are not implemented.
-- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
+- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review budgets, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
 
@@ -91,8 +91,8 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 - **Structured manifests** — every archive includes `archive-manifest.json` with session identity, file inventory, per-file digests, and content digest
 - **SHA-256 file hash** — `.tar.gz.sha256` sidecar for external integrity verification (fatal on write failure in regulated mode)
-- **Regulated archive completion guarantee** — clean regulated completion requires synchronous archive creation + verification success; `archiveStatus` field tracks lifecycle (`pending` → `verified` or `failed`)
-- **11-check verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, state presence, and audit-chain integrity findings
+- **Regulated archive completion guarantee** — clean regulated completion requires synchronous archive creation + verification success; `regulatedArchiveStatus` tracks lifecycle (`pending` → `verified` or `failed`)
+- **9-category verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, state presence, and audit-chain integrity across 31 distinct finding codes (see `src/archive/types.ts`)
 - **Redacted export by default** — archive artifacts are export-redacted (`mode=basic`, `includeRaw=false`) while runtime/audit SSOT remains raw internally
 - **Receipt export** — archives include `decision-receipts.redacted.v1.json` (and raw receipts only when explicitly opted in)
 - **Manifest risk signaling** — manifest records redaction mode, raw inclusion, redacted artifacts, excluded raw artifacts, and `raw_export_enabled` when raw export is opt-in
@@ -114,24 +114,31 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 ### 2. Governed Command Surface
 
-Twelve installed core FlowGuard commands cover workflow, diagnostics, and operations:
+Nineteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
 
-| Command            | Purpose                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                              |
-| `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                         |
-| `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.     |
-| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                |
-| `/architecture`    | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**. |
-| `/review`          | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.        |
-| `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                          |
-| `/implement`       | Execute implementation, record evidence, run review loop                                                           |
-| `/validate`        | Run validation checks (test quality, rollback safety)                                                              |
-| `/continue`        | Universal routing — do the next appropriate action for the current phase                                           |
-| `/abort`           | Emergency session termination                                                                                      |
-| `/archive`         | Archive a completed session as `.tar.gz`                                                                           |
+| Command                             | Purpose                                                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `/hydrate`                          | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                               |
+| `/status`                           | Show current phase, blockers, evidence, context, and readiness projections                                          |
+| `/finish`                           | Read-only Finish Card: overall readiness, evidence, and non-normative next-action guidance before export/PR/archive |
+| `/help`                             | Read-only context-sensitive guidance for the current workflow situation                                             |
+| `/commands`                         | Read-only list of context-relevant commands; `--all` shows the complete reference                                   |
+| `/ticket`                           | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.      |
+| `/plan`                             | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                 |
+| `/architecture`                     | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**.  |
+| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.         |
+| `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
+| `/implement`                        | Execute implementation, record evidence, run review loop                                                            |
+| `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted   |
+| `/resolve-implementation-challenge` | Record advisory evidence addressing an implementation review challenge                                              |
+| `/override-approve`                 | Accept an exhausted review gate with an explicit, recorded governance override                                      |
+| `/reconcile-mutation-episode`       | Resolve a host mutation episode whose outcome can never be observed; forces a fresh worktree recapture              |
+| `/validate`                         | Record validation checks (test quality, rollback safety); validation runs automatically (compatibility surface)     |
+| `/continue`                         | Compatibility routing — advance the workflow on explicit request, not workflow guidance                             |
+| `/abort`                            | Emergency session termination                                                                                       |
+| `/archive`                          | Archive a completed session as `.tar.gz`                                                                            |
 
-Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 
@@ -139,30 +146,30 @@ Each command is tied to phase admissibility rules, evidence requirements, and st
 
 The platform offers **three independent flows** starting from a shared READY entry point:
 
-**Ticket Flow (Full Development Lifecycle):**
+```mermaid
+flowchart LR
+    HYD[/hydrate/] --> READY
+    READY --> TICKET
+    READY --> ARCH[ARCHITECTURE]
+    READY --> PEER_REVIEW
 
-```
-READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+    TICKET --> PLAN --> PLAN_REV[PLAN_REVIEW] --> VAL[VALIDATION] --> IMPL[IMPLEMENTATION] --> IMPL_VAL[IMPL_VALIDATION] --> IMPL_REV[IMPL_REVIEW] --> EVID_REV[EVIDENCE_REVIEW] --> EXPORT_READY --> COMPLETE
+
+    ARCH --> ARCH_REV[ARCH_REVIEW] --> ARCH_COMPLETE
+
+    PEER_REVIEW --> PEER_REVIEW_COMPLETE
 ```
 
-**Architecture Flow (ADR Creation):**
-
-```
-READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
-```
-
-**Review Flow (Compliance Report):**
-
-```
-READY → REVIEW → REVIEW_COMPLETE
-```
+**Ticket Flow:** `READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE`
+**Architecture Flow:** `READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE`
+**Peer review flow:** `READY → PEER_REVIEW → PEER_REVIEW_COMPLETE`
 
 **User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
 
 **Independent Review Loops** (subagent-driven, mandatory): three reviewable
 obligation types — `plan`, `architecture`, `implement` — share one orchestration
 pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
-(F12 + F13 + P1.3). Each loop runs up to a per-mode iteration limit with
+(F12 + F13 + P1.3). Each loop runs up to its `reviewBudget` entry with
 digest-stop convergence:
 
 - **PLAN phase** — plan review loop (`obligationType: 'plan'`)
@@ -194,11 +201,11 @@ verdict `unable_to_review` consumes the obligation and BLOCKS via
 **Backward Transitions**:
 
 - `changes_requested` at PLAN_REVIEW -> back to PLAN
-- `reject` at PLAN_REVIEW or EVIDENCE_REVIEW -> back to TICKET
+- `reject` at PLAN_REVIEW or EVIDENCE_REVIEW -> terminal `REJECTED`
 - `changes_requested` at EVIDENCE_REVIEW -> back to IMPLEMENTATION
 - `CHECK_FAILED` at VALIDATION -> back to PLAN (plan must be revised and re-approved)
 - `changes_requested` at ARCH_REVIEW -> back to ARCHITECTURE
-- `reject` at ARCH_REVIEW -> back to READY
+- `reject` at ARCH_REVIEW -> terminal `REJECTED`
 
 **Every phase transition requires evidence.** The system computes whether progression is allowed.
 
@@ -209,7 +216,7 @@ The FlowGuard runtime maintains **canonical state** — a single JSON document, 
 - Current phase and next allowed action
 - Active profile and its rule content
 - Evidence chain (ticket, plan with version history, validation results, implementation, review decisions)
-- Policy snapshot (which rules governed this session, with SHA-256 hash for non-repudiation)
+- Policy snapshot (which rules governed this session, with a canonical SHA-256 digest for integrity comparison against a trusted reference)
 - Gate status and blockers (if any)
 
 In controlled environments, "the system should probably continue" is not acceptable. The platform says either:
@@ -295,9 +302,9 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 ### OpenCode Integration
 
-- **12 Custom Tools** (`src/integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers. The canonical list lives in `src/integration/tool-names.ts` (`TOOL_FLOWGUARD_*` constants).
-- **20 Command Prompts** (`.opencode/commands/*.md`) — 12 canonical + 8 product-alias commands. Templates are in `src/templates/commands/`.
-- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for independent adversarial review (deployed when `selfReview.subagentEnabled`). The agent body is rendered programmatically from `src/templates/mandates.ts` at install time; there is no static asset of this name in the source tree.
+- **20 Integration Tools** (`src/integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers. The canonical list lives in `src/integration/tool-names.ts` (`TOOL_FLOWGUARD_*` constants). 18 are exposed via MCP (`src/mcp-server/server.ts`); see `docs/mcp-tool-surface.md` for the two asymmetric exclusions.
+- **27 Installed Command Definitions** (`.opencode/commands/*.md`) backed by 26 templates. Templates live in `src/templates/commands/`. Includes 13 workflow commands, 7 operational tools, 4 product aliases, and 3 action variants. Canonical registry: `src/integration/installed-commands.ts`.
+- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for mandatory independent adversarial review. The agent body is rendered programmatically from `src/templates/mandates.ts` at install time; there is no static asset of this name in the source tree.
 - **1 Audit Plugin** (`src/integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
 - **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json` (or `opencode.jsonc` when present)
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
@@ -380,19 +387,18 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## Product Facts
 
-- **Version:** 1.2.0-tp.2
+- **Version:** 2.0.0-tp.1
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
 - **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
-- **Phase Count:** 14 explicit workflow phases across 3 flows
-- **Workflow Commands:** 12 installed core slash commands (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort, status, archive). The machine-driven set lives in `src/machine/commands.ts`; the installed `.md` templates and their alias overlay live in `src/templates/commands/`.
+- **Phase Count:** 18 explicit workflow phases across 3 flows
+- **Workflow Commands:** 13 Machine Commands (hydrate, ticket, plan, continue, implement, resolve-implementation-challenge, review-decision, override-approve, validate, review, architecture, export, abort) plus operational tools (status, archive) and 7 product aliases. See `src/integration/installed-commands.ts` for the full 27-definition registry.
 - **CLI Commands:** 6 (install, uninstall, doctor, run, serve, inspect)
 - **Operational Tools:** 2 user-facing read/export tools (`flowguard_status`, `flowguard_archive`)
-- **Custom Tools:** 12 OpenCode tool exports (see `src/integration/tool-names.ts`)
+- **Custom Tools:** 20 Integration Tool definitions, 18 MCP tools (see `src/integration/tools/index.ts`, `src/mcp-server/server.ts`)
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
 - **Actor Assurance:** Three-tier source-labeled attribution (source labels `env` / `git` / `claim` / `oidc` / `unknown`; assurance tiers `best_effort` / `claim_validated` / `idp_verified`), immutable per session; Solo, Team, and Team-CI default to `best_effort`, while Regulated defaults to `claim_validated`; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic. The `oidc` source label is historical — it covers any IdP-verified actor (static-key or JWKS-backed); no OIDC discovery is implemented.
-- **Self-Review Iterations:** SOLO: 2 | TEAM/TEAM-CI/REGULATED: 3
-- **Impl-Review Iterations:** SOLO: 1 | TEAM/TEAM-CI/REGULATED: 3
+- **Review Budgets:** `plan: 3`, `architecture: 3`, `implementation: 3` in every policy preset
 - **Policy Modes:** 4 (Solo, Team [default], Team-CI, Regulated)
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (`baseline`, `typescript`, `backend-java`, `frontend-angular` — IDs as declared in `src/config/profile.ts`)
@@ -402,7 +408,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Evidence Types:** Zod-validated schemas across `src/state/evidence-*.ts` plus discovery schemas under `src/discovery/` and `src/state/discovery-schemas.ts`
 - **Framework Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Unit project enforces 80% (branches/lines/functions/statements); integration project enforces 70% (see `vitest.config.ts`)
-- **Mutation Testing:** StrykerJS (v9.6.1) on 23 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
+- **Mutation Testing:** StrykerJS (v9.6.1) on 68 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — offline-capable / local-first by default; network-dependent features (remote JWKS, `/review url=...`, TSA timestamping) are opt-in and documented
 
@@ -414,7 +420,7 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 ---
 
-**Version:** 1.2.0-tp.2
+**Version:** 2.0.0-tp.1
 _Architecture: TypeScript, host-aware, OpenCode synchronous path, Zero-Bridge_
 _Distribution: Pre-built proprietary artifact (GitHub Releases)_
 _Last Updated: 2026-04-27_

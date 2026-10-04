@@ -1,9 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { redactDecisionReceipts, redactReviewReport } from './export-redaction.js';
+import {
+  redactDecisionReceipts,
+  redactReviewReport,
+  redactSessionState,
+  redactAuditEvent,
+  redactAuditDetail,
+  stableMask,
+} from './export-redaction.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 type ReceiptOutput = { receipts: Array<Record<string, unknown>> };
 type ReportOutput = { findings: Array<Record<string, unknown>> };
+
+function recordArray(output: Record<string, unknown>, key: string): Array<Record<string, unknown>> {
+  const value = output[key];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'object' && item !== null)) {
+    throw new TypeError(`expected ${key} record array`);
+  }
+  return value as Array<Record<string, unknown>>;
+}
+
+function redactedReceipts(
+  input: Record<string, unknown>,
+  mode: 'basic' | 'pseudonymous',
+): ReceiptOutput {
+  return { receipts: recordArray(redactDecisionReceipts(input, mode), 'receipts') };
+}
 
 describe('redaction/export-redaction', () => {
   // ─── HAPPY ────────────────────────────────────────────────────────────────
@@ -16,7 +38,7 @@ describe('redaction/export-redaction', () => {
           { decisionId: 'DEC-001', decidedBy: 'alice', rationale: 'Contains private context' },
         ],
       };
-      const output = redactDecisionReceipts(input, 'basic');
+      const output = redactedReceipts(input, 'basic');
       const receipt = output.receipts[0] as Record<string, unknown>;
       expect(receipt.decidedBy).toBe('[REDACTED]');
       expect(receipt.rationale).toBe('[REDACTED]');
@@ -29,7 +51,7 @@ describe('redaction/export-redaction', () => {
           { decidedBy: 'alice', rationale: 'same rationale text' },
         ],
       };
-      const output = redactDecisionReceipts(input, 'basic');
+      const output = redactedReceipts(input, 'basic');
       expect((output.receipts[0] as Record<string, unknown>).decidedBy).toBe(
         (output.receipts[1] as Record<string, unknown>).decidedBy,
       );
@@ -38,8 +60,8 @@ describe('redaction/export-redaction', () => {
 
     it('redacts strict mode with deterministic tokenized masks', () => {
       const input = { receipts: [{ decidedBy: 'alice', rationale: 'same' }] };
-      const outA = redactDecisionReceipts(input, 'strict');
-      const outB = redactDecisionReceipts(input, 'strict');
+      const outA = redactedReceipts(input, 'pseudonymous');
+      const outB = redactedReceipts(input, 'pseudonymous');
       const a = outA.receipts[0] as Record<string, unknown>;
       const b = outB.receipts[0] as Record<string, unknown>;
       expect(a.decidedBy).toBe(b.decidedBy);
@@ -47,8 +69,8 @@ describe('redaction/export-redaction', () => {
     });
 
     it('strict mode produces different tokens for different inputs', () => {
-      const out1 = redactDecisionReceipts({ receipts: [{ decidedBy: 'alice' }] }, 'strict');
-      const out2 = redactDecisionReceipts({ receipts: [{ decidedBy: 'bob' }] }, 'strict');
+      const out1 = redactedReceipts({ receipts: [{ decidedBy: 'alice' }] }, 'pseudonymous');
+      const out2 = redactedReceipts({ receipts: [{ decidedBy: 'bob' }] }, 'pseudonymous');
       expect(out1.receipts[0]).not.toEqual(out2.receipts[0]);
     });
 
@@ -66,7 +88,7 @@ describe('redaction/export-redaction', () => {
           fourEyes: { initiatedBy: 'alice', decidedBy: 'bob', detail: 'lgtm' },
         },
       };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       const fe = (output.completeness as Record<string, unknown>).fourEyes as Record<
         string,
         unknown
@@ -74,19 +96,19 @@ describe('redaction/export-redaction', () => {
       expect(fe.initiatedBy).toBe('[REDACTED]');
       expect(fe.decidedBy).toBe('[REDACTED]');
       expect(fe.detail).toBe('[REDACTED]');
-      expect((output.findings[0] as Record<string, unknown>).message).toBe('[REDACTED]');
+      expect(recordArray(output, 'findings')[0]?.message).toBe('[REDACTED]');
     });
 
     it('redacts findings message in review report basic mode', () => {
       const input = { findings: [{ message: 'Contains PII: alice@example.com' }] };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
-      expect((output.findings[0] as Record<string, unknown>).message).toBe('[REDACTED]');
+      const output = redactReviewReport(input, 'basic');
+      expect(recordArray(output, 'findings')[0]?.message).toBe('[REDACTED]');
     });
 
     it('redacts validationSummary detail in review report', () => {
       const input = { validationSummary: [{ checkId: 'test_quality', detail: 'secret detail' }] };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
-      expect((output.validationSummary[0] as Record<string, unknown>).detail).toBe('[REDACTED]');
+      const output = redactReviewReport(input, 'basic');
+      expect(recordArray(output, 'validationSummary')[0]?.detail).toBe('[REDACTED]');
     });
 
     it('redacts references in review report basic mode', () => {
@@ -106,7 +128,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       const refs = output.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe('[REDACTED]');
       expect(refs[0]!.title).toBe('[REDACTED]');
@@ -122,7 +144,7 @@ describe('redaction/export-redaction', () => {
           { ref: 'https://jira.internal.example.com/PROJ-1', title: 'PROJ-1: Internal thing' },
         ],
       };
-      const output = redactReviewReport(input, 'strict') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'pseudonymous');
       const refs = output.references as Array<Record<string, unknown>>;
       expect(String(refs[0]!.ref)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(refs[0]!.title)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
@@ -140,13 +162,13 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       const refs = output.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe('[REDACTED]');
       expect(refs[0]!.title).toBe('[REDACTED]');
       expect(refs[0]!.type).toBe('ticket');
       expect(refs[0]!.source).toBe('ados');
-      expect(refs[0]!.extractedAt).toBe('2026-01-15T10:00:00.000Z');
+      expect(refs[0]!.extractedAt).toBe('[REDACTED]');
     });
 
     it('mode=none leaves references unchanged', () => {
@@ -158,7 +180,7 @@ describe('redaction/export-redaction', () => {
 
     it('handles empty references array without throwing', () => {
       expect(() => redactReviewReport({ references: [] }, 'basic')).not.toThrow();
-      expect(() => redactReviewReport({ references: [] }, 'strict')).not.toThrow();
+      expect(() => redactReviewReport({ references: [] }, 'pseudonymous')).not.toThrow();
     });
 
     it('redacts deep copies without mutating original', () => {
@@ -182,16 +204,16 @@ describe('redaction/export-redaction', () => {
 
     it('handles empty receipts array without throwing', () => {
       expect(() => redactDecisionReceipts({ receipts: [] }, 'basic')).not.toThrow();
-      expect(() => redactDecisionReceipts({ receipts: [] }, 'strict')).not.toThrow();
+      expect(() => redactDecisionReceipts({ receipts: [] }, 'pseudonymous')).not.toThrow();
     });
 
     it('handles null findings in review report without throwing', () => {
       expect(() => redactReviewReport({}, 'basic')).not.toThrow();
-      expect(() => redactReviewReport({ findings: null as unknown }, 'strict')).not.toThrow();
+      expect(() => redactReviewReport({ findings: null }, 'pseudonymous')).not.toThrow();
     });
 
     it('handles null completeness without throwing', () => {
-      expect(() => redactReviewReport({ completeness: null as unknown }, 'basic')).not.toThrow();
+      expect(() => redactReviewReport({ completeness: null }, 'basic')).not.toThrow();
     });
 
     it('handles non-array receipts gracefully', () => {
@@ -223,7 +245,7 @@ describe('redaction/export-redaction', () => {
     it('handles null/undefined decidedBy without throwing (left unchanged)', () => {
       const input = { receipts: [{ decidedBy: null, rationale: undefined }] };
       expect(() => redactDecisionReceipts(input, 'basic')).not.toThrow();
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).toBe(null);
       expect(r.rationale).toBeUndefined();
@@ -236,7 +258,7 @@ describe('redaction/export-redaction', () => {
 
     it('handles empty string values', () => {
       const input = { receipts: [{ decidedBy: '', rationale: '' }] };
-      const out = redactDecisionReceipts(input, 'strict') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'pseudonymous');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(String(r.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
     });
@@ -256,14 +278,14 @@ describe('redaction/export-redaction', () => {
     });
 
     it('strict mode handles empty string deterministically', () => {
-      const out1 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'strict');
-      const out2 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'strict');
+      const out1 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'pseudonymous');
+      const out2 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'pseudonymous');
       expect(out1).toEqual(out2);
     });
 
     it('non-string decidedBy/rationale are left unchanged (type guard)', () => {
       const input = { receipts: [{ decidedBy: 123 as unknown, rationale: false as unknown }] };
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).toBe(123);
       expect(r.rationale).toBe(false);
@@ -271,13 +293,13 @@ describe('redaction/export-redaction', () => {
 
     it('review report leaves non-string finding message unchanged', () => {
       const input = { findings: [{ message: 42 as unknown }] };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
-      expect((out.findings[0] as Record<string, unknown>).message).toBe(42);
+      const out = redactReviewReport(input, 'basic');
+      expect(recordArray(out, 'findings')[0]?.message).toBe(42);
     });
 
     it('review report leaves non-string slot detail unchanged', () => {
       const input = { completeness: { slots: [{ detail: true as unknown }] } };
-      const out = redactReviewReport(input, 'strict') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'pseudonymous');
       const slot = (
         (out.completeness as Record<string, unknown>).slots as Array<Record<string, unknown>>
       )[0]!;
@@ -288,7 +310,7 @@ describe('redaction/export-redaction', () => {
       const input = {
         references: [{ ref: null as unknown, title: undefined as unknown, type: 'url' }],
       };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       const refs = out.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe(null);
       expect(refs[0]!.title).toBeUndefined();
@@ -299,7 +321,7 @@ describe('redaction/export-redaction', () => {
       const input = {
         references: [{ ref: 42 as unknown, title: true as unknown }],
       };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       const refs = out.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe(42);
       expect(refs[0]!.title).toBe(true);
@@ -311,7 +333,7 @@ describe('redaction/export-redaction', () => {
   describe('EDGE', () => {
     it('strict mode token is consistent across multiple calls with same input', () => {
       const input = { receipts: [{ decidedBy: 'alice', rationale: 'trust decision' }] };
-      const results = Array.from({ length: 5 }, () => redactDecisionReceipts(input, 'strict'));
+      const results = Array.from({ length: 5 }, () => redactedReceipts(input, 'pseudonymous'));
       const tokens = results.map((r) =>
         String((r.receipts[0] as Record<string, unknown>).decidedBy),
       );
@@ -319,9 +341,9 @@ describe('redaction/export-redaction', () => {
     });
 
     it('strict mode produces different tokens for different field values', () => {
-      const out = redactDecisionReceipts(
+      const out = redactedReceipts(
         { receipts: [{ decidedBy: 'alice', rationale: 'bob' }] },
-        'strict',
+        'pseudonymous',
       );
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).not.toBe(r.rationale);
@@ -338,14 +360,14 @@ describe('redaction/export-redaction', () => {
 
     it('redacts review report with empty findings array', () => {
       const input = { findings: [], completeness: {} };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       expect(out.findings).toEqual([]);
     });
 
     it('strict mode review report findings message', () => {
       const input = { findings: [{ message: 'sensitive review detail' }] };
-      const out = redactReviewReport(input, 'strict') as Record<string, unknown>;
-      expect(String((out.findings[0] as Record<string, unknown>).message)).toMatch(
+      const out = redactReviewReport(input, 'pseudonymous');
+      expect(String(recordArray(out, 'findings')[0]?.message)).toMatch(
         /^\[REDACTED:[a-f0-9]{12}\]$/,
       );
     });
@@ -356,8 +378,8 @@ describe('redaction/export-redaction', () => {
         decidedBy: `user-${i}`,
         rationale: `decision rationale ${i}`,
       }));
-      const out = redactDecisionReceipts({ receipts }, 'basic') as Record<string, unknown>;
-      const redacted = out.receipts as Array<Record<string, unknown>>;
+      const out = redactedReceipts({ receipts }, 'basic');
+      const redacted = out.receipts;
       expect(redacted).toHaveLength(100);
       redacted.forEach((r) => {
         expect(r.decidedBy).toBe('[REDACTED]');
@@ -375,7 +397,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).toBe('[REDACTED]');
       expect(r.rationale).toBe('[REDACTED]');
@@ -392,7 +414,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactDecisionReceipts(raw, 'strict') as Record<string, unknown>;
+      const out = redactedReceipts(raw, 'pseudonymous');
       const r = out.receipts[0] as Record<string, unknown>;
       const decidedByStr = String(r.decidedBy);
       const rationaleStr = String(r.rationale);
@@ -402,23 +424,43 @@ describe('redaction/export-redaction', () => {
       expect(rationaleStr).not.toContain('ghp_');
     });
 
-    it('decisionId and other non-sensitive fields are preserved', () => {
+    it('unknown string fields are redacted by default (default-deny)', () => {
       const input = {
         receipts: [
           {
             decisionId: 'DEC-999',
             decidedBy: 'alice',
             rationale: 'ok',
-            nonSensitiveField: 'kept as-is',
+            injectedSecret: 'leaked-value',
             timestamp: '2026-04-17',
           },
         ],
       };
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decisionId).toBe('DEC-999');
-      expect(r.nonSensitiveField).toBe('kept as-is');
       expect(r.timestamp).toBe('2026-04-17');
+      expect(r.decidedBy).toBe('[REDACTED]');
+      expect(r.rationale).toBe('[REDACTED]');
+      expect(r.injectedSecret).toBe('[REDACTED]');
+    });
+
+    it('unknown nested string fields are deep-walked and redacted', () => {
+      const input = {
+        findings: [
+          {
+            checkId: 'c1',
+            message: 'contains secret',
+            extra: { nestedSecret: 'should-be-redacted' },
+          },
+        ],
+      };
+      const out = redactReviewReport(input, 'basic');
+      const finding = (out.findings as Array<Record<string, unknown>>)[0]!;
+      expect(finding.checkId).toBe('c1');
+      expect(finding.message).toBe('[REDACTED]');
+      const extra = finding.extra as Record<string, unknown>;
+      expect(extra.nestedSecret).toBe('[REDACTED]');
     });
 
     it('deep copy safety: original nested objects are never mutated', () => {
@@ -454,7 +496,7 @@ describe('redaction/export-redaction', () => {
       expect(rBasic.decidedBy).toBe('[REDACTED]');
       expect(rBasic.rationale).toBe('[REDACTED]');
 
-      const outStrict = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const outStrict = redactDecisionReceipts(input, 'pseudonymous') as ReceiptOutput;
       const rStrict = outStrict.receipts[0]!;
       expect(String(rStrict.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(rStrict.rationale)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
@@ -470,7 +512,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactReviewReport(input, 'strict') as ReportOutput;
+      const out = redactReviewReport(input, 'pseudonymous') as ReportOutput;
       const finding = out.findings[0]!;
       expect(String(finding.message)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(finding.message)).not.toContain('RSA');
@@ -498,8 +540,8 @@ describe('redaction/export-redaction', () => {
       const receiptInput = { receipts: [{ decidedBy: 'bot', rationale: sharedValue }] };
       const reportInput = { findings: [{ checkId: 'c1', message: sharedValue }] };
 
-      const receiptOut = redactDecisionReceipts(receiptInput, 'strict') as ReceiptOutput;
-      const reportOut = redactReviewReport(reportInput, 'strict') as ReportOutput;
+      const receiptOut = redactDecisionReceipts(receiptInput, 'pseudonymous') as ReceiptOutput;
+      const reportOut = redactReviewReport(reportInput, 'pseudonymous') as ReportOutput;
 
       const receiptToken = String(receiptOut.receipts[0]!.rationale);
       const reportToken = String(reportOut.findings[0]!.message);
@@ -525,12 +567,12 @@ describe('redaction/export-redaction', () => {
       expect(rBasic.decidedBy).toBe('[REDACTED]');
       expect(rBasic.rationale).toBe('[REDACTED]');
 
-      const outStrict = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const outStrict = redactDecisionReceipts(input, 'pseudonymous') as ReceiptOutput;
       const rStrict = outStrict.receipts[0]!;
       expect(String(rStrict.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(rStrict.rationale)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
 
-      const outStrictB = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const outStrictB = redactDecisionReceipts(input, 'pseudonymous') as ReceiptOutput;
       const rStrictB = outStrictB.receipts[0]!;
       expect(rStrictB.rationale).toBe(rStrict.rationale);
     });
@@ -540,26 +582,269 @@ describe('redaction/export-redaction', () => {
       expect(redactDecisionReceipts(null as unknown as Record<string, unknown>, 'none')).toBe(null);
       expect(redactReviewReport(null as unknown as Record<string, unknown>, 'none')).toBe(null);
 
-      // mode !== none on null → TypeError (structuredClone(null) = null, then .receipts/.findings fails)
-      expect(() =>
-        redactDecisionReceipts(null as unknown as Record<string, unknown>, 'basic'),
-      ).toThrow(TypeError);
-      expect(() => redactReviewReport(null as unknown as Record<string, unknown>, 'basic')).toThrow(
-        TypeError,
+      // mode !== none on null → returns null (no fields to redact)
+      expect(redactDecisionReceipts(null as unknown as Record<string, unknown>, 'basic')).toBe(
+        null,
       );
+      expect(redactReviewReport(null as unknown as Record<string, unknown>, 'basic')).toBe(null);
 
-      // string primitive: structuredClone returns the string, property access on string
-      // returns undefined, Array.isArray(undefined) → false → skips redaction loop
+      // string primitive: structuredClone returns the string, deep walk
+      // treats it as a value to redact (default-deny for unknown strings).
       expect(redactDecisionReceipts('string' as unknown as Record<string, unknown>, 'basic')).toBe(
-        'string',
+        '[REDACTED]',
       );
       expect(redactReviewReport('string' as unknown as Record<string, unknown>, 'basic')).toBe(
-        'string',
+        '[REDACTED]',
       );
 
       // array: structuredClone([]) = []; .receipts/.findings → undefined; returns []
       expect(redactDecisionReceipts([] as unknown as Record<string, unknown>, 'basic')).toEqual([]);
       expect(redactReviewReport([] as unknown as Record<string, unknown>, 'basic')).toEqual([]);
+    });
+  });
+
+  // ─── DEFAULT-DENY DEEP WALK ──────────────────────────────────────────
+
+  describe('DEFAULT-DENY DEEP WALK', () => {
+    it('supports ordinary objects inside arrays', () => {
+      const input = { receipts: [{ decisionId: 'DEC-001' }] };
+      const out = redactedReceipts(input, 'basic');
+      const r = out.receipts[0] as Record<string, unknown>;
+      expect(r.decisionId).toBe('DEC-001');
+    });
+
+    it('supports repeated references that are not circular', () => {
+      const shared = { decisionId: 'DEC-001' };
+      const value = { left: shared, right: shared };
+      expect(() => redactReviewReport(value, 'basic')).not.toThrow();
+    });
+
+    it('throws on circular reference', () => {
+      const cyclic: Record<string, unknown> = {};
+      cyclic.self = cyclic;
+      expect(() => redactReviewReport(cyclic, 'basic')).toThrow(/circular/i);
+    });
+
+    it('does not throw on circular reference with mode none', () => {
+      const cyclic: Record<string, unknown> = {};
+      cyclic.self = cyclic;
+      expect(() => redactReviewReport(cyclic, 'none')).not.toThrow();
+    });
+
+    it('string array elements are always redacted', () => {
+      const input = { source: ['safe-enum', 'Bearer ghp_secret', { injectedSecret: 'leaked' }] };
+      const out = redactReviewReport(input, 'basic');
+      const arr = out.source as unknown[];
+      expect(arr[0]).toBe('[REDACTED]');
+      expect(arr[1]).toBe('[REDACTED]');
+      expect((arr[2] as Record<string, unknown>).injectedSecret).toBe('[REDACTED]');
+    });
+
+    it('throws on excessive nesting depth', () => {
+      let value: unknown = 'leaf';
+      for (let i = 0; i < 65; i++) {
+        value = { child: value };
+      }
+      expect(() => redactReviewReport(value as Record<string, unknown>, 'basic')).toThrow(/depth/);
+    });
+
+    it('allows 63 nested levels (64 nodes)', () => {
+      let value: unknown = 'leaf';
+      for (let i = 0; i < 63; i++) {
+        value = { child: value };
+      }
+      expect(() => redactReviewReport(value as Record<string, unknown>, 'basic')).not.toThrow();
+    });
+  });
+
+  // ─── STRUCTURAL REDACTION ──────────────────────────────────────────────
+
+  describe('STRUCTURAL REDACTION', () => {
+    it('sensitive keys are masked exactly once in strict mode', () => {
+      const result = redactReviewReport(
+        { findings: [{ message: 'secret finding' }] },
+        'pseudonymous',
+      );
+      const message = (result.findings as Array<Record<string, unknown>>)[0]?.message;
+      expect(message).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+    });
+
+    it('sensitive keys in decision receipts are masked once', () => {
+      const result = redactDecisionReceipts(
+        { receipts: [{ decidedBy: 'alice', rationale: 'secret rationale' }] },
+        'pseudonymous',
+      );
+      const r = (result.receipts as Array<Record<string, unknown>>)[0]!;
+      expect(r.decidedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(r.rationale).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(String(r.decidedBy)).not.toContain('alice');
+    });
+
+    it('sentinel-shaped value on unknown field is redacted', () => {
+      const result = redactReviewReport(
+        { injectedSecret: '[REDACTED:deadbeefcafe]' },
+        'pseudonymous',
+      );
+      expect(result.injectedSecret).not.toBe('[REDACTED:deadbeefcafe]');
+      expect(result.injectedSecret).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+    });
+
+    it('sentinel-shaped value on unknown field in receipts is redacted', () => {
+      const out = redactedReceipts(
+        {
+          receipts: [
+            {
+              decisionId: 'x',
+              decidedBy: 'alice',
+              rationale: 'ok',
+              injectedSecret: '[REDACTED:deadbeefcafe]',
+            },
+          ],
+        },
+        'basic',
+      );
+      const r = out.receipts[0] as Record<string, unknown>;
+      expect(r.injectedSecret).toBe('[REDACTED]');
+    });
+
+    it('sentinel-shaped value on unknown audit detail field is redacted', () => {
+      const result = redactAuditDetail(
+        { kind: 'tool_call', injected: '[REDACTED:deadbeefcafe]' },
+        'basic',
+      );
+      expect(result.injected).toBe('[REDACTED]');
+    });
+  });
+
+  // ─── SESSION-STATE REDACTION ──────────────────────────────────────────
+
+  describe('SESSION-STATE REDACTION', () => {
+    it('redacts identity fields in session state', () => {
+      const result = redactSessionState(
+        {
+          id: 'session-1',
+          phase: 'PLAN',
+          initiatedBy: 'alice',
+          schemaVersion: 'v1',
+          actorInfo: { id: 'actor-1', email: 'alice@example.test' },
+        },
+        'basic',
+      );
+      expect(result.phase).toBe('PLAN');
+      expect(result.schemaVersion).toBe('v1');
+      expect(result.initiatedBy).toBe('[REDACTED]');
+      const ai = result.actorInfo as Record<string, unknown>;
+      expect(ai.id).toBe('[REDACTED]');
+      expect(ai.email).toBe('[REDACTED]');
+    });
+
+    it('strict identity fields are masked exactly once from original values', () => {
+      const result = redactSessionState(
+        {
+          initiatedBy: 'alice',
+          actorInfo: { id: 'actor-1', displayName: 'Alice', email: 'alice@example.test' },
+        },
+        'pseudonymous',
+      );
+      expect(result.initiatedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+
+      const ai = result.actorInfo as Record<string, unknown>;
+      expect(ai.id).toBe(stableMask('actor-1', 'pseudonymous'));
+      expect(ai.displayName).toBe(stableMask('Alice', 'pseudonymous'));
+      expect(ai.email).toBe(stableMask('alice@example.test', 'pseudonymous'));
+    });
+
+    it('redacts path-bearing fields in session state', () => {
+      const result = redactSessionState(
+        {
+          worktree: '/home/alice/project',
+          reviewReportPath: '/tmp/reviews/report.json',
+          sessionDir: '/home/alice/.config/sessions/abc',
+        },
+        'basic',
+      );
+      expect(result.worktree).toBe('[REDACTED]');
+      expect(result.reviewReportPath).toBe('[REDACTED]');
+      expect(result.sessionDir).toBe('[REDACTED]');
+    });
+
+    it('preserves structured enum fields in session state', () => {
+      const result = redactSessionState(
+        {
+          phase: 'COMPLETE',
+          status: 'clear',
+          mode: 'regulated',
+          kind: 'lifecycle',
+          action: 'session_completed',
+          event: 'APPROVE',
+          verdict: 'approve',
+        },
+        'basic',
+      );
+      expect(result.phase).toBe('COMPLETE');
+      expect(result.status).toBe('clear');
+      expect(result.mode).toBe('regulated');
+      expect(result.kind).toBe('lifecycle');
+      expect(result.action).toBe('session_completed');
+      expect(result.event).toBe('APPROVE');
+      expect(result.verdict).toBe('approve');
+    });
+
+    it('mode=none returns session state unchanged', () => {
+      const input = { initiatedBy: 'alice', worktree: '/home/alice' };
+      const result = redactSessionState(input, 'none');
+      expect(result).toBe(input);
+    });
+
+    it('unknown string fields in session state are default-denied', () => {
+      const result = redactSessionState(
+        { injectedSecret: 'should-not-leak', phase: 'PLAN' },
+        'basic',
+      );
+      expect(result.phase).toBe('PLAN');
+      expect(result.injectedSecret).toBe('[REDACTED]');
+    });
+  });
+
+  // ─── AUDIT-DETAIL REDACTION ────────────────────────────────────────────
+
+  describe('AUDIT-DETAIL REDACTION', () => {
+    it('preserves structural audit detail fields', () => {
+      const result = redactAuditDetail(
+        {
+          kind: 'tool_call',
+          tool: 'bash',
+          success: true,
+          errorPhase: 'IMPLEMENTATION',
+          event: 'APPROVE',
+          verdict: 'approve',
+        },
+        'basic',
+      );
+      expect(result.kind).toBe('tool_call');
+      expect(result.tool).toBe('bash');
+      expect(result.event).toBe('APPROVE');
+      expect(result.verdict).toBe('approve');
+    });
+
+    it('redacts unknown string fields in audit detail', () => {
+      const result = redactAuditDetail(
+        { kind: 'tool_call', injectedSecret: 'leaked', diagnostic: '/home/user/secret' },
+        'basic',
+      );
+      expect(result.kind).toBe('tool_call');
+      expect(result.injectedSecret).toBe('[REDACTED]');
+      expect(result.diagnostic).toBe('[REDACTED]');
+    });
+
+    it('sanitizes and preserves errorMessage', () => {
+      const result = redactAuditDetail(
+        { kind: 'error', errorMessage: '/home/user/.ssh/id_rsa: EACCES' },
+        'pseudonymous',
+      );
+      expect(result.errorMessage).toContain('[path:id_rsa]');
+      expect(result.errorMessage).not.toContain('/home/user');
+      expect(result.errorMessage).not.toMatch(/^\[REDACTED/);
     });
   });
 
@@ -581,7 +866,11 @@ describe('redaction/export-redaction', () => {
         decidedBy: `user-${i}`,
         rationale: `rationale text ${i}`,
       }));
-      const { p95Ms } = benchmarkSync(() => redactDecisionReceipts({ receipts }, 'strict'), 50, 10);
+      const { p95Ms } = benchmarkSync(
+        () => redactDecisionReceipts({ receipts }, 'pseudonymous'),
+        50,
+        10,
+      );
       expect(p95Ms).toBeLessThan(PERF_BUDGETS.redactionStrict100Ms);
     });
 
@@ -615,5 +904,125 @@ describe('redaction/export-redaction', () => {
       const elapsed = performance.now() - start;
       expect(elapsed).toBeLessThan(5);
     });
+  });
+});
+
+describe('raw string masking and traversal guards', () => {
+  it('masks per mode with deterministic pseudonymous tokens', () => {
+    expect(stableMask('secret', 'none')).toBe('secret');
+    expect(stableMask('secret', 'basic')).toBe('[REDACTED]');
+
+    const first = stableMask('secret', 'pseudonymous');
+    expect(first).toMatch(/^\[REDACTED:[0-9a-f]{12}\]$/);
+    expect(stableMask('secret', 'pseudonymous')).toBe(first);
+    expect(stableMask('other', 'pseudonymous')).not.toBe(first);
+  });
+
+  it('preserves allow-listed keys while masking paths, sensitive and unknown keys', () => {
+    const redacted = redactSessionState(
+      {
+        decisionId: 'decision-1',
+        phase: 'PLAN',
+        worktree: '/repo',
+        workspace: '/ws',
+        sessionDir: '/sessions/s1',
+        somePath: '/p',
+        sourceDirectory: '/d',
+        dir: '/d2',
+        task_dir_name: '/d3',
+        initiatedBy: 'user@example.com',
+        custom: 'secret',
+        actorInfo: { id: 'actor-1', email: 'a@b.c', displayName: 'Actor' },
+        initiatedByIdentity: { id: 'identity-1', email: 'i@b.c', displayName: 'Initiator' },
+      },
+      'basic',
+    );
+
+    expect(redacted['decisionId']).toBe('decision-1');
+    expect(redacted['phase']).toBe('PLAN');
+    for (const key of [
+      'worktree',
+      'workspace',
+      'sessionDir',
+      'somePath',
+      'sourceDirectory',
+      'dir',
+      'task_dir_name',
+      'initiatedBy',
+      'custom',
+    ]) {
+      expect(redacted[key], key).toBe('[REDACTED]');
+    }
+    expect(redacted['actorInfo']).toMatchObject({
+      id: '[REDACTED]',
+      email: '[REDACTED]',
+      displayName: '[REDACTED]',
+    });
+    expect(redacted['initiatedByIdentity']).toMatchObject({
+      id: '[REDACTED]',
+      email: '[REDACTED]',
+      displayName: '[REDACTED]',
+    });
+  });
+
+  it('tolerates absent or non-object identity fields', () => {
+    expect(() => redactSessionState({}, 'basic')).not.toThrow();
+    expect(() =>
+      redactSessionState({ actorInfo: 'not-an-object', initiatedByIdentity: 42 }, 'basic'),
+    ).not.toThrow();
+  });
+
+  it('rejects nesting beyond the redaction depth limit for objects and arrays', () => {
+    const deepObject = (depth: number) => {
+      let node: Record<string, unknown> = { leaf: 'x' };
+      for (let index = 0; index < depth; index++) node = { nested: node };
+      return node;
+    };
+    const deepArray = (depth: number) => {
+      let node: unknown = 'x';
+      for (let index = 0; index < depth; index++) node = [node];
+      return { root: node };
+    };
+
+    expect(redactSessionState(deepObject(60), 'basic')).toBeDefined();
+    expect(() => redactSessionState(deepObject(70), 'basic')).toThrow(/maximum nesting depth/);
+    expect(() => redactSessionState(deepArray(70) as never, 'basic')).toThrow(
+      /maximum nesting depth/,
+    );
+  });
+
+  it('rejects circular references', () => {
+    const circular: Record<string, unknown> = { name: 'x' };
+    circular['self'] = circular;
+
+    expect(() => redactSessionState(circular, 'basic')).toThrow(/circular reference/);
+  });
+
+  it('redacts audit events without mutating the source', () => {
+    const event = {
+      actorInfo: { id: 'actor-1', email: 'a@b.c', displayName: 'Actor' },
+      detail: { errorMessage: 'failed at /home/user', tool: 'bash', custom: 'secret' },
+    };
+    const redacted = redactAuditEvent(event, 'basic');
+
+    expect(redacted['actorInfo']).toMatchObject({
+      id: '[REDACTED]',
+      email: '[REDACTED]',
+      displayName: '[REDACTED]',
+    });
+    expect((redacted['detail'] as Record<string, unknown>)['tool']).toBe('bash');
+    expect((redacted['detail'] as Record<string, unknown>)['custom']).toBe('[REDACTED]');
+    const errorMessage = (redacted['detail'] as Record<string, unknown>)['errorMessage'] as string;
+    expect(errorMessage).toContain('[path:user]');
+    expect(errorMessage).not.toContain('/home/user');
+    expect(event.actorInfo.id).toBe('actor-1');
+  });
+
+  it('returns audit events and details by reference in none mode', () => {
+    const event = { actorInfo: { id: 'actor-1' }, detail: { custom: 'secret' } };
+    expect(redactAuditEvent(event, 'none')).toEqual(event);
+
+    const detail = { custom: 'secret' };
+    expect(redactAuditDetail(detail, 'none')).toBe(detail);
   });
 });

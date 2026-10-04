@@ -9,14 +9,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   findBindingArtifacts,
+  findPublicationBinding,
   isArtifactBindingEntry,
   hasTimestampEvidence,
   isCurrentChainIntegrityFailure,
   isAuditFormatFailure,
+  auditReadFailureFindingCode,
+  resolveArchiveStrictness,
   resolveStrictMode,
   STRICT_WHEN_MODE_UNRESOLVED,
 } from './archive-verify-helpers.js';
 import type { SessionState } from '../../state/schema.js';
+import type { ArchivePublicationBinding } from './archive-artifact-binding.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -40,6 +44,16 @@ function bindingEntry(overrides: Record<string, unknown> = {}): Record<string, u
     sha256: 'a'.repeat(64),
     artifactType: 'evidence',
     ...overrides,
+  };
+}
+
+function publicationBinding(): ArchivePublicationBinding {
+  return {
+    publicationId: 'a'.repeat(64),
+    archiveFile: 'session.tar.gz',
+    archiveDigest: 'b'.repeat(64),
+    sidecarDigest: 'c'.repeat(64),
+    manifestContentDigest: 'd'.repeat(64),
   };
 }
 
@@ -91,6 +105,41 @@ describe('findBindingArtifacts', () => {
       bindingEvent([{ path: 'artifacts/last.json' }]),
     ];
     expect(findBindingArtifacts(events)).toEqual([{ path: 'artifacts/last.json' }]);
+  });
+});
+
+describe('findPublicationBinding', () => {
+  it('accepts only an exact digest tuple from the publication event contract', () => {
+    const expected = publicationBinding();
+    const event = {
+      event: 'archive:publication_bound',
+      detail: { schemaVersion: 'flowguard-archive-publication-binding.v1', ...expected },
+    };
+    expect(findPublicationBinding([event], expected)).toBe(true);
+    expect(findPublicationBinding([event], { ...expected, archiveDigest: 'e'.repeat(64) })).toBe(
+      false,
+    );
+  });
+
+  it('rejects a publication event with an unknown schema version', () => {
+    const expected = publicationBinding();
+    expect(
+      findPublicationBinding(
+        [{ event: 'archive:publication_bound', detail: { schemaVersion: 'v0', ...expected } }],
+        expected,
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects a historical tuple when a newer binding names the same archive', () => {
+    const historical = publicationBinding();
+    const current = { ...historical, publicationId: 'e'.repeat(64), archiveDigest: 'f'.repeat(64) };
+    const event = (detail: ArchivePublicationBinding) => ({
+      event: 'archive:publication_bound',
+      detail: { schemaVersion: 'flowguard-archive-publication-binding.v1', ...detail },
+    });
+    expect(findPublicationBinding([event(historical), event(current)], historical)).toBe(false);
+    expect(findPublicationBinding([event(historical), event(current)], current)).toBe(true);
   });
 });
 
@@ -147,17 +196,17 @@ describe('hasTimestampEvidence', () => {
 // ─── isCurrentChainIntegrityFailure ───────────────────────────────────────────
 
 describe('isCurrentChainIntegrityFailure', () => {
-  it('returns true for CHAIN_BREAK', () => {
+  it('returns true for current audit-chain integrity failures', () => {
     expect(isCurrentChainIntegrityFailure('CHAIN_BREAK')).toBe(true);
+    expect(isCurrentChainIntegrityFailure('CLOCK_ANOMALY')).toBe(true);
   });
 
-  it('returns true for LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE', () => {
-    expect(isCurrentChainIntegrityFailure('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE')).toBe(true);
+  it('returns false for envelope-format reasons (they have their own finding class)', () => {
+    expect(isCurrentChainIntegrityFailure('AUDIT_ENVELOPE_INVALID')).toBe(false);
   });
 
   it('returns false for other reasons', () => {
-    expect(isCurrentChainIntegrityFailure('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2')).toBe(false);
-    expect(isCurrentChainIntegrityFailure('UNSUPPORTED_AUDIT_FORMAT_VERSION')).toBe(false);
+    expect(isCurrentChainIntegrityFailure('TIMESTAMP_EVIDENCE_MISSING')).toBe(false);
   });
 
   it('returns false for null', () => {
@@ -168,21 +217,43 @@ describe('isCurrentChainIntegrityFailure', () => {
 // ─── isAuditFormatFailure ─────────────────────────────────────────────────────
 
 describe('isAuditFormatFailure', () => {
-  it('returns true for LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2', () => {
-    expect(isAuditFormatFailure('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2')).toBe(true);
+  it('returns true for AUDIT_ENVELOPE_INVALID', () => {
+    expect(isAuditFormatFailure('AUDIT_ENVELOPE_INVALID')).toBe(true);
   });
 
-  it('returns true for UNSUPPORTED_AUDIT_FORMAT_VERSION', () => {
-    expect(isAuditFormatFailure('UNSUPPORTED_AUDIT_FORMAT_VERSION')).toBe(true);
+  it('returns true for AUDIT_ENVELOPE_INVALID', () => {
+    expect(isAuditFormatFailure('AUDIT_ENVELOPE_INVALID')).toBe(true);
   });
 
   it('returns false for other reasons', () => {
     expect(isAuditFormatFailure('CHAIN_BREAK')).toBe(false);
-    expect(isAuditFormatFailure('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE')).toBe(false);
+    expect(isAuditFormatFailure('CLOCK_ANOMALY')).toBe(false);
   });
 
   it('returns false for null', () => {
     expect(isAuditFormatFailure(null)).toBe(false);
+  });
+});
+
+// ─── auditReadFailureFindingCode ──────────────────────────────────────────────
+
+describe('auditReadFailureFindingCode', () => {
+  it('maps the envelope-invalid read failure to audit_chain_invalid_event', () => {
+    expect(auditReadFailureFindingCode({ code: 'AUDIT_ENVELOPE_INVALID' })).toBe(
+      'audit_chain_invalid_event',
+    );
+  });
+
+  it('maps the envelope-invalid read failure to audit_chain_invalid_event', () => {
+    expect(auditReadFailureFindingCode({ code: 'AUDIT_ENVELOPE_INVALID' })).toBe(
+      'audit_chain_invalid_event',
+    );
+  });
+
+  it('falls back to audit_chain_invalid for any other failure', () => {
+    expect(auditReadFailureFindingCode({ code: 'READ_FAILED' })).toBe('audit_chain_invalid');
+    expect(auditReadFailureFindingCode(new Error('boom'))).toBe('audit_chain_invalid');
+    expect(auditReadFailureFindingCode(null)).toBe('audit_chain_invalid');
   });
 });
 
@@ -212,5 +283,26 @@ describe('resolveStrictMode', () => {
 
   it('returns STRICT_WHEN_MODE_UNRESOLVED for invalid mode', () => {
     expect(resolveStrictMode(sessionState('unknown'))).toBe(true);
+  });
+});
+
+describe('resolveArchiveStrictness', () => {
+  it('records whether strictness was resolved from trusted policy state', () => {
+    expect(resolveArchiveStrictness(sessionState('regulated'))).toEqual({
+      strict: true,
+      policyStateResolved: true,
+    });
+    expect(resolveArchiveStrictness(sessionState('team'))).toEqual({
+      strict: false,
+      policyStateResolved: true,
+    });
+  });
+
+  it('fails closed and reports unresolved strictness for missing or invalid state', () => {
+    expect(resolveArchiveStrictness(null)).toEqual({ strict: true, policyStateResolved: false });
+    expect(resolveArchiveStrictness(sessionState('unknown'))).toEqual({
+      strict: true,
+      policyStateResolved: false,
+    });
   });
 });

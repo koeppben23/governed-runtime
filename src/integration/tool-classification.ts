@@ -34,12 +34,19 @@ import {
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_EXPORT,
+  TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_DECLARE_CONTRACT,
+  TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
 } from './tool-names.js';
 
 export const TOOL_CLASSIFICATION = {
@@ -50,18 +57,32 @@ export const TOOL_CLASSIFICATION = {
   [TOOL_FLOWGUARD_RUN_CHECK]: 'workflow',
   [TOOL_FLOWGUARD_IMPLEMENT]: 'workflow',
   [TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION]: 'workflow',
+  [TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE]: 'workflow',
   [TOOL_FLOWGUARD_DECISION]: 'workflow',
   [TOOL_FLOWGUARD_REVIEW]: 'workflow',
   [TOOL_FLOWGUARD_CONTINUE]: 'workflow',
   [TOOL_FLOWGUARD_ARCHITECTURE]: 'workflow',
   [TOOL_FLOWGUARD_ABORT]: 'workflow',
+  [TOOL_FLOWGUARD_EXPORT]: 'workflow',
 
   // Operational tools (explicitly classified, own guards)
   [TOOL_FLOWGUARD_STATUS]: 'operational',
   [TOOL_FLOWGUARD_ARCHIVE]: 'operational',
+  [TOOL_FLOWGUARD_HELP]: 'operational',
+  [TOOL_FLOWGUARD_DECLARE_CONTRACT]: 'operational',
+  [TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE]: 'operational',
+  [TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE]: 'operational',
+  [TOOL_FLOWGUARD_OBSERVE_REPOSITORY]: 'operational',
 } as const;
 
-type OperationalToolName = typeof TOOL_FLOWGUARD_STATUS | typeof TOOL_FLOWGUARD_ARCHIVE;
+type OperationalToolName =
+  | typeof TOOL_FLOWGUARD_STATUS
+  | typeof TOOL_FLOWGUARD_ARCHIVE
+  | typeof TOOL_FLOWGUARD_HELP
+  | typeof TOOL_FLOWGUARD_DECLARE_CONTRACT
+  | typeof TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE
+  | typeof TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE
+  | typeof TOOL_FLOWGUARD_OBSERVE_REPOSITORY;
 type WorkflowToolName = Exclude<keyof typeof TOOL_CLASSIFICATION, OperationalToolName>;
 
 /**
@@ -75,11 +96,13 @@ export const WORKFLOW_TOOL_TO_COMMAND = {
   [TOOL_FLOWGUARD_RUN_CHECK]: Command.VALIDATE,
   [TOOL_FLOWGUARD_IMPLEMENT]: Command.IMPLEMENT,
   [TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION]: Command.IMPLEMENT,
+  [TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE]: Command.RESOLVE_IMPLEMENTATION_CHALLENGE,
   [TOOL_FLOWGUARD_DECISION]: Command.REVIEW_DECISION,
   [TOOL_FLOWGUARD_REVIEW]: Command.REVIEW,
   [TOOL_FLOWGUARD_CONTINUE]: Command.CONTINUE,
   [TOOL_FLOWGUARD_ARCHITECTURE]: Command.ARCHITECTURE,
   [TOOL_FLOWGUARD_ABORT]: Command.ABORT,
+  [TOOL_FLOWGUARD_EXPORT]: Command.EXPORT,
 } satisfies Record<WorkflowToolName, Command>; // Checks all workflow tools are mapped
 
 /**
@@ -102,6 +125,50 @@ export function isOperationalTool(toolName: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Operational tools that persist state, evidence, ledgers, or publishable
+ * artifacts. They are not workflow tools, but they mutate persisted
+ * authority and must therefore pass the durable audit reconciliation gate
+ * before their first side effect. Read-only projections (status/help) are
+ * deliberately absent from this set.
+ */
+type MutatingOperationalToolName =
+  | typeof TOOL_FLOWGUARD_ARCHIVE
+  | typeof TOOL_FLOWGUARD_DECLARE_CONTRACT
+  | typeof TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE
+  | typeof TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE
+  | typeof TOOL_FLOWGUARD_OBSERVE_REPOSITORY;
+
+const MUTATING_OPERATIONAL_TOOLS: ReadonlySet<MutatingOperationalToolName> = new Set([
+  TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_DECLARE_CONTRACT,
+  TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+]);
+
+/**
+ * FlowGuard tools that persist state, evidence, ledgers, or publishable
+ * artifacts: every workflow tool plus the mutating operational tools.
+ */
+export type MutatingFlowGuardTool = WorkflowToolName | MutatingOperationalToolName;
+
+/**
+ * True when the tool can create or change persisted state, evidence, ledger
+ * entries, or publishable artifacts — regardless of workflow/operational
+ * classification. This is the authority for the audit reconciliation gate.
+ *
+ * The predicate is exact: a `true` result guarantees a canonical FlowGuard
+ * identity. Host tools (which do not satisfy it) are handled separately by the
+ * callers and never narrow into the FlowGuard vocabulary.
+ */
+export function isMutatingFlowGuardTool(toolName: string): toolName is MutatingFlowGuardTool {
+  return (
+    isWorkflowTool(toolName) ||
+    MUTATING_OPERATIONAL_TOOLS.has(toolName as MutatingOperationalToolName)
+  );
 }
 
 /**

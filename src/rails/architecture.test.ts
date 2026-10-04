@@ -4,6 +4,7 @@ import type { ArchitectureInput } from './architecture.js';
 import { createTestContext } from '../testing.js';
 import { makeState, FIXED_TIME } from '../fixtures.js';
 import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
+import { hashText } from '../shared/hashing.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 const ctx = createTestContext();
@@ -16,6 +17,14 @@ const VALID_ADR_TEXT =
 const VALID_INPUT: ArchitectureInput = {
   title: 'Use PostgreSQL for primary storage',
   adrText: VALID_ADR_TEXT,
+};
+
+const ARCHITECTURE_CLAIM = {
+  claimId: '00000000-0000-4000-8000-000000000003',
+  statement: 'PostgreSQL provides the primary persistence store.',
+  critical: true,
+  authoritySectionId: 'decision',
+  requiredReviewEvidence: ['architecture-review'],
 };
 
 describe('executeArchitecture', () => {
@@ -32,7 +41,7 @@ describe('executeArchitecture', () => {
         expect(result.state.architecture!.title).toBe('Use PostgreSQL for primary storage');
         expect(result.state.architecture!.status).toBe('proposed');
         expect(result.state.architecture!.adrText).toBe(VALID_ADR_TEXT);
-        expect(result.state.architecture!.digest).toBe(`digest-of-${VALID_ADR_TEXT}`);
+        expect(result.state.architecture!.digest).toBe(hashText(VALID_ADR_TEXT));
       }
     });
 
@@ -45,6 +54,22 @@ describe('executeArchitecture', () => {
         expect(result.state.selfReview!.iteration).toBe(0);
         expect(result.state.selfReview!.verdict).toBe('changes_requested');
         expect(result.state.selfReview!.revisionDelta).toBe('major');
+      }
+    });
+
+    it('stores structured claim declarations on the ADR authority', () => {
+      const result = executeArchitecture(
+        makeState('READY'),
+        { ...VALID_INPUT, claims: [ARCHITECTURE_CLAIM] },
+        ctx,
+      );
+
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture?.claimDeclarations).toEqual({
+          flow: 'architecture',
+          claims: [ARCHITECTURE_CLAIM],
+        });
       }
     });
 
@@ -64,14 +89,13 @@ describe('executeArchitecture', () => {
       }
     });
 
-    it('uses maxSelfReviewIterations from policy', () => {
+    it('uses the architecture review budget from policy', () => {
       const state = makeState('READY');
       const soloCtx = { ...ctx, policy: SOLO_POLICY };
       const result = executeArchitecture(state, VALID_INPUT, soloCtx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        // SOLO: maxSelfReviewIterations = 2
-        expect(result.state.selfReview!.maxIterations).toBe(2);
+        expect(result.state.selfReview!.maxIterations).toBe(SOLO_POLICY.reviewBudget.architecture);
       }
     });
 
@@ -147,7 +171,7 @@ describe('executeArchitecture', () => {
     });
 
     it('blocks from terminal phases', () => {
-      for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const) {
+      for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const) {
         const state = makeState(phase);
         const result = executeArchitecture(state, VALID_INPUT, ctx);
         expect(result.kind).toBe('blocked');

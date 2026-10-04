@@ -3,7 +3,7 @@
  * @description Bridges FlowGuard ToolDefinition objects to MCP tool handlers.
  *
  * Responsibilities:
- * - Registers all 12 FlowGuard tools with the MCP server
+ * - Registers FlowGuard tools with the MCP server
  * - Builds ToolContext for each tool call from MCP request context
  * - Maps ToolResult (string | {output, metadata}) -> MCP CallToolResult
  * - Validates args via Zod before delegation (fail-closed on invalid input)
@@ -19,7 +19,11 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from '../integration/tools/helpers.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
-import { SESSION_UNRESOLVABLE_CODE, type McpSessionContext } from './session-resolver.js';
+import {
+  McpSessionResolutionError,
+  SESSION_UNRESOLVABLE_CODE,
+  type McpSessionContext,
+} from './session-resolver.js';
 import { mcpLogger } from './mcp-logger.js';
 import {
   getLogTraceFields,
@@ -27,6 +31,8 @@ import {
   toAdapterLogger,
 } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
+import { sanitizeDiagnosticString } from '../logging/redact.js';
+import { McpExecutionLimiter, type McpExecutionSlot } from './execution-limiter.js';
 
 // --- Tool Registry ---
 
@@ -92,10 +98,11 @@ function toHandledToolError(
   mcpName: string,
   sessionId: string | undefined,
 ): CallToolResult {
-  const message = err instanceof Error ? err.message : String(err);
-
-  // Extract FlowGuard error code if available
+  // Only boundary-produced errors may select a public diagnostic code. Never
+  // reflect arbitrary executor messages or codes into the MCP response.
   const code = extractErrorCode(err) ?? 'TOOL_EXECUTION_ERROR';
+  const rawMessage = err instanceof Error ? err.message : stringifyDiagnostic(err);
+  const message = sanitizeDiagnosticString(rawMessage);
 
   // Fail-closed session resolution: emit a minimal boundary diagnostic.
   if (code === SESSION_UNRESOLVABLE_CODE) {
@@ -185,6 +192,64 @@ export function sanitizeNullArgs(args: Record<string, unknown>): Record<string, 
   return sanitized;
 }
 
+// --- Execution Deadline ---
+
+/**
+ * Run a tool executor under a host-facing response deadline.
+ *
+ * Design invariants:
+ * - The deadline only bounds the *response* to the host. It never cancels the
+ *   underlying executor and never frees the concurrency slot early.
+ * - The slot is released exactly once, when the real executor settles — not
+ *   when the deadline fires. `McpExecutionSlot.release()` is idempotent.
+ * - The executor promise is awaited through a single settled wrapper, so a late
+ *   rejection (after the deadline already won the race) is always observed and
+ *   cannot surface as an `unhandledRejection`.
+ */
+interface ExecutionDeadlineOptions {
+  readonly toolDef: ToolDefinition;
+  readonly cleanArgs: Record<string, unknown>;
+  readonly toolContext: ToolContext;
+  readonly slot: McpExecutionSlot;
+  readonly timeoutMs: number;
+  readonly mcpName: string;
+  readonly sessionId: string | undefined;
+}
+
+async function runExecutionWithDeadline(
+  options: ExecutionDeadlineOptions,
+): Promise<CallToolResult> {
+  const { toolDef, cleanArgs, toolContext, slot, timeoutMs, mcpName, sessionId } = options;
+  // Single handled chain: normalizes success and failure, and owns slot release
+  // plus timer cleanup. The executor result is mapped to an MCP result; failures
+  // are mapped to a handled MCP error here so the chain never rejects. This
+  // guarantees a late settlement (after the deadline already won the race)
+  // cannot surface as an `unhandledRejection`.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settled: Promise<CallToolResult> = runWithAdapterLoggerAsync(
+    toAdapterLogger(mcpLogger),
+    () => toolDef.execute(cleanArgs, toolContext),
+  )
+    .then(
+      (result): CallToolResult => toMcpResult(result),
+      (err: unknown): CallToolResult => toHandledToolError(err, mcpName, sessionId),
+    )
+    .finally(() => {
+      slot.release();
+      if (timer) clearTimeout(timer);
+    });
+
+  const timeout = new Promise<CallToolResult>((resolve) => {
+    timer = setTimeout(
+      () => resolve(toMcpDenial('MCP_TOOL_TIMEOUT', 'MCP tool response deadline exceeded')),
+      timeoutMs,
+    );
+    timer.unref();
+  });
+
+  return Promise.race([settled, timeout]);
+}
+
 // --- Tool Registration ---
 
 /**
@@ -203,7 +268,8 @@ export function sanitizeNullArgs(args: Record<string, unknown>): Record<string, 
 export function registerAllTools(
   server: McpServer,
   tools: FlowGuardToolRegistry,
-  resolveContext: () => McpSessionContext,
+  resolveContext: () => McpSessionContext | Promise<McpSessionContext>,
+  limiter = new McpExecutionLimiter({ timeoutMs: 30_000, maxConcurrent: 10, maxPerSecond: 50 }),
 ): void {
   for (const [name, toolDef] of Object.entries(tools)) {
     const mcpName = `flowguard_${name}`;
@@ -226,7 +292,7 @@ export function registerAllTools(
             // Resolve session context inside the denial-mapping path. A
             // fail-closed resolution (SESSION_UNRESOLVABLE) must surface as a
             // governance denial, never escape the handler uncaught.
-            const sessionCtx = resolveContext();
+            const sessionCtx = await resolveContext();
             sessionId = sessionCtx.sessionId;
 
             return await runWithLogContextAsync({ traceId, sessionId }, async () => {
@@ -238,7 +304,10 @@ export function registerAllTools(
                   agent: 'mcp-client',
                   directory: sessionCtx.directory,
                   worktree: sessionCtx.worktree,
-                  abort: extra.signal ?? new AbortController().signal,
+                  ...(sessionCtx.workspaceFingerprint !== undefined
+                    ? { workspaceFingerprint: sessionCtx.workspaceFingerprint }
+                    : {}),
+                  abort: extra.signal,
                   metadata: () => {
                     /* MCP: metadata is embedded in text output */
                   },
@@ -250,10 +319,18 @@ export function registerAllTools(
                   ...getLogTraceFields(),
                 });
 
-                const result = await runWithAdapterLoggerAsync(toAdapterLogger(mcpLogger), () =>
-                  toolDef.execute(cleanArgs, toolContext),
-                );
-                return toMcpResult(result);
+                const slot = limiter.tryAcquire();
+                if (!slot)
+                  return toMcpDenial('MCP_RATE_LIMITED', 'MCP tool execution limit reached');
+                return await runExecutionWithDeadline({
+                  toolDef,
+                  cleanArgs,
+                  toolContext,
+                  slot,
+                  timeoutMs: limiter.limits.timeoutMs,
+                  mcpName,
+                  sessionId,
+                });
               } catch (err: unknown) {
                 return toHandledToolError(err, mcpName, sessionId);
               }
@@ -275,14 +352,16 @@ export function registerAllTools(
  */
 function extractErrorCode(err: unknown): string | undefined {
   if (err === null || err === undefined) return undefined;
-  if (typeof err === 'object') {
-    const record = err as Record<string, unknown>;
-    if (typeof record['code'] === 'string') return record['code'];
-  }
-  if (err instanceof Error) {
-    // FlowGuard errors often contain [CODE] prefix in message
-    const match = /\[([A-Z_]+)\]/.exec(err.message);
-    if (match) return match[1];
+  if (err instanceof McpSessionResolutionError) {
+    return err.code;
   }
   return undefined;
+}
+
+function stringifyDiagnostic(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    return '[unprintable]';
+  }
 }

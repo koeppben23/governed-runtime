@@ -92,6 +92,96 @@ export interface OtlpSinkHandle {
   shutdown(): Promise<void>;
 }
 
+/** Mutable state shared by the OTLP sink's module-scope helpers. */
+interface OtlpSinkState {
+  readonly endpoint: string;
+  readonly onFailure: OtlpSinkOptions['onFailure'];
+  readonly importModule: OtlpModuleImporter;
+  initialized: boolean;
+  initErrLogged: boolean;
+  shutdown: boolean;
+  // Lazy-initialised OTEL references. The provider is RETAINED (not discarded)
+  // so flush()/shutdown() can reach BatchLogRecordProcessor — otherwise batched
+  // records are silently lost on process exit and the timer leaks.
+  provider: OtlpProvider | null;
+  logger: OtlpLogger | null;
+}
+
+async function ensureOtlpLogger(state: OtlpSinkState): Promise<boolean> {
+  if (state.initialized) return state.logger !== null;
+  state.initialized = true;
+  if (state.shutdown) return false;
+
+  try {
+    const [sdkLogsMod, exporterMod] = (await Promise.all([
+      state.importModule('@opentelemetry/sdk-logs'),
+      state.importModule('@opentelemetry/exporter-logs-otlp-http'),
+    ])) as [SdkLogsModule, OtlpExporterModule];
+
+    const { LoggerProvider, BatchLogRecordProcessor } = sdkLogsMod;
+    const { OTLPLogExporter } = exporterMod;
+
+    state.provider = new LoggerProvider({
+      processors: [new BatchLogRecordProcessor(new OTLPLogExporter({ url: state.endpoint }))],
+    });
+
+    state.logger = state.provider.getLogger('flowguard', '1.0.0');
+
+    return true;
+  } catch (err) {
+    if (!state.initErrLogged) {
+      state.initErrLogged = true;
+      process.stderr.write(
+        `[FlowGuard] OTLP log export init failed: ` +
+          `${sanitizeDiagnosticString(err instanceof Error ? err.message : String(err))}\n`,
+      );
+    }
+    return false;
+  }
+}
+
+function mapSeverity(level: LogEntry['level']): number {
+  return SEVERITY_MAP[level] ?? 9; // default: INFO
+}
+
+function emitOtlpEntry(logger: OtlpLogger, entry: LogEntry): void {
+  logger.emit({
+    severityNumber: mapSeverity(entry.level),
+    severityText: entry.level,
+    body: sanitizeDiagnosticString(entry.message),
+    attributes: {
+      'flowguard.service': entry.service,
+      'flowguard.level': entry.level,
+      'flowguard.traceId': entry.traceId ?? '',
+      'flowguard.sessionId': entry.sessionId ?? '',
+      'flowguard.extra_json': sanitizeDiagnosticString(JSON.stringify(entry.extra ?? {})),
+    },
+  });
+}
+
+async function flushOtlpProvider(state: OtlpSinkState): Promise<void> {
+  if (!state.provider) return;
+  try {
+    await state.provider.forceFlush();
+  } catch (err) {
+    state.onFailure?.(err);
+  }
+}
+
+async function shutdownOtlpProvider(state: OtlpSinkState): Promise<void> {
+  if (state.shutdown) return;
+  state.shutdown = true;
+  if (!state.provider) return;
+  try {
+    await state.provider.shutdown();
+  } catch (err) {
+    state.onFailure?.(err);
+  } finally {
+    state.provider = null;
+    state.logger = null;
+  }
+}
+
 /**
  * Create an OTLP log exporter sink.
  *
@@ -102,102 +192,37 @@ export interface OtlpSinkHandle {
  * @returns OtlpSinkHandle: the sink (always resolves) plus flush/shutdown.
  */
 export function createOtlpLogSink(options: OtlpSinkOptions): OtlpSinkHandle {
-  const endpoint = options.endpoint;
-  const onFailure = options.onFailure;
-  const _import = options._import ?? ((specifier: string) => import(specifier) as Promise<unknown>);
-
-  let _initialized = false;
-  let _initErrLogged = false;
-  let _shutdown = false;
-
-  // Lazy-initialised OTEL references. The provider is RETAINED (not discarded)
-  // so flush()/shutdown() can reach BatchLogRecordProcessor — otherwise batched
-  // records are silently lost on process exit and the timer leaks.
-  let _provider: OtlpProvider | null = null;
-  let _logger: OtlpLogger | null = null;
-
-  async function ensureInit(): Promise<boolean> {
-    if (_initialized) return _logger !== null;
-    _initialized = true;
-    if (_shutdown) return false;
-
-    try {
-      const [sdkLogsMod, exporterMod] = (await Promise.all([
-        _import('@opentelemetry/sdk-logs'),
-        _import('@opentelemetry/exporter-logs-otlp-http'),
-      ])) as [SdkLogsModule, OtlpExporterModule];
-
-      const { LoggerProvider, BatchLogRecordProcessor } = sdkLogsMod;
-      const { OTLPLogExporter } = exporterMod;
-
-      _provider = new LoggerProvider({
-        processors: [new BatchLogRecordProcessor(new OTLPLogExporter({ url: endpoint }))],
-      });
-
-      _logger = _provider.getLogger('flowguard', '1.0.0');
-
-      return true;
-    } catch (err) {
-      if (!_initErrLogged) {
-        _initErrLogged = true;
-        process.stderr.write(
-          `[FlowGuard] OTLP log export init failed: ` +
-            `${sanitizeDiagnosticString(err instanceof Error ? err.message : String(err))}\n`,
-        );
-      }
-      return false;
-    }
-  }
-
-  function mapSeverity(level: LogEntry['level']): number {
-    return SEVERITY_MAP[level] ?? 9; // default: INFO
-  }
+  const state: OtlpSinkState = {
+    endpoint: options.endpoint,
+    onFailure: options.onFailure,
+    importModule: options._import ?? ((specifier: string) => import(specifier) as Promise<unknown>),
+    initialized: false,
+    initErrLogged: false,
+    shutdown: false,
+    provider: null,
+    logger: null,
+  };
 
   const sink: LogSink = async (entry: LogEntry): Promise<void> => {
-    if (_shutdown) return;
-    const ok = await ensureInit();
-    if (!ok || !_logger) return;
+    if (state.shutdown) return;
+    const ok = await ensureOtlpLogger(state);
+    const logger = state.logger;
+    if (!ok || !logger) return;
 
     try {
-      _logger.emit({
-        severityNumber: mapSeverity(entry.level),
-        severityText: entry.level,
-        body: sanitizeDiagnosticString(entry.message),
-        attributes: {
-          'flowguard.service': entry.service,
-          'flowguard.level': entry.level,
-          'flowguard.traceId': entry.traceId ?? '',
-          'flowguard.sessionId': entry.sessionId ?? '',
-          'flowguard.extra_json': sanitizeDiagnosticString(JSON.stringify(entry.extra ?? {})),
-        },
-      });
+      emitOtlpEntry(logger, entry);
     } catch (err) {
-      onFailure?.(err);
+      state.onFailure?.(err);
     }
   };
 
   return {
     sink,
     async flush(): Promise<void> {
-      if (!_provider) return;
-      try {
-        await _provider.forceFlush();
-      } catch (err) {
-        onFailure?.(err);
-      }
+      await flushOtlpProvider(state);
     },
     async shutdown(): Promise<void> {
-      if (_shutdown) return;
-      _shutdown = true;
-      if (!_provider) return;
-      try {
-        await _provider.shutdown();
-      } catch (err) {
-        onFailure?.(err);
-      } finally {
-        _provider = null;
-        _logger = null;
-      }
+      await shutdownOtlpProvider(state);
     },
   };
 }

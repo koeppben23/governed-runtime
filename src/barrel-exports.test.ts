@@ -102,10 +102,53 @@ describe('adapters/workspace/index.ts barrel', () => {
 describe('presentation/index.ts barrel', () => {
   const EXPECTED_EXPORTS = [
     'PHASE_LABELS',
-    'buildProductNextAction',
     'buildPlanReviewCard',
+    'buildEvidenceReviewCard',
+    'buildEvidenceApprovalCompletionDocument',
     'buildArchitectureReviewCard',
     'buildReviewReportCard',
+    'projectFindingRelation',
+    'formatFindingLocation',
+    'formatFindingSubject',
+    'formatFindingAffected',
+    'formatFindingEvidence',
+    'normalizedMarkdown',
+    'validateCodeLanguage',
+    'PresentationContractError',
+    'projectImpact',
+    'projectReasonFromRegistry',
+    'projectDetailFields',
+    'renderMarkdown',
+    'STATUS_LABELS',
+    'lookupStatusLabel',
+    'parseStatusLabel',
+    'parseArchiveLabel',
+    'toRecoveryProjection',
+    'GUIDANCE_STATUS_LABELS',
+    'REASON_COPY',
+    'isMigratedReasonCode',
+    'lookupReasonCopy',
+    'projectClaimResolutionFacts',
+    'projectClaimHumanProjection',
+    'projectHumanProofSummary',
+    'projectHumanVerificationStatus',
+    'humanVerificationLabel',
+    'humanVerificationExplanation',
+    'BINDING_DIAGNOSTIC_COPY',
+    'humanProviderKindLabel',
+    'humanCounterexampleKindLabel',
+    'humanCounterexampleRequirementText',
+    'humanRequiredEvidenceText',
+    'buildProofGraphSection',
+    'renderPlanClaimDeclarations',
+    'USER_IMPACT_COPY',
+    'humanImpactText',
+    'projectReviewDecision',
+    'REVIEW_DECISION_COPY',
+    'buildReviewDecisionConclusion',
+    'DIRECTIVE_COPY',
+    'directiveLabel',
+    'directiveDescription',
   ] as const;
 
   const INTERNAL_SYMBOLS = [
@@ -122,11 +165,6 @@ describe('presentation/index.ts barrel', () => {
       expect(mod.PHASE_LABELS.READY).toBe('Ready');
     });
 
-    it('re-exports buildProductNextAction', async () => {
-      const mod = await import('./presentation/index.js');
-      expect(typeof mod.buildProductNextAction).toBe('function');
-    });
-
     it('re-exports buildPlanReviewCard', async () => {
       const mod = await import('./presentation/index.js');
       expect(typeof mod.buildPlanReviewCard).toBe('function');
@@ -140,6 +178,11 @@ describe('presentation/index.ts barrel', () => {
     it('re-exports buildReviewReportCard', async () => {
       const mod = await import('./presentation/index.js');
       expect(typeof mod.buildReviewReportCard).toBe('function');
+    });
+
+    it('re-exports buildEvidenceReviewCard', async () => {
+      const mod = await import('./presentation/index.js');
+      expect(typeof mod.buildEvidenceReviewCard).toBe('function');
     });
   });
 
@@ -163,13 +206,18 @@ describe('presentation/index.ts barrel', () => {
       const mod = await import('./presentation/index.js');
       expect('PRODUCT_GUIDANCE' in mod).toBe(false);
     });
+
+    it('does NOT export the removed buildProductNextAction', async () => {
+      const mod = await import('./presentation/index.js');
+      expect('buildProductNextAction' in mod).toBe(false);
+    });
   });
 
   describe('CORNER — index.ts uses explicit named exports (no export *)', () => {
     it('index.ts has explicit named re-exports from each module', () => {
       const source = readSource('presentation/index.ts');
       expect(source).toContain("from './phase-labels.js'");
-      expect(source).toContain("from './next-action-copy.js'");
+      expect(source).toContain("from './evidence-review-card.js'");
       expect(source).toContain("from './plan-review-card.js'");
       expect(source).toContain("from './architecture-review-card.js'");
       expect(source).toContain("from './review-report-card.js'");
@@ -181,12 +229,51 @@ describe('presentation/index.ts barrel', () => {
     });
   });
 
-  describe('EDGE — index.ts exports exactly 5 symbols', () => {
+  describe('EDGE — index.ts exports exactly the expected set', () => {
     it('exports only the expected set', async () => {
       const mod = await import('./presentation/index.js');
       const keys = Object.keys(mod).sort();
       const expected = [...EXPECTED_EXPORTS].sort();
       expect(keys).toEqual(expected);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// src/index.ts barrel — canonical workflow-directive surface
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('src/index.ts barrel', () => {
+  describe('HAPPY — canonical workflow-directive surface is exported', () => {
+    it('re-exports resolveWorkflowDirective', async () => {
+      const mod = await import('./index.js');
+      expect(typeof mod.resolveWorkflowDirective).toBe('function');
+    });
+  });
+
+  describe('BAD — legacy next-action surface is removed', () => {
+    it('does NOT export buildProductNextAction', async () => {
+      const mod = await import('./index.js');
+      expect('buildProductNextAction' in mod).toBe(false);
+    });
+
+    it('does NOT export resolveNextAction', async () => {
+      const mod = await import('./index.js');
+      expect('resolveNextAction' in mod).toBe(false);
+    });
+
+    it('does NOT export ACTION_CODES', async () => {
+      const mod = await import('./index.js');
+      expect('ACTION_CODES' in mod).toBe(false);
+    });
+  });
+
+  describe('CORNER — index.ts re-exports the canonical module, never the deleted one', () => {
+    it('index.ts re-exports machine/workflow-directive.js', () => {
+      const source = readSource('index.ts');
+      expect(source).toContain("from './machine/workflow-directive.js'");
+      expect(source).not.toContain('next-action');
+      expect(source).not.toContain('buildProductNextAction');
     });
   });
 });
@@ -198,12 +285,12 @@ describe('presentation/index.ts barrel', () => {
 describe('integration tools use barrel imports', () => {
   const INTEGRATION_FILES = [
     'integration/tools/helpers.ts',
-    'integration/tools/plan.ts',
-    'integration/tools/plan-response.ts',
-    'integration/tools/architecture.ts',
-    'integration/tools/architecture-review.ts',
-    'integration/tools/architecture-submit.ts',
-    'integration/tools/architecture-shared.ts',
+    'integration/tools/plan/plan.ts',
+    'integration/tools/plan/plan-response.ts',
+    'integration/tools/architecture/architecture.ts',
+    'integration/tools/architecture/architecture-review-response.ts',
+    'integration/tools/architecture/architecture-submit.ts',
+    'integration/tools/architecture/architecture-shared.ts',
     'integration/tools/review-tool/completion.ts',
   ] as const;
 
@@ -215,10 +302,17 @@ describe('integration tools use barrel imports', () => {
       }
     });
 
-    it('no integration file deep-imports next-action-copy.js', () => {
+    it('no integration file deep-imports the deleted next-action-copy.js', () => {
       for (const file of INTEGRATION_FILES) {
         const source = readSource(file);
         expect(source).not.toContain('../../presentation/next-action-copy.js');
+      }
+    });
+
+    it('no integration file deep-imports the deleted machine next-action.js', () => {
+      for (const file of INTEGRATION_FILES) {
+        const source = readSource(file);
+        expect(source).not.toContain('machine/next-action.js');
       }
     });
 
@@ -256,17 +350,17 @@ describe('integration tools use barrel imports', () => {
   describe('HAPPY — integration files use barrel imports', () => {
     const FILES_USING_PRESENTATION = INTEGRATION_FILES.filter(
       (f) =>
-        f !== 'integration/tools/plan.ts' &&
-        f !== 'integration/tools/architecture.ts' &&
-        f !== 'integration/tools/architecture-submit.ts' &&
-        f !== 'integration/tools/architecture-shared.ts',
+        f !== 'integration/tools/plan/plan.ts' &&
+        f !== 'integration/tools/architecture/architecture.ts' &&
+        f !== 'integration/tools/architecture/architecture-submit.ts' &&
+        f !== 'integration/tools/architecture/architecture-shared.ts',
     );
     const FILES_USING_WORKSPACE = INTEGRATION_FILES.filter(
       (f) =>
-        f !== 'integration/tools/plan.ts' &&
-        f !== 'integration/tools/architecture.ts' &&
-        f !== 'integration/tools/architecture-submit.ts' &&
-        f !== 'integration/tools/architecture-shared.ts',
+        f !== 'integration/tools/plan/plan.ts' &&
+        f !== 'integration/tools/architecture/architecture.ts' &&
+        f !== 'integration/tools/architecture/architecture-submit.ts' &&
+        f !== 'integration/tools/architecture/architecture-shared.ts',
     );
 
     it('tool sub-modules import from presentation/index.js', () => {
@@ -296,10 +390,10 @@ describe('E2E — symbol identity through barrel', () => {
     expect(barrel.PHASE_LABELS).toBe(direct.PHASE_LABELS);
   });
 
-  it('buildProductNextAction direct import equals barrel import', async () => {
-    const direct = await import('./presentation/next-action-copy.js');
-    const barrel = await import('./presentation/index.js');
-    expect(barrel.buildProductNextAction).toBe(direct.buildProductNextAction);
+  it('resolveWorkflowDirective direct import equals barrel import', async () => {
+    const direct = await import('./machine/workflow-directive.js');
+    const barrel = await import('./index.js');
+    expect(barrel.resolveWorkflowDirective).toBe(direct.resolveWorkflowDirective);
   });
 
   it('buildPlanReviewCard direct import equals barrel import', async () => {

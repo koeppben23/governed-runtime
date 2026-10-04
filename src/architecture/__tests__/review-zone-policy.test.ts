@@ -1,0 +1,278 @@
+/**
+ * @module architecture/review-zone-policy.test
+ * @description Negative fixtures and contract proofs for the review zone
+ * policy. The real-tree activation (declared edge set measured on the final
+ * decomposition) is asserted here once the zones exist.
+ *
+ * @version v1
+ */
+
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  INTEGRATION_PLACEMENT_ZONES,
+  type IntegrationPlacementZone,
+} from './integration-placement-manifest.js';
+import { collectProductionSources } from './production-source.js';
+import {
+  analyzeReviewZonePolicy,
+  DECLARED_REVIEW_ZONE_EDGES,
+  describeZoneEdges,
+  mutualZonePairs,
+  resolveSpecifier,
+  reviewZoneCycles,
+  reviewZoneEdges,
+  zoneEdgeKey,
+  type ReviewZoneSource,
+  type ReviewZoneViolation,
+} from './review-zone-policy.js';
+
+const ZONES: readonly IntegrationPlacementZone[] = [
+  { id: 'root', dir: 'integration', description: 'fixture integration root' },
+  { id: 'review', dir: 'integration/review', description: 'fixture review root' },
+  { id: 'review/dispatch', dir: 'integration/review/dispatch', description: 'fixture dispatch' },
+  { id: 'review/evidence', dir: 'integration/review/evidence', description: 'fixture evidence' },
+  { id: 'tools', dir: 'integration/tools', description: 'fixture tools' },
+];
+
+function source(rel: string, content: string): ReviewZoneSource {
+  return { rel, content };
+}
+
+function analyzeViolations(
+  sources: readonly ReviewZoneSource[],
+  declared: readonly string[],
+): ReviewZoneViolation[] {
+  return analyzeReviewZonePolicy({
+    sources,
+    zones: ZONES,
+    declaredEdges: new Set(declared),
+  });
+}
+
+function analyze(sources: readonly ReviewZoneSource[], declared: readonly string[]): string[] {
+  return analyzeViolations(sources, declared).map((violation) => violation.rule);
+}
+
+describe('review zone policy', () => {
+  it('renders zone edges deterministically for diagnostics', () => {
+    expect(describeZoneEdges(['review/b -> review/c', 'review/a -> review/b'])).toBe(
+      'review/a -> review/b\nreview/b -> review/c',
+    );
+  });
+
+  it('resolves relative specifiers including extensionless paths', () => {
+    expect(resolveSpecifier('integration/review/dispatch/a.ts', '../evidence/b.js')).toBe(
+      'integration/review/evidence/b.ts',
+    );
+    expect(resolveSpecifier('integration/review/dispatch/a.ts', '../context/c')).toBe(
+      'integration/review/context/c.ts',
+    );
+    expect(resolveSpecifier('integration/tools/z.ts', './index.js')).toBe(
+      'integration/tools/index.ts',
+    );
+  });
+
+  it('accepts an observed edge exactly equal to the declared edge', () => {
+    expect(
+      analyze(
+        [source('integration/review/dispatch/a.ts', `import { x } from '../evidence/b.js';`)],
+        [zoneEdgeKey('review/dispatch', 'review/evidence')],
+      ),
+    ).toEqual([]);
+  });
+
+  it('fires on an undeclared observed edge', () => {
+    expect(
+      analyze(
+        [source('integration/review/dispatch/a.ts', `import { x } from '../evidence/b.js';`)],
+        [],
+      ),
+    ).toEqual(['undeclared-zone-edge']);
+  });
+
+  it('fires on a stale declared edge', () => {
+    expect(analyze([], [zoneEdgeKey('review/dispatch', 'review/evidence')])).toEqual([
+      'stale-zone-edge',
+    ]);
+  });
+
+  it('gives every violation a concrete repair hint', () => {
+    const violations = [
+      ...analyzeViolations(
+        [source('integration/review/dispatch/a.ts', `import { x } from '../evidence/b.js';`)],
+        [],
+      ),
+      ...analyzeViolations([], [zoneEdgeKey('review/dispatch', 'review/evidence')]),
+    ];
+
+    expect(new Set(violations.map((violation) => violation.rule))).toEqual(
+      new Set(['undeclared-zone-edge', 'stale-zone-edge']),
+    );
+    for (const violation of violations) {
+      expect((violation.hint ?? '').length, `${violation.rule}: ${violation.file}`).toBeGreaterThan(
+        0,
+      );
+    }
+  });
+
+  it('parses every comment-separated import form into the same zone edge', () => {
+    const forms = [
+      `import { x } from /* c */ '../evidence/b.js';`,
+      `export { x } from /* c */ '../evidence/b.js';`,
+      `await import(/* c */ '../evidence/b.js');`,
+      `const x = require(/* c */ '../evidence/b.js');`,
+      `import evidence = require('../evidence/b.js');`,
+    ];
+    for (const form of forms) {
+      const edges = reviewZoneEdges({
+        sources: [source('integration/review/dispatch/a.ts', form)],
+        zones: ZONES,
+      });
+      expect([...edges], form).toEqual([zoneEdgeKey('review/dispatch', 'review/evidence')]);
+    }
+  });
+
+  it('ignores commented-out imports and import-looking string content', () => {
+    expect(
+      analyze(
+        [
+          source('integration/review/dispatch/a.ts', `// import { x } from '../evidence/b.js';`),
+          source(
+            'integration/review/dispatch/b.ts',
+            `const text = "import { x } from '../evidence/b.js'";`,
+          ),
+          source('integration/review/dispatch/c.ts', `/* export * from '../evidence/b.js'; */`),
+        ],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('detects a zone edge whose specifier is separated by a comment', () => {
+    expect(
+      analyze(
+        [
+          source(
+            'integration/review/dispatch/d.ts',
+            `import { x } from /* comment */ '../evidence/b.js';`,
+          ),
+        ],
+        [],
+      ),
+    ).toEqual(['undeclared-zone-edge']);
+  });
+
+  it('does not flag a same-named index outside the reviewed zones', () => {
+    expect(
+      analyze(
+        [
+          source('integration/tools/z.ts', `import { x } from './index.js';`),
+          source('integration/tools/w.ts', `import { x } from '../review/types.js';`),
+        ],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('ignores test sources', () => {
+    expect(
+      analyze(
+        [source('integration/review/dispatch/a.test.ts', `import { x } from '../evidence/b.js';`)],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('detects a direct mutual zone pair from both observed directions', () => {
+    expect(
+      mutualZonePairs([
+        zoneEdgeKey('review/dispatch', 'review/evidence'),
+        zoneEdgeKey('review/evidence', 'review/dispatch'),
+      ]),
+    ).toEqual(['review/dispatch <-> review/evidence']);
+  });
+
+  it('reports no mutual pair for a purely directed chain', () => {
+    expect(
+      mutualZonePairs([
+        zoneEdgeKey('review/context', 'review/prompting'),
+        zoneEdgeKey('review/prompting', 'review/obligations'),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('reports remaining longer cycles as a deterministic metric', () => {
+    const cycles = reviewZoneCycles([
+      zoneEdgeKey('review/a', 'review/b'),
+      zoneEdgeKey('review/b', 'review/c'),
+      zoneEdgeKey('review/c', 'review/a'),
+      zoneEdgeKey('review/dispatch', 'review/evidence'),
+    ]);
+    expect(cycles).toEqual([['review/a', 'review/b', 'review/c']]);
+  });
+});
+
+describe('review zone policy — real tree', () => {
+  const sources = collectProductionSources(join(process.cwd(), 'src'));
+
+  it('keeps the observed zone graph exactly equal to the declared edge set', () => {
+    const violations = analyzeReviewZonePolicy({
+      sources,
+      zones: INTEGRATION_PLACEMENT_ZONES,
+      declaredEdges: DECLARED_REVIEW_ZONE_EDGES,
+    });
+    if (violations.length > 0) {
+      console.error(
+        'review zone violations:\n' +
+          violations
+            .map(
+              (violation) =>
+                `  - ${violation.file}: ${violation.message}` +
+                (violation.hint ? `\n      fix: ${violation.hint}` : ''),
+            )
+            .join('\n'),
+      );
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('holds a fully acyclic review zone graph', () => {
+    const observed = reviewZoneEdges({
+      sources,
+      zones: INTEGRATION_PLACEMENT_ZONES,
+    });
+
+    expect(mutualZonePairs(DECLARED_REVIEW_ZONE_EDGES)).toEqual([]);
+    expect(mutualZonePairs(observed)).toEqual([]);
+
+    expect(reviewZoneCycles(observed)).toEqual([]);
+  });
+
+  it('is non-vacuous: the policy declares edges and every review zone is populated and budgeted', () => {
+    expect(DECLARED_REVIEW_ZONE_EDGES.size).toBeGreaterThan(0);
+
+    const reviewZones = INTEGRATION_PLACEMENT_ZONES.filter(
+      (zone) => zone.id === 'review' || zone.id.startsWith('review/'),
+    );
+    expect(reviewZones.length).toBeGreaterThan(0);
+
+    const productionFiles = sources.map((source) => source.rel);
+    for (const zone of reviewZones) {
+      const files = productionFiles.filter(
+        (rel) =>
+          rel.startsWith('integration/review/') &&
+          rel.split('/').slice(0, -1).join('/') === zone.dir,
+      );
+      expect(files.length, zone.id).toBeGreaterThan(0);
+      expect(zone.targetProductionFiles, zone.id).toBeDefined();
+      const target = zone.targetProductionFiles ?? 0;
+      const exceptionFiles = new Set(
+        (zone.budgetExceptions ?? []).map((exception) => exception.file),
+      );
+      expect(files.length, zone.id).toBeLessThanOrEqual(target + exceptionFiles.size);
+    }
+  });
+});

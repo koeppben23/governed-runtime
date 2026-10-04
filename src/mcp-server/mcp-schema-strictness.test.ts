@@ -26,10 +26,10 @@ import { createMcpServer } from './server.js';
 interface ListedTool {
   readonly name: string;
   readonly inputSchema: {
-    readonly type?: string;
+    readonly type?: string | undefined;
     readonly additionalProperties?: unknown;
-    readonly required?: readonly string[];
-    readonly properties?: Record<string, unknown>;
+    readonly required?: readonly string[] | undefined;
+    readonly properties?: Record<string, unknown> | undefined;
   };
 }
 
@@ -43,15 +43,17 @@ describe('MCP schema strictness (issue #565)', () => {
     client = new Client({ name: 'strictness-test', version: '0.0.0' });
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const listed = await client.listTools();
-    tools = listed.tools as unknown as ListedTool[];
+    tools = listed.tools;
   });
 
   afterAll(async () => {
     await client.close();
   });
 
-  it('HAPPY: lists all 13 governance tools', () => {
-    expect(tools).toHaveLength(13);
+  it('HAPPY: lists all 18 governance tools', () => {
+    expect(tools).toHaveLength(18);
+    expect(tools.some((t) => t.name === 'flowguard_observe_repository')).toBe(true);
+    expect(tools.some((t) => t.name === 'flowguard_export')).toBe(true);
   });
 
   describe('EDGE: every tool input schema forbids unknown keys', () => {

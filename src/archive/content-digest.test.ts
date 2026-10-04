@@ -5,8 +5,10 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { computeArchiveContentDigest, type ArchiveContentDigestInput } from './content-digest.js';
+import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from './types.js';
 
 const DIGEST_A = 'a'.repeat(64);
 const DIGEST_B = 'b'.repeat(64);
@@ -14,7 +16,8 @@ const DIGEST_C = 'c'.repeat(64);
 
 function baseInput(): ArchiveContentDigestInput {
   return {
-    schemaVersion: 'archive-manifest.v2',
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
+    layoutVersion: 2,
     sessionId: 'ses_test',
     fingerprint: '1234567890abcdef12345678',
     policyMode: 'regulated',
@@ -37,8 +40,45 @@ describe('computeArchiveContentDigest', () => {
     expect(computeArchiveContentDigest(input)).toBe(computeArchiveContentDigest(input));
   });
 
+  it('COMPATIBILITY: pins the v4 canonical digest golden vector', () => {
+    // The digest is a persistence/integrity contract. If this vector changes,
+    // the digest formula or its integrity-covered inputs changed and the
+    // manifest schema version MUST change with it — never silently.
+    expect(computeArchiveContentDigest(baseInput())).toBe(
+      '63e2771236b50cf025c3acca879acef71c8dc34e91f051216e6d58eaf81021cf',
+    );
+  });
+
+  it('COMPATIBILITY: the retired v2 literal-order digest differs from the current canonical digest', () => {
+    // v2 serialized the integrity header with literal insertion order. The
+    // canonical serializer sorts keys, so the epoch boundary must be real:
+    // there is no silent byte carry-over between v2 and the current epoch.
+    const input: ArchiveContentDigestInput = {
+      ...baseInput(),
+      schemaVersion: 'archive-manifest.v2',
+    };
+    const v2Header = JSON.stringify({
+      schemaVersion: 'archive-manifest.v2',
+      layoutVersion: 2,
+      sessionId: 'ses_test',
+      fingerprint: '1234567890abcdef12345678',
+      policyMode: 'regulated',
+      discoveryDigest: DIGEST_C,
+      auditChainHead: DIGEST_A,
+      auditEventCount: 7,
+    });
+    const v2Digest = createHash('sha256')
+      .update(v2Header)
+      .update('\n')
+      .update([DIGEST_A, DIGEST_B].sort().join(''))
+      .digest('hex');
+
+    expect(computeArchiveContentDigest(input)).not.toBe(v2Digest);
+  });
+
   it.each([
     ['schemaVersion', { schemaVersion: 'archive-manifest.v3' }],
+    ['layoutVersion', { layoutVersion: 3 }],
     ['sessionId', { sessionId: 'ses_other' }],
     ['fingerprint', { fingerprint: 'fedcba0987654321fedcba09' }],
     ['policyMode', { policyMode: 'team' }],
@@ -62,14 +102,17 @@ describe('computeArchiveContentDigest', () => {
     expect(computeArchiveContentDigest(changed)).not.toBe(computeArchiveContentDigest(input));
   });
 
-  it('BAD: throws when an included file has no digest', () => {
+  it('BAD: throws MISSING_FILE_DIGEST when an included file has no digest', () => {
     const input: ArchiveContentDigestInput = {
       ...baseInput(),
       fileDigests: { 'audit.jsonl': DIGEST_A },
     };
 
-    expect(() => computeArchiveContentDigest(input)).toThrow(
-      "Missing file digest for included archive file 'session-state.json'",
+    expect(() => computeArchiveContentDigest(input)).toThrowError(
+      expect.objectContaining({
+        code: 'MISSING_FILE_DIGEST',
+        message: "Missing file digest for included archive file 'session-state.json'",
+      }),
     );
   });
 
@@ -81,6 +124,19 @@ describe('computeArchiveContentDigest', () => {
     };
 
     expect(computeArchiveContentDigest(reordered)).toBe(computeArchiveContentDigest(input));
+  });
+
+  it('CORNER: fileDigests property insertion order does not affect the digest', () => {
+    const input = baseInput();
+    const reinserted: ArchiveContentDigestInput = {
+      ...input,
+      fileDigests: {
+        'session-state.json': DIGEST_B,
+        'audit.jsonl': DIGEST_A,
+      },
+    };
+
+    expect(computeArchiveContentDigest(reinserted)).toBe(computeArchiveContentDigest(input));
   });
 
   it('EDGE: null and concrete discovery digests are distinct', () => {

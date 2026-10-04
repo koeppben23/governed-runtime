@@ -50,6 +50,14 @@ This document defines the canonical target model for actor assurance in FlowGuar
 
 ## 3) Assurance Tiers (Canonical)
 
+The tier vocabulary, the derived TypeScript union, the closed Zod schema, and
+the ordinal order are owned by the single authority
+[`src/shared/actor-assurance.ts`](../src/shared/actor-assurance.ts) — the tuple
+in that file IS the ordering. No other production module may define or
+re-declare the tier list, the `best_effort | claim_validated | idp_verified`
+union, a literal `z.enum([...])` of the tiers, or a parallel ordinal structure
+(enforced by `architecture/__tests__/actor-assurance-ssot.test.ts`).
+
 The following tiers are defined in ascending order of assurance strength:
 
 ### 3.1 `best_effort`
@@ -298,18 +306,15 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ### 10.2 Migration Mapping
 
-| Original Config                                     | Current Behavior                                                        |
-| --------------------------------------------------- | ----------------------------------------------------------------------- |
-| `FLOWGUARD_ACTOR_CLAIMS_PATH` not set               | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
-| `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim      | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`)      |
-| `requireVerifiedActorsForApproval: false` (default) | `minimumActorAssuranceForApproval: 'best_effort'`                       |
-| `requireVerifiedActorsForApproval: true`            | `minimumActorAssuranceForApproval: 'claim_validated'`                   |
+| Original Config                                | Current Behavior                                                        |
+| ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `FLOWGUARD_ACTOR_CLAIMS_PATH` not set          | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
+| `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`)      |
 
-### 10.3 Backward Compatibility & Precedence
+### 10.3 Approval Threshold
 
-- Original sessions loaded after upgrade: `actorAssurance: 'verified'` is accepted and treated as `claim_validated` (coercive parse in `src/state/evidence-assurance-internal.ts`).
-- Policy precedence (current runtime behavior, see `verifyAssuranceThreshold` in `src/rails/review-decision.ts`): `requireVerifiedActorsForApproval` is evaluated **first**. When it is `true`, the runtime requires `claim_validated` or higher and **does not consult** `minimumActorAssuranceForApproval`. The newer field is used only when the legacy flag is `false`/absent.
-- This provides a safe migration window without breaking existing sessions or configs, but operators relaxing the legacy gate by setting `minimumActorAssuranceForApproval` to a lower tier MUST also flip `requireVerifiedActorsForApproval` to `false` — otherwise the stricter legacy gate keeps winning silently.
+- `minimumActorAssuranceForApproval` is the sole approval-assurance authority.
+- Current session states and configuration reject the removed boolean policy key.
 
 ---
 

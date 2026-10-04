@@ -4,6 +4,7 @@ import {
   clearUserDecisionIntents,
   consumeUserDecisionIntent,
   parseUserDecisionCommand,
+  peekUserDecisionIntent,
   recordUserDecisionIntent,
   recordUserDecisionIntentFromCommand,
 } from './user-decision-intent.js';
@@ -16,13 +17,17 @@ describe('UserDecisionIntent', () => {
       command: '/approve',
       expectedVerdict: 'approve',
     });
-    expect(parseUserDecisionCommand({ command: 'request-changes', arguments: '' })).toEqual({
+    expect(parseUserDecisionCommand({ command: '/request-changes', arguments: '' })).toEqual({
       command: '/request-changes',
       expectedVerdict: 'changes_requested',
     });
     expect(parseUserDecisionCommand({ command: '/reject', arguments: '' })).toEqual({
       command: '/reject',
       expectedVerdict: 'reject',
+    });
+    expect(parseUserDecisionCommand({ command: '/override-approve', arguments: '' })).toEqual({
+      command: '/override-approve',
+      expectedVerdict: 'approve_with_governance_override',
     });
     expect(
       parseUserDecisionCommand({ command: '/review-decision', arguments: 'approve looks good' }),
@@ -41,6 +46,45 @@ describe('UserDecisionIntent', () => {
         arguments: '',
       }),
     ).toBeNull();
+  });
+
+  it('binds an override-approve command to the governance-override verdict', () => {
+    expect(
+      recordUserDecisionIntentFromCommand({
+        sessionId: 's1',
+        command: '/override-approve',
+        arguments: '',
+        nowMs: 1_000,
+      }),
+    ).toMatchObject({
+      command: '/override-approve',
+      expectedVerdict: 'approve_with_governance_override',
+    });
+    expect(
+      consumeUserDecisionIntent({
+        sessionId: 's1',
+        verdict: 'approve_with_governance_override',
+        nowMs: 2_000,
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('never accepts a plain approval verdict for an override-approve intent', () => {
+    recordUserDecisionIntentFromCommand({
+      sessionId: 's1',
+      command: '/override-approve',
+      arguments: '',
+      nowMs: 1_000,
+    });
+
+    // A plain approval at an override gate fails closed and burns the intent.
+    expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 2_000 })).toEqual({
+      ok: false,
+      reason: 'verdict_mismatch',
+    });
+    expect(
+      consumeUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 3_000 }),
+    ).toEqual({ ok: false, reason: 'missing' });
   });
 
   it('consumes a matching intent exactly once', () => {
@@ -95,6 +139,95 @@ describe('UserDecisionIntent', () => {
     ).toEqual({
       ok: false,
       reason: 'missing',
+    });
+  });
+
+  describe('peekUserDecisionIntent', () => {
+    it('does NOT consume a valid intent (survives repeated peeks for retry)', () => {
+      recordUserDecisionIntent({
+        sessionId: 's1',
+        command: '/approve',
+        expectedVerdict: 'approve',
+        nowMs: 1_000,
+        ttlMs: 30_000,
+      });
+
+      // First peek observes a valid intent...
+      expect(
+        peekUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 2_000 }),
+      ).toMatchObject({
+        ok: true,
+      });
+      // ...and a second peek still finds it (not burned by the first).
+      expect(
+        peekUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 2_500 }),
+      ).toMatchObject({
+        ok: true,
+      });
+      // The real consume then burns it exactly once.
+      expect(
+        consumeUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 3_000 }),
+      ).toMatchObject({
+        ok: true,
+      });
+      expect(
+        consumeUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 3_500 }),
+      ).toEqual({
+        ok: false,
+        reason: 'missing',
+      });
+    });
+
+    it('deletes an expired intent (anti-replay preserved)', () => {
+      recordUserDecisionIntent({
+        sessionId: 's1',
+        command: '/approve',
+        expectedVerdict: 'approve',
+        nowMs: 1_000,
+        ttlMs: 10,
+      });
+      expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 2_000 })).toEqual(
+        {
+          ok: false,
+          reason: 'expired',
+        },
+      );
+      // Deleted — a subsequent peek reports missing, never a stale approval.
+      expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 2_100 })).toEqual(
+        {
+          ok: false,
+          reason: 'missing',
+        },
+      );
+    });
+
+    it('deletes a mismatched intent (anti-replay preserved)', () => {
+      recordUserDecisionIntent({
+        sessionId: 's1',
+        command: '/approve',
+        expectedVerdict: 'approve',
+        nowMs: 1_000,
+        ttlMs: 30_000,
+      });
+      expect(
+        peekUserDecisionIntent({ sessionId: 's1', verdict: 'changes_requested', nowMs: 2_000 }),
+      ).toEqual({ ok: false, reason: 'verdict_mismatch' });
+      // Deleted — the original approve intent cannot be reused after a mismatch.
+      expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 2_100 })).toEqual(
+        {
+          ok: false,
+          reason: 'missing',
+        },
+      );
+    });
+
+    it('reports missing without error when no intent exists', () => {
+      expect(
+        peekUserDecisionIntent({ sessionId: 'none', verdict: 'approve', nowMs: 1_000 }),
+      ).toEqual({
+        ok: false,
+        reason: 'missing',
+      });
     });
   });
 });

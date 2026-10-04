@@ -8,9 +8,6 @@
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from './evidence-identifiers.js';
-
-export { FINGERPRINT_PATTERN };
 
 // ─── Closed Enums ─────────────────────────────────────────────────────────────
 
@@ -29,9 +26,28 @@ export { FINGERPRINT_PATTERN };
 export const CheckId = z.string().min(1);
 export type CheckId = z.infer<typeof CheckId>;
 
-/** User review verdict at a User Gate (approve, request changes, or reject). */
-export const ReviewVerdict = z.enum(['approve', 'changes_requested', 'reject']);
+/**
+ * User review verdict at a User Gate (approve, request changes, or reject).
+ *
+ * `approve_with_governance_override` is legal only at a governance override
+ * gate (an exhausted review loop); plain `approve` is legal only at a normal
+ * gate. The rail enforces the agreement against the canonical directive.
+ */
+export const ReviewVerdict = z.enum([
+  'approve',
+  'approve_with_governance_override',
+  'changes_requested',
+  'reject',
+]);
 export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
+
+/**
+ * Whether a human verdict is an approval (plain or governance override).
+ * Single authority for the approval subset of {@link ReviewVerdict}.
+ */
+export function isApprovalVerdict(verdict: ReviewVerdict): boolean {
+  return verdict === 'approve' || verdict === 'approve_with_governance_override';
+}
 
 /** Revision delta between iterations (digest comparison result). */
 export const RevisionDelta = z.enum(['none', 'minor', 'major']);
@@ -72,9 +88,42 @@ export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
 export const ReviewObligationStatus = z.enum(['pending', 'fulfilled', 'consumed', 'blocked']);
 export type ReviewObligationStatus = z.infer<typeof ReviewObligationStatus>;
 
+export const ReviewRepositoryRevisionProvenance = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('available'),
+      headSha: z.string().regex(/^[0-9a-f]{40,64}$/i),
+      baseSha: z
+        .string()
+        .regex(/^[0-9a-f]{40,64}$/i)
+        .optional(),
+    })
+    .readonly(),
+  z.object({ kind: z.literal('unavailable'), reason: z.string().min(1) }).readonly(),
+]);
+export type ReviewRepositoryRevisionProvenance = z.infer<typeof ReviewRepositoryRevisionProvenance>;
+
 /** Status of an Architecture Decision Record. */
 export const AdrStatus = z.enum(['proposed', 'accepted', 'deprecated']);
 export type AdrStatus = z.infer<typeof AdrStatus>;
+
+/**
+ * Completion of an independent review cycle (architecture and plan flows).
+ *
+ * This is lifecycle evidence for the current reviewed subject, not part of the
+ * subject's content identity and never a substitute for a human ReviewVerdict.
+ *
+ * - `pending`: the review loop has not converged.
+ * - `reviewer_accepted`: the independent reviewer accepted the subject.
+ * - `review_exhausted`: the review budget ended without reviewer acceptance;
+ *   only an explicit human override can release the subject.
+ */
+export const ReviewCompletion = z.enum(['pending', 'reviewer_accepted', 'review_exhausted']);
+export type ReviewCompletion = z.infer<typeof ReviewCompletion>;
+
+/** Flow-neutral completion shared by the architecture and plan review loops. */
+export const ArchitectureReviewCompletion = ReviewCompletion;
+export type ArchitectureReviewCompletion = ReviewCompletion;
 
 /** Where the content of a ticket or review originated. */
 export const InputOriginSchema = z.enum([
@@ -107,14 +156,9 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
 
 /**
  * How the reviewer was invoked.
- * - `host_subagent_task`: host-visible Task tool (OpenCode, synchronous, strongest).
- * - `sdk_session_prompt`: in-process SDK reviewer session.
- * - `manual_attested`: agent-submitted attested findings (out-of-process hosts, weakest sanctioned).
- * - `native_subagent_attested`: agent-submitted findings corroborated by a FlowGuard-captured
- *   host hook (SubagentStop / PostToolUse fired inside the `flowguard-reviewer` subagent).
- *   Strictly stronger than `manual_attested` (independent host witness of the reviewer subagent),
- *   but NOT equivalent to `host_subagent_task` (FlowGuard is not the deterministic spawner; the
- *   correlation is best-effort, not a synchronous handshake).
+ *
+ * `native_task_structured_followup` is the only sanctioned transport: OpenCode
+ * exposes the reviewer as a native Task child and FlowGuard captures structured
+ * findings from a schema-constrained follow-up in that same child session.
  */
-export type ReviewInvocationMode =
-  'host_subagent_task' | 'sdk_session_prompt' | 'manual_attested' | 'native_subagent_attested';
+export type ReviewInvocationMode = 'native_task_structured_followup';

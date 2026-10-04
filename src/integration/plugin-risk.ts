@@ -5,156 +5,62 @@
  * @version v1
  */
 
-import * as path from 'node:path';
 import { existsSync } from 'node:fs';
 
 import type { SessionState } from '../state/schema.js';
-import { writeState, readState } from '../adapters/persistence.js';
+import { PersistenceError, readState } from '../adapters/persistence.js';
 import { changedFiles } from '../adapters/git.js';
-import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
-import { isRiskClassificationAllowed, type RiskClassificationDecision } from './phase-tool-gate.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
+import { strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
+
+import {
+  enforceTicketDeclarationGate,
+  isRiskClassificationAllowed,
+  ticketDeclarationGate,
+  type DeniedRiskClassificationDecision,
+  type RiskClassificationDecision,
+} from './phase-tool-gate.js';
+import {
+  extractPathsFromBashCommand,
+  isBashScopeProvablyKnown,
+  isPatchScopeProvablyKnown,
+  targetPathsForRisk,
+} from './risk-path-extraction.js';
+import { appendReviewAuditEvent } from './review/evidence/audit-events.js';
+import { mutateStateWithAuditOperations } from './audit-outbox.js';
+
+export {
+  extractPathsFromBashCommand,
+  extractPathsFromPatch,
+  isBashScopeProvablyKnown,
+  isPatchScopeProvablyKnown,
+  targetPathsForRisk,
+} from './risk-path-extraction.js';
+
+// ─── Mutation scope ──────────────────────────────────────────────────────────
+
+/**
+ * Whether the mutation's target scope cannot be resolved before execution.
+ * Unknown scope is never interpreted as low risk: the provisional class is
+ * floored at STANDARD by the risk authority.
+ */
+function riskScopeUnknown(toolName: string, args: Record<string, unknown>): boolean {
+  if (toolName === 'write' || toolName === 'edit') return typeof args.filePath !== 'string';
+  if (toolName === 'apply_patch') {
+    const patch = typeof args.patchText === 'string' ? args.patchText : args.diff;
+    if (typeof patch !== 'string') return true;
+    return !isPatchScopeProvablyKnown(patch);
+  }
+  if (toolName === 'bash') {
+    if (typeof args.command !== 'string') return true;
+    if (!isBashScopeProvablyKnown(args.command)) return true;
+    return extractPathsFromBashCommand(args.command).length === 0;
+  }
+  return true;
+}
 
 export interface RiskEnforcementDeps {
   getSessionDir(sessionId: string): string | null;
   getWorktreeRoot(): string | undefined;
-}
-
-export function targetPathsForRisk(
-  toolName: string,
-  args: Record<string, unknown>,
-  getWorktreeRoot: () => string | undefined,
-): string[] {
-  if ((toolName === 'write' || toolName === 'edit') && typeof args.filePath === 'string') {
-    return [resolveRelativePath(args.filePath, getWorktreeRoot)];
-  }
-  if (toolName === 'apply_patch' && typeof args.diff === 'string') {
-    return extractPathsFromPatch(args.diff);
-  }
-  if (toolName === 'bash' && typeof args.command === 'string') {
-    return extractPathsFromBashCommand(args.command);
-  }
-  return [];
-}
-
-// ─── Path Resolution Helper ──────────────────────────────────────────────────
-
-function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | undefined): string {
-  const worktreeRoot = getWorktreeRoot() ? path.resolve(getWorktreeRoot()!) : null;
-  const resolved = path.resolve(filePath);
-  if (worktreeRoot && resolved.startsWith(`${worktreeRoot}${path.sep}`)) {
-    // Normalize to forward slashes for platform-independent audit output.
-    return path.relative(worktreeRoot, resolved).replace(/\\/g, '/');
-  }
-  return filePath;
-}
-
-// ─── apply_patch Path Extraction ─────────────────────────────────────────────
-
-/**
- * Extract target file paths from a unified diff string.
- * Parses `--- a/path` and `+++ b/path` headers, filters `/dev/null`.
- *
- * @internal
- */
-function collectPathsFromPattern(
-  diff: string,
-  pattern: RegExp,
-  groupIndexes: number[],
-  paths: Set<string>,
-): void {
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(diff)) !== null) {
-    for (const idx of groupIndexes) {
-      const filePath = (match[idx] ?? '').trim();
-      if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
-        paths.add(filePath.replace(/\\/g, '/'));
-      }
-    }
-  }
-}
-
-export function extractPathsFromPatch(diff: string): string[] {
-  if (diff.length > 1024 * 1024) return [];
-  const paths = new Set<string>();
-  collectPathsFromPattern(diff, /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm, [1], paths);
-  collectPathsFromPattern(diff, /^Binary files a\/(.+?) and b\/\1 differ$/gm, [1], paths);
-  collectPathsFromPattern(diff, /^diff --git a\/(.+?) b\/(.+)$/gm, [1, 2], paths);
-  return [...paths];
-}
-
-// ─── bash Command Path Extraction ────────────────────────────────────────────
-
-/**
- * Best-effort extraction of file paths from bash command strings.
- * Handles common patterns: redirects, tee, rm, mv, cp, sed -i, chmod, git checkout --.
- *
- * Returns [] for unparseable commands (fail-safe: unknown ≠ "no risk").
- *
- * @internal
- */
-export function extractPathsFromBashCommand(cmd: string): string[] {
-  // Guard against excessive input that could cause ReDoS.
-  if (cmd.length > 1024 * 1024) return [];
-
-  const paths = new Set<string>();
-
-  // 1. Redirect targets: >, >>, 2>, 2>>
-  const redirectPattern = /(?:^|[^<])(?:2?>?>|>)\s*["']?([^\s"'|;&><]+)["']?/g;
-  let match: RegExpExecArray | null;
-  while ((match = redirectPattern.exec(cmd)) !== null) {
-    const target = match[1] ?? '';
-    if (target && !target.startsWith('/dev/')) {
-      paths.add(target);
-    }
-  }
-
-  // 2. tee targets: | tee [-a] <file>
-  const teePattern = /\|\s*tee\s+(?:-a\s+)?["']?([^\s"'|;&><]+)["']?/g;
-  while ((match = teePattern.exec(cmd)) !== null) {
-    const target = match[1] ?? '';
-    if (target) paths.add(target);
-  }
-
-  collectArgsToPaths(cmd, /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g, paths);
-  collectArgsToPaths(cmd, /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g, paths);
-  collectArgsToPaths(
-    cmd,
-    /\bsed\s+(?:(?:-[^i\s]+\s+)*-i[^\s]*(?:\s+-[^i\s]+)*|-[a-zA-Z]*i[^\s]*)(?:\s+-[^i\s]+)*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g,
-    paths,
-  );
-  collectArgsToPaths(
-    cmd,
-    /\bchmod\s+(?:-[Rfvch]\s+)*(?:[0-7]{3,4}|[ugoa]?[+\-=/][rwxXst]+)\s+([^\n;&|]+)/g,
-    paths,
-  );
-  collectArgsToPaths(cmd, /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+([^\s;&|]+)/g, paths);
-
-  return [...paths].map((p) => p.replace(/\\/g, '/'));
-}
-
-function collectArgsToPaths(cmd: string, pattern: RegExp, paths: Set<string>): void {
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(cmd)) !== null) {
-    for (const arg of splitUnquotedArgs((match[1] ?? '').trim())) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-}
-
-/**
- * Split a string into arguments, respecting single/double quotes.
- * @internal
- */
-function splitUnquotedArgs(input: string): string[] {
-  const args: string[] = [];
-  const pattern = /(?:"([^"]*)")|(?:'([^']*)')|([^\s]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = pattern.exec(input)) !== null) {
-    const arg = m[1] ?? m[2] ?? m[3] ?? '';
-    if (arg) args.push(arg);
-  }
-  return args;
 }
 
 export async function currentChangedFilesForRisk(
@@ -180,39 +86,64 @@ export async function currentChangedFilesForRisk(
 export function evidenceUnavailableRiskDecision(
   state: SessionState,
   reason: string,
-): RiskClassificationDecision {
+): DeniedRiskClassificationDecision {
   return {
     allowed: false,
     code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
     reason,
     decisionId: `RISK-${new Date().toISOString().replace(/[^0-9]/g, '')}-evidence-unavailable`,
-    claimedTaskClass: state.claimedTaskClass,
     minimumTaskClass: 'HIGH-RISK',
+    effectiveTaskClass: 'HIGH-RISK',
+    declaredTaskClass: null,
+    declarationKind: state.ticket?.riskDeclaration.kind ?? 'absent',
+    ticketDigest: state.ticket?.digest ?? null,
+    ...(state.claimedTaskClass !== undefined ? { escalatedTaskClass: state.claimedTaskClass } : {}),
+    provisional: state.implementation === null,
+    unknownScope: true,
     touchedSurfaces: ['risk-classification-evidence'],
+    riskTriggers: ['ceremony_only'],
     changedFiles: [],
   };
 }
 
+function isTicketDeclarationCode(code: string): boolean {
+  return code.startsWith('TICKET_RISK_DECLARATION_');
+}
+
 export async function persistRiskDecisionBlock(
   sessDir: string,
-  state: SessionState,
-  decision: RiskClassificationDecision,
+  decision: DeniedRiskClassificationDecision,
   code: string,
   message: string,
 ): Promise<void> {
   const blockedAt = new Date().toISOString();
-  const nextState: SessionState = {
-    ...state,
-    riskGate: {
-      status: 'blocked',
-      code,
-      message,
-      blockedAt,
-      lastDecisionId: decision.decisionId,
-    },
-  };
-  await writeState(sessDir, nextState);
-  await appendRiskDecisionAudit(sessDir, state, decision, 'blocked', code);
+  const updated = await mutateStateWithAuditOperations(sessDir, (current) => {
+    if (current.riskGate?.status === 'blocked') return { next: current };
+    const next: SessionState = {
+      ...current,
+      riskGate: {
+        status: 'blocked',
+        code,
+        message,
+        blockedAt,
+        lastDecisionId: decision.decisionId,
+      },
+    };
+    return {
+      next,
+      semanticIntents: [
+        {
+          phase: next.phase,
+          event: 'risk:classification_checked',
+          occurredAt: blockedAt,
+          detail: riskDecisionAuditDetail(next, decision, 'blocked', code),
+        },
+      ],
+    };
+  });
+  if (updated === null) {
+    throw new PersistenceError('READ_FAILED', `no persisted session state at ${sessDir}`);
+  }
 }
 
 export async function appendRiskDecisionAudit(
@@ -224,37 +155,51 @@ export async function appendRiskDecisionAudit(
 ): Promise<void> {
   await appendReviewAuditEvent(
     sessDir,
-    state.binding.sessionId,
+    state.binding.hostSessionId,
     state.phase,
     'risk:classification_checked',
-    {
-      decisionId: decision.decisionId,
-      decision: result,
-      reasonCode,
-      claimedTaskClass: decision.claimedTaskClass ?? null,
-      minimumTaskClass: decision.minimumTaskClass,
-      touchedSurfaces: decision.touchedSurfaces,
-      changedFilesSummary: decision.changedFiles,
-      policyMode: state.policySnapshot.mode,
-      enforceRiskClassification: state.policySnapshot.enforceRiskClassification,
-      allowRiskDowngradeOverride: state.policySnapshot.allowRiskDowngradeOverride,
-      riskGateStatus: result === 'blocked' ? 'blocked' : (state.riskGate?.status ?? 'clear'),
-    },
+    riskDecisionAuditDetail(state, decision, result, reasonCode),
   );
 }
 
-function throwRiskBlocked(
+function riskDecisionAuditDetail(
+  state: SessionState,
   decision: RiskClassificationDecision,
+  result: 'allowed' | 'blocked',
+  reasonCode: string,
+): Record<string, unknown> {
+  return {
+    decisionId: decision.decisionId,
+    decision: result,
+    reasonCode,
+    minimumTaskClass: decision.minimumTaskClass,
+    effectiveTaskClass: decision.effectiveTaskClass,
+    declaredTaskClass: decision.declaredTaskClass,
+    declarationKind: decision.declarationKind,
+    ticketDigest: decision.ticketDigest,
+    escalatedTaskClass: decision.escalatedTaskClass ?? null,
+    provisional: decision.provisional,
+    unknownScope: decision.unknownScope,
+    touchedSurfaces: decision.touchedSurfaces,
+    changedFilesSummary: decision.changedFiles,
+    policyMode: state.policySnapshot.mode,
+    enforceRiskClassification: state.policySnapshot.enforceRiskClassification,
+    riskGateStatus: result === 'blocked' ? 'blocked' : (state.riskGate?.status ?? 'clear'),
+  };
+}
+
+function throwRiskBlocked(
+  decision: DeniedRiskClassificationDecision,
   state: SessionState,
   toolName: string,
 ): never {
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  const { code, reason } = decision;
   throw buildEnforcementError(code, reason, {
-    sessionId: state.binding.sessionId,
+    sessionId: state.binding.hostSessionId,
     tool: toolName,
-    claimedTaskClass: decision.claimedTaskClass ?? 'missing',
+    effectiveTaskClass: decision.effectiveTaskClass,
     minimumTaskClass: decision.minimumTaskClass,
+    declaredTaskClass: decision.declaredTaskClass ?? 'none',
     touchedSurface: decision.touchedSurfaces[0] ?? 'none',
     decisionId: decision.decisionId,
   });
@@ -263,14 +208,24 @@ function throwRiskBlocked(
 async function persistAndThrowRiskBlock(
   sessDir: string,
   state: SessionState,
-  decision: RiskClassificationDecision,
+  decision: DeniedRiskClassificationDecision,
   toolName: string,
 ): Promise<never> {
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  const { code, reason } = decision;
+  if (isTicketDeclarationCode(code)) {
+    try {
+      await appendRiskDecisionAudit(sessDir, state, decision, 'blocked', code);
+    } catch (err) {
+      throw buildEnforcementError(
+        'AUDIT_PERSISTENCE_FAILED',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    throwRiskBlocked(decision, state, toolName);
+  }
   if (state.riskGate?.status !== 'blocked') {
     try {
-      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+      await persistRiskDecisionBlock(sessDir, decision, code, reason);
     } catch (err) {
       throw buildEnforcementError(
         'AUDIT_PERSISTENCE_FAILED',
@@ -288,6 +243,11 @@ export async function enforceRiskClassificationBefore(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<void> {
+  // Ticket-declaration gate: pre-execution, independent of the risk-enforcement
+  // policy flag. An invalid or inconsistent declaration blocks every
+  // risk-relevant mutation before it runs; re-capturing the ticket clears it.
+  await enforceTicketDeclarationGate(sessDir, state, toolName);
+
   if (state.policySnapshot.enforceRiskClassification !== true) return;
   let files: string[];
   try {
@@ -299,7 +259,6 @@ export async function enforceRiskClassificationBefore(
       try {
         await persistRiskDecisionBlock(
           sessDir,
-          state,
           decision,
           'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
           reason,
@@ -317,6 +276,8 @@ export async function enforceRiskClassificationBefore(
     state,
     changedFiles: files,
     targetPaths: targetPathsForRisk(toolName, args, () => deps.getWorktreeRoot()),
+    mode: 'provisional',
+    unknownScope: riskScopeUnknown(toolName, args),
     now: new Date().toISOString(),
   });
   if (decision.allowed) {
@@ -350,7 +311,6 @@ async function handleEvidenceUnavailableBash(
     if (state.riskGate?.status !== 'blocked') {
       await persistRiskDecisionBlock(
         sessDir,
-        state,
         decision,
         'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         reason,
@@ -371,31 +331,61 @@ export async function enforceRiskClassificationAfterBash(
   output: { output?: unknown },
 ): Promise<void> {
   const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir || !existsSync(sessDir)) return;
-  const state = await readRiskStateForBash(sessDir, output);
-  if (!state || state.policySnapshot.enforceRiskClassification !== true) return;
+  if (!sessDir || !existsSync(sessDir)) {
+    // A bash call is governed by the Before-hook boundary, which requires a
+    // resolvable FlowGuard session. Lost context after release is an invariant
+    // violation, so it fails closed instead of silently skipping the gate.
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash risk classification has no resolvable FlowGuard session context for a governed mutation.',
+    });
+    return;
+  }
+  const stateResult = await readRiskStateForBash(sessDir, output);
+  if (stateResult.kind === 'unavailable') return;
+  if (stateResult.kind === 'missing') {
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash risk classification found no persisted session state for an authorized mutation.',
+    });
+    return;
+  }
+  const state = stateResult.state;
+  const declarationBlockedOutput = ticketDeclarationBlockedOutput(state, sessionId);
+  if (declarationBlockedOutput !== null) {
+    output.output = declarationBlockedOutput;
+    return;
+  }
+  if (state.policySnapshot.enforceRiskClassification !== true) return;
   const files = await readRiskChangedFilesForBash(deps, sessDir, state, output);
   if (!files) return;
   const decision = isRiskClassificationAllowed({
     state,
     changedFiles: files,
+    mode: 'final',
     now: new Date().toISOString(),
   });
   if (decision.allowed) return appendAllowedRiskDecisionForBash(sessDir, state, decision, output);
   await blockRiskDecisionAfterBash(sessDir, state, decision, sessionId, output);
 }
 
+type RiskStateResolution =
+  | { readonly kind: 'state'; readonly state: SessionState }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'unavailable' };
+
 async function readRiskStateForBash(
   sessDir: string,
   output: { output?: unknown },
-): Promise<SessionState | null> {
+): Promise<RiskStateResolution> {
   try {
-    return await readState(sessDir);
+    const state = await readState(sessDir);
+    return state ? { kind: 'state', state } : { kind: 'missing' };
   } catch (err) {
     output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
       reason: err instanceof Error ? err.message : String(err),
     });
-    return null;
+    return { kind: 'unavailable' };
   }
 }
 
@@ -439,23 +429,56 @@ async function appendAllowedRiskDecisionForBash(
   }
 }
 
+function ticketDeclarationBlockedOutput(
+  state: SessionState,
+  sessionId: string,
+): ReturnType<typeof strictBlockedOutput> | null {
+  const gate = ticketDeclarationGate(state);
+  if (gate.status !== 'blocked') return null;
+  return strictBlockedOutput(gate.code, {
+    reason: gate.reason,
+    sessionId,
+    ticketDigest: state.ticket?.digest ?? 'none',
+    declarationKind: state.ticket?.riskDeclaration.kind ?? 'absent',
+  });
+}
+
 async function blockRiskDecisionAfterBash(
   sessDir: string,
   state: SessionState,
-  decision: ReturnType<typeof isRiskClassificationAllowed>,
+  decision: DeniedRiskClassificationDecision,
   sessionId: string,
   output: { output?: unknown },
 ): Promise<void> {
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked after bash mutation.';
-  try {
-    if (state.riskGate?.status !== 'blocked')
-      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+  const { code, reason } = decision;
+  if (isTicketDeclarationCode(code)) {
+    try {
+      await appendRiskDecisionAudit(sessDir, state, decision, 'blocked', code);
+    } catch (err) {
+      output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
     output.output = strictBlockedOutput(code, {
       reason,
       sessionId,
-      claimedTaskClass: decision.claimedTaskClass ?? 'missing',
+      effectiveTaskClass: decision.effectiveTaskClass,
+      declaredTaskClass: decision.declaredTaskClass ?? 'none',
+      ticketDigest: decision.ticketDigest ?? 'none',
+      decisionId: decision.decisionId,
+    });
+    return;
+  }
+  try {
+    if (state.riskGate?.status !== 'blocked')
+      await persistRiskDecisionBlock(sessDir, decision, code, reason);
+    output.output = strictBlockedOutput(code, {
+      reason,
+      sessionId,
+      effectiveTaskClass: decision.effectiveTaskClass,
       minimumTaskClass: decision.minimumTaskClass,
+      declaredTaskClass: decision.declaredTaskClass ?? 'none',
       touchedSurface: decision.touchedSurfaces[0] ?? 'none',
       decisionId: decision.decisionId,
     });

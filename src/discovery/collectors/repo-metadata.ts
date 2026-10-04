@@ -16,7 +16,7 @@
  */
 
 import type { CollectorInput, CollectorOutput, RepoMetadata } from '../types.js';
-import * as git from '../../adapters/git.js';
+import type { DiscoveryIoPort } from '../io-port.js';
 
 /**
  * Collect repository metadata.
@@ -28,13 +28,14 @@ import * as git from '../../adapters/git.js';
  */
 export async function collectRepoMetadata(
   input: CollectorInput,
+  io: DiscoveryIoPort,
 ): Promise<CollectorOutput<RepoMetadata>> {
   try {
     const [branch, commit, clean, remote] = await Promise.all([
-      git.defaultBranch(input.worktreePath),
-      git.headCommit(input.worktreePath),
-      git.isClean(input.worktreePath),
-      git.remoteOriginUrl(input.worktreePath),
+      io.defaultBranch(input.worktreePath),
+      io.headCommit(input.worktreePath),
+      io.isClean(input.worktreePath),
+      io.remoteOriginUrl(input.worktreePath),
     ]);
 
     return {

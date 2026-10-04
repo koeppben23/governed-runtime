@@ -4,7 +4,7 @@
  *
  * Tests the full MCP protocol flow:
  * - Server spawns and responds to initialize
- * - tools/list returns all 13 FlowGuard tools
+ * - tools/list returns all FlowGuard tools
  * - tools/call dispatches to tool executors
  * - stdout guard prevents protocol contamination
  * - Negative paths: invalid tool, bad args, no session
@@ -16,15 +16,30 @@
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveSessionContext } from './session-resolver.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { McpSessionBinder, McpSessionResolutionError } from './session-resolver.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { registerAllTools, isGovernanceDenialCode } from './tool-adapter.js';
+import { McpExecutionLimiter, readMcpExecutionLimits } from './execution-limiter.js';
+import { reportMcpFatalError } from './fatal-error.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
+import {
+  resolveWorkspacePaths,
+  type ToolContext,
+  type ToolDefinition,
+} from '../integration/tools/helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../logging/adapter-logger.js';
+import { mcpLogger } from './mcp-logger.js';
 import { z } from 'zod';
+
+const execFileAsync = promisify(execFile);
 
 // --- Schema Converter Tests ---
 
@@ -101,77 +116,239 @@ describe('Session Resolver', () => {
     delete process.env['FLOWGUARD_PROJECT_DIR'];
   });
 
-  it('HAPPY: uses FLOWGUARD_SESSION_DIR when set', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/custom/path';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('custom');
-  });
+  async function repository(name: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), `${name}-`));
+    await execFileAsync('git', ['init'], { cwd: root });
+    return root;
+  }
 
-  it('HAPPY: uses first root when provided', () => {
-    const ctx = resolveSessionContext(['/project/root', '/other']);
-    expect(ctx.directory).toContain('project');
-  });
+  function root(path: string): { uri: string } {
+    return { uri: pathToFileURL(path).href };
+  }
 
-  // #422 negative-first: no env source and no roots MUST fail closed —
-  // the prior cwd fallback was a silent guess that hid missing inputs.
-  it('BAD: throws SESSION_UNRESOLVABLE when no env and no roots', () => {
-    expect(() => resolveSessionContext()).toThrow();
+  it('HAPPY: binds a real MCP root to its canonical Git worktree', async () => {
+    const repo = await repository('flowguard-mcp-root');
     try {
-      resolveSessionContext();
-      expect.unreachable('resolver must fail closed');
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+      const ctx = await new McpSessionBinder('mcp-stable-session').resolve([root(repo)]);
+      expect(ctx).toMatchObject({
+        sessionId: 'mcp-stable-session',
+        worktree: await realpath(repo),
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
     }
   });
 
-  // #422 negative-first: an empty roots array is "no roots" — still fail closed.
-  it('CORNER: empty roots array throws SESSION_UNRESOLVABLE', () => {
-    expect(() => resolveSessionContext([])).toThrow();
+  it('HAPPY: permits repeated equivalent root sets after binding', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    process.env['FLOWGUARD_PROJECT_DIR'] = second;
     try {
-      resolveSessionContext([]);
-      expect.unreachable('resolver must fail closed');
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+      const binder = new McpSessionBinder('mcp-stable-session');
+      await binder.resolve([root(first), root(second), root(first)]);
+      const ctx = await binder.resolve([root(second), root(first)]);
+      expect(ctx.worktree).toBe(await realpath(second));
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
     }
   });
 
-  // #422: wire the previously-dead FLOWGUARD_PROJECT_DIR contract as a real
-  // resolution source (host-advertised project dir, e.g. CLAUDE_PROJECT_DIR).
-  it('HAPPY: uses FLOWGUARD_PROJECT_DIR when set and no roots', () => {
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('proj');
+  it('binds workspace paths to the initial fingerprint when the Git remote changes', async () => {
+    const repo = await repository('flowguard-mcp-fingerprint');
+    try {
+      await execFileAsync('git', ['remote', 'add', 'origin', 'https://example.com/org/first.git'], {
+        cwd: repo,
+      });
+      const binder = new McpSessionBinder('mcp-fingerprint-session');
+      const first = await binder.resolve([root(repo)]);
+      await execFileAsync(
+        'git',
+        ['remote', 'set-url', 'origin', 'https://example.com/org/second.git'],
+        {
+          cwd: repo,
+        },
+      );
+      const second = await binder.resolve([root(repo)]);
+
+      expect(second.workspaceFingerprint).toBe(first.workspaceFingerprint);
+      await expect(
+        resolveWorkspacePaths({ ...second, sessionID: second.sessionId }),
+      ).resolves.toMatchObject({
+        fingerprint: first.workspaceFingerprint,
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   });
 
-  it('CORNER: FLOWGUARD_PROJECT_DIR wins over roots[0]', () => {
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext(['/roots/path']);
-    expect(ctx.directory).toContain('proj');
-    expect(ctx.directory).not.toContain('roots');
+  it('BAD: rejects no roots, filesystem paths, and non-existent roots', async () => {
+    const binder = new McpSessionBinder();
+    await expect(binder.resolve([])).rejects.toMatchObject({ code: 'SESSION_UNRESOLVABLE' });
+    await expect(binder.resolve([{ uri: 'https://example.com' }])).rejects.toMatchObject({
+      code: 'SESSION_UNRESOLVABLE',
+    });
+    await expect(
+      binder.resolve([{ uri: 'file:///definitely-not-a-flowguard-root' }]),
+    ).rejects.toMatchObject({
+      code: 'SESSION_UNRESOLVABLE',
+    });
   });
 
-  it('HAPPY: FLOWGUARD_SESSION_DIR takes priority over roots', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/env/path';
-    const ctx = resolveSessionContext(['/roots/path']);
-    expect(ctx.directory).toContain('env');
+  it('BAD: reports invalid schemes and file roots distinctly', async () => {
+    const file = await mkdtemp(join(tmpdir(), 'flowguard-mcp-file-'));
+    const rootFile = join(file, 'root-file');
+    await writeFile(rootFile, 'not a directory');
+    try {
+      await expect(
+        new McpSessionBinder().resolve([{ uri: 'https://example.com' }]),
+      ).rejects.toThrow('MCP root must use file: URI scheme');
+      await expect(new McpSessionBinder().resolve([root(rootFile)])).rejects.toThrow(
+        'MCP root is not a directory',
+      );
+    } finally {
+      await rm(file, { recursive: true, force: true });
+    }
   });
 
-  it('CORNER: FLOWGUARD_SESSION_DIR wins over FLOWGUARD_PROJECT_DIR', () => {
-    process.env['FLOWGUARD_SESSION_DIR'] = '/session/path';
-    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
-    const ctx = resolveSessionContext();
-    expect(ctx.directory).toContain('session');
-    expect(ctx.directory).not.toContain('proj');
+  it('BAD: rejects a repository subdirectory root instead of widening it to the Git worktree', async () => {
+    const repo = await repository('flowguard-mcp-root');
+    const subdirectory = join(repo, 'allowed', 'subdir');
+    await mkdir(subdirectory, { recursive: true });
+    try {
+      await expect(new McpSessionBinder().resolve([root(subdirectory)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
   });
 
-  it('HAPPY: preserves provided stable MCP session id', () => {
-    const ctx = resolveSessionContext(['/project/root'], 'mcp-stable-session');
+  it('BAD: rejects ambiguous multi-root authority without a matching project hint', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    try {
+      await expect(
+        new McpSessionBinder().resolve([root(first), root(second)]),
+      ).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
 
-    expect(ctx.sessionId).toBe('mcp-stable-session');
+  it('HAPPY: project hint disambiguates only an authorized worktree', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    process.env['FLOWGUARD_PROJECT_DIR'] = second;
+    try {
+      const ctx = await new McpSessionBinder().resolve([root(first), root(second)]);
+      expect(ctx.worktree).toBe(await realpath(second));
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('BAD: project hint must equal, not merely belong to, an authorized root', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    const nestedHint = join(second, 'nested');
+    await mkdir(nestedHint);
+    process.env['FLOWGUARD_PROJECT_DIR'] = nestedHint;
+    try {
+      await expect(
+        new McpSessionBinder().resolve([root(first), root(second)]),
+      ).rejects.toMatchObject({ code: 'SESSION_UNRESOLVABLE' });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('BAD: rejects root changes and symlink escapes after transport binding', async () => {
+    const first = await repository('flowguard-mcp-first');
+    const second = await repository('flowguard-mcp-second');
+    const link = join(first, 'linked-root');
+    await symlink(second, link);
+    try {
+      const binder = new McpSessionBinder();
+      await binder.resolve([root(first)]);
+      await expect(binder.resolve([root(link)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(first, { recursive: true, force: true }),
+        rm(second, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('BAD: session hint cannot select a repository', async () => {
+    const repo = await repository('flowguard-mcp-root');
+    const foreign = await mkdtemp(join(tmpdir(), 'flowguard-mcp-session-'));
+    process.env['FLOWGUARD_SESSION_DIR'] = foreign;
+    try {
+      await expect(new McpSessionBinder().resolve([root(repo)])).rejects.toMatchObject({
+        code: 'SESSION_UNRESOLVABLE',
+      });
+    } finally {
+      await Promise.all([
+        rm(repo, { recursive: true, force: true }),
+        rm(foreign, { recursive: true, force: true }),
+      ]);
+    }
   });
 });
 
 describe('Tool Adapter Session Identity', () => {
+  it('rejects invalid MCP execution limit configuration', () => {
+    expect(() => readMcpExecutionLimits({ FLOWGUARD_MCP_MAX_CONCURRENT: '0' })).toThrow(
+      'FLOWGUARD_MCP_MAX_CONCURRENT must be a positive integer',
+    );
+  });
+
+  it.each(['0', '-1', '1.5', ' 10', '10 ', 'Infinity', '9007199254740992', '9'.repeat(400)])(
+    'rejects malformed or unsafe MCP limit value %j',
+    (value) => {
+      expect(() => readMcpExecutionLimits({ FLOWGUARD_MCP_TOOL_TIMEOUT_MS: value })).toThrow();
+    },
+  );
+
+  it('rejects a safe-integer timeout above the timer maximum but accepts the boundary', () => {
+    // 2_147_483_648 is a safe integer but exceeds the Node timer max, so it must
+    // be rejected specifically by the upper-bound check (not the safe-integer
+    // check). The exact maximum must be accepted.
+    expect(() => readMcpExecutionLimits({ FLOWGUARD_MCP_TOOL_TIMEOUT_MS: '2147483648' })).toThrow(
+      'within supported bounds',
+    );
+    expect(readMcpExecutionLimits({ FLOWGUARD_MCP_TOOL_TIMEOUT_MS: '2147483647' }).timeoutMs).toBe(
+      2_147_483_647,
+    );
+  });
+
+  it('accepts concurrency and throughput up to MAX_SAFE_INTEGER', () => {
+    // maxConcurrent/maxPerSecond have no timer bound; the safe-integer maximum
+    // is accepted, proving the default `maximum` is MAX_SAFE_INTEGER.
+    const limits = readMcpExecutionLimits({
+      FLOWGUARD_MCP_MAX_CONCURRENT: String(Number.MAX_SAFE_INTEGER),
+      FLOWGUARD_MCP_MAX_PER_SECOND: String(Number.MAX_SAFE_INTEGER),
+    });
+    expect(limits.maxConcurrent).toBe(Number.MAX_SAFE_INTEGER);
+    expect(limits.maxPerSecond).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   it('BAD: reuses stable sessionID across calls and creates unique messageIDs', async () => {
     const contexts: ToolContext[] = [];
     let handler:
@@ -205,6 +382,35 @@ describe('Tool Adapter Session Identity', () => {
       'mcp-stable-session',
     ]);
     expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
+  });
+
+  it('maps structured tool output to a successful MCP text response', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        return { output: 'structured result', metadata: { ignoredByMcp: true } };
+      },
+    };
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+
+    const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
+    expect(result).toEqual({
+      isError: false,
+      content: [{ type: 'text', text: 'structured result' }],
+    });
   });
 
   it('HAPPY: MCP tool execution provides adapter logger and log context', async () => {
@@ -241,7 +447,7 @@ describe('Tool Adapter Session Identity', () => {
     expect(observed[0]!.durationMs).toBeUndefined();
   });
 
-  it('governance denial returns isError:false with governance:true in content', async () => {
+  it('untrusted error codes return sanitized execution errors', async () => {
     let handler:
       ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
@@ -266,11 +472,12 @@ describe('Tool Adapter Session Identity', () => {
     }));
 
     const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
-    expect(result.isError).toBe(false);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.governance).toBe(true);
-    expect(parsed.denied).toBe(true);
-    expect(parsed.code).toBe('PHASE_GATE_BLOCKED');
+    expect(result.isError).toBe(true);
+    const [content] = result.content;
+    if (!content) throw new TypeError('expected MCP response content');
+    const parsed = JSON.parse(content.text);
+    expect(parsed.governance).toBeUndefined();
+    expect(parsed.code).toBe('TOOL_EXECUTION_ERROR');
   });
 
   // #422 negative-first: a fail-closed session resolution (resolveContext
@@ -295,21 +502,21 @@ describe('Tool Adapter Session Identity', () => {
 
     const stderrWrites: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    process.stderr.write = (chunk: string | Uint8Array): boolean => {
       stderrWrites.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
       return true;
-    }) as typeof process.stderr.write;
+    };
 
     try {
       registerAllTools(fakeServer, { test: tool }, () => {
-        const err = new Error('[SESSION_UNRESOLVABLE] no session source');
-        (err as unknown as Record<string, unknown>).code = 'SESSION_UNRESOLVABLE';
-        throw err;
+        throw new McpSessionResolutionError('test resolution failure');
       });
 
       const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
       expect(result.isError).toBe(false);
-      const parsed = JSON.parse(result.content[0].text);
+      const [content] = result.content;
+      if (!content) throw new TypeError('expected MCP response content');
+      const parsed = JSON.parse(content.text);
       expect(parsed.governance).toBe(true);
       expect(parsed.denied).toBe(true);
       expect(parsed.code).toBe('SESSION_UNRESOLVABLE');
@@ -343,7 +550,7 @@ describe('Tool Adapter Session Identity', () => {
       description: 'test tool',
       args: {},
       async execute() {
-        throw new Error('Network timeout');
+        throw new Error('Network timeout reading /home/alice/token.txt token=super-secret');
       },
     };
 
@@ -355,10 +562,265 @@ describe('Tool Adapter Session Identity', () => {
 
     const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content[0].text);
+    const [content] = result.content;
+    if (!content) throw new TypeError('expected MCP response content');
+    const parsed = JSON.parse(content.text);
     expect(parsed.error).toBe(true);
     expect(parsed.governance).toBeUndefined();
     expect(parsed.code).toBe('TOOL_EXECUTION_ERROR');
+    expect(parsed.message).not.toContain('/home/alice');
+    expect(parsed.message).not.toContain('super-secret');
+  });
+
+  it('passes the SDK abort signal through unchanged', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const signal = new AbortController().signal;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute(_args, context) {
+        expect(context.abort).toBe(signal);
+        return 'ok';
+      },
+    };
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+    await handler!({}, { signal });
+  });
+
+  it('leaves abort undefined when the SDK does not provide a signal', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute(_args, context) {
+        expect(context.abort).toBeUndefined();
+        return 'ok';
+      },
+    };
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+    await handler!({}, {});
+  });
+
+  it('rejects calls over the shared concurrency limit without invoking the executor', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    let release!: () => void;
+    let calls = 0;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        calls += 1;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return 'ok';
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1_000, maxConcurrent: 1, maxPerSecond: 10 }),
+    );
+    const first = handler!({}, {});
+    await Promise.resolve();
+    const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
+    expect(result.isError).toBe(false);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      code: 'MCP_RATE_LIMITED',
+      governance: true,
+      denied: true,
+    });
+    expect(calls).toBe(1);
+    release();
+    await first;
+  });
+
+  it('releases the concurrency slot after a successful execution', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    let calls = 0;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        calls += 1;
+        return 'ok';
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1_000, maxConcurrent: 1, maxPerSecond: 10 }),
+    );
+
+    await handler!({}, {});
+    await handler!({}, {});
+    expect(calls).toBe(2);
+  });
+
+  it('returns a timeout while keeping a live executor in its concurrency slot', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    let release!: () => void;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return 'ok';
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1, maxConcurrent: 1, maxPerSecond: 10 }),
+    );
+    const timedOut = (await handler!({}, {})) as {
+      isError: boolean;
+      content: { text: string }[];
+    };
+    expect(timedOut.isError).toBe(false);
+    expect(JSON.parse(timedOut.content[0]!.text)).toMatchObject({
+      code: 'MCP_TOOL_TIMEOUT',
+      governance: true,
+      denied: true,
+    });
+    const rejected = (await handler!({}, {})) as {
+      isError: boolean;
+      content: { text: string }[];
+    };
+    expect(rejected.isError).toBe(false);
+    expect(JSON.parse(rejected.content[0]!.text)).toMatchObject({
+      code: 'MCP_RATE_LIMITED',
+      governance: true,
+      denied: true,
+    });
+    release();
+  });
+
+  it('does not emit an unhandledRejection when the executor rejects after the deadline', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      // Rejects strictly AFTER the 1ms deadline has already resolved the race.
+      async execute() {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw new Error('late executor failure /home/secret/token.txt');
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1, maxConcurrent: 5, maxPerSecond: 50 }),
+    );
+
+    const result = (await handler!({}, {})) as { content: { text: string }[] };
+    expect(JSON.parse(result.content[0]!.text).code).toBe('MCP_TOOL_TIMEOUT');
+
+    // Allow the late rejection to occur and any microtasks to flush.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    process.off('unhandledRejection', onUnhandled);
+    expect(unhandled).toEqual([]);
+  });
+});
+
+describe('McpExecutionLimiter slot handle', () => {
+  it('double release frees a slot only once', () => {
+    const limiter = new McpExecutionLimiter({
+      timeoutMs: 1000,
+      maxConcurrent: 1,
+      maxPerSecond: 50,
+    });
+    const slot = limiter.tryAcquire();
+    expect(slot).not.toBeNull();
+    // Second acquire is rejected while the slot is held.
+    expect(limiter.tryAcquire()).toBeNull();
+
+    slot!.release();
+    slot!.release(); // idempotent: must not free a second, non-existent slot
+
+    // Exactly one slot is free again; a single acquire succeeds, a second fails.
+    expect(limiter.tryAcquire()).not.toBeNull();
+    expect(limiter.tryAcquire()).toBeNull();
+  });
+
+  it('a rejected throughput acquisition consumes no start budget', () => {
+    // High concurrency so only the rolling throughput window can reject.
+    const limiter = new McpExecutionLimiter({
+      timeoutMs: 1000,
+      maxConcurrent: 100,
+      maxPerSecond: 2,
+    });
+    const a = limiter.tryAcquire(1000);
+    const b = limiter.tryAcquire(1000);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    // Window is full (2 starts) → rejected, and the rejection records no start.
+    expect(limiter.tryAcquire(1000)).toBeNull();
+    expect(limiter.tryAcquire(1000)).toBeNull();
+    // Releasing does not add throughput budget back within the same window.
+    a!.release();
+    expect(limiter.tryAcquire(1000)).toBeNull();
+    // Advancing past the rolling window frees exactly the original budget again.
+    expect(limiter.tryAcquire(2000)).not.toBeNull();
+    expect(limiter.tryAcquire(2000)).not.toBeNull();
+    expect(limiter.tryAcquire(2000)).toBeNull();
   });
 });
 
@@ -374,6 +836,37 @@ describe('isGovernanceDenialCode', () => {
     expect(isGovernanceDenialCode('TOOL_EXECUTION_ERROR')).toBe(false);
     expect(isGovernanceDenialCode('UNKNOWN_CODE')).toBe(false);
     expect(isGovernanceDenialCode('')).toBe(false);
+  });
+});
+
+describe('MCP fatal diagnostics', () => {
+  it('writes only a sanitized stderr diagnostic and sets a non-zero exit code', () => {
+    const writes: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const originalExitCode = process.exitCode;
+    process.stderr.write = (chunk: string | Uint8Array): boolean => {
+      writes.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
+      return true;
+    };
+
+    try {
+      reportMcpFatalError(
+        new Error(
+          String.raw`read /home/alice/token.txt C:\Users\alice\secret.txt \\server\share\key token=super-secret`,
+        ),
+      );
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.stderr.write = originalWrite;
+      process.exitCode = originalExitCode;
+    }
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain('[FlowGuard MCP] Fatal error:');
+    expect(writes[0]).not.toContain('/home/alice');
+    expect(writes[0]).not.toContain('C:\\Users\\alice');
+    expect(writes[0]).not.toContain('\\server\\share');
+    expect(writes[0]).not.toContain('super-secret');
   });
 });
 
@@ -396,7 +889,7 @@ describe('Stdout Guard', () => {
 // --- Tool Registry Completeness ---
 
 describe('Tool Registry', () => {
-  it('HAPPY: all 13 FlowGuard tools are importable', async () => {
+  it('HAPPY: all FlowGuard tools are importable', async () => {
     const tools = await import('../integration/tools/index.js');
     const expectedNames = [
       'status',
@@ -412,6 +905,7 @@ describe('Tool Registry', () => {
       'abort_session',
       'archive',
       'continue',
+      'help',
     ];
 
     for (const name of expectedNames) {
@@ -456,6 +950,87 @@ describe('Tool Registry', () => {
           `Tool '${name}' arg '${argName}' should be a Zod schema`,
         ).toBeDefined();
       }
+    }
+  });
+});
+
+describe('MCP tool adapter logging contract', () => {
+  function harness(tool: ToolDefinition) {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-log-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+    if (handler === null) throw new Error('handler not registered');
+    return () => handler!({}, {});
+  }
+
+  it('logs tool_invoked with tool identity and session id', async () => {
+    const info = vi.spyOn(mcpLogger, 'info');
+    try {
+      const invoke = harness({
+        description: 'test tool',
+        args: {},
+        async execute() {
+          return 'ok';
+        },
+      });
+      await invoke();
+
+      const call = info.mock.calls.find((entry) => entry[1] === 'tool_invoked');
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ tool: 'flowguard_test', sessionId: 'mcp-log-session' });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('logs tool_denied with the boundary code for a fail-closed session error', async () => {
+    const warn = vi.spyOn(mcpLogger, 'warn');
+    try {
+      const invoke = harness({
+        description: 'test tool',
+        args: {},
+        async execute() {
+          throw new McpSessionResolutionError('missing session');
+        },
+      });
+      await invoke();
+
+      const call = warn.mock.calls.find((entry) => entry[1] === 'tool_denied');
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ tool: 'flowguard_test', code: 'SESSION_UNRESOLVABLE' });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not emit the session-resolution diagnostic for ordinary failures', async () => {
+    const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      const invoke = harness({
+        description: 'test tool',
+        args: {},
+        async execute() {
+          throw new Error('ordinary failure');
+        },
+      });
+      await invoke();
+
+      const wrote = write.mock.calls.some((entry) =>
+        String(entry[0]).includes('mcp-session-resolver'),
+      );
+      expect(wrote).toBe(false);
+    } finally {
+      write.mockRestore();
     }
   });
 });

@@ -1,6 +1,7 @@
 import type { ReviewVerdict } from '../state/evidence.js';
 
-export type UserDecisionCommand = '/approve' | '/request-changes' | '/reject' | '/review-decision';
+export type UserDecisionCommand =
+  '/approve' | '/override-approve' | '/request-changes' | '/reject' | '/review-decision';
 
 export interface UserDecisionIntent {
   readonly sessionId: string;
@@ -39,6 +40,9 @@ export function parseUserDecisionCommand(input: {
 }): { readonly command: UserDecisionCommand; readonly expectedVerdict: ReviewVerdict } | null {
   const command = normalizeCommand(input.command);
   if (command === '/approve') return { command, expectedVerdict: 'approve' };
+  if (command === '/override-approve') {
+    return { command, expectedVerdict: 'approve_with_governance_override' };
+  }
   if (command === '/request-changes') return { command, expectedVerdict: 'changes_requested' };
   if (command === '/reject') return { command, expectedVerdict: 'reject' };
   if (command !== '/review-decision') return null;
@@ -54,8 +58,8 @@ export function recordUserDecisionIntent(input: {
   readonly sessionId: string;
   readonly command: UserDecisionCommand;
   readonly expectedVerdict: ReviewVerdict;
-  readonly nowMs?: number;
-  readonly ttlMs?: number;
+  readonly nowMs?: number | undefined;
+  readonly ttlMs?: number | undefined;
 }): UserDecisionIntent {
   const createdAtMs = input.nowMs ?? Date.now();
   const ttlMs = input.ttlMs ?? DEFAULT_TTL_MS;
@@ -87,6 +91,40 @@ export function recordUserDecisionIntentFromCommand(input: {
     nowMs: input.nowMs,
     ttlMs: input.ttlMs,
   });
+}
+
+/**
+ * Non-destructive gate check for a recorded user-decision intent.
+ *
+ * Unlike {@link consumeUserDecisionIntent}, a *valid* intent is left in place so
+ * a decision call that fails at a later, independent stage (schema validation,
+ * actor assurance, etc.) can be retried without the user re-issuing the command.
+ * The valid intent is only removed once the decision is actually processed — see
+ * {@link consumeUserDecisionIntent}, which the decision tool calls on success.
+ *
+ * Anti-replay is preserved for the terminal rejection reasons: an `expired` or
+ * `verdict_mismatch` intent IS deleted here so a stale or wrong-verdict command
+ * can never become an implicit approval cache for a later tool call. A `missing`
+ * intent has nothing to delete.
+ */
+export function peekUserDecisionIntent(input: {
+  readonly sessionId: string;
+  readonly verdict: ReviewVerdict;
+  readonly nowMs?: number;
+}): UserDecisionIntentConsumeResult {
+  const intent = intents.get(input.sessionId);
+  if (!intent) return { ok: false, reason: 'missing' };
+
+  const nowMs = input.nowMs ?? Date.now();
+  if (Date.parse(intent.expiresAt) <= nowMs) {
+    intents.delete(input.sessionId);
+    return { ok: false, reason: 'expired' };
+  }
+  if (intent.expectedVerdict !== input.verdict) {
+    intents.delete(input.sessionId);
+    return { ok: false, reason: 'verdict_mismatch' };
+  }
+  return { ok: true, intent };
 }
 
 export function consumeUserDecisionIntent(input: {

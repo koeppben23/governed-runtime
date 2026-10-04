@@ -1,0 +1,95 @@
+name: Control Plane Drift
+
+on:
+  pull_request:
+    paths:
+      - '.github/**'
+      - 'scripts/control-plane-*'
+      - 'scripts/release-preflight.js'
+      - 'scripts/verify-release-tag.js'
+      - 'scripts/assert-main-release-tag.js'
+  schedule:
+    - cron: '30 8 * * 1' # Mondays 08:30 UTC (after docs drift)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: control-plane-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Verify live control plane (pull request, partial)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/control-plane-drift.js --mode partial --verbose
+
+      - name: Verify live control plane (trusted, strict)
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}
+        run: node scripts/control-plane-drift.js --mode strict --verbose
+
+  # Remediation runs only for trusted schedule/dispatch events, never for
+  # pull_request runs of untrusted code, and holds issues:write without any
+  # contents:write or code checkout.
+  remediate:
+    name: control-plane-drift-remediation
+    needs: verify
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or refresh drift issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'control-plane-drift',
+              state: 'open',
+            });
+            if (issues.data.length > 0) {
+              console.log('Open control-plane-drift issue already exists, skipping.');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Control plane drifted from the repository contract',
+              labels: ['control-plane-drift', 'automated', 'high-risk'],
+              body: [
+                '## Control Plane Drift Detected',
+                '',
+                'The scheduled control-plane check found a divergence between the live',
+                'GitHub rulesets/environment and `scripts/control-plane-contract.js`.',
+                '',
+                `**Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '### Next steps',
+                '',
+                '1. Read the workflow log for the exact divergence list',
+                '2. Restore the relied-upon setting or update the contract through a protected PR',
+                '3. Re-run the workflow and close this issue only when it is green',
+              ].join('\n'),
+            });

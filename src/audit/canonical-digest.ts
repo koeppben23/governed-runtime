@@ -28,20 +28,31 @@
  * @version v1
  */
 
-import { hashText } from '../shared/hashing.js';
+import { hashDigestBytes, hashText, type Sha2Algorithm } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
-// Re-exported so existing consumers (and the SSOT guard's audit allowlist) keep
-// importing the canonical serializer from here, while the single definition
-// lives in shared/canonical-json.ts.
+// Re-exported so existing consumers keep importing the canonical serializer
+// from here, while the single definition lives in shared/canonical-json.ts.
 export { canonicalJsonStringify };
 
 const EXCLUDED_FIELDS = new Set([
   'chainHash',
+  'auditSequence',
+  'recordedAt',
   'timestampEvidence',
-  'canonicalEventDigest',
+  'semanticEventDigest',
   'prevHash',
 ]);
+
+/** Canonical event content shared by every digest algorithm. */
+function canonicalEventContent(event: Record<string, unknown>): string {
+  const stripped: Record<string, unknown> = {};
+  for (const key of Object.keys(event).sort()) {
+    if (EXCLUDED_FIELDS.has(key)) continue;
+    stripped[key] = event[key];
+  }
+  return canonicalJsonStringify(stripped);
+}
 
 /**
  * Compute the canonical event digest for TSA anchoring.
@@ -53,11 +64,26 @@ const EXCLUDED_FIELDS = new Set([
  * @returns SHA-256 hex digest.
  */
 export function computeCanonicalEventDigest(event: Record<string, unknown>): string {
-  const stripped: Record<string, unknown> = {};
-  for (const key of Object.keys(event).sort()) {
-    if (EXCLUDED_FIELDS.has(key)) continue;
-    stripped[key] = event[key];
-  }
-  const canonical = canonicalJsonStringify(stripped);
-  return hashText(canonical);
+  return hashText(canonicalEventContent(event));
+}
+
+/** Digest algorithms admissible for RFC 3161 message imprints (TSA2). */
+export type TsDigestAlgorithm = Sha2Algorithm;
+
+/**
+ * The full admissible digest family of the canonical event content, for
+ * verification of RFC 3161 tokens whose message imprint may use any of the
+ * allowlisted algorithms. The verifier selects the matching digest AFTER
+ * reading the token's declared imprint algorithm — a token never gets to
+ * choose which expected digest it is compared against.
+ */
+export function computeCanonicalEventDigests(
+  event: Record<string, unknown>,
+): Record<TsDigestAlgorithm, Uint8Array> {
+  const content = canonicalEventContent(event);
+  return {
+    sha256: hashDigestBytes('sha256', content),
+    sha384: hashDigestBytes('sha384', content),
+    sha512: hashDigestBytes('sha512', content),
+  };
 }

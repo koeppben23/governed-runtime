@@ -72,25 +72,13 @@ FlowGuard processes data in two contexts:
 - Long-term retention
 - Archive integrity verification
 
-### Export Redaction
+### Archive Evidence Handling
 
-FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
+Archive Layout v2 defaults to a redacted sharing archive (`basic`, `includeRaw=false`). It is `not_verifiable` because canonical runtime state and audit-chain evidence are intentionally excluded.
 
-**Scope of redaction:** Only `decision-receipts.*.json` and `review-report.*.json` are subject to export redaction. The following are always included as raw and are never redacted:
+Authorized auditors may request raw evidence only when `archive.redaction.allowRawExport=true`, using `redactionMode=none, includeRaw=true`. That archive includes raw runtime state, audit trail, decision receipts, review reports, and evidence artifacts. Its manifest marks `rawIncluded: true` and the `raw_audit_evidence_export` risk flag. Store and transfer raw archives as confidential material.
 
-- `session-state.json` — raw session state (internal SSOT)
-- `audit.jsonl` — raw append-only audit chain (integrity chain artifact)
-
-External references recorded on `/ticket` are stored in `session-state.json` and remain raw for authority/traceability reasons. This includes ticket URLs, tracker IDs, branch names, and similar reference metadata.
-
-Review-report export references are redacted in redacted export artifacts.
-
-Default archive behavior:
-
-- `archive.redaction.mode = basic`
-- `archive.redaction.includeRaw = false`
-
-Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests with a risk flag.
+External references recorded on `/ticket`, including URLs, tracker IDs, and branch names, remain raw in the archived authoritative state and reports.
 
 ### Configuration
 
@@ -232,5 +220,5 @@ User Input → OpenCode → FlowGuard Tools → Session State → Audit Trail �
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-15_

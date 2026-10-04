@@ -16,12 +16,18 @@ export {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue,
   abort_session,
   archive,
+  export,
   architecture,
+  help,
+  declare_contract,
+  observe_repository,
+  reconcile_mutation_episode,
 } from './tools/index.js';
 
 export { FlowGuardAuditPlugin } from './plugin.js';

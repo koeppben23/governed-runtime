@@ -9,7 +9,9 @@
  * - Stateless: all state on filesystem, crash-safe restart
  * - Delegates to same rail executors as the OpenCode plugin
  *
- * The server exposes all 13 FlowGuard governance tools via the MCP protocol.
+ * The server exposes FlowGuard governance tools via the MCP protocol.
+ * 18 of 20 Integration Tools are registered here (see docs/mcp-tool-surface.md
+ * for the two intentional exclusions).
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
@@ -17,11 +19,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js';
-import { resolveSessionContext } from './session-resolver.js';
+import { McpSessionBinder, type McpSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { PACKAGE_VERSION } from '../shared/package-version.js';
 import { mcpLogger } from './mcp-logger.js';
+import { McpExecutionLimiter, readMcpExecutionLimits } from './execution-limiter.js';
 
 // --- Tool Imports ---
 
@@ -37,12 +41,19 @@ import { ticket } from '../integration/tools/index.js';
 import { review } from '../integration/tools/index.js';
 import { abort_session } from '../integration/tools/index.js';
 import { archive } from '../integration/tools/index.js';
-// 'continue' is a reserved word - imported via namespace
+// 'continue' and 'export' are reserved words - imported via aliases
 import { continue as continue_cmd } from '../integration/tools/index.js';
+import { export as export_session } from '../integration/tools/index.js';
+import { help } from '../integration/tools/index.js';
+import {
+  declare_contract,
+  record_mutation_evidence,
+  observe_repository,
+} from '../integration/tools/index.js';
 
 // --- Tool Registry ---
 
-const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
+export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   status,
   hydrate,
   plan,
@@ -55,8 +66,17 @@ const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   review,
   abort_session,
   archive,
+  export: export_session,
   continue: continue_cmd,
+  help,
+  declare_contract,
+  record_mutation_evidence,
+  observe_repository,
 };
+
+const rootsListChangedNotification = z.object({
+  method: z.literal('notifications/roots/list_changed'),
+});
 
 // --- Server Factory ---
 
@@ -79,16 +99,28 @@ export function createMcpServer(): McpServer {
       },
     },
   );
+  const limiter = new McpExecutionLimiter(readMcpExecutionLimits());
+  const sessionBinder = new McpSessionBinder(sessionId);
+  let cachedContext: McpSessionContext | undefined;
 
-  // Register all 13 FlowGuard tools
-  registerAllTools(server, FLOWGUARD_TOOLS, () => {
-    // Resolve session context fresh for each tool call from host-advertised
-    // sources (FLOWGUARD_SESSION_DIR / FLOWGUARD_PROJECT_DIR env, or MCP roots).
-    // MCP roots/list is not wired here yet, so roots are passed as undefined and
-    // the env sources carry resolution. When no source is present the resolver
-    // fails closed (SESSION_UNRESOLVABLE) — never a cwd guess.
-    return resolveSessionContext(undefined, sessionId);
+  // MCP clients notify root changes, which invalidates the authority cache.
+  server.server.setNotificationHandler(rootsListChangedNotification, () => {
+    cachedContext = undefined;
   });
+
+  // Register FlowGuard tools
+  registerAllTools(
+    server,
+    FLOWGUARD_TOOLS,
+    async () => {
+      if (!cachedContext) {
+        const { roots } = await server.server.listRoots();
+        cachedContext = await sessionBinder.resolve(roots);
+      }
+      return cachedContext;
+    },
+    limiter,
+  );
 
   return server;
 }

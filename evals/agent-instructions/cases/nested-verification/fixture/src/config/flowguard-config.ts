@@ -1,0 +1,1 @@
+// src/config/flowguard-config.ts — has a type error to fix
