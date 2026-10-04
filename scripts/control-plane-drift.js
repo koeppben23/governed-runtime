@@ -2,17 +2,26 @@
 /**
  * @module scripts/control-plane-drift
  * @description Fail-closed drift detection for the relied-upon GitHub control
- * plane: branch ruleset, tag rulesets, and the protected release environment.
+ * plane: branch ruleset, tag rulesets, protected release environment, and the
+ * repository Actions policy.
  *
  * The live configuration is compared against `scripts/control-plane-contract.js`
- * (the single structured authority). Any missing or divergent relied-upon
- * setting fails. Because the repository is public, all endpoints are readable
- * without elevated credentials; `bypass_actors` is only visible to callers with
- * enough ruleset access, so a hidden actor list is reported as `UNVERIFIED`
- * instead of being silently treated as correct.
+ * (the single structured authority). Verification has two modes:
+ *
+ * - `strict` (default; scheduled runs and the release POST-TAG preflight):
+ *   every relied-upon setting, including the exact bypass actors, must be
+ *   readable and correct. Hidden `bypass_actors` is a failure.
+ * - `partial` (pull-request runs only, no privileged secret): everything
+ *   readable must match; hidden `bypass_actors` is reported as
+ *   `PARTIAL_VERIFICATION` instead of a false full match.
+ *
+ * The repository is public, so most endpoints are readable without elevated
+ * credentials. Reading `bypass_actors` and the Actions policy needs an
+ * owner-authorized read; set `CONTROL_PLANE_TOKEN` to a read-only token with
+ * `Administration: read`.
  *
  * Usage:
- *   node scripts/control-plane-drift.js [--verbose] [--repo owner/name]
+ *   node scripts/control-plane-drift.js [--mode strict|partial] [--verbose] [--repo owner/name]
  */
 
 import { CONTROL_PLANE_CONTRACT } from './control-plane-contract.js';
@@ -29,34 +38,64 @@ function ruleByType(ruleset, type) {
   return ruleset.rules?.find((rule) => rule.type === type);
 }
 
-function describeBypassActors(ruleset) {
-  if (Array.isArray(ruleset.bypass_actors)) {
-    return ruleset.bypass_actors.map((actor) => `${actor.actor_type}:${actor.actor_id}`);
-  }
-  return null;
+function describeActor(actor) {
+  return `${actor.actor_type}:${actor.actor_id}:${actor.bypass_mode ?? 'always'}`;
 }
 
-function checkBypassActors(ruleset, contract, failures, warnings) {
-  const actors = describeBypassActors(ruleset);
-  if (actors === null) {
-    warnings.push(
-      `UNVERIFIED bypass actors for ruleset '${ruleset.name}': the API hides bypass_actors for this caller (verify with an owner-authorized read)`,
-    );
+function describeExpectedActor(actor) {
+  return `${actor.actorType}:${actor.actorId}:${actor.bypassMode}`;
+}
+
+function checkBypassActors(ruleset, expectedActors, mode, failures, warnings, unverified) {
+  const observed = Array.isArray(ruleset.bypass_actors)
+    ? ruleset.bypass_actors.map(describeActor)
+    : null;
+  const expected = expectedActors.map(describeExpectedActor);
+  if (observed === null) {
+    const message = `bypass actors for ruleset '${ruleset.name}' could not be verified: the API requires an owner-authorized read (set CONTROL_PLANE_TOKEN)`;
+    if (mode === 'strict') {
+      failures.push(message);
+    } else {
+      warnings.push(`UNVERIFIED ${message}`);
+      unverified.push(`bypass actors for '${ruleset.name}'`);
+    }
     return;
   }
-  if (contract.expectsBypassActor && actors.length === 0) {
+  if (!sameSet(observed, expected)) {
     failures.push(
-      `ruleset '${ruleset.name}' must declare a bypass actor for the release authority, but has none`,
-    );
-  }
-  if (!contract.expectsBypassActor && actors.length > 0) {
-    failures.push(
-      `ruleset '${ruleset.name}' must not declare bypass actors (found ${actors.join(', ')})`,
+      `ruleset '${ruleset.name}' bypass actors are [${observed.join(', ')}], expected [${expected.join(', ')}]`,
     );
   }
 }
 
-function checkBranchRuleset(live, contract, failures, warnings) {
+function checkRefs(ruleset, refsContract, failures) {
+  const included = ruleset.conditions?.ref_name?.include ?? [];
+  const excluded = ruleset.conditions?.ref_name?.exclude ?? [];
+  if (refsContract.mode === 'exact') {
+    if (!sameSet(included, refsContract.includedRefs)) {
+      failures.push(
+        `ruleset '${ruleset.name}' includes [${included.join(', ')}], expected exactly [${refsContract.includedRefs.join(', ')}]`,
+      );
+    }
+    if (!sameSet(excluded, refsContract.excludedRefs)) {
+      failures.push(
+        `ruleset '${ruleset.name}' excludes [${excluded.join(', ')}], expected exactly [${refsContract.excludedRefs.join(', ')}]`,
+      );
+    }
+    return;
+  }
+  const allIncluded = included.includes('~ALL');
+  for (const ref of refsContract.includedRefs) {
+    if (!allIncluded && !included.includes(ref)) {
+      failures.push(`ruleset '${ruleset.name}' does not include ${ref}`);
+    }
+    if (excluded.includes(ref)) {
+      failures.push(`ruleset '${ruleset.name}' excludes protected ref ${ref}`);
+    }
+  }
+}
+
+function checkBranchRuleset(live, contract, mode, failures, warnings, unverified) {
   const ruleset = live.rulesets.find((entry) => entry.name === contract.name);
   if (!ruleset) {
     failures.push(`missing branch ruleset '${contract.name}'`);
@@ -78,24 +117,23 @@ function checkBranchRuleset(live, contract, failures, warnings) {
       failures.push(`ruleset '${ruleset.name}' is missing rule '${required}'`);
     }
   }
-  const includedRefs = ruleset.conditions?.ref_name?.include ?? [];
-  if (!includedRefs.includes('~ALL')) {
-    for (const ref of contract.includedRefs) {
-      if (!includedRefs.includes(ref)) {
-        failures.push(`ruleset '${ruleset.name}' does not include ${ref}`);
-      }
-    }
-  }
+  checkRefs(ruleset, contract.refs, failures);
   const statusRule = ruleByType(ruleset, 'required_status_checks');
   if (statusRule) {
-    const contexts = (statusRule.parameters?.required_status_checks ?? []).map(
-      (check) => check.context,
-    );
+    const entries = statusRule.parameters?.required_status_checks ?? [];
+    const contexts = entries.map((check) => check.context);
     if (!sameSet(contexts, contract.requiredStatusChecks)) {
       const missing = contract.requiredStatusChecks.filter((name) => !contexts.includes(name));
       const extra = contexts.filter((name) => !contract.requiredStatusChecks.includes(name));
       if (missing.length > 0) failures.push(`required checks missing: ${missing.join(', ')}`);
       if (extra.length > 0) failures.push(`required checks not in contract: ${extra.join(', ')}`);
+    }
+    for (const check of entries) {
+      if (check.integration_id !== contract.requiredStatusChecksIntegrationId) {
+        failures.push(
+          `required check '${check.context}' is bound to app ${check.integration_id ?? 'none'}, expected ${contract.requiredStatusChecksIntegrationId}`,
+        );
+      }
     }
     const strict = statusRule.parameters?.strict_required_status_checks_policy;
     if (strict !== contract.strictRequiredStatusChecks) {
@@ -137,10 +175,10 @@ function checkBranchRuleset(live, contract, failures, warnings) {
       );
     }
   }
-  checkBypassActors(ruleset, contract, failures, warnings);
+  checkBypassActors(ruleset, contract.bypassActors, mode, failures, warnings, unverified);
 }
 
-function checkTagRulesets(live, contract, failures, warnings) {
+function checkTagRulesets(live, contract, mode, failures, warnings, unverified) {
   for (const tagContract of contract) {
     const ruleset = live.rulesets.find((entry) => entry.name === tagContract.name);
     if (!ruleset) {
@@ -163,7 +201,8 @@ function checkTagRulesets(live, contract, failures, warnings) {
         failures.push(`ruleset '${ruleset.name}' is missing rule '${required}'`);
       }
     }
-    checkBypassActors(ruleset, tagContract, failures, warnings);
+    checkRefs(ruleset, tagContract.refs, failures);
+    checkBypassActors(ruleset, tagContract.bypassActors, mode, failures, warnings, unverified);
   }
 }
 
@@ -181,6 +220,17 @@ function checkReleaseEnvironment(live, contract, failures) {
       `environment '${contract.name}' wait timer is ${waitTimer.wait_timer} minutes, expected ${contract.waitTimerMinutes}`,
     );
   }
+  const deploymentPolicy = environment.deployment_branch_policy;
+  if (deploymentPolicy?.custom_branch_policies !== contract.customBranchPolicies) {
+    failures.push(
+      `environment '${contract.name}' custom_branch_policies is ${deploymentPolicy?.custom_branch_policies}, expected ${contract.customBranchPolicies}`,
+    );
+  }
+  if (deploymentPolicy?.protected_branches !== contract.protectedBranches) {
+    failures.push(
+      `environment '${contract.name}' protected_branches is ${deploymentPolicy?.protected_branches}, expected ${contract.protectedBranches}`,
+    );
+  }
   const policies = live.releaseEnvironmentPolicies ?? [];
   const tagPolicy = policies.find(
     (policy) => policy.name === contract.deploymentTagPolicy && policy.type === 'tag',
@@ -192,18 +242,50 @@ function checkReleaseEnvironment(live, contract, failures) {
   }
 }
 
+function checkActionsPolicy(live, contract, mode, failures, warnings, unverified) {
+  const permissions = live.actionsPermissions;
+  if (!permissions || permissions.unavailable) {
+    const message = `Actions policy could not be read${
+      permissions?.unavailable ? `: ${permissions.unavailable}` : ''
+    } (set CONTROL_PLANE_TOKEN)`;
+    if (mode === 'strict') {
+      failures.push(message);
+    } else {
+      warnings.push(`UNVERIFIED ${message}`);
+      unverified.push('Actions policy');
+    }
+    return;
+  }
+  if (permissions.enabled !== contract.enabled) {
+    failures.push(`Actions enabled is ${permissions.enabled}, expected ${contract.enabled}`);
+  }
+  if (permissions.allowed_actions !== contract.allowedActions) {
+    failures.push(
+      `Actions allowed_actions is '${permissions.allowed_actions}', expected '${contract.allowedActions}'`,
+    );
+  }
+  if (permissions.sha_pinning_required !== contract.shaPinningRequired) {
+    failures.push(
+      `Actions sha_pinning_required is ${permissions.sha_pinning_required}, expected ${contract.shaPinningRequired}`,
+    );
+  }
+}
+
 /**
  * Pure comparison between observed live configuration and the contract.
  *
- * @returns {{ failures: string[], warnings: string[] }}
+ * @returns {{ failures: string[], warnings: string[], unverified: string[] }}
  */
-export function evaluateControlPlane(live, contract = CONTROL_PLANE_CONTRACT) {
+export function evaluateControlPlane(live, contract = CONTROL_PLANE_CONTRACT, options = {}) {
+  const mode = options.mode === 'partial' ? 'partial' : 'strict';
   const failures = [];
   const warnings = [];
-  checkBranchRuleset(live, contract.branchRuleset, failures, warnings);
-  checkTagRulesets(live, contract.tagRulesets, failures, warnings);
+  const unverified = [];
+  checkBranchRuleset(live, contract.branchRuleset, mode, failures, warnings, unverified);
+  checkTagRulesets(live, contract.tagRulesets, mode, failures, warnings, unverified);
   checkReleaseEnvironment(live, contract.releaseEnvironment, failures);
-  return { failures, warnings };
+  checkActionsPolicy(live, contract.actionsPolicy, mode, failures, warnings, unverified);
+  return { failures, warnings, unverified };
 }
 
 async function githubJson(fetchImpl, path, token) {
@@ -221,7 +303,9 @@ async function githubJson(fetchImpl, path, token) {
 }
 
 /**
- * Fetch the live control plane. Fails closed: any unavailable endpoint throws.
+ * Fetch the live control plane. Rulesets, environments, and deployment
+ * policies are required and fail closed. The Actions policy is fetched
+ * best-effort and reported as unavailable when the caller is not authorized.
  */
 export async function fetchLiveControlPlane({ repo, token, fetchImpl = fetch }) {
   const rulesetSummaries = await githubJson(fetchImpl, `/repos/${repo}/rulesets`, token);
@@ -235,26 +319,40 @@ export async function fetchLiveControlPlane({ repo, token, fetchImpl = fetch }) 
     `/repos/${repo}/environments/${CONTROL_PLANE_CONTRACT.releaseEnvironment.name}/deployment-branch-policies`,
     token,
   );
+  let actionsPermissions;
+  try {
+    actionsPermissions = await githubJson(fetchImpl, `/repos/${repo}/actions/permissions`, token);
+  } catch (error) {
+    actionsPermissions = { unavailable: error instanceof Error ? error.message : String(error) };
+  }
   return {
     rulesets,
     environments: environments.environments ?? [],
     releaseEnvironmentPolicies: releaseEnvironmentPolicies.branch_policies ?? [],
+    actionsPermissions,
   };
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const verbose = args.includes('--verbose');
+  const modeIndex = args.indexOf('--mode');
+  const mode = modeIndex >= 0 ? args[modeIndex + 1] : 'strict';
   const repoIndex = args.indexOf('--repo');
   const repo = repoIndex >= 0 ? args[repoIndex + 1] : process.env.GITHUB_REPOSITORY;
   if (!repo) {
     console.error('control-plane-drift failed: pass --repo owner/name or set GITHUB_REPOSITORY');
     process.exit(1);
   }
+  if (mode !== 'strict' && mode !== 'partial') {
+    console.error(`control-plane-drift failed: unknown mode '${mode}'`);
+    process.exit(1);
+  }
 
+  const token = process.env.CONTROL_PLANE_TOKEN || process.env.GITHUB_TOKEN;
   let live;
   try {
-    live = await fetchLiveControlPlane({ repo, token: process.env.GITHUB_TOKEN });
+    live = await fetchLiveControlPlane({ repo, token });
   } catch (error) {
     console.error(
       `control-plane-drift failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -262,13 +360,15 @@ async function main() {
     process.exit(1);
   }
 
-  const { failures, warnings } = evaluateControlPlane(live, CONTROL_PLANE_CONTRACT);
+  const { failures, warnings, unverified } = evaluateControlPlane(live, CONTROL_PLANE_CONTRACT, {
+    mode,
+  });
   for (const warning of warnings) {
     console.warn(`warning: ${warning}`);
   }
   if (verbose) {
     console.log(
-      `Checked ${live.rulesets.length} ruleset(s) and ${live.environments.length} environment(s) on ${repo}.`,
+      `Checked ${live.rulesets.length} ruleset(s) and ${live.environments.length} environment(s) on ${repo} in ${mode} mode.`,
     );
   }
   if (failures.length > 0) {
@@ -277,6 +377,12 @@ async function main() {
     }
     console.error(`control-plane-drift failed: ${failures.length} divergence(s) detected`);
     process.exit(1);
+  }
+  if (unverified.length > 0) {
+    console.warn(
+      `control-plane-drift PARTIAL_VERIFICATION: ${unverified.join(', ')} could not be verified`,
+    );
+    return;
   }
   console.log('control-plane-drift OK: live configuration matches the contract.');
 }

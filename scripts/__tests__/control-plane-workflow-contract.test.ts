@@ -9,11 +9,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  CONTROL_PLANE_CONTRACT,
-  REQUIRED_STATUS_CHECKS,
-  TAG_RULESET_CONTRACTS,
-} from '../control-plane-contract.js';
+import { CONTROL_PLANE_CONTRACT, REQUIRED_STATUS_CHECKS } from '../control-plane-contract.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
@@ -26,9 +22,10 @@ describe('scripts/control-plane-workflow-contract', () => {
   describe('release workflow', () => {
     const workflow = readRepoFile('.github/workflows/release.yml');
 
-    it('runs the post-tag preflight before the verification jobs', () => {
+    it('runs the strict post-tag preflight before the verification jobs', () => {
       expect(workflow).toContain('  preflight:');
       expect(workflow).toContain('node scripts/verify-release-tag.js "$GITHUB_REF_NAME"');
+      expect(workflow).toContain('CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}');
       expect(workflow).toContain('  verify:\n    name: verify\n    needs: preflight');
       expect(workflow).toContain(
         'needs: [preflight, verify, release-smoke, verify-runtime, mutation]',
@@ -42,8 +39,9 @@ describe('scripts/control-plane-workflow-contract', () => {
       );
     });
 
-    it('publishes SemVer prereleases as GitHub prereleases', () => {
-      expect(workflow).toContain('if [[ "$GITHUB_REF_NAME" == *-* ]]');
+    it('derives prerelease publication from the preflight decision authority', () => {
+      expect(workflow).toContain('prerelease: ${{ steps.verify.outputs.prerelease }}');
+      expect(workflow).toContain('needs.preflight.outputs.prerelease');
       expect(workflow).toContain('--prerelease');
     });
   });
@@ -51,14 +49,29 @@ describe('scripts/control-plane-workflow-contract', () => {
   describe('control-plane drift workflow', () => {
     const workflow = readRepoFile('.github/workflows/control-plane-drift.yml');
 
-    it('keeps pull_request verification read-only', () => {
+    it('runs partial verification on pull requests without the privileged token', () => {
       const verifyJob = workflow.slice(
         workflow.indexOf('  verify:'),
         workflow.indexOf('  remediate:'),
       );
-      expect(verifyJob).toContain('GITHUB_TOKEN: ${{ github.token }}');
+      expect(verifyJob).toContain('--mode partial');
+      expect(verifyJob).toContain("if: github.event_name == 'pull_request'");
+      const partialStep = verifyJob.slice(
+        verifyJob.indexOf('Verify live control plane (pull request, partial)'),
+        verifyJob.indexOf('Verify live control plane (trusted, strict)'),
+      );
+      expect(partialStep).not.toContain('CONTROL_PLANE_TOKEN');
+    });
+
+    it('runs strict verification with the read token on trusted events', () => {
+      const verifyJob = workflow.slice(
+        workflow.indexOf('  verify:'),
+        workflow.indexOf('  remediate:'),
+      );
+      expect(verifyJob).toContain('--mode strict');
+      expect(verifyJob).toContain("if: github.event_name != 'pull_request'");
+      expect(verifyJob).toContain('CONTROL_PLANE_TOKEN: ${{ secrets.CONTROL_PLANE_READ_TOKEN }}');
       expect(verifyJob).not.toContain('issues: write');
-      expect(workflow).not.toContain('contents: write');
     });
 
     it('runs privileged remediation only on trusted non-PR events', () => {
@@ -66,6 +79,10 @@ describe('scripts/control-plane-workflow-contract', () => {
       const remediateJob = workflow.slice(workflow.indexOf('  remediate:'));
       expect(remediateJob).toContain('issues: write');
       expect(remediateJob).not.toContain('actions/checkout');
+    });
+
+    it('never grants contents write', () => {
+      expect(workflow).not.toContain('contents: write');
     });
   });
 
@@ -78,28 +95,17 @@ describe('scripts/control-plane-workflow-contract', () => {
       }
     });
 
-    it('documents both tag rulesets and the release environment', () => {
-      expect(branchProtection).toContain(TAG_RULESET_CONTRACTS[0]?.name);
-      expect(branchProtection).toContain(TAG_RULESET_CONTRACTS[1]?.name);
-      expect(branchProtection).toContain('release');
+    it('documents both tag rulesets, the release environment, and the Actions policy', () => {
+      expect(branchProtection).toContain(CONTROL_PLANE_CONTRACT.tagRulesets[0]?.name);
+      expect(branchProtection).toContain(CONTROL_PLANE_CONTRACT.tagRulesets[1]?.name);
       expect(branchProtection).toContain('wait timer');
-    });
-  });
-
-  describe('contract sanity', () => {
-    it('keeps tag creation and immutability as separate policies', () => {
-      expect(TAG_RULESET_CONTRACTS).toHaveLength(2);
-      const [creation, immutability] = TAG_RULESET_CONTRACTS;
-      expect(creation).toBeDefined();
-      expect(immutability).toBeDefined();
-      expect(creation?.requiredRules).toEqual(['creation']);
-      expect(creation?.expectsBypassActor).toBe(true);
-      expect(immutability?.requiredRules).toEqual(['update', 'deletion', 'non_fast_forward']);
-      expect(immutability?.expectsBypassActor).toBe(false);
+      expect(branchProtection).toContain('Actions policy');
     });
 
-    it('requires no approving review for the solo-maintainer ruleset', () => {
-      expect(CONTROL_PLANE_CONTRACT.branchRuleset.pullRequest.requiredApprovingReviewCount).toBe(0);
+    it('documents the strict/partial verification modes and the read token', () => {
+      expect(branchProtection).toContain('strict');
+      expect(branchProtection).toContain('PARTIAL_VERIFICATION');
+      expect(branchProtection).toContain('CONTROL_PLANE_READ_TOKEN');
     });
   });
 });
