@@ -256,6 +256,7 @@ jobs:
             release/checksums.sha256 \
             release/sbom.cdx.json \
             release/LICENSE \
+            --repo "$GITHUB_REPOSITORY" \
             --title "FlowGuard v${GITHUB_REF_NAME#v}" \
             --generate-notes \
             --verify-tag \

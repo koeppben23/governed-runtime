@@ -1038,6 +1038,13 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Security
 
+- **Release publication works without a checkout in the write job.** The
+  promote-only `release` job intentionally does not check out the repository,
+  but `gh release create` resolved the repository through git and failed with
+  `fatal: not a git repository`. It now passes `--repo "$GITHUB_REPOSITORY"`,
+  so the verified artifact publishes without adding code to the write-capable
+  job.
+
 - **Release tag provenance and control-plane drift.** The tag-triggered release
   workflow now runs a POST-TAG preflight before any write-capable step: the
   pushed tag must be an annotated tag object with a GitHub-verified signature
