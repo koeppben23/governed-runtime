@@ -278,4 +278,4 @@ These require specialized accounting/ERP systems.
 
 _Last Updated: 2026-04-19_
 
-FlowGuard Version: 2.0.0-tp.1
+FlowGuard Version: 2.0.0-tp.2
