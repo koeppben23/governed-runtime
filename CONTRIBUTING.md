@@ -31,94 +31,24 @@ top-level module directions are owned exclusively by `MODULE_DEPENDENCY_POLICY`
 module graph must match that policy exactly — including zero module cycles (see
 [Architecture Rules](#architecture-rules)).
 
-## Development Setup
+## Development Setup And Debugging
 
-### Prerequisites
+The [Development Guide](docs/development/index.md) is the contributor
+navigation entry point. The canonical local setup, debugging, and dogfooding
+workflow — including the macOS + IntelliJ IDEA flow, Vitest, CLI, MCP, OpenCode
+live debugging, source maps, and isolated dogfood repositories — lives in
+[docs/development/debugging.md](docs/development/debugging.md); this file
+intentionally does not duplicate it.
 
 - Node.js — canonical version defined in `.node-version` (currently `22.22.2`).
-  - `nvm install "$(cat .node-version)" && nvm use "$(cat .node-version)"`
-  - `fnm use "$(cat .node-version)"`
-- npm (bundled with the Node version)
 - The package runtime support claim is `^20.0.0 || ^22.0.0 || ^24.0.0` (see `engines` in `package.json`); CI verifies the packed artifact on each supported major separately from the dev toolchain.
-- Dev-only tooling (for example `scripts/generate-mutation-registry.mjs`, which imports TypeScript through Node type stripping) may require the pinned `.node-version` runtime; that is a development contract and does not widen the published `engines` range.
-
-### Installation
-
-```bash
-# Install exactly from the committed lockfile
-npm ci
-
-# Type check
-npm run check
-
-# Check production or test/configuration contexts separately
-npm run check:prod
-npm run check:tests
-
-# Lint (CI gate: --max-warnings=0)
-npm run lint:strict
-
-# Run the default unit and integration suite
-npm test
-
-# Run deterministic agent-instruction eval tests
-npm run test:evals
-
-# Run coverage gate
-npm run test:coverage
-
-# Build
-npm run build
-```
 
 ## Testing
 
-FlowGuard uses Vitest for testing. Run the checks relevant to the changed surface before
-submitting a PR; `npm test` runs the default unit and integration suite only.
-Linting is enforced on `src/**/*.ts` with an additional type-aware safety profile on critical governance surfaces (`src/audit`, `src/config`, `src/redaction`, `src/adapters/workspace`).
-Coverage thresholds are 80% across branches, lines, functions, and statements:
-
-- Branches: 80%
-- Lines: 80%
-- Functions: 80%
-- Statements: 80%
-
-```bash
-# Run the default unit and integration suite
-npm test
-
-# Run deterministic agent-instruction eval tests
-npm run test:evals
-
-# Run tests in watch mode
-npm run test:watch
-
-# Check code formatting (Prettier)
-npm run check:format
-
-# Format code
-npm run format
-
-# Generate changelog
-npm run changelog
-
-# Run a specific test file
-npx vitest run src/state/state.test.ts
-
-# Run architecture tests
-npx vitest run src/architecture/__tests__/dependency-rules.test.ts
-```
-
-### Test Categories
-
-| Category     | Files                              | Purpose                           |
-| ------------ | ---------------------------------- | --------------------------------- |
-| Unit         | `src/**/*.test.ts` (w/ exclusions) | Core logic testing                |
-| Architecture | `src/architecture/__tests__/`      | Dependency rule verification      |
-| Integration  | `src/integration/*.test.ts`        | OpenCode tool integration         |
-| Evals        | `evals/**/*.test.ts`                | Deterministic agent-instruction harness contracts |
-| Smoke        | `src/cli/*smoke*.test.ts`          | Built CLI + ACP end-to-end        |
-| Performance  | `*.test.ts` with PERF describe     | Performance regression prevention |
+Test selection, layers, and the executable verification surface are owned by
+[docs/testing-strategy.md](docs/testing-strategy.md); `package.json` is the
+executable script authority. Coverage thresholds are 80% across branches,
+lines, functions, and statements; run the gate with `npm run test:coverage`.
 
 ### Test Naming Conventions
 
@@ -144,15 +74,6 @@ describe('ModuleName / Feature', () => {
   });
 });
 ```
-
-## Debugging
-
-The [Development Guide](docs/development/index.md) is the contributor
-navigation entry point for setup, architecture, debugging, and dogfooding.
-
-For the canonical macOS + IntelliJ IDEA development and debugging workflow,
-including Vitest, CLI, MCP, OpenCode live debugging, source maps and isolated
-dogfood repositories, see [docs/development/debugging.md](docs/development/debugging.md).
 
 ## Code Style
 
@@ -464,25 +385,10 @@ High-risk work must include:
 
 ### 2. Development
 
-```bash
-# Create a feature branch
-git checkout -b feat/my-feature
-
-# Make changes
-# ... write code ...
-
-# Run the default unit and integration suite
-npm test
-
-# Run deterministic agent-instruction eval tests
-npm run test:evals
-
-# Run type check
-npm run check
-
-# Run architecture tests
-npm run test:architecture
-```
+Create a topic branch per the [Branch Model](#branch-model), make the change,
+and run the checks selected by
+[docs/testing-strategy.md](docs/testing-strategy.md) on top of the
+[AGENTS.md](AGENTS.md#verification) verification list.
 
 ### 3. Commit Messages
 

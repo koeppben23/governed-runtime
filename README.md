@@ -147,26 +147,9 @@ New to the codebase? Start with the
 [Developer Architecture Map](./docs/development/architecture-map.md), which maps
 change types to owning modules and checks, and to
 [Your First Change](./docs/development/first-change.md), an additive walkthrough.
-
-```bash
-# Install exactly from the committed lockfile
-npm ci
-
-# Type check
-npm run check
-
-# Lint
-npm run lint
-
-# Run tests
-npm test
-
-# Run coverage gate (global thresholds enforced)
-npm run test:coverage
-
-# Build
-npm run build
-```
+Setup, debugging, and command selection are owned there and by
+[docs/testing-strategy.md](./docs/testing-strategy.md); `package.json` is the
+executable script authority.
 
 ### CI Jobs
 
