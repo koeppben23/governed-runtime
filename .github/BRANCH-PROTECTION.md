@@ -223,7 +223,6 @@ required-check list together.
    `release` environment wait timer (15 minutes) and its `v*` tag deployment
    policy through the same strict run.
 3. Open a test PR and confirm merge stays blocked until all required checks pass.
-4. Open a test PR and confirm merge stays blocked until all required checks pass.
 
 ## Emergency Procedure
 
