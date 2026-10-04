@@ -21,17 +21,18 @@ import * as path from 'node:path';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
-  DiscoverySummarySchema,
   DetectedItemSchema,
-  DetectedStackSchema,
-  DetectedStackVersionSchema,
-  DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
 } from './types.js';
+import {
+  DetectedStackSchema,
+  DetectedStackTargetSchema,
+  DiscoverySummarySchema,
+} from '../state/discovery-schemas.js';
 import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
@@ -65,14 +66,31 @@ vi.mock('../adapters/git', () => ({
 
 const gitMock = await import('../adapters/git.js');
 
+import type { DiscoveryIoPort } from './io-port.js';
+
+const EMPTY_SIGNALS = {
+  files: [] as string[],
+  packageFilePaths: [] as string[],
+  configFilePaths: [] as string[],
+};
+
+const DISCOVERY_IO: DiscoveryIoPort = {
+  readPersistedDiscovery: async () => null,
+  listRepoSignals: async () => EMPTY_SIGNALS,
+  defaultBranch: gitMock.defaultBranch,
+  headCommit: gitMock.headCommit,
+  isClean: gitMock.isClean,
+  remoteOriginUrl: gitMock.remoteOriginUrl,
+};
+
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
 const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -96,8 +114,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -116,8 +134,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -132,14 +150,13 @@ describe('discovery/orchestrator', () => {
       // Override remoteOriginUrl for this test (default mock returns null)
       vi.mocked(gitMock.remoteOriginUrl).mockResolvedValueOnce('https://github.com/test/repo.git');
 
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
 
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
       expect(result.collectedAt).toBeDefined();
       expect(typeof result.collectedAt).toBe('string');
 
-      // All collectors should report status
-      expect(Object.keys(result.collectors).length).toBe(6);
+      expect(result.diagnostics).toHaveLength(6);
 
       // Stack should have detected TypeScript
       expect(result.stack.languages.some((l) => l.id === 'typescript')).toBe(true);
@@ -147,8 +164,7 @@ describe('discovery/orchestrator', () => {
       // Topology should be single-project
       expect(result.topology.kind).toBe('single-project');
 
-      // Validation hints should have commands
-      expect(result.validationHints.commands.length).toBeGreaterThan(0);
+      expect(result).not.toHaveProperty('validationHints');
 
       // Schema validation passes
       const parsed = DiscoveryResultSchema.safeParse(result);
@@ -156,7 +172,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDiscoverySummary produces lightweight summary', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const summary = extractDiscoverySummary(result);
 
       expect(summary.primaryLanguages).toContain('typescript');
@@ -172,7 +188,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('computeDiscoveryDigest returns deterministic hash', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const digest1 = computeDiscoveryDigest(result);
       const digest2 = computeDiscoveryDigest(result);
 
@@ -182,7 +198,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack returns versioned items sorted by category then id', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
 
       // TS project should have at least typescript with a version
@@ -194,23 +210,6 @@ describe('discovery/orchestrator', () => {
 
       expect(ds.summary).toBeTruthy();
       expect(ds.items.length).toBeGreaterThan(0);
-      expect(ds.versions.length).toBeGreaterThanOrEqual(0);
-
-      // Every versioned entry must have id, version, and target
-      for (const v of ds.versions) {
-        expect(v.id.length).toBeGreaterThan(0);
-        expect(v.version.length).toBeGreaterThan(0);
-        expect([
-          'language',
-          'framework',
-          'runtime',
-          'buildTool',
-          'tool',
-          'testFramework',
-          'qualityTool',
-          'database',
-        ]).toContain(v.target);
-      }
 
       // Every item must have id and kind
       for (const item of ds.items) {
@@ -234,7 +233,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack summary matches items array', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       if (!ds) return;
 
@@ -246,10 +245,10 @@ describe('discovery/orchestrator', () => {
   describe('CORNER', () => {
     it('handles empty input gracefully', async () => {
       // Override git mocks to return null for empty-repo scenario
-      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
-      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
       expect(result.stack.languages).toHaveLength(0);
@@ -257,17 +256,17 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack returns null when no items have versions', async () => {
-      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
-      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).toBeNull();
     });
 
     it('extractDetectedStack sorts languages before frameworks before runtimes', async () => {
       // Build a synthetic DiscoveryResult with mixed categories
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       // Inject synthetic versioned items across categories
       result.stack.runtimes = [
         { id: 'node', confidence: 0.9, classification: 'fact', evidence: [], version: '20.11.0' },
@@ -300,7 +299,7 @@ describe('discovery/orchestrator', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions.map((v) => v.target)).toEqual([
+      expect(ds!.items.map((item) => item.kind)).toEqual([
         'language',
         'framework',
         'runtime',
@@ -316,7 +315,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack includes evidence when versionEvidence exists', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         {
           id: 'java',
@@ -336,12 +335,11 @@ describe('discovery/orchestrator', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions[0]!.evidence).toBe('pom.xml:<java.version>');
       expect(ds!.items[0]!.evidence).toBe('pom.xml:<java.version>');
     });
 
     it('extractDetectedStack omits evidence when versionEvidence is absent', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         { id: 'go', confidence: 0.9, classification: 'fact', evidence: [], version: '1.21' },
       ];
@@ -354,11 +352,11 @@ describe('discovery/orchestrator', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions[0]!.evidence).toBeUndefined();
+      expect(ds!.items[0]!.evidence).toBeUndefined();
     });
 
-    it('extractDetectedStack surfaces unversioned items in items[] but not versions[]', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+    it('extractDetectedStack surfaces versioned and unversioned items in items[]', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       // Inject a versioned language + unversioned test framework
       result.stack.languages = [
         {
@@ -392,16 +390,12 @@ describe('discovery/orchestrator', () => {
       expect(ds!.items[1]).toMatchObject({ kind: 'testFramework', id: 'vitest' });
       expect(ds!.items[1]!.version).toBeUndefined();
 
-      // versions[] has only versioned item
-      expect(ds!.versions).toHaveLength(1);
-      expect(ds!.versions[0]).toMatchObject({ id: 'java', version: '21', target: 'language' });
-
       // summary: "java=21, vitest"
       expect(ds!.summary).toBe('java=21, vitest');
     });
 
     it('extractDetectedStack populates targets[] from compilerTarget', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         {
           id: 'typescript',
@@ -433,7 +427,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack omits targets[] when no compilerTarget exists', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         { id: 'go', confidence: 0.9, classification: 'fact', evidence: [], version: '1.21' },
       ];
@@ -450,7 +444,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack uses evidence[0] when versionEvidence is absent', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.testFrameworks = [
         {
           id: 'vitest',
@@ -472,10 +466,10 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack returns null for completely empty stack', async () => {
-      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
-      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       // Double-check: all categories are empty
       expect(result.stack.languages).toHaveLength(0);
       expect(result.stack.frameworks).toHaveLength(0);
@@ -485,75 +479,64 @@ describe('discovery/orchestrator', () => {
       expect(ds).toBeNull();
     });
 
-    it('validation hints derive typecheck command from tsconfig', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
-      const typecheckCmd = result.validationHints.commands.find((c) => c.kind === 'typecheck');
-      expect(typecheckCmd).toBeDefined();
-      expect(typecheckCmd?.command).toContain('tsc');
+    it('detects TypeScript from tsconfig', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
+      expect(result.stack.languages.some((item) => item.id === 'typescript')).toBe(true);
     });
 
-    it('validation hints derive lint tools from eslint config', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
-      const eslint = result.validationHints.lintTools.find((t) => t.id === 'eslint');
+    it('detects eslint from eslint config', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
+      const eslint = result.stack.qualityTools.find((item) => item.id === 'eslint');
       expect(eslint).toBeDefined();
       expect(eslint?.classification).toBe('fact');
     });
 
     it('monorepo input yields monorepo topology', async () => {
-      const result = await runDiscovery(MONOREPO_INPUT);
+      const result = await runDiscovery(MONOREPO_INPUT, DISCOVERY_IO);
       expect(result.topology.kind).toBe('monorepo');
       expect(result.topology.modules.length).toBeGreaterThanOrEqual(3);
     });
 
-    it('derives gradle/jest commands from detected stack', async () => {
+    it('detects gradle and jest from repository evidence', async () => {
       const input: CollectorInput = {
         worktreePath: '/test/gradle',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/app.kt'],
-        packageFiles: ['build.gradle'],
-        configFiles: ['jest.config.ts'],
+        packageFilePaths: ['build.gradle'],
+        configFilePaths: ['jest.config.ts'],
       };
 
-      const result = await runDiscovery(input);
-      const commands = result.validationHints.commands.map((c) => c.command);
-
-      expect(commands).toContain('gradle build');
-      expect(commands).toContain('gradle test');
-      expect(commands).toContain('npx jest');
+      const result = await runDiscovery(input, DISCOVERY_IO);
+      expect(result.stack.buildTools.some((item) => item.id === 'gradle')).toBe(true);
+      expect(result.stack.testFrameworks.some((item) => item.id === 'jest')).toBe(true);
     });
 
-    it('derives cargo and go-module commands from detected stack', async () => {
+    it('detects cargo and go modules from repository evidence', async () => {
       const input: CollectorInput = {
         worktreePath: '/test/multi',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/lib.rs', 'main.go', 'Cargo.toml', 'go.mod'],
-        packageFiles: ['Cargo.toml', 'go.mod'],
-        configFiles: [],
+        packageFilePaths: ['Cargo.toml', 'go.mod'],
+        configFilePaths: [],
       };
 
-      const result = await runDiscovery(input);
-      const commands = result.validationHints.commands.map((c) => c.command);
-
-      expect(commands).toContain('cargo build');
-      expect(commands).toContain('cargo test');
-      expect(commands).toContain('go build ./...');
-      expect(commands).toContain('go test ./...');
+      const result = await runDiscovery(input, DISCOVERY_IO);
+      expect(result.stack.buildTools.map((item) => item.id)).toEqual(
+        expect.arrayContaining(['cargo', 'go-modules']),
+      );
     });
 
-    it('derives maven commands from detected stack', async () => {
+    it('detects maven from repository evidence', async () => {
       const input: CollectorInput = {
         worktreePath: '/test/maven',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/main/java/App.java'],
-        packageFiles: ['pom.xml'],
-        configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       };
 
-      const result = await runDiscovery(input);
-      const commands = result.validationHints.commands.map((c) => c.command);
-
-      expect(commands).toContain('mvn compile');
-      expect(commands).toContain('mvn test');
+      const result = await runDiscovery(input, DISCOVERY_IO);
+      expect(result.stack.buildTools.some((item) => item.id === 'maven')).toBe(true);
     });
   });
 
@@ -562,7 +545,7 @@ describe('discovery/orchestrator', () => {
       // Input with both invalid and valid package files
       const badInput: CollectorInput = {
         ...TS_PROJECT_INPUT,
-        packageFiles: ['yarn.lock', 'package.json'],
+        packageFilePaths: ['yarn.lock', 'package.json'],
       };
 
       // Should not throw — should handle gracefully
@@ -583,7 +566,7 @@ describe('discovery/orchestrator', () => {
     it('runDiscovery completes even if one collector throws', async () => {
       // Note: Individual collectors should not throw, but we verify resilience
       // If a collector throws, the orchestrator should handle it
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
     });
   });
@@ -597,7 +580,7 @@ describe('discovery/orchestrator', () => {
       };
 
       const start = Date.now();
-      const result = await runDiscovery(largeInput);
+      const result = await runDiscovery(largeInput, DISCOVERY_IO);
       const elapsed = Date.now() - start;
 
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
@@ -611,8 +594,10 @@ describe('discovery/orchestrator', () => {
         return 'main';
       });
 
-      const result = await runDiscovery(TS_PROJECT_INPUT, 1);
-      const failedCollectors = Object.values(result.collectors).filter((s) => s === 'failed');
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO, 1);
+      const failedCollectors = result.diagnostics.filter(
+        (diagnostic) => diagnostic.status === 'failed',
+      );
 
       expect(failedCollectors.length).toBeGreaterThan(0);
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
@@ -626,7 +611,7 @@ describe('discovery/orchestrator', () => {
 
       for (let i = 0; i < iterations; i++) {
         const start = Date.now();
-        await runDiscovery(TS_PROJECT_INPUT);
+        await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
         times.push(Date.now() - start);
       }
 
@@ -636,7 +621,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('computeDiscoveryDigest is fast (< 5ms)', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const start = Date.now();
       computeDiscoveryDigest(result);
       const elapsed = Date.now() - start;

@@ -6,7 +6,7 @@
  * Risk classification enforcement extracted to plugin-risk.ts (FG-REL-042).
  * After-hook processing extracted to plugin-afterhooks.ts.
  *
- * @version v10
+ * @version v11
  */
 
 import { existsSync, statSync } from 'node:fs';
@@ -28,20 +28,28 @@ import { createPluginLogger } from './plugin-logging.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import type { OrchestratorDeps } from './plugin-orchestrator.js';
 import type { RiskEnforcementDeps } from './plugin-risk.js';
-import { type FlowGuardPluginRuntime } from './plugin-shared.js';
-import { createOpenCodeHostAdapter } from './opencode-host-adapter.js';
+import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-shared.js';
+import { createOpenCodeHostAdapter, HostCapabilityMismatchError } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
-import type { OrchestratorClient } from './review/orchestrator.js';
+import type { OrchestratorClient } from './review/types.js';
+import {
+  isNativeReviewerTaskAfter,
+  isNativeReviewerTaskBefore,
+  nativeReviewTaskAfter,
+  nativeReviewTaskBefore,
+} from './review/dispatch/native-task-review.js';
+import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
+import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
+import { renderPlanClaimDeclarations } from '../presentation/index.js';
+import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
   const normalized = path.resolve(worktree);
   if (normalized === '/' || /^[A-Za-z]:[\\/]?$/.test(normalized)) return false;
   try {
-    const gitPath = path.join(normalized, '.git');
-    if (!existsSync(gitPath)) return false;
-    const st = statSync(gitPath);
-    return st.isDirectory() || st.isFile();
+    if (!existsSync(normalized)) return false;
+    return statSync(normalized).isDirectory();
   } catch {
     return false;
   }
@@ -53,14 +61,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   const ws = createWorkspace({ auditWorktree });
 
-  try {
-    await ws.resolveFingerprint();
-  } catch (err) {
-    console.warn(
-      '[flowguard] workspace fingerprint resolution failed (non-blocking):',
-      err instanceof Error ? err.message : String(err),
-    );
-  }
+  await resolveWorkspaceFingerprint(ws);
 
   const { log, config, disposeLogging } = await createPluginLogger(
     client,
@@ -69,6 +70,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     ws.cachedFingerprint,
     auditWorktree ? repoConfigPath(auditWorktree) : undefined,
   );
+
+  initHumanProjectionTelemetrySink(config.humanProjectionTelemetry.enabled);
 
   const adapterLog = toAdapterLogger(log);
 
@@ -88,16 +91,18 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   const typedClient = client as OrchestratorClient;
 
-  let currentSessionId = 'unknown';
   const adapter = createOpenCodeHostAdapter({
     client: typedClient,
-    getSessionId: () => currentSessionId,
     directory: candidateWorktree ?? '',
     worktree: candidateWorktree ?? '',
   });
 
-  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
+  await initializeHostAdapter(adapter, log, disposeLogging);
+
+  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient);
   const toolTraceIds = new Map<string, string>();
+  const activeCommandScopes = new Map<string, ActiveCommandScope>();
+  const checkReworkContinuations = new Set<string>();
   const auditDeps = createAuditDeps(
     ws,
     log,
@@ -125,31 +130,71 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     orchestratorDeps,
     auditDeps,
     toolTraceIds,
-    setCurrentSessionId: (sessionId) => {
-      currentSessionId = sessionId;
-    },
+    activeCommandScopes,
+    checkReworkContinuations,
     logError,
   });
 
-  // Use OpenCode's plugin teardown hook (Hooks.dispose) to flush + release log
-  // sinks (OTLP shutdown + SIGUSR1 detach). OpenCode awaits dispose, giving the
-  // OTLP batch exporter a real completion point — unlike global process-exit
-  // listeners, this is per-instance and is not leaked across plugin inits.
-  if (disposeLogging) {
-    hooks.dispose = disposeLogging;
-  }
+  hooks.dispose = async () => {
+    try {
+      await adapter.shutdown();
+    } finally {
+      await disposeLogging?.();
+    }
+  };
 
   return hooks;
 };
 
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
+type PluginLoggingRuntime = Awaited<ReturnType<typeof createPluginLogger>>;
+
+async function resolveWorkspaceFingerprint(ws: PluginWorkspaceRuntime): Promise<void> {
+  try {
+    await ws.resolveFingerprint();
+  } catch (err) {
+    console.warn(
+      '[flowguard] workspace fingerprint resolution failed (non-blocking):',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+async function initializeHostAdapter(
+  adapter: ReturnType<typeof createOpenCodeHostAdapter>,
+  log: PluginLogger,
+  disposeLogging: PluginLoggingRuntime['disposeLogging'],
+): Promise<void> {
+  // Fail-closed boot: on any initialization or capability failure, release the
+  // resources acquired above (adapter + logging/OTLP/reloader) before
+  // rethrowing. Without this, repeated failed boots would leak SIGUSR1
+  // listeners and OTLP exporter timers while hooks.dispose never exists.
+  try {
+    await adapter.initialize();
+    const capabilityValidation = await adapter.validateCapabilities();
+    if (!capabilityValidation.valid) {
+      throw new HostCapabilityMismatchError(capabilityValidation.mismatches);
+    }
+    log.warn('adapter', 'host capabilities are contract-attested only', {
+      code: 'HOST_CAPABILITY_UNVERIFIED',
+      runtimeVerified: capabilityValidation.runtimeVerified,
+      contractAttested: capabilityValidation.contractAttested,
+    });
+  } catch (err) {
+    try {
+      await adapter.shutdown();
+    } finally {
+      await disposeLogging?.();
+    }
+    throw err;
+  }
+}
 
 function createOrchestratorDeps(
   ws: PluginWorkspaceRuntime,
   log: PluginLogger,
   client: OrchestratorClient,
-  adapter: OrchestratorDeps['adapter'],
 ): OrchestratorDeps {
   return {
     resolveFingerprint: ws.resolveFingerprint,
@@ -159,7 +204,6 @@ function createOrchestratorDeps(
     getEnforcementState: ws.getEnforcementState,
     log,
     client,
-    adapter,
   };
 }
 
@@ -173,6 +217,7 @@ function createAuditDeps(
   return {
     resolveFingerprint: ws.resolveFingerprint,
     getSessionDir: ws.getSessionDir,
+    resolveCanonicalSessionDir: ws.resolveCanonicalSessionDir,
     resolveSessionPolicy,
     initChain: ws.initChain,
     invalidateChainState: ws.invalidateChainState,
@@ -191,8 +236,34 @@ function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<Re
   return {
     'command.execute.before': (input: unknown, output: unknown) =>
       commandBefore(runtime, input, output),
-    'tool.execute.before': (input: unknown, output: unknown) => toolBefore(runtime, input, output),
-    'tool.execute.after': (input: unknown, output: unknown) => toolAfter(runtime, input, output),
+    'tool.execute.before': async (input: unknown, output: unknown) => {
+      // The governed reviewer Task is its own host-transport boundary. It must
+      // not traverse the generic host-tool path because that path has no child
+      // identity/dispatch semantics; nativeReviewTaskBefore performs the exact
+      // durable authorization and canonical prompt injection instead.
+      if (isNativeReviewerTaskBefore(output)) {
+        await nativeReviewTaskBefore(
+          runtime,
+          input,
+          output,
+          (sessionId, toolName) =>
+            reconcilePendingAuditOperations(runtime.auditDeps, sessionId, toolName),
+          { evaluateProofGraphGate, renderPlanClaimDeclarations },
+        );
+        return;
+      }
+      await toolBefore(runtime, input, output);
+    },
+    'tool.execute.after': async (input: unknown, output: unknown) => {
+      // Native Task text is transcript-only. Its dedicated after boundary
+      // performs same-child structured capture and evidence binding before the
+      // result reaches the parent agent.
+      if (isNativeReviewerTaskAfter(input)) {
+        await nativeReviewTaskAfter(runtime, input, output);
+        return;
+      }
+      await toolAfter(runtime, input, output);
+    },
     event: ({ event }) => handlePluginEvent(runtime, event),
     'experimental.session.compacting': (input, output) => handleCompaction(runtime, input, output),
   };

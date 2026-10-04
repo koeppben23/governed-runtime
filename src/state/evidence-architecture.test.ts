@@ -22,6 +22,8 @@ describe('evidence-architecture', () => {
         status: 'proposed' as const,
         createdAt: FIXED_TIME,
         digest: 'sha256-adr',
+        reviewFindings: [],
+        reviewCompletion: 'pending' as const,
       };
       expect(ArchitectureDecision.parse(adr)).toEqual(adr);
     });
@@ -34,6 +36,7 @@ describe('evidence-architecture', () => {
         status: 'accepted' as const,
         createdAt: FIXED_TIME,
         digest: 'sha256-deadbeef',
+        reviewCompletion: 'reviewer_accepted' as const,
         reviewFindings: [],
       };
       expect(ArchitectureDecision.parse(adr)).toEqual(adr);
@@ -87,7 +90,7 @@ describe('evidence-architecture', () => {
       expect(validateAdrSections('')).toEqual(['## Context', '## Decision', '## Consequences']);
     });
 
-    it('ArchitectureDecision with absent reviewFindings is valid (legacy compat)', () => {
+    it('ArchitectureDecision requires review completion evidence', () => {
       const adr = {
         id: 'ADR-1',
         title: 'Legacy ADR',
@@ -96,11 +99,40 @@ describe('evidence-architecture', () => {
         createdAt: FIXED_TIME,
         digest: 'abc',
       };
+      expect(() => ArchitectureDecision.parse(adr)).toThrow();
+    });
+
+    it('accepts review exhaustion as lifecycle evidence without changing ADR content', () => {
+      const adr = {
+        id: 'ADR-1',
+        title: 'Exhausted ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        status: 'proposed' as const,
+        reviewFindings: [],
+        reviewCompletion: 'review_exhausted' as const,
+        createdAt: FIXED_TIME,
+        digest: 'content-digest',
+      };
       expect(ArchitectureDecision.parse(adr)).toEqual(adr);
     });
   });
 
   describe('EDGE', () => {
+    it('rejects an unknown review completion state', () => {
+      expect(() =>
+        ArchitectureDecision.parse({
+          id: 'ADR-1',
+          title: 'Test',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          status: 'proposed',
+          reviewFindings: [],
+          reviewCompletion: 'accepted',
+          createdAt: FIXED_TIME,
+          digest: 'abc',
+        }),
+      ).toThrow();
+    });
+
     it('ArchitectureDecision rejects empty title', () => {
       expect(() =>
         ArchitectureDecision.parse({

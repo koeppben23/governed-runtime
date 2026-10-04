@@ -91,9 +91,9 @@ describe('SDK Contract: Claude Code hook protocol', () => {
       expect(schema.required).toContain('hookSpecificOutput');
       const hookOutput = (schema.properties as Record<string, Record<string, unknown>>)
         .hookSpecificOutput;
-      expect(hookOutput.required).toContain('hookEventName');
-      expect(hookOutput.required).toContain('permissionDecision');
-      expect(hookOutput.required).toContain('permissionDecisionReason');
+      expect(hookOutput!.required).toContain('hookEventName');
+      expect(hookOutput!.required).toContain('permissionDecision');
+      expect(hookOutput!.required).toContain('permissionDecisionReason');
     });
 
     it('FlowGuard deny output satisfies schema structure', () => {
@@ -116,7 +116,7 @@ describe('SDK Contract: Claude Code hook protocol', () => {
     it('post-tool-use output supports additionalContext injection', () => {
       const schema = loadSchema(claudeBaseDir, 'post-tool-use-output.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      const hookProps = props.hookSpecificOutput.properties as Record<string, unknown>;
+      const hookProps = props.hookSpecificOutput!.properties as Record<string, unknown>;
       expect(hookProps).toHaveProperty('additionalContext');
     });
   });
@@ -188,8 +188,8 @@ describe('SDK Contract: Codex hook protocol', () => {
     it('schema has permission_mode field', () => {
       const schema = loadSchema(codexBaseDir, 'pre-tool-use-input.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.permission_mode.enum).toContain('default');
-      expect(props.permission_mode.enum).toContain('full-auto');
+      expect(props.permission_mode!.enum).toContain('default');
+      expect(props.permission_mode!.enum).toContain('full-auto');
     });
 
     it('schema has turn_id and tool_use_id (Codex-only)', () => {
@@ -202,7 +202,7 @@ describe('SDK Contract: Codex hook protocol', () => {
     it('transcript_path allows null (Codex may not provide it)', () => {
       const schema = loadSchema(codexBaseDir, 'pre-tool-use-input.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      const transcriptType = props.transcript_path.type;
+      const transcriptType = props.transcript_path!.type;
       expect(transcriptType).toContain('null');
     });
   });
@@ -211,16 +211,16 @@ describe('SDK Contract: Codex hook protocol', () => {
     it('output schema has updatedInput in hookSpecificOutput', () => {
       const schema = loadSchema(codexBaseDir, 'pre-tool-use-output.json');
       const hookProps = (schema.properties as Record<string, Record<string, unknown>>)
-        .hookSpecificOutput.properties as Record<string, unknown>;
+        .hookSpecificOutput!.properties as Record<string, unknown>;
       expect(hookProps).toHaveProperty('updatedInput');
     });
 
     it('permissionDecision allows both deny and allow', () => {
       const schema = loadSchema(codexBaseDir, 'pre-tool-use-output.json');
       const hookProps = (schema.properties as Record<string, Record<string, unknown>>)
-        .hookSpecificOutput.properties as Record<string, Record<string, unknown>>;
-      expect(hookProps.permissionDecision.enum).toContain('deny');
-      expect(hookProps.permissionDecision.enum).toContain('allow');
+        .hookSpecificOutput!.properties as Record<string, Record<string, unknown>>;
+      expect(hookProps.permissionDecision!.enum).toContain('deny');
+      expect(hookProps.permissionDecision!.enum).toContain('allow');
     });
   });
 
@@ -236,9 +236,9 @@ describe('SDK Contract: Codex hook protocol', () => {
     it('session-start includes source enum', () => {
       const schema = loadSchema(codexBaseDir, 'session-start-input.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.source.enum).toContain('startup');
-      expect(props.source.enum).toContain('resume');
-      expect(props.source.enum).toContain('clear');
+      expect(props.source!.enum).toContain('startup');
+      expect(props.source!.enum).toContain('resume');
+      expect(props.source!.enum).toContain('clear');
     });
   });
 
@@ -246,13 +246,13 @@ describe('SDK Contract: Codex hook protocol', () => {
     it('stop includes stop_hook_active boolean', () => {
       const schema = loadSchema(codexBaseDir, 'stop-input.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.stop_hook_active.type).toBe('boolean');
+      expect(props.stop_hook_active!.type).toBe('boolean');
     });
 
     it('stop includes last_assistant_message (nullable)', () => {
       const schema = loadSchema(codexBaseDir, 'stop-input.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.last_assistant_message.type).toContain('null');
+      expect(props.last_assistant_message!.type).toContain('null');
     });
   });
 
@@ -264,9 +264,9 @@ describe('SDK Contract: Codex hook protocol', () => {
 
       // Both require hookSpecificOutput with same 3 fields
       const claudeReq = (claudeSchema.properties as Record<string, Record<string, unknown>>)
-        .hookSpecificOutput.required as string[];
+        .hookSpecificOutput!.required as string[];
       const codexReq = (codexSchema.properties as Record<string, Record<string, unknown>>)
-        .hookSpecificOutput.required as string[];
+        .hookSpecificOutput!.required as string[];
 
       expect(claudeReq).toContain('hookEventName');
       expect(claudeReq).toContain('permissionDecision');
@@ -291,9 +291,9 @@ describe('SDK Contract: Codex hook protocol', () => {
       const claudeSchema = loadSchema(claudeBaseDir, 'pre-tool-use-input.json');
       const codexSchema = loadSchema(codexBaseDir, 'pre-tool-use-input.json');
       const claudeType = (claudeSchema.properties as Record<string, Record<string, unknown>>)
-        .transcript_path.type;
+        .transcript_path!.type;
       const codexType = (codexSchema.properties as Record<string, Record<string, unknown>>)
-        .transcript_path.type;
+        .transcript_path!.type;
       expect(claudeType).toBe('string');
       expect(codexType).toContain('null');
     });

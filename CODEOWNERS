@@ -12,6 +12,13 @@
 /src/integration/           @koeppben23
 /src/cli/                   @koeppben23
 /.github/workflows/         @koeppben23
+/.github/BRANCH-PROTECTION.md @koeppben23
+
+# Release, dependency, and lockfile policy
+/scripts/                   @koeppben23
+/package.json               @koeppben23
+/package-lock.json          @koeppben23
+/knip.json                  @koeppben23
 
 # Configuration and security
 /src/config/                 @koeppben23

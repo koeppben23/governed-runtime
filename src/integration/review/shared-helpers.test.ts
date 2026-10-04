@@ -1,52 +1,17 @@
 /**
  * @module integration/review/shared-helpers.test
- * @description Tests for shared-helpers pure functions — attestation validation,
- *              policy extraction, output detection, and session context construction.
+ * @description Tests for shared-helpers pure functions — attestation validation.
  *
  * @test-policy HAPPY, BAD
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   validatePipelineAttestation,
-  isStrictEnforcementEnabled,
-  isOutputAlreadyBlocked,
-  buildReviewDiscoveryContextForPipeline,
   REASON_MANDATE_MISSING,
   REASON_MANDATE_MISMATCH,
   REASON_UNABLE_TO_REVIEW,
 } from './shared-helpers.js';
-import type { PipelineContext } from './pipeline-types.js';
-import type { SessionState } from '../../state/schema.js';
-
-const { buildReviewDiscoveryContext } = vi.hoisted(() => ({
-  buildReviewDiscoveryContext: vi.fn(),
-}));
-
-vi.mock('./discovery-context-loader.js', () => ({
-  buildReviewDiscoveryContext: (input: unknown) => buildReviewDiscoveryContext(input),
-}));
-
-vi.mock('../review/orchestrator.js', () => ({
-  extractReviewContext: vi.fn(),
-}));
-vi.mock('../review/prompt-builders.js', () => ({
-  buildPlanReviewPrompt: vi.fn(),
-  buildImplReviewPrompt: vi.fn(),
-  buildArchitectureReviewPrompt: vi.fn(),
-  selectReviewerProfileRules: vi.fn(() => ({})),
-}));
-
-vi.mock('../plugin-helpers.js', () => ({
-  parseToolResult: vi.fn((output: string) => {
-    try {
-      const parsed = JSON.parse(output);
-      return parsed;
-    } catch {
-      return null;
-    }
-  }),
-}));
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -91,33 +56,33 @@ describe('validatePipelineAttestation', () => {
   it('missing attestation returns MANDATE_MISSING', () => {
     const result = validatePipelineAttestation(findings({ attestation: null }), fullExpected());
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISSING);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISSING);
   });
 
   it('mandate digest mismatch returns MANDATE_MISMATCH', () => {
     const result = validatePipelineAttestation(
-      findings({ attestation: { ...findings().attestation!, mandateDigest: 'wrong' } }),
+      findings({ attestation: { ...findings().attestation, mandateDigest: 'wrong' } }),
       fullExpected(),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('iteration mismatch returns MANDATE_MISMATCH', () => {
     const result = validatePipelineAttestation(findings(), fullExpected({ iteration: 2 }));
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('reviewedBy mismatch returns MANDATE_MISMATCH', () => {
     const result = validatePipelineAttestation(
       findings({
-        attestation: { ...findings().attestation!, reviewedBy: 'wrong-agent' },
+        attestation: { ...findings().attestation, reviewedBy: 'wrong-agent' },
       }),
       fullExpected(),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('unable_to_review verdict with enforce flag returns UNABLE_TO_REVIEW', () => {
@@ -126,7 +91,7 @@ describe('validatePipelineAttestation', () => {
       fullExpected({ checkUnableToReview: true }),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_UNABLE_TO_REVIEW);
+    if (!result.valid) expect(result.code).toBe(REASON_UNABLE_TO_REVIEW);
   });
 
   it('obligationId mismatch returns MANDATE_MISMATCH', () => {
@@ -135,7 +100,7 @@ describe('validatePipelineAttestation', () => {
       fullExpected({ obligationId: 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb' }),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('criteriaVersion mismatch returns MANDATE_MISMATCH', () => {
@@ -144,90 +109,6 @@ describe('validatePipelineAttestation', () => {
       fullExpected({ criteriaVersion: '9.9.9' }),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
-  });
-});
-
-// ─── isStrictEnforcementEnabled ───────────────────────────────────────────────
-
-describe('isStrictEnforcementEnabled', () => {
-  it('returns true when selfReview.strictEnforcement is true', () => {
-    const s = {
-      policySnapshot: { selfReview: { strictEnforcement: true } },
-    } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(true);
-  });
-
-  it('returns false when selfReview is absent', () => {
-    const s = { policySnapshot: {} } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(false);
-  });
-
-  it('returns false when strictEnforcement is false', () => {
-    const s = {
-      policySnapshot: { selfReview: { strictEnforcement: false } },
-    } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(false);
-  });
-});
-
-// ─── isOutputAlreadyBlocked ───────────────────────────────────────────────────
-
-describe('isOutputAlreadyBlocked', () => {
-  it('detects blocked output from result string', () => {
-    expect(
-      isOutputAlreadyBlocked({
-        output: JSON.stringify({ error: true, code: 'TEST_CODE' }),
-      }),
-    ).toBe(true);
-  });
-
-  it('returns false for non-blocked output', () => {
-    expect(isOutputAlreadyBlocked({ output: JSON.stringify({ error: false }) })).toBe(false);
-  });
-
-  it('returns false for non-JSON output', () => {
-    expect(isOutputAlreadyBlocked({ output: 'plain text output' })).toBe(false);
-  });
-});
-
-// ─── buildReviewDiscoveryContextForPipeline (#401 drift) ──────────────────────
-
-describe('buildReviewDiscoveryContextForPipeline (#401 drift)', () => {
-  beforeEach(() => {
-    buildReviewDiscoveryContext.mockReset();
-    buildReviewDiscoveryContext.mockResolvedValue({ verificationCandidates: [] });
-  });
-
-  function makeCtx(): PipelineContext {
-    return {
-      sessionState: { binding: { worktree: '/tmp/repo' } },
-      deps: {
-        resolveFingerprint: vi.fn().mockResolvedValue('fp-1'),
-        log: { warn: vi.fn(), info: vi.fn() },
-        adapter: { getWorktree: () => '/tmp/repo' },
-      },
-    } as unknown as PipelineContext;
-  }
-
-  it('requests a drift check for content/PR review (includeDriftCheck: true)', async () => {
-    await buildReviewDiscoveryContextForPipeline(makeCtx());
-
-    expect(buildReviewDiscoveryContext).toHaveBeenCalledTimes(1);
-    const input = buildReviewDiscoveryContext.mock.calls[0][0] as {
-      includeDriftCheck?: boolean;
-    };
-    expect(input.includeDriftCheck).toBe(true);
-  });
-
-  it('passes resolved fingerprint and worktree to the loader', async () => {
-    await buildReviewDiscoveryContextForPipeline(makeCtx());
-
-    const input = buildReviewDiscoveryContext.mock.calls[0][0] as {
-      fingerprint?: string | null;
-      worktree?: string;
-    };
-    expect(input.fingerprint).toBe('fp-1');
-    expect(input.worktree).toBe('/tmp/repo');
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 });

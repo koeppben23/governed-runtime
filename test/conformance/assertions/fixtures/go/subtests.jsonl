@@ -1,0 +1,17 @@
+{"Time":"2026-08-07T09:54:19.190978+02:00","Action":"start","Package":"flowguard-conformance-go"}
+{"Time":"2026-08-07T09:54:19.556312+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestNested"}
+{"Time":"2026-08-07T09:54:19.556371+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested","Output":"=== RUN   TestNested\n"}
+{"Time":"2026-08-07T09:54:19.556412+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestNested/multiplication"}
+{"Time":"2026-08-07T09:54:19.556422+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/multiplication","Output":"=== RUN   TestNested/multiplication\n"}
+{"Time":"2026-08-07T09:54:19.556439+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/multiplication","Output":"--- PASS: TestNested/multiplication (0.00s)\n"}
+{"Time":"2026-08-07T09:54:19.556447+02:00","Action":"pass","Package":"flowguard-conformance-go","Test":"TestNested/multiplication","Elapsed":0}
+{"Time":"2026-08-07T09:54:19.556456+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing"}
+{"Time":"2026-08-07T09:54:19.556462+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Output":"=== RUN   TestNested/nested_failing\n"}
+{"Time":"2026-08-07T09:54:19.556469+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Output":"    math_test.go:36: Add(1,1) = 2; want 3\n"}
+{"Time":"2026-08-07T09:54:19.556476+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Output":"--- FAIL: TestNested/nested_failing (0.00s)\n"}
+{"Time":"2026-08-07T09:54:19.556484+02:00","Action":"fail","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Elapsed":0}
+{"Time":"2026-08-07T09:54:19.556492+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested","Output":"--- FAIL: TestNested (0.00s)\n"}
+{"Time":"2026-08-07T09:54:19.55651+02:00","Action":"fail","Package":"flowguard-conformance-go","Test":"TestNested","Elapsed":0}
+{"Time":"2026-08-07T09:54:19.556519+02:00","Action":"output","Package":"flowguard-conformance-go","Output":"FAIL\n"}
+{"Time":"2026-08-07T09:54:19.55687+02:00","Action":"output","Package":"flowguard-conformance-go","Output":"FAIL\tflowguard-conformance-go\t0.365s\n"}
+{"Time":"2026-08-07T09:54:19.556886+02:00","Action":"fail","Package":"flowguard-conformance-go","Elapsed":0.366}

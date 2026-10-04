@@ -28,7 +28,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import {
   status,
   hydrate,
@@ -116,6 +116,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -254,19 +255,23 @@ async function currentSessionDir(): Promise<string> {
 
 describe('abort_session', () => {
   describe('HAPPY', () => {
-    it('aborts session to COMPLETE', async () => {
+    it('aborts session to the ABORTED terminal position', async () => {
       await hydrateAndTicket();
       const raw = await abort_session.execute({ reason: 'Testing abort' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('COMPLETE');
+      expect(result.phase).toBe('ABORTED');
+      // Governance integrity: the aborted session is explicitly marked and is NOT
+      // presented as a clean completion; ABORTED has a terminal directive.
+      expect(result.aborted).toBe(true);
+      expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
     });
 
     it('abort is persisted on disk', async () => {
       await hydrateSession();
       await abort_session.execute({ reason: 'Done' }, ctx);
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).toBe('COMPLETE');
+      expect(s.phase).toBe('ABORTED');
     });
   });
 
@@ -285,7 +290,7 @@ describe('abort_session', () => {
       await hydrateSession();
       const raw = await abort_session.execute({ reason: 'Cancel' }, ctx);
       const result = parseToolResult(raw);
-      expect(result.phase).toBe('COMPLETE');
+      expect(result.phase).toBe('ABORTED');
     });
   });
 
@@ -293,7 +298,7 @@ describe('abort_session', () => {
   // the terminal phase, emits a diagnostic warn, and delegates to the rail,
   // which performs an idempotent no-op (no overwrite, no transition).
   describe('#421 terminal-phase guard', () => {
-    it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+    it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const)(
       '%s: abort is a no-op and logs a boundary warn (no overwrite)',
       async (phase) => {
         await hydrateSession();
@@ -311,7 +316,7 @@ describe('abort_session', () => {
         const warns: Array<{
           service: string;
           message: string;
-          extra?: Record<string, unknown>;
+          extra: Record<string, unknown> | undefined;
         }> = [];
         const capturing: AdapterLogger = {
           info: () => {},

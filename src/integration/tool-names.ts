@@ -1,15 +1,26 @@
 /**
  * @module integration/tool-names
- * @description Canonical FlowGuard tool name constants.
+ * @description Canonical FlowGuard tool identity authority.
  *
- * Single source of truth for all FlowGuard tool names and agent identifiers.
- * Every module that compares or routes on tool names MUST import from here.
+ * Single source of truth for all FlowGuard tool names and their namespace
+ * prefixes. Every module that compares, routes, allowlists, or classifies on
+ * a FlowGuard tool identity MUST import from here; lower layers that may not
+ * depend on `integration/` may store a tool name as data, and
+ * `architecture/__tests__/tool-name-ssot.test.ts` proves that data stays a
+ * member of the canonical vocabulary.
  *
- * REVIEWER_SUBAGENT_TYPE is re-exported from shared/flowguard-identifiers.ts
- * (neutral module, zero dependencies, importable by any layer).
+ * `FLOWGUARD_TOOL_NAMES` is the canonical tuple; the set and the
+ * `FlowGuardToolName` union are derived from it, so membership can never
+ * diverge from the vocabulary.
  *
- * @version v1
+ * @version v2
  */
+
+/** Namespace prefix every canonical FlowGuard tool name starts with. */
+export const FLOWGUARD_TOOL_PREFIX = 'flowguard_';
+
+/** OpenCode MCP namespace prefix under which FlowGuard tools are exposed. */
+export const MCP_FLOWGUARD_TOOL_PREFIX = 'mcp__flowguard__';
 
 export const TOOL_FLOWGUARD_STATUS = 'flowguard_status';
 export const TOOL_FLOWGUARD_HYDRATE = 'flowguard_hydrate';
@@ -28,16 +39,70 @@ export const TOOL_FLOWGUARD_IMPLEMENT = 'flowguard_implement';
  * evidence-record call — unrepresentable at the tool surface.
  */
 export const TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION = 'flowguard_review_implementation';
+export const TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE =
+  'flowguard_resolve_implementation_challenge';
 export const TOOL_FLOWGUARD_RUN_CHECK = 'flowguard_run_check';
 export const TOOL_FLOWGUARD_REVIEW = 'flowguard_review';
 export const TOOL_FLOWGUARD_CONTINUE = 'flowguard_continue';
 export const TOOL_FLOWGUARD_ARCHITECTURE = 'flowguard_architecture';
 export const TOOL_FLOWGUARD_ABORT = 'flowguard_abort_session';
 export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
+export const TOOL_FLOWGUARD_EXPORT = 'flowguard_export';
+export const TOOL_FLOWGUARD_HELP = 'flowguard_help';
+export const TOOL_FLOWGUARD_DECLARE_CONTRACT = 'flowguard_declare_contract';
+export const TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE = 'flowguard_record_mutation_evidence';
+export const TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE = 'flowguard_reconcile_mutation_episode';
+/**
+ * The sanctioned reviewer observation capability. The ONLY tool whose output
+ * may become repository evidence authority. The reviewer agent templates
+ * carve this out of their deny-lists deliberately.
+ */
+export const TOOL_FLOWGUARD_OBSERVE_REPOSITORY = 'flowguard_observe_repository';
 
-export { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+/**
+ * The complete canonical FlowGuard tool vocabulary.
+ *
+ * This tuple is the identity authority. Every individual constant above MUST
+ * appear here exactly once; the architecture guard proves that invariant.
+ */
+export const FLOWGUARD_TOOL_NAMES = [
+  TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_TICKET,
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
+  TOOL_FLOWGUARD_RUN_CHECK,
+  TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_CONTINUE,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_EXPORT,
+  TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_DECLARE_CONTRACT,
+  TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
+  TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+] as const;
 
-const FLOWGUARD_VERDICT_TOOLS: ReadonlySet<string> = new Set([
+/** The canonical FlowGuard tool identity union, derived from the tuple. */
+export type FlowGuardToolName = (typeof FLOWGUARD_TOOL_NAMES)[number];
+
+/** Membership view over the canonical vocabulary (derived, never hand-built). */
+export const ALL_FLOWGUARD_TOOL_NAMES: ReadonlySet<FlowGuardToolName> = new Set(
+  FLOWGUARD_TOOL_NAMES,
+);
+
+/** Whether a string is a canonical FlowGuard tool identity. */
+export function isFlowGuardToolName(value: string): value is FlowGuardToolName {
+  return ALL_FLOWGUARD_TOOL_NAMES.has(value as FlowGuardToolName);
+}
+
+/** The subset of FlowGuard tools that submit a verdict. */
+const FLOWGUARD_VERDICT_TOOLS: ReadonlySet<FlowGuardToolName> = new Set([
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_ARCHITECTURE,
@@ -45,5 +110,5 @@ const FLOWGUARD_VERDICT_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 export function isFlowGuardVerdictTool(toolName: string): boolean {
-  return FLOWGUARD_VERDICT_TOOLS.has(toolName);
+  return isFlowGuardToolName(toolName) && FLOWGUARD_VERDICT_TOOLS.has(toolName);
 }

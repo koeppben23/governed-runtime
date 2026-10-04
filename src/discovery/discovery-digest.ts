@@ -7,12 +7,20 @@
  *
  * JSON canonicalization is delegated to the single canonical serializer in
  * `shared/canonical-json.ts`; this module does NOT define its own. Invariants:
- * - computeDiscoveryDigest() is backward-compatible, behavior unchanged
  * - computeStableDriftDigest() strips only collectedAt and diagnostics[].durationMs
  */
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import type { DiscoveryResult } from './types.js';
+
+const COLLECTOR_OUTPUTS = {
+  'repo-metadata': 'repoMetadata',
+  'stack-detection': 'stack',
+  topology: 'topology',
+  'surface-detection': 'surfaces',
+  'code-surface-analysis': 'codeSurfaces',
+  'domain-signals': 'domainSignals',
+} as const;
 
 /**
  * Compute SHA-256 digest of a DiscoveryResult.
@@ -32,10 +40,9 @@ export function computeDiscoveryDigest(result: DiscoveryResult): string {
  * - diagnostics[].durationMs (wall-clock timing — varies per run)
  *
  * Preserves all content-semantic fields including:
- * - schemaVersion, collectors, diagnostics[].{name, status, timedOut,
+ * - schemaVersion, diagnostics[].{name, status, timedOut,
  *   errorCode, degradedReason}
- * - repoMetadata, stack, topology, surfaces, codeSurfaces, domainSignals,
- *   validationHints
+ * - repoMetadata, stack, topology, surfaces, codeSurfaces, domainSignals
  */
 function stripVolatileFields(result: DiscoveryResult): Record<string, unknown> {
   const {
@@ -46,14 +53,59 @@ function stripVolatileFields(result: DiscoveryResult): Record<string, unknown> {
     collectedAt: string;
   };
 
-  const strippedDiagnostics = diagnostics?.map(
+  const strippedDiagnostics = diagnostics.map(
     ({ durationMs: _durationMs, ...diagRest }) => diagRest,
   );
 
   return {
     ...rest,
-    ...(strippedDiagnostics ? { diagnostics: strippedDiagnostics } : {}),
+    diagnostics: strippedDiagnostics,
   };
+}
+
+/**
+ * Compute stable digests for every semantic producer in DiscoveryResult.
+ * Together these projections cover every field in the stable global digest,
+ * so a semantic global drift always has a named diagnostic contributor.
+ */
+export function computeStableDiscoveryContributorDigests(
+  result: DiscoveryResult,
+): ReadonlyMap<string, string> {
+  const digests = new Map<string, string>();
+  const diagnosticsByName = new Map(
+    result.diagnostics.map(({ durationMs: _durationMs, ...diagnostic }) => [
+      diagnostic.name,
+      diagnostic,
+    ]),
+  );
+  const collectorNames = new Set<keyof typeof COLLECTOR_OUTPUTS>([
+    ...diagnosticsByName.keys(),
+    ...(Object.keys(COLLECTOR_OUTPUTS) as Array<keyof typeof COLLECTOR_OUTPUTS>),
+  ]);
+
+  for (const name of [...collectorNames].sort()) {
+    const outputKey = COLLECTOR_OUTPUTS[name];
+    digests.set(
+      name,
+      hashText(
+        canonicalJsonStringify({
+          status: diagnosticsByName.get(name)?.status ?? null,
+          diagnostic: diagnosticsByName.get(name) ?? null,
+          output: outputKey ? result[outputKey] : null,
+        }),
+      ),
+    );
+  }
+  digests.set(
+    'discovery-metadata',
+    hashText(
+      canonicalJsonStringify({
+        schemaVersion: result.schemaVersion,
+        diagnosticOrder: result.diagnostics.map((diagnostic) => diagnostic.name),
+      }),
+    ),
+  );
+  return digests;
 }
 
 /**

@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { HOST_IDS } from '../shared/hosts.js';
@@ -126,23 +127,34 @@ export const FlowGuardConfigSchema = z.object({
       otlp: { enabled: false, allowInsecure: false },
     }),
 
+  /** Human Projection UX telemetry — optional, non-authoritative, disabled by default. */
+  humanProjectionTelemetry: z
+    .object({
+      /** Enable structured UX observation events. Default: false (opt-in). */
+      enabled: z.boolean().default(false),
+    })
+    .default({ enabled: false }),
+
   /** Policy override configuration. Merged field-wise with the resolved preset. */
   policy: z
     .object({
       /** Default policy mode when /hydrate is called without an explicit mode. */
       defaultMode: PolicyModeSchema.optional(),
-      /** Override max self-review iterations (PLAN phase). */
-      maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
-      /** Override max impl-review iterations (IMPL_REVIEW phase). */
-      maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
-      /** P33/P34: Require verified actor identity for regulated approvals.
-       * Superseded by minimumActorAssuranceForApproval when set. */
-      requireVerifiedActorsForApproval: z.boolean().optional(),
-      /** P34: Minimum assurance level required for approval.
-       * 'best_effort' | 'claim_validated' | 'idp_verified' */
-      minimumActorAssuranceForApproval: z
-        .enum(['best_effort', 'claim_validated', 'idp_verified'])
+      /** Field-wise review-loop budget overrides. */
+      reviewBudget: z
+        .object({
+          plan: z.number().int().min(1).max(10).optional(),
+          architecture: z.number().int().min(1).max(10).optional(),
+          implementation: z.number().int().min(1).max(10).optional(),
+        })
         .optional(),
+      /** Override retries after accept findings contain blocking issues (F12). */
+      maxIncoherentReviewerCaptureRetries: z.number().int().min(0).max(5).optional(),
+      /** Override obligation-level reviewer-attempt budget (output repairs and
+       * task re-arms). */
+      maxReviewerAttempts: z.number().int().min(0).max(5).optional(),
+      /** P34: Minimum assurance level required for approval. */
+      minimumActorAssuranceForApproval: ActorAssuranceSchema.optional(),
       /** P35a/P35b1/P35b2: IdP configuration for static keys or JWKS (path/URI). */
       identityProvider: IdpConfigSchema.optional(),
       /** P35a: IdP verification mode ('optional' or 'required'). */
@@ -150,7 +162,6 @@ export const FlowGuardConfigSchema = z.object({
       /** Enforce machine-checked runtime risk classification. */
       enforceRiskClassification: z.boolean().optional(),
       /** Permit structured risk-downgrade overrides. Initial presets keep this false. */
-      allowRiskDowngradeOverride: z.boolean().optional(),
       /** Permit policy-gated reduced ceremony for runtime-verified TRIVIAL tasks. */
       allowReducedCeremony: z.boolean().optional(),
       /**
@@ -177,6 +188,7 @@ export const FlowGuardConfigSchema = z.object({
         })
         .optional(),
     })
+    .strict()
     .default({}),
 
   /** Profile configuration. */
@@ -189,6 +201,19 @@ export const FlowGuardConfigSchema = z.object({
     })
     .default({}),
 
+  /** Transient presentation preferences; never workflow or audit authority. */
+  presentation: z
+    .object({
+      /** OpenCode-only transient Markdown preferences. */
+      opencode: z
+        .object({
+          /** Glyph vocabulary for host-visible Markdown responses. */
+          glyphProfile: z.enum(['unicode', 'ascii']).default('unicode'),
+        })
+        .default({ glyphProfile: 'unicode' }),
+    })
+    .default({ opencode: { glyphProfile: 'unicode' } }),
+
   /** Host execution configuration. Does not affect governance authority. */
   host: z
     .object({
@@ -197,26 +222,35 @@ export const FlowGuardConfigSchema = z.object({
     })
     .default({}),
 
-  /** Archive configuration. Fields reserved — logic implemented in later phases. */
+  /** Archive configuration. */
   archive: z
     .object({
-      /** Number of days to retain archived sessions. Null = no auto-cleanup. */
-      retentionDays: z.number().int().min(1).optional(),
-      /** Whether to auto-cleanup old sessions on workspace init. */
-      autoCleanupSessions: z.boolean().optional(),
-      /** Custom export path for archived sessions. Null = default location. */
-      exportPath: z.string().optional(),
-      /** Export redaction policy for archive artifacts. */
+      /** Export redaction constraints for archive artifacts. */
       redaction: z
         .object({
-          /** Redaction mode for export artifacts. */
-          mode: z.enum(['none', 'basic', 'strict']).default('basic'),
-          /** Include raw artifacts in archive alongside redacted artifacts. */
-          includeRaw: z.boolean().default(false),
+          /** Allowed redaction modes. Must contain at least one. */
+          allowedModes: z
+            .array(z.enum(['none', 'basic', 'pseudonymous']))
+            .min(1)
+            .default(['none', 'basic', 'pseudonymous']),
+          /** Whether raw (unredacted) evidence export is permitted. Default: false (secure). */
+          allowRawExport: z.boolean().default(false),
+          /** Maximum audit events processed during redaction. Exceeding this fails the archive. */
+          maxAuditEvents: z.number().int().min(1).max(100_000).default(10_000),
         })
-        .default({ mode: 'basic', includeRaw: false }),
+        .default({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: false,
+          maxAuditEvents: 10_000,
+        }),
     })
-    .default({ redaction: { mode: 'basic', includeRaw: false } }),
+    .default({
+      redaction: {
+        allowedModes: ['none', 'basic', 'pseudonymous'],
+        allowRawExport: false,
+        maxAuditEvents: 10_000,
+      },
+    }),
 });
 
 // ─── Types ───────────────────────────────────────────────────────────────────

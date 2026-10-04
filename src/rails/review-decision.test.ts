@@ -6,12 +6,109 @@ import {
   IMPL_EVIDENCE,
   PLAN_RECORD,
   FIXED_TIME,
+  APPROVED_IMPL_REVIEW,
+  REDUCED_CEREMONY_DECISION,
 } from '../fixtures.js';
+import { TEAM_POLICY } from '../config/policy.js';
+import type { FlowGuardPolicy } from '../config/policy.js';
+import type { ReviewAssuranceState } from '../state/evidence-review.js';
+import { DecisionIdentity } from '../state/evidence-identity.js';
+import {
+  assuranceChain,
+  ARCH_INVOCATION_ID,
+  ARCH_OBLIGATION_ID,
+} from './review-decision-test-helpers.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,
-  policy: {},
+  digest: (text: string) => `sha256:${text.length}`,
+  policy: TEAM_POLICY,
 };
+
+/**
+ * Bound architecture review evidence in the canonical assurance chain: one
+ * fulfilled/consumed obligation plus its invocation with a findingsHash.
+ * `obligationInvocationId: false` reproduces the direct host-task shape where
+ * the obligation's invocationId is unset and the invocation links back via
+ * obligationId only.
+ */
+function architectureAssurance(input: {
+  subjectDigest: string;
+  status: 'fulfilled' | 'consumed';
+  iteration?: number;
+  findingsHash?: string;
+  capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
+  obligationInvocationId?: boolean;
+}): ReviewAssuranceState {
+  return assuranceChain([
+    {
+      obligationId: ARCH_OBLIGATION_ID,
+      subjectDigest: input.subjectDigest,
+      status: input.status,
+      ...(input.iteration !== undefined ? { iteration: input.iteration } : {}),
+      ...(input.findingsHash !== undefined ? { findingsHash: input.findingsHash } : {}),
+      ...(input.capturedVerdict !== undefined ? { capturedVerdict: input.capturedVerdict } : {}),
+      ...(input.claimDeclarationsDigest !== undefined
+        ? { claimDeclarationsDigest: input.claimDeclarationsDigest }
+        : {}),
+      invocationId: input.obligationInvocationId === false ? null : ARCH_INVOCATION_ID,
+      consumedByObligationId: input.status === 'consumed' ? ARCH_OBLIGATION_ID : null,
+    },
+  ]);
+}
+
+function withPolicy(overrides: Partial<FlowGuardPolicy>): FlowGuardPolicy {
+  return { ...TEAM_POLICY, ...overrides };
+}
+
+const PLAN_OBLIGATION_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const PLAN_INVOCATION_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+interface PlanAssuranceInput {
+  subjectDigest: string;
+  status: 'fulfilled' | 'consumed' | 'pending';
+  obligationType?: 'plan' | 'architecture';
+  obligationId?: string;
+  invocationId?: string;
+  findingsHash?: string;
+  iteration?: number;
+  createdAt?: string;
+  capturedVerdict?: string;
+  claimDeclarationsDigest?: string;
+}
+
+/** Minimal single-obligation assurance for plan-certificate binding tests. */
+function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
+  const obligationId = input.obligationId ?? PLAN_OBLIGATION_ID;
+  return assuranceChain([
+    {
+      obligationId,
+      obligationType: input.obligationType ?? 'plan',
+      subjectDigest: input.subjectDigest,
+      status: input.status,
+      ...(input.iteration !== undefined ? { iteration: input.iteration } : {}),
+      ...(input.createdAt !== undefined ? { createdAt: input.createdAt } : {}),
+      invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
+      findingsHash: input.findingsHash ?? 'a'.repeat(64),
+      ...(input.capturedVerdict !== undefined ? { capturedVerdict: input.capturedVerdict } : {}),
+      // Default: the empty declaration set (most plan-approval tests carry no claims).
+      claimDeclarationsDigest:
+        input.claimDeclarationsDigest ??
+        hashText(canonicalJsonStringify(emptyClaimDeclarations('plan'))),
+      consumedByObligationId: input.status === 'consumed' ? obligationId : null,
+    },
+  ]);
+}
+
+function identityWithoutAssurance(): typeof reviewerIdentity {
+  const identity = { ...reviewerIdentity };
+  Reflect.deleteProperty(identity, 'actorAssurance');
+  return identity;
+}
 
 const initiatorIdentity = {
   actorId: 'initiator-1',
@@ -32,22 +129,215 @@ const reviewerIdentity = {
 /** Minimal converged self-review for tests requiring a completed review loop. */
 const CONVERGED_SELF_REVIEW = {
   iteration: 1,
+  reviewCycle: 1,
   maxIterations: 3,
-  verdict: 'converged' as const,
+  prevDigest: null,
+  currDigest: 'review-digest',
+  revisionDelta: 'none' as const,
+  verdict: 'accept' as const,
   decidedAt: FIXED_TIME,
 };
 
+const PLAN_CLAIM = {
+  claimId: '00000000-0000-4000-8000-000000000003',
+  statement: 'The login flow rejects invalid credentials.',
+  critical: true,
+  authoritySectionId: 'authentication',
+  claimScope: 'specific_behavior' as const,
+  expectedCheckId: 'test',
+};
+
+const ARCHITECTURE_CLAIM = {
+  claimId: '00000000-0000-4000-8000-000000000004',
+  statement: 'The selected architecture keeps service data durable.',
+  critical: true,
+  authoritySectionId: 'decision',
+  requiredReviewEvidence: ['architecture-review'],
+};
+
+function ticketFixture(text = 't', digest = 'd') {
+  return {
+    text,
+    digest,
+    source: 'user' as const,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    riskDeclaration: { kind: 'absent' as const },
+  };
+}
+
 describe('review-decision rail', () => {
-  it('reject at ARCH_REVIEW clears architecture and selfReview', () => {
+  it('carries the exact decision evidence for a plan approval', () => {
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        reviewFindings: [],
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
+        reviewCompletion: 'reviewer_accepted',
+      },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+        claimDeclarationsDigest: hashText(
+          canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] }),
+        ),
+      }),
+    });
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.decisionEvidence).toEqual({
+        verdict: 'approve',
+        rationale: 'approved',
+        decidedAt: FIXED_TIME,
+        decisionIdentity: reviewerIdentity,
+      });
+    }
+  });
+
+  it('preserves the decision evidence when changes_requested clears the persisted decision', () => {
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        reviewFindings: [],
+        claimDeclarations: emptyClaimDeclarations('plan'),
+        reviewCompletion: 'reviewer_accepted',
+      },
+    });
+
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'changes_requested', rationale: 'needs work', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.reviewDecision).toBeNull();
+      expect(result.decisionEvidence).toEqual({
+        verdict: 'changes_requested',
+        rationale: 'needs work',
+        decidedAt: FIXED_TIME,
+        decisionIdentity: reviewerIdentity,
+      });
+    }
+  });
+
+  it('creates an immutable certificate for the approved plan claims', () => {
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        reviewFindings: [],
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
+        reviewCompletion: 'reviewer_accepted',
+      },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+        claimDeclarationsDigest: hashText(
+          canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] }),
+        ),
+      }),
+    });
+
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.plan?.approvalCertificate).toMatchObject({
+        flow: 'plan',
+        authorityDigest: PLAN_RECORD.current.digest,
+        claimDeclarationsDigest: hashText(
+          '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","claimScope":"specific_behavior","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan","version":"v2"}',
+        ),
+        decisionAttestationDigest: baseCtx.digest(
+          '{"decidedAt":"2026-01-01T00:00:00.000Z","decisionIdentity":{"actorAssurance":"claim_validated","actorDisplayName":"Reviewer","actorEmail":"review@example.com","actorId":"reviewer-1","actorSource":"claim"},"rationale":"approved","verdict":"approve"}',
+        ),
+        approvedAt: FIXED_TIME,
+        approvedBy: 'reviewer-1',
+        planVersion: expect.any(Number),
+        planRecordDigest: expect.any(String),
+        certificateId: expect.any(String),
+      });
+      expect(result.state.plan?.history).toEqual(PLAN_RECORD.history);
+      // approve is preserve-only: the recorded decision and the counters survive.
+      expect(result.state.reviewDecision?.verdict).toBe('approve');
+      expect(result.state.reviewDecision?.decidedAt).toBe(FIXED_TIME);
+      expect(result.state.reviewCycles).toEqual(state.reviewCycles);
+    }
+  });
+
+  it('creates an immutable certificate for approved architecture claims', () => {
+    const architecture = {
+      ...ARCHITECTURE_DECISION,
+      reviewCompletion: 'reviewer_accepted' as const,
+      claimDeclarations: { flow: 'architecture' as const, claims: [ARCHITECTURE_CLAIM] },
+    };
     const state = makeState('ARCH_REVIEW', {
-      architecture: ARCHITECTURE_DECISION,
+      architecture,
+      reviewAssurance: architectureAssurance({
+        subjectDigest: architecture.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
+    });
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.architecture?.approvalCertificate).toEqual({
+        flow: 'architecture',
+        authorityDigest: architecture.digest,
+        claimDeclarationsDigest: baseCtx.digest(
+          '{"claims":[{"authoritySectionId":"decision","claimId":"00000000-0000-4000-8000-000000000004","critical":true,"requiredReviewEvidence":["architecture-review"],"statement":"The selected architecture keeps service data durable."}],"flow":"architecture"}',
+        ),
+        decisionAttestationDigest: baseCtx.digest(
+          '{"decidedAt":"2026-01-01T00:00:00.000Z","decisionIdentity":{"actorAssurance":"claim_validated","actorDisplayName":"Reviewer","actorEmail":"review@example.com","actorId":"reviewer-1","actorSource":"claim"},"rationale":"approved","verdict":"approve"}',
+        ),
+        approvedAt: FIXED_TIME,
+        approvedBy: 'reviewer-1',
+        certificateId: expect.any(String),
+        reviewBinding: {
+          kind: 'current_review',
+          reviewObligationId: ARCH_OBLIGATION_ID,
+          reviewEvidenceDigest: 'f'.repeat(64),
+          reviewedSubjectDigest: architecture.digest,
+        },
+      });
+      // approve is preserve-only: the recorded decision and the counters survive.
+      expect(result.state.reviewDecision?.verdict).toBe('approve');
+      expect(result.state.reviewDecision?.decidedAt).toBe(FIXED_TIME);
+      expect(result.state.reviewCycles).toEqual(state.reviewCycles);
+    }
+  });
+
+  it('reject at ARCH_REVIEW preserves reviewed evidence at the terminal position', () => {
+    const state = makeState('ARCH_REVIEW', {
+      architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
       },
     });
 
@@ -56,30 +346,33 @@ describe('review-decision rail', () => {
       {
         verdict: 'reject',
         rationale: 'start over',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       baseCtx,
     );
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(result.state.architecture).toBeNull();
-      expect(result.state.selfReview).toBeNull();
+      expect(result.state.phase).toBe('REJECTED');
+      expect(result.state.architecture).not.toBeNull();
+      expect(result.state.selfReview).not.toBeNull();
+      expect(result.state.reviewDecision?.verdict).toBe('reject');
     }
   });
 
   it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview', () => {
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      ticket: ticketFixture('t', 'd'),
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
         executedAt: FIXED_TIME,
       },
     });
@@ -89,7 +382,7 @@ describe('review-decision rail', () => {
       {
         verdict: 'changes_requested',
         rationale: 'rework implementation',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       baseCtx,
     );
@@ -104,14 +397,20 @@ describe('review-decision rail', () => {
 
   it('approve at ARCH_REVIEW marks architecture as accepted', () => {
     const state = makeState('ARCH_REVIEW', {
-      architecture: ARCHITECTURE_DECISION,
+      architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
+      reviewAssurance: architectureAssurance({
+        subjectDigest: ARCHITECTURE_DECISION.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
       },
     });
 
@@ -120,7 +419,7 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'accepted',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       baseCtx,
     );
@@ -131,9 +430,11 @@ describe('review-decision rail', () => {
     }
   });
 
-  it('regulated approve requires structured identities', () => {
+  it('regulated approve requires the structured initiator identity', () => {
+    // A valid reviewer identity is always present on the input; the missing
+    // initiator identity is the authority gap this boundary must reject.
     const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: null,
+      initiatedByIdentity: undefined,
     });
 
     const result = executeReviewDecision(
@@ -141,11 +442,11 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       {
         ...baseCtx,
-        policy: { allowSelfApproval: false },
+        policy: { ...TEAM_POLICY, allowSelfApproval: false },
       },
     );
 
@@ -167,7 +468,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: {
           ...reviewerIdentity,
           actorSource: 'unknown',
@@ -175,7 +475,7 @@ describe('review-decision rail', () => {
       },
       {
         ...baseCtx,
-        policy: { allowSelfApproval: false },
+        policy: { ...TEAM_POLICY, allowSelfApproval: false },
       },
     );
 
@@ -184,35 +484,6 @@ describe('review-decision rail', () => {
       expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
       expect(result.reason).toBeDefined();
       expect(result.reason).not.toBe('');
-    }
-  });
-
-  it('requireVerifiedActorsForApproval blocks best_effort reviewer', () => {
-    const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: initiatorIdentity,
-    });
-
-    const result = executeReviewDecision(
-      state,
-      {
-        verdict: 'approve',
-        rationale: 'ok',
-        decidedBy: 'reviewer-1',
-        decisionIdentity: {
-          ...reviewerIdentity,
-          actorAssurance: 'best_effort',
-        },
-      },
-      {
-        ...baseCtx,
-        policy: { requireVerifiedActorsForApproval: true },
-      },
-    );
-
-    expect(result.kind).toBe('blocked');
-    if (result.kind === 'blocked') {
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      expect(result.reason).toBeDefined();
     }
   });
 
@@ -226,7 +497,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: {
           ...reviewerIdentity,
           actorAssurance: 'claim_validated',
@@ -234,7 +504,7 @@ describe('review-decision rail', () => {
       },
       {
         ...baseCtx,
-        policy: { minimumActorAssuranceForApproval: 'idp_verified' },
+        policy: withPolicy({ minimumActorAssuranceForApproval: 'idp_verified' }),
       },
     );
 
@@ -250,7 +520,7 @@ describe('review-decision rail', () => {
     const state = makeState('TICKET');
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'r1' },
+      { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
     expect(result.kind).toBe('blocked');
@@ -270,10 +540,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -291,10 +560,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorSource: 'unknown' as const },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -312,10 +580,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'initiator-1',
         decisionIdentity: { ...reviewerIdentity, actorId: 'initiator-1' },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -333,10 +600,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorId: '   ' },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -353,10 +619,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -373,10 +638,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'cafe\u0301',
         decisionIdentity: { ...reviewerIdentity, actorId: 'cafe\u0301' },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -387,40 +651,23 @@ describe('review-decision rail', () => {
   it('regulated approve allows valid comparable different identities', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
     });
     const result = executeReviewDecision(
       state,
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('ok');
-  });
-
-  it('ACTOR_ASSURANCE_INSUFFICIENT reason includes minimum and current levels', () => {
-    const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: initiatorIdentity,
-    });
-    const result = executeReviewDecision(
-      state,
-      {
-        verdict: 'approve',
-        rationale: 'ok',
-        decidedBy: 'reviewer-1',
-        decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
-      },
-      { ...baseCtx, policy: { requireVerifiedActorsForApproval: true } },
-    );
-    expect(result.kind).toBe('blocked');
-    if (result.kind === 'blocked') {
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      expect(result.reason).toContain('claim_validated');
-      expect(result.reason).toContain('best_effort');
-    }
   });
 
   it('ACTOR_ASSURANCE_INSUFFICIENT via minimumActorAssurance includes levels', () => {
@@ -432,10 +679,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
       },
-      { ...baseCtx, policy: { minimumActorAssuranceForApproval: 'idp_verified' } },
+      { ...baseCtx, policy: withPolicy({ minimumActorAssuranceForApproval: 'idp_verified' }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -450,16 +696,17 @@ describe('review-decision rail', () => {
       architecture: ARCHITECTURE_DECISION,
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
       },
     });
     const result = executeReviewDecision(
       state,
-      { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'r1' },
+      { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
     expect(result.kind).toBe('ok');
@@ -469,33 +716,31 @@ describe('review-decision rail', () => {
   });
 
   it('changes_requested at EVIDENCE_REVIEW clears reducedCeremony alongside impl', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial config change',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['config/app.json'],
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      ticket: ticketFixture('t', 'd'),
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
         executedAt: FIXED_TIME,
       },
     });
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'changes_requested', rationale: 'rework implementation', decidedBy: 'reviewer-1' },
+      {
+        verdict: 'changes_requested',
+        rationale: 'rework implementation',
+        decisionIdentity: reviewerIdentity,
+      },
       baseCtx,
     );
 
@@ -509,33 +754,27 @@ describe('review-decision rail', () => {
   });
 
   it('approve does NOT clear reducedCeremony', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial fix',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['src/index.ts'],
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      ticket: ticketFixture('t', 'd'),
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
         executedAt: FIXED_TIME,
       },
     });
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'looks good', decidedBy: 'reviewer-1' },
+      { verdict: 'approve', rationale: 'looks good', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
 
@@ -546,33 +785,27 @@ describe('review-decision rail', () => {
     }
   });
 
-  it('reject clears reducedCeremony alongside all downstream', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial fix',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['src/index.ts'],
-      decidedAt: FIXED_TIME,
-    };
+  it('reject preserves reducedCeremony and implementation evidence at REJECTED', () => {
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-      plan: PLAN_RECORD,
+      ticket: ticketFixture('t', 'd'),
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
     });
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'reject', rationale: 'start over', decidedBy: 'reviewer-1' },
+      { verdict: 'reject', rationale: 'start over', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(result.state.reducedCeremony).toBeNull();
-      expect(result.state.implementation).toBeNull();
-      expect(result.state.reviewDecision).toBeNull();
+      expect(result.state.phase).toBe('REJECTED');
+      expect(result.state.reducedCeremony).toEqual(reducedCeremonyDecision);
+      expect(result.state.implementation).toEqual(IMPL_EVIDENCE);
+      expect(result.state.reviewDecision?.verdict).toBe('reject');
     }
   });
 
@@ -580,7 +813,7 @@ describe('review-decision rail', () => {
     const state = makeState('PLAN_REVIEW');
     const result = executeReviewDecision(
       state,
-      { verdict: 'maybe' as never, rationale: 'idk', decidedBy: 'r1' },
+      { verdict: 'maybe' as never, rationale: 'idk', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
     expect(result.kind).toBe('blocked');
@@ -591,437 +824,28 @@ describe('review-decision rail', () => {
   });
 
   // ─── MUTATION KILL round 2 ───────────────────────────────────
-  it('idp_verified passes requireVerifiedActorsForApproval (assurance threshold)', () => {
-    // Kill: actorAssurance !== 'idp_verified' → true (blocks idp_verified)
+  it('idp_verified meets the assurance threshold', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
+      plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
     });
     const result = executeReviewDecision(
       state,
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
       },
-      { ...baseCtx, policy: { requireVerifiedActorsForApproval: true } },
+      { ...baseCtx, policy: withPolicy({}) },
     );
     // idp_verified meets the threshold — should NOT be blocked
     expect(result.kind).toBe('ok');
   });
 
   // ─── MUTATION KILL ────────────────────────────────────────────────────
-
-  describe('MUTATION_KILL', () => {
-    it('approve at ARCH_REVIEW sets architecture.status to "accepted"', () => {
-      const state = makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.architecture?.status).toBe('accepted');
-      }
-    });
-
-    it('approve at ARCH_REVIEW without architecture leaves state unchanged (arch guard)', () => {
-      const state = makeState('ARCH_REVIEW', {
-        architecture: null,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.architecture).toBeNull();
-      }
-    });
-
-    it('changes_requested at ARCH_REVIEW clears selfReview', () => {
-      const state = makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'changes_requested', rationale: 'Needs work', decidedBy: 'reviewer' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.selfReview).toBeNull();
-        // architecture should still be present
-        expect(result.state.architecture).not.toBeNull();
-      }
-    });
-
-    it('changes_requested does NOT trigger four-eyes check (verdict gate)', () => {
-      // Use regulated policy with allowSelfApproval=false
-      // changes_requested by same person as initiator should NOT be blocked
-      const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
-        selfReview: CONVERGED_SELF_REVIEW,
-        initiatedBy: 'same-person',
-        initiatedByIdentity: { ...initiatorIdentity, actorId: 'same-person' },
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'changes_requested',
-          rationale: 'Needs changes',
-          decidedBy: 'same-person',
-          decisionIdentity: { ...reviewerIdentity, actorId: 'same-person' },
-        },
-        { ...baseCtx, policy: { allowSelfApproval: false } },
-      );
-      // Should NOT be blocked (four-eyes only applies to approve)
-      expect(result.kind).toBe('ok');
-    });
-
-    it('P34: minimumActorAssuranceForApproval=claim_validated blocks best_effort actor', () => {
-      const state = makeState('EVIDENCE_REVIEW', {
-        implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
-        initiatedBy: 'initiator',
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
-        },
-        {
-          ...baseCtx,
-          policy: {
-            minimumActorAssuranceForApproval: 'claim_validated',
-            // NOT using legacy requireVerifiedActorsForApproval
-          },
-        },
-      );
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      }
-    });
-
-    it('P34: minimumActorAssuranceForApproval=idp_verified blocks claim_validated actor', () => {
-      const state = makeState('EVIDENCE_REVIEW', {
-        implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
-        initiatedBy: 'initiator',
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'claim_validated' as const },
-        },
-        {
-          ...baseCtx,
-          policy: {
-            minimumActorAssuranceForApproval: 'idp_verified',
-          },
-        },
-      );
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      }
-    });
-
-    it('P34: minimumActorAssuranceForApproval=claim_validated allows claim_validated actor (>= threshold)', () => {
-      const state = makeState('EVIDENCE_REVIEW', {
-        implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
-        initiatedBy: 'initiator',
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'claim_validated' as const },
-        },
-        {
-          ...baseCtx,
-          policy: {
-            minimumActorAssuranceForApproval: 'claim_validated',
-          },
-        },
-      );
-      expect(result.kind).toBe('ok');
-    });
-
-    it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
-      const state = makeState('EVIDENCE_REVIEW', {
-        implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
-        initiatedBy: 'initiator',
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
-        },
-        {
-          ...baseCtx,
-          policy: {
-            minimumActorAssuranceForApproval: 'idp_verified',
-          },
-        },
-      );
-      expect(result.kind).toBe('ok');
-    });
-
-    it('P34: minimumActorAssuranceForApproval absent → no assurance check (else-if gate)', () => {
-      const state = makeState('EVIDENCE_REVIEW', {
-        implementation: IMPL_EVIDENCE,
-        plan: PLAN_RECORD,
-        initiatedBy: 'initiator',
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
-        },
-        {
-          ...baseCtx,
-          policy: {
-            // Neither requireVerifiedActorsForApproval nor minimumActorAssuranceForApproval set
-          },
-        },
-      );
-      expect(result.kind).toBe('ok');
-    });
-
-    it('approve at PLAN_REVIEW does NOT modify architecture (phase guard)', () => {
-      const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        // architecture should remain null — not set to {status:'accepted'}
-        expect(result.state.architecture).toBeNull();
-      }
-    });
-
-    // ── Kill mutants in applyStateClearingPattern ────────────────────
-
-    it('changes_requested at PLAN_REVIEW clears selfReview (survivor kill)', () => {
-      const state = makeState('PLAN_REVIEW', {
-        plan: PLAN_RECORD,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.selfReview).toBeNull();
-        expect(result.state.reviewDecision).toBeNull();
-      }
-    });
-
-    it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview (survivor kill)', () => {
-      const state = makeState('EVIDENCE_REVIEW', {
-        implementation: IMPL_EVIDENCE,
-        implReview: {
-          iteration: 1,
-          maxIterations: 3,
-          prevDigest: IMPL_EVIDENCE.digest,
-          currDigest: IMPL_EVIDENCE.digest,
-          revisionDelta: 'none',
-          verdict: 'approve',
-          executedAt: FIXED_TIME,
-        },
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.implementation).toBeNull();
-        expect(result.state.implReview).toBeNull();
-        expect(result.state.reviewDecision).toBeNull();
-      }
-    });
-
-    it('changes_requested at ARCH_REVIEW clears selfReview (survivor kill)', () => {
-      const state = makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.selfReview).toBeNull();
-      }
-    });
-
-    it('reject at PLAN_REVIEW clears all downstream evidence (survivor kill)', () => {
-      const state = makeState('PLAN_REVIEW', {
-        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
-        plan: PLAN_RECORD,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.ticket).toBeNull();
-        expect(result.state.plan).toBeNull();
-        expect(result.state.selfReview).toBeNull();
-        expect(result.state.reviewDecision).toBeNull();
-      }
-    });
-
-    it('reject at ARCH_REVIEW clears architecture and selfReview (survivor kill)', () => {
-      const state = makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.architecture).toBeNull();
-        expect(result.state.selfReview).toBeNull();
-      }
-    });
-
-    it('actorAssurance fallback to best_effort when undefined (survivor kill)', () => {
-      const state = makeState('PLAN_REVIEW', {
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: {
-            actorId: 'reviewer-1',
-            actorEmail: 'r@e.com',
-            actorSource: 'claim',
-            actorAssurance: undefined as unknown as 'claim_validated', // Test fallback
-          },
-        },
-        {
-          ...baseCtx,
-          policy: { requireVerifiedActorsForApproval: true },
-        },
-      );
-      // Should still work since undefined falls back to 'best_effort' which fails requirement
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-        // Pin the explicit string fallback so a literal mutation cannot survive:
-        // the rendered message must contain "best_effort" as the current assurance.
-        expect(result.reason).toContain('best_effort');
-        expect(result.reason).toContain('claim_validated');
-      }
-    });
-
-    it('actorAssurance fallback to best_effort under explicit minimumAssurance (P34 path)', () => {
-      // Triggers the second fallback site at line 221.
-      const state = makeState('PLAN_REVIEW', {
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: {
-            actorId: 'reviewer-1',
-            actorEmail: 'r@e.com',
-            actorSource: 'claim',
-            actorAssurance: undefined as unknown as 'claim_validated',
-          },
-        },
-        {
-          ...baseCtx,
-          policy: { minimumActorAssuranceForApproval: 'claim_validated' },
-        },
-      );
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-        expect(result.reason).toContain('best_effort');
-        expect(result.reason).toContain('claim_validated');
-      }
-    });
-
-    it('approve at non-ARCH_REVIEW phase does NOT mutate architecture status', () => {
-      // Kills L122 mutant `if (true && state.architecture)`:
-      // approve at PLAN_REVIEW with architecture present must leave it untouched.
-      const state = makeState('PLAN_REVIEW', {
-        initiatedByIdentity: initiatorIdentity,
-        architecture: ARCHITECTURE_DECISION,
-        plan: PLAN_RECORD,
-        selfReview: CONVERGED_SELF_REVIEW,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-        },
-        baseCtx,
-      );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        // Architecture must be preserved as-is, NOT promoted to 'accepted'
-        // (which would happen only at ARCH_REVIEW).
-        expect(result.state.architecture).toBe(state.architecture);
-        expect(result.state.architecture?.status).toBe(ARCHITECTURE_DECISION.status);
-      }
-    });
-  });
 });

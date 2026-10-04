@@ -11,11 +11,14 @@
  * @version v1
  */
 
+export type { ActorInfo } from '../state/evidence.js';
+
 // Structured event types + factories
 export {
-  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
+  type StateWriteDetail,
+  type EnforcementDeniedDetail,
   type ToolCallDetail,
   type ErrorDetail,
   type LifecycleDetail,
@@ -24,6 +27,10 @@ export {
   type ChainedAuditEvent,
   type AuditFormatVersion,
   type EventBody,
+  type TransitionBodyInput,
+  type StateWriteBodyInput,
+  type EnforcementDeniedBodyInput,
+  type ErrorEventInput,
   type ToolCallEventInput,
   type LifecycleEventInput,
   type DecisionEventInput,
@@ -32,6 +39,8 @@ export {
   computeChainHash,
   finalizeWithTimestampEvidence,
   buildTransitionBody,
+  buildStateWriteBody,
+  buildEnforcementDeniedBody,
   buildToolCallBody,
   buildErrorBody,
   buildLifecycleBody,

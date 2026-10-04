@@ -1,24 +1,21 @@
 /**
  * @module implement
- * @description /implement rail — execute implementation and auto-advance through IMPL_REVIEW.
+ * @description /implement rail — record implementation and advance into fresh post-implementation validation.
  *
  * Behavior:
  * 1. Validate admissibility (allowed in IMPLEMENTATION)
- * 2. Verify preconditions: ticket, plan, validation passed
+ * 2. Verify preconditions: ticket, plan, baseline validation passed
  * 3. Execute implementation via LLM executor
  * 4. Record ImplEvidence
- * 5. Auto-advance to IMPL_REVIEW
- * 6. Run impl review loop (up to maxIterations from policy, digest-stop)
- * 7. Auto-advance to EVIDENCE_REVIEW if review converges
+ * 5. Enter IMPL_VALIDATION with an EMPTY post-implementation validation slot
+ * 6. Runtime system work executes every active check against the frozen
+ *    implementation subject before IMPL_REVIEW may become reachable
  *
- * maxIterations is resolved from policy:
- * - SOLO: 1 (fast, minimal ceremony)
- * - TEAM/REGULATED: 3 (deep convergence)
+ * Pre-implementation validation is baseline evidence only. It must never be
+ * copied into `implValidation`: any repository mutation makes those results
+ * stale for the implementation subject by definition.
  *
- * The auto-advance through IMPL_REVIEW eliminates /continue in the happy path.
- * If the review loop doesn't converge, stops at IMPL_REVIEW.
- *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState } from '../state/schema.js';
@@ -26,7 +23,6 @@ import type { ImplEvidence, PlanRecord, TicketEvidence, LoopVerdict } from '../s
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import {
-  applyTransition,
   autoAdvance,
   runConvergenceLoop,
   createPolicyEvalFn,
@@ -49,9 +45,8 @@ export interface ImplExecutors {
   ) => Promise<{ changedFiles: string[]; domainFiles: string[] }>;
 
   /**
-   * Review the implementation against the plan.
-   * Returns verdict. If changes_requested, the executor may have revised the impl
-   * (reflected in updatedImpl).
+   * Historical bundled-review seam retained for rail-level tests. Production
+   * review is host-orchestrated after fresh IMPL_VALIDATION completes.
    */
   reviewAndRevise: (
     impl: ImplEvidence,
@@ -61,6 +56,23 @@ export interface ImplExecutors {
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Deterministic, collision-resistant implementation id for the rail-level
+ * executor seam. Rails must not use Node randomness; the id derives from the
+ * frozen content digest and the recording timestamp, so it is unique per
+ * `/implement` execution while staying pure. The canonical integration tool
+ * path generates its own UUID instead.
+ */
+function deriveRailImplementationId(ctx: RailContext, digest: string): string {
+  const hex = ctx
+    .digest(`${digest}:${ctx.now()}`)
+    .replace(/[^0-9a-f]/gi, '')
+    .toLowerCase()
+    .padEnd(30, '0')
+    .slice(0, 30);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(12, 15)}-a${hex.slice(15, 18)}-${hex.slice(18, 30)}`;
+}
 
 async function collectAndAdvance(
   state: SessionState,
@@ -74,37 +86,32 @@ async function collectAndAdvance(
   transitions: TransitionRecord[];
 }> {
   const { changedFiles, domainFiles } = await executors.execute(work.ticket, work.plan);
+  const digest = ctx.digest(changedFiles.sort().join('\n'));
   const currentImpl: ImplEvidence = {
+    implementationId: deriveRailImplementationId(ctx, digest),
     changedFiles,
     domainFiles,
-    digest: ctx.digest(changedFiles.sort().join('\n')),
+    digest,
     executedAt: ctx.now(),
   };
-  let nextState: SessionState = {
+  const nextState: SessionState = {
     ...state,
     implementation: currentImpl,
+    // Hard freshness boundary: baseline validation belongs to the approved plan
+    // and pre-mutation repository state. A newly recorded implementation is a
+    // different verification subject, so every post-implementation check starts
+    // unproven and must be executed again through the canonical run-check path.
+    implValidation: [],
     implReview: null,
     error: null,
   };
-  const allTransitions: TransitionRecord[] = [];
-  const evalAfterImpl = evalFn(nextState);
-  if (evalAfterImpl.kind === 'transition') {
-    const at = ctx.now();
-    allTransitions.push({
-      from: nextState.phase,
-      to: evalAfterImpl.target,
-      event: evalAfterImpl.event,
-      at,
-    });
-    nextState = applyTransition(
-      nextState,
-      nextState.phase,
-      evalAfterImpl.target,
-      evalAfterImpl.event,
-      at,
-    );
+  const advanced = autoAdvance(nextState, evalFn, ctx);
+  if (advanced.kind === 'overflow') {
+    // Non-terminating advance (misconfigured topology). Keep the recorded evidence
+    // at IMPLEMENTATION; the caller re-evaluates and surfaces the stop.
+    return { currentImpl, nextState, transitions: [] };
   }
-  return { currentImpl, nextState, transitions: allTransitions };
+  return { currentImpl, nextState: advanced.state, transitions: [...advanced.transitions] };
 }
 
 export async function executeImplement(
@@ -137,16 +144,25 @@ export async function executeImplement(
     evalFn,
   );
 
-  const maxIterations = ctx.policy?.maxImplReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  // With active checks, the freshness boundary above intentionally leaves the
+  // machine in IMPL_VALIDATION. Runtime-owned system work executes those checks
+  // and only then activates independent implementation review.
+  const maxIterations = ctx.policy?.reviewBudget.implementation ?? DEFAULT_MAX_REVIEW_ITERATIONS;
   if (nextState.phase !== 'IMPL_REVIEW') {
     const result = evalFn(nextState);
     return { kind: 'ok', state: nextState, evalResult: result, transitions: allTransitions };
   }
 
+  // A zero-check policy may still reach IMPL_REVIEW directly. Preserve the
+  // rail's historical bundled-review behavior for that explicit vacuous case;
+  // normal production flows with active checks never enter this branch.
   const plan = state.plan;
   const loop = await runConvergenceLoop(currentImpl, maxIterations, async (impl, iter) => {
     const review = await executors.reviewAndRevise(impl, plan, iter);
-    return { verdict: review.verdict, updated: review.updatedImpl };
+    return {
+      verdict: review.verdict,
+      ...(review.updatedImpl !== undefined ? { updated: review.updatedImpl } : {}),
+    };
   });
 
   if (loop.kind === 'blocked') {
@@ -159,7 +175,7 @@ export async function executeImplement(
   const finalState: SessionState = {
     ...nextState,
     implementation: loop.artifact,
-    implReview: buildImplReviewState(loop, ctx.now()),
+    implReview: buildImplReviewState(loop, ctx.now(), state.reviewCycles.implementation),
   };
   const advanced = autoAdvance(finalState, evalFn, ctx);
   if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);

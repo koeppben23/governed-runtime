@@ -1,0 +1,218 @@
+import { describe, it, expect } from 'vitest';
+import {
+  buildReviewDecisionConclusion,
+  projectReviewDecision,
+  REVIEW_DECISION_COPY,
+} from './review-decision.js';
+import type { DirectiveProjection, ReviewDecisionProjectionInput } from './review-decision.js';
+import type { FindingRelationPresentation } from './model.js';
+
+const RELATION: FindingRelationPresentation = {
+  subjectAnchors: [
+    { kind: 'repository_location', location: { path: 'src/example.ts', revision: 'head' } },
+  ],
+  evidenceLocations: [],
+};
+
+describe('buildReviewDecisionConclusion', () => {
+  it('renders every directive command verbatim at a normal gate', () => {
+    const directive: DirectiveProjection = {
+      kind: 'human_gate',
+      code: 'PLAN_DECISION_REQUIRED',
+      commands: ['/approve', '/request-changes', '/reject'],
+    };
+    const conclusion = buildReviewDecisionConclusion(directive, {
+      '/approve': 'approve the plan',
+    });
+    expect(conclusion.kind).toBe('decision_required');
+    if (conclusion.kind !== 'decision_required') return;
+    expect(conclusion.actions.map((action) => action.invocation)).toEqual(directive.commands);
+    expect(conclusion.actions[0]?.description).toBe('approve the plan');
+    // Missing copy renders the exact invocation — never an invented command.
+    expect(conclusion.actions[1]?.description).toBe('/request-changes');
+  });
+
+  it('renders the override command at an exhausted gate without filtering it away', () => {
+    const directive: DirectiveProjection = {
+      kind: 'human_gate',
+      code: 'PLAN_OVERRIDE_REQUIRED',
+      commands: ['/override-approve', '/request-changes', '/reject'],
+    };
+    const conclusion = buildReviewDecisionConclusion(directive, {
+      '/override-approve': 'accept with a recorded governance override',
+    });
+    expect(conclusion.kind).toBe('decision_required');
+    if (conclusion.kind !== 'decision_required') return;
+    expect(conclusion.actions.map((action) => action.invocation)).toEqual(directive.commands);
+    expect(conclusion.actions[0]?.description).toBe('accept with a recorded governance override');
+    expect(conclusion.question).toBe('Plan review exhausted: governance override required.');
+  });
+
+  it('renders a terminal conclusion for non-gate directives', () => {
+    const directive: DirectiveProjection = {
+      kind: 'terminal',
+      code: 'WORKFLOW_REJECTED',
+      commands: [],
+    };
+    expect(buildReviewDecisionConclusion(directive, {})).toEqual({
+      kind: 'terminal',
+      message: 'Workflow rejected.',
+    });
+  });
+});
+
+describe('projectReviewDecision', () => {
+  it('includes a compact affected-subject summary without changing readiness', () => {
+    const result = projectReviewDecision({
+      blockingIssues: [
+        {
+          message: 'Callback validation is incomplete',
+          severity: 'major',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'repository_location',
+                location: { revision: 'head', path: 'src/auth/callback.ts', line: 44, endLine: 61 },
+              },
+            ],
+            evidenceLocations: [],
+          },
+        },
+      ],
+    });
+
+    expect(result.readiness).toBe('not_ready');
+    expect(result.blockers[0]?.detail).toBe(
+      'Severity: major · Affected: HEAD · src/auth/callback.ts:44–61',
+    );
+  });
+
+  it('empty input produces ready readiness', () => {
+    const result = projectReviewDecision({});
+    expect(result.readiness).toBe('ready');
+    expect(result.blockers).toEqual([]);
+    expect(result.risks).toEqual([]);
+    expect(result.advisories).toEqual([]);
+    expect(result.summary).toContain('No blocking review findings remain');
+  });
+
+  it('blockingIssues produce not_ready readiness', () => {
+    const input: ReviewDecisionProjectionInput = {
+      blockingIssues: [{ message: 'Missing null check', relation: RELATION }],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.readiness).toBe('not_ready');
+    expect(result.blockers).toHaveLength(1);
+    expect(result.blockers[0]!.title).toBe('Missing null check');
+    expect(result.blockers[0]!.source).toBe('review_finding');
+    expect(result.summary).toContain('1 blocking issue');
+  });
+
+  it('majorRisks do NOT affect readiness', () => {
+    const input: ReviewDecisionProjectionInput = {
+      majorRisks: [{ message: 'Retry behavior untested', relation: RELATION }],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.readiness).toBe('ready');
+    expect(result.risks).toHaveLength(1);
+    expect(result.blockers).toEqual([]);
+  });
+
+  it('blockingIssues override majorRisks for readiness', () => {
+    const input: ReviewDecisionProjectionInput = {
+      blockingIssues: [{ message: 'Missing null check', relation: RELATION }],
+      majorRisks: [{ message: 'Retry behavior untested', relation: RELATION }],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.readiness).toBe('not_ready');
+    expect(result.blockers).toHaveLength(1);
+    expect(result.risks).toHaveLength(1);
+  });
+
+  it('multiple blockingIssues produce plural summary', () => {
+    const input: ReviewDecisionProjectionInput = {
+      blockingIssues: [
+        { message: 'Issue A', relation: RELATION },
+        { message: 'Issue B', relation: RELATION },
+      ],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.summary).toContain('2 blocking issues');
+  });
+
+  it('maps advisories from missingVerification, scopeCreep, unknowns', () => {
+    const input: ReviewDecisionProjectionInput = {
+      missingVerification: ['Check: test'],
+      scopeCreep: ['New feature outside scope'],
+      unknowns: ['Deployment impact unknown'],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.advisories).toHaveLength(3);
+    expect(result.advisories[0]!.kind).toBe('missing_verification');
+    expect(result.advisories[1]!.kind).toBe('scope_creep');
+    expect(result.advisories[2]!.kind).toBe('unknown');
+  });
+
+  it('advisories do NOT affect readiness', () => {
+    const input: ReviewDecisionProjectionInput = {
+      missingVerification: ['Check: test'],
+      scopeCreep: ['New feature'],
+      unknowns: ['Impact unknown'],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.readiness).toBe('ready');
+    expect(result.blockers).toEqual([]);
+  });
+
+  it('preserves findingId when present', () => {
+    const input: ReviewDecisionProjectionInput = {
+      blockingIssues: [{ message: 'Issue', relation: RELATION, findingId: 'abc-123' }],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.blockers[0]!.findingId).toBe('abc-123');
+  });
+
+  it('omits findingId when absent', () => {
+    const input: ReviewDecisionProjectionInput = {
+      blockingIssues: [{ message: 'Issue', relation: RELATION }],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.blockers[0]!.findingId).toBeUndefined();
+  });
+
+  it('handles all zero-length arrays', () => {
+    const input: ReviewDecisionProjectionInput = {
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+    };
+    const result = projectReviewDecision(input);
+    expect(result.readiness).toBe('ready');
+    expect(result.blockers).toEqual([]);
+    expect(result.risks).toEqual([]);
+    expect(result.advisories).toEqual([]);
+  });
+});
+
+describe('REVIEW_DECISION_COPY', () => {
+  it('covers both readiness states', () => {
+    const states: Array<'ready' | 'not_ready'> = ['ready', 'not_ready'];
+    for (const state of states) {
+      expect(REVIEW_DECISION_COPY[state]).toBeTruthy();
+      expect(REVIEW_DECISION_COPY[state].headline.length).toBeGreaterThan(0);
+      expect(REVIEW_DECISION_COPY[state].explanation.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('ready copy does NOT imply approval', () => {
+    expect(REVIEW_DECISION_COPY.ready.headline).not.toMatch(/approv/i);
+    expect(REVIEW_DECISION_COPY.ready.explanation).not.toMatch(/approv/i);
+  });
+
+  it('not_ready copy does NOT imply severity', () => {
+    expect(REVIEW_DECISION_COPY.not_ready.headline).not.toMatch(/critical/i);
+    expect(REVIEW_DECISION_COPY.not_ready.headline).not.toMatch(/severe/i);
+  });
+});

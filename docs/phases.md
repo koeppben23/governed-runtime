@@ -1,13 +1,22 @@
 # Phases
 
-FlowGuard uses 14 explicit workflow phases across 3 independent flows. Every session starts at the **READY** phase after `/hydrate`.
+FlowGuard uses 18 explicit workflow phases across 3 independent flows. Every session starts at the **READY** phase after `/hydrate`, with 4 transitions from READY: the three flow selections plus emergency `/abort`.
+
+The single authority for the phase graph and progressions is
+`src/machine/topology.ts`: `TRANSITIONS`/`resolveTransition` define every edge
+and `FLOW_PHASES` defines the canonical **forward** progression of each flow
+(used for evidence milestones; `isFlowPhase()` answers flow membership). A
+progression is deliberately not the full transition set — self-loops,
+backedges, `REJECTED`, `ABORTED`, and the `REDUCED_CEREMONY` shortcut are
+additional edges. Flow selection from READY is resolved from the graph, never
+hardcoded.
 
 ## Flows
 
 ### Ticket Flow (Full Development Lifecycle)
 
 ```
-READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE
 ```
 
 ### Architecture Flow (ADR Creation)
@@ -16,85 +25,71 @@ READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → 
 READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
 ```
 
-### Review Flow (Compliance Report)
+### Peer Review Flow
 
 ```
-READY → REVIEW → REVIEW_COMPLETE
+READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
 ```
 
 ## Flow Diagram
 
-```
-                              ┌──────────┐
-                              │ /hydrate │
-                              └────┬─────┘
-                                   │
-                                   ▼
-                              ┌──────────┐
-                              │  READY   │  ◄── Command-driven (no guards)
-                              └──┬──┬──┬─┘
-                   ┌─────────────┘  │  └─────────────┐
-                   │                │                 │
-              /ticket          /architecture       /review
-                   │                │                 │
-    ═══════════════╪════════   ════╪════════════   ══╪══════════════
-    TICKET FLOW    │          ARCH FLOW    │     REVIEW FLOW   │
-    ═══════════════╪════════   ════╪════════════   ══╪══════════════
-                   ▼                ▼                 ▼
-              ┌──────────┐    ┌──────────────┐   ┌──────────┐
-              │  TICKET  │    │ ARCHITECTURE │   │  REVIEW  │
-              └────┬─────┘    └──────┬───────┘   └────┬─────┘
-                   │  auto           │  ADR review     │  auto
-                   ▼                 ▼  loop           ▼
-              ┌──────────┐    ┌──────────────┐   ┌────────────────┐
-              │   PLAN   │◄┐  │ ARCH_REVIEW  │   │REVIEW_COMPLETE │ ■
-              └────┬─────┘ │  └──┬───┬───┬───┘   └────────────────┘
-    independent   │       │     │   │   │
-    review loop   ▼       │     │   │   │ reject
-              ┌────────────┐     │   │   └──────► (READY)
-              │PLAN_REVIEW │     │   │
-              └─┬───┬───┬──┘     │   │ changes_requested
-                │   │   │        │   └──────► (ARCHITECTURE)
-                │   │   │        │
-     approve    │   │   │ reject │ approve
-                │   │   └──► (TICKET)
-                │   │                       ▼
-     changes_   │   │               ┌───────────────┐
-     requested  │   │               │ ARCH_COMPLETE  │ ■
-        ▼       │   │               └───────────────┘
-      (PLAN)    │   │                 ADR "accepted"
-                │   │                 MADR written
-                ▼   │
-           ┌────────────┐
-           │ VALIDATION │
-           └──┬─────┬───┘
-              │     │
-    ALL_PASSED│     │CHECK_FAILED
-              │     └──► (PLAN)
-              ▼
-      ┌────────────────┐
-      │IMPLEMENTATION  │
-      └───────┬────────┘
-              │  auto
-              ▼
-      ┌────────────────┐
-      │  IMPL_REVIEW   │ ◄── independent review loop
-      └───────┬────────┘
-              │  auto (converged)
-              ▼
-      ┌────────────────┐
-      │EVIDENCE_REVIEW │
-      └─┬─────┬────┬───┘
-        │     │    │
-approve │     │    │ reject
-        │     │    └──► (TICKET)
-        │     │
-        │  changes_requested
-        │     └──► (IMPLEMENTATION)
-        ▼
-   ┌──────────┐
-   │ COMPLETE  │ ■
-   └──────────┘
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    [*] --> READY : /hydrate
+
+    state "TICKET FLOW" as TF
+    state "ARCH FLOW" as AF
+    state "PEER REVIEW FLOW" as RF
+
+    READY --> TICKET : /task
+    READY --> ARCHITECTURE : /architecture
+    READY --> PEER_REVIEW : /review
+
+    TICKET --> PLAN : auto
+    PLAN --> PLAN_REVIEW : review accepted
+    PLAN --> PLAN_REVIEW : review exhausted (override gate)
+    ARCHITECTURE --> ARCH_REVIEW : review accepted
+    ARCHITECTURE --> ARCH_REVIEW : review exhausted (override gate)
+
+    state PLAN {
+        [*] --> plan_label : independent review loop
+    }
+
+    PLAN_REVIEW --> VALIDATION : approve
+    PLAN_REVIEW --> PLAN : changes_requested
+    PLAN_REVIEW --> REJECTED : reject
+
+    VALIDATION --> IMPLEMENTATION : all_passed
+    VALIDATION --> PLAN : check_failed
+
+    IMPLEMENTATION --> IMPL_VALIDATION : auto
+    IMPL_VALIDATION --> IMPL_REVIEW : all_passed
+    IMPL_VALIDATION --> IMPLEMENTATION : check_failed
+
+    state IMPL_REVIEW_s {
+        [*] --> impl_label : independent review loop
+    }
+
+    IMPL_REVIEW --> EVIDENCE_REVIEW : review converged / exhausted
+
+    EVIDENCE_REVIEW --> EXPORT_READY : approve | override-approve
+    EVIDENCE_REVIEW --> IMPLEMENTATION : changes_requested
+    EVIDENCE_REVIEW --> REJECTED : reject
+
+    EXPORT_READY --> COMPLETE : export materialized
+
+    state ARCHITECTURE_s {
+        [*] --> arch_label : ADR review loop
+    }
+
+    ARCH_REVIEW --> ARCH_COMPLETE : approve | override-approve
+    ARCH_REVIEW --> ARCHITECTURE : changes_requested
+    ARCH_REVIEW --> REJECTED : reject
+
+    PEER_REVIEW --> PEER_REVIEW_COMPLETE : auto
+    READY --> ABORTED : abort
 ```
 
 | Symbol                    | Meaning                                                                              |
@@ -108,9 +103,11 @@ approve │     │    │ reject
 
 ### Shared Entry Point
 
-| Phase | Description                             | Gate Type      |
-| ----- | --------------------------------------- | -------------- |
-| READY | Post-hydrate entry point, choose a flow | Command-driven |
+| Phase    | Description                             | Gate Type      |
+| -------- | --------------------------------------- | -------------- |
+| READY    | Post-hydrate entry point, choose a flow | Command-driven |
+| ABORTED  | Session terminated by `/abort`          | Terminal       |
+| REJECTED | Human gate rejected                     | Terminal       |
 
 ### Ticket Flow
 
@@ -121,8 +118,10 @@ approve │     │    │ reject
 | PLAN_REVIEW     | Human approves plan                         | **User Gate**                  |
 | VALIDATION      | Run validation checks                       | Automatic                      |
 | IMPLEMENTATION  | Execute plan                                | Automatic                      |
+| IMPL_VALIDATION | Re-run checks against the implemented code  | Automatic                      |
 | IMPL_REVIEW     | Subagent reviews implementation             | Automatic (independent review) |
 | EVIDENCE_REVIEW | Human reviews evidence                      | **User Gate**                  |
+| EXPORT_READY    | Materialize verifiable export evidence      | Command-driven                 |
 | COMPLETE        | Session complete                            | Terminal                       |
 
 ### Architecture Flow
@@ -133,18 +132,18 @@ approve │     │    │ reject
 | ARCH_REVIEW   | Human reviews ADR        | **User Gate**          |
 | ARCH_COMPLETE | ADR accepted             | Terminal               |
 
-### Review Flow
+### Peer Review Flow
 
-| Phase           | Description                | Gate Type |
-| --------------- | -------------------------- | --------- |
-| REVIEW          | Generate compliance report | Automatic |
-| REVIEW_COMPLETE | Report delivered           | Terminal  |
+| Phase                | Description                               | Gate Type |
+| -------------------- | ----------------------------------------- | --------- |
+| PEER_REVIEW          | Review a foreign target, no approver gate | Automatic |
+| PEER_REVIEW_COMPLETE | Peer review report delivered              | Terminal  |
 
 ## Gate Types
 
 ### Command-Driven (READY)
 
-- User selects a flow via command (`/ticket`, `/architecture`, `/review`)
+- User selects a flow via command (`/task`, `/architecture`, `/review`)
 - No guards — evaluator returns `pending` until a command is issued
 
 ### Automatic Gates
@@ -161,7 +160,11 @@ approve │     │    │ reject
 
 ### User Gates
 
-- Require explicit human approval via `/review-decision`
+- Require an explicit human decision: `/approve`, `/request-changes`, or `/reject`
+- An exhausted review loop turns the gate into a **governance override gate**:
+  plain `/approve` is blocked (`GOVERNANCE_OVERRIDE_REQUIRED`) and the only
+  approval path is `/override-approve`, which records the override and binds the
+  exact reviewed subject digest
 - Four-eyes principle in regulated mode (reviewer must differ from session initiator)
 - Examples: PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW
 
@@ -170,13 +173,13 @@ approve │     │    │ reject
 ### READY
 
 **Entry:** `/hydrate`
-**Exit:** `/ticket`, `/architecture`, or `/review`
+**Exit:** `/task`, `/architecture`, or `/review`
 
 Post-hydrate entry point. The system provides guidance on available flows. User selects a flow by issuing the corresponding command.
 
 ### TICKET
 
-**Entry:** `/ticket` from READY
+**Entry:** `/task` from READY
 **Exit:** Automatic (advances to PLAN when ticket evidence is recorded)
 
 Records the task description. Validates that the task is clear and actionable.
@@ -195,60 +198,88 @@ plan to start a fresh obligation. See `docs/independent-review.md`.
 
 ### PLAN_REVIEW
 
-**Entry:** Automatic from PLAN (independent review converged)
-**Exit:** `/review-decision` (or `/approve`, `/request-changes`, `/reject`)
+**Entry:** Automatic from PLAN (independent review accepted or exhausted)
+**Exit:** `/approve`, `/override-approve`, `/request-changes`, or `/reject`
 
 Human reviews and approves the plan before implementation begins. When independent review converges, a **Plan Review Card** is displayed showing the complete plan body, version, policy mode, task title, and recommended next actions. In regulated mode, a second person must review.
 
-- `approve` → VALIDATION
+- `approve` → VALIDATION (reviewer accepted the reviewed revision)
+- `override-approve` → VALIDATION (review exhausted without acceptance; recorded as a governance override bound to the reviewed digest)
 - `changes_requested` → back to PLAN
-- `reject` → back to TICKET
+- `reject` → REJECTED (terminal)
 
 ### VALIDATION
 
-**Entry:** `/review-decision approve` from PLAN_REVIEW
+**Entry:** `/approve` or `/override-approve` from PLAN_REVIEW
 **Exit:** Automatic (all checks passed → IMPLEMENTATION, any check failed → back to PLAN)
 
 Runs automated validation checks derived from `verificationCandidates`. All checks must pass to proceed.
-Use `/check` to execute the active verification candidates.
+Validation executes automatically when the phase is entered; `/check` remains available as a compatibility surface to execute the active verification candidates explicitly.
 
 ### IMPLEMENTATION
 
 **Entry:** Automatic from VALIDATION (all checks passed)
-**Exit:** Automatic (auto-advances to IMPL_REVIEW)
+**Exit:** Automatic (auto-advances to IMPL_VALIDATION)
 
 AI implements the plan using OpenCode tools. Changed files are automatically tracked via git.
 
-When `policy.allowReducedCeremony` is enabled, FlowGuard may reduce only the implementation-review ceremony after implementation evidence is recorded. The machine still uses explicit transitions (`IMPLEMENTATION → EVIDENCE_REVIEW` via `REDUCED_CEREMONY`, then the normal evidence gate). Reduction is evidenced in `state.reducedCeremony`; FlowGuard does not synthesize `implReview` evidence. Reduction is allowed only for a `TRIVIAL` claim, runtime-computed `TRIVIAL` changed files, clear `riskGate`, complete passing validation evidence, no sensitive surfaces, no policy-required host review, and no outstanding review obligation. Otherwise the full IMPL_REVIEW path remains unchanged.
+When `policy.allowReducedCeremony` is enabled **and** `requireHumanGates` is true, FlowGuard may reduce only the independent implementation-review ceremony **after** post-implementation verification. `/implement` records the frozen implementation generation and projects `pending_post_implementation_verification`; the machine has no implementation-phase shortcut. The decision is made in IMPL_VALIDATION, inside the `/check` transaction, once every active check has a latest decisive PASS bound to the current `implementationId`, and only after the frozen governed bytes were re-attested in the worktree. The machine then uses the explicit `IMPL_VALIDATION → EVIDENCE_REVIEW` transition via `REDUCED_CEREMONY`. Reduction requires the effective risk class (`max(runtime minimum, ticket-declared floor, optional escalation)`) to be `TRIVIAL`. It is evidenced in `state.reducedCeremony` with the implementation digest, frozen policy digest, declaration provenance (ticket digest, declared class, escalation) and exact check/attempt basis; FlowGuard never synthesizes `implReview` evidence, and completeness reports the review slot as explicitly `waived`. Otherwise the full IMPL_VALIDATION → IMPL_REVIEW path remains unchanged.
 Use `/implement` to record evidence and auto-advance.
+
+### IMPL_VALIDATION
+
+**Entry:** Automatic from IMPLEMENTATION (after `/implement` records evidence)
+**Exit:** Automatic (all post-fix checks passed → IMPL_REVIEW; any check failed → back to IMPLEMENTATION)
+
+Re-runs the active verification checks against the **implemented** code (recorded in
+`implValidation`, distinct from the pre-implementation `validation` baseline). The
+checks execute automatically; `/check` remains available as a compatibility surface to
+execute them explicitly. A genuine failure routes back to IMPLEMENTATION (the
+delivered code is wrong, not the plan); a timeout or executor error retries in
+IMPL_VALIDATION without invalidating the approved plan. Reduced ceremony can
+waive only the subsequent IMPL_REVIEW, never this phase.
 
 ### IMPL_REVIEW
 
-**Entry:** Automatic from IMPLEMENTATION (after `/implement`)
+**Entry:** Automatic from IMPL_VALIDATION (post-implementation checks passed)
 **Exit:** Automatic (review convergence)
 
 The reviewer subagent reviews the implementation against the plan. This is an
 **independent review gate, not a human gate** (USER_GATES = {PLAN_REVIEW,
 EVIDENCE_REVIEW, ARCH_REVIEW}). The LLM records evidence with `flowguard_implement` and submits the reviewer verdict via
 `flowguard_review_implementation`. The reviewer's three verdicts
-(`approve`, `changes_requested`, `unable_to_review`) follow the same semantics
-as the PLAN loop. On `approve` convergence, auto-advances to EVIDENCE_REVIEW;
+(`accept`, `changes_requested`, `unable_to_review`) follow the same semantics
+as the PLAN loop. On `accept` convergence, auto-advances to EVIDENCE_REVIEW;
 on `unable_to_review`, BLOCKED via `SUBAGENT_UNABLE_TO_REVIEW`.
 
 ### EVIDENCE_REVIEW
 
-**Entry:** Automatic from IMPL_REVIEW (review converged)
-**Exit:** `/review-decision`
+**Entry:** Automatic from IMPL_REVIEW (review converged or exhausted)
+**Exit:** `/approve`, `/override-approve`, `/request-changes`, or `/reject`
 
-Final human review of all evidence before completion.
+Final human review of all evidence before completion. When the implementation
+review exhausted its budget with changes requested, this gate becomes a
+governance override gate: plain `/approve` is blocked and the reviewed revision
+can only be accepted through `/override-approve`, which binds the exact
+reviewed implementation digest.
 
-- `approve` → COMPLETE
+- `approve` → EXPORT_READY (reviewer accepted the reviewed revision)
+- `override-approve` → EXPORT_READY (review exhausted; recorded override)
 - `changes_requested` → back to IMPLEMENTATION
-- `reject` → back to TICKET
+- `reject` → REJECTED (terminal)
+
+### EXPORT_READY
+
+**Entry:** `/approve` or `/override-approve` from EVIDENCE_REVIEW
+**Exit:** `/export` (materializes the verifiable package and completes)
+
+Completion is possible only after `/export` materializes and persists exact,
+verifiable export evidence. A blocked or failed export leaves the session in
+EXPORT_READY; only `EXPORT_MATERIALIZED` advances to COMPLETE.
 
 ### COMPLETE
 
-**Entry:** Automatic after EVIDENCE_REVIEW approval
+**Entry:** Automatic after `/export` materializes and persists verifiable export evidence
 **Exit:** Terminal
 
 Ticket flow complete. Can be archived with `/archive`.
@@ -263,20 +294,22 @@ include `## Context`, `## Decision`, and `## Consequences` sections. The ADR
 review loop runs through the **same plugin-orchestrated subagent pipeline** as
 PLAN and IMPL_REVIEW (F13 parity): the reviewer evaluates Context completeness,
 Decision concreteness, Consequences honesty, and MADR structure. Three
-verdicts (`approve`, `changes_requested`, `unable_to_review`) follow uniform
+verdicts (`accept`, `changes_requested`, `unable_to_review`) follow uniform
 semantics; `unable_to_review` consumes the obligation and BLOCKS via
 `SUBAGENT_UNABLE_TO_REVIEW`.
 
 ### ARCH_REVIEW
 
-**Entry:** Automatic from ARCHITECTURE (ADR review converged)
-**Exit:** `/review-decision`
+**Entry:** Automatic from ARCHITECTURE (ADR review accepted or exhausted)
+**Exit:** `/approve`, `/override-approve`, `/request-changes`, or `/reject`
 
-Human reviews the ADR.
+Human reviews the ADR. An exhausted ADR review turns this gate into a
+governance override gate; the override binds the exact reviewed ADR digest.
 
 - `approve` → ARCH_COMPLETE (ADR status set to "accepted")
+- `override-approve` → ARCH_COMPLETE (review exhausted; recorded override)
 - `changes_requested` → back to ARCHITECTURE
-- `reject` → back to READY
+- `reject` → REJECTED (terminal)
 
 ### ARCH_COMPLETE
 
@@ -285,16 +318,19 @@ Human reviews the ADR.
 
 Architecture flow complete. ADR is accepted. MADR artifact is written. Can be archived with `/archive`.
 
-### REVIEW
+### PEER_REVIEW
 
 **Entry:** `/review` from READY
-**Exit:** Automatic (report generation advances to REVIEW_COMPLETE)
+**Exit:** Automatic (report generation advances to PEER_REVIEW_COMPLETE)
 
-Generates a compliance review report with evidence completeness matrix, four-eyes status, validation summary, and findings.
+The peer review flow reviews a foreign PR, branch, commit, diff, or text and
+produces findings for another developer. It never mutates the reviewed target
+and has no approval gate; `changes_requested` is a valid review outcome, not a
+workflow instruction.
 
-### REVIEW_COMPLETE
+### PEER_REVIEW_COMPLETE
 
-**Entry:** Automatic from REVIEW (report generated)
+**Entry:** Automatic from PEER_REVIEW (report generated)
 **Exit:** Terminal
 
-Review flow complete. Report delivered. Can be archived with `/archive`.
+Peer review complete. Report delivered. Can be archived with `/archive`.

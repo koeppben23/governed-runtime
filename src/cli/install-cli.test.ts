@@ -4,19 +4,21 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterAll } from 'vitest';
 import * as path from 'node:path';
-import { mkdirSync } from 'node:fs';
-import { formatResult, formatDoctor, main } from './install.js';
-import type { CliResult, DoctorCheck } from './install.js';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  VERSION,
-  repoArgs,
-  createMockTarball,
-  setupCliTestEnvironment,
-} from './install-test-helpers.test.js';
+  dispatchCliEntrypoint,
+  formatResult,
+  formatDoctor,
+  isDirectCliExecution,
+  main,
+} from './install.js';
+import type { CliResult, DoctorCheck } from './install-types.js';
+import { createMockTarball, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
-// ─── Mock: child_process ──────────────────────────────────────────────────────
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
   const mockImpl = (
@@ -47,8 +49,6 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 setupCliTestEnvironment();
 
-// ─── formatResult / formatDoctor ──────────────────────────────────────────────
-
 describe('cli/formatResult', () => {
   describe('HAPPY', () => {
     it('formats install result with summary lines', () => {
@@ -60,7 +60,9 @@ describe('cli/formatResult', () => {
           { path: '/tmp/test/c', action: 'skipped', reason: 'already exists' },
         ],
         errors: [],
+        errorDetails: [],
         warnings: [],
+        notices: [],
       };
       const output = formatResult(result);
       expect(output).toContain('Written: 1 files');
@@ -76,7 +78,9 @@ describe('cli/formatResult', () => {
         target: '/tmp/test',
         ops: [],
         errors: ['something broke'],
+        errorDetails: [],
         warnings: [],
+        notices: [],
       };
       const output = formatResult(result);
       expect(output).toContain('[error]');
@@ -86,9 +90,15 @@ describe('cli/formatResult', () => {
 
   describe('CORNER', () => {
     it('handles empty ops, errors, and warnings gracefully', () => {
-      const result: CliResult = { target: '/tmp/test', ops: [], errors: [], warnings: [] };
-      const output = formatResult(result);
-      expect(typeof output).toBe('string');
+      const result: CliResult = {
+        target: '/tmp/test',
+        ops: [],
+        errors: [],
+        errorDetails: [],
+        warnings: [],
+        notices: [],
+      };
+      expect(typeof formatResult(result)).toBe('string');
     });
 
     it('formats warnings when present', () => {
@@ -96,7 +106,9 @@ describe('cli/formatResult', () => {
         target: '/tmp/test',
         ops: [],
         errors: [],
+        errorDetails: [],
         warnings: ['something was modified'],
+        notices: [],
       };
       const output = formatResult(result);
       expect(output).toContain('[warn]');
@@ -111,8 +123,7 @@ describe('cli/formatResult', () => {
         { file: 'b.ts', status: 'missing' },
         { file: 'c.ts', status: 'ok' },
       ];
-      const output = formatDoctor(checks);
-      expect(output).toContain('2/3 checks passed');
+      expect(formatDoctor(checks, 'opencode')).toContain('2/3 actionable checks passed');
     });
 
     it('formatDoctor shows status labels for all statuses', () => {
@@ -123,18 +134,26 @@ describe('cli/formatResult', () => {
         { file: 'd', status: 'unmanaged' },
         { file: 'e', status: 'version_mismatch', detail: 'v1 != v2' },
         { file: 'f', status: 'instruction_missing' },
-        { file: 'g', status: 'instruction_stale' },
-        { file: 'h', status: 'error', detail: 'malformed' },
+        { file: 'g', status: 'error', detail: 'malformed' },
       ];
-      const output = formatDoctor(checks);
+      const output = formatDoctor(checks, 'opencode');
       expect(output).toContain('[ok]');
       expect(output).toContain('[MISSING]');
       expect(output).toContain('[MODIFIED]');
       expect(output).toContain('[UNMANAGED]');
       expect(output).toContain('[VERSION]');
       expect(output).toContain('[INSTR_MISSING]');
-      expect(output).toContain('[INSTR_STALE]');
       expect(output).toContain('[ERROR]');
+    });
+
+    it('all-info checks produce NOT_VERIFIED status', () => {
+      const checks: DoctorCheck[] = [
+        { file: 'trust://opencode/authority', status: 'info' },
+        { file: 'trust://opencode/capabilities', status: 'info' },
+      ];
+      const output = formatDoctor(checks, 'opencode');
+      expect(output).toContain('Status: NOT_VERIFIED');
+      expect(output).toContain('0/0 actionable checks passed');
     });
   });
 
@@ -144,18 +163,20 @@ describe('cli/formatResult', () => {
         path: `/tmp/file-${i}.ts`,
         action: 'written' as const,
       }));
-      const result: CliResult = { target: '/tmp', ops, errors: [], warnings: [] };
+      const result: CliResult = {
+        target: '/tmp',
+        ops,
+        errors: [],
+        errorDetails: [],
+        warnings: [],
+        notices: [],
+      };
       const start = performance.now();
-      for (let i = 0; i < 100; i++) {
-        formatResult(result);
-      }
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(50);
+      for (let i = 0; i < 100; i++) formatResult(result);
+      expect(performance.now() - start).toBeLessThan(50);
     });
   });
 });
-
-// ─── main ─────────────────────────────────────────────────────────────────────
 
 describe('cli/main', () => {
   describe('HAPPY', () => {
@@ -164,56 +185,42 @@ describe('cli/main', () => {
       const code = await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
       expect(code).toBe(0);
     });
-
-    // NOTE: "doctor after install returns 0" is build-dependent (#423: doctor
-    // validates the running package's shipped dist/ executables) and therefore
-    // lives in the smoke project — see doctor-cli-smoke.test.ts. The unit project
-    // is no-build-required (vitest.config.ts) and must not assert a built dist.
   });
 
   describe('BAD', () => {
-    it('returns 1 for invalid args', async () => {
-      const code = await main([]);
-      expect(code).toBe(1);
+    it('returns 2 for invalid args', async () => {
+      await expect(main([])).resolves.toBe(2);
     });
 
-    it('returns 1 for unknown command', async () => {
-      const code = await main(['deploy']);
-      expect(code).toBe(1);
+    it('returns 2 for unknown command', async () => {
+      await expect(main(['deploy'])).resolves.toBe(2);
     });
 
     it('returns 1 when install is called without --core-tarball', async () => {
-      const code = await main(['install', '--install-scope', 'repo']);
-      expect(code).toBe(1);
+      await expect(main(['install', '--install-scope', 'repo'])).resolves.toBe(1);
     });
+
+    it.each([['--mode', 'team'], ['--global'], ['--project']])(
+      'returns 2 for removed install option %s',
+      async (...args) => {
+        await expect(main(['install', ...args])).resolves.toBe(2);
+      },
+    );
   });
 
   describe('CORNER', () => {
     it('returns 1 for doctor on empty directory (repo scope)', async () => {
-      const code = await main(['doctor', '--install-scope', 'repo']);
-      expect(code).toBe(1);
-    });
-
-    it('deprecated --project still works via main() but requires --core-tarball', async () => {
-      const tarball = await createMockTarball();
-      const code = await main(['install', '--project', '--core-tarball', tarball]);
-      expect(code).toBe(0);
+      await expect(main(['doctor', '--install-scope', 'repo'])).resolves.toBe(1);
     });
   });
 
   describe('EDGE', () => {
     it('uninstall returns 0 even if nothing was installed (repo scope)', async () => {
-      const code = await main(['uninstall', '--install-scope', 'repo']);
-      expect(code).toBe(0);
+      await expect(main(['uninstall', '--install-scope', 'repo'])).resolves.toBe(0);
     });
 
-    // NOTE: "doctor returns 0 when only warn checks present" is build-dependent
-    // (#423) and lives in the smoke project — see doctor-cli-smoke.test.ts.
-
     it('doctor returns 1 when real errors exist', async () => {
-      // Empty dir, no install → missing artifacts → exit 1
-      const code = await main(['doctor', '--install-scope', 'repo']);
-      expect(code).toBe(1);
+      await expect(main(['doctor', '--install-scope', 'repo'])).resolves.toBe(1);
     });
   });
 
@@ -222,8 +229,110 @@ describe('cli/main', () => {
       const tarball = await createMockTarball();
       const start = performance.now();
       await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(1000);
+      expect(performance.now() - start).toBeLessThan(1000);
+    });
+  });
+});
+
+// ─── Entry-point boundary ─────────────────────────────────────────────────────
+
+describe('cli/entrypoint boundary', () => {
+  const installModuleUrl = new URL('./install.ts', import.meta.url);
+  const installModulePath = fileURLToPath(installModuleUrl);
+  let boundaryDir: string | undefined;
+
+  function boundaryDirOrThrow(): string {
+    boundaryDir ??= mkdtempSync(path.join(tmpdir(), 'fg-cli-entrypoint-'));
+    return boundaryDir;
+  }
+
+  afterAll(() => {
+    if (boundaryDir !== undefined) rmSync(boundaryDir, { recursive: true, force: true });
+  });
+
+  describe('direct execution detection', () => {
+    it('HAPPY: recognizes this module as direct execution', () => {
+      expect(isDirectCliExecution(installModulePath, installModuleUrl.href)).toBe(true);
+    });
+
+    it.skipIf(process.platform === 'win32')(
+      'HAPPY: resolves npm-bin-style symlinks to the same module',
+      () => {
+        const dir = boundaryDirOrThrow();
+        const target = path.join(dir, 'real-install.js');
+        const link = path.join(dir, 'flowguard');
+        writeFileSync(target, '// entry\n', 'utf8');
+        symlinkSync(target, link);
+        expect(isDirectCliExecution(link, pathToFileURL(target).href)).toBe(true);
+      },
+    );
+
+    it('BAD: rejects a different existing install.js', () => {
+      const other = path.join(boundaryDirOrThrow(), 'other', 'install.js');
+      mkdirSync(path.dirname(other), { recursive: true });
+      writeFileSync(other, '// other entry\n', 'utf8');
+      expect(isDirectCliExecution(other, installModuleUrl.href)).toBe(false);
+    });
+
+    it('BAD: rejects an unresolvable argv entry without throwing', () => {
+      const missing = path.join(boundaryDirOrThrow(), 'missing', 'install.js');
+      expect(() => isDirectCliExecution(missing, installModuleUrl.href)).not.toThrow();
+      expect(isDirectCliExecution(missing, installModuleUrl.href)).toBe(false);
+    });
+
+    it('BAD: rejects a missing argv entry', () => {
+      expect(isDirectCliExecution(undefined, installModuleUrl.href)).toBe(false);
+    });
+  });
+
+  describe('process-boundary dispatcher', () => {
+    function capture(): {
+      exitCodes: number[];
+      errors: string[];
+      exit: (code: number) => void;
+      reportError: (message: string) => void;
+    } {
+      const exitCodes: number[] = [];
+      const errors: string[] = [];
+      return {
+        exitCodes,
+        errors,
+        exit: (code: number) => exitCodes.push(code),
+        reportError: (message: string) => errors.push(message),
+      };
+    }
+
+    it.each([0, 1, 2])('HAPPY: exits with the runner code %i', async (code) => {
+      const sink = capture();
+      await dispatchCliEntrypoint(['x'], async () => code, sink.exit, sink.reportError);
+      expect(sink.exitCodes).toEqual([code]);
+      expect(sink.errors).toEqual([]);
+    });
+
+    it('BAD: reports an Error rejection deterministically and exits 1', async () => {
+      const sink = capture();
+      await dispatchCliEntrypoint(
+        ['x'],
+        async () => {
+          throw new Error('boom');
+        },
+        sink.exit,
+        sink.reportError,
+      );
+      expect(sink.exitCodes).toEqual([1]);
+      expect(sink.errors).toEqual(['[error] flowguard CLI failed unexpectedly: boom']);
+    });
+
+    it('BAD: reports a non-Error rejection deterministically and exits 1', async () => {
+      const sink = capture();
+      await dispatchCliEntrypoint(
+        ['x'],
+        () => Promise.reject('plain failure'),
+        sink.exit,
+        sink.reportError,
+      );
+      expect(sink.exitCodes).toEqual([1]);
+      expect(sink.errors).toEqual(['[error] flowguard CLI failed unexpectedly: plain failure']);
     });
   });
 });

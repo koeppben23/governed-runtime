@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_declare_contract",
+  "title": "flowguard_declare_contract",
+  "description": "Declare evidence-bound ProofGraph contract claims for the current change; advisory, never alters review acceptance.",
+  "type": "object",
+  "required": ["claims"],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "description": "Claims to declare, each covered by an implementation check at the current revision.",
+      "items": {
+        "type": "object",
+        "required": ["statement", "checkId", "critical"],
+        "properties": {
+          "statement": {
+            "type": "string",
+            "description": "The behavioral claim being asserted."
+          },
+          "checkId": {
+            "type": "string",
+            "description": "Active check whose implementation attempt is the claim evidence."
+          },
+          "critical": {
+            "type": "boolean",
+            "description": "Whether the claim is critical. Required and explicit: a critical claim can block the final approval, so it must never be assumed. A critical claim additionally requires a distinct counterexampleCheckId."
+          },
+          "counterexampleCheckId": {
+            "type": "string",
+            "description": "Optional distinct check whose FAILURE would contradict this claim (adversarial falsification); required for critical claims."
+          },
+          "authority": {
+            "type": "string",
+            "enum": ["ticket", "plan", "architecture"],
+            "description": "Approved GOVERNING source for this claim (ticket/plan/architecture). Only a resolved authority classifies the claim as `fact`; without one it is a NOT_VERIFIED assumption. Validation evidence is never a governing authority."
+          },
+          "structuralSurface": {
+            "type": "string",
+            "enum": ["command-registration", "config-defaults"],
+            "description": "Optional cross-artifact consistency surface whose assertion also covers this claim. Becomes required positive evidence and is bound to the surface digest, so the claim goes STALE when that surface changes."
+          },
+          "mutationProfile": {
+            "type": "string",
+            "enum": ["proofgraph-evaluator", "proofgraph-gate"],
+            "description": "Optional opt-in semantic mutation profile. Becomes required positive evidence: surviving mutants make the claim UNPROVEN, and a profile with no recorded mutation report is NOT_VERIFIED rather than a pass."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

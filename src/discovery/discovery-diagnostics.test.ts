@@ -12,6 +12,7 @@
  * - Negative paths: timeout, unreadable files, parse failures, budget exhaustion
  */
 
+import type { DiscoveryIoPort as DiscoveryIoType } from './io-port.js';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -36,8 +37,6 @@ vi.mock('../adapters/git', () => ({
   remoteOriginUrl: vi.fn().mockResolvedValue(null),
   listRepoSignals: vi.fn().mockResolvedValue({
     files: [],
-    packageFiles: [],
-    configFiles: [],
     packageFilePaths: [],
     configFilePaths: [],
   }),
@@ -47,12 +46,24 @@ vi.mock('../adapters/persistence-discovery', () => ({
   readDiscovery: vi.fn().mockResolvedValue(null),
 }));
 
+const gitModule = await import('../adapters/git.js');
+const persistenceModule = await import('../adapters/persistence-discovery.js');
+
+const DISCOVERY_IO: DiscoveryIoType = {
+  readPersistedDiscovery: persistenceModule.readDiscovery,
+  listRepoSignals: gitModule.listRepoSignals,
+  defaultBranch: gitModule.defaultBranch,
+  headCommit: gitModule.headCommit,
+  isClean: gitModule.isClean,
+  remoteOriginUrl: gitModule.remoteOriginUrl,
+};
+
 const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 describe('discovery/diagnostics (#372)', () => {
@@ -64,12 +75,12 @@ describe('discovery/diagnostics (#372)', () => {
 
   describe('Phase 1: collector diagnostics', () => {
     it('runDiscovery produces diagnostics array for all 6 collectors', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
       expect(result.diagnostics).toBeDefined();
-      expect(result.diagnostics!.length).toBe(6);
+      expect(result.diagnostics.length).toBe(6);
 
-      for (const diag of result.diagnostics!) {
+      for (const diag of result.diagnostics) {
         const parsed = CollectorDiagnosticSchema.safeParse(diag);
         expect(parsed.success).toBe(true);
         expect(diag.durationMs).toBeGreaterThanOrEqual(0);
@@ -81,11 +92,11 @@ describe('discovery/diagnostics (#372)', () => {
       expect(schemaParsed.success).toBe(true);
     });
 
-    it('diagnostics are consistent with legacy collectors map', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+    it('diagnostics identify each collector', async () => {
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
-      for (const diag of result.diagnostics!) {
-        expect(result.collectors[diag.name]).toBe(diag.status);
+      for (const diag of result.diagnostics) {
+        expect(diag.name).toBeTruthy();
       }
     });
 
@@ -163,8 +174,8 @@ describe('discovery/diagnostics (#372)', () => {
           worktreePath: tmpDir,
           fingerprint: 'abcdef0123456789abcdef01',
           allFiles: ['good.ts', 'missing.ts'],
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -197,8 +208,8 @@ describe('discovery/diagnostics (#372)', () => {
           worktreePath: tmpDir,
           fingerprint: 'abcdef0123456789abcdef01',
           allFiles,
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -226,8 +237,8 @@ describe('discovery/diagnostics (#372)', () => {
           worktreePath: tmpDir,
           fingerprint: 'abcdef0123456789abcdef01',
           allFiles,
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -258,8 +269,8 @@ describe('discovery/diagnostics (#372)', () => {
           fingerprint: 'abcdef0123456789abcdef01',
           // Intentionally list deep file first to test sorting
           allFiles: ['deep/nested/z.ts', 'a.ts'],
-          packageFiles: [],
-          configFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
         };
 
         const result = await collectCodeSurfaces(input);
@@ -290,18 +301,16 @@ describe('discovery/diagnostics (#372)', () => {
   // ─── Phase 5: Advisory Authority ──────────────────────────────────────────
 
   describe('Phase 5: advisory authority consolidation', () => {
-    it('validationHints remains in DiscoveryResult for digest stability', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
-      expect(result.validationHints).toBeDefined();
-      expect(result.validationHints.commands).toBeDefined();
-      expect(result.validationHints.lintTools).toBeDefined();
+    it('DiscoveryResult has no legacy planning fields', async () => {
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
+      expect(result).not.toHaveProperty('collectors');
+      expect(result).not.toHaveProperty('validationHints');
     });
 
-    it('DiscoveryResult schema still requires validationHints', () => {
+    it('DiscoveryResult schema requires diagnostics', () => {
       const incomplete = {
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: {},
         repoMetadata: {
           defaultBranch: null,
           headCommit: null,
@@ -326,17 +335,65 @@ describe('discovery/diagnostics (#372)', () => {
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
         domainSignals: { keywords: [], glossarySources: [] },
-        // Missing validationHints
       };
       const parsed = DiscoveryResultSchema.safeParse(incomplete);
       expect(parsed.success).toBe(false);
+    });
+
+    it('requires exactly one diagnostic for every current collector and code surfaces', async () => {
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
+      const withoutCodeSurfaces = (({ codeSurfaces: _codeSurfaces, ...rest }) => rest)(result);
+
+      expect(DiscoveryResultSchema.safeParse({ ...result, diagnostics: [] }).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({ ...result, diagnostics: result.diagnostics.slice(1) })
+          .success,
+      ).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: [...result.diagnostics.slice(0, -1), result.diagnostics[0]],
+        }).success,
+      ).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: [
+            { ...result.diagnostics[0], name: 'unknown-collector' },
+            ...result.diagnostics.slice(1),
+          ],
+        }).success,
+      ).toBe(false);
+      expect(DiscoveryResultSchema.safeParse(withoutCodeSurfaces).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: result.diagnostics.map((diagnostic) =>
+            diagnostic.name === 'code-surface-analysis'
+              ? { ...diagnostic, status: 'failed' as const }
+              : diagnostic,
+          ),
+          codeSurfaces: { ...result.codeSurfaces, status: 'failed' as const },
+        }).success,
+      ).toBe(true);
+    });
+
+    it('rejects removed v1 fields instead of stripping them', async () => {
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
+      expect(DiscoveryResultSchema.safeParse({ ...result, collectors: {} }).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          validationHints: { commands: [], lintTools: [] },
+        }).success,
+      ).toBe(false);
     });
   });
 
   // ─── Schema Backward Compat ───────────────────────────────────────────────
 
-  describe('Schema backward compatibility', () => {
-    it('DiscoveryResult without diagnostics field parses successfully', () => {
+  describe('Schema rejection', () => {
+    it('rejects the legacy discovery.v1 shape without diagnostics', () => {
       const legacyResult = {
         schemaVersion: 'discovery.v1',
         collectedAt: new Date().toISOString(),
@@ -365,14 +422,13 @@ describe('discovery/diagnostics (#372)', () => {
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { commands: [], lintTools: [] },
       };
       const parsed = DiscoveryResultSchema.safeParse(legacyResult);
-      expect(parsed.success).toBe(true);
+      expect(parsed.success).toBe(false);
     });
 
-    it('CodeSurfacesInfo without readStatuses/budget extensions parses', async () => {
-      const legacy = {
+    it('CodeSurfacesInfo preserves current optional fields but rejects obsolete fields', async () => {
+      const current = {
         status: 'ok',
         endpoints: [],
         authBoundaries: [],
@@ -387,10 +443,14 @@ describe('discovery/diagnostics (#372)', () => {
           timedOut: false,
         },
       };
-      // Imported schema allows optional new fields
       const { CodeSurfacesInfoSchema } = await import('./types.js');
-      const parsed = CodeSurfacesInfoSchema.safeParse(legacy);
-      expect(parsed.success).toBe(true);
+      expect(CodeSurfacesInfoSchema.safeParse(current).success).toBe(true);
+      expect(
+        CodeSurfacesInfoSchema.safeParse({
+          ...current,
+          budget: { ...current.budget, outcome: 'supported' },
+        }).success,
+      ).toBe(false);
     });
   });
 
@@ -399,7 +459,7 @@ describe('discovery/diagnostics (#372)', () => {
   describe('Phase 7: stable drift digest', () => {
     it('computeStableDriftDigest returns deterministic hash', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const d2 = computeStableDriftDigest(result);
       expect(d1).toBe(d2);
@@ -409,7 +469,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest unchanged when collectedAt differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const shifted = { ...result, collectedAt: new Date(Date.now() + 86_400_000).toISOString() };
       const d2 = computeStableDriftDigest(shifted);
@@ -418,11 +478,11 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest unchanged when diagnostics[].durationMs differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const shifted = {
         ...result,
-        diagnostics: result.diagnostics!.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
+        diagnostics: result.diagnostics.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
       };
       const d2 = computeStableDriftDigest(shifted);
       expect(d1).toBe(d2);
@@ -430,24 +490,28 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest unchanged when both volatile fields differ', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const shifted = {
         ...result,
         collectedAt: new Date(Date.now() + 86_400_000).toISOString(),
-        diagnostics: result.diagnostics!.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
+        diagnostics: result.diagnostics.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
       };
       const d2 = computeStableDriftDigest(shifted);
       expect(d1).toBe(d2);
     });
 
-    it('stable digest changes when collectors status differs', async () => {
+    it('stable digest changes when diagnostic status differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const changed = {
         ...result,
-        collectors: { ...result.collectors, 'repo-metadata': 'failed' as const },
+        diagnostics: result.diagnostics.map((diagnostic) =>
+          diagnostic.name === 'repo-metadata'
+            ? { ...diagnostic, status: 'failed' as const }
+            : diagnostic,
+        ),
       };
       const d2 = computeStableDriftDigest(changed);
       expect(d1).not.toBe(d2);
@@ -455,11 +519,21 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest changes when stack content differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const changed = {
         ...result,
-        stack: { ...result.stack, languages: [{ id: 'typescript', confidence: 1.0 }] },
+        stack: {
+          ...result.stack,
+          languages: [
+            {
+              id: 'typescript',
+              confidence: 1.0,
+              classification: 'fact' as const,
+              evidence: ['tsconfig.json'],
+            },
+          ],
+        },
       };
       const d2 = computeStableDriftDigest(changed);
       expect(d1).not.toBe(d2);
@@ -467,7 +541,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('full digest changes when collectedAt changes, stable digest does not', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const full1 = computeDiscoveryDigest(result);
       const stable1 = computeStableDriftDigest(result);
       const shifted = { ...result, collectedAt: new Date(Date.now() + 86_400_000).toISOString() };
@@ -481,13 +555,16 @@ describe('discovery/diagnostics (#372)', () => {
   describe('Phase 7b: checkDiscoveryDrift behavior', () => {
     it('unchanged repo with different timestamps reports drifted: false', async () => {
       // Use same worktree path so runDiscovery produces consistent metadata
-      const result = await runDiscovery({
-        worktreePath: '/test/repo',
-        fingerprint: 'abcdef0123456789abcdef01',
-        allFiles: [],
-        packageFiles: [],
-        configFiles: [],
-      });
+      const result = await runDiscovery(
+        {
+          worktreePath: '/test/repo',
+          fingerprint: 'abcdef0123456789abcdef01',
+          allFiles: [],
+          packageFilePaths: [],
+          configFilePaths: [],
+        },
+        DISCOVERY_IO,
+      );
 
       const { readDiscovery } = await import('../adapters/persistence-discovery.js');
       (readDiscovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(result);
@@ -495,8 +572,6 @@ describe('discovery/diagnostics (#372)', () => {
       const { listRepoSignals } = await import('../adapters/git.js');
       (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
         files: [],
-        packageFiles: [],
-        configFiles: [],
         packageFilePaths: [],
         configFilePaths: [],
       });
@@ -506,13 +581,14 @@ describe('discovery/diagnostics (#372)', () => {
         '/workspace',
         '/test/repo',
         'abcdef0123456789abcdef01',
+        DISCOVERY_IO,
       );
       expect(drift.drifted).toBe(false);
       expect(drift.persistedDigest).toBeTypeOf('string');
     });
 
     it('changed content reports drifted: true without collector status changes', async () => {
-      const persisted = await runDiscovery(EMPTY_INPUT);
+      const persisted = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
       const { readDiscovery } = await import('../adapters/persistence-discovery.js');
       (readDiscovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(persisted);
@@ -520,8 +596,6 @@ describe('discovery/diagnostics (#372)', () => {
       const { listRepoSignals } = await import('../adapters/git.js');
       (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
         files: ['src/index.ts'],
-        packageFiles: ['package.json'],
-        configFiles: ['tsconfig.json'],
         packageFilePaths: ['package.json'],
         configFilePaths: ['tsconfig.json'],
       });
@@ -531,17 +605,24 @@ describe('discovery/diagnostics (#372)', () => {
         '/workspace',
         '/test/ts-repo',
         'abcdef0123456789abcdef01',
+        DISCOVERY_IO,
       );
       expect(drift.drifted).toBe(true);
       expect(drift.currentDigest).not.toBe(drift.persistedDigest);
+      expect(drift.changedContributors).toEqual(expect.any(Array));
+      expect(drift.changedContributors!.length).toBeGreaterThan(0);
     });
 
-    it('drifted: true with changedCollectors when collector status changes', async () => {
-      const persisted = await runDiscovery(EMPTY_INPUT);
-      // Mutate a collector status to 'failed'
+    it('drifted: true attributes a collector when its status changes', async () => {
+      const persisted = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
+      // Mutate a collector diagnostic to 'failed'
       const tampered = {
         ...persisted,
-        collectors: { ...persisted.collectors, 'stack-detection': 'failed' as const },
+        diagnostics: persisted.diagnostics.map((diagnostic) =>
+          diagnostic.name === 'stack-detection'
+            ? { ...diagnostic, status: 'failed' as const }
+            : diagnostic,
+        ),
       };
 
       const { readDiscovery } = await import('../adapters/persistence-discovery.js');
@@ -550,8 +631,6 @@ describe('discovery/diagnostics (#372)', () => {
       const { listRepoSignals } = await import('../adapters/git.js');
       (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
         files: [],
-        packageFiles: [],
-        configFiles: [],
         packageFilePaths: [],
         configFilePaths: [],
       });
@@ -561,9 +640,10 @@ describe('discovery/diagnostics (#372)', () => {
         '/workspace',
         '/test/repo',
         'abcdef0123456789abcdef01',
+        DISCOVERY_IO,
       );
       expect(drift.drifted).toBe(true);
-      expect(drift.changedCollectors).toContain('stack-detection');
+      expect(drift.changedContributors).toContain('stack-detection');
     });
   });
 });

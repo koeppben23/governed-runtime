@@ -1,6 +1,6 @@
 /**
  * @module hydrate.test
- * @test-policy mutation-kill — targets applyHydrateOverrides, input validation,
+ * @test-policy HAPPY, BAD, CORNER — targets applyHydrateOverrides, input validation,
  * activeChecks fallback, phaseRuleContent, defaults via ?? operators.
  */
 import { describe, it, expect } from 'vitest';
@@ -14,10 +14,11 @@ import {
   makeState,
 } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const digestFn = (text: string): string => `sha256:${text.slice(0, 8)}`;
+const digestFn = hashText;
 
 const baseCtx: RailContext = {
   now: () => FIXED_TIME,
@@ -164,34 +165,32 @@ describe('hydrate rail unit tests', () => {
   // ─── applyHydrateOverrides ────────────────────────────────────────────
 
   describe('applyHydrateOverrides', () => {
-    it('applies maxSelfReviewIterations override when provided', () => {
-      const result = hydrateNew(minimalInput({ policy: { maxSelfReviewIterations: 5 } }));
+    it('applies review budget overrides when provided', () => {
+      const result = hydrateNew(minimalInput({ policy: { reviewBudget: { plan: 5 } } }));
       const state = expectOk(result);
-      expect(state.policySnapshot.maxSelfReviewIterations).toBe(5);
+      expect(state.policySnapshot.reviewBudget.plan).toBe(5);
     });
 
-    it('preserves base maxSelfReviewIterations when override is undefined', () => {
+    it('preserves the base plan budget when override is undefined', () => {
       const result = hydrateNew(minimalInput({ policy: {} }));
       const state = expectOk(result);
-      // solo default is 2
-      expect(state.policySnapshot.maxSelfReviewIterations).toBe(2);
+      expect(state.policySnapshot.reviewBudget.plan).toBe(baseCtx.policy!.reviewBudget.plan);
     });
 
-    it('applies maxImplReviewIterations override when provided', () => {
-      const result = hydrateNew(minimalInput({ policy: { maxImplReviewIterations: 7 } }));
+    it('applies implementation review budget override when provided', () => {
+      const result = hydrateNew(minimalInput({ policy: { reviewBudget: { implementation: 7 } } }));
       const state = expectOk(result);
-      expect(state.policySnapshot.maxImplReviewIterations).toBe(7);
+      expect(state.policySnapshot.reviewBudget.implementation).toBe(7);
     });
 
     it('applies risk-classification policy overrides when provided', () => {
       const result = hydrateNew(
         minimalInput({
-          policy: { enforceRiskClassification: true, allowRiskDowngradeOverride: false },
+          policy: { enforceRiskClassification: true },
         }),
       );
       const state = expectOk(result);
       expect(state.policySnapshot.enforceRiskClassification).toBe(true);
-      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(false);
     });
 
     it('stores claimedTaskClass as a claim on new sessions', () => {
@@ -200,25 +199,12 @@ describe('hydrate rail unit tests', () => {
       expect(state.claimedTaskClass).toBe('STANDARD');
     });
 
-    it('preserves base maxImplReviewIterations when override is undefined', () => {
+    it('preserves the base implementation budget when override is undefined', () => {
       const result = hydrateNew(minimalInput({ policy: {} }));
       const state = expectOk(result);
-      expect(state.policySnapshot.maxImplReviewIterations).toBe(1);
-    });
-
-    it('applies requireVerifiedActorsForApproval override', () => {
-      const result = hydrateNew(
-        minimalInput({ policy: { requireVerifiedActorsForApproval: true } }),
+      expect(state.policySnapshot.reviewBudget.implementation).toBe(
+        baseCtx.policy!.reviewBudget.implementation,
       );
-      const state = expectOk(result);
-      expect(state.policySnapshot.requireVerifiedActorsForApproval).toBe(true);
-    });
-
-    it('preserves base requireVerifiedActorsForApproval when undefined', () => {
-      const result = hydrateNew(minimalInput({ policy: {} }));
-      const state = expectOk(result);
-      // solo default is false
-      expect(state.policySnapshot.requireVerifiedActorsForApproval).toBe(false);
     });
 
     it('applies identityProviderMode override', () => {
@@ -239,7 +225,9 @@ describe('hydrate rail unit tests', () => {
       const idpConfig = {
         issuer: 'https://idp.example.com',
         audience: ['my-app'],
-        jwksSource: { type: 'local' as const, keys: [] },
+        mode: 'jwks' as const,
+        jwksPath: '/tmp/idp-jwks.json',
+        cacheTtlSeconds: 300,
         claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
       };
       const result = hydrateNew(minimalInput({ policy: { identityProvider: idpConfig } }));
@@ -251,7 +239,9 @@ describe('hydrate rail unit tests', () => {
       const idpConfig = {
         issuer: 'https://base-idp.example.com',
         audience: ['base-app'],
-        jwksSource: { type: 'local' as const, keys: [] },
+        mode: 'jwks' as const,
+        jwksPath: '/tmp/base-idp-jwks.json',
+        cacheTtlSeconds: 300,
         claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
       };
       const basePolicy = { ...getPolicyPreset('solo'), identityProvider: idpConfig };
@@ -287,7 +277,7 @@ describe('hydrate rail unit tests', () => {
       const result = hydrateNew(minimalInput({ profile: { profileId: 'baseline' } }));
       const state = expectOk(result);
       // Mutating returned array should not affect the profile
-      const checks = state.activeChecks as string[];
+      const checks = state.activeChecks;
       checks.push('extra');
       // Re-hydrate to verify isolation
       const result2 = hydrateNew(minimalInput({ profile: { profileId: 'baseline' } }));
@@ -486,22 +476,10 @@ describe('hydrate rail unit tests', () => {
       expect(state.policySnapshot.enforceRiskClassification).toBe(false);
     });
 
-    it('allowRiskDowngradeOverride preserves base false when undefined', () => {
-      const result = hydrateNew(minimalInput({ policy: {} }));
-      const state = expectOk(result);
-      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(false);
-    });
-
     it('allowReducedCeremony preserves base false when undefined', () => {
       const result = hydrateNew(minimalInput({ policy: {} }));
       const state = expectOk(result);
       expect(state.policySnapshot.allowReducedCeremony).toBe(false);
-    });
-
-    it('allowRiskDowngradeOverride=true IS applied (kills ObjectLiteral mutant)', () => {
-      const result = hydrateNew(minimalInput({ policy: { allowRiskDowngradeOverride: true } }));
-      const state = expectOk(result);
-      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(true);
     });
 
     it('allowReducedCeremony=true IS applied (kills ObjectLiteral mutant)', () => {
@@ -567,7 +545,6 @@ describe('hydrate rail unit tests', () => {
     it('undefined candidates produces empty activeChecks', () => {
       const result = hydrateNew(
         minimalInput({
-          session: { verificationCandidates: undefined },
           profile: {},
         }),
       );

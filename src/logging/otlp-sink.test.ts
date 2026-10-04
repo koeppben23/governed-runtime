@@ -270,7 +270,12 @@ describe('createOtlpLogSink', () => {
       endpoint: 'http://localhost:4318',
       _import: mods.mockImport,
     });
-    await sink({ ...testEntry, level: 'warn', traceId: undefined, sessionId: undefined });
+    await sink({
+      level: 'warn',
+      service: testEntry.service,
+      message: testEntry.message,
+      ...(testEntry.extra !== undefined ? { extra: testEntry.extra } : {}),
+    });
     const record = mods.emitFn.mock.calls[0]![0] as Record<string, unknown>;
     expect(record.severityText).toBe('warn');
     const attrs = record.attributes as Record<string, string>;

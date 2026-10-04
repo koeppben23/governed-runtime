@@ -1,7 +1,9 @@
 /**
  * @module schema
  * @description Core state model — Phase enum, Event enum, Transition, and SessionState.
- *              Single Zod schema validated on every atomic write.
+ *              SessionState's evidence, configuration, and discovery field groups
+ *              live in the `session-state-*-shape.ts` siblings. Single Zod schema
+ *              validated on every atomic write.
  *
  * Design decisions (Lead-reviewed):
  * - No updatedAt at top-level (redundant — evidences have own timestamps)
@@ -14,56 +16,52 @@
  */
 
 import { z } from 'zod';
+import { ActorInfoSchema, BindingInfo, ErrorInfo, ImplementationRework } from './evidence.js';
+import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
+import { ExportCompletionEvidence } from './evidence-export.js';
+import { SystemWorkOperation } from './system-work.js';
+import { DiscoveryHealthGate } from './discovery-schemas.js';
+import { resolveAuthoritativePeerReviewTask } from './peer-review.js';
+import { SessionStateConfigShape } from './session-state-config-shape.js';
+import { SessionStateDiscoveryShape } from './session-state-discovery-shape.js';
+import { TaskClass } from './task-class.js';
 import {
-  ActorInfoSchema,
-  ArchitectureDecision,
-  BindingInfo,
-  CheckId,
-  DecisionIdentitySchema,
-  ErrorInfo,
-  ImplEvidence,
-  ImplReviewResult,
-  PlanRecord,
-  PolicySnapshotSchema,
-  ReviewAssuranceState,
-  ReviewDecision,
-  ReviewFindings,
-  SelfReviewLoop,
-  TicketEvidence,
-  ValidationResult,
-} from './evidence.js';
-import {
-  DiscoverySummarySchema,
-  DetectedStackSchema,
-  VerificationCandidatesSchema,
-} from './discovery-schemas.js';
+  SessionStateEvidenceShape,
+  SessionStateReviewEvidenceShape,
+} from './session-state-evidence-shape.js';
+
+/** Immutable compatibility contract for executable session authority. */
+export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v10' as const;
+export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
+export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
- * The 14 FlowGuard phases across 3 standalone flows.
- * init() is a function (bootstrap, workspace, binding, discovery) — not a phase.
+ * The 18 FlowGuard phases across 3 standalone flows; init() is a
+ * function (bootstrap, workspace, binding, discovery) — not a phase.
  *
  * After /hydrate, the session starts at READY — a routing phase
  * where the user selects one of 3 standalone flows:
  *
  * Ticket flow (full development lifecycle):
- *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE
  *   Reduced ceremony: IMPLEMENTATION → EVIDENCE_REVIEW only with explicit reducedCeremony evidence.
  *
  * Architecture flow (ADR creation):
  *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
  *
- * Review flow (compliance report):
- *   READY → REVIEW → REVIEW_COMPLETE
+ * Peer review flow (peer review report):
+ *   READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
  *
  * Backward transitions:
  *   PLAN_REVIEW --changes_requested--> PLAN
- *   PLAN_REVIEW --reject--> TICKET
+ *   PLAN_REVIEW --reject--> REJECTED
  *   EVIDENCE_REVIEW --changes_requested--> IMPLEMENTATION
- *   EVIDENCE_REVIEW --reject--> TICKET
+ *   EVIDENCE_REVIEW --reject--> REJECTED
  *   ARCH_REVIEW --changes_requested--> ARCHITECTURE
- *   ARCH_REVIEW --reject--> READY
+ *   ARCH_REVIEW --reject--> REJECTED
  */
 export const Phase = z.enum([
   'READY',
@@ -72,38 +70,123 @@ export const Phase = z.enum([
   'PLAN_REVIEW',
   'VALIDATION',
   'IMPLEMENTATION',
+  'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
+  'EXPORT_READY',
   'COMPLETE',
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ]);
 export type Phase = z.infer<typeof Phase>;
 
 // ─── Task Risk Classification ────────────────────────────────────────────────
 
-/**
- * Agent-claimed task class. This is only an operator/agent claim, never the
- * runtime truth. The runtime computes a minimum class per gate check.
- */
-export const TaskClass = z.enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
-export type TaskClass = z.infer<typeof TaskClass>;
+/** Specific authority affected by a HIGH-RISK implementation change. */
+export const RiskTrigger = z.enum([
+  'state_integrity',
+  'audit_authority',
+  'identity_boundary',
+  'approval_authority',
+  'policy_authority',
+  'migration',
+  'distribution_integrity',
+  'command_contract',
+  'ceremony_only',
+]);
+export type RiskTrigger = z.infer<typeof RiskTrigger>;
 
-/** Runtime decision that implementation review ceremony was explicitly reduced. */
+/**
+ * Exact verification basis of one reduced-ceremony decision: the frozen active
+ * check set and the selected implementation-scoped attempts. The decision is
+ * only valid while every referenced attempt is the latest decisive result for
+ * its check in the bound implementation cycle.
+ */
+export const ReducedCeremonyVerificationBasis = z
+  .object({
+    checkIds: z.array(z.string().min(1)),
+    attempts: z.array(
+      z
+        .object({
+          checkId: z.string().min(1),
+          attemptId: z.string().uuid(),
+          executedAt: z.string().datetime(),
+        })
+        .readonly(),
+    ),
+  })
+  .readonly();
+export type ReducedCeremonyVerificationBasis = z.infer<typeof ReducedCeremonyVerificationBasis>;
+
+/**
+ * Runtime decision that implementation review ceremony was explicitly reduced.
+ *
+ * The decision is not itself transition authority: the machine guard requires
+ * the full binding (`implementationId` + implementation digest + frozen policy
+ * digest + valid verification basis) plus passing post-implementation evidence.
+ */
 export const ReducedCeremonyDecision = z
   .object({
     profile: z.literal('reduced'),
     reason: z.string().min(1),
-    claimedTaskClass: TaskClass,
+    /** Conservative effective class: max(computed, ticket floor, escalation). */
+    effectiveTaskClass: TaskClass,
     computedMinimumTaskClass: TaskClass,
+    /** Ticket-declared floor, or null when the ticket declares none. */
+    declaredTaskClass: TaskClass.nullable(),
+    /** Declaration kind of the bound ticket. */
+    declarationKind: z.enum(['absent', 'declared', 'conflict', 'invalid']),
+    /** Digest of the bound ticket content (`state.ticket.digest`). */
+    ticketDigest: z.string().min(1).nullable(),
+    /** Optional raise-only escalation claim active at decision time. */
+    escalatedTaskClass: TaskClass.optional(),
     touchedSurfaces: z.array(z.string()),
+    /** Execution identity of the bound `/implement` recording. */
+    implementationId: z.string().uuid(),
+    /** Content digest of the frozen implementation revision. */
+    implementationDigest: z.string().min(1),
+    /** Frozen policy snapshot hash (`policySnapshot.hash`) the decision was made under. */
+    policyDigest: z.string().min(1),
+    /** Exact check/attempt basis selected by the canonical evidence authority. */
+    verificationBasis: ReducedCeremonyVerificationBasis,
     decidedAt: z.string().datetime(),
   })
   .readonly();
 export type ReducedCeremonyDecision = z.infer<typeof ReducedCeremonyDecision>;
+
+/**
+ * Risk classification bound to the exact implementation revision it describes.
+ *
+ * Persisted so gate rails can consult it without importing the integration-layer
+ * classifier. The `implementationDigest` binding is the invariant: an assessment
+ * whose digest no longer matches the current implementation is superseded and
+ * must never justify a gate decision (#762).
+ */
+export const ImplementationRiskAssessment = z
+  .object({
+    computedMinimumTaskClass: TaskClass,
+    /** Conservative effective class: max(computed, ticket floor, escalation). */
+    effectiveTaskClass: TaskClass,
+    /** Ticket-declared floor, or null when the ticket declares none. */
+    declaredTaskClass: TaskClass.nullable(),
+    declarationKind: z.enum(['absent', 'declared', 'conflict', 'invalid']),
+    /** Digest of the bound ticket content at `/implement` time. */
+    ticketDigest: z.string().min(1).nullable(),
+    /** Optional raise-only escalation claim active at assessment time. */
+    escalatedTaskClass: TaskClass.optional(),
+    touchedSurfaces: z.array(z.string()),
+    riskTriggers: z.array(RiskTrigger),
+    assessedFrom: z.literal('implementation_changed_files'),
+    assessedFileCount: z.number().int().nonnegative(),
+    implementationDigest: z.string().min(1),
+  })
+  .readonly();
+export type ImplementationRiskAssessment = z.infer<typeof ImplementationRiskAssessment>;
 
 /** Persistent risk gate state. A blocked gate must stop the next mutating tool. */
 export const RiskGate = z.discriminatedUnion('status', [
@@ -123,52 +206,15 @@ export const RiskGate = z.discriminatedUnion('status', [
 export type RiskGate = z.infer<typeof RiskGate>;
 
 /**
- * Cached drift verdict (#399). Drift is assessed only at /hydrate to bound cost;
- * per-tool enforcement reads this cached value rather than re-running drift.
- * Any non-'clean' value is fail-closed-eligible under onDrift policy.
+ * Discovery health gate vocabulary. Canonically owned by discovery-schemas.ts
+ * (discovery-derived data embedded in SessionState); re-exported here because
+ * SessionState is the surface consumers import it from.
  */
-export const DiscoveryDriftAssessment = z.enum([
-  'clean',
-  'drifted',
-  'missing_discovery',
-  'unavailable',
-  'timeout',
-  'not_checked',
-]);
-export type DiscoveryDriftAssessment = z.infer<typeof DiscoveryDriftAssessment>;
-
-/** Discovery health gate reason codes (#399). */
-export const DiscoveryHealthGateCode = z.enum([
-  'DISCOVERY_HEALTH_UNAVAILABLE',
-  'DISCOVERY_HEALTH_DEGRADED',
-  'DISCOVERY_DRIFT_BLOCKED',
-]);
-export type DiscoveryHealthGateCode = z.infer<typeof DiscoveryHealthGateCode>;
-
-/**
- * Persistent Discovery health gate (#399).
- *
- * Separates the gate DECISION (`status`) from cached drift EVIDENCE
- * (`lastDriftAssessment`). A blocked gate stops the next mutating tool.
- * The gate is cleared ONLY by reconcileDiscoveryHealthGate at /hydrate with
- * fresh healthy Discovery and bounded drift — never by /status or by a
- * subsequent unavailable re-read at the tool seam.
- */
-export const DiscoveryHealthGate = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('clear'),
-    clearedAt: z.string().datetime().optional(),
-    lastDriftAssessment: DiscoveryDriftAssessment.optional(),
-  }),
-  z.object({
-    status: z.literal('blocked'),
-    code: DiscoveryHealthGateCode,
-    message: z.string().min(1),
-    blockedAt: z.string().datetime(),
-    lastDriftAssessment: DiscoveryDriftAssessment.optional(),
-  }),
-]);
-export type DiscoveryHealthGate = z.infer<typeof DiscoveryHealthGate>;
+export {
+  DiscoveryDriftAssessment,
+  DiscoveryHealthGateCode,
+  DiscoveryHealthGate,
+} from './discovery-schemas.js';
 
 // ─── Event ────────────────────────────────────────────────────────────────────
 
@@ -181,7 +227,7 @@ export const Event = z.enum([
   // READY → flow selection
   'TICKET_SELECTED',
   'ARCHITECTURE_SELECTED',
-  'REVIEW_SELECTED',
+  'PEER_REVIEW_SELECTED',
 
   // TICKET → PLAN
   'PLAN_READY',
@@ -199,6 +245,9 @@ export const Event = z.enum([
   'ALL_PASSED',
   'CHECK_FAILED',
 
+  // VALIDATION execution error (timeout / command-not-found): retry, do NOT re-plan
+  'CHECK_ERRORED',
+
   // IMPLEMENTATION → IMPL_REVIEW
   'IMPL_COMPLETE',
 
@@ -209,16 +258,25 @@ export const Event = z.enum([
   'REVIEW_MET',
   'REVIEW_PENDING',
 
-  // REVIEW flow → REVIEW_COMPLETE
-  'REVIEW_DONE',
+  // Peer review flow → PEER_REVIEW_COMPLETE
+  'PEER_REVIEW_DONE',
+
+  // IMPL_REVIEW → EVIDENCE_REVIEW when the review budget is exhausted with
+  // changes requested; the final gate becomes a governance override gate.
+  'REVIEW_EXHAUSTED',
+
+  // EXPORT_READY → COMPLETE after a verifiable package is materialized.
+  'EXPORT_MATERIALIZED',
 
   // Error recovery (non-user-gate, non-terminal phases)
   'ERROR',
 
-  // Emergency escape — bypasses topology, used only by /abort rail
+  // Emergency termination — explicitly transitions every non-terminal phase to ABORTED.
   'ABORT',
 ]);
 export type Event = z.infer<typeof Event>;
+
+export type { ExportCompletionEvidence } from './evidence-export.js';
 
 // ─── Transition ───────────────────────────────────────────────────────────────
 
@@ -235,6 +293,60 @@ export const Transition = z.object({
 });
 export type Transition = z.infer<typeof Transition>;
 
+/**
+ * Durable hand-off from an atomic state mutation to the append-only audit
+ * authority. The operation ID becomes the transition audit-event ID, so a
+ * restart can acknowledge an already-appended event without duplicating it.
+ */
+const PendingAuditOperationBase = z.object({
+  operationId: z.string().uuid(),
+  preStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  mutationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  postStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  auditEventDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  status: z.enum(['state_committed', 'audit_committed', 'reconciled']),
+});
+
+/** A phase transition commits its state↔audit binding through this operation. */
+const PendingTransitionAuditOperation = PendingAuditOperationBase.extend({
+  kind: z.literal('transition'),
+  transition: Transition.extend({
+    chainIndex: z.number().int().nonnegative(),
+    autoAdvanced: z.boolean(),
+  }),
+});
+
+/** A non-transition authority write commits one durable state↔audit binding. */
+const PendingStateWriteAuditOperation = PendingAuditOperationBase.extend({
+  kind: z.literal('state_write'),
+  stateWrite: z.object({
+    phase: Phase,
+    at: z.string().datetime(),
+  }),
+});
+
+/** A semantic event committed atomically with the authority state it describes. */
+const PendingSemanticAuditOperation = PendingAuditOperationBase.extend({
+  kind: z.literal('semantic'),
+  semantic: z.object({
+    phase: Phase,
+    event: z.string().min(1),
+    occurredAt: z.string().datetime(),
+    actor: z.string().min(1).optional(),
+    actorInfo: ActorInfoSchema.optional(),
+    detail: z.record(z.string(), z.unknown()),
+  }),
+});
+
+export const PendingAuditOperation = z
+  .union([
+    PendingTransitionAuditOperation,
+    PendingStateWriteAuditOperation,
+    PendingSemanticAuditOperation,
+  ])
+  .readonly();
+export type PendingAuditOperation = z.infer<typeof PendingAuditOperation>;
+
 // ─── Session State ────────────────────────────────────────────────────────────
 
 /**
@@ -247,228 +359,144 @@ export type Transition = z.infer<typeof Transition>;
  *
  * The evaluator reads these slots to determine which guards pass.
  */
-export const SessionState = z.object({
-  /** Unique session identifier. */
-  id: z.string().uuid(),
+export const SessionState = z
+  .object({
+    /** Unique session identifier. */
+    id: z.string().uuid(),
 
-  /** Schema version — always "v1" for this generation. */
-  schemaVersion: z.literal('v1'),
+    /**
+     * Explicit FlowGuard session identifier for the Assurance epoch.
+     * Must equal `id` — the two fields are the same authority under an
+     * unambiguous name (no host/FlowGuard identity conflation).
+     */
+    flowguardSessionId: z.string().uuid(),
 
-  /** Current FlowGuard phase. */
-  phase: Phase,
+    /** Schema version for the executable Assurance epoch. */
+    schemaVersion: z.literal(CURRENT_SESSION_STATE_SCHEMA_VERSION),
 
-  /** Agent/operator risk-classification claim. Not runtime authority. */
-  claimedTaskClass: TaskClass.optional(),
+    /** Hard-cut epoch; no prior or unknown epoch is executable authority. */
+    assuranceEpoch: z.literal(CURRENT_ASSURANCE_EPOCH),
 
-  /** Persistent runtime risk gate block state for mutating host tools. */
-  riskGate: RiskGate.optional(),
+    /** Required state digest contract for this epoch. */
+    stateDigestFormat: z.literal(CURRENT_STATE_DIGEST_FORMAT),
 
-  /** Persistent Discovery health gate block state for mutating host tools (#399). */
-  discoveryHealthGate: DiscoveryHealthGate.optional(),
+    /** Required audit-chain contract for this epoch. */
+    auditChainFormat: z.literal(CURRENT_AUDIT_CHAIN_FORMAT),
 
-  /** Workspace binding (OpenCode session <-> git worktree). */
-  binding: BindingInfo,
+    /** Current FlowGuard phase. */
+    phase: Phase,
+    /** Agent/operator risk-classification claim. Not runtime authority. */
+    claimedTaskClass: TaskClass.optional(),
+    /** Persistent runtime risk gate block state for mutating host tools. */
+    riskGate: RiskGate.optional(),
 
-  // ── Evidence Slots ──────────────────────────────────────────
+    /** Revision-bound risk classification of the recorded implementation (#762). */
+    implementationRiskAssessment: ImplementationRiskAssessment.nullable(),
 
-  /** Ticket/task evidence from /ticket. */
-  ticket: TicketEvidence.nullable(),
+    implementationRework: ImplementationRework.nullable(),
+    /** Persistent Discovery health gate block state for mutating host tools (#399). */
+    discoveryHealthGate: DiscoveryHealthGate.optional(),
 
-  /** Architecture Decision Record from /architecture. */
-  architecture: ArchitectureDecision.nullable(),
+    /** Workspace binding (OpenCode session <-> git worktree). */
+    binding: BindingInfo,
 
-  /** Plan record with version history from /plan. */
-  plan: PlanRecord.nullable(),
+    ...SessionStateEvidenceShape,
 
-  /** Self-review loop state (PLAN phase, digest-stop). */
-  selfReview: SelfReviewLoop.nullable(),
+    /** Explicit runtime evidence for reducing implementation-review ceremony. */
+    reducedCeremony: ReducedCeremonyDecision.nullable(),
 
-  /** Validation check results (VALIDATION phase, N checks in one phase). */
-  validation: z.array(ValidationResult),
+    ...SessionStateReviewEvidenceShape,
 
-  /** Implementation evidence from /implement. */
-  implementation: ImplEvidence.nullable(),
+    ...SessionStateConfigShape,
 
-  /** Explicit runtime evidence for reducing implementation-review ceremony. */
-  reducedCeremony: ReducedCeremonyDecision.nullable().default(null),
+    ...SessionStateDiscoveryShape,
 
-  /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
-  implReview: ImplReviewResult.nullable(),
-
-  /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
-  implReviewFindings: z.array(ReviewFindings).optional(),
-
-  /** P35 strict independent-review obligations and invocation evidence. */
-  reviewAssurance: ReviewAssuranceState.optional(),
-
-  /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
-  reviewDecision: ReviewDecision.nullable(),
-
-  /** Absolute path to the generated review report file (REVIEW phase, P8b). */
-  reviewReportPath: z.string().nullable().default(null),
-
-  /** Next auto-generated ADR sequence number for /architecture. */
-  nextAdrNumber: z.number().int().positive(),
-
-  // ── Configuration ───────────────────────────────────────────
-
-  /**
-   * Active profile information — resolved at hydrate time.
-   * Contains the profile ID, name, and LLM rule content.
-   * The ruleContent is the stack-specific guidance text injected into
-   * tool responses when commands reference "profile rules".
-   * phaseRuleContent maps Phase values to additional phase-specific text
-   * that is appended to ruleContent when the session is in that phase.
-   * Null only if no profile was resolved (should not happen — baseline is always available).
-   */
-  activeProfile: z
-    .object({
-      id: z.string().min(1),
-      name: z.string().min(1),
-      ruleContent: z.string(),
-      phaseRuleContent: z.record(z.string(), z.string()).optional(),
-    })
-    .nullable(),
-
-  /**
-   * Active validation checks for this session.
-   * Derived from verificationCandidates at hydrate-time (unique kinds).
-   * Empty if no verification commands were discovered.
-   */
-  activeChecks: z.array(CheckId),
-
-  /**
-   * Immutable policy snapshot — frozen at session creation.
-   * Records which FlowGuard rules governed this session.
-   * The hash provides non-repudiation for auditors.
-   */
-  policySnapshot: PolicySnapshotSchema,
-
-  /**
-   * Identity of the session initiator (author).
-   * Set once at hydrate time, never mutated.
-   * Used for regulated approval four-eyes enforcement:
-   * initiatedBy !== reviewDecision.decidedBy (approve path).
-   *
-   * P30: For regulated sessions, this MUST be a known actor identity,
-   * not the technical session ID. Use initiatedByIdentity for full provenance.
-   */
-  initiatedBy: z.string().min(1),
-
-  /**
-   * Structured initiator identity for regulated approval (P30).
-   * Persists actor identity at session creation for four-eyes proof.
-   * Required for regulated mode.
-   */
-  initiatedByIdentity: DecisionIdentitySchema.optional(),
-
-  /**
-   * Resolved actor identity at hydrate time (P27).
-   * Best-effort operator identity — NOT an authentication claim.
-   * Absent when no actor identity was resolved; null is not a valid state value.
-   */
-  actorInfo: ActorInfoSchema.optional(),
-
-  // ── Discovery ───────────────────────────────────────────────
-
-  /**
-   * SHA-256 digest of the DiscoveryResult at session creation time.
-   * Used for drift detection: if the workspace discovery changes,
-   * this digest will no longer match the current discovery.json.
-   * Null for sessions created before Phase 5 (discovery system).
-   */
-  discoveryDigest: z.string().nullable().optional(),
-
-  /**
-   * Lightweight discovery summary for quick consumption by Plan/Review/Implement.
-   * NOT the full DiscoveryResult — just the most useful fields.
-   * Null for sessions created before Phase 5 (discovery system).
-   */
-  discoverySummary: DiscoverySummarySchema.nullable().optional(),
-
-  /**
-   * Compact detected stack evidence for surfacing in flowguard_status.
-   *
-   * Derived evidence — NOT SSOT. The authoritative stack data lives in
-   * DiscoveryResult.stack. This is a compact projection of all detected
-   * stack items (versioned and unversioned), sorted deterministically
-   * by category then id.
-   *
-   * Null when no items were detected or for pre-discovery sessions.
-   */
-  detectedStack: DetectedStackSchema.nullable().optional(),
-
-  /**
-   * Advisory verification command candidates derived from stack + manifest evidence.
-   *
-   * Derived evidence — NOT SSOT. These candidates are planning hints only and
-   * MUST NOT be treated as executed checks.
-   */
-  verificationCandidates: VerificationCandidatesSchema.optional(),
-
-  /**
-   * Pre-implementation worktree baseline (P-baseline).
-   *
-   * Snapshot of files already dirty at session start (hydrate), used by
-   * flowguard_implement to scope recorded evidence to files the task actually
-   * changed — pre-existing dirty files (e.g. a stale opencode.json) are
-   * subtracted so they are not attributed to the implementation or used to
-   * raise the risk floor.
-   *
-   * `.optional()` for backward compatibility (no schema version bump): legacy
-   * sessions and sessions hydrated by an older plugin have no baseline. When
-   * absent, implement does NOT subtract (it records the full worktree exactly
-   * as before) and surfaces `baselineScoping: "unavailable"` — it never hides
-   * evidence. Null is treated identically to absent.
-   */
-  implementationBaseline: z
-    .object({
-      /**
-       * Files dirty at capture time, each with the git blob hash of its content
-       * at session start. A pre-dirty file is scoped out of implementation
-       * evidence ONLY if its current hash still matches — so a file the task
-       * actually modified (hash changed) is never hidden. `hash` is null for a
-       * path that was unreadable/deleted at capture time.
-       */
-      dirtyFiles: z.array(
-        z.object({
-          path: z.string(),
-          hash: z.string().nullable(),
-        }),
-      ),
-      /** ISO-8601 capture timestamp (hydrate time). */
-      capturedAt: z.string().datetime(),
-    })
-    .nullable()
-    .optional(),
-
-  // ── Metadata ────────────────────────────────────────────────
-
-  /** Last transition (from → to via event). Null before first transition. */
-  transition: Transition.nullable(),
-
-  /** Error state. Non-null triggers ERROR event in guard evaluation. */
-  error: ErrorInfo.nullable(),
-
-  /** Session creation timestamp (set once by init()). */
-  createdAt: z.string().datetime(),
-
-  /**
-   * Archive lifecycle status for completed sessions.
-   *
-   * Only set for regulated clean completions (EVIDENCE_REVIEW → APPROVE → COMPLETE).
-   * Non-regulated sessions and aborted sessions do not set this field.
-   *
-   * - `pending`  — archive creation in progress
-   * - `created`  — archive created, verification pending
-   * - `verified` — archive created and verification passed
-   * - `failed`   — archive creation or verification failed
-   *
-   * Invariant: `phase === 'COMPLETE' && policySnapshot.mode === 'regulated'
-   *            && !error && archiveStatus !== 'verified'` = NOT a clean regulated completion.
-   *
-   * Added in P26 — .optional() for backward compatibility (no schema version bump).
-   */
-  archiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable().optional(),
-});
+    // ── Metadata ────────────────────────────────────────────────
+    /** Last transition (from → to via event). Null before first transition. */
+    transition: Transition.nullable(),
+    /**
+     * State-owned audit outbox. Operations remain after reconciliation as
+     * durable correlation evidence; their status is monotonic.
+     */
+    pendingAuditOperations: z.array(PendingAuditOperation),
+    /** Error state. Non-null triggers ERROR event in guard evaluation. */
+    error: ErrorInfo.nullable(),
+    /** Session creation timestamp (set once by init()). */
+    createdAt: z.string().datetime(),
+    exportCompletionEvidence: ExportCompletionEvidence.nullable(),
+    /** Pending system work (validation); atomic with the entering transition. */
+    pendingSystemWork: SystemWorkOperation.nullable(),
+    /** Removed persisted archive authority; old state must fail at this boundary. */
+    archiveStatus: z.never().optional(),
+    /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
+    regulatedArchiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable(),
+    /** Purpose of the most recent user-requested archive export. */
+    lastExportPackagePurpose: z.enum(['sharing', 'auditor']).nullable().optional(),
+    /** Whether the most recent export contains the canonical evidence required for verification. */
+    lastExportIntegrityCapability: z.enum(['verifiable', 'not_verifiable']).nullable().optional(),
+    /** Verification outcome for the most recent user-requested archive export. */
+    lastExportVerificationStatus: z.enum(['not_run', 'passed', 'failed']).nullable().optional(),
+  })
+  .strict()
+  .superRefine((state, context) => {
+    // Identity invariant: flowguardSessionId is the same authority as id
+    // under an explicit name. Divergence would let two session identities
+    // claim one state — the STATE itself is invalid.
+    if (state.flowguardSessionId !== state.id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['flowguardSessionId'],
+        message: `flowguardSessionId must equal id (${state.id})`,
+      });
+      return;
+    }
+    // Outbox identity invariant: pendingAuditOperations operationIds are the
+    // transition audit-event identity authority. Duplicates would let
+    // acknowledgement update multiple records through one identity, so the
+    // STATE itself is invalid when duplicates exist.
+    const seenOperationIds = new Set<string>();
+    for (const operation of state.pendingAuditOperations) {
+      if (seenOperationIds.has(operation.operationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pendingAuditOperations'],
+          message: `duplicate pendingAuditOperations operationId: ${operation.operationId}`,
+        });
+        return;
+      }
+      seenOperationIds.add(operation.operationId);
+    }
+    // #852: mutation-episode identity + recovery-fencing invariants.
+    if (
+      enforceMutationEpisodeInvariants(
+        state.mutationEpisodes,
+        state.mutationEpisodeResolutions,
+        context,
+      )
+    )
+      return;
+    // Peer-review lifecycle invariant: a structurally broken evidence
+    // chain (dangling supersession, cycles, completions on superseded entries,
+    // multiple authoritative incarnations) makes the STATE invalid — it must
+    // fail closed at the schema boundary instead of silently collapsing to an
+    // empty ProofGraph projection. The resolver is the single lifecycle
+    // authority (state/peer-review.ts).
+    const assurance = state.reviewAssurance;
+    if (!assurance) return;
+    for (const obligation of assurance.obligations) {
+      if (obligation.obligationType !== 'review') continue;
+      const resolved = resolveAuthoritativePeerReviewTask(
+        state.peerReviewEvidence,
+        obligation.obligationId,
+      );
+      if (resolved.kind === 'blocked') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['peerReviewEvidence'],
+          message: `peer review lifecycle is invalid: ${resolved.reason}`,
+        });
+        return;
+      }
+    }
+  });
 export type SessionState = z.infer<typeof SessionState>;

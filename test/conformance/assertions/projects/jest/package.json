@@ -1,0 +1,7 @@
+{
+  "name": "flowguard-conformance-jest",
+  "private": true,
+  "devDependencies": {
+    "jest": "29.7.0"
+  }
+}

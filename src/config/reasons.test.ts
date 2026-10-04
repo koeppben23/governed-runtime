@@ -52,6 +52,18 @@ describe('config/reasons', () => {
     it('defaultReasonRegistry has 30+ codes', () => {
       expect(defaultReasonRegistry.size).toBeGreaterThanOrEqual(30);
     });
+
+    it('architecture review completion recovery reopens the current review gate', () => {
+      const reason = defaultReasonRegistry.get('ARCHITECTURE_REVIEW_COMPLETION_REQUIRED');
+      expect(reason?.quickFixCommand).toBe('/review-decision changes_requested');
+      expect(reason?.recoverySteps[0]).toContain('Request changes');
+    });
+
+    it('mutation binding recovery first reopens IMPLEMENTATION from the evidence gate', () => {
+      const reason = defaultReasonRegistry.get('MUTATION_EPISODE_BINDING_REQUIRED');
+      expect(reason?.quickFixCommand).toBe('/request-changes');
+      expect(reason?.recoverySteps[0]).toContain('/request-changes');
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -245,9 +257,9 @@ describe('config/reasons', () => {
 describe('cli/templates/verification-output-contract', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('/plan template contains ## Verification Plan section', () => {
+    it('/plan template contains ## Verification section', () => {
       const planTemplate = COMMANDS['plan.md'];
-      expect(planTemplate).toContain('## Verification Plan');
+      expect(planTemplate).toContain('## Verification');
     });
 
     it('/plan template requires Source citation for verification checks', () => {
@@ -261,15 +273,54 @@ describe('cli/templates/verification-output-contract', () => {
       expect(planTemplate).toMatch(/recovery/i);
     });
 
-    it('/plan template requires seven sections', () => {
+    it('/plan template defines exactly one implementation-plan H1', () => {
       const planTemplate = COMMANDS['plan.md'];
-      expect(planTemplate).toContain('## Objective');
+      expect((planTemplate as string).match(/`# Implementation Plan`/g)).toHaveLength(1);
+      expect(planTemplate).toContain('The single top-level heading of the plan body');
+    });
+
+    it('/plan template requires seven mandatory semantic dimensions', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      // Metadata header
+      expect(planTemplate).toContain('> **Objective:**');
+      expect(planTemplate).toContain('**Scope:**');
+      expect(planTemplate).toContain('**Risk:**');
+      expect(planTemplate).toContain('**Version:**');
+      // Sections
       expect(planTemplate).toContain('## Approach');
-      expect(planTemplate).toContain('## Steps');
-      expect(planTemplate).toContain('## Files to Modify');
-      expect(planTemplate).toContain('## Edge Cases');
-      expect(planTemplate).toContain('## Validation Criteria');
-      expect(planTemplate).toContain('## Verification Plan');
+      expect(planTemplate).toContain('## Implementation');
+      expect(planTemplate).toContain('**Files:**');
+      expect(planTemplate).toContain('**Changes:**');
+      expect(planTemplate).toContain('**Edge cases:**');
+      expect(planTemplate).toContain('**Validation:**');
+      expect(planTemplate).toContain('## Change Inventory');
+      expect(planTemplate).toContain('## Acceptance Criteria');
+      expect(planTemplate).toContain('## Verification');
+    });
+
+    it('/plan template defines the files-union invariant', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/union of all per-step.*Files.*must match.*files listed here/is);
+    });
+
+    it('/plan template defines the change-inventory table contract', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toContain('| Area | Files | Change |');
+      expect(planTemplate).toContain('|---|---|---|');
+      expect(planTemplate).toMatch(/CREATE/);
+      expect(planTemplate).toMatch(/MODIFY/);
+      expect(planTemplate).toMatch(/DELETE/);
+      expect(planTemplate).toMatch(/RENAME/);
+    });
+
+    it('/plan template requires checklist acceptance criteria', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toContain('- [ ]');
+    });
+
+    it('/plan template excludes globs and directories from file paths', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/Do not use directories, glob patterns/);
     });
 
     it('/implement template contains ## Verification Evidence section', () => {
@@ -299,7 +350,7 @@ describe('cli/templates/verification-output-contract', () => {
   describe('BAD', () => {
     it('/plan guards against invented verification commands via Source citation requirement', () => {
       const planTemplate = COMMANDS['plan.md'];
-      expect(planTemplate).toMatch(/Cite Source for each verification check/i);
+      expect(planTemplate).toMatch(/## Verification.*cites Source|Cite Source.*for each check/i);
     });
 
     it('/plan must NOT use generic commands when candidates exist', () => {
@@ -315,9 +366,9 @@ describe('cli/templates/verification-output-contract', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('/plan requires source-backed Verification Plan', () => {
+    it('/plan requires source-backed Verification', () => {
       const planTemplate = COMMANDS['plan.md'];
-      expect(planTemplate).toMatch(/Verification Plan cites Source/i);
+      expect(planTemplate).toMatch(/Source:.*package.json/i);
     });
 
     it('/implement requires clearly separated Verification Evidence', () => {
@@ -381,7 +432,6 @@ describe('cli/templates/verification-output-contract', () => {
     describe('BAD', () => {
       it('undefined state is handled gracefully', () => {
         const result = resolveRuntimePolicyMode({
-          state: undefined,
           configDefaultMode: 'team',
         });
         expect(result).toBe('team');
@@ -399,15 +449,12 @@ describe('cli/templates/verification-output-contract', () => {
     // ─── CORNER ─────────────────────────────────────────────────
     describe('CORNER', () => {
       it('null configDefaultMode falls back to team (fail-closed)', () => {
-        const result = resolveRuntimePolicyMode({
-          configDefaultMode: undefined,
-        });
+        const result = resolveRuntimePolicyMode({});
         expect(result).toBe('team');
       });
 
       it('null state falls back to config', () => {
         const result = resolveRuntimePolicyMode({
-          state: undefined,
           configDefaultMode: 'team',
         });
         expect(result).toBe('team');
@@ -426,7 +473,7 @@ describe('cli/templates/verification-output-contract', () => {
 
       it('state with null mode falls back to config', () => {
         const result = resolveRuntimePolicyMode({
-          state: { policySnapshot: { mode: undefined } },
+          state: { policySnapshot: {} },
           configDefaultMode: 'team',
         });
         expect(result).toBe('team');
@@ -437,7 +484,6 @@ describe('cli/templates/verification-output-contract', () => {
           state: {
             policySnapshot: {
               mode: 'regulated',
-              requireHumanGates: true,
             },
           },
           configDefaultMode: 'solo',
@@ -457,6 +503,35 @@ describe('cli/templates/verification-output-contract', () => {
     it('/review flags generic command usage as defect', () => {
       const reviewTemplate = COMMANDS['review.md'];
       expect(reviewTemplate).toMatch(/flag this as a defect/i);
+    });
+  });
+
+  // ─── Catalog registration ──────────────────────────────────
+  describe('catalog registration', () => {
+    it('registers one representative code from every built-in category', () => {
+      const probes = [
+        'CONFIG_MISSING',
+        'NO_ARCHITECTURE',
+        'HELP_ARGUMENTS_INVALID',
+        'MCP_TOOL_TIMEOUT',
+        'PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE',
+        'MUTATION_EPISODE_RESOLVED',
+      ] as const;
+
+      for (const code of probes) {
+        expect(defaultReasonRegistry.get(code), code).toBeDefined();
+      }
+    });
+
+    it('freezes the default registry after built-in registration', () => {
+      expect(() =>
+        defaultReasonRegistry.register({
+          code: 'TEST_ONLY_UNREGISTERED_AFTER_LOAD',
+          category: 'state',
+          messageTemplate: 'must not be accepted after freeze',
+          recoverySteps: [],
+        }),
+      ).toThrow(/frozen/i);
     });
   });
 });

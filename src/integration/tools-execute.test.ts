@@ -1,6 +1,6 @@
 /**
  * @module integration/tools-execute.test
- * @description Execution tests for all 10 FlowGuard tool execute() functions.
+ * @description Execution tests for FlowGuard tool execute() functions.
  *
  * Tests split into individual files per tool/feature group:
  *   - tools-execute-status.test.ts    (status)

@@ -33,6 +33,14 @@ export const TsaVerificationStatus = z.enum(['unchecked', 'valid', 'invalid']);
 export type TsaVerificationStatus = z.infer<typeof TsaVerificationStatus>;
 
 export const TsaEvidenceSchema = z.object({
+  /**
+   * RFC 3161 token as base64 DER. Persisted audit-chain.v3 records always
+   * carry a token string: every TSA response — including the mock/internal
+   * provider — yields a token. The internal-imprint model (no external TSA)
+   * is represented by the empty string, which is the ONLY token-less form
+   * accepted by this envelope; a `tsa` payload without a tokenDerBase64
+   * string field is schema-invalid and is rejected before verification.
+   */
   tokenDerBase64: z.string(),
   receivedAt: z.string().datetime(),
   messageImprint: z.string().optional(),

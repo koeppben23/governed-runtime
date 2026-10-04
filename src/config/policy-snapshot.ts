@@ -7,23 +7,25 @@
  * 2. freezePolicySnapshot()  — freeze a PolicyResolution or HydratePolicyResolution
  * 3. resolvePolicyFromSnapshot() — reconstruct executable FlowGuardPolicy from snapshot
  *
- * Snapshot normalization (enriching incomplete/legacy snapshots) lives in
- * policy-snapshot-normalize.ts.
+ * Snapshot validation and reconstruction live in the canonical policy snapshot
+ * contract; incomplete snapshots are rejected at its trust boundary.
  *
  * The snapshot is the sole runtime authority for all governance-critical checks.
  * No runtime path should reconstruct policy from policyMode alone.
  *
- * Dependency: imports PolicySnapshot type from state layer. This is an existing
- * dependency that predates this module — config depends on state schema types.
+ * Dependency: PolicySnapshot is the canonical persisted state contract consumed
+ * by this policy lifecycle authority.
  *
  * @version v1
  */
 
 import type { PolicySnapshot } from '../state/evidence.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../state/evidence-identifiers.js';
+import { PolicyConfigurationError } from './policy-errors.js';
 import type {
   FlowGuardPolicy,
   AuditPolicy,
-  TimestampAssurancePolicy,
   PolicyMode,
   EffectiveGateBehavior,
   PolicyDegradedReason,
@@ -33,12 +35,6 @@ import type {
 } from './policy-types.js';
 import type { PolicyResolution } from './policy-resolver.js';
 import type { HydratePolicyResolution } from './policy-types.js';
-import {
-  normalizeSelfReviewConfig,
-  modeConsistentDefaults,
-  normalizeDiscoveryHealthField,
-  normalizeValidationEvidenceField,
-} from './policy-snapshot-normalize.js';
 
 // ─── Canonical Snapshot Creation ──────────────────────────────────────────────
 
@@ -65,27 +61,51 @@ function buildAuditSection(audit: AuditPolicy): PolicySnapshot['audit'] {
   };
 }
 
-function buildResolutionFields(
+function validatePolicyDigest(hash: string): string {
+  if (POLICY_DIGEST_PATTERN.test(hash)) return hash;
+  throw new PolicyConfigurationError(
+    'INVALID_POLICY_DIGEST',
+    'Policy digest must be a 64-character lowercase SHA-256 hex string.',
+    { received: hash, pattern: POLICY_DIGEST_PATTERN.source },
+  );
+}
+
+/**
+ * Frozen resolution provenance — never executable policy. `requestedMode` and
+ * `effectiveGateBehavior` are intentionally NOT part of this projection: they
+ * are owned exactly once by the snapshot literal below.
+ */
+type PolicyResolutionProvenance = Pick<
+  PolicySnapshot,
+  | 'source'
+  | 'degradedReason'
+  | 'resolutionReason'
+  | 'centralMinimumMode'
+  | 'policyDigest'
+  | 'policyVersion'
+  | 'policyPathHint'
+>;
+
+function buildResolutionProvenance(
   resolution: Parameters<typeof createPolicySnapshot>[3],
-  policy: FlowGuardPolicy,
-  fallbackGate: EffectiveGateBehavior,
-) {
-  if (!resolution) return { requestedMode: policy.mode };
-  const r = resolution;
+): PolicyResolutionProvenance {
+  const {
+    source,
+    degradedReason,
+    resolutionReason,
+    centralMinimumMode,
+    policyDigest,
+    policyVersion,
+    policyPathHint,
+  } = resolution ?? {};
   return {
-    requestedMode: r.requestedMode ?? policy.mode,
-    effectiveGateBehavior: r.effectiveGateBehavior ?? fallbackGate,
-    ...(r.source ? { source: r.source } : ({} as Record<string, unknown>)),
-    ...(r.degradedReason ? { degradedReason: r.degradedReason } : ({} as Record<string, unknown>)),
-    ...(r.resolutionReason
-      ? { resolutionReason: r.resolutionReason }
-      : ({} as Record<string, unknown>)),
-    ...(r.centralMinimumMode
-      ? { centralMinimumMode: r.centralMinimumMode }
-      : ({} as Record<string, unknown>)),
-    ...(r.policyDigest ? { policyDigest: r.policyDigest } : ({} as Record<string, unknown>)),
-    ...(r.policyVersion ? { policyVersion: r.policyVersion } : ({} as Record<string, unknown>)),
-    ...(r.policyPathHint ? { policyPathHint: r.policyPathHint } : ({} as Record<string, unknown>)),
+    ...(source ? { source } : {}),
+    ...(degradedReason ? { degradedReason } : {}),
+    ...(resolutionReason ? { resolutionReason } : {}),
+    ...(centralMinimumMode ? { centralMinimumMode } : {}),
+    ...(policyDigest ? { policyDigest } : {}),
+    ...(policyVersion ? { policyVersion } : {}),
+    ...(policyPathHint ? { policyPathHint } : {}),
   };
 }
 
@@ -105,33 +125,35 @@ export function createPolicySnapshot(
     policyPathHint?: string;
   },
 ): PolicySnapshot {
-  const canonical = JSON.stringify(policy, Object.keys(policy).sort());
+  const canonical = canonicalJsonStringify(policy);
+  const hash = validatePolicyDigest(digestFn(canonical));
   const fallbackGate = policy.requireHumanGates
     ? ('human_gated' as const)
     : ('auto_approve' as const);
 
   return {
     mode: policy.mode,
-    hash: digestFn(canonical),
+    hash,
+    hashVersion: POLICY_DIGEST_VERSION,
     resolvedAt,
-    ...(buildResolutionFields(resolution, policy, fallbackGate) as Record<string, unknown>),
+    ...buildResolutionProvenance(resolution),
     requestedMode: resolution?.requestedMode ?? policy.mode,
     effectiveGateBehavior: resolution?.effectiveGateBehavior ?? fallbackGate,
     requireHumanGates: policy.requireHumanGates,
-    maxSelfReviewIterations: policy.maxSelfReviewIterations,
-    maxImplReviewIterations: policy.maxImplReviewIterations,
+    reviewBudget: { ...policy.reviewBudget },
+    maxIncoherentReviewerCaptureRetries: policy.maxIncoherentReviewerCaptureRetries,
+    maxReviewerAttempts: policy.maxReviewerAttempts,
     allowSelfApproval: policy.allowSelfApproval,
-    requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
     audit: buildAuditSection(policy.audit),
     actorClassification: { ...policy.actorClassification },
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
     identityProviderMode: policy.identityProviderMode,
-    ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
-    reviewOutputPolicy: policy.reviewOutputPolicy,
-    reviewInvocationPolicy: policy.reviewInvocationPolicy,
+    challengePolicy: {
+      version: policy.challengePolicy.version,
+      counts: { ...policy.challengePolicy.counts },
+    },
     enforceRiskClassification: policy.enforceRiskClassification,
-    allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     allowReducedCeremony: policy.allowReducedCeremony,
     discoveryHealth: {
       enforcement: policy.discoveryHealth.enforcement,
@@ -152,19 +174,21 @@ export function freezePolicySnapshot(
   resolvedAt: string,
   digestFn: (text: string) => string,
 ): PolicySnapshot {
+  const centralEvidence = 'centralEvidence' in resolution ? resolution.centralEvidence : undefined;
   return createPolicySnapshot(resolution.policy, resolvedAt, digestFn, {
     requestedMode: resolution.requestedMode,
     effectiveGateBehavior: resolution.effectiveGateBehavior,
-    degradedReason: resolution.degradedReason,
-    source: 'effectiveSource' in resolution ? resolution.effectiveSource : undefined,
-    resolutionReason: 'resolutionReason' in resolution ? resolution.resolutionReason : undefined,
-    centralMinimumMode:
-      'centralEvidence' in resolution ? resolution.centralEvidence?.minimumMode : undefined,
-    policyDigest: 'centralEvidence' in resolution ? resolution.centralEvidence?.digest : undefined,
-    policyVersion:
-      'centralEvidence' in resolution ? resolution.centralEvidence?.version : undefined,
-    policyPathHint:
-      'centralEvidence' in resolution ? resolution.centralEvidence?.pathHint : undefined,
+    ...(resolution.degradedReason !== undefined
+      ? { degradedReason: resolution.degradedReason }
+      : {}),
+    ...('effectiveSource' in resolution ? { source: resolution.effectiveSource } : {}),
+    ...('resolutionReason' in resolution && resolution.resolutionReason !== undefined
+      ? { resolutionReason: resolution.resolutionReason }
+      : {}),
+    ...(centralEvidence !== undefined ? { centralMinimumMode: centralEvidence.minimumMode } : {}),
+    ...(centralEvidence !== undefined ? { policyDigest: centralEvidence.digest } : {}),
+    ...(centralEvidence?.version !== undefined ? { policyVersion: centralEvidence.version } : {}),
+    ...(centralEvidence !== undefined ? { policyPathHint: centralEvidence.pathHint } : {}),
   });
 }
 
@@ -174,54 +198,42 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
   return {
     mode: snapshot.mode,
     requireHumanGates: snapshot.requireHumanGates,
-    maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
-    maxImplReviewIterations: snapshot.maxImplReviewIterations,
+    reviewBudget: { ...snapshot.reviewBudget },
+    maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries,
+    maxReviewerAttempts: snapshot.maxReviewerAttempts,
     allowSelfApproval: snapshot.allowSelfApproval,
-    selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
-    reviewOutputPolicy:
-      snapshot.reviewOutputPolicy ?? modeConsistentDefaults(snapshot.mode).reviewOutputPolicy,
-    reviewInvocationPolicy:
-      snapshot.reviewInvocationPolicy ??
-      modeConsistentDefaults(snapshot.mode).reviewInvocationPolicy,
-    minimumActorAssuranceForApproval:
-      snapshot.minimumActorAssuranceForApproval ??
-      (snapshot.requireVerifiedActorsForApproval
-        ? 'claim_validated'
-        : modeConsistentDefaults(snapshot.mode).minimumActorAssuranceForApproval),
-    requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
+    challengePolicy: snapshot.challengePolicy,
+    minimumActorAssuranceForApproval: snapshot.minimumActorAssuranceForApproval,
     audit: {
       emitTransitions: snapshot.audit.emitTransitions,
       emitToolCalls: snapshot.audit.emitToolCalls,
       enableChainHash: snapshot.audit.enableChainHash,
-      timestampAssurance: ((snapshot.audit as Record<string, unknown>)
-        .timestampAssurance as TimestampAssurancePolicy) ?? {
-        enabled: false,
-        mode: 'local_only' as const,
-        strict: false,
-        criticalEvents: ['decision', 'lifecycle'],
-        ntpServers: ['pool.ntp.org'],
-        ntpDriftThresholdMs: 30000,
-        tsaTimeoutMs: 10000,
+      timestampAssurance: {
+        enabled: snapshot.audit.timestampAssurance.enabled,
+        mode: snapshot.audit.timestampAssurance.mode,
+        strict: snapshot.audit.timestampAssurance.strict,
+        criticalEvents: [...snapshot.audit.timestampAssurance.criticalEvents],
+        ...(snapshot.audit.timestampAssurance.tsaUrl !== undefined
+          ? { tsaUrl: snapshot.audit.timestampAssurance.tsaUrl }
+          : {}),
+        ...(snapshot.audit.timestampAssurance.trustAnchors !== undefined
+          ? { trustAnchors: [...snapshot.audit.timestampAssurance.trustAnchors] }
+          : {}),
+        ...(snapshot.audit.timestampAssurance.ntpServers !== undefined
+          ? { ntpServers: [...snapshot.audit.timestampAssurance.ntpServers] }
+          : {}),
+        ntpDriftThresholdMs: snapshot.audit.timestampAssurance.ntpDriftThresholdMs,
+        tsaTimeoutMs: snapshot.audit.timestampAssurance.tsaTimeoutMs,
       },
     } satisfies AuditPolicy,
     actorClassification: { ...snapshot.actorClassification },
-    identityProvider: snapshot.identityProvider,
-    identityProviderMode: snapshot.identityProviderMode ?? 'optional',
-    enforceRiskClassification:
-      snapshot.enforceRiskClassification ??
-      modeConsistentDefaults(snapshot.mode).enforceRiskClassification,
-    allowRiskDowngradeOverride:
-      snapshot.allowRiskDowngradeOverride ??
-      modeConsistentDefaults(snapshot.mode).allowRiskDowngradeOverride,
-    allowReducedCeremony:
-      snapshot.allowReducedCeremony ?? modeConsistentDefaults(snapshot.mode).allowReducedCeremony,
-    discoveryHealth: normalizeDiscoveryHealthField(
-      (snapshot as Record<string, unknown>).discoveryHealth,
-      modeConsistentDefaults(snapshot.mode).discoveryHealth,
-    ).value,
-    validationEvidence: normalizeValidationEvidenceField(
-      (snapshot as Record<string, unknown>).validationEvidence,
-      modeConsistentDefaults(snapshot.mode).validationEvidence,
-    ).value,
+    ...(snapshot.identityProvider !== undefined
+      ? { identityProvider: snapshot.identityProvider }
+      : {}),
+    identityProviderMode: snapshot.identityProviderMode,
+    enforceRiskClassification: snapshot.enforceRiskClassification,
+    allowReducedCeremony: snapshot.allowReducedCeremony,
+    discoveryHealth: { ...snapshot.discoveryHealth },
+    validationEvidence: { ...snapshot.validationEvidence },
   };
 }

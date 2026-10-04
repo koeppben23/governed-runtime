@@ -21,17 +21,18 @@ import * as path from 'node:path';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
-  DiscoverySummarySchema,
   DetectedItemSchema,
-  DetectedStackSchema,
-  DetectedStackVersionSchema,
-  DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
 } from './types.js';
+import {
+  DetectedStackSchema,
+  DetectedStackTargetSchema,
+  DiscoverySummarySchema,
+} from '../state/discovery-schemas.js';
 import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
@@ -71,8 +72,8 @@ const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -96,8 +97,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -116,8 +117,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -139,8 +140,8 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
       worktreePath: '/test/repo',
       fingerprint: 'abcdef0123456789abcdef01',
       allFiles: overrides?.allFiles ?? ['src/index.ts', 'package.json'],
-      packageFiles: overrides?.packageFiles ?? ['package.json'],
-      configFiles: overrides?.configFiles ?? [],
+      packageFilePaths: overrides?.packageFilePaths ?? ['package.json'],
+      configFilePaths: overrides?.configFilePaths ?? [],
       readFile: mockReadFile(files),
     };
   }
@@ -152,7 +153,7 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
         { '.nvmrc': '20.11.0\n' },
         {
           allFiles: ['src/index.js', 'package.json', '.nvmrc'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -169,7 +170,7 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
         { '.node-version': 'v22.1.0' },
         {
           allFiles: ['src/index.js', 'package.json', '.node-version'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -183,7 +184,7 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
         { 'package.json': JSON.stringify({ engines: { node: '>=20.0.0' } }) },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -204,7 +205,7 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -220,8 +221,8 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
         },
         {
           allFiles: ['src/index.ts', 'package.json', 'tsconfig.json'],
-          packageFiles: ['package.json'],
-          configFiles: ['tsconfig.json'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['tsconfig.json'],
         },
       );
       const result = await collectStack(input);
@@ -244,7 +245,7 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
       const result = await collectStack(input);
@@ -267,7 +268,7 @@ describe('discovery/collectors/stack-detection/version-extraction', () => {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
       const result = await collectStack(input);
@@ -288,7 +289,7 @@ java {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle.kts'],
-          packageFiles: ['build.gradle.kts'],
+          packageFilePaths: ['build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -302,7 +303,7 @@ java {
         { 'go.mod': 'module example.com/myapp\n\ngo 1.22\n' },
         {
           allFiles: ['main.go', 'go.mod'],
-          packageFiles: ['go.mod'],
+          packageFilePaths: ['go.mod'],
         },
       );
       const result = await collectStack(input);
@@ -320,8 +321,8 @@ java {
         },
         {
           allFiles: ['src/app/app.component.ts', 'package.json', 'angular.json'],
-          packageFiles: ['package.json'],
-          configFiles: ['angular.json'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['angular.json'],
         },
       );
       const result = await collectStack(input);
@@ -340,7 +341,7 @@ java {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -371,7 +372,7 @@ java {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle.kts'],
-          packageFiles: ['build.gradle.kts'],
+          packageFilePaths: ['build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -398,7 +399,7 @@ java {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
 
@@ -419,7 +420,7 @@ java {
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle'],
-          packageFiles: ['build.gradle'],
+          packageFilePaths: ['build.gradle'],
         },
       );
 
@@ -444,7 +445,7 @@ java {
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
 
@@ -466,8 +467,8 @@ java {
         },
         {
           allFiles: ['docker-compose.yml'],
-          packageFiles: [],
-          configFiles: ['docker-compose.yml'],
+          packageFilePaths: [],
+          configFilePaths: ['docker-compose.yml'],
         },
       );
 
@@ -488,8 +489,8 @@ java {
         },
         {
           allFiles: ['docker-compose.yml'],
-          packageFiles: [],
-          configFiles: ['docker-compose.yml'],
+          packageFilePaths: [],
+          configFilePaths: ['docker-compose.yml'],
         },
       );
 
@@ -513,7 +514,7 @@ java {
         },
         {
           allFiles: ['src/test/java/AppTest.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
 
@@ -541,8 +542,8 @@ java {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml', 'docker-compose.yml'],
-          packageFiles: ['pom.xml'],
-          configFiles: ['docker-compose.yml'],
+          packageFilePaths: ['pom.xml'],
+          configFilePaths: ['docker-compose.yml'],
         },
       );
 
@@ -567,8 +568,8 @@ java {
         worktreePath: '/test/repo',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/index.ts', 'package.json'],
-        packageFiles: ['package.json'],
-        configFiles: [],
+        packageFilePaths: ['package.json'],
+        configFilePaths: [],
         // no readFile
       };
       const result = await collectStack(input);
@@ -592,8 +593,8 @@ java {
         worktreePath: '/test/repo',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/index.ts', 'package.json'],
-        packageFiles: ['package.json'],
-        configFiles: [],
+        packageFilePaths: ['package.json'],
+        configFilePaths: [],
         readFile: async () => {
           throw new Error('disk failure');
         },
@@ -607,7 +608,7 @@ java {
         { 'pom.xml': '<project><properties><java.version>NOT_A_VERSION</java.version>' },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
       const result = await collectStack(input);
@@ -620,7 +621,7 @@ java {
         { '.nvmrc': '' },
         {
           allFiles: ['src/index.js', '.nvmrc'],
-          packageFiles: [],
+          packageFilePaths: [],
         },
       );
       const result = await collectStack(input);
@@ -638,8 +639,8 @@ java {
         },
         {
           allFiles: ['docker-compose.yml'],
-          packageFiles: [],
-          configFiles: ['docker-compose.yml'],
+          packageFilePaths: [],
+          configFilePaths: ['docker-compose.yml'],
         },
       );
 
@@ -658,8 +659,8 @@ java {
         },
         {
           allFiles: ['docker-compose.yml'],
-          packageFiles: [],
-          configFiles: ['docker-compose.yml'],
+          packageFilePaths: [],
+          configFilePaths: ['docker-compose.yml'],
         },
       );
 
@@ -680,8 +681,8 @@ java {
         },
         {
           allFiles: ['packages/app/docker-compose.yml'],
-          packageFiles: [],
-          configFiles: ['packages/app/docker-compose.yml'],
+          packageFilePaths: [],
+          configFilePaths: ['packages/app/docker-compose.yml'],
         },
       );
 
@@ -700,7 +701,7 @@ java {
         },
         {
           allFiles: ['src/index.js', 'package.json', '.nvmrc'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -715,7 +716,7 @@ java {
         { '.nvmrc': '22.0.0' },
         {
           allFiles: ['src/index.ts', 'src/app.ts', '.nvmrc'],
-          packageFiles: [],
+          packageFilePaths: [],
         },
       );
       const result = await collectStack(input);
@@ -733,8 +734,8 @@ java {
         worktreePath: '/test/repo',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/index.js', 'package.json', '.nvmrc'],
-        packageFiles: ['package.json'],
-        configFiles: [],
+        packageFilePaths: ['package.json'],
+        configFilePaths: [],
         readFile: async (p) => {
           if (p === '.nvmrc') {
             // Simulate slow disk read for .nvmrc
@@ -767,7 +768,7 @@ java {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml', 'build.gradle'],
-          packageFiles: ['pom.xml', 'build.gradle'],
+          packageFilePaths: ['pom.xml', 'build.gradle'],
         },
       );
       const result = await collectStack(input);
@@ -792,7 +793,7 @@ plugins {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml', 'build.gradle.kts'],
-          packageFiles: ['pom.xml', 'build.gradle.kts'],
+          packageFilePaths: ['pom.xml', 'build.gradle.kts'],
         },
       );
       const result = await collectStack(input);
@@ -814,7 +815,7 @@ plugins {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
       const result = await collectStack(input);
@@ -833,8 +834,8 @@ plugins {
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
-          configFiles: [], // no spring-boot config file detected
+          packageFilePaths: ['pom.xml'],
+          configFilePaths: [], // no spring-boot config file detected
         },
       );
       const result = await collectStack(input);
@@ -849,7 +850,7 @@ plugins {
         { 'build.gradle': "sourceCompatibility = '17'" },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle'],
-          packageFiles: ['build.gradle'],
+          packageFilePaths: ['build.gradle'],
         },
       );
       const result = await collectStack(input);
@@ -869,7 +870,7 @@ sourceCompatibility = '21'`,
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle'],
-          packageFiles: ['build.gradle'],
+          packageFilePaths: ['build.gradle'],
         },
       );
       const result = await collectStack(input);
@@ -893,8 +894,8 @@ sourceCompatibility = '21'`,
         },
         {
           allFiles: ['src/index.ts', 'tsconfig.json'],
-          packageFiles: [],
-          configFiles: ['tsconfig.json'],
+          packageFilePaths: [],
+          configFilePaths: ['tsconfig.json'],
         },
       );
       const result = await collectStack(input);
@@ -912,7 +913,7 @@ sourceCompatibility = '21'`,
         },
         {
           allFiles: ['src/index.ts', 'package.json'],
-          packageFiles: ['package.json'],
+          packageFilePaths: ['package.json'],
         },
       );
       const result = await collectStack(input);
@@ -925,7 +926,7 @@ sourceCompatibility = '21'`,
         { 'go.mod': 'module example.com/app\n\ngo 1.23.4\n' },
         {
           allFiles: ['main.go', 'go.mod'],
-          packageFiles: ['go.mod'],
+          packageFilePaths: ['go.mod'],
         },
       );
       const result = await collectStack(input);
@@ -941,8 +942,8 @@ sourceCompatibility = '21'`,
         worktreePath: '/test/repo',
         fingerprint: 'abcdef0123456789abcdef01',
         allFiles: ['src/index.ts', 'package.json'],
-        packageFiles: ['package.json'],
-        configFiles: [],
+        packageFilePaths: ['package.json'],
+        configFilePaths: [],
         readFile: async () => undefined,
       };
       const result = await collectStack(input);
@@ -991,8 +992,8 @@ sourceCompatibility = '21'`,
         },
         {
           allFiles: ['src/index.ts', 'package.json', 'tsconfig.json'],
-          packageFiles: ['package.json'],
-          configFiles: ['tsconfig.json'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['tsconfig.json'],
         },
       );
       const result = await collectStack(input);
@@ -1010,7 +1011,7 @@ sourceCompatibility = '21'`,
         { '.nvmrc': 'v18.19.1' },
         {
           allFiles: ['src/index.js', '.nvmrc'],
-          packageFiles: [],
+          packageFilePaths: [],
         },
       );
       const result = await collectStack(input);
@@ -1029,7 +1030,7 @@ sourceCompatibility = '21'`,
         },
         {
           allFiles: ['src/main/java/App.java', 'pom.xml'],
-          packageFiles: ['pom.xml'],
+          packageFilePaths: ['pom.xml'],
         },
       );
       const result = await collectStack(input);
@@ -1047,7 +1048,7 @@ sourceCompatibility = '21'`,
         },
         {
           allFiles: ['src/main/java/App.java', 'build.gradle.kts', 'build.gradle'],
-          packageFiles: ['build.gradle.kts', 'build.gradle'],
+          packageFilePaths: ['build.gradle.kts', 'build.gradle'],
         },
       );
       const result = await collectStack(input);
@@ -1071,8 +1072,8 @@ sourceCompatibility = '21'`,
         },
         {
           allFiles: ['src/index.ts', 'package.json', 'tsconfig.json', '.nvmrc', 'angular.json'],
-          packageFiles: ['package.json'],
-          configFiles: ['tsconfig.json', 'angular.json'],
+          packageFilePaths: ['package.json'],
+          configFilePaths: ['tsconfig.json', 'angular.json'],
         },
       );
 

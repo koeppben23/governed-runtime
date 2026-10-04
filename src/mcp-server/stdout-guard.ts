@@ -57,7 +57,7 @@ export function installStdoutGuard(): void {
     }
     return process.stderr.write(chunk, encodingOrCallback, callback);
   };
-  process.stdout.write = guardedWrite as typeof process.stdout.write;
+  process.stdout.write = guardedWrite;
 }
 
 /**

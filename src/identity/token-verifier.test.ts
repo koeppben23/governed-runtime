@@ -13,7 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
-import { SignJWT } from 'jose';
+import { SignJWT, type JWTHeaderParameters } from 'jose';
 import { JwtStaticTokenVerifier } from './token-verifier.js';
 import { StaticKeyResolver } from './key-resolver.js';
 import { IdpError } from './errors.js';
@@ -43,7 +43,7 @@ function base64url(obj: unknown): string {
 }
 
 async function signJwt(
-  header: Record<string, unknown>,
+  header: JWTHeaderParameters,
   payload: Record<string, unknown>,
   privateKey: crypto.KeyObject,
 ): Promise<string> {
@@ -210,7 +210,7 @@ describe('JwtStaticTokenVerifier', () => {
     it('handles multiple audiences', async () => {
       const verifier = makeVerifier({
         audience: ['flowguard', 'other-service'],
-      } as Partial<IdpConfig>);
+      });
       const token = await validRsaToken({ aud: ['flowguard', 'other-service'] });
       const result = await verifier.verify(token);
 
@@ -477,7 +477,7 @@ describe('JwtStaticTokenVerifier', () => {
           emailClaim: 'user_email',
           nameClaim: 'display_name',
         },
-      } as Partial<IdpConfig>);
+      });
       const token = await validRsaToken({
         user_id: 'custom-id',
         user_email: 'custom@example.com',
@@ -543,7 +543,7 @@ describe('JwtStaticTokenVerifier', () => {
     it('audience mismatch error includes both token and configured audiences', async () => {
       const verifier = makeVerifier({
         audience: ['other-service'],
-      } as Partial<IdpConfig>);
+      });
       const token = await validRsaToken({ aud: 'flowguard' });
       await expect(verifier.verify(token)).rejects.toMatchObject({ code: 'IDP_AUDIENCE_MISMATCH' });
     });

@@ -6,8 +6,19 @@
  */
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEW_VALIDATION_REASONS } from './reasons-validation-review.js';
+import { OBSERVATION_VALIDATION_REASONS } from './reasons-validation-observation.js';
+import { STRUCTURED_REVIEW_REASONS } from './reasons-validation-structured.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
+  {
+    code: 'HELP_ARGUMENTS_INVALID',
+    category: 'input',
+    messageTemplate: 'Invalid FlowGuard help arguments.',
+    recoverySteps: [
+      'Use view=context, view=commands with scope=available or all, or view=command with a command name',
+    ],
+  },
+
   {
     code: 'COMMAND_NOT_ALLOWED',
     category: 'admissibility',
@@ -26,6 +37,16 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'COMMAND_SCOPE_DENIED',
+    category: 'admissibility',
+    messageTemplate: "'{tool}' is not permitted while {command} is active",
+    recoverySteps: [
+      'Report the current command result and stop',
+      'Wait for the user to invoke the next explicit FlowGuard command',
+    ],
+  },
+
+  {
     code: 'WRONG_PHASE',
     category: 'admissibility',
     messageTemplate: 'Command is not valid in the current phase (current: {phase})',
@@ -36,11 +57,11 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     code: 'HOST_TOOL_PHASE_DENIED',
     category: 'admissibility',
     messageTemplate:
-      "'{tool}' is not allowed in phase {phase}. Use read-only tools (read, glob, grep) for investigation.",
+      "'{tool}' is only allowed in phase IMPLEMENTATION, not {phase}. Use read-only tools (read, glob, grep) outside implementation.",
     recoverySteps: [
       'Check the current phase with flowguard_status',
-      'Use read-only tools (read, glob, grep) during investigation phases',
-      'Wait for the implementation phase to use mutating tools',
+      'Use read-only tools (read, glob, grep) outside implementation',
+      'Return to IMPLEMENTATION before using mutating host tools',
     ],
   },
 
@@ -55,32 +76,12 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'RISK_CLASSIFICATION_MISMATCH',
-    category: 'admissibility',
-    messageTemplate:
-      'Task classified as {claimedTaskClass} but runtime evidence requires at least {minimumTaskClass} for {touchedSurface}',
-    recoverySteps: [
-      'Reclassify the task at the required risk level and re-hydrate the session',
-      'Do not use text justification to downgrade risk classification',
-    ],
-  },
-
-  {
-    code: 'RISK_CLASSIFICATION_REQUIRED',
-    category: 'admissibility',
-    messageTemplate: 'Risk classification is required before mutating tools may run',
-    recoverySteps: [
-      'Run flowguard_hydrate with claimedTaskClass set to HIGH-RISK, STANDARD, or TRIVIAL',
-    ],
-  },
-
-  {
     code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
     category: 'admissibility',
     messageTemplate: 'Cannot verify risk classification evidence. {reason}',
     recoverySteps: [
-      'Restore readable session state and git worktree evidence',
-      'Run flowguard_status or flowguard_hydrate before retrying mutating tools',
+      'Restore readable session state and git worktree evidence so future sessions can classify risk',
+      'This evidence failure latches the risk gate for the current session; hydrate does not clear it — start a fresh governed session to proceed',
     ],
   },
 
@@ -89,15 +90,8 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'admissibility',
     messageTemplate: 'Risk gate is already blocked for this session: {reason}',
     recoverySteps: [
-      'Reclassify the task at the required risk level or start a fresh governed session',
+      'A blocked risk gate is fail-closed and cannot be cleared in-session (hydrate and reclassification do not clear it); start a fresh governed session to proceed',
     ],
-  },
-
-  {
-    code: 'RISK_DOWNGRADE_OVERRIDE_DENIED',
-    category: 'admissibility',
-    messageTemplate: 'Risk downgrade overrides are disabled by policy',
-    recoverySteps: ['Reclassify the task at the runtime-computed minimum risk level'],
   },
 
   {
@@ -138,6 +132,62 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: 'Ticket text must not be empty',
     recoverySteps: ['Provide a non-empty task description'],
+  },
+
+  {
+    code: 'TICKET_REFERENCE_WITHOUT_CONTENT',
+    category: 'input',
+    messageTemplate:
+      'The ticket text is only a file or URL reference; the referenced content was not adopted',
+    recoverySteps: [
+      'Pass the repository file via ticketSource (/task --file <path>) so the runtime reads and binds its content',
+      'Or pass the full external content explicitly with inputOrigin=external_reference and references',
+      'A bare reference never counts as the canonical ticket content',
+    ],
+  },
+
+  {
+    code: 'TICKET_SOURCE_UNREADABLE',
+    category: 'input',
+    messageTemplate: 'The repository file passed as ticketSource could not be read: {reason}',
+    recoverySteps: [
+      'Verify the path is repository-relative, exists and is readable, and stays inside the worktree',
+      'Re-run /task with a corrected --file path',
+    ],
+  },
+
+  {
+    code: 'TICKET_SOURCE_CONFLICT',
+    category: 'input',
+    messageTemplate:
+      'ticketSource and text are mutually exclusive; provide exactly one canonical ticket content source',
+    recoverySteps: [
+      'Pass only ticketSource (/task --file <path>) to adopt a repository file',
+      'Or pass only text with the complete ticket content (optionally with inputOrigin/references)',
+      'Put additional context inside the ticket content, never as a competing second source',
+    ],
+  },
+
+  {
+    code: 'TICKET_RISK_DECLARATION_INVALID',
+    category: 'admissibility',
+    messageTemplate:
+      'The ticket risk declaration is invalid ({raw}); risk-relevant mutations are blocked until it is corrected',
+    recoverySteps: [
+      'Re-run /task with a valid declaration line: Risk: TRIVIAL | STANDARD | HIGH-RISK',
+      'Or remove the malformed declaration line if no explicit risk class is intended',
+    ],
+  },
+
+  {
+    code: 'TICKET_RISK_DECLARATION_INCONSISTENT',
+    category: 'admissibility',
+    messageTemplate:
+      'The stored ticket risk declaration does not match the parser result over the ticket text',
+    recoverySteps: [
+      'Re-run /task to re-capture the ticket from its canonical content',
+      'Do not edit persisted state manually — the declaration is digest-bound',
+    ],
   },
 
   {
@@ -191,7 +241,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Human-gated policies require an explicit user decision from a host command boundary ({reason}).',
     recoverySteps: [
       'Present the reviewCard verbatim to the user',
-      'Ask the user to run /review-decision approve, /request-changes, or /reject',
+      'Ask the user to run /approve, /request-changes, or /reject',
       "Do not decide on the user's behalf and do not call flowguard_decision from a model-only tool call",
     ],
   },
@@ -284,6 +334,15 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       "When reviewVerdict is 'changes_requested', planText with the revised plan is required.",
     recoverySteps: ["Provide revised planText alongside reviewVerdict: 'changes_requested'"],
   },
+  {
+    code: 'REVISED_PLAN_CLAIMS_REQUIRED',
+    category: 'input',
+    messageTemplate:
+      "When reviewVerdict is 'changes_requested', complete revised claims are required with planText.",
+    recoverySteps: [
+      "Provide complete claims alongside planText and reviewVerdict: 'changes_requested'",
+    ],
+  },
 
   {
     code: 'MISSING_CHECKS',
@@ -297,16 +356,99 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'VALIDATION_SUBJECT_CHANGED',
+    category: 'state',
+    messageTemplate:
+      'The plan or implementation under validation changed while checks were running; the results cannot be bound to a stable subject digest.',
+    recoverySteps: [
+      'Re-run flowguard_status to confirm the current phase and subject digest',
+      'Re-run the check so its attempt binds to the current plan or implementation digest',
+    ],
+  },
+
+  {
+    code: 'VERIFICATION_SUBJECT_CHANGED',
+    category: 'state',
+    messageTemplate:
+      'The execution subject ({component}) changed during the {phase} phase: {detail}',
+    recoverySteps: [
+      'Re-run discovery to capture the current execution surface',
+      'Re-execute verification against the current subject',
+    ],
+  },
+
+  {
+    code: 'SUBAGENT_MANDATE_MISSING',
+    category: 'state',
+    messageTemplate:
+      'The captured reviewer findings carry no mandate attestation for the active review obligation {obligationId}.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command so the host creates a reviewer child session bound to the active mandate',
+      'Do not submit hand-assembled or reconstructed findings for a strict review',
+      'Run /continue to confirm the active obligation before retrying the verdict',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
     code: 'CONTENT_ANALYSIS_REQUIRED',
     category: 'input',
     messageTemplate:
-      'Content-aware /review requires reviewFindings. Analyze the supplied content before calling flowguard_review.',
+      'Content-aware /review requires a host-observed structured reviewer analysis. Re-run flowguard_review with the content fields and reviewObligationId after FlowGuard captures the reviewer findings.',
     recoverySteps: [
       'Fetch or inspect the referenced text, PR, branch, or URL content',
-      'Create concrete findings with severity, category, and message',
-      'Re-run flowguard_review with reviewFindings populated',
+      'Re-run flowguard_review with the same content fields and reviewObligationId once the host has captured the reviewer findings',
+      'Submit only the bound reviewVerdict; do not construct or submit reviewFindings yourself',
+    ],
+  },
+
+  {
+    code: 'REVIEW_CONTENT_SOURCE_INCOMPLETE',
+    category: 'input',
+    messageTemplate:
+      'Review source declared ({label}) but no concrete content was provided. Provide branch=<ref>, prNumber=<n>, url=<supported-url>, or non-empty text.',
+    recoverySteps: [
+      'Call flowguard_review with a concrete content field: branch=<ref>, prNumber=<n>, url=<supported-url>, or text=<content>',
+      'InputOrigin and references are provenance metadata only — they do not load content',
+    ],
+  },
+
+  {
+    code: 'OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED',
+    category: 'config',
+    messageTemplate:
+      'OpenCode accepts the FlowGuard instruction entry but the detected runtime ({runtimeLine}, version {version}) does not resolve instruction sources. FlowGuard mandates are not active.',
+    recoverySteps: [
+      'Switch to an OpenCode runtime that is not on the FlowGuard incompatible deny-list',
+      'Verify the mandate file path is present in the opencode.json instructions[] array',
+      'Open an OpenCode session and confirm FlowGuard mandates take effect; FlowGuard cannot verify activation automatically',
+    ],
+  },
+
+  {
+    code: 'REVIEW_SUBJECT_CHANGED_WHILE_PENDING',
+    category: 'input',
+    messageTemplate:
+      'The submitted artifact revision ({submittedDigest}) does not match the frozen subject ({subjectDigest}) of the pending review obligation {obligationId}. A pending review never silently reviews a different artifact revision.',
+    recoverySteps: [
+      'Submit the same artifact revision to continue the active review (reissue/repair of the pending obligation)',
+      'Wait for the pending obligation to settle (verdict or terminal block) before reviewing a changed revision',
+      'A changed revision after a blocked obligation starts a fresh review via revision semantics',
+    ],
+  },
+
+  {
+    code: 'RESTART_CYCLE_ITERATION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Architecture review restart refused: the blocked predecessor obligation {obligationId} carries iteration {predecessorIteration} but the flow state carries iteration {selfReviewIteration}. The review cycle binding is inconsistent.',
+    recoverySteps: [
+      'Inspect the session state and audit trail before further workflow actions',
+      'Restore a consistent review cycle from trusted evidence or abort the session',
     ],
   },
 
   ...REVIEW_VALIDATION_REASONS,
+  ...OBSERVATION_VALIDATION_REASONS,
+  ...STRUCTURED_REVIEW_REASONS,
 ] as const satisfies readonly BlockedReason[];

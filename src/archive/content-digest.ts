@@ -3,21 +3,36 @@
  * @description Single canonical authority for the archive content digest.
  *
  * The content digest binds two surfaces into one SHA-256:
- * 1. The sorted file digests (archive payload integrity).
- * 2. An integrity header of security-relevant manifest metadata.
+ * 1. An integrity header of security-relevant manifest metadata.
+ * 2. The sorted file digests (archive payload integrity).
+ *
+ * The header is serialized with the canonical JSON authority
+ * (`shared/canonical-json.ts`, sorted keys at every depth) and combined with
+ * the sorted file digests through the length-framed multi-part primitive
+ * (`hashParts` in `shared/hashing.ts`). This module owns only the domain
+ * formula — which fields are bound and how they are framed — never a private
+ * serializer or SHA-256 primitive.
  *
  * Folding the metadata into the digest closes the gap where unsigned manifest
  * fields (policy mode, audit head/count, identity) could be mutated without
  * detection. Any change to a covered field invalidates the digest (fail-closed).
  *
+ * Digest epoch: `archive-manifest.v4`. The formula is unchanged from v3
+ * (canonical header plus length-framed parts), but `schemaVersion` is an
+ * integrity-covered field, so v4 manifests produce v4-specific digest bytes.
+ * The v2 header was serialized with a literal-insertion-order `JSON.stringify`,
+ * so routing it through the canonical serializer intentionally changed the
+ * digest bytes. Older archives fail closed at schema validation; there is no
+ * dual-formula compatibility path.
+ *
  * Pure module: no I/O, no logging, no side effects. Both the archive builder
  * and verifier call this so there is no parallel/duplicate digest formula.
  *
- * @version v1
+ * @version v2
  */
 
-import * as crypto from 'node:crypto';
-import { PersistenceError } from '../adapters/persistence-core.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashParts } from '../shared/hashing.js';
 
 /**
  * Inputs to the archive content digest.
@@ -38,6 +53,8 @@ export interface ArchiveContentDigestInput {
   auditEventCount: number;
   /** Manifest schema version. */
   schemaVersion: string;
+  /** Archive payload layout version. */
+  layoutVersion: number;
   /** Session identifier. */
   sessionId: string;
   /** Workspace fingerprint. */
@@ -46,19 +63,29 @@ export interface ArchiveContentDigestInput {
   discoveryDigest: string | null;
 }
 
+/** Archive-domain error for a missing per-file digest (code preserved). */
+class ArchiveContentDigestError extends Error {
+  readonly code = 'MISSING_FILE_DIGEST';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ArchiveContentDigestError';
+  }
+}
+
 /**
  * Compute the deterministic archive content digest.
  *
- * The integrity header is serialized with a fixed key order so the digest is
- * stable across runs and platforms.
+ * The integrity header is canonicalized (sorted keys at every depth) and the
+ * multi-part input is length-framed, so the digest is stable across runs,
+ * platforms, and property insertion order while remaining unambiguous.
  */
 export function computeArchiveContentDigest(input: ArchiveContentDigestInput): string {
   const sortedDigestValues = input.includedFiles
     .map((file) => {
       const digest = input.fileDigests[file];
       if (!digest) {
-        throw new PersistenceError(
-          'MISSING_FILE_DIGEST',
+        throw new ArchiveContentDigestError(
           `Missing file digest for included archive file '${file}'`,
         );
       }
@@ -66,8 +93,9 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     })
     .sort();
 
-  const integrityHeader = JSON.stringify({
+  const integrityHeader = canonicalJsonStringify({
     schemaVersion: input.schemaVersion,
+    layoutVersion: input.layoutVersion,
     sessionId: input.sessionId,
     fingerprint: input.fingerprint,
     policyMode: input.policyMode,
@@ -76,13 +104,5 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     auditEventCount: input.auditEventCount,
   });
 
-  // Multi-part streaming digest (header + separator + joined values). Kept as a
-  // direct createHash call: the shared hashing helpers cover single-shot string
-  // and buffer inputs, not this incremental multi-update form.
-  return crypto
-    .createHash('sha256')
-    .update(integrityHeader)
-    .update('\n')
-    .update(sortedDigestValues.join(''))
-    .digest('hex');
+  return hashParts([integrityHeader, ...sortedDigestValues]);
 }

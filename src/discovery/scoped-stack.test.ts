@@ -7,6 +7,33 @@ import { describe, it, expect } from 'vitest';
 import type { DetectedItem } from './types.js';
 import { extractScopedStack } from './scoped-stack.js';
 
+function completeDiagnostics() {
+  return [
+    { name: 'repo-metadata', status: 'complete', durationMs: 0, timedOut: false },
+    { name: 'stack-detection', status: 'complete', durationMs: 0, timedOut: false },
+    { name: 'topology', status: 'complete', durationMs: 0, timedOut: false },
+    { name: 'surface-detection', status: 'complete', durationMs: 0, timedOut: false },
+    { name: 'code-surface-analysis', status: 'complete', durationMs: 0, timedOut: false },
+    { name: 'domain-signals', status: 'complete', durationMs: 0, timedOut: false },
+  ];
+}
+
+const EMPTY_CODE_SURFACES = {
+  status: 'ok' as const,
+  endpoints: [],
+  authBoundaries: [],
+  dataAccess: [],
+  integrations: [],
+  budget: {
+    scannedFiles: 0,
+    scannedBytes: 0,
+    maxFiles: 200,
+    maxBytesPerFile: 65536,
+    maxTotalBytes: 2097152,
+    timedOut: false,
+  },
+};
+
 describe('discovery/scoped-stack', () => {
   // ─── HAPPY: basic scope detection ──────
   describe('HAPPY', () => {
@@ -652,9 +679,9 @@ services:
       const { DiscoveryResultSchema } = await import('./types.js');
 
       const result = DiscoveryResultSchema.parse({
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: { stack: 'complete' },
+        diagnostics: completeDiagnostics(),
         repoMetadata: {
           fingerprint: 'abcdef0123456789abcdef01',
           defaultBranch: 'main',
@@ -710,8 +737,8 @@ services:
           ignorePaths: [],
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
+        codeSurfaces: EMPTY_CODE_SURFACES,
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { checks: [], placeholderScripts: [], commands: [], lintTools: [] },
       });
 
       const detectedStack = await extractDetectedStack(result, [
@@ -749,9 +776,9 @@ services:
       });
 
       const result = DiscoveryResultSchema.parse({
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: { stack: 'complete' },
+        diagnostics: completeDiagnostics(),
         repoMetadata: {
           fingerprint: 'abcdef0123456789abcdef01',
           defaultBranch: 'main',
@@ -786,8 +813,8 @@ services:
           ignorePaths: [],
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
+        codeSurfaces: EMPTY_CODE_SURFACES,
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { checks: [], placeholderScripts: [], commands: [], lintTools: [] },
       });
 
       const readFile = async (path: string): Promise<string | undefined> => {
@@ -818,9 +845,9 @@ services:
       const { DiscoveryResultSchema } = await import('./types.js');
 
       const result = DiscoveryResultSchema.parse({
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: { stack: 'complete' },
+        diagnostics: completeDiagnostics(),
         repoMetadata: {
           fingerprint: 'abcdef0123456789abcdef01',
           defaultBranch: 'main',
@@ -857,8 +884,8 @@ services:
           ignorePaths: [],
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
+        codeSurfaces: EMPTY_CODE_SURFACES,
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { checks: [], placeholderScripts: [], commands: [], lintTools: [] },
       });
 
       const detectedStack = await extractDetectedStack(result, ['package.json', 'src/index.ts']);

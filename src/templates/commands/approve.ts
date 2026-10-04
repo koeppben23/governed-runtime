@@ -1,8 +1,7 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
-export const APPROVE_COMMAND = `
----
-description: Approve the currently active review gate (plan, implementation evidence, or architecture).
+export const APPROVE_COMMAND = `---
+description: FlowGuard — Approve the currently active review gate (plan, implementation evidence, or architecture).
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -27,10 +26,15 @@ Decision context: $ARGUMENTS
 - Only run this command when the user explicitly invoked /approve. Do not infer approval from chat context or review findings.
 - The approval target is determined by the current phase — flowguard_decision handles routing deterministically.
 - If blocked: report the reason and stop (never work around a blocked decision).
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Approval recorded via flowguard_decision.
 - Phase transition and next action reported.
-- Response ends with \`Next action:\` line.
+- If \`presentation.markdown\` was present, it was printed verbatim and its
+  rendered conclusion (the trailing \`→\`/\`•\` command line or the
+  \`## Decision required\` block) is the next-action guidance — do NOT append a
+  separate \`Next action:\` line.
+- Only on the fallback projection (no \`presentation.markdown\`): response ends
+  with a \`Next action:\` line.
 `;

@@ -9,18 +9,21 @@ import {
 import { verifyEvent, verifyChain, getLastChainHash } from './integrity.js';
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { SESSION_ID, TS1, TS2, TS3, buildChain } from './audit-test-helpers.js';
+import { SESSION_ID, TS1, TS2, TS3, buildChain, stampChainSequence } from './audit-test-helpers.js';
 
 describe('audit integrity', () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('verifyEvent passes for valid event with correct prevHash', () => {
-      const event = createTransitionEvent(
-        SESSION_ID,
-        'PLAN',
-        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
-        TS1,
-        GENESIS_HASH,
+      const event = stampChainSequence(
+        createTransitionEvent(
+          SESSION_ID,
+          'PLAN',
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+          TS1,
+          GENESIS_HASH,
+        ),
+        1,
       );
       const result = verifyEvent(event, GENESIS_HASH, 0);
       expect(result.valid).toBe(true);
@@ -29,24 +32,196 @@ describe('audit integrity', () => {
 
     it('verifyChain passes for valid 3-event chain', () => {
       const chain = buildChain(3);
-      const result = verifyChain(chain as unknown as Record<string, unknown>[]);
+      const result = verifyChain(chain.map((event) => ({ ...event })));
       expect(result.valid).toBe(true);
       expect(result.totalEvents).toBe(3);
       expect(result.verifiedCount).toBe(3);
-      expect(result.skippedCount).toBe(0);
       expect(result.firstBreak).toBeNull();
       expect(result.reason).toBeNull();
     });
 
     it('getLastChainHash returns last event chainHash', () => {
       const chain = buildChain(3);
-      const lastHash = getLastChainHash(chain as unknown as Record<string, unknown>[]);
+      const lastHash = getLastChainHash(chain.map((event) => ({ ...event })));
       expect(lastHash).toBe(chain[2]!.chainHash);
+    });
+
+    it('verifyChain rejects a trail whose sequence authority is not index + 1 (1, 7, 7)', () => {
+      const chain = buildChain(3);
+      const resealed = chain.map((event, i) => {
+        const { chainHash: _chainHash, ...body } = event;
+        const restamped = {
+          ...body,
+          auditSequence: i === 0 ? 1 : 7,
+        } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+        return {
+          ...restamped,
+          chainHash: computeChainHash(restamped.prevHash, restamped),
+        };
+      });
+      // Re-chain so every chainHash is internally consistent: the sequence
+      // authority alone must still invalidate the trail.
+      const result = verifyChain(resealed);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('auditSequence mismatch');
+    });
+
+    it('verifyChain rejects a re-sealed trail whose semanticEventDigest was not recomputed', () => {
+      const chain = buildChain(2);
+      const resealed = chain.map((event) => {
+        const { chainHash: _chainHash, ...body } = event;
+        const tamperedBody = {
+          ...body,
+          semanticEventDigest: '0'.repeat(64),
+        } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+        return {
+          ...tamperedBody,
+          chainHash: computeChainHash(tamperedBody.prevHash, tamperedBody),
+        };
+      });
+      const result = verifyChain(resealed);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('semanticEventDigest mismatch');
     });
   });
 
   // ─── BAD ────────────────────────────────────────────────────
   describe('BAD', () => {
+    it('rejects a hash-consistent record that omits a required audit envelope field', () => {
+      const event = buildChain(1)[0]!;
+      const { chainHash: _chainHash, actor: _actor, ...withoutActor } = event;
+      const resealed = {
+        ...withoutActor,
+        semanticEventDigest: computeCanonicalEventDigest(withoutActor),
+      };
+      const malformed = {
+        ...resealed,
+        chainHash: computeChainHash(
+          resealed.prevHash,
+          resealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+        ),
+      };
+
+      const result = verifyChain([malformed]);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reason).toContain('violates the canonical audit-chain.v3');
+    });
+
+    it('rejects a hash-shaped schema-invalid record without handing it to timestamp authorities', () => {
+      // Reviewer scenario: missing `event` plus VALID chainHash/prevHash and
+      // strictTimestamps:true. The envelope gate must fail closed
+      // deterministically and the invalid form must never reach the TSA
+      // imprint / evidence-presence sub-authorities.
+      const source = buildChain(1)[0]!;
+      const { chainHash: _chainHash, event: _event, ...withoutEvent } = source;
+      const resealed = {
+        ...withoutEvent,
+        semanticEventDigest: computeCanonicalEventDigest(withoutEvent),
+      };
+      const malformed = {
+        ...resealed,
+        chainHash: computeChainHash(
+          resealed.prevHash,
+          resealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+        ),
+      };
+
+      const result = verifyChain([malformed], { strictTimestamps: true });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.tsaImprintMismatches).toEqual([]);
+      expect(result.tokenVerificationRequired).toEqual([]);
+      expect(result.missingTimestampEvidence).toEqual([]);
+      expect(result.tsaEvidenceDowngraded).toEqual([]);
+    });
+
+    it('keeps original trail indices in timestamp diagnostics after an envelope-invalid record', () => {
+      const chain = buildChain(3);
+      // Envelope-invalid record in the middle: hash-shaped, internally
+      // consistent, but missing a required schema field.
+      const { chainHash: _middleHash, actor: _actor, ...middleBody } = chain[1]!;
+      const middleResealed = {
+        ...middleBody,
+        semanticEventDigest: computeCanonicalEventDigest(middleBody),
+      };
+      const invalidMiddle = {
+        ...middleResealed,
+        chainHash: computeChainHash(
+          middleResealed.prevHash,
+          middleResealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
+        ),
+      };
+      // The third event must chain over the last VALID event (index 0) and
+      // its recordedAt regresses before it — a monotonicity violation at
+      // ORIGINAL index 2, not at compacted index 1.
+      const { chainHash: _lastHash, ...lastBody } = chain[2]!;
+      const lastResealed = {
+        ...lastBody,
+        prevHash: chain[0]!.chainHash,
+        recordedAt: '2025-12-31T23:59:00.000Z',
+        semanticEventDigest: computeCanonicalEventDigest({
+          ...lastBody,
+          prevHash: chain[0]!.chainHash,
+          recordedAt: '2025-12-31T23:59:00.000Z',
+        }),
+      };
+      const lastValid = {
+        ...lastResealed,
+        chainHash: computeChainHash(lastResealed.prevHash, lastResealed),
+      };
+
+      const result = verifyChain([chain[0], invalidMiddle, lastValid] as unknown as Record<
+        string,
+        unknown
+      >[]);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.index).toBe(1);
+      expect(result.timestampMonotonicity?.valid).toBe(false);
+      expect(result.timestampMonotonicity?.firstBreak).toBe(2);
+    });
+
+    it('rejects a hash-consistent trail with mixed FlowGuard session identities', () => {
+      const [first, second] = buildChain(2);
+      const { chainHash: _chainHash, ...secondBody } = second!;
+      const changedIdentity = {
+        ...secondBody,
+        flowguardSessionId: '00000000-0000-4000-8000-000000000001',
+      };
+      const resealed = {
+        ...changedIdentity,
+        semanticEventDigest: computeCanonicalEventDigest(changedIdentity),
+      };
+      const mixedTrail = [
+        first!,
+        { ...resealed, chainHash: computeChainHash(resealed.prevHash, resealed) },
+      ];
+
+      const result = verifyChain(mixedTrail as unknown as Record<string, unknown>[]);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('flowguardSessionId mismatch');
+    });
+
+    it('rejects a trail that is not bound to the expected FlowGuard session', () => {
+      const result = verifyChain(buildChain(1) as unknown as Record<string, unknown>[], {
+        expectedFlowguardSessionId: '00000000-0000-4000-8000-000000000001',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.reason).toContain('flowguardSessionId mismatch');
+    });
+
     it('verifyEvent fails on prevHash mismatch', () => {
       const event = createTransitionEvent(
         SESSION_ID,
@@ -109,7 +284,7 @@ describe('audit integrity', () => {
         },
       } as unknown as Record<string, unknown>;
 
-      const result = verifyChain([tampered], { strict: true });
+      const result = verifyChain([tampered]);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('CHAIN_BREAK');
       expect(result.firstBreak?.expectedChainHash).toHaveLength(64);
@@ -118,11 +293,11 @@ describe('audit integrity', () => {
 
     it('strict timestamp verification fails when nested content tamper is re-sealed but TSA imprint is unchanged', () => {
       const original = buildNestedDecisionEvent(GENESIS_HASH);
-      const originalDigest = computeCanonicalEventDigest(original);
+      const originalDigest = computeCanonicalEventDigest({ ...original });
       const { chainHash: _originalChainHash, ...originalBody } = original;
       const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...originalBody,
-        canonicalEventDigest: originalDigest,
+        semanticEventDigest: originalDigest,
         timestampEvidence: {
           status: 'tsa_stamped',
           source: 'tsa',
@@ -151,20 +326,118 @@ describe('audit integrity', () => {
           },
         },
       } as Omit<ChainedAuditEvent, 'chainHash'>;
+      // A coordinated local edit recomputes BOTH the stamped semantic digest
+      // and the chainHash — the TSA imprint is the only authority it cannot
+      // regenerate, so verification must fall through to the TSA check.
       const tamperedWithUpdatedLocalDigest = {
         ...tamperedBody,
-        canonicalEventDigest: computeCanonicalEventDigest(tamperedBody),
+        semanticEventDigest: computeCanonicalEventDigest(tamperedBody),
       };
       const resealedTamper = {
         ...tamperedWithUpdatedLocalDigest,
         chainHash: computeChainHash(GENESIS_HASH, tamperedWithUpdatedLocalDigest),
       };
 
-      const result = verifyChain([resealedTamper], { strict: true, strictTimestamps: true });
+      const result = verifyChain([resealedTamper], { strictTimestamps: true });
 
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
       expect(result.tokenVerificationRequired).toEqual([0]);
+    });
+
+    it('AC2: a downgraded status on stronger TSA evidence is a chain failure (TSA_EVIDENCE_DOWNGRADED)', () => {
+      const original = buildNestedDecisionEvent(GENESIS_HASH);
+      const originalDigest = computeCanonicalEventDigest({ ...original });
+      const { chainHash: _originalChainHash, ...originalBody } = original;
+      const downgradedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...originalBody,
+        semanticEventDigest: originalDigest,
+        timestampEvidence: {
+          status: 'local',
+          source: 'local_clock',
+          resolvedAt: TS1,
+          tsa: {
+            tokenDerBase64: '',
+            receivedAt: TS1,
+            verificationStatus: 'unchecked',
+            messageImprint: originalDigest,
+            digestAlgorithm: 'sha256',
+          },
+        },
+      };
+      const downgraded = {
+        ...downgradedBody,
+        chainHash: computeChainHash(GENESIS_HASH, downgradedBody),
+      };
+
+      const result = verifyChain([downgraded], { strictTimestamps: true });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('TSA_EVIDENCE_DOWNGRADED');
+      expect(result.tsaEvidenceDowngraded).toEqual([0]);
+    });
+
+    it('prioritizes downgraded TSA evidence over a deferred external token verification', () => {
+      const first = buildNestedDecisionEvent(GENESIS_HASH);
+      const firstDigest = computeCanonicalEventDigest({ ...first });
+      const { chainHash: _firstChainHash, ...firstBody } = first;
+      const externalTokenBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...firstBody,
+        semanticEventDigest: firstDigest,
+        timestampEvidence: {
+          status: 'tsa_stamped',
+          source: 'tsa',
+          resolvedAt: TS1,
+          tsa: {
+            tokenDerBase64: 'external-token',
+            receivedAt: TS1,
+            messageImprint: firstDigest,
+            digestAlgorithm: 'sha256',
+            verificationStatus: 'unchecked',
+          },
+        },
+      };
+      const externalToken = {
+        ...externalTokenBody,
+        chainHash: computeChainHash(GENESIS_HASH, externalTokenBody),
+      };
+
+      const second = buildNestedDecisionEvent(externalToken.chainHash);
+      const { chainHash: _secondChainHash, ...secondBody } = second;
+      const secondWithSequence = {
+        ...secondBody,
+        auditSequence: 2,
+        occurredAt: TS2,
+        recordedAt: TS2,
+      };
+      const secondDigest = computeCanonicalEventDigest(secondWithSequence);
+      const downgradedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...secondWithSequence,
+        semanticEventDigest: secondDigest,
+        timestampEvidence: {
+          status: 'local',
+          source: 'local_clock',
+          resolvedAt: TS2,
+          tsa: {
+            tokenDerBase64: '',
+            receivedAt: TS2,
+            messageImprint: secondDigest,
+            digestAlgorithm: 'sha256',
+            verificationStatus: 'unchecked',
+          },
+        },
+      };
+      const downgraded = {
+        ...downgradedBody,
+        chainHash: computeChainHash(externalToken.chainHash, downgradedBody),
+      };
+
+      const result = verifyChain([externalToken, downgraded], { strictTimestamps: true });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('TSA_EVIDENCE_DOWNGRADED');
+      expect(result.tokenVerificationRequired).toEqual([0]);
+      expect(result.tsaEvidenceDowngraded).toEqual([1]);
     });
 
     // ── Constant-time comparison tests for safeHashEqual ────────
@@ -233,12 +506,15 @@ describe('audit integrity', () => {
     });
 
     it('verifyEvent passes with matching hash', () => {
-      const event = createTransitionEvent(
-        SESSION_ID,
-        'PLAN',
-        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
-        TS1,
-        GENESIS_HASH,
+      const event = stampChainSequence(
+        createTransitionEvent(
+          SESSION_ID,
+          'PLAN',
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+          TS1,
+          GENESIS_HASH,
+        ),
+        1,
       );
       // Use the actual correct prevHash
       const result = verifyEvent(event, GENESIS_HASH, 0);
@@ -250,7 +526,7 @@ describe('audit integrity', () => {
       const chain = buildChain(5);
       // Tamper event #2 by modifying its detail
       const tampered = chain.map((e, i) => {
-        if (i === 2) return { ...e, phase: 'TAMPERED' } as unknown as Record<string, unknown>;
+        if (i === 2) return { ...e, phase: 'TAMPERED' };
         return e as unknown as Record<string, unknown>;
       });
       const result = verifyChain(tampered);
@@ -260,38 +536,38 @@ describe('audit integrity', () => {
       expect(result.reason).toBe('CHAIN_BREAK');
     });
 
-    it('verifyChain reports chained pre-v2 events as legacy format, not tampering', () => {
+    it('verifyChain reports pre-v3 records as envelope-invalid, not tampering', () => {
       const event = buildNestedDecisionEvent(GENESIS_HASH);
-      const { auditFormatVersion: _auditFormatVersion, ...legacy } = event;
+      const { auditFormatVersion: _auditFormatVersion, ...invalid } = event;
 
-      const result = verifyChain([legacy as unknown as Record<string, unknown>], { strict: true });
+      const result = verifyChain([invalid]);
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
-      expect(result.firstBreak?.reasonCode).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
     });
 
-    it('verifyChain reports audit-chain.v1 as legacy format, not tampering', () => {
+    it('verifyChain reports audit-chain.v1 as envelope-invalid, not tampering', () => {
       const event = {
         ...buildNestedDecisionEvent(GENESIS_HASH),
         auditFormatVersion: 'audit-chain.v1',
       };
 
-      const result = verifyChain([event as unknown as Record<string, unknown>], { strict: true });
+      const result = verifyChain([event]);
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
-      expect(result.firstBreak?.reasonCode).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
     });
 
-    it('verifyChain reports unknown audit format as unsupported', () => {
+    it('verifyChain reports unknown audit format as envelope-invalid', () => {
       const event = {
         ...buildNestedDecisionEvent(GENESIS_HASH),
         auditFormatVersion: 'audit-chain.v999',
       };
 
-      const result = verifyChain([event as unknown as Record<string, unknown>], { strict: true });
+      const result = verifyChain([event]);
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('UNSUPPORTED_AUDIT_FORMAT_VERSION');
-      expect(result.firstBreak?.reasonCode).toBe('UNSUPPORTED_AUDIT_FORMAT_VERSION');
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
     });
   });
 
@@ -329,10 +605,10 @@ describe('audit integrity', () => {
         chainHash: '',
         prevHash: 'abc123',
       };
-      const chain = buildChain(1);
-      // verifyChain should skip this event (handled internally via isChainedEvent)
+      // verifyChain treats non-v3 records as envelope-invalid — no skipping.
       const result = verifyChain([event]);
-      expect(result.skippedCount).toBe(1);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
     });
 
     it('isChainedEvent returns false for empty prevHash string', () => {
@@ -342,59 +618,57 @@ describe('audit integrity', () => {
         prevHash: '',
       };
       const result = verifyChain([event]);
-      expect(result.skippedCount).toBe(1);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
     });
 
-    it('verifyChain skips non-chained (legacy) events', () => {
-      const legacyEvent: Record<string, unknown> = {
-        id: 'legacy-1',
-        sessionId: SESSION_ID,
+    it('verifyChain rejects non-v3 records', () => {
+      const invalidEvent: Record<string, unknown> = {
+        id: 'invalid-1',
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'machine',
         detail: {},
         // No prevHash, no chainHash
       };
-      const result = verifyChain([legacyEvent]);
-      expect(result.valid).toBe(true);
+      const result = verifyChain([invalidEvent]);
+      expect(result.valid).toBe(false);
       expect(result.totalEvents).toBe(1);
-      expect(result.verifiedCount).toBe(0);
-      expect(result.skippedCount).toBe(1);
-      expect(result.reason).toBeNull();
+      expect(result.verifiedCount).toBe(1);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
     });
   });
 
   // ─── EDGE ───────────────────────────────────────────────────
   describe('EDGE', () => {
-    it('verifyChain with mixed chained and legacy events', () => {
+    it('verifyChain with mixed chained and invalid records fails closed on the invalid record', () => {
       const chain = buildChain(2);
-      const legacy: Record<string, unknown> = {
-        id: 'legacy-1',
-        sessionId: SESSION_ID,
+      const invalid: Record<string, unknown> = {
+        id: 'invalid-1',
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'some:event',
-        timestamp: TS2,
+        occurredAt: TS2,
         actor: 'machine',
         detail: {},
       };
-      // Insert legacy between two chained events
+      // Append the invalid record after the chained events (inserting it
+      // between chained events would additionally break the sequence authority
+      // of every following record, which the dedicated sequence test covers).
       const mixed = [
         chain[0] as unknown as Record<string, unknown>,
-        legacy,
         chain[1] as unknown as Record<string, unknown>,
+        invalid,
       ];
       const result = verifyChain(mixed);
-      // Chain continues from event[0].chainHash to event[2].prevHash
-      // Event[2] was created with event[0].chainHash as prevHash
-      // so after skipping the legacy event, the chain should still be valid
+      // Invalid records are never skipped — the chain fails closed.
       expect(result.totalEvents).toBe(3);
-      expect(result.skippedCount).toBe(1);
-      expect(result.verifiedCount).toBe(2);
-      // The chain is valid because event[1] (chained, index=2) was built
-      // with event[0].chainHash as prevHash
-      expect(result.valid).toBe(true);
-      expect(result.reason).toBeNull();
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+      expect(result.firstBreak?.index).toBe(2);
     });
 
     it('insertion attack detected — new event breaks prevHash chain', () => {
@@ -413,10 +687,13 @@ describe('audit integrity', () => {
         TS2,
         chain[0]!.chainHash, // Uses correct prevHash for [0]
       );
+      // The inserted event carries a compliant sequence for its chain position;
+      // the attack is exposed by the prevHash break of the event AFTER it.
+      const insertedStamped = stampChainSequence(inserted, 2);
       // Insert between [0] and [1] — [1]'s prevHash still points to [0], not inserted
       const tampered = [
         chain[0] as unknown as Record<string, unknown>,
-        inserted as unknown as Record<string, unknown>,
+        insertedStamped as unknown as Record<string, unknown>,
         chain[1] as unknown as Record<string, unknown>, // prevHash = chain[0].chainHash, not inserted.chainHash
         chain[2] as unknown as Record<string, unknown>,
       ];
@@ -428,18 +705,18 @@ describe('audit integrity', () => {
       expect(result.reason).toBe('CHAIN_BREAK');
     });
 
-    it('getLastChainHash skips trailing legacy events', () => {
+    it('getLastChainHash skips trailing non-chained events', () => {
       const chain = buildChain(2);
-      const legacy: Record<string, unknown> = {
-        id: 'legacy-tail',
-        sessionId: SESSION_ID,
+      const invalid: Record<string, unknown> = {
+        id: 'invalid-tail',
+        flowguardSessionId: SESSION_ID,
         phase: 'COMPLETE',
         event: 'some:event',
         timestamp: TS3,
         actor: 'machine',
         detail: {},
       };
-      const mixed = [...chain.map((e) => e as unknown as Record<string, unknown>), legacy];
+      const mixed = [...chain.map((e) => e as unknown as Record<string, unknown>), invalid];
       expect(getLastChainHash(mixed)).toBe(chain[1]!.chainHash);
     });
   });
@@ -461,17 +738,16 @@ describe('audit integrity', () => {
       it('strict mode with all chained events → valid', () => {
         const chain = buildChain(3);
         const raw = chain.map((e) => e as unknown as Record<string, unknown>);
-        const result = verifyChain(raw, { strict: true });
+        const result = verifyChain(raw);
         expect(result.valid).toBe(true);
         expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(0);
         expect(result.verifiedCount).toBe(3);
       });
 
       it('strict mode with single chained event → valid', () => {
         const chain = buildChain(1);
         const raw = chain.map((e) => e as unknown as Record<string, unknown>);
-        const result = verifyChain(raw, { strict: true });
+        const result = verifyChain(raw);
         expect(result.valid).toBe(true);
         expect(result.reason).toBeNull();
       });
@@ -479,67 +755,65 @@ describe('audit integrity', () => {
 
     // ─── BAD ────────────────────────────────────────────────
     describe('BAD', () => {
-      it('strict mode rejects single legacy event', () => {
-        const legacyEvent: Record<string, unknown> = {
-          id: 'legacy-strict-1',
-          sessionId: SESSION_ID,
+      it('rejects a single invalid record in every mode', () => {
+        const invalidEvent: Record<string, unknown> = {
+          id: 'invalid-strict-1',
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
-          timestamp: TS1,
+          occurredAt: TS1,
           actor: 'machine',
           detail: {},
         };
-        const result = verifyChain([legacyEvent], { strict: true });
+        const result = verifyChain([invalidEvent]);
         expect(result.valid).toBe(false);
-        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
-        expect(result.skippedCount).toBe(1);
-        expect(result.verifiedCount).toBe(0);
-        expect(result.firstBreak).toBeNull();
+        expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+        expect(result.verifiedCount).toBe(1);
+        expect(result.firstBreak?.index).toBe(0);
       });
 
-      it('strict mode rejects multiple legacy events', () => {
-        const legacyEvents: Record<string, unknown>[] = [
+      it('rejects multiple invalid records in every mode', () => {
+        const invalidEvents: Record<string, unknown>[] = [
           {
-            id: 'leg-1',
-            sessionId: SESSION_ID,
+            id: 'inv-1',
+            flowguardSessionId: SESSION_ID,
             phase: 'TICKET',
             event: 'e1',
-            timestamp: TS1,
+            occurredAt: TS1,
             actor: 'machine',
             detail: {},
           },
           {
-            id: 'leg-2',
-            sessionId: SESSION_ID,
+            id: 'inv-2',
+            flowguardSessionId: SESSION_ID,
             phase: 'PLAN',
             event: 'e2',
-            timestamp: TS2,
+            occurredAt: TS2,
             actor: 'machine',
             detail: {},
           },
           {
-            id: 'leg-3',
-            sessionId: SESSION_ID,
+            id: 'inv-3',
+            flowguardSessionId: SESSION_ID,
             phase: 'PLAN',
             event: 'e3',
-            timestamp: TS3,
+            occurredAt: TS3,
             actor: 'machine',
             detail: {},
           },
         ];
-        const result = verifyChain(legacyEvents, { strict: true });
+        const result = verifyChain(invalidEvents);
         expect(result.valid).toBe(false);
-        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
-        expect(result.skippedCount).toBe(3);
+        expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       });
 
-      it('strict mode with tampered event → CHAIN_BREAK (not legacy)', () => {
+      it('strict mode with tampered event → CHAIN_BREAK (not envelope-invalid)', () => {
         const chain = buildChain(3);
         const tampered = chain.map((e, i) => {
-          if (i === 1) return { ...e, phase: 'TAMPERED' } as unknown as Record<string, unknown>;
+          if (i === 1) return { ...e, phase: 'TAMPERED' };
           return e as unknown as Record<string, unknown>;
         });
-        const result = verifyChain(tampered, { strict: true });
+        const result = verifyChain(tampered);
         expect(result.valid).toBe(false);
         expect(result.reason).toBe('CHAIN_BREAK');
         expect(result.firstBreak).not.toBeNull();
@@ -548,96 +822,89 @@ describe('audit integrity', () => {
 
     // ─── CORNER ─────────────────────────────────────────────
     describe('CORNER', () => {
-      it('strict mode with empty trail → valid (nothing to skip)', () => {
-        const result = verifyChain([], { strict: true });
+      it('strict mode with empty trail → valid', () => {
+        const result = verifyChain([]);
         expect(result.valid).toBe(true);
         expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(0);
       });
 
-      it('non-strict (default) with legacy events → still valid (backward compat)', () => {
-        const legacyEvent: Record<string, unknown> = {
-          id: 'legacy-compat',
-          sessionId: SESSION_ID,
+      it('non-strict (default) with invalid records → still fails closed', () => {
+        const invalidEvent: Record<string, unknown> = {
+          id: 'invalid-compat',
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
-          timestamp: TS1,
+          occurredAt: TS1,
           actor: 'machine',
           detail: {},
         };
-        const result = verifyChain([legacyEvent]);
-        expect(result.valid).toBe(true);
-        expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(1);
+        const result = verifyChain([invalidEvent]);
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       });
 
-      it('explicit strict: false behaves like default (legacy-tolerant)', () => {
-        const legacyEvent: Record<string, unknown> = {
-          id: 'legacy-explicit-false',
-          sessionId: SESSION_ID,
+      it('explicit strict: false also fails closed on invalid records', () => {
+        const invalidEvent: Record<string, unknown> = {
+          id: 'invalid-explicit-false',
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'transition:PLAN_READY',
-          timestamp: TS1,
+          occurredAt: TS1,
           actor: 'machine',
           detail: {},
         };
-        const result = verifyChain([legacyEvent], { strict: false });
-        expect(result.valid).toBe(true);
-        expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(1);
+        const result = verifyChain([invalidEvent]);
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       });
     });
 
     // ─── EDGE ───────────────────────────────────────────────
     describe('EDGE', () => {
-      it('strict mode with mixed chained + legacy → fails on legacy', () => {
+      it('mixed chained + invalid → fails closed on the invalid record', () => {
         const chain = buildChain(2);
-        const legacy: Record<string, unknown> = {
-          id: 'legacy-mixed-strict',
-          sessionId: SESSION_ID,
+        const invalid: Record<string, unknown> = {
+          id: 'invalid-mixed-strict',
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'some:event',
-          timestamp: TS2,
+          occurredAt: TS2,
           actor: 'machine',
           detail: {},
         };
         const mixed = [
           chain[0] as unknown as Record<string, unknown>,
-          legacy,
           chain[1] as unknown as Record<string, unknown>,
+          invalid,
         ];
-        const result = verifyChain(mixed, { strict: true });
+        const result = verifyChain(mixed);
         expect(result.valid).toBe(false);
-        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
-        expect(result.skippedCount).toBe(1);
-        expect(result.verifiedCount).toBe(2);
-        // Chain hashes themselves are valid — the break is due to legacy event
-        expect(result.firstBreak).toBeNull();
+        expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
+        expect(result.firstBreak?.index).toBe(2);
       });
 
-      it('strict mode: chain break + legacy events → reason is CHAIN_BREAK (severity priority)', () => {
+      it('strict mode: chain break + invalid record → reason is CHAIN_BREAK (severity priority)', () => {
         const chain = buildChain(3);
-        const legacy: Record<string, unknown> = {
-          id: 'legacy-plus-break',
-          sessionId: SESSION_ID,
+        const invalid: Record<string, unknown> = {
+          id: 'invalid-plus-break',
+          flowguardSessionId: SESSION_ID,
           phase: 'PLAN',
           event: 'some:event',
-          timestamp: TS2,
+          occurredAt: TS2,
           actor: 'machine',
           detail: {},
         };
-        // Tamper chain[1] AND insert a legacy event
+        // Tamper chain[1] AND insert an invalid record
         const tampered = [
           chain[0] as unknown as Record<string, unknown>,
-          legacy,
+          invalid,
           { ...chain[1], phase: 'TAMPERED' } as unknown as Record<string, unknown>,
           chain[2] as unknown as Record<string, unknown>,
         ];
-        const result = verifyChain(tampered, { strict: true });
+        const result = verifyChain(tampered);
         expect(result.valid).toBe(false);
-        // CHAIN_BREAK wins over LEGACY — more severe
+        // CHAIN_BREAK wins over envelope-invalid — more severe
         expect(result.reason).toBe('CHAIN_BREAK');
-        expect(result.skippedCount).toBe(1);
         expect(result.firstBreak).not.toBeNull();
       });
     });
@@ -647,7 +914,7 @@ describe('audit integrity', () => {
       it('strict mode adds no measurable overhead vs default', () => {
         const chain = buildChain(1000);
         const raw = chain.map((e) => e as unknown as Record<string, unknown>);
-        const { p99Ms } = benchmarkSync(() => verifyChain(raw, { strict: true }), 5, 1);
+        const { p99Ms } = benchmarkSync(() => verifyChain(raw), 5, 1);
         expect(p99Ms).toBeLessThan(PERF_BUDGETS.auditChainVerify1000Ms);
       });
     });
@@ -657,10 +924,13 @@ describe('audit integrity', () => {
 function buildNestedDecisionEvent(prevHash: string): ChainedAuditEvent {
   const body: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: '11111111-1111-4111-8111-111111111111',
-    sessionId: SESSION_ID,
+    flowguardSessionId: SESSION_ID,
     phase: 'PLAN_REVIEW',
     event: 'decision:DEC-001',
-    timestamp: TS1,
+    occurredAt: TS1,
+    auditSequence: 1,
+    recordedAt: TS1,
+    semanticEventDigest: 'c'.repeat(64),
     actor: 'human',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: {

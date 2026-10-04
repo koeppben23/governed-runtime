@@ -67,12 +67,12 @@ upgrade before managed artifacts are written.
 
 ### What Is Preserved
 
-| Component         | Preserved | Notes                                |
-| ----------------- | --------- | ------------------------------------ |
-| **Session state** | Yes       | File-based, readable after reinstall |
-| **Audit trails**  | Yes       | File-based                           |
-| **Archives**      | Yes       | File-based                           |
-| **Configuration** | Yes       | `flowguard.json` unchanged           |
+| Component         | Preserved | Notes                                         |
+| ----------------- | --------- | --------------------------------------------- |
+| **Session state** | Yes       | File-based; compatibility is release-specific |
+| **Audit trails**  | Yes       | File-based                                    |
+| **Archives**      | Yes       | File-based                                    |
+| **Configuration** | Yes       | `flowguard.json` unchanged                    |
 
 **Customer Responsibility:**
 
@@ -86,28 +86,57 @@ upgrade before managed artifacts are written.
 
 ### State Schema Compatibility
 
-FlowGuard is **pre-1.0**. The persisted session-state schema is locked at
-`schemaVersion: 'v1'` and there is **no migration infrastructure** in this
-release. See [`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
-for the design proposal.
+FlowGuard is a prerelease product. The persisted session-state schema is
+`schemaVersion: 'v10'`, `assurance-epoch.v3`, `state-digest.v2`,
+`policy-digest.v4`, and audit records are strictly `audit-chain.v3`. Pre-v10
+state is **hard-rejected** with `SESSION_STATE_INCOMPATIBLE` at the `readState`
+preflight, and audit records that violate the canonical audit-chain.v3
+envelope are rejected with `AUDIT_ENVELOPE_INVALID` at every audit persistence
+and verification boundary — the trust boundary never classifies legacy
+formats, and non-v3 artifacts are never migrated, reinterpreted, or re-sealed.
+Archive or complete active sessions before crossing the epoch boundary. See
+[`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
+for the superseded migration proposal.
 
-| From Version | To Version | Compatibility                                                                               |
-| ------------ | ---------- | ------------------------------------------------------------------------------------------- |
-| pre-1.0 dev  | pre-1.0    | Sessions from earlier development releases are **not supported** — `/archive` and re-create |
-| 1.0+         | 1.x        | Same `schemaVersion: 'v1'` — sessions readable; full forward-compatibility guaranteed       |
-| 1.x          | 2.0        | Major version bump may bump `schemaVersion`. Check release notes; archive before upgrading  |
+| From Version                                                     | To Version                                | Compatibility                                                                                                                                                                             |
+| ---------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any prerelease                                                   | Later prerelease                          | No forward-compatibility guarantee. Archive or complete active sessions before upgrading.                                                                                                 |
+| State `schemaVersion: v9`/earlier                                | Current state contract (`v10`)            | Incompatible by design. State is rejected with `SESSION_STATE_INCOMPATIBLE`; no migration path exists. Archive or complete the session with its old artifact, then start a fresh session. |
+| Audit trail `audit-chain.v2`/earlier, regardless of state schema | Current audit contract (`audit-chain.v3`) | Incompatible by design. Records are rejected with `AUDIT_ENVELOPE_INVALID`; no migration or re-seal path exists.                                                                          |
+| `v1.2.0-tp.2` and earlier policy digests                         | A release requiring `policy-digest.v4`    | Incompatible by design. The current digest excludes removed policy authorities; archive or complete the session with the old artifact, then start a new session.                          |
 
-**FlowGuard validates state on read.** If a future version introduces an
-incompatible `schemaVersion`, FlowGuard will reject the state at hydrate time
-with an explicit BLOCKED `SCHEMA_VALIDATION_FAILED` and require the operator to
-archive the old session and start fresh.
+**FlowGuard validates state on read.** A release that requires an incompatible
+schema or evidence contract rejects the state at hydrate time with an explicit
+BLOCKED `SCHEMA_VALIDATION_FAILED` (or `SESSION_STATE_INCOMPATIBLE` at the
+`readState` contract preflight for pre-v10 state).
+Do not edit persisted state to bridge that boundary. Use the previously
+installed artifact to archive or complete the session, then start a fresh
+session after upgrading.
 
 **Customer Responsibility:**
 
-- Archive sessions before upgrading (always recoverable from archives)
+- Complete or archive every active session with the currently installed artifact
+  before upgrading
 - Test upgrade in non-production
-- Treat any `schemaVersion` change as a breaking change until migration
-  infrastructure ships (tracked in `docs/architecture/schema-migration.md`)
+- Treat every changed schema or required evidence contract as breaking —
+  the Assurance epoch replaces migration with hard rejection
+  (`docs/architecture/schema-migration.md`)
+
+### Reviewer Mandate Compatibility
+
+Reviewer obligations bind both `criteriaVersion` and the reviewer-mandate digest. The
+`p38-v1` mandate requires `changes_requested` whenever `blockingIssues` is non-empty.
+The `p39-v1` mandate makes the reviewer tool-capability profile part of the attested
+contract by denying direct and MCP-prefixed `flowguard_*` tools while preserving
+read-only research tools. The `p40-v1` mandate additionally denies the reviewer's
+`task` capability, preventing subagent cascades. Each version has its own digest.
+
+Existing obligations remain bound to their persisted `p38-v1` or `p39-v1` criteria and
+digest and are never reinterpreted as `p40-v1` evidence. Archive or complete an
+in-flight review before upgrading when its attestation must remain reproducible; create
+a new artifact review cycle to use p40. Rolling back to a p39 build likewise requires a
+new review cycle for any p40-bound obligation. Do not edit obligation attestation values
+or mandate digests to bridge the version boundary.
 
 ### Archive Compatibility
 
@@ -172,9 +201,9 @@ checksums:
 
 ```
 /artifact-store/
-├── flowguard-core-1.2.0-tp.2.tgz   (current)
-├── flowguard-core-1.2.0-tp.1.tgz   (previous)
-├── flowguard-core-1.1.0.tgz        (rollback target)
+├── flowguard-core-<current>.tgz   (current)
+├── flowguard-core-<previous>.tgz  (previous)
+├── flowguard-core-<rollback>.tgz  (rollback target)
 └── checksums.sha256
 ```
 
@@ -227,8 +256,9 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 **Customer Responsibility:**
 
-- Complete or archive sessions before major upgrades
-- Verify session state is readable after upgrade
+- Complete or archive sessions before every prerelease upgrade
+- Verify archives after upgrade; do not expect an active pre-upgrade session to
+  remain readable
 
 ---
 
@@ -252,5 +282,5 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
-_Last Updated: 2026-04-15_
+FlowGuard Version: 2.0.0-tp.1
+_Last Updated: 2026-08-25_

@@ -31,12 +31,13 @@ const {
 
 vi.mock('../adapters/persistence.js', () => ({
   writeState: mockWriteState,
+  writeStateAlreadyLocked: mockWriteState,
   readState: mockReadState,
 }));
 
-vi.mock('../discovery/discovery-health.js', async () => {
-  const actual = await vi.importActual<typeof import('../discovery/discovery-health.js')>(
-    '../discovery/discovery-health.js',
+vi.mock('./discovery/discovery-health-loader.js', async () => {
+  const actual = await vi.importActual<typeof import('./discovery/discovery-health-loader.js')>(
+    './discovery/discovery-health-loader.js',
   );
   return {
     ...actual,
@@ -44,14 +45,14 @@ vi.mock('../discovery/discovery-health.js', async () => {
   };
 });
 
-vi.mock('./plugin-helpers.js', () => ({
+vi.mock('./blocked-result.js', () => ({
   buildEnforcementError: mockBuildEnforcementError,
   strictBlockedOutput: mockStrictBlockedOutput,
 }));
 
-vi.mock('./discovery-health-gate.js', async () => {
-  const actual = await vi.importActual<typeof import('./discovery-health-gate.js')>(
-    './discovery-health-gate.js',
+vi.mock('./discovery/discovery-health-gate.js', async () => {
+  const actual = await vi.importActual<typeof import('./discovery/discovery-health-gate.js')>(
+    './discovery/discovery-health-gate.js',
   );
   return {
     ...actual,
@@ -59,7 +60,7 @@ vi.mock('./discovery-health-gate.js', async () => {
   };
 });
 
-vi.mock('./review/audit-events.js', () => ({
+vi.mock('./review/evidence/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAuditEvent,
 }));
 
@@ -141,16 +142,18 @@ describe('enforceDiscoveryHealthBefore', () => {
     expect(arg.health.status).toBe('unavailable');
   });
 
-  it('persists a blocked gate + audit and throws on first block transition', async () => {
+  it('commits the blocked gate and its semantic audit intent', async () => {
     mockIsAllowed.mockReturnValue({
       allowed: false,
       code: 'DISCOVERY_HEALTH_UNAVAILABLE',
       message: 'Discovery unavailable',
       driftStatus: 'unavailable',
     });
-    await expect(
-      enforceDiscoveryHealthBefore(mockDeps(), sessDir, requiredState(), 'write'),
-    ).rejects.toThrow('DISCOVERY_HEALTH_UNAVAILABLE');
+    const state = requiredState();
+    mockReadState.mockResolvedValue(state);
+    await expect(enforceDiscoveryHealthBefore(mockDeps(), sessDir, state, 'write')).rejects.toThrow(
+      'DISCOVERY_HEALTH_UNAVAILABLE',
+    );
 
     expect(mockWriteState).toHaveBeenCalledTimes(1);
     const written = mockWriteState.mock.calls[0]![1] as SessionState;
@@ -158,8 +161,11 @@ describe('enforceDiscoveryHealthBefore', () => {
       status: 'blocked',
       code: 'DISCOVERY_HEALTH_UNAVAILABLE',
     });
-    expect(mockAppendReviewAuditEvent).toHaveBeenCalledTimes(1);
-    expect(mockAppendReviewAuditEvent.mock.calls[0]![3]).toBe('discovery_health:gate_changed');
+    expect(mockAppendReviewAuditEvent).not.toHaveBeenCalled();
+    expect(written.pendingAuditOperations.find((item) => item.kind === 'semantic')).toMatchObject({
+      kind: 'semantic',
+      semantic: { event: 'discovery_health:gate_changed' },
+    });
   });
 
   it('does NOT re-persist when the gate is already blocked (idempotent)', async () => {
@@ -189,22 +195,43 @@ describe('enforceDiscoveryHealthBefore', () => {
       code: 'DISCOVERY_DRIFT_BLOCKED',
       message: 'drift',
     });
+    const state = requiredState();
+    mockReadState.mockResolvedValue(state);
     mockWriteState.mockRejectedValue(new Error('disk full'));
-    await expect(
-      enforceDiscoveryHealthBefore(mockDeps(), sessDir, requiredState(), 'write'),
-    ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+    await expect(enforceDiscoveryHealthBefore(mockDeps(), sessDir, state, 'write')).rejects.toThrow(
+      'AUDIT_PERSISTENCE_FAILED',
+    );
   });
 });
 
 describe('enforceDiscoveryHealthAfterBash', () => {
   const sessionId = 's1';
 
-  it('returns early when sessDir is null', async () => {
+  it('fails closed when sessDir is null', async () => {
     const deps = mockDeps({ getSessionDir: () => null });
     const output: { output?: unknown } = {};
     await enforceDiscoveryHealthAfterBash(deps, sessionId, output);
     expect(mockReadState).not.toHaveBeenCalled();
-    expect(output.output).toBeUndefined();
+    expect(mockStrictBlockedOutput).toHaveBeenCalledWith(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      expect.objectContaining({
+        reason: expect.stringContaining('no resolvable FlowGuard session'),
+      }),
+    );
+    expect(output.output).toBeDefined();
+  });
+
+  it('fails closed when persisted state is missing', async () => {
+    mockReadState.mockResolvedValue(null);
+    const output: { output?: unknown } = {};
+    await enforceDiscoveryHealthAfterBash(mockDeps(), sessionId, output);
+    expect(mockStrictBlockedOutput).toHaveBeenCalledWith(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      expect.objectContaining({
+        reason: expect.stringContaining('no persisted session state'),
+      }),
+    );
+    expect(output.output).toBeDefined();
   });
 
   it('writes a blocked output (does not throw) when the decision blocks', async () => {

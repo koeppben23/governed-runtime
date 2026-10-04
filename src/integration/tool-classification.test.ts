@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   TOOL_CLASSIFICATION,
   getToolClassification,
+  isMutatingFlowGuardTool,
   isOperationalTool,
   isWorkflowTool,
   listClassifiedTools,
@@ -29,6 +30,10 @@ import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_STATUS,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_HELP,
+  TOOL_FLOWGUARD_DECLARE_CONTRACT,
+  TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
 } from './tool-names.js';
 import * as ToolNames from './tool-names.js';
 import { Command } from '../machine/commands.js';
@@ -78,6 +83,10 @@ describe('tool-classification', () => {
     it('TOOL_FLOWGUARD_ARCHIVE is operational', () => {
       expect(getToolClassification(TOOL_FLOWGUARD_ARCHIVE)).toBe('operational');
     });
+
+    it('TOOL_FLOWGUARD_HELP is operational', () => {
+      expect(getToolClassification(TOOL_FLOWGUARD_HELP)).toBe('operational');
+    });
   });
 
   describe('HAPPY — helper functions work', () => {
@@ -94,6 +103,23 @@ describe('tool-classification', () => {
     it('helper predicates return false for unknown tools', () => {
       expect(isWorkflowTool('flowguard_unknown')).toBe(false);
       expect(isOperationalTool('flowguard_unknown')).toBe(false);
+    });
+
+    it('isMutatingFlowGuardTool covers persistent operational tools', () => {
+      expect(isMutatingFlowGuardTool(TOOL_FLOWGUARD_PLAN)).toBe(true);
+      expect(isMutatingFlowGuardTool(TOOL_FLOWGUARD_ARCHIVE)).toBe(true);
+      expect(isMutatingFlowGuardTool(TOOL_FLOWGUARD_DECLARE_CONTRACT)).toBe(true);
+      expect(isMutatingFlowGuardTool(TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE)).toBe(true);
+      expect(isMutatingFlowGuardTool(TOOL_FLOWGUARD_OBSERVE_REPOSITORY)).toBe(true);
+    });
+
+    it('isMutatingFlowGuardTool keeps read-only operational tools available', () => {
+      expect(isMutatingFlowGuardTool(TOOL_FLOWGUARD_STATUS)).toBe(false);
+      expect(isMutatingFlowGuardTool(TOOL_FLOWGUARD_HELP)).toBe(false);
+    });
+
+    it('isMutatingFlowGuardTool returns false for unknown tools', () => {
+      expect(isMutatingFlowGuardTool('flowguard_unknown')).toBe(false);
     });
   });
 
@@ -127,7 +153,8 @@ describe('tool-classification', () => {
     it('all TOOL_FLOWGUARD_* names from tool-names.ts are classified', () => {
       const canonicalTools = Object.entries(ToolNames)
         .filter(([name]) => name.startsWith('TOOL_FLOWGUARD_'))
-        .map(([, value]) => value);
+        .map(([, value]) => value)
+        .filter((value) => typeof value === 'string');
 
       for (const tool of canonicalTools) {
         expect(() => getToolClassification(tool)).not.toThrow();

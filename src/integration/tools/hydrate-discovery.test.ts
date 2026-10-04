@@ -11,30 +11,44 @@ import {
   buildProfileEvidence,
   buildProfileResolution,
   collectProfileCandidates,
-} from './hydrate-discovery.js';
+} from './hydrate/hydrate-discovery.js';
 import type { FlowGuardProfile } from '../../config/profile.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
-import type { RepoSignals } from '../../adapters/git.js';
-import type { HydrateConfig } from './hydrate.js';
+import type { RepoSignals } from '../../config/profile.js';
+import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
+import type { HydrateConfig } from './hydrate/hydrate.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
-function profile(overrides: Partial<FlowGuardProfile> = {}): FlowGuardProfile {
-  return {
+type ProfileOverrides = {
+  [K in keyof FlowGuardProfile]?: FlowGuardProfile[K] | undefined;
+};
+
+function profile(overrides: ProfileOverrides = {}): FlowGuardProfile {
+  const built = {
+    ...DEFAULT_CONFIG,
     id: 'node-typescript',
     name: 'Node.js / TypeScript',
     detect: () => 0.9,
     activeChecks: ['test_quality', 'lint_check'],
     profileRules: { plan: [], implement: [], arch: [], review: [] },
-    ...overrides,
-  } as FlowGuardProfile;
+  };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      Reflect.deleteProperty(built, key);
+    } else {
+      Object.assign(built, { [key]: value });
+    }
+  }
+  return built;
 }
 
 function detectionInput(overrides = {}) {
   return {
     repoSignals: {
-      packageFiles: ['package.json'],
-      configFiles: ['tsconfig.json'],
+      files: [],
+      packageFilePaths: ['package.json'],
+      configFilePaths: ['tsconfig.json'],
     } as RepoSignals,
     discovery: {
       schemaVersion: 1,
@@ -49,23 +63,9 @@ function detectionInput(overrides = {}) {
 
 function hydrateConfig(overrides = {}): HydrateConfig {
   return {
-    idp: null,
-    trustAnchors: [],
-    tsaUrl: '',
-    profile: { defaultId: '', activeChecks: [] },
-    policy: {
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 5,
-      requireVerifiedActorsForApproval: false,
-      identityProvider: null,
-      identityProviderMode: 'optional' as const,
-      minimumActorAssuranceForApproval: null,
-      enforceRiskClassification: false,
-      allowRiskDowngradeOverride: false,
-      allowReducedCeremony: false,
-    },
+    ...DEFAULT_CONFIG,
     ...overrides,
-  } as HydrateConfig;
+  };
 }
 
 // ─── buildProfileEvidence ─────────────────────────────────────────────────────
@@ -93,10 +93,22 @@ describe('buildProfileEvidence', () => {
 
   it('detects Python profile via pyproject.toml', () => {
     const input = detectionInput({
-      repoSignals: { packageFiles: ['pyproject.toml'], configFiles: [] },
+      repoSignals: { packageFilePaths: ['pyproject.toml'], configFilePaths: [] },
     });
     const evidence = buildProfileEvidence(profile({ id: 'python' }), input);
     expect(evidence).toContain('packageFile:pyproject.toml');
+  });
+
+  it('deduplicates repeated manifest basenames in first-occurrence order', () => {
+    const input = detectionInput({
+      repoSignals: {
+        files: ['pom.xml', 'module-a/pom.xml', 'module-b/pom.xml'],
+        packageFilePaths: ['pom.xml', 'module-a/pom.xml', 'module-b/pom.xml'],
+        configFilePaths: [],
+      },
+    });
+    const evidence = buildProfileEvidence(profile({ id: 'backend-java' }), input);
+    expect(evidence).toEqual(['packageFile:pom.xml']);
   });
 });
 

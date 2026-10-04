@@ -36,6 +36,33 @@ import { hashTextShort } from '../shared/hashing.js';
  *
  * URL regex matches http/https URLs and absolute file paths.
  */
+/** Sentinel: the identity field is omitted from the redacted extra. */
+const OMIT_FIELD = Symbol('omit-identity-field');
+
+function redactPathLikeIdentityValue(value: unknown): unknown {
+  return typeof value === 'string' && value.trim() ? `[redacted:${basename$0(value)}]` : OMIT_FIELD;
+}
+
+function redactJwksUriIdentityValue(value: unknown): unknown {
+  if (typeof value !== 'string' || !value.trim()) return OMIT_FIELD;
+  try {
+    const url = new URL(value);
+    return `[redacted:${url.hostname}]`;
+  } catch {
+    return '[redacted:invalid-uri]';
+  }
+}
+
+function redactIssuerIdentityValue(value: unknown): unknown {
+  if (typeof value !== 'string' || !value.trim()) return OMIT_FIELD;
+  const hash = hashTextShort(value, 8);
+  return `[hashed:${hash}]`;
+}
+
+function redactErrorIdentityValue(value: unknown): unknown {
+  return typeof value === 'string' ? sanitizeDiagnosticString(value) : value;
+}
+
 export function redactIdentityExtra(
   extra?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
@@ -44,33 +71,19 @@ export function redactIdentityExtra(
   const redacted: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(extra)) {
+    let next: unknown;
     if (key === 'tokenPath' || key === 'jwksPath') {
-      if (typeof value === 'string' && value.trim()) {
-        redacted[key] = `[redacted:${basename$0(value)}]`;
-      }
+      next = redactPathLikeIdentityValue(value);
     } else if (key === 'jwksUri') {
-      if (typeof value === 'string' && value.trim()) {
-        try {
-          const url = new URL(value);
-          redacted[key] = `[redacted:${url.hostname}]`;
-        } catch {
-          redacted[key] = '[redacted:invalid-uri]';
-        }
-      }
+      next = redactJwksUriIdentityValue(value);
     } else if (key === 'issuer') {
-      if (typeof value === 'string' && value.trim()) {
-        const hash = hashTextShort(value, 8);
-        redacted[key] = `[hashed:${hash}]`;
-      }
+      next = redactIssuerIdentityValue(value);
     } else if (key === 'error') {
-      if (typeof value === 'string') {
-        redacted[key] = sanitizeDiagnosticString(value);
-      } else {
-        redacted[key] = value;
-      }
+      next = redactErrorIdentityValue(value);
     } else {
-      redacted[key] = value;
+      next = value;
     }
+    if (next !== OMIT_FIELD) redacted[key] = next;
   }
 
   return redacted;
@@ -188,16 +201,15 @@ export function redactExtra(extra?: Record<string, unknown>): Record<string, unk
   }
 }
 
-function redactValue(value: unknown, seen: WeakSet<object>, depth: number): unknown {
-  if (typeof value === 'string') return sanitizeDiagnosticString(value);
-  // bigint is not JSON-serializable — coerce so a sink's JSON.stringify cannot
-  // throw and silently drop the whole entry.
-  if (typeof value === 'bigint') return `${value}`;
-  if (value === null || typeof value !== 'object') return value;
-  if (seen.has(value)) return '[redacted:circular]';
-  if (depth >= MAX_REDACT_DEPTH) return '[redacted:too-deep]';
-  seen.add(value);
+/** Read an arbitrary property without a narrowing assertion. */
+function readProperty(value: object, key: string): unknown {
+  return Reflect.get(value, key);
+}
 
+/** Sentinel: the value is not one of the specially coerced built-ins. */
+const NOT_SPECIAL_OBJECT = Symbol('not-special-object');
+
+function redactSpecialObject(value: object): unknown {
   // Built-in objects do not survive a generic Object.entries() walk: Date/Map/
   // Set/RegExp collapse to {}, Buffer becomes an index map, and a raw Error loses
   // its (non-enumerable) name/message/stack. Coerce them to safe, sanitized forms
@@ -208,7 +220,7 @@ function redactValue(value: unknown, seen: WeakSet<object>, depth: number): unkn
       message: sanitizeDiagnosticString(value.message),
     };
     if (value.stack) out.stack = sanitizeDiagnosticString(value.stack);
-    const code = (value as NodeJS.ErrnoException).code;
+    const code = readProperty(value, 'code');
     if (typeof code === 'string') out.code = code;
     return out;
   }
@@ -219,28 +231,33 @@ function redactValue(value: unknown, seen: WeakSet<object>, depth: number): unkn
   if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
     return `[binary:${value.byteLength}]`;
   }
+  return NOT_SPECIAL_OBJECT;
+}
 
-  if (Array.isArray(value)) {
-    return value.map((v) => redactValue(v, seen, depth + 1));
-  }
-
+function redactViaToJSON(value: object, seen: WeakSet<object>, depth: number): unknown {
   // Honor a custom toJSON() (e.g. class instances that intentionally project a
   // subset) before walking raw own-properties, so the redactor cannot surface
   // private fields the value meant to hide or drop derived getters.
-  const maybeToJSON = (value as { toJSON?: unknown }).toJSON;
-  if (typeof maybeToJSON === 'function') {
-    try {
-      return redactValue((value as { toJSON: () => unknown }).toJSON(), seen, depth + 1);
-    } catch {
-      // fall through to the generic walk if toJSON throws
-    }
+  const maybeToJSON = readProperty(value, 'toJSON');
+  if (typeof maybeToJSON !== 'function') return NOT_SPECIAL_OBJECT;
+  try {
+    return redactValue(maybeToJSON.call(value), seen, depth + 1);
+  } catch {
+    // fall through to the generic walk if toJSON throws
+    return NOT_SPECIAL_OBJECT;
   }
+}
 
+function objectEntries(value: object): [string, unknown][] {
+  return Object.entries(value);
+}
+
+function redactPlainObject(value: object, seen: WeakSet<object>, depth: number): unknown {
   // The generic walk can throw if an enumerable getter or a proxy trap throws.
   // Catch per-object so one hostile property cannot break the whole log call.
   try {
     const out: Record<string, unknown> = {};
-    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    for (const [key, v] of objectEntries(value)) {
       try {
         out[key] = redactValue(v, seen, depth + 1);
       } catch {
@@ -251,6 +268,29 @@ function redactValue(value: unknown, seen: WeakSet<object>, depth: number): unkn
   } catch {
     return '[unredactable-object]';
   }
+}
+
+function redactValue(value: unknown, seen: WeakSet<object>, depth: number): unknown {
+  if (typeof value === 'string') return sanitizeDiagnosticString(value);
+  // bigint is not JSON-serializable — coerce so a sink's JSON.stringify cannot
+  // throw and silently drop the whole entry.
+  if (typeof value === 'bigint') return `${value}`;
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[redacted:circular]';
+  if (depth >= MAX_REDACT_DEPTH) return '[redacted:too-deep]';
+  seen.add(value);
+
+  const special = redactSpecialObject(value);
+  if (special !== NOT_SPECIAL_OBJECT) return special;
+
+  if (Array.isArray(value)) {
+    return value.map((v) => redactValue(v, seen, depth + 1));
+  }
+
+  const viaToJSON = redactViaToJSON(value, seen, depth);
+  if (viaToJSON !== NOT_SPECIAL_OBJECT) return viaToJSON;
+
+  return redactPlainObject(value, seen, depth);
 }
 
 function safeDateToISO(d: Date): string {

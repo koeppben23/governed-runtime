@@ -49,10 +49,6 @@ export {
   freezePolicySnapshot,
   resolvePolicyFromSnapshot,
 } from './policy-snapshot.js';
-export {
-  normalizePolicySnapshot,
-  normalizePolicySnapshotWithMeta,
-} from './policy-snapshot-normalize.js';
 
 // ── Reasons ──────────────────────────────────────────────────────────────────
 export {

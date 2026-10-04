@@ -6,6 +6,8 @@ import {
   selfReviewPending,
   allValidationsPassed,
   checkFailed,
+  checkErrored,
+  implCheckErrored,
   implComplete,
   implReviewMet,
   implReviewPending,
@@ -62,6 +64,63 @@ describe('guards', () => {
       expect(checkFailed(makeState('VALIDATION', { validation: VALIDATION_FAILED }))).toBe(true);
     });
 
+    it('checkErrored fires when a check timed out', () => {
+      const timedOut = [{ ...VALIDATION_FAILED[0]!, passed: false, timedOut: true, exitCode: 124 }];
+      expect(checkErrored(makeState('VALIDATION', { validation: timedOut }))).toBe(true);
+    });
+
+    it('checkErrored fires when a check command was not found (exit 127)', () => {
+      const notFound = [
+        { ...VALIDATION_FAILED[0]!, passed: false, timedOut: false, exitCode: 127 },
+      ];
+      expect(checkErrored(makeState('VALIDATION', { validation: notFound }))).toBe(true);
+    });
+
+    it('checkErrored does NOT fire for an ordinary check failure (exit 1)', () => {
+      // VALIDATION_FAILED has exitCode 1, timedOut false → a genuine failure, not an execution error.
+      expect(checkErrored(makeState('VALIDATION', { validation: VALIDATION_FAILED }))).toBe(false);
+    });
+
+    it('checkErrored fires for a blocked outcome even with exit code 0 (subject drift)', () => {
+      // VERIFICATION_SUBJECT_CHANGED: the process succeeded but the reviewed
+      // subject changed during execution. This is a technical block, never a
+      // proven artifact failure.
+      const subjectChanged = [
+        { ...VALIDATION_FAILED[0]!, passed: false, outcome: 'blocked' as const, exitCode: 0 },
+      ];
+      expect(checkErrored(makeState('VALIDATION', { validation: subjectChanged }))).toBe(true);
+    });
+
+    it('implCheckErrored fires for a blocked post-implementation outcome with exit code 0', () => {
+      const subjectChanged = [
+        { ...VALIDATION_FAILED[0]!, passed: false, outcome: 'blocked' as const, exitCode: 0 },
+      ];
+      expect(
+        implCheckErrored(makeState('IMPL_VALIDATION', { implValidation: subjectChanged })),
+      ).toBe(true);
+    });
+
+    it('implCheckErrored treats an inconclusive assertion extraction as a technical block', () => {
+      const inconclusive = [
+        {
+          ...VALIDATION_FAILED[0]!,
+          passed: false,
+          outcome: 'inconclusive' as const,
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: {
+            status: 'inconclusive' as const,
+            attemptId: '00000000-0000-4000-8000-0000000000a9',
+            reasonCode: 'report_ambiguous' as const,
+            reason: 'report could not be bound unambiguously',
+          },
+        },
+      ];
+      expect(implCheckErrored(makeState('IMPL_VALIDATION', { implValidation: inconclusive }))).toBe(
+        true,
+      );
+    });
+
     it('implComplete fires when implementation is present', () => {
       expect(implComplete(makeState('IMPLEMENTATION', { implementation: IMPL_EVIDENCE }))).toBe(
         true,
@@ -81,7 +140,9 @@ describe('guards', () => {
     });
 
     it('reviewDone fires when report path is set', () => {
-      expect(reviewDone(makeState('REVIEW', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
+      expect(reviewDone(makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' }))).toBe(
+        true,
+      );
     });
 
     it('reviewDone is phase-agnostic and only checks the report slot', () => {
@@ -89,9 +150,9 @@ describe('guards', () => {
       expect(reviewDone(makeState('READY', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
     });
 
-    it('reviewDone does not fire when REVIEW phase has no report path (P8b)', () => {
-      expect(reviewDone(makeState('REVIEW', { reviewReportPath: null }))).toBe(false);
-      expect(reviewDone(makeState('REVIEW'))).toBe(false);
+    it('reviewDone does not fire when PEER_REVIEW phase has no report path (P8b)', () => {
+      expect(reviewDone(makeState('PEER_REVIEW', { reviewReportPath: null }))).toBe(false);
+      expect(reviewDone(makeState('PEER_REVIEW'))).toBe(false);
     });
 
     it('isConverged returns true on iteration limit', () => {
@@ -304,6 +365,7 @@ describe('guards', () => {
       const atMax = makeState('PLAN', {
         selfReview: {
           iteration: 3,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',
@@ -318,6 +380,7 @@ describe('guards', () => {
       const notAtMax = makeState('PLAN', {
         selfReview: {
           iteration: 2,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',
@@ -332,6 +395,7 @@ describe('guards', () => {
       const atMax = makeState('IMPL_REVIEW', {
         implReview: {
           iteration: 3,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',
@@ -351,6 +415,13 @@ describe('guards', () => {
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });
@@ -376,7 +447,21 @@ describe('guards', () => {
     it('checkFailed returns false when all executed checks passed but others are pending (#502)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: true,
+            detail: 'ok',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        ],
       });
       expect(checkFailed(state)).toBe(false);
     });
@@ -385,7 +470,21 @@ describe('guards', () => {
     it('partial check pass: allValidationsPassed === false AND checkFailed === false (#502)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: true,
+            detail: 'ok',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        ],
       });
       expect(allValidationsPassed(state)).toBe(false);
       expect(checkFailed(state)).toBe(false);
@@ -395,7 +494,22 @@ describe('guards', () => {
     it('checkFailed returns true when at least one executed check failed (#502 regression)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: false, detail: 'fail', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: false,
+            detail: 'fail',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'inconclusive' as const,
+            classificationReason: 'non-zero exit code',
+          },
+        ],
       });
       expect(checkFailed(state)).toBe(true);
     });
@@ -417,7 +531,7 @@ describe('guards', () => {
         'IMPLEMENTATION',
         'IMPL_REVIEW',
         'ARCHITECTURE',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       for (const phase of guardPhases) {
         expect(GUARDS.has(phase)).toBe(true);
@@ -431,7 +545,7 @@ describe('guards', () => {
       expect(GUARDS.has('ARCH_REVIEW')).toBe(false);
       expect(GUARDS.has('COMPLETE')).toBe(false);
       expect(GUARDS.has('ARCH_COMPLETE')).toBe(false);
-      expect(GUARDS.has('REVIEW_COMPLETE')).toBe(false);
+      expect(GUARDS.has('PEER_REVIEW_COMPLETE')).toBe(false);
     });
 
     it("ERROR guard is always first in each phase's guard list", () => {
@@ -449,18 +563,39 @@ describe('guards', () => {
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'test_quality',
             passed: true,
             detail: 'ok2',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'rollback_safety',
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });
@@ -476,12 +611,27 @@ describe('guards', () => {
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'rollback_safety',
             passed: false,
             detail: 'fail',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'inconclusive' as const,
+            classificationReason: 'non-zero exit code',
           },
         ],
       });
@@ -508,19 +658,26 @@ describe('guards', () => {
       ]);
     });
 
-    it('VALIDATION guards contain exactly ERROR, ALL_PASSED, CHECK_FAILED', () => {
+    it('VALIDATION guards contain exactly ERROR, CHECK_ERRORED, ALL_PASSED, CHECK_FAILED', () => {
       expect(GUARDS.get('VALIDATION')!.map((g) => g.event)).toEqual([
         'ERROR',
+        'CHECK_ERRORED',
         'ALL_PASSED',
         'CHECK_FAILED',
       ]);
     });
 
-    it('IMPLEMENTATION guards contain exactly ERROR, REDUCED_CEREMONY, and IMPL_COMPLETE', () => {
-      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual([
+    it('IMPLEMENTATION guards contain exactly ERROR and IMPL_COMPLETE', () => {
+      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual(['ERROR', 'IMPL_COMPLETE']);
+    });
+
+    it('IMPL_VALIDATION guards order reduction after technical blocks and before ALL_PASSED', () => {
+      expect(GUARDS.get('IMPL_VALIDATION')!.map((g) => g.event)).toEqual([
         'ERROR',
+        'CHECK_ERRORED',
         'REDUCED_CEREMONY',
-        'IMPL_COMPLETE',
+        'ALL_PASSED',
+        'CHECK_FAILED',
       ]);
     });
 
@@ -533,17 +690,17 @@ describe('guards', () => {
     });
 
     it('REVIEW guards contain exactly ERROR and REVIEW_DONE', () => {
-      expect(GUARDS.get('REVIEW')!.map((g) => g.event)).toEqual(['ERROR', 'REVIEW_DONE']);
+      expect(GUARDS.get('PEER_REVIEW')!.map((g) => g.event)).toEqual(['ERROR', 'PEER_REVIEW_DONE']);
     });
   });
 
   // ─── MUTATION KILL: implReviewPending ───────────────────────
   describe('MUTATION_KILL', () => {
-    it('reviewDone: false when phase is REVIEW but reportPath null (kills conditional→true)', () => {
-      expect(reviewDone(makeState('REVIEW', { reviewReportPath: null }))).toBe(false);
+    it('reviewDone: false when phase is PEER_REVIEW but reportPath null (kills conditional→true)', () => {
+      expect(reviewDone(makeState('PEER_REVIEW', { reviewReportPath: null }))).toBe(false);
     });
 
-    it('reviewDone: true outside REVIEW when reportPath is set (phase-agnostic predicate)', () => {
+    it('reviewDone: true outside PEER_REVIEW when reportPath is set (phase-agnostic predicate)', () => {
       expect(reviewDone(makeState('PLAN', { reviewReportPath: '/report.json' }))).toBe(true);
     });
 

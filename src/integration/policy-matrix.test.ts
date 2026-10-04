@@ -33,9 +33,15 @@ import {
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
 
 type Mode = 'solo' | 'team' | 'team-ci' | 'regulated';
-type CellResult = { allowed: boolean; code?: string; phase?: string; detail?: string };
+type CellResult = {
+  allowed: boolean;
+  code?: string | undefined;
+  phase?: string | undefined;
+  detail?: string | undefined;
+};
 
 const MODES: Mode[] = ['solo', 'team', 'team-ci', 'regulated'];
 
@@ -46,7 +52,17 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Automatic validation crosses VALIDATION → IMPLEMENTATION, which freezes
+    // the pre-mutation implementation base from the worktree HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 vi.mock('../adapters/actor', async (importOriginal) => {
@@ -116,7 +132,7 @@ function contextFor(mode: Mode): TestToolContext {
 }
 
 async function callOk(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   ctx: TestToolContext,
 ): Promise<Record<string, unknown>> {
@@ -130,7 +146,7 @@ async function callOk(
 }
 
 async function callResult(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   ctx: TestToolContext,
 ): Promise<CellResult> {
@@ -145,7 +161,7 @@ async function callResult(
 }
 
 function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   ctx: TestToolContext,
 ): void {
@@ -176,13 +192,20 @@ async function hydrateMode(mode: Mode, ctx: TestToolContext): Promise<void> {
 async function drivePastPlan(mode: Mode, ctx: TestToolContext): Promise<string> {
   await hydrateMode(mode, ctx);
   await callOk(ticket, { text: `${mode} matrix task`, source: 'user' }, ctx);
-  await callOk(plan, { planText: '## Plan\nTest matrix policy behavior.' }, ctx);
-  for (let i = 0; i < 5; i++) {
-    const phase = await currentPhase(ctx);
-    if (phase === 'PLAN_REVIEW' || phase === 'VALIDATION') return phase;
+  await callOk(
+    plan,
+    { planText: '## Plan\nTest matrix policy behavior.', targetPaths: ['docs/test.md'] },
+    ctx,
+  );
+  let phase = await currentPhase(ctx);
+  for (let i = 0; i < 5 && phase === 'PLAN'; i++) {
     await callOk(plan, { reviewVerdict: 'accept' }, ctx);
+    phase = await currentPhase(ctx);
   }
-  return currentPhase(ctx);
+  // Human-gated modes stop at PLAN_REVIEW. Auto-approving modes (solo) cross
+  // PLAN_REVIEW → VALIDATION and the automatic validation runner advances to
+  // IMPLEMENTATION when the active checks pass.
+  return phase;
 }
 
 async function scenarioSameActorApproval(mode: Mode): Promise<CellResult> {
@@ -267,11 +290,25 @@ async function scenarioMissingValidationEvidence(mode: Mode): Promise<CellResult
     });
     await callOk(decision, { verdict: 'approve', rationale: 'Move to validation' }, ctx);
   }
-  // In the new model: calling run_check with an unavailable kind → CHECK_KIND_NOT_AVAILABLE
+  // Approval enters VALIDATION and the runtime runs the active checks
+  // automatically. Reset the projection to the pending wait state so the
+  // explicit run_check surface resolves the unavailable kind under the
+  // validation-phase guard: an unavailable kind → CHECK_KIND_NOT_AVAILABLE.
+  const dir = await sessionDir(ctx);
+  const state = await readState(dir);
+  const patched = {
+    ...state!,
+    phase: 'VALIDATION' as const,
+    validation: [],
+    validationAttempts: [],
+    implementation: null,
+  };
+  delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+  await writeState(dir, patched);
   return callResult(run_check, { kind: 'security' }, ctx);
 }
 
-async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
+async function scenarioInvalidAuditStrictness(mode: Mode): Promise<CellResult> {
   const ctx = contextFor(mode);
   await hydrateMode(mode, ctx);
   const dir = await sessionDir(ctx);
@@ -279,19 +316,23 @@ async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
     id: crypto.randomUUID(),
     sessionId: ctx.sessionID,
     phase: 'READY',
-    event: 'legacy_event',
-    timestamp: new Date().toISOString(),
+    event: 'non_v3_event',
+    occurredAt: new Date().toISOString(),
     actor: 'legacy',
     detail: { source: 'policy-matrix' },
   };
   await fs.appendFile(path.join(dir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
-  const { events } = await readAuditTrail(dir);
-  const result = verifyChain(events as unknown as Array<Record<string, unknown>>, {
-    strict: mode === 'regulated',
-  });
+  // Read the raw trail (the epoch reader itself rejects non-v3 records with
+  // AUDIT_ENVELOPE_INVALID) and verify the chain over raw lines.
+  const raw = await fs.readFile(path.join(dir, 'audit.jsonl'), 'utf-8');
+  const events = raw
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const result = verifyChain(events);
   return {
     allowed: result.valid,
-    code: result.valid ? undefined : result.reason,
+    code: result.valid ? undefined : (result.reason ?? undefined),
     phase: await currentPhase(ctx),
   };
 }
@@ -305,9 +346,11 @@ const MATRIX: Array<{
     scenario: 'same_actor_approval',
     run: scenarioSameActorApproval,
     expected: {
-      solo: { allowed: true, phase: 'VALIDATION' },
-      team: { allowed: true, phase: 'VALIDATION' },
-      'team-ci': { allowed: true, phase: 'VALIDATION' },
+      // Approval enters VALIDATION and automatic validation advances to
+      // IMPLEMENTATION when the active checks pass.
+      solo: { allowed: true, phase: 'IMPLEMENTATION' },
+      team: { allowed: true, phase: 'IMPLEMENTATION' },
+      'team-ci': { allowed: true, phase: 'IMPLEMENTATION' },
       regulated: { allowed: false, code: 'FOUR_EYES_ACTOR_MATCH' },
     },
   },
@@ -315,19 +358,19 @@ const MATRIX: Array<{
     scenario: 'different_actor_approval',
     run: scenarioDifferentActorApproval,
     expected: {
-      solo: { allowed: true, phase: 'VALIDATION' },
-      team: { allowed: true, phase: 'VALIDATION' },
-      'team-ci': { allowed: true, phase: 'VALIDATION' },
-      regulated: { allowed: true, phase: 'VALIDATION' },
+      solo: { allowed: true, phase: 'IMPLEMENTATION' },
+      team: { allowed: true, phase: 'IMPLEMENTATION' },
+      'team-ci': { allowed: true, phase: 'IMPLEMENTATION' },
+      regulated: { allowed: true, phase: 'IMPLEMENTATION' },
     },
   },
   {
     scenario: 'low_assurance_approval',
     run: scenarioLowAssuranceApproval,
     expected: {
-      solo: { allowed: true, phase: 'VALIDATION' },
-      team: { allowed: true, phase: 'VALIDATION' },
-      'team-ci': { allowed: true, phase: 'VALIDATION' },
+      solo: { allowed: true, phase: 'IMPLEMENTATION' },
+      team: { allowed: true, phase: 'IMPLEMENTATION' },
+      'team-ci': { allowed: true, phase: 'IMPLEMENTATION' },
       regulated: { allowed: false, code: 'ACTOR_ASSURANCE_INSUFFICIENT' },
     },
   },
@@ -342,74 +385,18 @@ const MATRIX: Array<{
     },
   },
   {
-    scenario: 'legacy_audit_strictness',
-    run: scenarioLegacyAuditStrictness,
+    scenario: 'invalid_audit_strictness',
+    run: scenarioInvalidAuditStrictness,
     expected: {
-      solo: { allowed: true, phase: 'READY' },
-      team: { allowed: true, phase: 'READY' },
-      'team-ci': { allowed: true, phase: 'READY' },
-      regulated: { allowed: false, code: 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE' },
+      solo: { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
+      team: { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
+      'team-ci': { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
+      regulated: { allowed: false, code: 'AUDIT_ENVELOPE_INVALID', phase: 'READY' },
     },
   },
 ];
 
 describe('policy mode matrix', () => {
-  it('freezes reviewOutputPolicy defaults per mode', async () => {
-    const expected: Record<Mode, 'structured_required' | 'text_compat_allowed'> = {
-      solo: 'text_compat_allowed',
-      team: 'text_compat_allowed',
-      'team-ci': 'structured_required',
-      regulated: 'structured_required',
-    };
-
-    for (const mode of MODES) {
-      const ctx = contextFor(mode);
-      await hydrateMode(mode, ctx);
-      const state = await readState(await sessionDir(ctx));
-      expect(state?.policySnapshot.reviewOutputPolicy).toBe(expected[mode]);
-    }
-  });
-
-  it('normalizes missing reviewOutputPolicy mode-consistently for solo', async () => {
-    const { normalizePolicySnapshotWithMeta } =
-      await import('../config/policy-snapshot-normalize.js');
-    const result = normalizePolicySnapshotWithMeta({
-      mode: 'solo',
-      hash: 'test-hash',
-      resolvedAt: '2026-01-01T00:00:00.000Z',
-      requestedMode: 'solo',
-      effectiveGateBehavior: 'auto_approve',
-      requireHumanGates: false,
-      maxSelfReviewIterations: 2,
-      maxImplReviewIterations: 1,
-      allowSelfApproval: true,
-      audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
-      actorClassification: {},
-    });
-    expect(result.snapshot.reviewOutputPolicy).toBe('text_compat_allowed');
-    expect(result.normalized).toBe(true);
-  });
-
-  it('normalizes missing reviewOutputPolicy mode-consistently for team-ci', async () => {
-    const { normalizePolicySnapshotWithMeta } =
-      await import('../config/policy-snapshot-normalize.js');
-    const result = normalizePolicySnapshotWithMeta({
-      mode: 'team-ci',
-      hash: 'test-hash',
-      resolvedAt: '2026-01-01T00:00:00.000Z',
-      requestedMode: 'team-ci',
-      effectiveGateBehavior: 'human_gated',
-      requireHumanGates: true,
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 3,
-      allowSelfApproval: true,
-      audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
-      actorClassification: {},
-    });
-    expect(result.snapshot.reviewOutputPolicy).toBe('structured_required');
-    expect(result.normalized).toBe(true);
-  });
-
   for (const testCase of MATRIX) {
     for (const mode of MODES) {
       it(`${testCase.scenario} / ${mode}`, async () => {

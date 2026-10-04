@@ -49,23 +49,58 @@ describe('documentation/release-process', () => {
   });
 
   describe('CORNER — docs require PR before tag', () => {
-    it('README documents PR-first and tag-after-merge release ordering', () => {
+    it('contributing guidance owns the PR-first, tag-after-merge ordering', () => {
+      const contributing = readRepoFile('CONTRIBUTING.md');
+
+      expect(contributing).toContain(
+        'Create and push a signed annotated tag: `git tag -s vX.Y.Z -m "FlowGuard vX.Y.Z" && git push origin vX.Y.Z`',
+      );
+      expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
+      expect(contributing).toContain('`npm version` for FlowGuard releases');
+      expect(contributing).toContain(
+        'If a release tag is pushed before the release commit is merged',
+      );
+      expect(contributing).toContain('Do not overwrite or force-push the tag');
+    });
+
+    it('README delegates the release process instead of duplicating the checklist', () => {
       const readme = readRepoFile('README.md');
 
-      expect(readme).toContain('Releases are PR-first because `main` is protected');
-      expect(readme).toContain('Do not use `npm version` for');
-      expect(readme).toContain('squash-merge');
-      expect(readme).toContain('git tag vX.Y.Z && git push origin vX.Y.Z');
+      expect(readme).toContain('Releases are\nPR-first');
+      expect(readme).toContain('docs/release-policy.md');
+      expect(readme).not.toContain('npm run release:assert-main-tag');
     });
 
     it('release policy binds v-tags to origin/main commits', () => {
       const policy = readRepoFile('docs/release-policy.md');
 
       expect(policy).toContain(
-        'A `v*` tag must point at a commit already contained in `origin/main`',
+        'A `v*` tag\nmust point at a commit already contained in `origin/main`',
       );
-      expect(policy).toContain('Do not use `npm version` for FlowGuard releases');
-      expect(policy).toContain('Do not overwrite or force-push the tag');
+      expect(policy).toContain('recovery procedure for a tag published before merge');
+    });
+  });
+
+  describe('EDGE — release artifacts stay checksum-bound', () => {
+    it('verifies the runtime test artifact before installing it', () => {
+      const workflow = readRepoFile('.github/workflows/release.yml');
+      const runtimeJob = workflow.slice(
+        workflow.indexOf('  verify-runtime:'),
+        workflow.indexOf('  release-smoke:'),
+      );
+
+      expect(runtimeJob).toContain('sha256sum --check checksums.sha256');
+      expect(runtimeJob.indexOf('sha256sum --check checksums.sha256')).toBeLessThan(
+        runtimeJob.indexOf('npm install "$GITHUB_WORKSPACE/flowguard-core-"*.tgz'),
+      );
+    });
+
+    it('documents prerelease state incompatibility without a migration claim', () => {
+      const upgrade = readRepoFile('docs/upgrade-rollback.md');
+
+      expect(upgrade).toContain('No forward-compatibility guarantee.');
+      expect(upgrade).toContain('policy-digest.v4');
+      expect(upgrade).toContain('Do not edit persisted state to bridge that');
     });
   });
 
@@ -75,7 +110,21 @@ describe('documentation/release-process', () => {
 
       expect(contributing).toContain('release/vX.Y.Z');
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
-      expect(contributing).toContain('Create and push the `vX.Y.Z` tag only after');
+      expect(contributing).toContain(
+        'Create and push a signed annotated tag: `git tag -s vX.Y.Z -m "FlowGuard vX.Y.Z" && git push origin vX.Y.Z`',
+      );
+      expect(contributing).toContain('gpg.format ssh');
+      expect(contributing).toContain('SemVer prerelease suffix');
+    });
+
+    it('wires the tag preflight and prerelease publication into the release workflow', () => {
+      const workflow = readRepoFile('.github/workflows/release.yml');
+
+      expect(workflow).toContain('node scripts/verify-release-tag.js "$GITHUB_REF_NAME"');
+      expect(workflow).toContain(
+        'needs: [preflight, verify, release-smoke, verify-runtime, mutation]',
+      );
+      expect(workflow).toContain('--prerelease');
     });
   });
 });

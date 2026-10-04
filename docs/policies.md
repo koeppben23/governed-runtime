@@ -117,6 +117,28 @@ configuration unit. To configure stronger actor identity assurance independent o
 mode, use `policy.minimumActorAssuranceForApproval` and
 `policy.identityProviderMode` (see "Configuring Stronger Assurance" below).
 
+## Review Challenge Policy
+
+New sessions freeze `challenge-policy.v1` into their policy snapshot. Each review
+obligation derives coverage from the central effective task class:
+`max(runtime minimum, ticket-declared floor, optional escalation)`. TRIVIAL requires
+0 challenges, STANDARD 1, and HIGH-RISK 2. A ticket that declares HIGH-RISK
+therefore keeps its challenge requirement even if its paths look doc-only. Plan and
+architecture obligations require `design_challenge` evidence, implementation
+obligations require `implementation_challenge`, and peer review obligations
+require `content_challenge` (whose coverage is derived from the reviewed diff, not
+the session's task-class claim). The obligation stores the resolved count, kind,
+and policy version before reviewer invocation. The required challenges must be
+substantively distinct and evidence-bound; a design/content challenge whose
+falsification is `contradicted` cannot accompany acceptance.
+
+Absent-`challengePolicy` handling is mode-dependent and fail-closed: a `solo`
+snapshot without the field stays legacy-tolerant (enforcement disabled), while
+`team`, `team-ci`, and `regulated` fail closed to the canonical
+`challenge-policy.v1` matrix so a legacy or stripped snapshot in an enforced mode
+cannot silently disable challenge enforcement. A present-but-malformed policy
+always normalizes to the canonical matrix.
+
 ## Central Policy Minimum
 
 FlowGuard supports an explicit central policy source via `FLOWGUARD_POLICY_PATH`.
@@ -136,39 +158,30 @@ Resolution contract:
 
 ## Policy Comparison
 
-| Setting                                | Solo      | Team     | Team-CI             | Regulated       |
-| -------------------------------------- | --------- | -------- | ------------------- | --------------- |
-| Human gates                            | 0         | 3        | 0 (CI only; else 3) | 3               |
-| Four-eyes required                     | No        | No       | No                  | **Yes**         |
-| Self-approval                          | Allowed   | Allowed  | Allowed             | **Not Allowed** |
-| Plan review iterations (max)           | 2         | 3        | 3                   | 3               |
-| Impl review iterations (max)           | 1         | 3        | 3                   | 3               |
-| Reviewer invocation                    | preferred | required | required            | required        |
-| Decision actor classification          | system    | human    | system              | human           |
-| Audit trail (transitions + tool calls) | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
-| Audit chain hash                       | No        | **Yes**  | **Yes**             | **Yes**         |
-| Subagent review                        | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
-| Strict review enforcement              | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
+| Setting                                | Solo    | Team    | Team-CI             | Regulated       |
+| -------------------------------------- | ------- | ------- | ------------------- | --------------- |
+| Human gates                            | 0       | 3       | 0 (CI only; else 3) | 3               |
+| Four-eyes required                     | No      | No      | No                  | **Yes**         |
+| Self-approval                          | Allowed | Allowed | Allowed             | **Not Allowed** |
+| Plan review iterations (max)           | 2       | 3       | 3                   | 3               |
+| Impl review iterations (max)           | 1       | 3       | 3                   | 3               |
+| Decision actor classification          | system  | human   | system              | human           |
+| Audit trail (transitions + tool calls) | **Yes** | **Yes** | **Yes**             | **Yes**         |
+| Audit chain hash                       | No      | **Yes** | **Yes**             | **Yes**         |
+| Subagent review                        | **Yes** | **Yes** | **Yes**             | **Yes**         |
+| Strict review enforcement              | **Yes** | **Yes** | **Yes**             | **Yes**         |
 
 **Human gates list (where applicable):** `PLAN_REVIEW`, `EVIDENCE_REVIEW`,
 `ARCH_REVIEW`. `IMPL_REVIEW` is an independent-review gate (subagent-driven), not
 a human gate.
-
-**Reviewer invocation** (`reviewInvocationPolicy`): `required` =
-`host_task_required` — the `flowguard-reviewer` subagent MUST be invoked via the
-host Task tool. `preferred` = `host_task_preferred` — the host Task subagent is
-preferred, but obligation-bound reviewer evidence may also be supplied via
-SDK/manual attestation. Either way self-review is never accepted as evidence.
 
 **Decision actor classification** (`actorClassification.flowguard_decision`):
 how a `/review-decision` is labelled in the audit trail — `human` in team/regulated
 (an explicit human decision is expected), `system` in solo/team-ci (gates
 auto-approve, so the decision is machine-attributed).
 
-**Subagent review:** All four modes ship with `selfReview.subagentEnabled = true`,
-`selfReview.fallbackToSelf = false`, `selfReview.strictEnforcement = true` as the
-runtime-normalized defaults. Self-review is never accepted as review evidence in
-the current release; the orchestrator deterministically invokes the
+**Subagent review:** Independent subagent review is a mandatory runtime invariant,
+not a policy setting. Self-review is never accepted as review evidence; the orchestrator invokes the
 `flowguard-reviewer` subagent for `/plan`, `/architecture`, and `/implement` and
 fails closed on missing or mismatched evidence (see `docs/independent-review.md`).
 
@@ -232,6 +245,8 @@ Config (identityProviderMode, minimumActorAssuranceForApproval)
 ```
 
 The enforcement always reads from the persisted **policy snapshot** — not from reconstructed policy mode defaults. This guarantees that the exact policy active at session creation governs all decisions.
+
+**Executable parity.** Every executable `FlowGuardPolicy` field is frozen into `PolicySnapshot` and reconstructed by `resolvePolicyFromSnapshot()`. The snapshot may additionally contain resolution/provenance fields (source, reasons, central-policy metadata); those are never executable policy. Optional executable fields preserve absence as their frozen semantic: the snapshot omits `identityProvider` when it is not configured and reconstruction returns `undefined`. Nested executable policy shapes (`AuditPolicy`, `TimestampAssurancePolicy`, `ChallengePolicy`, `ReviewBudget`, `DiscoveryHealthPolicy`, `ValidationEvidencePolicy`) are authored once as Zod schemas in `src/state/evidence-policy.ts`; `src/config/policy-types.ts` re-exports their inferred types as a deep-readonly, exact-optional projection instead of re-declaring them, so the public policy API remains immutable. Enforcement is structural: compile-time top-level `keyof` coverage (`src/architecture/__tests__/policy-snapshot-parity.test.ts`) plus a strict round-trip contract over all four canonical presets and a maximally-deviating legal policy, reconstructed from the schema-parsed snapshot (`src/config/policy-snapshot.test.ts`).
 
 ## Discovery Health Enforcement
 

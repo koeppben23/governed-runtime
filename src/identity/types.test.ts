@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { JwkKeySchema, SigningKeySchema, type JwkKey } from './types.js';
+import { JwkKeySchema, SigningKeySchema, type JwkKey } from '../shared/policy-idp-config.js';
 
 // ─── Valid public JWKs ─────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ describe('JwkKeySchema', () => {
     it('accepts valid public RSA JWK', () => {
       const result = JwkKeySchema.safeParse(validRsaJwk);
       expect(result.success).toBe(true);
-      if (result.success) {
+      if (result.success && result.data.jwk.kty === 'RSA') {
         expect(result.data.jwk.kty).toBe('RSA');
         expect(result.data.jwk.n).toBe('modulus-base64url-string');
         expect(result.data.jwk.e).toBe('AQAB');
@@ -54,7 +54,7 @@ describe('JwkKeySchema', () => {
     it('accepts valid public EC JWK', () => {
       const result = JwkKeySchema.safeParse(validEcJwk);
       expect(result.success).toBe(true);
-      if (result.success) {
+      if (result.success && result.data.jwk.kty === 'EC') {
         expect(result.data.jwk.kty).toBe('EC');
         expect(result.data.jwk.crv).toBe('P-256');
       }

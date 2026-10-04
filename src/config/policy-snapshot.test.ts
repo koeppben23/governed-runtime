@@ -18,18 +18,18 @@ import {
 } from './policy-snapshot.js';
 import {
   SOLO_POLICY,
+  TEAM_POLICY,
+  TEAM_CI_POLICY,
   REGULATED_POLICY,
   type PolicyResolution,
   type PolicyDegradedReason,
   type HydratePolicyResolution,
 } from './policy.js';
-import type { PolicySnapshot } from '../state/evidence.js';
-import {
-  normalizeSelfReviewConfig,
-  modeConsistentDefaults,
-  normalizeDiscoveryHealthField,
-  normalizeValidationEvidenceField,
-} from './policy-snapshot-normalize.js';
+import { PolicySnapshotSchema, type PolicySnapshot } from '../state/evidence.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../state/evidence-identifiers.js';
+import { PolicyConfigurationError } from './policy-errors.js';
+import type { FlowGuardPolicy } from './policy-types.js';
 
 export const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
 export const NOW = '2026-04-27T10:00:00.000Z';
@@ -68,22 +68,38 @@ describe('createPolicySnapshot', () => {
   it('creates a PolicySnapshot from SoloPolicy', () => {
     const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
     expect(snapshot.mode).toBe('solo');
-    expect(snapshot.hash).toBe(
-      sha256(JSON.stringify(SOLO_POLICY, Object.keys(SOLO_POLICY).sort())),
-    );
+    expect(snapshot.hash).toBe(sha256(canonicalJsonStringify(SOLO_POLICY)));
+    expect(snapshot.hashVersion).toBe(POLICY_DIGEST_VERSION);
     expect(snapshot.resolvedAt).toBe(NOW);
     expect(snapshot.requireHumanGates).toBe(SOLO_POLICY.requireHumanGates);
-    expect(snapshot.maxSelfReviewIterations).toBe(SOLO_POLICY.maxSelfReviewIterations);
-    expect(snapshot.maxImplReviewIterations).toBe(SOLO_POLICY.maxImplReviewIterations);
-    expect(snapshot.allowSelfApproval).toBe(SOLO_POLICY.allowSelfApproval);
-    expect(snapshot.requireVerifiedActorsForApproval).toBe(
-      SOLO_POLICY.requireVerifiedActorsForApproval,
+    expect(snapshot.reviewBudget).toEqual(SOLO_POLICY.reviewBudget);
+    expect(snapshot.maxIncoherentReviewerCaptureRetries).toBe(
+      SOLO_POLICY.maxIncoherentReviewerCaptureRetries,
     );
+    expect(snapshot.allowSelfApproval).toBe(SOLO_POLICY.allowSelfApproval);
     expect(snapshot.identityProviderMode).toBe(SOLO_POLICY.identityProviderMode);
-    expect(snapshot.reviewOutputPolicy).toBe(SOLO_POLICY.reviewOutputPolicy);
-    expect(snapshot.reviewInvocationPolicy).toBe(SOLO_POLICY.reviewInvocationPolicy);
     expect(snapshot.effectiveGateBehavior).toBe('auto_approve');
   });
+
+  it.each(['', 'abc', 'UNKNOWN_LEGACY', 'A'.repeat(64)])(
+    'rejects an invalid policy digest %p with structured diagnostics',
+    (invalidDigest) => {
+      let thrown: unknown;
+      try {
+        createPolicySnapshot(SOLO_POLICY, NOW, () => invalidDigest);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(PolicyConfigurationError);
+      const error = thrown as PolicyConfigurationError;
+      expect(error.code).toBe('INVALID_POLICY_DIGEST');
+      expect(error.details).toEqual({
+        received: invalidDigest,
+        pattern: POLICY_DIGEST_PATTERN.source,
+      });
+    },
+  );
 
   it('includes resolution metadata in the snapshot', () => {
     const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256, {
@@ -112,6 +128,73 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.audit.timestampAssurance.enabled).toBe(
       SOLO_POLICY.audit.timestampAssurance.enabled,
     );
+  });
+
+  it('preserves configured optional timestamp-assurance fields', () => {
+    const policy = {
+      ...SOLO_POLICY,
+      audit: {
+        ...SOLO_POLICY.audit,
+        timestampAssurance: {
+          ...SOLO_POLICY.audit.timestampAssurance,
+          tsaUrl: 'https://tsa.example.test',
+          trustAnchors: ['anchor-a'],
+          ntpServers: ['ntp.example.test'],
+        },
+      },
+    };
+
+    expect(createPolicySnapshot(policy, NOW, sha256).audit.timestampAssurance).toMatchObject({
+      tsaUrl: 'https://tsa.example.test',
+      trustAnchors: ['anchor-a'],
+      ntpServers: ['ntp.example.test'],
+    });
+  });
+
+  it('preserves an explicit resolution instead of policy defaults', () => {
+    const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256, {
+      requestedMode: 'team',
+      effectiveGateBehavior: 'human_gated',
+    });
+
+    expect(snapshot.requestedMode).toBe('team');
+    expect(snapshot.effectiveGateBehavior).toBe('human_gated');
+  });
+
+  it('binds governance fields into the policy digest', () => {
+    const baseline = createPolicySnapshot(SOLO_POLICY, NOW, sha256).hash;
+    const variants: readonly FlowGuardPolicy[] = [
+      {
+        ...SOLO_POLICY,
+        audit: { ...SOLO_POLICY.audit, enableChainHash: !SOLO_POLICY.audit.enableChainHash },
+      },
+      {
+        ...SOLO_POLICY,
+        audit: { ...SOLO_POLICY.audit, emitToolCalls: !SOLO_POLICY.audit.emitToolCalls },
+      },
+      {
+        ...SOLO_POLICY,
+        validationEvidence: {
+          ...SOLO_POLICY.validationEvidence,
+          allowNoCommands: !SOLO_POLICY.validationEvidence.allowNoCommands,
+        },
+      },
+      {
+        ...SOLO_POLICY,
+        minimumActorAssuranceForApproval: 'claim_validated' as const,
+      },
+      {
+        ...SOLO_POLICY,
+        challengePolicy: {
+          ...SOLO_POLICY.challengePolicy,
+          counts: { ...SOLO_POLICY.challengePolicy.counts, STANDARD: 2 },
+        } as unknown as FlowGuardPolicy['challengePolicy'],
+      },
+    ];
+
+    for (const policy of variants) {
+      expect(createPolicySnapshot(policy, NOW, sha256).hash).not.toBe(baseline);
+    }
   });
 });
 
@@ -167,18 +250,145 @@ describe('resolvePolicyFromSnapshot', () => {
       const reconstructed = resolvePolicyFromSnapshot(snapshot);
       expect(reconstructed.mode).toBe('regulated');
       expect(reconstructed.requireHumanGates).toBe(true);
-      expect(reconstructed.reviewOutputPolicy).toBe('structured_required');
+    });
+
+    it('round-trips the versioned challenge policy', () => {
+      const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
+      expect(snapshot.challengePolicy).toEqual(SOLO_POLICY.challengePolicy);
+      expect(resolvePolicyFromSnapshot(snapshot).challengePolicy).toEqual(
+        SOLO_POLICY.challengePolicy,
+      );
+    });
+
+    it('preserves an explicit discoveryHealth onDegraded=allow through the runtime rebuild', () => {
+      const policy = {
+        ...REGULATED_POLICY,
+        discoveryHealth: {
+          ...REGULATED_POLICY.discoveryHealth,
+          onDegraded: 'allow' as const,
+        },
+      };
+      const snapshot = createPolicySnapshot(policy, NOW, sha256);
+      expect(snapshot.discoveryHealth.onDegraded).toBe('allow');
+      expect(resolvePolicyFromSnapshot(snapshot).discoveryHealth).toEqual({
+        ...REGULATED_POLICY.discoveryHealth,
+        onDegraded: 'allow',
+      });
+    });
+
+    it('preserves an explicit discoveryHealth onDrift=allow through the runtime rebuild', () => {
+      const policy = {
+        ...REGULATED_POLICY,
+        discoveryHealth: {
+          ...REGULATED_POLICY.discoveryHealth,
+          onDrift: 'allow' as const,
+        },
+      };
+      const snapshot = createPolicySnapshot(policy, NOW, sha256);
+      expect(snapshot.discoveryHealth.onDrift).toBe('allow');
+      expect(resolvePolicyFromSnapshot(snapshot).discoveryHealth).toEqual({
+        ...REGULATED_POLICY.discoveryHealth,
+        onDrift: 'allow',
+      });
     });
   });
+});
 
-  describe('LEGACY — missing fields', () => {
-    it('reconstructs policy with safe defaults for legacy fields', () => {
-      const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
-      const reconstructed = resolvePolicyFromSnapshot({
-        ...snapshot,
-        identityProviderMode: undefined as unknown as 'optional' | 'required',
-      });
-      expect(reconstructed.identityProviderMode).toBe('optional');
-    });
+// ─── Executable policy parity contract ────────────────────────────────────────
+
+/**
+ * Maximally-deviating LEGAL policy: every freely variable value differs from
+ * the regulated preset; fixed contract literals (`challengePolicy.version` and
+ * its counts) intentionally keep their canonical values. No casts.
+ */
+function maxDeviationPolicy(): FlowGuardPolicy {
+  const base = REGULATED_POLICY;
+  return {
+    mode: 'team-ci',
+    requireHumanGates: false,
+    reviewBudget: { plan: 2, architecture: 3, implementation: 4 },
+    maxIncoherentReviewerCaptureRetries: 5,
+    maxReviewerAttempts: 4,
+    allowSelfApproval: true,
+    challengePolicy: { ...base.challengePolicy },
+    audit: {
+      emitTransitions: false,
+      emitToolCalls: false,
+      enableChainHash: false,
+      timestampAssurance: {
+        enabled: true,
+        mode: 'tsa_critical',
+        strict: true,
+        criticalEvents: ['decision', 'lifecycle'],
+        tsaUrl: 'https://tsa.example.test',
+        trustAnchors: ['-----BEGIN CERTIFICATE-----parity-----END CERTIFICATE-----'],
+        ntpServers: ['ntp.example.test'],
+        ntpDriftThresholdMs: 1234,
+        tsaTimeoutMs: 4321,
+      },
+    },
+    actorClassification: { run_check: 'agent', review_decision: 'human' },
+    minimumActorAssuranceForApproval: 'idp_verified',
+    identityProvider: {
+      mode: 'static',
+      issuer: 'https://issuer.example.test',
+      audience: ['flowguard'],
+      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      signingKeys: [
+        {
+          kind: 'jwk',
+          kid: 'parity-kid',
+          alg: 'RS256',
+          jwk: { kty: 'RSA', n: 'cGFyaXR5', e: 'AQAB' },
+        },
+      ],
+    },
+    identityProviderMode: 'required',
+    enforceRiskClassification: true,
+    allowReducedCeremony: true,
+    discoveryHealth: { enforcement: 'advisory', onDegraded: 'block', onDrift: 'warn' },
+    validationEvidence: { enforcement: 'advisory', allowNoCommands: true },
+  };
+}
+
+describe('executable policy snapshot parity', () => {
+  const PRESETS: readonly FlowGuardPolicy[] = [
+    SOLO_POLICY,
+    TEAM_POLICY,
+    TEAM_CI_POLICY,
+    REGULATED_POLICY,
+  ];
+
+  it('HAPPY: every canonical preset round-trips strictly through the schema-parsed snapshot', () => {
+    for (const policy of PRESETS) {
+      // Parse the writer output through the snapshot schema authority and
+      // reconstruct the PARSED value: a field the writer spreads in but the
+      // schema drops must not survive via the raw builder object.
+      const snapshot = PolicySnapshotSchema.parse(createPolicySnapshot(policy, NOW, sha256));
+
+      const reconstructed = resolvePolicyFromSnapshot(snapshot);
+      expect(reconstructed).toStrictEqual(policy);
+      expect(Object.keys(reconstructed).sort()).toEqual(Object.keys(policy).sort());
+    }
+  });
+
+  it('HAPPY: a maximally-deviating legal policy round-trips strictly through the schema', () => {
+    const policy = maxDeviationPolicy();
+    const snapshot = PolicySnapshotSchema.parse(createPolicySnapshot(policy, NOW, sha256));
+
+    const reconstructed = resolvePolicyFromSnapshot(snapshot);
+    expect(reconstructed).toStrictEqual(policy);
+    expect(Object.keys(reconstructed).sort()).toEqual(Object.keys(policy).sort());
+  });
+
+  it('CORNER: same-typed numeric fields survive without cross-field bleed', () => {
+    const policy = maxDeviationPolicy();
+    const snapshot = createPolicySnapshot(policy, NOW, sha256);
+
+    expect(snapshot.reviewBudget).toStrictEqual(policy.reviewBudget);
+    expect(snapshot.maxIncoherentReviewerCaptureRetries).toBe(5);
+    expect(snapshot.maxReviewerAttempts).toBe(4);
+    expect(snapshot.audit.timestampAssurance.ntpDriftThresholdMs).toBe(1234);
+    expect(snapshot.audit.timestampAssurance.tsaTimeoutMs).toBe(4321);
   });
 });

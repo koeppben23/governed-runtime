@@ -39,7 +39,7 @@ Relevance levels:
 | HR        | Human Resources                      | Not Applicable | —                                                                                          |
 | AM        | Asset Management                     | Partial        | Release artifact checksums, SBOM, narrow supply chain                                      |
 | PS        | Physical Security                    | Not Applicable | —                                                                                          |
-| RB        | Operational Procedures               | **Direct**     | 14-phase governed workflow, evidence gates, audit trail                                    |
+| RB        | Operational Procedures               | **Direct**     | Governed workflow with 18 phases, evidence gates, audit trail                              |
 | IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                              |
 | CRY       | Cryptography and Key Management      | Partial        | SHA-256 hash chain, checksums on release artifacts                                         |
 | KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                                     |
@@ -66,10 +66,10 @@ The RB domain covers change management, operational documentation, logging, and 
 
 **Change Management:**
 
-- 14 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Review (READY → REVIEW → REVIEW_COMPLETE)
+- 18 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Peer review (READY → PEER_REVIEW → PEER_REVIEW_COMPLETE)
 - Phase gates that require evidence before progression — no phase can be skipped
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
-- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` returns to TICKET (ticket flow) or READY (architecture flow)
+- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` terminates the workflow at `REJECTED`
 - Validation checks defined by active profile must all pass before implementation begins
 - Every phase transition is governed by a pure, deterministic state machine with an immutable transition table
 
@@ -185,14 +185,14 @@ The COM domain covers compliance documentation, evidence retention, and audit su
 - Zod-validated evidence schemas (defined across `src/state/evidence-*.ts`) ensure structural correctness
 - Compliance summary generation: automated compliance assessment from session audit trail (see `src/audit/summary.ts`)
 - Session archives: `.tar.gz` with structured manifest, file inventory, per-file SHA-256 digests, and content digest
-- Archive verification (`verifyArchive()` in `src/adapters/workspace/archive.ts`) validates manifest presence, file completeness, digest integrity, audit chain, archive checksum sidecar, TSA timestamps (when enabled), and per-artifact evidence binding. The enum of finding codes is in `src/archive/types.ts`.
+- Archive verification (`verifyArchive()` in `src/adapters/workspace/archive-verify-chain.ts`) validates manifest presence, file completeness, digest integrity, audit chain, archive checksum sidecar, TSA timestamps (when enabled), and per-artifact evidence binding. The enum of finding codes is in `src/archive/types.ts`.
 
 **Audit Support:**
 
 - Complete session history: ticket, plan versions, validation results, implementation evidence, review decisions
-- Hash-chained audit trail provides non-repudiation (each event cryptographically linked to predecessor)
-- Policy snapshot proves which rules governed each session
-- Read-only compliance report generation (`/review`) available at any phase without mutating state
+- Hash-chained audit trail is tamper-evident (each event cryptographically links to its predecessor); non-repudiation requires an external trust anchor.
+- Policy snapshot records which rules governed each session; its digest supports integrity comparison against a trusted reference.
+- Read-only peer review report generation (`/review`) available at any phase without mutating state
 
 #### Organization Must Provide
 
@@ -239,7 +239,7 @@ FlowGuard provides release artifact integrity verification and minimal supply ch
 
 FlowGuard uses cryptographic operations for integrity verification, not for data encryption or key management.
 
-- **FlowGuard provides:** SHA-256 hash-chained audit trail (tamper-evident), SHA-256 digests on archive files and manifests, SHA-256 checksums on release artifacts, SHA-256 policy snapshot hashing for non-repudiation.
+- **FlowGuard provides:** SHA-256 hash-chained audit trail (tamper-evident), SHA-256 digests on archive files and manifests, SHA-256 checksums on release artifacts, and canonical SHA-256 policy snapshot digests for integrity comparison against trusted references.
 - **Organization must provide:** Encryption policies, key management infrastructure, certificate management, cryptographic algorithm selection policies.
 
 ### PI — Portability and Interoperability
@@ -314,5 +314,5 @@ The following FlowGuard artifacts provide verifiable evidence for the mappings a
 ---
 
 _Reference: BSI C5:2020 — Cloud Computing Compliance Criteria Catalogue_
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-15_

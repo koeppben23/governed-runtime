@@ -2,129 +2,85 @@
  * @module config/policy-types
  * @description Core policy types and interfaces.
  *
+ * Executable policy shapes (`AuditPolicy`, `TimestampAssurancePolicy`,
+ * `ChallengePolicy`, `ReviewBudget`, `DiscoveryHealthPolicy`,
+ * `ValidationEvidencePolicy`) have exactly one authority: the Zod schemas in
+ * `state/evidence-policy.ts`. This module re-exports their inferred types for
+ * config-layer consumers and derives the mode-vocabulary unions from them.
+ * The re-exported types are the deep-readonly, exact-optional projection of
+ * the schemas — the public policy API stays immutable.
+ *
  * Extracted from policy.ts.
  *
  * @version v1
  */
 
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type { ActorAssurance } from '../shared/actor-assurance.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import type { PolicyMode, CentralMinimumMode } from '../state/policy-mode.js';
+import {
+  CHALLENGE_POLICY_VERSION,
+  type AuditPolicy,
+  type ChallengePolicy,
+  type DiscoveryHealthPolicy,
+  type ReviewBudget,
+  type TimestampAssurancePolicy,
+  type ValidationEvidencePolicy,
+} from '../state/evidence-policy.js';
 
-// ─── Timestamp Assurance Policy ──────────────────────────────────────────────
+export type {
+  AuditPolicy,
+  ChallengePolicy,
+  DiscoveryHealthPolicy,
+  ReviewBudget,
+  TimestampAssurancePolicy,
+  ValidationEvidencePolicy,
+};
+export { CHALLENGE_POLICY_VERSION };
 
-/** Timestamp assurance evidence configuration for audit events. */
-export interface TimestampAssurancePolicy {
-  /** Enable timestamp assurance evidence (default: false). */
-  readonly enabled: boolean;
-  /** Assurance mode: local_only, ntp_check, or tsa_critical. */
-  readonly mode: 'local_only' | 'ntp_check' | 'tsa_critical';
-  /** Strict mode — TSA failure on critical events → session ERROR.
-   *  Slice 1 (#269): always false. Inert. Will activate only in follow-up
-   *  ticket when real TSA verifier (pkijs) is available. */
-  readonly strict: boolean;
-  /** Event kinds that require TSA evidence (e.g., decision, lifecycle). */
-  readonly criticalEvents: ReadonlyArray<string>;
-  /** TSA endpoint URL (required in tsa_critical mode). */
-  readonly tsaUrl?: string;
-  /** PEM-encodierte TSA trust anchor certificates (for Slice 2 verification). */
-  readonly trustAnchors?: ReadonlyArray<string>;
-  /** NTP server hostnames (default: pool.ntp.org). */
-  readonly ntpServers?: ReadonlyArray<string>;
-  /** Max clock drift before warning (ms, default: 30000). */
-  readonly ntpDriftThresholdMs: number;
-  /** TSA request timeout (ms, default: 10000). */
-  readonly tsaTimeoutMs: number;
-}
+export type ChallengeKind = 'design_challenge' | 'implementation_challenge' | 'content_challenge';
 
-// ─── Audit Policy ─────────────────────────────────────────────────────────────
+/** Approved V1 matrix, frozen into every new session policy snapshot. */
+export const CHALLENGE_POLICY_V1: ChallengePolicy = {
+  version: CHALLENGE_POLICY_VERSION,
+  counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+};
 
-/** Controls which audit events are emitted and how. */
-export interface AuditPolicy {
-  /** Emit per-transition audit events (one per state change). */
-  readonly emitTransitions: boolean;
-  /** Emit per-tool-call audit events. */
-  readonly emitToolCalls: boolean;
-  /** Enable SHA-256 hash chain for tamper detection. */
-  readonly enableChainHash: boolean;
-  /** Timestamp assurance evidence configuration. */
-  readonly timestampAssurance: TimestampAssurancePolicy;
+export function challengeKindForObligation(obligationType: string): ChallengeKind {
+  if (obligationType === 'implement') return 'implementation_challenge';
+  if (obligationType === 'review') return 'content_challenge';
+  return 'design_challenge';
 }
 
 /**
- * Mandatory independent review configuration.
- * Plan and implementation reviews must be performed by the flowguard-reviewer
- * subagent with mandate-bound evidence. Self-review fallback is not permitted.
+ * Canonical default for `maxReviewerAttempts`: exactly ONE additional
+ * reviewer attempt (dispatch re-arm) per obligation.
  *
- * NOTE: These fields are retained for compatibility with existing snapshots.
- * In the current governance model, only the mandatory strict configuration
- * (subagentEnabled=true, fallbackToSelf=false, strictEnforcement=true) is valid.
- * Weaker values are normalized to the mandatory default at snapshot load time.
- * @see policy-snapshot.ts normalizeSelfReviewConfig
+ * initial attempt (does not count) → spent/interrupted dispatch → re-arm #1
+ * re-arm #1 → spent dispatch → budget exhausted
+ *
+ * The value is frozen onto the obligation at creation; presets and the
+ * config override both route through this canonical default.
  */
-export interface SelfReviewConfig {
-  /** Legacy/compatibility field. Mandatory independent review is always enabled. */
-  readonly subagentEnabled: boolean;
-  /** Legacy/compatibility field. Self-review fallback is always prohibited. */
-  readonly fallbackToSelf: boolean;
-  /** Legacy/compatibility field. Strict enforcement is always required. */
-  readonly strictEnforcement: boolean;
-}
-
-/** Controls which reviewer output modes may satisfy governance evidence. */
-export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
-
-/** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */
-export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-
-/** Mandatory independent review configuration for FlowGuardPolicy. */
-export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
-  subagentEnabled: true,
-  fallbackToSelf: false,
-  strictEnforcement: true,
-};
+export const DEFAULT_MAX_REVIEWER_ATTEMPTS = 1;
 
 // ─── Discovery Health Policy ──────────────────────────────────────────────────
 
-/** Master switch for policy-gated Discovery health enforcement. */
-export type DiscoveryHealthEnforcement = 'off' | 'advisory' | 'required';
-
 /**
- * Deterministic action for available-but-degraded or stale Discovery.
- * Degraded = failed/partial collectors, budget exhaustion, read failures, or stale ageWarning.
+ * Mode vocabularies derived from the `DiscoveryHealthPolicySchema` authority.
+ * See `state/evidence-policy.ts` for the enforcement/action semantics.
  */
-export type DiscoveryHealthDegradedAction = 'allow' | 'warn' | 'block';
-
-/** Deterministic action for non-clean Discovery drift verdicts. */
-export type DiscoveryHealthDriftAction = 'allow' | 'warn' | 'block';
-
-/**
- * Policy-gated Discovery health enforcement (#399).
- *
- * Two-axis governance:
- * - enforcement: master switch. 'off' = legacy advisory-only behavior (no new
- *   workflow blocks). 'advisory' = surface warnings/NOT_VERIFIED but never block.
- *   'required' = unavailable (missing/corrupt/schema_invalid/read_failed) ALWAYS
- *   blocks; degraded/drift follow onDegraded/onDrift.
- * - onDegraded: action when Discovery is available but degraded or stale.
- * - onDrift: action when the cached drift verdict is not 'clean' (drifted,
- *   missing_discovery, unavailable, timeout, not_checked — all fail-closed-eligible).
- *
- * Policy NEVER fabricates Discovery evidence; it only governs whether a workflow
- * may proceed with degraded/unavailable evidence. DiscoveryResult remains SSOT.
- */
-export interface DiscoveryHealthPolicy {
-  readonly enforcement: DiscoveryHealthEnforcement;
-  readonly onDegraded: DiscoveryHealthDegradedAction;
-  readonly onDrift: DiscoveryHealthDriftAction;
-}
+export type DiscoveryHealthEnforcement = DiscoveryHealthPolicy['enforcement'];
+export type DiscoveryHealthDegradedAction = DiscoveryHealthPolicy['onDegraded'];
+export type DiscoveryHealthDriftAction = DiscoveryHealthPolicy['onDrift'];
 
 /**
  * Mode-keyed default Discovery health policy.
  *
  * regulated/team-ci fail closed (required); solo/team stay advisory-off so
  * existing default behavior introduces no new workflow blocks. This is the
- * single source of truth for the default, reused by presets, snapshot
- * normalization, and persisted-snapshot backward-compat resolution.
+ * single source of truth for the default, reused by presets and snapshot
+ * normalization.
  */
 export function defaultDiscoveryHealthForMode(mode: PolicyMode): DiscoveryHealthPolicy {
   if (mode === 'regulated' || mode === 'team-ci') {
@@ -136,46 +92,17 @@ export function defaultDiscoveryHealthForMode(mode: PolicyMode): DiscoveryHealth
 // ─── Validation Evidence Policy ───────────────────────────────────────────────
 
 /**
- * Master switch for policy-gated validation-evidence enforcement (#400).
- *
- * - 'off'      : legacy behavior. Empty activeChecks vacuously passes VALIDATION.
- * - 'advisory' : never blocks, but surfaces a NOT_VERIFIED warning when VALIDATION
- *                would pass with no verification evidence.
- * - 'required' : VALIDATION must NOT pass vacuously. Empty activeChecks blocks
- *                fail-closed unless an explicit policy-backed exception is set.
+ * Mode vocabulary derived from the `ValidationEvidencePolicySchema` authority.
+ * See `state/evidence-policy.ts` for the enforcement semantics.
  */
-export type ValidationEvidenceEnforcement = 'off' | 'advisory' | 'required';
-
-/**
- * Policy-gated validation-evidence enforcement (#400).
- *
- * Prevents HIGH-RISK/regulated sessions from passing VALIDATION vacuously when no
- * Discovery-derived verification commands are available. Under 'required',
- * progression past VALIDATION demands at least one applicable active check OR an
- * explicit policy-backed exception (`allowNoCommands`).
- *
- * This policy NEVER fabricates verification evidence and NEVER permits arbitrary
- * fallback commands; command resolution stays candidate-only (verificationCandidates
- * remains the source of truth). It only governs whether a workflow may proceed
- * without runtime verification evidence.
- */
-export interface ValidationEvidencePolicy {
-  readonly enforcement: ValidationEvidenceEnforcement;
-  /**
-   * Explicit policy-backed exception: when true, a session with genuinely no
-   * repo-native verification commands may still pass VALIDATION under 'required'.
-   * This is the ONLY sanctioned opt-out; it is recorded in the policy snapshot.
-   */
-  readonly allowNoCommands: boolean;
-}
+export type ValidationEvidenceEnforcement = ValidationEvidencePolicy['enforcement'];
 
 /**
  * Mode-keyed default validation-evidence policy.
  *
  * regulated/team-ci fail closed ('required'); solo/team stay 'off' so existing
  * low-risk default behavior introduces no new workflow blocks. Single source of
- * truth for the default, reused by presets, snapshot normalization, and
- * persisted-snapshot backward-compat resolution.
+ * truth for the default, reused by presets and snapshot normalization.
  */
 export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEvidencePolicy {
   if (mode === 'regulated' || mode === 'team-ci') {
@@ -191,7 +118,7 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
  *
  * Determines:
  * - Whether human gates require explicit human decisions
- * - Max iterations for independent plan and implementation review loops
+ * - Review budgets for plan, architecture, and implementation loops
  * - Whether the session initiator can approve their own work (four-eyes)
  * - Which audit events are emitted and how
  * - How actors are classified in the audit trail
@@ -207,11 +134,18 @@ export interface FlowGuardPolicy {
    */
   readonly requireHumanGates: boolean;
 
-  /** Max independent review iterations in PLAN phase before force-convergence. */
-  readonly maxSelfReviewIterations: number;
+  /** Review-loop iteration budgets before force-convergence. */
+  readonly reviewBudget: ReviewBudget;
 
-  /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
-  readonly maxImplReviewIterations: number;
+  /** Max fresh reviewer attempts after an F12-incoherent review result. */
+  readonly maxIncoherentReviewerCaptureRetries: number;
+
+  /**
+   * Obligation-level reviewer-attempt budget: how many NEW reviewer attempts
+   * (semantic re-reviews) may be minted for one obligation. Transport failures
+   * retry within the same attempt and do not consume this budget.
+   */
+  readonly maxReviewerAttempts: number;
 
   /**
    * Whether the session initiator can approve at User Gates.
@@ -221,14 +155,8 @@ export interface FlowGuardPolicy {
    */
   readonly allowSelfApproval: boolean;
 
-  /** Independent review configuration. */
-  readonly selfReview: SelfReviewConfig;
-
-  /** Whether lower-assurance text-compatible review output may satisfy evidence. */
-  readonly reviewOutputPolicy: ReviewOutputPolicy;
-
-  /** How reviewer invocation must occur: host-visible Task tool, SDK, or policy-gated. */
-  readonly reviewInvocationPolicy: ReviewInvocationPolicy;
+  /** Versioned challenge coverage policy frozen into new session snapshots. */
+  readonly challengePolicy: ChallengePolicy;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;
@@ -243,29 +171,16 @@ export interface FlowGuardPolicy {
   /**
    * P34: Minimum required actor assurance for regulated approval decisions.
    *
-   * - 'best_effort'     → any actor may approve (default, backward-compat with P33 v0)
+   * - 'best_effort'     → any actor may approve (default)
    * - 'claim_validated' → only actors with validated local claims may approve
    * - 'idp_verified'    → only IdP-verified actors may approve (future P35 enterprise target)
    *
    * Applies at User Gates in regulated mode. Actors below the threshold are blocked
    * with reason ACTOR_ASSURANCE_INSUFFICIENT.
    *
-   * Migration from P33 v0:
-   *   requireVerifiedActorsForApproval: true  → minimumActorAssuranceForApproval: 'claim_validated'
-   *   requireVerifiedActorsForApproval: false → minimumActorAssuranceForApproval: 'best_effort'
-   *
    * P34 design doc: docs/actor-assurance-architecture.md
    */
-  readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
-
-  /**
-   * P33 (deprecated): Whether regulated approvals require verified actor identity.
-   * Ignored if minimumActorAssuranceForApproval is set.
-   * Translated to minimumActorAssuranceForApproval at resolution time:
-   *   true  → 'claim_validated'
-   *   false → 'best_effort'
-   */
-  readonly requireVerifiedActorsForApproval: boolean;
+  readonly minimumActorAssuranceForApproval: ActorAssurance;
 
   /**
    * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
@@ -292,7 +207,6 @@ export interface FlowGuardPolicy {
    * Initial Issue #271 slice keeps all presets false; text justification alone
    * must not bypass the gate.
    */
-  readonly allowRiskDowngradeOverride: boolean;
 
   /**
    * Permit reduced delivery ceremony only after runtime evidence proves a task is

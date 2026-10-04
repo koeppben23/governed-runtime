@@ -41,7 +41,8 @@ function restoreReadFile(): void {
 }
 import { DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import { globalConfigPath, repoConfigPath, PersistenceError } from '../adapters/persistence.js';
-import { readConfig } from '../adapters/persistence-config.js';
+import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
+import { runWithAdapterLogger, type AdapterLogger } from '../logging/adapter-logger.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -105,15 +106,21 @@ describe('readConfig', () => {
   it('returns DEFAULT_CONFIG when no config file exists', async () => {
     const config = await readConfig(tmpDir);
     expect(config).toEqual(DEFAULT_CONFIG);
+    expect(config.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+    expect(config.archive.redaction.allowRawExport).toBe(false);
+    expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
 
   it('reads and parses a valid config file', async () => {
     const custom: FlowGuardConfig = {
+      ...DEFAULT_CONFIG,
       schemaVersion: 'v1',
-      logging: { level: 'debug' },
+      logging: { ...DEFAULT_CONFIG.logging, level: 'debug' },
       policy: { defaultMode: 'regulated' },
       profile: { defaultId: 'typescript' },
-      archive: { redaction: { mode: 'basic', includeRaw: false } },
+      archive: {
+        redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 500 },
+      },
     };
     await writeRawConfig(tmpDir, JSON.stringify(custom));
     const config = await readConfig(tmpDir);
@@ -135,6 +142,9 @@ describe('readConfig', () => {
     // policy and profile should have defaults
     expect(config.policy).toEqual({});
     expect(config.profile).toEqual({});
+    expect(config.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+    expect(config.archive.redaction.allowRawExport).toBe(false);
+    expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
 
   // ── BAD ────────────────────────────────────────────────────────────────
@@ -298,19 +308,25 @@ describe('readConfig — precedence', () => {
   }
 
   const REPO_CUSTOM: FlowGuardConfig = {
+    ...DEFAULT_CONFIG,
     schemaVersion: 'v1',
-    logging: { level: 'debug' },
+    logging: { ...DEFAULT_CONFIG.logging, level: 'debug' },
     policy: { defaultMode: 'regulated' },
     profile: {},
-    archive: { redaction: { mode: 'basic', includeRaw: false } },
+    archive: {
+      redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 10_000 },
+    },
   };
 
   const GLOBAL_CUSTOM: FlowGuardConfig = {
+    ...DEFAULT_CONFIG,
     schemaVersion: 'v1',
-    logging: { level: 'warn' },
+    logging: { ...DEFAULT_CONFIG.logging, level: 'warn' },
     policy: {},
     profile: { defaultId: 'global-profile' },
-    archive: { redaction: { mode: 'basic', includeRaw: false } },
+    archive: {
+      redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 10_000 },
+    },
   };
 
   // ── HAPPY ──────────────────────────────────────────────────
@@ -425,6 +441,25 @@ describe('readConfig — precedence', () => {
     expect(config.profile.defaultId).toBeUndefined();
   });
 
+  it('repo glyph profile wins over the global glyph profile', async () => {
+    await writeRawConfig(
+      worktree,
+      JSON.stringify({
+        schemaVersion: 'v1',
+        presentation: { opencode: { glyphProfile: 'ascii' } },
+      }),
+    );
+    await writeGlobalConfig(
+      JSON.stringify({
+        schemaVersion: 'v1',
+        presentation: { opencode: { glyphProfile: 'unicode' } },
+      }),
+    );
+
+    const config = await readConfig(worktree);
+    expect(config.presentation.opencode.glyphProfile).toBe('ascii');
+  });
+
   // ── EDGE ───────────────────────────────────────────────────
 
   it('returned config is a deep clone (mutation safe)', async () => {
@@ -449,5 +484,132 @@ describe('readConfig — precedence', () => {
     const config2 = await readConfig(worktree);
     expect(config2.logging.level).toBe('warn');
     expect(config2).not.toEqual(DEFAULT_CONFIG);
+  });
+});
+
+// =============================================================================
+// readConfig / writeConfig — error and warning contracts
+// =============================================================================
+
+describe('config persistence boundaries', () => {
+  let worktree: string;
+  let globalCfgDir: string;
+  let restoreEnv: () => void;
+
+  beforeEach(async () => {
+    worktree = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-config-boundary-repo-'));
+    globalCfgDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-config-boundary-global-'));
+    restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: globalCfgDir });
+  });
+
+  afterEach(async () => {
+    restoreEnv();
+    restoreReadFile();
+    await fs.rm(worktree, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(globalCfgDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  function captureLogger(): {
+    log: AdapterLogger;
+    warnings: Array<{
+      service: string;
+      message: string;
+      extra?: Record<string, unknown> | undefined;
+    }>;
+  } {
+    const warnings: Array<{
+      service: string;
+      message: string;
+      extra?: Record<string, unknown> | undefined;
+    }> = [];
+    const log: AdapterLogger = {
+      info: () => {},
+      warn: (service, message, extra) => warnings.push({ service, message, extra }),
+      error: () => {},
+    };
+    return { log, warnings };
+  }
+
+  it('maps a non-ENOENT repo read failure to READ_FAILED', async () => {
+    vi.mocked(fs.readFile).mockImplementation((...args: unknown[]) => {
+      const [filePathStr] = args;
+      if (typeof filePathStr === 'string' && filePathStr.includes(worktree)) {
+        const err = new Error('permission denied') as NodeJS.ErrnoException;
+        err.code = 'EACCES';
+        return Promise.reject(err);
+      }
+      const actual = (globalThis as Record<string, unknown>).__fsActualCFG as typeof fsActual;
+      return actual.readFile(...(args as Parameters<typeof actual.readFile>));
+    });
+
+    const error = await readConfig(worktree).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PersistenceError);
+    expect((error as PersistenceError).code).toBe('READ_FAILED');
+    expect((error as Error).message).toContain('Failed to read repo config');
+  });
+
+  it('warns with the repo path when the repo config is absent and falls through', async () => {
+    const { log, warnings } = captureLogger();
+
+    const config = await runWithAdapterLogger(log, () => readConfig(worktree));
+
+    expect(config).toEqual(DEFAULT_CONFIG);
+    const warning = warnings.find((entry) =>
+      entry.message.includes('Repo config not found, falling through to global'),
+    );
+    expect(warning).toBeDefined();
+    expect(warning!.service).toBe('persistence-config');
+    expect(warning!.extra).toEqual({ repoPath: repoConfigPath(worktree) });
+  });
+
+  it('maps invalid global JSON to PARSE_FAILED', async () => {
+    await fs.writeFile(path.join(globalCfgDir, 'flowguard.json'), 'not json {{{', 'utf-8');
+
+    const error = await readConfig().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PersistenceError);
+    expect((error as PersistenceError).code).toBe('PARSE_FAILED');
+    expect((error as Error).message).toContain('Global config file is not valid JSON');
+  });
+
+  it('warns with the global path when the optional global config is absent', async () => {
+    const { log, warnings } = captureLogger();
+
+    const config = await runWithAdapterLogger(log, () => readConfig());
+
+    expect(config).toEqual(DEFAULT_CONFIG);
+    const warning = warnings.find((entry) =>
+      entry.message.includes('Optional global config not found; using global defaults'),
+    );
+    expect(warning).toBeDefined();
+    expect(warning!.extra).toEqual({ globalConfigPath: globalConfigPath() });
+  });
+
+  it('refuses to persist a schema-invalid repo config', async () => {
+    const invalid = { schemaVersion: 'v1', logging: { level: 'bogus' } } as never;
+
+    const error = await writeRepoConfig(worktree, invalid).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PersistenceError);
+    expect((error as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+    expect((error as Error).message).toContain('Config failed schema validation');
+  });
+
+  it('writes the validated config to the global path and round-trips it', async () => {
+    await writeGlobalConfig({
+      ...DEFAULT_CONFIG,
+      schemaVersion: 'v1',
+      logging: { ...DEFAULT_CONFIG.logging, level: 'warn' },
+    });
+
+    const exists = await fs
+      .access(path.join(globalCfgDir, 'flowguard.json'))
+      .then(() => true)
+      .catch(() => false);
+    expect(exists).toBe(true);
+
+    const config = await readConfig();
+    expect(config.logging.level).toBe('warn');
   });
 });

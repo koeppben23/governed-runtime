@@ -31,7 +31,7 @@ interface Logger {
 
 interface ResolvePluginSessionPolicyOpts {
   sessDir: string | null;
-  configDefaultMode?: PolicyMode;
+  configDefaultMode?: PolicyMode | undefined;
   log?: Logger;
 }
 
@@ -66,7 +66,9 @@ async function checkStateFileExists(
 }
 
 function makeFallbackPolicy(configDefaultMode?: PolicyMode) {
-  const mode = resolveRuntimePolicyMode({ configDefaultMode });
+  const mode = resolveRuntimePolicyMode(
+    configDefaultMode !== undefined ? { configDefaultMode } : {},
+  );
   return { policy: resolvePolicyWithContext(mode, detectCiContext()).policy };
 }
 
@@ -86,7 +88,7 @@ export async function resolvePluginSessionPolicy(
   const state = await readState(sessDir);
   if (!state?.policySnapshot) {
     const resolution = resolvePolicyWithContext(
-      resolveRuntimePolicyMode({ configDefaultMode }),
+      resolveRuntimePolicyMode(configDefaultMode !== undefined ? { configDefaultMode } : {}),
       detectCiContext(),
     );
     log?.debug('policy', 'resolved default policy', {

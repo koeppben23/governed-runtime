@@ -8,13 +8,24 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { Readable } from 'node:stream';
+import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
+import { EventEmitter } from 'node:events';
+import { request } from 'node:https';
 import {
   executeReview,
   validateReviewUrl,
   validateResolvedReviewUrlTarget,
   parseIPv4,
 } from './review.js';
+import {
+  fetchUrlContent,
+  MAX_REVIEW_URL_RESPONSE_BYTES,
+  resolveReviewTarget,
+} from './review-url.js';
 import { makeState, makeProgressedState } from '../fixtures.js';
+
+vi.mock('node:https', () => ({ request: vi.fn() }));
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -174,6 +185,61 @@ describe('BUG-13: validateReviewUrl — SSRF mitigation', () => {
 });
 
 describe('Issue #310: resolved URL targets are validated before fetch', () => {
+  function response(body: Uint8Array, headers: Record<string, string> = {}) {
+    return Object.assign(Readable.from([body]), {
+      statusCode: 200,
+      statusMessage: 'OK',
+      headers,
+    });
+  }
+
+  it.each([
+    ['malformed UTF-8 bytes', new Uint8Array([0xc3, 0x28]), 'text/plain; charset=utf-8'],
+    [
+      'unsupported charset',
+      new TextEncoder().encode('review material'),
+      'text/plain; charset=iso-8859-1',
+    ],
+    [
+      'malformed charset declaration',
+      new TextEncoder().encode('review material'),
+      'text/plain; charset=',
+    ],
+  ])('blocks URL materialization with %s', async (_case, body, contentType) => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(body, { 'content-type': contentType }) as never,
+    );
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_URL_CONTENT_ENCODING_INVALID' });
+  });
+
+  it('reports invalid UTF-8 response bytes distinctly', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(new Uint8Array([0xc3, 0x28])) as never,
+    );
+
+    expect(result).toMatchObject({
+      code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
+      reason:
+        'URL review content could not be materialized as strict UTF-8: response bytes are not valid UTF-8.',
+    });
+  });
+
+  it('blocks a compressed response whose decoded material exceeds the limit', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        response(gzipSync(Buffer.alloc(MAX_REVIEW_URL_RESPONSE_BYTES + 1, 'x')), {
+          'content-encoding': 'gzip',
+        }) as never,
+    );
+    expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
+  });
+
   it('accepts hostname DNS results when every resolved address is public', async () => {
     const result = await validateResolvedReviewUrlTarget(
       'https://example.com/spec.md',
@@ -184,6 +250,91 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
     );
 
     expect(result.valid).toBe(true);
+  });
+
+  it('uses a public IPv6 literal as the pinned target without DNS lookup', async () => {
+    const dnsLookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }] as const);
+
+    await expect(
+      resolveReviewTarget('https://[2606:2800:220:1:248:1893:25c8:1946]:8443/spec', dnsLookup),
+    ).resolves.toEqual({
+      hostname: '2606:2800:220:1:248:1893:25c8:1946',
+      port: 8443,
+      address: '2606:2800:220:1:248:1893:25c8:1946',
+      family: 6,
+    });
+    expect(dnsLookup).not.toHaveBeenCalled();
+  });
+
+  it('uses a public IPv4 literal as the pinned target without DNS lookup', async () => {
+    const dnsLookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }] as const);
+
+    await expect(resolveReviewTarget('https://8.8.8.8:8443/spec', dnsLookup)).resolves.toEqual({
+      hostname: '8.8.8.8',
+      port: 8443,
+      address: '8.8.8.8',
+      family: 4,
+    });
+    expect(dnsLookup).not.toHaveBeenCalled();
+  });
+
+  it('binds the fetch transport to the selected validated DNS address', async () => {
+    let targetAddress: string | undefined;
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [
+        { address: '93.184.216.34', family: 4 },
+        { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 },
+      ],
+      async (_url, target) => {
+        targetAddress = target.address;
+        return response(new TextEncoder().encode('review material')) as never;
+      },
+    );
+
+    expect(result).toEqual({ content: 'review material' });
+    expect(targetAddress).toBe('93.184.216.34');
+  });
+
+  it('disables Node auto-family selection while the default transport pins DNS', async () => {
+    let options: Record<string, unknown> | undefined;
+    vi.mocked(request).mockImplementationOnce((_url, requestOptions) => {
+      options = requestOptions as Record<string, unknown>;
+      const fakeRequest = new EventEmitter() as EventEmitter & {
+        setTimeout: () => void;
+        destroy: () => void;
+        end: () => void;
+      };
+      fakeRequest.setTimeout = () => undefined;
+      fakeRequest.destroy = () => undefined;
+      fakeRequest.end = () =>
+        queueMicrotask(() => fakeRequest.emit('error', new Error('test transport')));
+      return fakeRequest as never;
+    });
+
+    const result = await fetchUrlContent('https://example.com/spec.md', async () => [
+      { address: '93.184.216.34', family: 4 },
+    ]);
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
+    expect(options).toMatchObject({
+      agent: false,
+      autoSelectFamily: false,
+      family: 4,
+      headers: { 'accept-encoding': 'gzip, deflate, br' },
+      servername: 'example.com',
+    });
+    const lookup = options?.lookup;
+    expect(lookup).toEqual(expect.any(Function));
+    const callback = vi.fn();
+    (
+      lookup as (
+        hostname: string,
+        options: unknown,
+        callback: (error: NodeJS.ErrnoException | null, address: string, family: 4 | 6) => void,
+      ) => void
+    )('example.com', { all: false }, callback);
+    expect(callback).toHaveBeenCalledWith(null, '93.184.216.34', 4);
   });
 
   it('blocks mixed DNS results when any resolved address is private', async () => {
@@ -231,6 +382,18 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
     expect((result as { reason: string }).reason).toContain('malformed IPv6');
   });
 
+  it('blocks malformed IPv4 DNS answers fail-closed', async () => {
+    const result = await validateResolvedReviewUrlTarget(
+      'https://example.com/spec.md',
+      async () => [{ address: '999.1.1.1', family: 4 }],
+    );
+
+    expect(result).toEqual({
+      valid: false,
+      reason: 'DNS lookup for "example.com" returned malformed IPv4 address "999.1.1.1"',
+    });
+  });
+
   it.each([
     ['127.0.0.1', 4, 'private/reserved IPv4'],
     ['10.0.0.1', 4, 'private/reserved IPv4'],
@@ -243,6 +406,8 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
     ['fc00::1', 6, 'private/reserved IPv6'],
     ['fe80::1', 6, 'private/reserved IPv6'],
     ['::ffff:127.0.0.1', 6, 'private/reserved IPv6'],
+    ['0:0:0:0:0:ffff:7f00:1', 6, 'private/reserved IPv6'],
+    ['::127.0.0.1', 6, 'private/reserved IPv6'],
   ] as const)('blocks private/reserved DNS answer %s', async (address, family, reason) => {
     const result = await validateResolvedReviewUrlTarget(
       'https://example.com/spec.md',
@@ -282,11 +447,11 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
         state,
         NOW,
         { dnsLookup: async () => [{ address: '127.0.0.1', family: 4 }] },
-        { inputOrigin: 'url', url: 'https://metadata.example/spec.md' },
+        { inputOrigin: 'external_reference', url: 'https://metadata.example/spec.md' },
       );
 
       expect('kind' in result).toBe(true);
-      if ('kind' in result) {
+      if ('kind' in result && result.kind === 'blocked') {
         expect(result.kind).toBe('blocked');
         expect(result.code).toBe('COMMAND_BLOCKED');
         expect(result.reason).toContain('private/reserved IPv4');
@@ -295,6 +460,258 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it('blocks an identity response whose body exceeds the decoded limit', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(Buffer.alloc(MAX_REVIEW_URL_RESPONSE_BYTES + 1, 'x')) as never,
+    );
+    expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
+  });
+
+  it('accepts an identity response exactly at the decoded byte limit', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(Buffer.alloc(MAX_REVIEW_URL_RESPONSE_BYTES, 'x')) as never,
+    );
+
+    expect(result).toMatchObject({ content: expect.any(String) });
+    if ('content' in result) expect(result.content).toHaveLength(MAX_REVIEW_URL_RESPONSE_BYTES);
+  });
+
+  it('preserves every chunk in a successful response body', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        Object.assign(Readable.from([Buffer.from('first '), Buffer.from('second')]), {
+          statusCode: 200,
+          statusMessage: 'OK',
+          headers: {},
+        }) as never,
+    );
+
+    expect(result).toEqual({ content: 'first second' });
+  });
+
+  it.each([199, 300])('blocks non-2xx HTTP status %i', async (statusCode) => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        Object.assign(Readable.from([]), {
+          statusCode,
+          statusMessage: 'test',
+          headers: {},
+        }) as never,
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'COMMAND_BLOCKED' });
+  });
+
+  it('reports the exact failed status when no status message is provided', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => Object.assign(Readable.from([]), { statusCode: 404, headers: {} }) as never,
+    );
+
+    expect(result).toMatchObject({
+      kind: 'blocked',
+      code: 'COMMAND_BLOCKED',
+      reason: '/review blocked: Failed to fetch https://example.com/spec.md: HTTP 404 ',
+    });
+  });
+
+  it('reports the declared and absent charset in encoding failures', async () => {
+    const dnsLookup = async () => [{ address: '93.184.216.34', family: 4 }] as const;
+    const latin1 = await fetchUrlContent(
+      'https://example.com/spec.md',
+      dnsLookup,
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-type': 'text/plain; charset=latin1',
+        }) as never,
+    );
+    const malformed = await fetchUrlContent(
+      'https://example.com/spec.md',
+      dnsLookup,
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-type': 'text/plain; charset=',
+        }) as never,
+    );
+
+    expect(latin1).toMatchObject({
+      reason:
+        'URL review content could not be materialized as strict UTF-8: declared charset is not strict UTF-8 (text/plain; charset=latin1).',
+    });
+    expect(malformed).toMatchObject({
+      reason:
+        'URL review content could not be materialized as strict UTF-8: declared charset is not strict UTF-8 (text/plain; charset=).',
+    });
+  });
+
+  it.each([
+    'text/plain; charset=utf-8; charset=utf-8',
+    'text/plain; charset=utf-8; charset=iso-8859-1',
+  ])('blocks multiple charset declarations: %s', async (contentType) => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-type': contentType,
+        }) as never,
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_URL_CONTENT_ENCODING_INVALID' });
+  });
+
+  it('blocks unsupported content encodings', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-encoding': 'compress',
+        }) as never,
+    );
+
+    expect(result).toMatchObject({
+      kind: 'blocked',
+      code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
+      reason:
+        'URL review content could not be materialized as strict UTF-8: unsupported Content-Encoding: compress.',
+    });
+  });
+
+  it.each([
+    ['deflate', deflateSync(Buffer.from('deflated review material'))],
+    ['br', brotliCompressSync(Buffer.from('brotli review material'))],
+  ])('decodes %s response content', async (contentEncoding, body) => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(body, { 'content-encoding': contentEncoding }) as never,
+    );
+
+    expect(result).toEqual({
+      content: `${contentEncoding === 'br' ? 'brotli' : 'deflated'} review material`,
+    });
+  });
+
+  it('treats an empty Content-Encoding as identity', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(Buffer.from('review material'), { 'content-encoding': '' }) as never,
+    );
+
+    expect(result).toEqual({ content: 'review material' });
+  });
+
+  it('accepts one quoted UTF-8 charset parameter and array-valued headers', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-type': ['text/plain; charset="UTF-8"'] as never,
+        }) as never,
+    );
+
+    expect(result).toEqual({ content: 'review material' });
+  });
+
+  it('ignores non-charset parameters while accepting a strict UTF-8 charset', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () =>
+        response(new TextEncoder().encode('review material'), {
+          'content-type': 'text/plain; format=flowed; charset=utf-8',
+        }) as never,
+    );
+
+    expect(result).toEqual({ content: 'review material' });
+  });
+
+  it('blocks oversized responses with the configured limit in the diagnostic', async () => {
+    const result = await fetchUrlContent(
+      'https://example.com/spec.md',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+      async () => response(Buffer.alloc(MAX_REVIEW_URL_RESPONSE_BYTES + 1, 'x')) as never,
+    );
+
+    expect(result).toMatchObject({
+      reason: `/review blocked: Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
+    });
+  });
+
+  it('fails the default transport when the TLS peer differs from the pinned address', async () => {
+    let destroyedWith: Error | undefined;
+    vi.mocked(request).mockImplementationOnce(() => {
+      const fakeRequest = new EventEmitter() as EventEmitter & {
+        setTimeout: () => void;
+        destroy: (error: Error) => void;
+        end: () => void;
+      };
+      const socket = new EventEmitter() as EventEmitter & { remoteAddress: string };
+      socket.remoteAddress = '93.184.216.35';
+      fakeRequest.setTimeout = () => undefined;
+      fakeRequest.destroy = (error) => {
+        destroyedWith = error;
+        fakeRequest.emit('error', error);
+      };
+      fakeRequest.end = () =>
+        queueMicrotask(() => {
+          fakeRequest.emit('socket', socket);
+          socket.emit('secureConnect');
+        });
+      return fakeRequest as never;
+    });
+
+    const result = await fetchUrlContent('https://example.com/spec.md', async () => [
+      { address: '93.184.216.34', family: 4 },
+    ]);
+
+    expect(destroyedWith?.message).toBe('HTTPS peer address differs from the validated target');
+    expect(result).toMatchObject({
+      kind: 'blocked',
+      reason:
+        '/review blocked: Failed to fetch https://example.com/spec.md: HTTPS peer address differs from the validated target',
+    });
+  });
+
+  it('accepts an IPv4-mapped TLS peer address for the pinned IPv4 target', async () => {
+    vi.mocked(request).mockImplementationOnce(() => {
+      const fakeRequest = new EventEmitter() as EventEmitter & {
+        setTimeout: () => void;
+        destroy: (error: Error) => void;
+        end: () => void;
+      };
+      const socket = new EventEmitter() as EventEmitter & { remoteAddress: string };
+      socket.remoteAddress = '::FFFF:93.184.216.34';
+      fakeRequest.setTimeout = () => undefined;
+      fakeRequest.destroy = (error) => fakeRequest.emit('error', error);
+      fakeRequest.end = () =>
+        queueMicrotask(() => {
+          fakeRequest.emit('socket', socket);
+          socket.emit('secureConnect');
+          fakeRequest.emit('response', response(Buffer.from('review material')));
+        });
+      return fakeRequest as never;
+    });
+
+    await expect(
+      fetchUrlContent('https://example.com/spec.md', async () => [
+        { address: '93.184.216.34', family: 4 },
+      ]),
+    ).resolves.toEqual({ content: 'review material' });
   });
 });
 

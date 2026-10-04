@@ -1,7 +1,7 @@
 /**
  * @module review.test
- * @description Tests for the /review rail core — executeReview, executeReviewFlow,
- *              and startReviewFlow behavior. Content-aware, URL-security, and
+ * @description Tests for the /review rail core — executeReview and
+ *              startReviewFlow behavior. Content-aware, URL-security, and
  *              schema-validation tests live in sibling files.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
@@ -9,12 +9,18 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  executeReview,
-  executeReviewFlow,
+  executeReview as executeReviewUnsafe,
   startReviewFlow,
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
+import type {
+  ReviewReportDraft,
+  ReviewReportFinding,
+  ValidationResult,
+} from '../state/evidence.js';
+import type { RailBlocked } from './types.js';
+import type { SessionState } from '../state/schema.js';
 import {
   makeState,
   makeProgressedState,
@@ -30,6 +36,66 @@ import { createTestContext } from '../testing.js';
 const NOW = '2026-01-15T10:00:00.000Z';
 
 const noopExecutors: ReviewExecutors = {};
+
+type RenderedReviewFinding = {
+  readonly source: ReviewReportFinding['source'];
+  readonly severity: 'info' | 'warning' | 'error';
+  readonly category: string;
+  readonly message: string;
+};
+
+type RenderedReviewReport = Omit<ReviewReportDraft, 'findings'> & {
+  readonly findings: RenderedReviewFinding[];
+};
+
+function renderReviewReport(report: ReviewReportDraft): RenderedReviewReport {
+  return {
+    ...report,
+    findings: report.findings.map((finding) =>
+      finding.source === 'material_finding'
+        ? {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.finding.category,
+            message: finding.finding.message,
+          }
+        : {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.category,
+            message: finding.message,
+          },
+    ),
+  };
+}
+
+function isBlockedReview(result: ReviewReportDraft | RailBlocked): result is RailBlocked {
+  return 'kind' in result && result.kind === 'blocked';
+}
+
+async function executeReview(
+  ...args: Parameters<typeof executeReviewUnsafe>
+): Promise<RenderedReviewReport> {
+  const result = await executeReviewUnsafe(...args);
+  if (isBlockedReview(result)) throw new Error(`Expected review report, received ${result.code}`);
+  return renderReviewReport(result);
+}
+
+function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  return {
+    checkId,
+    passed,
+    detail,
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: passed ? 0 : 1,
+    executionMs: 1,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+    outcome: passed ? 'supported' : 'inconclusive',
+  };
+}
 
 // =============================================================================
 // /review rail
@@ -60,12 +126,11 @@ describe('review rail', () => {
       expect(report.validationSummary[0]!.passed).toBe(true);
     });
 
-    it('includes evidence completeness matrix', async () => {
+    it('excludes local session completeness and integration-owned coverage from the rail draft', async () => {
       const state = makeProgressedState('COMPLETE');
       const report = await executeReview(state, NOW);
-      expect(report.completeness).toBeDefined();
-      expect(report.completeness.overallComplete).toBe(true);
-      expect(report.completeness.slots).toHaveLength(8);
+      expect(report).not.toHaveProperty('completeness');
+      expect(report).not.toHaveProperty('peerReviewCoverage');
     });
 
     it('is available at any phase (always allowed)', async () => {
@@ -147,7 +212,7 @@ describe('review rail', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -161,7 +226,6 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice',
           decisionIdentity: {
             actorId: 'alice',
             actorEmail: null,
@@ -182,7 +246,7 @@ describe('review rail', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,
@@ -254,8 +318,18 @@ describe('review rail', () => {
       const state = makeState('TICKET'); // Will have mechanical findings (no ticket)
       const llmExecutors: ReviewExecutors = {
         analyze: async () => [
-          { severity: 'info', category: 'style', message: 'Code looks clean' },
-          { severity: 'warning', category: 'security', message: 'Missing CSRF protection' },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'style',
+            message: 'Code looks clean',
+          },
+          {
+            source: 'unknown',
+            reportSeverity: 'warning',
+            category: 'security',
+            message: 'Missing CSRF protection',
+          },
         ],
       };
       const report = await executeReview(state, NOW, llmExecutors);
@@ -383,7 +457,7 @@ describe('review rail', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: true,
         },
         initiatedBy: 'alice',
@@ -391,7 +465,12 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice', // same person
+          decisionIdentity: {
+            actorId: 'alice',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
         },
       });
       const report = await executeReview(state, NOW);
@@ -403,7 +482,7 @@ describe('review rail', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,
@@ -448,23 +527,27 @@ describe('review rail', () => {
     });
   });
 
-  // ─── MUTATION KILL: executeReviewFlow ───────────────────────
-  describe('MUTATION: executeReviewFlow', () => {
+  // ─── P8b: startReviewFlow (test: writeReport throws → no REVIEW_COMPLETE) ──
+  describe('P8b: startReviewFlow', () => {
     const ctx = createTestContext();
 
-    it('HAPPY: transitions from READY to REVIEW_COMPLETE', () => {
-      const state = makeState('READY', { reviewReportPath: '/tmp/report.json' });
-      const result = executeReviewFlow(state, ctx);
+    it('transitions READY → PEER_REVIEW, NOT to PEER_REVIEW_COMPLETE', () => {
+      // P8b: startReviewFlow only applies the READY→PEER_REVIEW transition.
+      // The reviewDone guard requires reviewReportPath, which is not yet set.
+      // This proves that if writeReport throws before the caller sets
+      // reviewReportPath and calls autoAdvance, no REVIEW_COMPLETE is persisted.
+      const state = makeState('READY');
+      const result = startReviewFlow(state, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('REVIEW_COMPLETE');
-        expect(result.transitions.length).toBeGreaterThanOrEqual(1);
+        expect(result.state.phase).toBe('PEER_REVIEW');
+        expect(result.state.reviewReportPath).toBeFalsy();
       }
     });
 
     it('BAD: blocks at non-READY phase with command and phase in reason', () => {
       const state = makeState('TICKET');
-      const result = executeReviewFlow(state, ctx);
+      const result = startReviewFlow(state, ctx);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('COMMAND_NOT_ALLOWED');
@@ -475,30 +558,11 @@ describe('review rail', () => {
 
     it('BAD: blocks at COMPLETE phase', () => {
       const state = makeState('COMPLETE');
-      const result = executeReviewFlow(state, ctx);
+      const result = startReviewFlow(state, ctx);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('COMMAND_NOT_ALLOWED');
         expect(result.reason).toContain('/review');
-      }
-    });
-  });
-
-  // ─── P8b: startReviewFlow (test: writeReport throws → no REVIEW_COMPLETE) ──
-  describe('P8b: startReviewFlow', () => {
-    const ctx = createTestContext();
-
-    it('transitions READY → REVIEW, NOT to REVIEW_COMPLETE', () => {
-      // P8b: startReviewFlow only applies the READY→REVIEW transition.
-      // The reviewDone guard requires reviewReportPath, which is not yet set.
-      // This proves that if writeReport throws before the caller sets
-      // reviewReportPath and calls autoAdvance, no REVIEW_COMPLETE is persisted.
-      const state = makeState('READY');
-      const result = startReviewFlow(state, ctx);
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('REVIEW');
-        expect(result.state.reviewReportPath).toBeFalsy();
       }
     });
   });
@@ -512,9 +576,9 @@ describe('review rail', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'check_a', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'check_b', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'check_c', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('check_a', false, 'fail'),
+          validationResult('check_b', false, 'fail'),
+          validationResult('check_c', true, 'ok'),
         ],
       });
       const report = await executeReview(state, NOW);
@@ -528,8 +592,8 @@ describe('review rail', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'failing_one', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'passing_one', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('failing_one', false, 'fail'),
+          validationResult('passing_one', true, 'ok'),
         ],
       });
       const report = await executeReview(state, NOW);
@@ -545,7 +609,7 @@ describe('review rail', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: true, // fourEyes.required = false
         },
         initiatedBy: 'alice',
@@ -553,7 +617,12 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'ok',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob', // different person, but not satisfied because not required
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
         },
       });
       const report = await executeReview(state, NOW);
@@ -599,7 +668,10 @@ describe('review rail', () => {
         initiatedBy: 'initiator-1',
         reviewDecision: {
           ...state.reviewDecision!,
-          decidedBy: 'reviewer-2', // different person
+          decisionIdentity: {
+            ...state.reviewDecision!.decisionIdentity,
+            actorId: 'reviewer-2', // different person
+          },
         },
       };
       const report = await executeReview(stateWithFourEyes, NOW);
@@ -608,7 +680,7 @@ describe('review rail', () => {
       expect(fourEyesFindings).toHaveLength(0);
     });
 
-    it('four-eyes required + NOT satisfied (decidedBy=null) → warning', async () => {
+    it('four-eyes required + NOT satisfied (no review decision) → warning', async () => {
       // regulated + no review decision yet
       const state = makeProgressedState('IMPLEMENTATION');
       const stateWithFourEyes = {
@@ -625,24 +697,23 @@ describe('review rail', () => {
 
     it('four-eyes required + NOT satisfied (same person) → error', async () => {
       const state = makeProgressedState('COMPLETE');
-      const stateViolated = {
+      const stateViolated: SessionState = {
         ...state,
         policySnapshot: { ...state.policySnapshot, allowSelfApproval: false },
         initiatedBy: 'same-person',
         initiatedByIdentity: {
           actorId: 'same-person',
           actorEmail: null,
-          actorSource: 'claim',
-          actorAssurance: 'claim_validated',
+          actorSource: 'claim' as const,
+          actorAssurance: 'claim_validated' as const,
         },
         reviewDecision: {
           ...state.reviewDecision!,
-          decidedBy: 'same-person', // same as initiator
           decisionIdentity: {
             actorId: 'same-person',
             actorEmail: null,
-            actorSource: 'claim',
-            actorAssurance: 'claim_validated',
+            actorSource: 'claim' as const,
+            actorAssurance: 'claim_validated' as const,
           },
         },
       };
@@ -694,8 +765,18 @@ describe('review rail', () => {
       };
       const llmExecutors: ReviewExecutors = {
         analyze: async () => [
-          { severity: 'info', category: 'style', message: 'Code looks clean' },
-          { severity: 'info', category: 'docs', message: 'Documentation is thorough' },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'style',
+            message: 'Code looks clean',
+          },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'docs',
+            message: 'Documentation is thorough',
+          },
         ],
       };
       const report = await executeReview(cleanState, NOW, llmExecutors);

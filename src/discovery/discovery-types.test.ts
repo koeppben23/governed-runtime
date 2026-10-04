@@ -21,17 +21,18 @@ import * as path from 'node:path';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
-  DiscoverySummarySchema,
   DetectedItemSchema,
-  DetectedStackSchema,
-  DetectedStackVersionSchema,
-  DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
 } from './types.js';
+import {
+  DetectedStackSchema,
+  DetectedStackTargetSchema,
+  DiscoverySummarySchema,
+} from '../state/discovery-schemas.js';
 import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
@@ -71,8 +72,8 @@ const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
   allFiles: [],
-  packageFiles: [],
-  configFiles: [],
+  packageFilePaths: [],
+  configFilePaths: [],
 };
 
 const TS_PROJECT_INPUT: CollectorInput = {
@@ -96,8 +97,8 @@ const TS_PROJECT_INPUT: CollectorInput = {
     'README.md',
     'prisma/schema.prisma',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'vitest.config.ts', '.eslintrc.json', '.prettierrc'],
 };
 
 const MONOREPO_INPUT: CollectorInput = {
@@ -116,8 +117,8 @@ const MONOREPO_INPUT: CollectorInput = {
     'libs/common/package.json',
     '.github/workflows/ci.yml',
   ],
-  packageFiles: ['package.json'],
-  configFiles: ['tsconfig.json', 'nx.json'],
+  packageFilePaths: ['package.json'],
+  configFilePaths: ['tsconfig.json', 'nx.json'],
 };
 
 // ─── Schema Tests ─────────────────────────────────────────────────────────────
@@ -148,21 +149,13 @@ describe('discovery/types', () => {
       expect(result.success).toBe(true);
     });
 
-    it('DetectedStackVersion validates correct data', () => {
-      const result = DetectedStackVersionSchema.safeParse({
-        id: 'java',
-        version: '21',
-        target: 'language',
-        evidence: 'pom.xml:<java.version>',
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it('DetectedStackVersion validates without optional evidence', () => {
-      const result = DetectedStackVersionSchema.safeParse({
-        id: 'node',
-        version: '20.11.0',
-        target: 'runtime',
+    it('DetectedStackItem stores versions directly on items', () => {
+      const result = DetectedStackSchema.safeParse({
+        summary: 'java=21, node=20.11.0',
+        items: [
+          { kind: 'language', id: 'java', version: '21', evidence: 'pom.xml:<java.version>' },
+          { kind: 'runtime', id: 'node', version: '20.11.0' },
+        ],
       });
       expect(result.success).toBe(true);
     });
@@ -190,10 +183,6 @@ describe('discovery/types', () => {
           { kind: 'language', id: 'java', version: '21' },
           { kind: 'framework', id: 'spring-boot', version: '3.4.1', evidence: 'pom.xml' },
         ],
-        versions: [
-          { id: 'java', version: '21', target: 'language' },
-          { id: 'spring-boot', version: '3.4.1', target: 'framework', evidence: 'pom.xml' },
-        ],
       });
       expect(result.success).toBe(true);
     });
@@ -210,8 +199,8 @@ describe('discovery/types', () => {
       expect(result.success).toBe(true);
     });
 
-    it('DISCOVERY_SCHEMA_VERSION is discovery.v1', () => {
-      expect(DISCOVERY_SCHEMA_VERSION).toBe('discovery.v1');
+    it('DISCOVERY_SCHEMA_VERSION is discovery.v2', () => {
+      expect(DISCOVERY_SCHEMA_VERSION).toBe('discovery.v2');
     });
 
     it('PROFILE_RESOLUTION_SCHEMA_VERSION is profile-resolution.v1', () => {
@@ -254,20 +243,18 @@ describe('discovery/types', () => {
       expect(result.success).toBe(false);
     });
 
-    it('DetectedStackVersion rejects empty id', () => {
-      const result = DetectedStackVersionSchema.safeParse({
-        id: '',
-        version: '21',
-        target: 'language',
+    it('DetectedStack rejects an item with an empty id', () => {
+      const result = DetectedStackSchema.safeParse({
+        summary: 'java=21',
+        items: [{ kind: 'language', id: '', version: '21' }],
       });
       expect(result.success).toBe(false);
     });
 
-    it('DetectedStackVersion rejects empty version', () => {
-      const result = DetectedStackVersionSchema.safeParse({
-        id: 'java',
-        version: '',
-        target: 'language',
+    it('DetectedStack rejects an item with an empty version', () => {
+      const result = DetectedStackSchema.safeParse({
+        summary: 'java',
+        items: [{ kind: 'language', id: 'java', version: '' }],
       });
       expect(result.success).toBe(false);
     });
@@ -277,9 +264,10 @@ describe('discovery/types', () => {
       expect(result.success).toBe(false);
     });
 
-    it('DetectedStack rejects missing versions array', () => {
+    it('DetectedStack rejects a legacy versions-only shape', () => {
       const result = DetectedStackSchema.safeParse({
         summary: 'java=21',
+        versions: [{ id: 'java', version: '21', target: 'language' }],
       });
       expect(result.success).toBe(false);
     });
@@ -293,6 +281,7 @@ describe('archive/types', () => {
     it('ArchiveManifest validates correct data', () => {
       const result = ArchiveManifestSchema.safeParse({
         schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
+        layoutVersion: 2,
         createdAt: new Date().toISOString(),
         sessionId: crypto.randomUUID(),
         fingerprint: 'abcdef0123456789abcdef01',

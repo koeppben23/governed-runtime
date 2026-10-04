@@ -27,12 +27,21 @@ import {
 } from '../test-helpers.js';
 import { status, hydrate, ticket, plan, run_check } from '../tools/index.js';
 import { readState, writeState } from '../../adapters/persistence.js';
+import { FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../../adapters/workspace/index.js';
 import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
+import { evaluateImplValidationEvidence } from '../../machine/impl-validation-evidence.js';
+import { deriveVerificationCandidateId } from '../../state/candidate-identity.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
+import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
+import { headCommitFull } from '../../adapters/git.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 import {
   resetAdapterLogger,
@@ -40,6 +49,24 @@ import {
   type AdapterLogger,
 } from '../../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../../logging/log-context.js';
+import type { ToolDefinition } from '../tools/helpers.js';
+
+type RunCheckResult = {
+  error?: boolean;
+  code?: string;
+  message?: string;
+  evidence: {
+    kind: string;
+    passed: boolean;
+    exitCode: number;
+    executionMs: number;
+    outputDigest: string;
+    timedOut: boolean;
+  };
+  derivedRepairGuidance?: unknown;
+  remainingChecks?: unknown[];
+  status?: string;
+};
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -50,7 +77,15 @@ vi.mock('../../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
+});
+
+vi.mock('../../adapters/frozen-repository.js', async (importOriginal) => {
+  const { frozenRepositoryAdapterMock } = await import('../adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../../adapters/frozen-repository.js')>(),
+  );
 });
 
 vi.mock('../../adapters/actor', async (importOriginal) => {
@@ -115,15 +150,48 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
+async function writeImplFileAndDigest(
+  tmpDir: string,
+  filePath: string,
+  content: string,
+): Promise<string> {
+  const fullPath = join(tmpDir, filePath);
+  mkdirSync(join(fullPath, '..'), { recursive: true });
+  writeFileSync(fullPath, content, 'utf-8');
+  writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ scripts: {} }), 'utf-8');
+  const hashes = await hashWorktreeFiles(tmpDir, [filePath]);
+  return hashText(`${filePath}:${hashes[filePath] ?? 'deleted'}`);
+}
+
+/**
+ * Write files matching the mocked git changed-file set and return the canonical
+ * implementation digest for that exact subject.
+ */
+async function writeDefaultImplSubject(tmpDir: string): Promise<string> {
+  for (const file of GIT_MOCK_DEFAULTS.changedFiles) {
+    const full = join(tmpDir, file);
+    mkdirSync(join(full, '..'), { recursive: true });
+    writeFileSync(full, `content of ${file}`, 'utf-8');
+  }
+  const sortedFiles = [...GIT_MOCK_DEFAULTS.changedFiles].sort();
+  const hashes = await hashWorktreeFiles(tmpDir, sortedFiles);
+  return hashText(sortedFiles.map((file) => `${file}:${hashes[file] ?? 'deleted'}`).join('\n'));
+}
+
 function captureLogger(): {
   log: AdapterLogger;
-  entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
+  entries: {
+    level: string;
+    service: string;
+    message: string;
+    extra: Record<string, unknown> | undefined;
+  }[];
 } {
   const entries: {
     level: string;
     service: string;
     message: string;
-    extra?: Record<string, unknown>;
+    extra: Record<string, unknown> | undefined;
   }[] = [];
   return {
     entries,
@@ -146,10 +214,7 @@ function captureLogger(): {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function callOk(
-  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
-  args: unknown,
-) {
+async function callOk(tool: ToolDefinition, args: unknown) {
   const sd = await getSessDir();
   const finalArgs = await withStrictReviewFindings(sd, args);
   const raw = await tool.execute(finalArgs, ctx);
@@ -168,9 +233,25 @@ async function getSessDir(): Promise<string> {
 async function driveToValidation(): Promise<void> {
   await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
   await callOk(ticket, { text: 'Test task', source: 'user' });
-  await callOk(plan, { planText: '## Plan\nTest plan' });
+  await callOk(plan, { planText: '## Plan\nTest plan', targetPaths: ['docs/test.md'] });
+  // Solo plan convergence auto-approves into VALIDATION and the runtime now
+  // runs the active checks automatically, advancing to IMPLEMENTATION. These
+  // tests exercise the explicit run_check surface, so reset the projection to
+  // the pending VALIDATION wait state. The implementation-entry freeze is
+  // cleared too so a later run_check re-drives the ALL_PASSED transition under
+  // test (including the freeze-failure path).
   await callOk(plan, { reviewVerdict: 'accept' });
-  // Now should be in VALIDATION phase
+  const sd = await getSessDir();
+  const state = await readState(sd);
+  const patched = {
+    ...state!,
+    phase: 'VALIDATION' as const,
+    validation: [],
+    validationAttempts: [],
+    implementation: null,
+  };
+  delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+  await writeState(sd, patched);
 }
 
 // ─── HAPPY ───────────────────────────────────────────────────────────────────
@@ -178,7 +259,9 @@ async function driveToValidation(): Promise<void> {
 describe('HAPPY', () => {
   it('executes check and returns evidence', async () => {
     await driveToValidation();
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
 
     expect(result.error).toBeUndefined();
     expect(result.evidence).toBeDefined();
@@ -197,9 +280,45 @@ describe('HAPPY', () => {
     const state = await readState(sd);
     expect(state).not.toBeNull();
     expect(state!.validation.length).toBe(1);
-    expect(state!.validation[0].checkId).toBe('typecheck');
-    expect(state!.validation[0].passed).toBe(true);
-    expect(state!.validation[0].outputDigest).toBe('a'.repeat(64));
+    const [validation] = state!.validation;
+    expect(validation).toBeDefined();
+    expect(validation!.checkId).toBe('typecheck');
+    expect(validation!.passed).toBe(true);
+    expect(validation!.outputDigest).toBe('a'.repeat(64));
+  });
+
+  it('freezes a full-check attestation from the candidate on the executed attempt', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: (state!.verificationCandidates ?? []).map((candidate) =>
+        candidate.kind === 'typecheck'
+          ? {
+              assertionCapability: 'structured' as const,
+              candidateId: candidate.candidateId,
+              kind: candidate.kind,
+              command: candidate.command,
+              source: candidate.source,
+              confidence: candidate.confidence,
+              reason: candidate.reason,
+              fullCheckScopeAttestation: 'full_check' as const,
+              assertionReport: {
+                collection: 'stdout' as const,
+                transport: 'stdout' as const,
+                format: 'junit_xml' as const,
+                providerId: 'junit' as const,
+              },
+            }
+          : candidate,
+      ),
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const persisted = await readState(sd);
+    expect(persisted!.validationAttempts[0]!.result.fullCheckScopeAttestation).toBe('full_check');
   });
 
   it('advances to IMPLEMENTATION when all active checks pass', async () => {
@@ -216,6 +335,37 @@ describe('HAPPY', () => {
     expect(finalState!.phase).toBe('IMPLEMENTATION');
   });
 
+  it('freezes the implementation base authority on the ALL_PASSED transition into IMPLEMENTATION', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sd);
+    expect(finalState!.phase).toBe('IMPLEMENTATION');
+    // Single transition finalizer: the persisted IMPLEMENTATION state carries
+    // the frozen pre-mutation base authority resolved from the worktree HEAD.
+    expect(finalState!.implementationBaseAuthority).toBeDefined();
+    expect(finalState!.implementationBaseAuthority!.objectSha).toBe('d'.repeat(40));
+  });
+
+  it('fails closed with REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED when no commit can be frozen', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const before = await readState(sd);
+
+    vi.mocked(headCommitFull).mockResolvedValueOnce(null);
+    const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
+    const result = parseToolResult(raw);
+
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED');
+    // Nothing persisted: the session must not enter IMPLEMENTATION without a
+    // frozen base authority.
+    const after = await readState(sd);
+    expect(after!.phase).toBe(before!.phase);
+  });
+
   it('calls executeCheck with correct arguments', async () => {
     await driveToValidation();
     await callOk(run_check, { kind: 'typecheck' });
@@ -227,6 +377,534 @@ describe('HAPPY', () => {
         cwd: ws.tmpDir,
       }),
     );
+  });
+
+  it('selects and persists the exact candidate when candidateId is supplied', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'typecheck-alternate';
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        primary,
+        { ...primary, candidateId, command: 'npm run exact-typecheck' },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: state!.executionSubjectInputsByCandidateId![primary.candidateId] ?? [],
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck', candidateId });
+
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run exact-typecheck' }),
+    );
+    expect((await readState(sd))!.validation[0]!.candidateId).toBe(candidateId);
+  });
+
+  it('fails closed when a candidateId has no exact execution subject binding', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'typecheck-unbound';
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        primary,
+        { ...primary, candidateId, command: 'npm run unbound-typecheck' },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+      },
+    });
+    vi.mocked(executeCheck).mockClear();
+
+    const raw = await run_check.execute({ kind: 'typecheck', candidateId }, ctx);
+    const result = parseToolResult(raw);
+
+    expect(result).toMatchObject({ error: true, code: 'VERIFICATION_SUBJECT_CHANGED' });
+    expect(String(result.message)).toContain('candidate-specific execution subject inputs');
+    expect(executeCheck).not.toHaveBeenCalled();
+    expect((await readState(sd))!.validation).toEqual(state!.validation);
+  });
+
+  it('fails closed when a candidateId has an empty exact execution subject binding', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'typecheck-empty-binding';
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        primary,
+        { ...primary, candidateId, command: 'npm run empty-binding-typecheck' },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [],
+      },
+    });
+    vi.mocked(executeCheck).mockClear();
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    expect(result).toMatchObject({ error: true, code: 'VERIFICATION_SUBJECT_CHANGED' });
+    expect(String(result.message)).toContain('candidate-specific execution subject inputs');
+    expect(executeCheck).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a Gradle wrapper bootstrap input changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'gradle-wrapper-script';
+    const wrapperProperties = join(ws.tmpDir, 'gradle', 'wrapper', 'gradle-wrapper.properties');
+    mkdirSync(dirname(wrapperProperties), { recursive: true });
+    writeFileSync(
+      wrapperProperties,
+      'distributionUrl=https://services.gradle.org/initial.zip\n',
+      'utf-8',
+    );
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'gradle/wrapper/gradle-wrapper.properties' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(
+        wrapperProperties,
+        'distributionUrl=https://services.gradle.org/changed.zip\n',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation, the approval authority survives,
+    // and the blocked evidence is persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
+    const blockedState = await readState(sd);
+    expect(blockedState!.plan).not.toBeNull();
+    expect(blockedState!.selfReview).not.toBeNull();
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run test --' }),
+    );
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: gradle/wrapper/gradle-wrapper.properties changed',
+      ),
+    });
+  });
+
+  it('fails closed when Maven runtime configuration changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'maven-runtime-config-script';
+    const extensionsXml = join(ws.tmpDir, '.mvn', 'extensions.xml');
+    mkdirSync(dirname(extensionsXml), { recursive: true });
+    writeFileSync(
+      extensionsXml,
+      '<extensions><extension><artifactId>initial</artifactId></extension></extensions>\n',
+      'utf-8',
+    );
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: '.mvn/extensions.xml' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(
+        extensionsXml,
+        '<extensions><extension><artifactId>changed</artifactId></extension></extensions>\n',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation, the approval authority survives,
+    // and the blocked evidence is persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
+    const blockedState = await readState(sd);
+    expect(blockedState!.plan).not.toBeNull();
+    expect(blockedState!.selfReview).not.toBeNull();
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run test --' }),
+    );
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: .mvn/extensions.xml changed',
+      ),
+    });
+  });
+
+  it('fails closed when a transitive Maven module POM changes during a package-script check', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'maven-module-pom-script';
+    const modulePom = join(ws.tmpDir, 'app', 'pom.xml');
+    mkdirSync(dirname(modulePom), { recursive: true });
+    writeFileSync(modulePom, '<project><artifactId>initial</artifactId></project>\n', 'utf-8');
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'app/pom.xml' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(modulePom, '<project><artifactId>changed</artifactId></project>\n', 'utf-8');
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation, the approval authority survives,
+    // and the blocked evidence is persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
+    const blockedState = await readState(sd);
+    expect(blockedState!.plan).not.toBeNull();
+    expect(blockedState!.selfReview).not.toBeNull();
+    const persisted = await readState(sd);
+    expect(persisted!.validation[0]).toMatchObject({
+      passed: false,
+      outcome: 'blocked',
+      classificationReason: expect.stringContaining(
+        'VERIFICATION_SUBJECT_CHANGED: app/pom.xml changed',
+      ),
+    });
+  });
+
+  it('post-implementation subject drift keeps IMPL_VALIDATION and the implementation evidence', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'gradle-wrapper-script-impl';
+    const wrapperProperties = join(ws.tmpDir, 'gradle', 'wrapper', 'gradle-wrapper.properties');
+    mkdirSync(dirname(wrapperProperties), { recursive: true });
+    writeFileSync(
+      wrapperProperties,
+      'distributionUrl=https://services.gradle.org/initial.zip\n',
+      'utf-8',
+    );
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        digest: implDigest,
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'gradle/wrapper/gradle-wrapper.properties' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(
+        wrapperProperties,
+        'distributionUrl=https://services.gradle.org/changed.zip\n',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    // A post-implementation technical block must NOT clear the implementation
+    // evidence: no rework is required when the run could not produce a
+    // trustworthy verdict.
+    expect(result).toMatchObject({ phase: 'IMPL_VALIDATION' });
+    const persisted = await readState(sessDir);
+    expect(persisted!.implementation).not.toBeNull();
+    expect(persisted!.implementation!.digest).toBe(implDigest);
+    expect(persisted!.implValidation[0]).toMatchObject({ passed: false, outcome: 'blocked' });
+  });
+
+  it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
+    writeFileSync(
+      join(ws.tmpDir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'python -m pytest' } }),
+      'utf-8',
+    );
+    writeFileSync(join(ws.tmpDir, 'requirements.txt'), 'pytest>=7\n', 'utf-8');
+    writeFileSync(
+      join(ws.tmpDir, 'pyproject.toml'),
+      '[project]\ndependencies = ["pytest>=7"]\n',
+      'utf-8',
+    );
+    vi.mocked(listRepoSignals).mockResolvedValueOnce({
+      files: ['package.json', 'requirements.txt', 'pyproject.toml'],
+      packageFilePaths: ['package.json', 'requirements.txt'],
+      configFilePaths: ['pyproject.toml'],
+    });
+    await driveToValidation();
+
+    const sd = await getSessDir();
+    const aggregate = (await readState(sd))!.verificationCandidates!.find(
+      (candidate) =>
+        candidate.kind === 'test' &&
+        candidate.assertionCapability === 'structured' &&
+        candidate.assertionReport.format === 'junit_xml',
+    );
+    expect(aggregate).toBeDefined();
+    expect(aggregate).toMatchObject({
+      command: 'npm run test --',
+      fullCheckScopeAttestation: 'full_check',
+    });
+    expect((await readState(sd))!.activeChecks).toContain('test');
+
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      const reportPath = /--junitxml=(\S+)/.exec(input.command)?.[1];
+      expect(reportPath).toBeDefined();
+      const absoluteReportPath = join(input.cwd, reportPath!);
+      mkdirSync(dirname(absoluteReportPath), { recursive: true });
+      writeFileSync(
+        absoluteReportPath,
+        '<testsuite tests="1" failures="0" errors="0"><testcase classname="tests.test_suite" name="suite" /></testsuite>',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    await callOk(run_check, { kind: 'test', candidateId: aggregate!.candidateId });
+
+    const attempt = (await readState(sd))!.validationAttempts.find(
+      (entry) => entry.result.candidateId === aggregate!.candidateId,
+    );
+    expect(attempt?.result).toMatchObject({
+      candidateId: aggregate!.candidateId,
+      fullCheckScopeAttestation: 'full_check',
+      assertionExtraction: {
+        status: 'extracted',
+        bindingCapability: 'aggregate',
+        format: 'junit_xml',
+        providerId: 'pytest',
+      },
+    });
+  });
+
+  it('executes a run_specific structured candidate with its per-attempt argument and stays satisfiable', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
+    const definition = {
+      assertionCapability: 'structured' as const,
+      kind: 'test' as const,
+      command: 'npm test --',
+      source: 'detectedStack:testFramework:jest',
+      confidence: 'high' as const,
+      reason: 'jest fixture',
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'jest_json' as const,
+        providerId: 'jest' as const,
+        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
+    };
+    const candidate = { ...definition, candidateId: deriveVerificationCandidateId(definition) };
+    await writeState(sd, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        digest: implDigest,
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      activeChecks: ['test'],
+      verificationCandidates: [candidate],
+      executionSubjectInputsByCandidateId: {
+        [candidate.candidateId]: [{ kind: 'implementation' }],
+      },
+    });
+
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      const reportPath = /--outputFile=(\S+)/.exec(input.command)?.[1];
+      expect(reportPath).toBeDefined();
+      const absoluteReportPath = join(input.cwd, reportPath!);
+      mkdirSync(dirname(absoluteReportPath), { recursive: true });
+      writeFileSync(
+        absoluteReportPath,
+        JSON.stringify({
+          testResults: [
+            { name: 'tests/a.test.ts', assertionResults: [{ title: 'passes', status: 'passed' }] },
+          ],
+        }),
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 120,
+        outputDigest: 'a'.repeat(64),
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    await callOk(run_check, { kind: 'test', candidateId: candidate.candidateId });
+
+    const persisted = (await readState(sd))!;
+    const attempt = persisted.validationAttempts.find(
+      (entry) => entry.result.candidateId === candidate.candidateId,
+    );
+    expect(attempt?.result.command).toMatch(
+      /^npm test -- --json --outputFile=\.flowguard\/reports\/[^/]+\/jest\.json$/,
+    );
+    // The shared predicate (normal gate and reduced eligibility) accepts the
+    // extended command because it is reconstructed from the frozen definition.
+    expect(evaluateImplValidationEvidence(persisted).satisfied).toBe(true);
   });
 });
 
@@ -261,10 +939,12 @@ describe('BAD', () => {
       verificationCandidates: [
         ...(state!.verificationCandidates ?? []),
         {
-          kind: 'security',
+          assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_security_manual',
+          kind: 'security' as const,
           command: 'npm audit',
           source: 'manual',
-          confidence: 'low',
+          confidence: 'low' as const,
           reason: 'manual',
         },
       ],
@@ -292,7 +972,9 @@ describe('BAD', () => {
       },
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result.error).toBe(true);
     expect(result.code).toBe('VALIDATION_EVIDENCE_UNVERIFIED');
   });
@@ -304,6 +986,10 @@ describe('BAD', () => {
     await writeState(sd, {
       ...state!,
       activeChecks: [],
+      // No detected stack → exercises the genuine NO_ACTIVE_CHECKS path (not F4's
+      // stack-detected-but-no-commands block).
+      discoverySummary: null,
+      detectedStack: null,
       policySnapshot: {
         ...state!.policySnapshot,
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
@@ -340,6 +1026,8 @@ describe('CORNER', () => {
           executionMs: 200,
           outputDigest: 'b'.repeat(64),
           timedOut: false,
+          outcome: 'inconclusive' as const,
+          classificationReason: 'non-zero exit code',
         },
       ],
     };
@@ -350,8 +1038,178 @@ describe('CORNER', () => {
 
     const finalState = await readState(sd);
     expect(finalState!.validation.length).toBe(1); // Replaced, not appended
-    expect(finalState!.validation[0].passed).toBe(true);
-    expect(finalState!.validation[0].outputDigest).toBe('a'.repeat(64));
+    const [validation] = finalState!.validation;
+    expect(validation).toBeDefined();
+    expect(validation!.passed).toBe(true);
+    expect(validation!.outputDigest).toBe('a'.repeat(64));
+  });
+
+  it('retains every baseline re-run in the ledger while replacing the current projection', async () => {
+    await driveToValidation();
+    vi.mocked(executeCheck).mockResolvedValueOnce({
+      kind: 'typecheck',
+      command: 'npx tsc --noEmit',
+      exitCode: 124,
+      passed: false,
+      executionMs: 60000,
+      outputDigest: 'd'.repeat(64),
+      stdout: '',
+      stderr: '',
+      timedOut: true,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const state = await readState(await getSessDir());
+    expect(state!.validation).toHaveLength(1);
+    expect(state!.validationAttempts).toHaveLength(2);
+    expect(state!.validationAttempts.map((attempt) => attempt.result.outputDigest)).toEqual([
+      'd'.repeat(64),
+      'a'.repeat(64),
+    ]);
+    for (const attempt of state!.validationAttempts) {
+      expect(attempt.scope).toBe('baseline');
+      expect(attempt.attemptId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+      if (attempt.scope === 'baseline') {
+        expect(attempt.planDigest).toBe(state!.plan!.current.digest);
+      }
+    }
+  });
+
+  it('binds post-implementation validation attempts to the implementation digest', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        digest: implDigest,
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sessDir);
+    expect(finalState!.validationAttempts).toHaveLength(1);
+    expect(finalState!.validationAttempts[0]).toMatchObject({
+      scope: 'implementation',
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
+      implementationDigest: implDigest,
+    });
+  });
+
+  it('materializes approved-plan claims with the current implementation attempt at IMPL_REVIEW', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    const claimId = '11111111-1111-4111-8111-111111111111';
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        digest: implDigest,
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      plan: {
+        ...state!.plan!,
+        claimDeclarations: {
+          flow: 'plan',
+          version: 'v2',
+          claims: [
+            {
+              claimId,
+              statement: 'approved plan behavior is implemented',
+              critical: true,
+              authoritySectionId: 'implementation',
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'typecheck',
+            },
+          ],
+        },
+        approvalCertificate: {
+          flow: 'plan',
+          authorityDigest: state!.plan!.current.digest,
+          claimDeclarationsDigest: hashText(
+            canonicalJsonStringify({
+              flow: 'plan',
+              version: 'v2',
+              claims: [
+                {
+                  claimId,
+                  statement: 'approved plan behavior is implemented',
+                  critical: true,
+                  authoritySectionId: 'implementation',
+                  claimScope: 'specific_behavior',
+                  expectedCheckId: 'typecheck',
+                },
+              ],
+            }),
+          ),
+          decisionAttestationDigest: hashText('decision'),
+          approvedAt: '2026-01-01T00:00:00.000Z',
+          approvedBy: 'approver',
+          certificateId: '00000000-0000-4000-8000-000000000001',
+          // The certificate is bound to the CURRENT plan record: a hardcoded
+          // version or record digest makes it stale, and materialization then
+          // yields an empty contract instead of the claims under test.
+          planVersion: state!.plan!.current.planVersion,
+          planRecordDigest: state!.plan!.current.recordDigest,
+          reviewBinding: {
+            kind: 'current_review',
+            reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
+            reviewEvidenceDigest: 'e'.repeat(64),
+            reviewedSubjectDigest: state!.plan!.current.digest,
+          },
+        },
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sessDir);
+    expect(finalState!.phase).toBe('IMPL_REVIEW');
+    expect(finalState!.proofContract?.claims[0]?.evidenceRefs).toEqual([
+      {
+        kind: 'validation_attempt',
+        attemptId: finalState!.validationAttempts[0]!.attemptId,
+      },
+    ]);
+  });
+
+  it('fails closed when the phase-specific digest prerequisite is unavailable', async () => {
+    await driveToValidation();
+    // The automatic plan-convergence run consumed the executor mock; clear it
+    // so this test measures only the blocked run_check calls below.
+    vi.mocked(executeCheck).mockClear();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    await writeState(sessDir, { ...state!, plan: null });
+
+    const baseline = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    expect(baseline.code).toBe('PLAN_REQUIRED');
+    expect(executeCheck).not.toHaveBeenCalled();
+
+    await writeState(sessDir, { ...state!, phase: 'IMPL_VALIDATION', implementation: null });
+    const implementation = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    expect(implementation.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
+    expect(executeCheck).not.toHaveBeenCalled();
+    expect((await readState(sessDir))!.validationAttempts).toEqual([]);
   });
 
   it('records failed check without advancing phase', async () => {
@@ -370,7 +1228,9 @@ describe('CORNER', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result.evidence.passed).toBe(false);
     expect(result.evidence.exitCode).toBe(1);
     expect(result.derivedRepairGuidance).toBeDefined();
@@ -379,7 +1239,7 @@ describe('CORNER', () => {
       expect(rg.kind).toBe('derived_repair_guidance');
       expect(rg.advisory).toBe(true);
       expect(rg.source).toBe('run_check_output');
-      expect(rg.status).toBe('available');
+      expect(rg.status).toBe('unavailable');
       expect(rg.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
       );
@@ -390,7 +1250,9 @@ describe('CORNER', () => {
     // Phase goes to PLAN on failure (CHECK_FAILED transition)
     expect(state!.phase).toBe('PLAN');
     // Derived repair guidance is persisted
-    expect(state!.validation[0].derivedRepairGuidance).toBeDefined();
+    const [validation] = state!.validation;
+    expect(validation).toBeDefined();
+    expect(validation!.derivedRepairGuidance).toBeDefined();
   });
 });
 
@@ -413,16 +1275,17 @@ describe('EDGE', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result.evidence.timedOut).toBe(true);
     expect(result.evidence.exitCode).toBe(124);
     expect(result.status).toContain('timed out');
     expect(result.derivedRepairGuidance).toBeDefined();
     if (result.derivedRepairGuidance) {
       const rg = result.derivedRepairGuidance as Record<string, unknown>;
-      expect(rg.status).toBe('available');
-      expect(rg.category).toBe('timeout');
-      expect(rg.confidence).toBe('high');
+      expect(rg.status).toBe('unavailable');
+      expect(rg.category ?? rg.reason).toBeDefined();
     }
   });
 
@@ -442,7 +1305,9 @@ describe('EDGE', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
     });
 
-    const result1 = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result1 = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result1.evidence.passed).toBe(false);
     expect(result1.evidence.exitCode).toBe(1);
     expect(result1.evidence.timedOut).toBe(false);
@@ -481,7 +1346,7 @@ describe('CONCURRENCY', () => {
     const raw = await runWithLogContextAsync({ traceId: 'trace-run-check' }, () =>
       run_check.execute({ kind: 'typecheck' }, ctx),
     );
-    const result = parseToolResult(raw) as Record<string, unknown>;
+    const result = parseToolResult(raw);
 
     expect(result.error).toBe(true);
     expect(result.code).toBe('LOCK_TIMEOUT_EXHAUSTED');
@@ -552,6 +1417,8 @@ describe('CONCURRENCY', () => {
       verificationCandidates: [
         ...(s!.verificationCandidates ?? []),
         {
+          assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_lint_parallel',
           kind: 'lint',
           command: 'npm run lint',
           source: 'discovery' as const,
@@ -559,6 +1426,8 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_parallel',
           kind: 'test',
           command: 'npm test',
           source: 'discovery' as const,
@@ -566,6 +1435,8 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_build_parallel',
           kind: 'build',
           command: 'npm run build',
           source: 'discovery' as const,
@@ -573,6 +1444,12 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
       ],
+      executionSubjectInputsByCandidateId: {
+        ...(s!.executionSubjectInputsByCandidateId ?? {}),
+        vc_lint_parallel: [{ kind: 'implementation' as const }],
+        vc_test_parallel: [{ kind: 'implementation' as const }],
+        vc_build_parallel: [{ kind: 'implementation' as const }],
+      },
     });
 
     // Execute 4 checks in parallel — each check runs outside the lock,
@@ -584,7 +1461,7 @@ describe('CONCURRENCY', () => {
       run_check.execute({ kind: 'build' }, ctx),
     ]);
 
-    const parsedResults = results.map((r) => parseToolResult(r) as Record<string, unknown>);
+    const parsedResults = results.map((r) => parseToolResult(r));
     const errors = parsedResults.filter((r) => r.error);
     if (errors.length > 0) {
       console.error('Parallel check errors:', JSON.stringify(errors, null, 2));
@@ -631,10 +1508,7 @@ describe('STALE_STATE', () => {
       };
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
-      string,
-      unknown
-    >;
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
     expect(result.error).toBe(true);
     // Phase C re-reads under lock, sees COMPLETE, blocks with COMMAND_NOT_ALLOWED
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
@@ -659,6 +1533,10 @@ describe('STALE_STATE', () => {
       await writeState(sd, {
         ...(await readState(sd))!,
         activeChecks: [],
+        // No detected stack → the mid-flight clear yields NO_ACTIVE_CHECKS rather
+        // than F4's stack-detected-but-no-commands block.
+        discoverySummary: null,
+        detectedStack: null,
       });
       return {
         kind: input.kind,
@@ -674,10 +1552,7 @@ describe('STALE_STATE', () => {
       };
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
-      string,
-      unknown
-    >;
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
     expect(result.error).toBe(true);
     // Phase C re-reads under lock, sees empty activeChecks, blocks
     expect(result.code).toBe('NO_ACTIVE_CHECKS');

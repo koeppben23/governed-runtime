@@ -13,9 +13,7 @@
  */
 
 import type { DiscoveryResult } from './types.js';
-import type { CodeSurfaceStatus } from './types.js';
-import { readDiscovery } from '../adapters/persistence-discovery.js';
-import { PersistenceError } from '../adapters/persistence.js';
+import type { CodeSurfaceStatus } from '../state/discovery-schemas.js';
 
 export type DiscoveryHealthUnavailableReason =
   'missing' | 'corrupt' | 'schema_invalid' | 'read_failed';
@@ -31,7 +29,7 @@ export interface DiscoveryHealthAvailableProjection {
   readonly failedCollectorNames: string[];
   readonly hasBudgetExhaustion: boolean;
   readonly readFailureCount: number;
-  readonly codeSurfaceStatus: CodeSurfaceStatus | null;
+  readonly codeSurfaceStatus: CodeSurfaceStatus;
   readonly collectedAt: string | null;
   readonly ageWarning: string | null;
   readonly healthy: boolean;
@@ -56,18 +54,18 @@ export type DiscoveryHealthProjection =
  *
  * Derived from:
  * - result.diagnostics[] → collector status counts and failed names
- * - result.codeSurfaces?.budget.budgetExhausted → hasBudgetExhaustion
- * - result.codeSurfaces?.readStatuses → readFailureCount (non-read_ok)
- * - result.codeSurfaces?.status → codeSurfaceStatus
+ * - result.codeSurfaces.budget.budgetExhausted → hasBudgetExhaustion
+ * - result.codeSurfaces.readStatuses → readFailureCount (non-read_ok)
+ * - result.codeSurfaces.status → codeSurfaceStatus
  * - result.collectedAt → collectedAt, ageWarning (computed)
  *
- * healthy: no failed, partial, budget exhaustion, or read failures.
+ * healthy: no failed/partial collectors, healthy code-surface status, budget exhaustion, or read failures.
  *
  * @param result - The DiscoveryResult to project from.
- * @returns DiscoveryHealthProjection — never null, always has defaults for missing data.
+ * @returns DiscoveryHealthProjection derived from a schema-valid current result.
  */
 export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealthProjection {
-  const diagnostics = result.diagnostics ?? [];
+  const diagnostics = result.diagnostics;
 
   let completeCollectors = 0;
   let partialCollectors = 0;
@@ -90,11 +88,11 @@ export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealth
   }
 
   const codeSurfaces = result.codeSurfaces;
-  const hasBudgetExhaustion = codeSurfaces?.budget?.budgetExhausted ?? false;
-  const readFailureCount = codeSurfaces?.readStatuses
+  const hasBudgetExhaustion = codeSurfaces.budget.budgetExhausted ?? false;
+  const readFailureCount = codeSurfaces.readStatuses
     ? Object.values(codeSurfaces.readStatuses).filter((s) => s !== 'read_ok').length
     : 0;
-  const codeSurfaceStatus: CodeSurfaceStatus | null = codeSurfaces?.status ?? null;
+  const codeSurfaceStatus: CodeSurfaceStatus = codeSurfaces.status;
   const collectedAt: string | null = result.collectedAt ?? null;
 
   const ageWarning = computeAgeWarning(collectedAt);
@@ -102,6 +100,7 @@ export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealth
   const healthy =
     failedCollectors === 0 &&
     partialCollectors === 0 &&
+    codeSurfaceStatus === 'ok' &&
     !hasBudgetExhaustion &&
     readFailureCount === 0;
 
@@ -144,55 +143,9 @@ export function isDiscoveryHealthAvailable(
   return health?.status === 'available';
 }
 
-/**
- * Map a persistence error to a fail-closed unavailable reason.
- *
- * Single source of truth shared by status projection and the #399 health gate
- * so that both surfaces classify read/parse/schema failures identically.
- */
-export function classifyDiscoveryHealthUnavailable(
-  error: unknown,
-): DiscoveryHealthUnavailableReason {
-  if (error instanceof PersistenceError) {
-    switch (error.code) {
-      case 'PARSE_FAILED':
-        return 'corrupt';
-      case 'SCHEMA_VALIDATION_FAILED':
-        return 'schema_invalid';
-      case 'READ_FAILED':
-      case 'WRITE_FAILED':
-      case 'LOCK_TIMEOUT':
-        return 'read_failed';
-    }
-  }
-  return 'read_failed';
-}
-
 export interface DiscoveryHealthContext {
   readonly discovery: DiscoveryResult | null;
   readonly discoveryHealth: DiscoveryHealthProjection;
-}
-
-/**
- * Load the persisted DiscoveryResult and derive its advisory health projection.
- *
- * Fail-closed: a missing artifact or any read/parse/schema failure yields an
- * `unavailable` projection rather than a fabricated healthy one. This is the
- * canonical cheap read used by the per-tool #399 health gate and by status.
- */
-export async function loadDiscoveryHealthContext(wsDir: string): Promise<DiscoveryHealthContext> {
-  try {
-    const result = await readDiscovery(wsDir);
-    if (!result) {
-      return { discovery: null, discoveryHealth: unavailableDiscoveryHealth('missing') };
-    }
-    return { discovery: result, discoveryHealth: extractDiscoveryHealth(result) };
-  } catch (error) {
-    return {
-      discovery: null,
-      discoveryHealth: unavailableDiscoveryHealth(classifyDiscoveryHealthUnavailable(error)),
-    };
-  }
 }
 
 function recoveryForReason(reason: DiscoveryHealthUnavailableReason): string {

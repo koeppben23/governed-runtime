@@ -11,12 +11,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { createTestContext } from './testing.js';
+import { hashText } from './shared/hashing.js';
 
 describe('testing module', () => {
   it('returns default time and digest function', () => {
     const ctx = createTestContext();
     expect(ctx.now()).toBe('2026-01-01T00:00:00.000Z');
-    expect(ctx.digest('hello')).toBe('digest-of-hello');
+    expect(ctx.digest('hello')).toBe(hashText('hello'));
   });
 
   it('accepts custom fixed time', () => {

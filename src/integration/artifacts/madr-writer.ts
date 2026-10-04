@@ -7,9 +7,15 @@
  * to ARCH_COMPLETE. The MADR file is a standalone Markdown artifact
  * suitable for archival and version control.
  *
+ * The generated envelope is FlowGuard metadata, never ADR content: the status
+ * line identifies the FlowGuard decision (`FlowGuard Decision Status`) and the
+ * digest line identifies the exact reviewed text (`Reviewed ADR digest`). The
+ * submitted `adrText` is embedded byte-identically — including any `## Status`
+ * section or `- Status:` line it carries — and is never rewritten.
+ *
  * File naming: {id}.md (e.g., ADR-1.md)
  *
- * @version v1
+ * @version v2
  */
 
 import * as fs from 'node:fs/promises';
@@ -28,22 +34,22 @@ export class MadrWriteError extends Error {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MADR_SCHEMA_VERSION = 'madr-artifact.v1';
+const MADR_SCHEMA_VERSION = 'madr-artifact.v2';
 
 // ─── MADR Content ─────────────────────────────────────────────────────────────
 
 /**
  * Format an ArchitectureDecision into MADR Markdown content.
- * The output follows the MADR template with FlowGuard metadata header.
+ * The output follows the MADR template with a FlowGuard metadata envelope.
  */
 export function formatMadrContent(adr: ArchitectureDecision): string {
   return [
     `# ${adr.id}: ${adr.title}`,
     '',
-    `- Status: ${adr.status}`,
+    `- FlowGuard Decision Status: ${adr.status}`,
+    `- Reviewed ADR digest: ${adr.digest}`,
     `- Date: ${adr.createdAt}`,
     `- Schema: ${MADR_SCHEMA_VERSION}`,
-    `- Digest: ${adr.digest}`,
     '',
     adr.adrText,
     '', // trailing newline

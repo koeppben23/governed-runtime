@@ -22,6 +22,7 @@
 
 import * as crypto from 'node:crypto';
 import { TsaError } from './errors.js';
+import type { TsDigestAlgorithm } from './canonical-digest.js';
 
 export interface TimestampAuthorityProvider {
   requestTimestamp(input: {
@@ -38,8 +39,12 @@ export interface TimestampAuthorityProvider {
 export interface TimestampVerifier {
   verifyToken(input: {
     tokenDerBase64: string;
-    expectedDigest: Uint8Array;
-    digestAlgorithm: 'sha256';
+    /**
+     * The expected message-imprint digest per admissible algorithm (TSA2).
+     * The verifier reads the token's declared imprint algorithm and compares
+     * against the matching digest — a token never selects its own comparator.
+     */
+    expectedDigests: Record<TsDigestAlgorithm, Uint8Array>;
     trustAnchors: string[];
   }): Promise<{
     status: 'valid' | 'invalid';
@@ -48,7 +53,10 @@ export interface TimestampVerifier {
     serialNumber?: string;
     signerSubject?: string;
     messageImprintHex?: string;
+    digestAlgorithm?: TsDigestAlgorithm;
     reason?: string;
+    /** Structured diagnostics for algorithm/extension rejections. */
+    detail?: string;
   }>;
 }
 
@@ -96,8 +104,7 @@ export class MockTimestampVerifier implements TimestampVerifier {
 
   async verifyToken(input: {
     tokenDerBase64: string;
-    expectedDigest: Uint8Array;
-    digestAlgorithm: 'sha256';
+    expectedDigests: Record<TsDigestAlgorithm, Uint8Array>;
     trustAnchors: string[];
   }): Promise<{
     status: 'valid' | 'invalid';
@@ -105,7 +112,10 @@ export class MockTimestampVerifier implements TimestampVerifier {
     policyOid?: string;
     serialNumber?: string;
     signerSubject?: string;
+    messageImprintHex?: string;
+    digestAlgorithm?: TsDigestAlgorithm;
     reason?: string;
+    detail?: string;
   }> {
     if (this.failOnMismatch && input.tokenDerBase64 !== this.expectedToken) {
       return { status: 'invalid', reason: 'token_mismatch' };
@@ -116,6 +126,7 @@ export class MockTimestampVerifier implements TimestampVerifier {
       policyOid: '1.3.6.1.4.1.4146.1.95',
       serialNumber: crypto.randomUUID(),
       signerSubject: 'CN=Mock TSA',
+      digestAlgorithm: 'sha256',
     };
   }
 }

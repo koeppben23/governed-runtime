@@ -37,6 +37,17 @@ export function unresolvedBlockingObligations(state: SessionState): ReviewObliga
   );
 }
 
+/** Formats the canonical blocking-obligation result for every hook transport. */
+export function formatUnresolvedBlockingObligationReason(
+  obligations: readonly Pick<ReviewObligation, 'obligationId'>[],
+): string {
+  const obligationIds = obligations.map((obligation) => obligation.obligationId).sort();
+  return (
+    `${obligationIds.length} unresolved review obligation(s) block mutating host tool use: ` +
+    obligationIds.join(', ')
+  );
+}
+
 // ─── Thresholds ──────────────────────────────────────────────────────────────
 
 /** Seconds after obligation creation before INFO→WARN escalation. */

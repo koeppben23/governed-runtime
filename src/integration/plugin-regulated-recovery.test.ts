@@ -1,0 +1,499 @@
+/**
+ * @module integration/plugin-regulated-recovery.test
+ * @description Integration tests for the before-hook regulated completion
+ * recovery: resuming an interrupted completion over REAL persistence and audit
+ * adapters, without holding the non-reentrant session lock across the chain.
+ *
+ * @test-policy HAPPY, BAD
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SessionState } from '../state/schema.js';
+import {
+  makeState,
+  REGULATED_POLICY_SNAPSHOT,
+  REVIEW_APPROVE,
+  TICKET,
+  PLAN_RECORD,
+  SELF_REVIEW_CONVERGED,
+  VALIDATION_PASSED,
+  IMPL_EVIDENCE,
+  IMPL_REVIEW_CONVERGED,
+} from '../fixtures.js';
+import { initWorkspace } from '../adapters/workspace/index.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import {
+  appendAuditEventAlreadyLocked,
+  readAuditTrail,
+  withAuditTrailLock,
+} from '../adapters/persistence-audit.js';
+import { getLastChainHash } from '../audit/integrity.js';
+import { buildTransitionBody, finalizeWithTimestampEvidence } from '../audit/types.js';
+import { buildSemanticAuditBody } from '../audit/semantic-event.js';
+import { createTestWorkspace, withTestEnv, type TestWorkspace } from './test-helpers.js';
+import { prepareAuditOperations } from './audit-outbox.js';
+import { reconcilePendingAuditOperations } from './plugin-audit.js';
+import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
+import { createSessionCompletionAuditDeps } from './services/regulated-completion.js';
+import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import { recoverRegulatedCompletion } from './plugin-regulated-recovery.js';
+
+const archiveMock = vi.hoisted(() => ({
+  archiveRegulatedEvidence: vi.fn(),
+}));
+const verificationMock = vi.hoisted(() => ({
+  verifyRegulatedArchive: vi.fn().mockResolvedValue({
+    passed: true,
+    findings: [],
+    manifest: null,
+    verifiedAt: '2026-01-01T00:00:00.000Z',
+  }),
+}));
+
+vi.mock('../adapters/workspace/archive.js', () => archiveMock);
+vi.mock('../adapters/workspace/archive-verify-chain.js', () => verificationMock);
+
+import { archiveRegulatedEvidence } from '../adapters/workspace/archive.js';
+import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
+
+const SESSION_ID = '550e8400-e29b-41d4-a716-446655440000';
+const AT = '2026-01-01T00:00:00.000Z';
+
+let ws: TestWorkspace;
+let cleanupEnv: () => void;
+
+beforeEach(async () => {
+  cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
+  ws = await createTestWorkspace();
+  archiveMock.archiveRegulatedEvidence.mockResolvedValue('/regulated-archive.tar.gz');
+});
+
+afterEach(async () => {
+  vi.clearAllMocks();
+  cleanupEnv();
+  await ws.cleanup();
+});
+
+function reviewState(phase: 'EVIDENCE_REVIEW' | 'COMPLETE') {
+  return makeState(phase, {
+    ticket: TICKET,
+    plan: PLAN_RECORD,
+    selfReview: SELF_REVIEW_CONVERGED,
+    reviewDecision: REVIEW_APPROVE,
+    validation: VALIDATION_PASSED,
+    implementation: IMPL_EVIDENCE,
+    implReview: IMPL_REVIEW_CONVERGED,
+    policySnapshot: REGULATED_POLICY_SNAPSHOT,
+    // Only the terminal COMPLETE state carries the export completion transition.
+    // The durable approval transition it chained from is seeded through the
+    // real outbox path (see seedCompleteCheckpoint).
+    ...(phase === 'COMPLETE'
+      ? {
+          transition: {
+            from: 'EXPORT_READY' as const,
+            to: 'COMPLETE' as const,
+            event: 'EXPORT_MATERIALIZED' as const,
+            at: AT,
+          },
+        }
+      : {}),
+  });
+}
+
+function approvalTransition() {
+  return {
+    from: 'EVIDENCE_REVIEW' as const,
+    to: 'EXPORT_READY' as const,
+    event: 'APPROVE' as const,
+    at: AT,
+  };
+}
+
+/**
+ * Seed the crash checkpoint through the real state/outbox path: the approval
+ * transition, the export completion transition, and the terminal decision are
+ * committed as durable operations with real state-binding digests.
+ */
+async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
+  const exportReady = makeState('EXPORT_READY', {
+    ticket: TICKET,
+    plan: PLAN_RECORD,
+    selfReview: SELF_REVIEW_CONVERGED,
+    reviewDecision: REVIEW_APPROVE,
+    validation: VALIDATION_PASSED,
+    implementation: IMPL_EVIDENCE,
+    implReview: IMPL_REVIEW_CONVERGED,
+    policySnapshot: REGULATED_POLICY_SNAPSHOT,
+    transition: approvalTransition(),
+  });
+  await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+  const persisted = await readState(sessDir);
+  const complete = {
+    ...reviewState('COMPLETE'),
+    pendingAuditOperations: persisted!.pendingAuditOperations,
+  };
+  await writeStateWithArtifactsAndAuditOperations(sessDir, complete, undefined, [
+    terminalDecisionIntent(),
+  ]);
+}
+
+function terminalDecisionIntent() {
+  return {
+    phase: 'EVIDENCE_REVIEW' as const,
+    event: 'decision:DEC-001',
+    occurredAt: AT,
+    detail: {
+      kind: 'decision',
+      decisionId: 'DEC-001',
+      decisionSequence: 1,
+      gatePhase: 'EVIDENCE_REVIEW',
+      verdict: REVIEW_APPROVE.verdict,
+      rationale: REVIEW_APPROVE.rationale,
+      decisionIdentity: REVIEW_APPROVE.decisionIdentity,
+      decidedAt: REVIEW_APPROVE.decidedAt,
+      fromPhase: 'EVIDENCE_REVIEW',
+      toPhase: 'EXPORT_READY',
+      transitionEvent: 'APPROVE',
+      policyMode: 'regulated',
+    },
+  };
+}
+
+function terminalLifecycleIntent() {
+  return {
+    phase: 'COMPLETE' as const,
+    event: 'lifecycle:session_completed',
+    occurredAt: new Date().toISOString(),
+    detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' },
+  };
+}
+
+async function seedSession(state: SessionState): Promise<{ fingerprint: string; sessDir: string }> {
+  const initialized = await initWorkspace(ws.tmpDir, SESSION_ID);
+  await writeState(initialized.sessionDir, state);
+  return { fingerprint: initialized.fingerprint, sessDir: initialized.sessionDir };
+}
+
+function recoveryRuntime(sessDir: string, fingerprint: string, state: SessionState) {
+  return {
+    ws: {
+      getSessionDir: (candidate: string) => (candidate === SESSION_ID ? sessDir : null),
+    },
+    log: { warn: vi.fn() },
+    auditDeps: createSessionCompletionAuditDeps({
+      sessDir,
+      sessionID: SESSION_ID,
+      fingerprint,
+      state,
+    }),
+  } as unknown as FlowGuardPluginRuntime;
+}
+
+async function auditEvents(sessDir: string) {
+  return await readAuditTrail(sessDir);
+}
+
+describe('recoverRegulatedCompletion', () => {
+  it('drains a terminal outbox checkpoint after a crash and archives exactly-once', async () => {
+    // Crash window: the terminal transition + decision semantic operation are
+    // committed to the durable outbox, but reconciliation never ran.
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    await seedCompleteCheckpoint(sessDir);
+
+    await recoverRegulatedCompletion(
+      recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+      SESSION_ID,
+    );
+
+    const finalState = await readState(sessDir);
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
+    const events = await auditEvents(sessDir);
+    expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.detail.kind === 'transition' &&
+          event.detail.from === 'EVIDENCE_REVIEW' &&
+          event.detail.to === 'EXPORT_READY' &&
+          event.detail.event === 'APPROVE',
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.detail.kind === 'transition' &&
+          event.detail.from === 'EXPORT_READY' &&
+          event.detail.to === 'COMPLETE' &&
+          event.detail.event === 'EXPORT_MATERIALIZED',
+      ),
+    ).toHaveLength(1);
+    expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when a competing append makes the export transition durable first', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    // COMPLETE checkpoint without the terminal decision intent: the approval
+    // and export transitions are durable outbox operations, no receipt exists.
+    const exportReady = makeState('EXPORT_READY', {
+      ticket: TICKET,
+      plan: PLAN_RECORD,
+      selfReview: SELF_REVIEW_CONVERGED,
+      reviewDecision: REVIEW_APPROVE,
+      validation: VALIDATION_PASSED,
+      implementation: IMPL_EVIDENCE,
+      implReview: IMPL_REVIEW_CONVERGED,
+      policySnapshot: REGULATED_POLICY_SNAPSHOT,
+      transition: approvalTransition(),
+    });
+    await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+    const persisted = await readState(sessDir);
+    const complete = {
+      ...reviewState('COMPLETE'),
+      pendingAuditOperations: persisted!.pendingAuditOperations,
+    };
+    await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
+
+    // A competing appender writes the export transition durably before
+    // recovery reaches its audit-lock critical section.
+    await withAuditTrailLock(sessDir, async () => {
+      const prevHash = getLastChainHash(await readAuditTrail(sessDir));
+      const body = buildTransitionBody({
+        flowguardSessionId: complete.flowguardSessionId,
+        hostSessionId: complete.binding.hostSessionId,
+        phase: 'COMPLETE',
+        detail: {
+          from: 'EXPORT_READY',
+          to: 'COMPLETE',
+          event: 'EXPORT_MATERIALIZED',
+          autoAdvanced: false,
+          chainIndex: 1,
+        },
+        occurredAt: AT,
+        prevHash,
+      });
+      await appendAuditEventAlreadyLocked(sessDir, finalizeWithTimestampEvidence(body, prevHash));
+    });
+
+    await recoverRegulatedCompletion(
+      recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+      SESSION_ID,
+    );
+
+    const finalState = await readState(sessDir);
+    expect(finalState?.regulatedArchiveStatus).toBe('failed');
+    expect(
+      (await auditEvents(sessDir)).filter((event) => event.detail.kind === 'decision'),
+    ).toHaveLength(0);
+  });
+
+  it('recovers the outbox correlation from a durable receipt after a crash between append and state write', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    // COMPLETE checkpoint without the terminal decision intent.
+    const exportReady = makeState('EXPORT_READY', {
+      ticket: TICKET,
+      plan: PLAN_RECORD,
+      selfReview: SELF_REVIEW_CONVERGED,
+      reviewDecision: REVIEW_APPROVE,
+      validation: VALIDATION_PASSED,
+      implementation: IMPL_EVIDENCE,
+      implReview: IMPL_REVIEW_CONVERGED,
+      policySnapshot: REGULATED_POLICY_SNAPSHOT,
+      transition: approvalTransition(),
+    });
+    await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+    const persisted = await readState(sessDir);
+    const complete = {
+      ...reviewState('COMPLETE'),
+      pendingAuditOperations: persisted!.pendingAuditOperations,
+    };
+    await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
+
+    // Fault injection: the exact committed decision event is appended
+    // durably, then the process dies before the state commit that would have
+    // persisted its outbox operation.
+    const withDecision = prepareAuditOperations(complete, complete, undefined, [
+      terminalDecisionIntent(),
+    ]);
+    const operation = withDecision.pendingAuditOperations.at(-1);
+    if (!operation || operation.kind !== 'semantic') {
+      throw new Error('expected a committed decision operation');
+    }
+    await withAuditTrailLock(sessDir, async () => {
+      const prevHash = getLastChainHash(await readAuditTrail(sessDir));
+      const body = buildSemanticAuditBody({
+        flowguardSessionId: complete.flowguardSessionId,
+        hostSessionId: complete.binding.hostSessionId,
+        phase: operation.semantic.phase,
+        detail: operation.semantic.detail,
+        event: operation.semantic.event,
+        occurredAt: operation.semantic.occurredAt,
+        prevHash,
+        operationId: operation.operationId,
+        preStateDigest: operation.preStateDigest,
+        mutationDigest: operation.mutationDigest,
+        postStateDigest: operation.postStateDigest,
+      });
+      await appendAuditEventAlreadyLocked(sessDir, finalizeWithTimestampEvidence(body, prevHash));
+    });
+    const crashedState = await readState(sessDir);
+    expect(
+      crashedState?.pendingAuditOperations.some(
+        (candidate) => candidate.operationId === operation.operationId,
+      ),
+    ).toBe(false);
+
+    await recoverRegulatedCompletion(
+      recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+      SESSION_ID,
+    );
+
+    const finalState = await readState(sessDir);
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
+    const events = await auditEvents(sessDir);
+    const decisions = events.filter((event) => event.detail.kind === 'decision');
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]!.id).toBe(operation.operationId);
+    const repaired = finalState?.pendingAuditOperations.find(
+      (candidate) => candidate.operationId === operation.operationId,
+    );
+    expect(repaired?.status).toBe('reconciled');
+    const decisionIndex = events.findIndex((event) => event.detail.kind === 'decision');
+    const exportIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'transition' &&
+        event.detail.from === 'EXPORT_READY' &&
+        event.detail.to === 'COMPLETE',
+    );
+    expect(decisionIndex).toBeGreaterThan(-1);
+    expect(exportIndex).toBeGreaterThan(-1);
+    expect(decisionIndex).toBeLessThan(exportIndex);
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries after a lifecycle outbox crash without duplicating terminal evidence', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    await seedCompleteCheckpoint(sessDir);
+    const deps = createSessionCompletionAuditDeps({
+      sessDir,
+      sessionID: SESSION_ID,
+      fingerprint,
+      state: (await readState(sessDir))!,
+    });
+    await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_decision');
+    const pending = await readState(sessDir);
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      { ...pending!, regulatedArchiveStatus: 'pending' },
+      undefined,
+      [terminalLifecycleIntent()],
+    );
+
+    await recoverRegulatedCompletion(
+      recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+      SESSION_ID,
+    );
+
+    const finalState = await readState(sessDir);
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
+    const events = await auditEvents(sessDir);
+    expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
+    expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resume an already verified session', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('COMPLETE'));
+    const verified = {
+      ...(await readState(sessDir))!,
+      regulatedArchiveStatus: 'verified' as const,
+    };
+    await writeState(sessDir, verified);
+
+    await recoverRegulatedCompletion(recoveryRuntime(sessDir, fingerprint, verified), SESSION_ID);
+
+    expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+  });
+
+  it('skips recovery for a non-terminal session', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    const state = await readState(sessDir);
+
+    await recoverRegulatedCompletion(recoveryRuntime(sessDir, fingerprint, state!), SESSION_ID);
+
+    expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+  });
+
+  it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const)(
+    'leaves a regulated %s session byte-semantically unchanged',
+    async (phase) => {
+      const { fingerprint, sessDir } = await seedSession(
+        makeState(phase, {
+          policySnapshot: REGULATED_POLICY_SNAPSHOT,
+          reviewDecision: REVIEW_APPROVE,
+          transition: { from: 'ARCH_REVIEW', to: phase, event: 'APPROVE', at: AT },
+        }),
+      );
+      const before = JSON.stringify(await readState(sessDir));
+
+      await recoverRegulatedCompletion(
+        recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+        SESSION_ID,
+      );
+
+      expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+      expect(JSON.stringify(await readState(sessDir))).toBe(before);
+      expect((await auditEvents(sessDir)).length).toBe(0);
+    },
+  );
+
+  it('concurrent recovery commits exactly one terminal decision and lifecycle', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    await seedCompleteCheckpoint(sessDir);
+    const seedState = await readState(sessDir);
+
+    await Promise.all([
+      recoverRegulatedCompletion(recoveryRuntime(sessDir, fingerprint, seedState!), SESSION_ID),
+      recoverRegulatedCompletion(recoveryRuntime(sessDir, fingerprint, seedState!), SESSION_ID),
+    ]);
+
+    const events = await auditEvents(sessDir);
+    expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
+    expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+    expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
+    expect((await readState(sessDir))?.regulatedArchiveStatus).toBe('verified');
+  });
+
+  it('a late concurrent recovery never re-publishes archive bytes that were already verified', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    await seedCompleteCheckpoint(sessDir);
+    const state = await readState(sessDir);
+
+    // Barrier-controlled interleaving: recovery A blocks inside the archive
+    // step; recovery B enters while A still holds the completion lock.
+    let releaseArchive!: () => void;
+    archiveMock.archiveRegulatedEvidence.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          releaseArchive = () => resolve('/a.tar.gz');
+        }),
+    );
+    const runtime = () => recoveryRuntime(sessDir, fingerprint, state!);
+
+    const first = recoverRegulatedCompletion(runtime(), SESSION_ID);
+    while (archiveMock.archiveRegulatedEvidence.mock.calls.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const second = recoverRegulatedCompletion(runtime(), SESSION_ID);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    releaseArchive();
+    await Promise.all([first, second]);
+
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+    expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
+    const finalState = await readState(sessDir);
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
+    expect(finalState?.pendingAuditOperations.every((op) => op.status === 'reconciled')).toBe(true);
+  });
+});

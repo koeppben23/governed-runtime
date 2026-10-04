@@ -22,7 +22,7 @@ Use this guide for deeper review behavior while keeping root mandates authoritat
 
 For each material finding, provide:
 
-- location,
+- structured relation (`subjectAnchors` and `evidenceLocations`),
 - evidence,
 - impact,
 - smallest credible fix.

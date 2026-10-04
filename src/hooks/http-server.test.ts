@@ -55,6 +55,12 @@ vi.mock('./shared/session-resolver.js', () => ({
 // Mock obligation-tracker.
 vi.mock('./shared/obligation-tracker.js', () => ({
   assessObligationEscalation: vi.fn(() => ({ message: null })),
+  formatUnresolvedBlockingObligationReason: (obligations: Array<{ obligationId: string }>) =>
+    `${obligations.length} unresolved review obligation(s) block mutating host tool use: ` +
+    obligations
+      .map((obligation) => obligation.obligationId)
+      .sort()
+      .join(', '),
   unresolvedBlockingObligations: (state: {
     reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
   }) =>
@@ -67,14 +73,21 @@ vi.mock('./shared/obligation-tracker.js', () => ({
 
 let handleSessionStart: (typeof import('./http-server.js'))['handleSessionStart'];
 let handleHttpRequest: (typeof import('./http-server.js'))['handleHttpRequest'];
+let readHttpHookServerConfig: (typeof import('./http-server.js'))['readHttpHookServerConfig'];
 let signalListenerBaseline: {
   sigterm: NodeJS.SignalsListener[];
   sigint: NodeJS.SignalsListener[];
 };
 
+const TEST_HOOK_TOKEN = 'test-hook-token-with-at-least-thirty-two-characters';
+
 beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
+  process.env['FLOWGUARD_HOOK_TOKEN'] = TEST_HOOK_TOKEN;
+  delete process.env['FLOWGUARD_HOOK_HOST'];
+  delete process.env['FLOWGUARD_HOOK_PORT'];
+  delete process.env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
   signalListenerBaseline = {
     sigterm: process.listeners('SIGTERM') as NodeJS.SignalsListener[],
     sigint: process.listeners('SIGINT') as NodeJS.SignalsListener[],
@@ -100,6 +113,12 @@ beforeEach(async () => {
   }));
   vi.doMock('./shared/obligation-tracker.js', () => ({
     assessObligationEscalation: vi.fn(() => ({ message: null })),
+    formatUnresolvedBlockingObligationReason: (obligations: Array<{ obligationId: string }>) =>
+      `${obligations.length} unresolved review obligation(s) block mutating host tool use: ` +
+      obligations
+        .map((obligation) => obligation.obligationId)
+        .sort()
+        .join(', '),
     unresolvedBlockingObligations: (state: {
       reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
     }) =>
@@ -112,12 +131,18 @@ beforeEach(async () => {
   handleSessionStart = mod.handleSessionStart;
   handlePreToolUse = mod.handlePreToolUse;
   handleHttpRequest = mod.handleHttpRequest;
+  readHttpHookServerConfig = mod.readHttpHookServerConfig;
 });
 
 afterEach(() => {
   for (const listener of process.listeners('SIGTERM') as NodeJS.SignalsListener[]) {
     if (!signalListenerBaseline.sigterm.includes(listener)) process.off('SIGTERM', listener);
   }
+  delete process.env['FLOWGUARD_HOOK_TOKEN'];
+  delete process.env['FLOWGUARD_HOOK_HOST'];
+  delete process.env['FLOWGUARD_HOOK_PORT'];
+  delete process.env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  process.exitCode = undefined;
   for (const listener of process.listeners('SIGINT') as NodeJS.SignalsListener[]) {
     if (!signalListenerBaseline.sigint.includes(listener)) process.off('SIGINT', listener);
   }
@@ -130,16 +155,29 @@ function makeRequest(input: {
   url?: string;
   body: string;
   contentLength?: string;
+  headers?: Record<string, string>;
+  rawHeaders?: string[];
 }) {
   const req = new Readable({
     read() {
       this.push(input.body);
       this.push(null);
     },
-  }) as Readable & { method?: string; url?: string; headers: Record<string, string> };
+  }) as Readable & {
+    method?: string;
+    url?: string;
+    headers: Record<string, string>;
+    rawHeaders: string[];
+  };
   req.method = input.method ?? 'POST';
   req.url = input.url ?? '/hooks/pre-tool-use';
-  req.headers = input.contentLength ? { 'content-length': input.contentLength } : {};
+  req.headers = {
+    authorization: `Bearer ${TEST_HOOK_TOKEN}`,
+    'content-type': 'application/json',
+    ...(input.contentLength ? { 'content-length': input.contentLength } : {}),
+    ...input.headers,
+  };
+  req.rawHeaders = input.rawHeaders ?? [];
   return req;
 }
 
@@ -170,20 +208,22 @@ describe('handleSessionStart', () => {
   describe('HAPPY', () => {
     it('should return allow and persist audit event on success', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockResolvedValue({ fingerprint: 'fp_abc123' });
-      mockSessionDir.mockReturnValue('/workspace/sessions/fp_abc123/sess_test_123');
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/workspace/sessions/fp_abc123/sess_test_123',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000002', phase: 'READY' },
+      });
       mockAppendAuditEvent.mockResolvedValue(undefined);
 
       const result = await handleSessionStart(validPayload);
 
       expect(result).toEqual({ decision: 'allow' });
       expect(mockEnsureWorkspace).toHaveBeenCalledWith('/tmp/project');
-      expect(mockComputeFingerprint).toHaveBeenCalledWith('/tmp/project');
-      expect(mockSessionDir).toHaveBeenCalledWith('fp_abc123', 'sess_test_123');
       expect(mockAppendAuditEvent).toHaveBeenCalledWith(
         '/workspace/sessions/fp_abc123/sess_test_123',
         expect.objectContaining({
-          sessionId: 'sess_test_123',
+          flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+          hostSessionId: 'sess_test_123',
           phase: 'READY',
           event: 'lifecycle',
           actor: 'system',
@@ -209,25 +249,31 @@ describe('handleSessionStart', () => {
         reason: 'workspace bootstrap failed (non-blocking)',
       });
       // Should NOT attempt fingerprint or audit after workspace failure.
-      expect(mockComputeFingerprint).not.toHaveBeenCalled();
       expect(mockAppendAuditEvent).not.toHaveBeenCalled();
     });
 
-    it('should return allow when computeFingerprint fails (sessDir remains null)', async () => {
+    it('should return allow when session resolution fails (audit skipped)', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockRejectedValue(new Error('git not found'));
+      mockResolveSession.mockResolvedValue({
+        ok: false,
+        code: 'SESSION_DIR_NOT_FOUND',
+        reason: 'no state',
+      });
 
       const result = await handleSessionStart(validPayload);
 
       expect(result).toEqual({ decision: 'allow' });
-      // Audit should NOT be called because sessDir is null.
+      // Audit should NOT be called without a resolved FlowGuard identity.
       expect(mockAppendAuditEvent).not.toHaveBeenCalled();
     });
 
     it('should return allow when appendAuditEvent fails (non-fatal)', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockResolvedValue({ fingerprint: 'fp_xyz' });
-      mockSessionDir.mockReturnValue('/sessions/fp_xyz/sess_test_123');
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/sessions/fp_xyz/sess_test_123',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000002', phase: 'READY' },
+      });
       mockAppendAuditEvent.mockRejectedValue(new Error('disk full'));
 
       const result = await handleSessionStart(validPayload);
@@ -239,9 +285,9 @@ describe('handleSessionStart', () => {
   });
 
   describe('CORNER', () => {
-    it('should handle non-Error throw from computeFingerprint', async () => {
+    it('should handle non-Error throw from session resolution', async () => {
       mockEnsureWorkspace.mockResolvedValue(undefined);
-      mockComputeFingerprint.mockRejectedValue('string error');
+      mockResolveSession.mockRejectedValue('string error');
 
       const result = await handleSessionStart(validPayload);
 
@@ -335,12 +381,104 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(
-      expect.objectContaining({ status: 'ok', pid: expect.any(Number) }),
-    );
+    expect(JSON.parse(res.body)).toEqual({ status: 'ok' });
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Origin');
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Credentials');
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Headers');
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Methods');
   });
 
-  it('BAD: non-POST non-health requests return 405 without resolving a session', async () => {
+  it.each([
+    { label: 'missing authorization', headers: { authorization: '' } },
+    { label: 'wrong token', headers: { authorization: 'Bearer wrong-token' } },
+    { label: 'wrong scheme', headers: { authorization: `Basic ${TEST_HOOK_TOKEN}` } },
+    { label: 'extra token part', headers: { authorization: `Bearer ${TEST_HOOK_TOKEN} extra` } },
+  ])('BAD: $label returns 401 before state resolution', async ({ headers }) => {
+    const req = makeRequest({ body: '{}', headers });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(401);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Unauthorized' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+    expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { method: 'GET', url: '/hooks/pre-tool-use' },
+    { method: 'POST', url: '/hooks/unknown' },
+    { method: 'OPTIONS', url: '/hooks/unknown' },
+  ])(
+    'BAD: unauthenticated $method $url returns 401 without route enumeration',
+    async ({ method, url }) => {
+      const req = makeRequest({ method, url, body: '', headers: { authorization: '' } });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(401);
+      expect(JSON.parse(res.body)).toEqual({ error: 'Unauthorized' });
+      expect(mockResolveSession).not.toHaveBeenCalled();
+      expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+    },
+  );
+
+  it('BAD: duplicate authorization headers return 401 before body processing', async () => {
+    const req = makeRequest({
+      body: '{}',
+      rawHeaders: [
+        'Authorization',
+        `Bearer ${TEST_HOOK_TOKEN}`,
+        'Authorization',
+        `Bearer ${TEST_HOOK_TOKEN}`,
+        'Content-Type',
+        'application/json',
+      ],
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(401);
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'missing content type', headers: { 'content-type': '' } },
+    { label: 'wrong content type', headers: { 'content-type': 'text/json' } },
+  ])('BAD: $label returns 415 before state resolution', async ({ headers }) => {
+    const req = makeRequest({ body: '{}', headers });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(415);
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('HAPPY: application/json with charset is accepted', async () => {
+    const req = makeRequest({
+      body: JSON.stringify({ tool_name: 'Read', tool_input: {}, session_id: 's', cwd: '/tmp' }),
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('BAD: authenticated OPTIONS on a hook route returns 405', async () => {
+    const req = makeRequest({ method: 'OPTIONS', body: '' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(405);
+  });
+
+  it('BAD: authenticated non-POST non-health requests return 405 without resolving a session', async () => {
     const req = makeRequest({ method: 'GET', url: '/hooks/pre-tool-use', body: '' });
     const res = makeResponse();
 
@@ -351,7 +489,7 @@ describe('handleHttpRequest', () => {
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
-  it('BAD: unknown POST route returns 404 without resolving a session', async () => {
+  it('BAD: authenticated unknown POST route returns 404 without resolving a session', async () => {
     const req = makeRequest({ url: '/hooks/unknown', body: '{}' });
     const res = makeResponse();
 
@@ -389,7 +527,10 @@ describe('handleHttpRequest', () => {
     mockResolveSession.mockResolvedValue({
       ok: true,
       sessionDir: '/sessions/sess_test_123',
-      state: { phase: 'IMPLEMENTATION' },
+      state: {
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+        phase: 'IMPLEMENTATION',
+      },
     });
     mockAppendAuditEvent.mockResolvedValue(undefined);
     const req = makeRequest({
@@ -410,7 +551,8 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).toHaveBeenCalledWith(
       '/sessions/sess_test_123',
       expect.objectContaining({
-        sessionId: 'sess_test_123',
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+        hostSessionId: 'sess_test_123',
         phase: 'IMPLEMENTATION',
         event: 'tool_call',
         actor: 'machine',
@@ -491,6 +633,7 @@ describe('handleHttpRequest', () => {
       ok: true,
       sessionDir: '/sessions/sess_test_123',
       state: {
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
         phase: 'IMPL_REVIEW',
         reviewAssurance: {
           obligations: [
@@ -518,7 +661,8 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).toHaveBeenCalledWith(
       '/sessions/sess_test_123',
       expect.objectContaining({
-        sessionId: 'sess_test_123',
+        flowguardSessionId: '00000000-0000-4000-8000-000000000002',
+        hostSessionId: 'sess_test_123',
         phase: 'IMPL_REVIEW',
         event: 'lifecycle',
         actor: 'system',
@@ -689,5 +833,43 @@ describe('handleHttpRequest', () => {
     expect(res.status).toBe(413);
     expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
     expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('readHttpHookServerConfig', () => {
+  it('uses the secure loopback defaults with an explicit token', () => {
+    expect(readHttpHookServerConfig({ FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN })).toEqual({
+      binding: 'loopback',
+      host: '127.0.0.1',
+      port: 18462,
+      token: TEST_HOOK_TOKEN,
+    });
+  });
+
+  it('permits IPv6 loopback and remote binds only with explicit opt-in', () => {
+    expect(
+      readHttpHookServerConfig({
+        FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN,
+        FLOWGUARD_HOOK_HOST: '::1',
+      }),
+    ).toMatchObject({ binding: 'loopback', host: '::1' });
+    expect(
+      readHttpHookServerConfig({
+        FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN,
+        FLOWGUARD_HOOK_HOST: '0.0.0.0',
+        FLOWGUARD_HOOK_ALLOW_REMOTE: '1',
+      }),
+    ).toMatchObject({ binding: 'remote', allowRemote: true });
+  });
+
+  it.each([
+    {},
+    { FLOWGUARD_HOOK_TOKEN: 'short' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_HOST: '0.0.0.0' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_HOST: 'localhost' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_PORT: '0' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_PORT: '18462abc' },
+  ])('rejects unsafe or malformed configuration: %o', (env) => {
+    expect(() => readHttpHookServerConfig(env)).toThrow(TypeError);
   });
 });

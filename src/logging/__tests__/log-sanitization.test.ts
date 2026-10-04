@@ -15,13 +15,18 @@ import { runWithLogContext } from '../log-context.js';
 
 function captureLogger(): {
   log: AdapterLogger;
-  entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
+  entries: {
+    level: string;
+    service: string;
+    message: string;
+    extra?: Record<string, unknown> | undefined;
+  }[];
 } {
   const entries: {
     level: string;
     service: string;
     message: string;
-    extra?: Record<string, unknown>;
+    extra?: Record<string, unknown> | undefined;
   }[] = [];
   return {
     entries,
@@ -49,7 +54,7 @@ describe('log-sanitization', () => {
     it('logs only code, no vars content', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/tools/helpers.js');
+      const { formatBlocked } = await import('../../integration/blocked-result.js');
 
       formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
 
@@ -61,7 +66,7 @@ describe('log-sanitization', () => {
     it('keeps traceId and durationMs as safe structured fields', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/tools/helpers.js');
+      const { formatBlocked } = await import('../../integration/blocked-result.js');
 
       runWithLogContext({ traceId: '11111111-1111-4111-8111-111111111111' }, () => {
         formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
@@ -79,7 +84,8 @@ describe('log-sanitization', () => {
     it('formatRailResult extra contains code but not reason text', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatRailResult } = await import('../../integration/tools/helpers.js');
+      const { formatRailResult } =
+        await import('../../integration/tools/helpers-rail-presentation.js');
 
       formatRailResult({
         kind: 'blocked',
@@ -95,7 +101,8 @@ describe('log-sanitization', () => {
     it('overflowLimit is a number, not a message', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatRailResult } = await import('../../integration/tools/helpers.js');
+      const { formatRailResult } =
+        await import('../../integration/tools/helpers-rail-presentation.js');
 
       formatRailResult({
         kind: 'blocked',

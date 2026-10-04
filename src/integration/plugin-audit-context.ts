@@ -9,8 +9,10 @@
  * @version v1
  */
 
-import type { SessionState, Phase, Event } from '../state/schema.js';
-import { parseToolResult } from './plugin-helpers.js';
+import type { SessionState } from '../state/schema.js';
+import { parseToolResult } from './blocked-result.js';
+
+import { sanitizeDiagnosticString } from '../logging/redact.js';
 import { checkNtpClock, type NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 
@@ -41,6 +43,24 @@ interface AuditContextDeps {
 
 // ─── Internal types ───────────────────────────────────────────────────────────
 
+/**
+ * Resolve the explicit audit identity pair. Audit events never carry a
+ * polymorphic sessionId: `flowguardSessionId` is the SAME FlowGuard UUID on
+ * every event class, and `hostSessionId` is bound separately where host
+ * context exists. Returns null when the FlowGuard identity is unavailable —
+ * the caller must skip the event instead of approximating an identity.
+ */
+export function auditIdentity(state: SessionState | null): {
+  flowguardSessionId: string;
+  hostSessionId?: string;
+} | null {
+  if (!state) return null;
+  return {
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
+  };
+}
+
 export interface AuditContext {
   sessDir: string;
   emitToolCalls: boolean;
@@ -50,12 +70,12 @@ export interface AuditContext {
   now: string;
   prevHash: string;
   phase: string;
-  transitions: Array<{ from: Phase; to: Phase; event: Event; at: string }>;
   success: boolean;
+  errorCode?: string | undefined;
   errorMessage: string | undefined;
   parsed: ReturnType<typeof parseToolResult>;
   timestampAssurance: TimestampAssurancePolicy;
-  ntpResult?: NtpCheckResult;
+  ntpResult?: NtpCheckResult | undefined;
 }
 
 // ─── Context Resolution ──────────────────────────────────────────────────────
@@ -71,6 +91,10 @@ export async function resolveAuditContext(
   if (!sessDir) return null;
 
   const { policy, state } = await deps.resolveSessionPolicy(sessDir);
+  if (!state) {
+    deps.log.debug('audit', 'skipping unhydrated session audit', { sessionId, tool: toolName });
+    return null;
+  }
   const { emitToolCalls, emitTransitions, enableChainHash } = policy.audit;
   const effectiveMode = policy.mode;
 
@@ -84,7 +108,7 @@ export async function resolveAuditContext(
   const actor = policy.actorClassification[toolName] ?? 'system';
   const now = new Date().toISOString();
 
-  if (state?.archiveStatus) deps.invalidateChainState(sessionId);
+  if (state?.regulatedArchiveStatus) deps.invalidateChainState(sessionId);
   const prevHash = await deps.initChain(sessDir, sessionId);
   const parsedOutput = parseAuditOutput(output);
   const resolvedTsa = resolveTimestampAssurancePolicy(policy.audit.timestampAssurance);
@@ -99,9 +123,9 @@ export async function resolveAuditContext(
       actor,
       now,
       prevHash,
-      phase: parsedOutput.phase,
-      transitions: parsedOutput.transitions,
+      phase: state.phase,
       success: parsedOutput.success,
+      errorCode: parsedOutput.errorCode,
       errorMessage: parsedOutput.errorMessage,
       parsed: parsedOutput.parsed,
       timestampAssurance: resolvedTsa,
@@ -131,15 +155,23 @@ export interface AuditContextResolution {
 
 function parseAuditOutput(
   output: unknown,
-): Pick<AuditContext, 'phase' | 'transitions' | 'success' | 'errorMessage' | 'parsed'> {
+): Pick<AuditContext, 'success' | 'errorCode' | 'errorMessage' | 'parsed'> {
   const parsed = parseToolResult(extractToolOutputValue(output));
-  const metadataTransitions = extractMetadataTransitions(output);
+  const rawMessage =
+    typeof parsed?.message === 'string'
+      ? parsed.message
+      : typeof parsed?.errorMessage === 'string'
+        ? parsed.errorMessage
+        : undefined;
   return {
-    phase: typeof parsed?.phase === 'string' ? parsed.phase : 'unknown',
-    transitions:
-      metadataTransitions.length > 0 ? metadataTransitions : extractParsedTransitions(parsed),
     success: parsed?.error !== true,
-    errorMessage: typeof parsed?.errorMessage === 'string' ? parsed.errorMessage : undefined,
+    errorCode: typeof parsed?.code === 'string' ? parsed.code : undefined,
+    // Diagnostic text from a tool result is unstructured and may carry
+    // credentials or absolute paths. It reaches the raw audit trail via
+    // tool_call.detail.errorMessage and error.detail.message, so it is
+    // redacted here — once, at the point it enters the audit context —
+    // rather than at each consumer.
+    errorMessage: rawMessage === undefined ? undefined : sanitizeDiagnosticString(rawMessage),
     parsed,
   };
 }
@@ -148,23 +180,6 @@ function extractToolOutputValue(output: unknown): unknown {
   return typeof output === 'object' && output !== null && 'output' in output
     ? (output as { output?: unknown }).output
     : output;
-}
-
-function extractMetadataTransitions(output: unknown): AuditContext['transitions'] {
-  const metadata =
-    typeof output === 'object' && output !== null
-      ? ((output as Record<string, unknown>).metadata as Record<string, unknown> | undefined)
-      : undefined;
-  return Array.isArray(metadata?.transitions)
-    ? (metadata.transitions as AuditContext['transitions'])
-    : [];
-}
-
-function extractParsedTransitions(
-  parsed: ReturnType<typeof parseToolResult>,
-): AuditContext['transitions'] {
-  const rawTransitions = (parsed?._audit as { transitions?: unknown } | undefined)?.transitions;
-  return Array.isArray(rawTransitions) ? (rawTransitions as AuditContext['transitions']) : [];
 }
 
 function resolveTimestampAssurancePolicy(

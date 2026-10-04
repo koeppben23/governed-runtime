@@ -1,0 +1,1 @@
+// Security-critical guard — do not change lightly

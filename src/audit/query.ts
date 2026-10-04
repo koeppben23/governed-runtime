@@ -9,29 +9,37 @@
  * - Functional filter combinators — compose for complex queries
  * - Type-safe predicate builders for each filterable dimension
  * - Chronological ordering guaranteed (input must be chronological)
- * - Works with both legacy (AuditEvent) and chained (ChainedAuditEvent) events
+ * - Covers canonical audit-chain.v3 events — the only trail format
  *
  * @version v1
  */
 
 import type { AuditEvent } from '../state/evidence.js';
+import { ReviewVerdict } from '../state/evidence.js';
+import type { DecisionIdentity } from '../state/evidence-identity.js';
+import { DecisionIdentity as DecisionIdentitySchema } from '../state/evidence-identity.js';
 import type { AuditEventKind } from './types.js';
+import { ENFORCEMENT_DENIED_EVENT_NAME, STATE_WRITE_EVENT_NAME } from './types.js';
+import { AuditQueryError } from './errors.js';
 
 /** Structured decision receipt derived from decision audit events. */
 export interface DecisionReceipt {
   readonly decisionId: string;
   readonly decisionSequence: number;
   readonly gatePhase: string;
-  readonly verdict: 'approve' | 'changes_requested' | 'reject';
+  readonly verdict: ReviewVerdict;
   readonly rationale: string;
-  readonly decidedBy: string;
+  readonly decisionIdentity: DecisionIdentity;
   readonly decidedAt: string;
   readonly fromPhase: string;
   readonly toPhase: string;
   readonly transitionEvent: string;
   readonly policyMode: string;
   readonly eventId: string;
-  readonly sessionId: string;
+  /** FlowGuard session identity (the same FlowGuard UUID on every event class). */
+  readonly flowguardSessionId: string;
+  /** Host session identity where bound (OpenCode session id). */
+  readonly hostSessionId?: string;
   readonly timestamp: string;
 }
 
@@ -42,9 +50,13 @@ export type AuditFilter = (event: AuditEvent) => boolean;
 
 // ─── Basic Filters ────────────────────────────────────────────────────────────
 
-/** Filter events by session ID. */
+/**
+ * Filter events by session identity. Matches either explicit identity —
+ * `flowguardSessionId` (FlowGuard UUID) or `hostSessionId` (host session id).
+ * Events never carry a polymorphic sessionId.
+ */
 export function bySession(sessionId: string): AuditFilter {
-  return (event) => event.sessionId === sessionId;
+  return (event) => event.flowguardSessionId === sessionId || event.hostSessionId === sessionId;
 }
 
 /** Filter events by phase (exact match). */
@@ -64,12 +76,26 @@ export function byActor(actor: string): AuditFilter {
 }
 
 /**
+ * Kinds whose audit-chain.v3 event name is not of the form `${kind}:...`.
+ * Every other kind uses the `${kind}:` prefix form.
+ */
+const EXACT_EVENT_NAME_BY_KIND: Partial<Record<AuditEventKind, string>> = {
+  state_write: STATE_WRITE_EVENT_NAME,
+  enforcement_denied: ENFORCEMENT_DENIED_EVENT_NAME,
+};
+
+/**
  * Filter events by event kind.
- * Matches against the `event` field prefix (e.g., "transition:" for kind "transition").
+ *
+ * The `event` field carries the kind discriminator, but the audit-chain.v3
+ * event names are not uniformly `${kind}:...`. Two current factories emit
+ * non-prefix names — `state_write` (no suffix) and `enforcement:denied`
+ * (whose kind is `enforcement_denied`) — so those are matched exactly.
  */
 export function byKind(kind: AuditEventKind): AuditFilter {
-  const prefix = `${kind}:`;
-  return (event) => event.event.startsWith(prefix);
+  const exact = EXACT_EVENT_NAME_BY_KIND[kind];
+  if (exact !== undefined) return (event) => event.event === exact;
+  return (event) => event.event.startsWith(`${kind}:`);
 }
 
 /**
@@ -87,8 +113,8 @@ export function byEvent(eventName: string): AuditFilter {
  */
 export function byTimeRange(from: string | null, to: string | null): AuditFilter {
   return (event) => {
-    if (from !== null && event.timestamp < from) return false;
-    if (to !== null && event.timestamp > to) return false;
+    if (from !== null && event.occurredAt < from) return false;
+    if (to !== null && event.occurredAt > to) return false;
     return true;
   };
 }
@@ -128,7 +154,11 @@ export function filterEvents(events: AuditEvent[], filter: AuditFilter): AuditEv
 }
 
 /**
- * Get all events for a specific session, ordered chronologically.
+ * Get all events for a specific session, in trail (record) order.
+ *
+ * This preserves the order of the input trail, which under audit-chain.v3 is
+ * `recordedAt` order — the order the append authority committed the events.
+ * That is not necessarily `occurredAt` order: see {@link timeSpan}.
  */
 export function sessionEvents(events: AuditEvent[], sessionId: string): AuditEvent[] {
   return filterEvents(events, bySession(sessionId));
@@ -161,64 +191,88 @@ export function decisionEvents(events: AuditEvent[]): AuditEvent[] {
 }
 
 /**
- * Extract structured decision receipts from decision events.
- * Invalid/malformed decision event payloads are skipped.
+ * Extract a structured decision receipt from one decision event.
+ *
+ * Fails closed on a decision event whose payload does not satisfy the
+ * canonical receipt shape: malformed decision evidence is never silently
+ * dropped from a read model that also allocates decision sequence authority.
  */
-function toDecisionReceipt(event: AuditEvent): DecisionReceipt | null {
+function toDecisionReceipt(event: AuditEvent): DecisionReceipt {
   const detail = event.detail;
-  const verdict = detail.verdict;
-  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return null;
+  const verdict = ReviewVerdict.safeParse(detail.verdict);
+  if (!verdict.success) throw invalidDecisionReceipt(event, 'verdict');
 
   const stringFields = [
     'decisionId',
     'gatePhase',
     'rationale',
-    'decidedBy',
     'decidedAt',
     'fromPhase',
     'toPhase',
     'transitionEvent',
     'policyMode',
   ] as const;
-  if (stringFields.some((f) => typeof detail[f] !== 'string')) return null;
-  if (typeof detail.decisionSequence !== 'number') return null;
+  const missing = stringFields.find((field) => typeof detail[field] !== 'string');
+  if (missing) throw invalidDecisionReceipt(event, missing);
+  if (typeof detail.decisionSequence !== 'number') {
+    throw invalidDecisionReceipt(event, 'decisionSequence');
+  }
+  const decisionIdentity = DecisionIdentitySchema.safeParse(detail.decisionIdentity);
+  if (!decisionIdentity.success) throw invalidDecisionReceipt(event, 'decisionIdentity');
 
   return {
     decisionId: detail.decisionId as string,
     decisionSequence: detail.decisionSequence,
     gatePhase: detail.gatePhase as string,
-    verdict,
+    verdict: verdict.data,
     rationale: detail.rationale as string,
-    decidedBy: detail.decidedBy as string,
+    decisionIdentity: decisionIdentity.data,
     decidedAt: detail.decidedAt as string,
     fromPhase: detail.fromPhase as string,
     toPhase: detail.toPhase as string,
     transitionEvent: detail.transitionEvent as string,
     policyMode: detail.policyMode as string,
     eventId: event.id,
-    sessionId: event.sessionId,
-    timestamp: event.timestamp,
+    flowguardSessionId: event.flowguardSessionId,
+    ...(event.hostSessionId ? { hostSessionId: event.hostSessionId } : {}),
+    timestamp: event.occurredAt,
   };
 }
 
+function invalidDecisionReceipt(event: AuditEvent, field: string): AuditQueryError {
+  return new AuditQueryError(
+    'AUDIT_DECISION_RECEIPT_INVALID',
+    `Decision audit event ${event.id} does not carry a canonical decision receipt field "${field}".`,
+  );
+}
+
 export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
-  const receipts: DecisionReceipt[] = [];
-  for (const event of decisionEvents(events)) {
-    const receipt = toDecisionReceipt(event);
-    if (receipt) receipts.push(receipt);
-  }
-  return receipts;
+  return decisionEvents(events).map(toDecisionReceipt);
 }
 
 /**
- * Get distinct session IDs from the trail.
+ * Get distinct FlowGuard session IDs from the trail.
  */
 export function distinctSessions(events: AuditEvent[]): string[] {
   const seen = new Set<string>();
   for (const event of events) {
-    seen.add(event.sessionId);
+    seen.add(event.flowguardSessionId);
   }
   return Array.from(seen);
+}
+
+/**
+ * Resolve the kind namespace of an event for counting.
+ *
+ * Unlike {@link byKind} this is not restricted to AuditEventKind: free
+ * namespaces such as `review:*` are counted under their own prefix. Only
+ * `enforcement:denied` needs an explicit mapping, because its prefix
+ * (`enforcement`) is not its kind (`enforcement_denied`).
+ */
+function eventKindName(event: AuditEvent): string {
+  if (event.event === ENFORCEMENT_DENIED_EVENT_NAME) return 'enforcement_denied';
+  const separator = event.event.indexOf(':');
+  return separator === -1 ? event.event : event.event.slice(0, separator);
 }
 
 /**
@@ -227,8 +281,7 @@ export function distinctSessions(events: AuditEvent[]): string[] {
 export function countByKind(events: AuditEvent[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const event of events) {
-    // Extract kind from "kind:detail" format
-    const kind = event.event.split(':')[0] || 'unknown';
+    const kind = eventKindName(event) || 'unknown';
     counts[kind] = (counts[kind] || 0) + 1;
   }
   return counts;
@@ -246,15 +299,37 @@ export function countByPhase(events: AuditEvent[]): Record<string, number> {
 }
 
 /**
- * Get the first and last timestamp from a set of events.
+ * Get the earliest and latest occurrence time from a set of events.
+ *
+ * Computed as min/max over `occurredAt`, not as first/last element. Under
+ * audit-chain.v3 the trail is ordered by `recordedAt` (the writer's append
+ * authority), and a reconciled outbox event may legitimately carry an older
+ * `occurredAt` than the event recorded before it. Reading the endpoints
+ * positionally would therefore report a wrong — and possibly negative — span.
+ *
  * Returns null if the events array is empty.
  */
 export function timeSpan(
   events: AuditEvent[],
 ): { first: string; last: string; durationMs: number } | null {
-  if (events.length === 0) return null;
-  const first = events[0]!.timestamp;
-  const last = events[events.length - 1]!.timestamp;
-  const durationMs = new Date(last).getTime() - new Date(first).getTime();
+  const firstEvent = events[0];
+  if (firstEvent === undefined) return null;
+  let first = firstEvent.occurredAt;
+  let last = first;
+  let firstMs = Date.parse(first);
+  let lastMs = firstMs;
+  for (const event of events) {
+    const ms = Date.parse(event.occurredAt);
+    if (Number.isNaN(ms)) continue;
+    if (Number.isNaN(firstMs) || ms < firstMs) {
+      first = event.occurredAt;
+      firstMs = ms;
+    }
+    if (Number.isNaN(lastMs) || ms > lastMs) {
+      last = event.occurredAt;
+      lastMs = ms;
+    }
+  }
+  const durationMs = lastMs - firstMs;
   return { first, last, durationMs };
 }

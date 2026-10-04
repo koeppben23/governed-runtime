@@ -26,8 +26,10 @@ function readDoc(relativePath: string): string {
 function rc2Section(): string {
   const marker = '## [1.2.0-rc.2] - 2026-05-03\n';
   const afterMarker = readDoc('CHANGELOG.md').split(marker)[1];
-  expect(afterMarker, 'CHANGELOG.md must contain a [1.2.0-rc.2] section').toBeTruthy();
-  return afterMarker!.split(/\n## \[/)[0];
+  if (!afterMarker) throw new TypeError('CHANGELOG.md must contain a [1.2.0-rc.2] section');
+  const [section] = afterMarker.split(/\n## \[/);
+  if (!section) throw new TypeError('missing rc.2 section');
+  return section;
 }
 
 describe('documentation/review-capabilities-doc-drift', () => {
@@ -116,9 +118,10 @@ describe('documentation/review-capabilities-doc-drift', () => {
       expect(cmds).not.toContain('branch name — loads diff via `gh` CLI');
     });
 
-    it('commands.md branch references git diff', () => {
+    it('commands.md assigns branch materialization to FlowGuard', () => {
       const cmds = readDoc('docs/commands.md');
-      expect(cmds).toMatch(/branch.*git diff/i);
+      expect(cmds).toMatch(/branch.*FlowGuard resolves and freezes/i);
+      expect(cmds).toContain('No remote is required when both refs exist locally.');
     });
 
     it('CHANGELOG PR-E entry does not claim branch review requires gh CLI', () => {

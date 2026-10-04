@@ -1,0 +1,1 @@
+// src/machine/commands.ts — must not import from integration/

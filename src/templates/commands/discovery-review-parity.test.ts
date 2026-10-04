@@ -15,7 +15,6 @@ import { describe, expect, it } from 'vitest';
 import { PLAN_COMMAND } from './plan.js';
 import { IMPLEMENT_COMMAND } from './implement.js';
 import { ARCHITECTURE_COMMAND } from './architecture.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 const TEMPLATES: ReadonlyArray<readonly [string, string]> = [
   ['plan', PLAN_COMMAND],
@@ -33,10 +32,10 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
         expect(template).toContain('detectedStack');
       });
 
-      // HAPPY — Discovery context is passed to the reviewer subagent.
-      it('passes Discovery context to the reviewer subagent', () => {
-        expect(template).toContain(REVIEWER_SUBAGENT_TYPE);
-        expect(template).toMatch(/Pass the compact Discovery context captured in Phase 1/);
+      // HAPPY — FlowGuard remains responsible for independent review evidence.
+      it('keeps independent review evidence bound by FlowGuard', () => {
+        expect(template).toContain('FlowGuard');
+        expect(template).toContain('host-observed structured reviewer invocation evidence');
       });
 
       // BAD — unverifiable Discovery yields NOT_VERIFIED, never invented truth.
@@ -45,18 +44,10 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
         expect(template).toContain('do not invent repository truth');
       });
 
-      // CORNER — subagent must check Discovery BEFORE repo-dependent claims.
-      it('instructs the subagent to check health/drift before repo-dependent claims', () => {
-        expect(template).toMatch(
-          /check Discovery health and drift BEFORE any repo-dependent quality claim/,
-        );
-        expect(template).toMatch(/cannot be correlated to local repository Discovery/);
-      });
-
       // EDGE — Discovery is evidence, not verdict authority.
       it('states Discovery context is advisory, NOT review verdict authority', () => {
         expect(template).toMatch(/advisory[\s\S]*NOT review verdict[\s\S]*authority/);
-        expect(template).toContain('ReviewFindings');
+        expect(template).toContain('host-observed structured reviewer invocation evidence');
       });
 
       // EDGE — Done-when enforces the Discovery checks.

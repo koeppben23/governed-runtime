@@ -12,6 +12,7 @@
  */
 
 import type { RailContext } from './rails/types.js';
+import { hashText } from './shared/hashing.js';
 
 // ─── Test Context Factory ────────────────────────────────────────────────────
 
@@ -19,12 +20,12 @@ import type { RailContext } from './rails/types.js';
  * Create a deterministic RailContext for testing.
  *
  * @param fixedTime - Fixed ISO-8601 timestamp. now() always returns this.
- * @param digestFn - Optional custom digest function. Defaults to "digest-of-{input}".
+ * @param digestFn - Optional custom digest function. Defaults to SHA-256 hex.
  *
  * Usage in tests:
  *   const ctx = createTestContext("2026-01-01T00:00:00.000Z");
  *   expect(ctx.now()).toBe("2026-01-01T00:00:00.000Z"); // deterministic
- *   expect(ctx.digest("hello")).toBe("digest-of-hello"); // predictable
+ *   expect(ctx.digest("hello")).toMatch(/^[a-f0-9]{64}$/);
  */
 export function createTestContext(
   fixedTime: string = '2026-01-01T00:00:00.000Z',
@@ -32,6 +33,6 @@ export function createTestContext(
 ): RailContext {
   return {
     now: () => fixedTime,
-    digest: digestFn ?? ((text: string) => `digest-of-${text}`),
+    digest: digestFn ?? hashText,
   };
 }

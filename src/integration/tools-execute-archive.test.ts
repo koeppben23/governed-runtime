@@ -1,6 +1,6 @@
 /**
  * @module integration/tools-execute.test
- * @description Execution tests for all 10 FlowGuard tool execute() functions.
+ * @description Execution tests for FlowGuard tool execute() functions.
  *
  * Tests each tool's execute() against real filesystem persistence with
  * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
@@ -16,6 +16,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   createToolContext,
   createTestWorkspace,
@@ -35,13 +39,12 @@ import {
   plan,
   decision,
   implement,
-  validate,
   review,
   abort_session,
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
@@ -114,6 +117,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -136,6 +140,17 @@ let cleanupEnv: () => void;
 beforeEach(async () => {
   cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
   ws = await createTestWorkspace();
+  // Write config with raw export enabled for archive tests.
+  await fs.writeFile(
+    path.join(process.env.OPENCODE_CONFIG_DIR ?? '', 'flowguard.json'),
+    JSON.stringify({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: { allowedModes: ['none', 'basic', 'pseudonymous'], allowRawExport: true },
+      },
+    }),
+    'utf8',
+  );
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
@@ -195,22 +210,152 @@ describe('archive', () => {
   describe('HAPPY', () => {
     it.skipIf(!tarOk)('archives a completed session to tar.gz', async () => {
       await hydrateSession();
-      await abort_session.execute({ reason: 'Complete for archive' }, ctx);
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
       const raw = await archive.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.status).toContain('archived');
+      expect(result).toMatchObject({
+        packagePurpose: 'sharing',
+        integrityCapability: 'not_verifiable',
+        verificationStatus: 'not_run',
+      });
+      expect(String(result.status)).toContain('requires raw');
+      expect(wsMock.verifyArchive).not.toHaveBeenCalled();
       expect(typeof result.archivePath).toBe('string');
       // Verify tar.gz file exists on disk
       await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
     });
 
     it.skipIf(!tarOk)(
+      'redacts secrets from real session and audit evidence in final sharing archive bytes',
+      async () => {
+        const secret = 'R14_SHARING_SECRET_4d20fd89637c';
+        await hydrateSession();
+        await ticket.execute({ text: `Investigate token=${secret}`, source: 'user' }, ctx);
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const priorState = await readState(sessDir);
+        await appendAuditEvent(sessDir, {
+          id: crypto.randomUUID(),
+          flowguardSessionId: priorState!.flowguardSessionId,
+          hostSessionId: ctx.sessionID,
+          phase: 'TICKET',
+          event: 'test:sharing_secret',
+          occurredAt: new Date().toISOString(),
+          actor: 'system',
+          detail: { secret },
+        });
+        const state = await readState(sessDir);
+        await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+
+        const [rawState, rawAudit] = await Promise.all([
+          fs.readFile(path.join(sessDir, 'session-state.json')),
+          fs.readFile(path.join(sessDir, 'audit.jsonl')),
+        ]);
+        expect(rawState.includes(secret)).toBe(true);
+        expect(rawAudit.includes(secret)).toBe(true);
+
+        const rawResult = parseToolResult(
+          await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+        );
+        expect(rawResult).toMatchObject({
+          packagePurpose: 'auditor',
+          integrityCapability: 'verifiable',
+          verificationStatus: 'passed',
+        });
+        const { stdout: rawStateInArchive } = await promisify(execFile)('tar', [
+          'xOf',
+          rawResult.archivePath as string,
+          `${ctx.sessionID}/state/session-state.json`,
+        ]);
+        expect(rawStateInArchive).toContain(secret);
+
+        const sharingResult = parseToolResult(await archive.execute({}, ctx));
+        expect(sharingResult).toMatchObject({
+          packagePurpose: 'sharing',
+          integrityCapability: 'not_verifiable',
+          verificationStatus: 'not_run',
+        });
+        const archivePath = sharingResult.archivePath as string;
+        expect((await fs.readFile(archivePath)).includes(secret)).toBe(false);
+
+        const { stdout: membersRaw } = await promisify(execFile)('tar', ['tzf', archivePath]);
+        const members = membersRaw
+          .split('\n')
+          .map((member) => member.trim())
+          .filter((member) => member.length > 0);
+        expect(members.length).toBeGreaterThan(0);
+        for (const member of members) {
+          const { stdout } = await promisify(execFile)('tar', ['xOf', archivePath, member]);
+          expect(stdout).not.toContain(secret);
+        }
+
+        const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sharing-archive-r14-'));
+        try {
+          await promisify(execFile)('tar', ['xzf', archivePath, '-C', extractionRoot]);
+          await expect(
+            fs.access(path.join(extractionRoot, ctx.sessionID, 'state', 'session-state.json')),
+          ).rejects.toThrow();
+        } finally {
+          await fs.rm(extractionRoot, { recursive: true, force: true });
+        }
+      },
+    );
+
+    it.skipIf(!tarOk)(
+      'preserves verified regulated completion evidence when creating a sharing archive',
+      async () => {
+        await hydrateSession();
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        await writeState(sessDir, {
+          ...state!,
+          phase: 'COMPLETE',
+          regulatedArchiveStatus: 'verified',
+          policySnapshot: {
+            ...state!.policySnapshot,
+            mode: 'regulated',
+            requestedMode: 'regulated',
+          },
+        });
+
+        const result = parseToolResult(await archive.execute({}, ctx));
+        const persisted = await readState(sessDir);
+        expect(result).toMatchObject({
+          packagePurpose: 'sharing',
+          integrityCapability: 'not_verifiable',
+          verificationStatus: 'not_run',
+        });
+        expect(result.directive).toBeDefined();
+        expect(persisted?.regulatedArchiveStatus).toBe('verified');
+        expect(persisted).toMatchObject({
+          lastExportPackagePurpose: 'sharing',
+          lastExportIntegrityCapability: 'not_verifiable',
+          lastExportVerificationStatus: 'not_run',
+        });
+      },
+    );
+
+    it.skipIf(!tarOk)(
       'archive manifest includes derived ticket/plan artifacts with digests',
       async () => {
         await hydrateSession();
         await ticket.execute({ text: 'Archive artifact evidence test', source: 'user' }, ctx);
-        await plan.execute({ planText: '## Plan\n1. Create evidence artifacts' }, ctx);
+        await plan.execute(
+          { planText: '## Plan\n1. Create evidence artifacts', targetPaths: ['docs/test.md'] },
+          ctx,
+        );
 
         const { computeFingerprint, sessionDir: resolveSessionDir } =
           await import('../adapters/workspace/index.js');
@@ -219,35 +364,41 @@ describe('archive', () => {
         const state = await readState(sessDir);
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        const raw = await archive.execute({}, ctx);
+        const raw = await archive.execute(
+          { redactionMode: 'none' as const, includeRaw: true },
+          ctx,
+        );
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
 
-        const manifestRaw = await fs.readFile(`${sessDir}/archive-manifest.json`, 'utf-8');
+        const { stdout: manifestRaw } = await promisify(execFile)('tar', [
+          'xOf',
+          result.archivePath as string,
+          `${ctx.sessionID}/archive-manifest.json`,
+        ]);
         const manifest = JSON.parse(manifestRaw) as {
           includedFiles: string[];
           fileDigests: Record<string, string>;
         };
-        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.md');
-        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.json');
-        expect(manifest.includedFiles).toContain('artifacts/plan.v1.md');
-        expect(manifest.includedFiles).toContain('artifacts/plan.v1.json');
-        expect(manifest.fileDigests['artifacts/ticket.v1.json']).toBeTruthy();
-        expect(manifest.fileDigests['artifacts/plan.v1.json']).toBeTruthy();
+        expect(manifest.includedFiles).toContain('artifacts/ticket/ticket.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/ticket/ticket.v1.json');
+        expect(manifest.includedFiles).toContain('artifacts/plan/plan.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/plan/plan.v1.json');
+        expect(manifest.fileDigests['artifacts/ticket/ticket.v1.json']).toBeTruthy();
+        expect(manifest.fileDigests['artifacts/plan/plan.v1.json']).toBeTruthy();
       },
     );
 
     it.skipIf(!tarOk)(
       're-archiving a session is idempotent: no duplicate artifact-binding event, verify still passes',
       async () => {
-        // Reproduces the demo archive race: the fire-and-forget auto-archive on
-        // COMPLETE plus the manual /export both archive the same session. Without
-        // idempotent binding, each appends an archive:artifacts_bound event, the
-        // live trail outgrows the manifest anchor, and verify reports
+        // Repeated explicit exports must not duplicate artifact bindings. Without
+        // idempotent binding, each archive appends an archive:artifacts_bound event
+        // and the live trail outgrows the manifest anchor, so verify reports
         // audit_chain_truncated -> archiveStatus:"failed" on a valid archive.
         await hydrateSession();
         await ticket.execute({ text: 'Idempotent re-archive test', source: 'user' }, ctx);
-        await plan.execute({ planText: '## Plan\n1. Step' }, ctx);
+        await plan.execute({ planText: '## Plan\n1. Step', targetPaths: ['docs/test.md'] }, ctx);
 
         const {
           computeFingerprint,
@@ -264,12 +415,18 @@ describe('archive', () => {
         const state = await readState(sessDir);
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        // First archive (simulates the auto-archive on COMPLETE).
-        await archiveSession(fp.fingerprint, ctx.sessionID);
-        // Second archive (simulates the manual /export).
-        await archiveSession(fp.fingerprint, ctx.sessionID);
+        // First explicit archive.
+        await archiveSession(fp.fingerprint, ctx.sessionID, {
+          redactionMode: 'none',
+          includeRaw: true,
+        });
+        // Repeated explicit archive.
+        await archiveSession(fp.fingerprint, ctx.sessionID, {
+          redactionMode: 'none',
+          includeRaw: true,
+        });
 
-        const { events } = await readAuditTrail(sessDir);
+        const events = await readAuditTrail(sessDir);
         const bindingEvents = events.filter((e) => e.event === ARTIFACT_BINDING_EVENT);
         expect(bindingEvents.length).toBe(1);
 
@@ -278,34 +435,40 @@ describe('archive', () => {
       },
     );
 
-    it.skipIf(!tarOk)(
-      'manual archive after a prior archive reports verified (status and archiveStatus agree)',
-      async () => {
-        await hydrateSession();
-        await ticket.execute({ text: 'Archive status consistency test', source: 'user' }, ctx);
-        await plan.execute({ planText: '## Plan\n1. Step' }, ctx);
+    it.skipIf(!tarOk)('manual auditor archive reports a passed verification outcome', async () => {
+      await hydrateSession();
+      await ticket.execute({ text: 'Archive status consistency test', source: 'user' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Step', targetPaths: ['docs/test.md'] }, ctx);
 
-        const {
-          computeFingerprint,
-          sessionDir: resolveSessionDir,
-          archiveSession,
-        } = await import('../adapters/workspace/index.js');
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-        const state = await readState(sessDir);
-        await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+      const {
+        computeFingerprint,
+        sessionDir: resolveSessionDir,
+        archiveSession,
+      } = await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        // Prior archive (auto-archive equivalent).
-        await archiveSession(fp.fingerprint, ctx.sessionID);
+      // Prior explicit archive.
+      await archiveSession(fp.fingerprint, ctx.sessionID, {
+        redactionMode: 'none',
+        includeRaw: true,
+      });
 
-        // Manual /export now must not race to failed.
-        const result = parseToolResult(await archive.execute({}, ctx));
-        expect(result.error).toBeUndefined();
-        expect(result.archiveStatus).toBe('verified');
-        expect(String(result.status)).toContain('verified');
-        expect(String(result.status)).not.toContain('failed');
-      },
-    );
+      // Manual /export now must not race to failed.
+      const result = parseToolResult(
+        await archive.execute({ redactionMode: 'none' as const, includeRaw: true }, ctx),
+      );
+      expect(result.error).toBeUndefined();
+      expect(result).toMatchObject({
+        packagePurpose: 'auditor',
+        integrityCapability: 'verifiable',
+        verificationStatus: 'passed',
+      });
+      expect(String(result.status)).toContain('verified');
+      expect(String(result.status)).not.toContain('failed');
+    });
   });
 
   describe('BAD', () => {
@@ -327,7 +490,10 @@ describe('archive', () => {
     it('fail-closes archive when state references plan but derived artifacts are missing', async () => {
       await hydrateSession();
       await ticket.execute({ text: 'Archive guard ticket', source: 'user' }, ctx);
-      await plan.execute({ planText: '## Plan\n1. Archive guard plan' }, ctx);
+      await plan.execute(
+        { planText: '## Plan\n1. Archive guard plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -347,6 +513,19 @@ describe('archive', () => {
         'EVIDENCE_ARTIFACT_MISMATCH',
       ]).toContain(result.code);
     });
+
+    it('blocks /export for an aborted session (not a clean audit package)', async () => {
+      // Governance integrity: an aborted session is terminal (phase=COMPLETE)
+      // but must not be exportable as a "verifiable audit package" — that would
+      // misrepresent a failed/abandoned session as a clean completion. The abort
+      // is already preserved in the audit trail; the user is directed to /review.
+      await hydrateSession();
+      await abort_session.execute({ reason: 'Operator aborted mid-flow' }, ctx);
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ABORTED');
+    });
   });
 
   describe('CORNER', () => {
@@ -365,6 +544,8 @@ describe('archive', () => {
           title: 'Test ADR',
           adrText: '## Context\nTest\n## Decision\nTest\n## Consequences\nTest',
           status: 'accepted',
+          reviewFindings: [],
+          reviewCompletion: 'reviewer_accepted',
           createdAt: new Date().toISOString(),
           digest: 'abc123',
         },
@@ -382,7 +563,7 @@ describe('archive', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
-      await writeState(sessDir, { ...state!, phase: 'REVIEW_COMPLETE' });
+      await writeState(sessDir, { ...state!, phase: 'PEER_REVIEW_COMPLETE' });
       const raw = await archive.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
@@ -391,7 +572,12 @@ describe('archive', () => {
 
     it('archive path follows expected pattern', async () => {
       await hydrateSession();
-      await abort_session.execute({ reason: 'Done' }, ctx);
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
       // Even if tar is missing, the tool should at least try and produce
       // a meaningful error or succeed. We test the path structure.
       const raw = await archive.execute({}, ctx);

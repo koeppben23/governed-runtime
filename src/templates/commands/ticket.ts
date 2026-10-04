@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 const EXTERNAL_REFERENCE_TABLE: Array<{
   scenario: string;
@@ -12,7 +12,6 @@ const EXTERNAL_REFERENCE_TABLE: Array<{
     inputOrigin: 'external_reference',
   },
   { scenario: 'User text AND URL', source: 'external', inputOrigin: 'mixed' },
-  { scenario: 'Extraction failed', source: 'external', inputOrigin: 'external_reference' },
 ];
 
 const externalRefMarkdown = [
@@ -24,9 +23,8 @@ const externalRefMarkdown = [
   ),
 ].join('\n');
 
-export const TICKET_COMMAND = `
----
-description: Record a task or ticket for the FlowGuard session.
+export const TICKET_COMMAND = `---
+description: FlowGuard — Record a task or ticket for the session.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -46,19 +44,39 @@ $ARGUMENTS
 2. **External Reference Resolution** (URLs, ticket IDs, issue links):
    If the user provides a URL (Jira, ADOS, GitHub Issue, Confluence, Figma, etc.) or ticket ID:
    - Extract the ticket title and description using the \`webfetch\` agent tool (you extract, then pass text to FlowGuard — FlowGuard itself never fetches URLs).
+   - **Risk field:** adopt a risk class only from an external field whose FIELD NAME
+     explicitly denotes one — \`Risk\`, \`Risk Class\`, \`Risikoklasse\` — and whose read value is
+     exactly \`TRIVIAL\`, \`STANDARD\` or \`HIGH-RISK\`. Never derive a class from other field names
+     or values (\`Priority\`, \`Severity\`, \`Impact\`, \`Business Criticality\`,
+     \`Production Relevance\`, story points, ...). Keep the description unchanged and append the
+     verified field as its own canonical \`Risk: <CLASS>\` line; if the description already carries
+     a different \`Risk:\` line, do not rewrite it — the parser detects the conflict and applies the
+     higher floor conservatively.
+   - Comments, attachments and provider state are NOT part of this import contract; never claim
+     they were adopted.
    - Build \`references\` array with \`ExternalReference\` objects:
      - \`ref\`: original URL or ticket ID
      - \`type\`: \`ticket\` | \`issue\` | \`doc\` | \`url\` (inferred from source)
      - \`title\`: extracted title
      - \`source\`: platform name (jira, ados, github, gitlab, confluence, figma)
      - \`extractedAt\`: ISO timestamp (only when content was actually extracted)
-   - Set \`inputOrigin\` based on scenario:
+    - Set \`inputOrigin\` based on scenario:
 ${externalRefMarkdown}
-   - On extraction failure: use placeholder text, still add reference (without \`extractedAt\`).
+   - **On extraction failure or unreadable risk field: STOP — fail closed.** Never invent,
+     paraphrase into a placeholder, or pass a bare URL/ticket ID as ticket content; the runtime
+     blocks a reference without adopted content with \`TICKET_REFERENCE_WITHOUT_CONTENT\`. If the
+     extracted provider content or extraction result shows that an explicit risk field exists but
+     its value could not be read/verified, do not call \`flowguard_ticket\` at all. Report that the
+     external content could not be verified and ask the user either to paste the ticket text or to
+     point to a repository file, which is then adopted with \`ticketSource\`. Only fully available
+     external content may be passed as \`text\`.
 
-3. Call \`flowguard_ticket\` with:
-   - \`text\`: Ticket description (extracted or user-provided). If \`$ARGUMENTS\` is empty, ask the user for a description first.
-   - \`source\` and \`inputOrigin\` per the table above.
+3. Call \`flowguard_ticket\` with exactly ONE canonical content source:
+   - Repository file as the task source: \`ticketSource: { kind: "repository_file", path: "<path>" }\`
+     with NO \`text\`; FlowGuard reads the file and binds its content digest.
+   - Otherwise \`text\`: Ticket description (extracted or user-provided). If \`$ARGUMENTS\` is empty, ask the user for a description first.
+   - \`source\` and \`inputOrigin\` per the table above. Never pass a bare file path, URL, or
+     ticket ID as \`text\` — adopt the content explicitly.
    - \`references\` (optional): Array of ExternalReference objects.
 
 4. Report: confirm ticket recorded, show current phase and next action.
@@ -68,10 +86,11 @@ ${externalRefMarkdown}
 - Use exactly what the user provided or what was extracted — never invent ticket text.
 - Preserve original URLs/references — never lose the source.
 - If no arguments provided: ask the user for their task description before proceeding.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Ticket text recorded via flowguard_ticket.
 - External references captured with full audit provenance.
-- Response ends with \`Next action: run /plan to generate an implementation plan.\`
+- If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

@@ -24,10 +24,29 @@ import {
   AuditEvent,
   ReviewReport,
 } from '../state/evidence.js';
-import { Phase, Event, Transition, SessionState } from '../state/schema.js';
+import {
+  Phase,
+  Event,
+  Transition,
+  SessionState,
+  ReducedCeremonyDecision,
+  ImplementationRiskAssessment,
+  RiskGate,
+} from '../state/schema.js';
+import { TaskClass, isTaskClass } from '../state/task-class.js';
+import {
+  artifactReviewSubjectScope,
+  createReviewObligation,
+  freezeReviewMaterial,
+} from '../integration/review/obligations/assurance.js';
+import { ensureReviewAssurance } from './review-dispatch.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
+import { makePlanRevision } from './evidence-test-constants.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { readState } from '../adapters/persistence.js';
+import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
+
+const VALID_POLICY_DIGEST = 'a'.repeat(64);
 
 describe('state schemas', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -75,18 +94,20 @@ describe('state schemas', () => {
         digest: 'abc123',
         source: 'user',
         createdAt: FIXED_TIME,
+        riskDeclaration: { kind: 'absent' },
       };
       expect(TicketEvidence.parse(ticket)).toEqual(ticket);
     });
 
     it('PlanEvidence parses valid plan', () => {
-      const plan = {
+      const plan = makePlanRevision({
         body: '## Plan\nStep 1',
-        digest: 'abc',
-        sections: ['Plan'],
         createdAt: FIXED_TIME,
-      };
-      expect(PlanEvidence.parse(plan)).toEqual(plan);
+      });
+      const parsed = PlanEvidence.parse(plan);
+      expect(parsed.body).toBe(plan.body);
+      expect(parsed.planVersion).toBe(1);
+      expect(parsed.lineageStatus).toBe('verified');
     });
 
     it('ValidationResult parses valid result', () => {
@@ -101,13 +122,14 @@ describe('state schemas', () => {
         executionMs: 1200,
         outputDigest: 'a'.repeat(64),
         timedOut: false,
+        outcome: 'supported',
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });
 
     it('BindingInfo accepts OpenCode-style session IDs', () => {
       const binding = {
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         worktree: '/tmp/test',
         fingerprint: 'abcdef0123456789abcdef01',
         resolvedAt: FIXED_TIME,
@@ -126,6 +148,57 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).not.toThrow();
     });
 
+    it('SessionState rejects the removed archiveStatus persisted field', () => {
+      expect(() =>
+        SessionState.parse({ ...makeState('TICKET'), archiveStatus: 'verified' }),
+      ).toThrow();
+    });
+
+    it('SessionState rejects a state missing validationAttempts (no read-time defaulting)', () => {
+      const incomplete: Record<string, unknown> = { ...makeState('TICKET') };
+      delete incomplete.validationAttempts;
+      expect(() => SessionState.parse(incomplete)).toThrow();
+    });
+
+    it('SessionState rejects a state missing challengeResolutions (no read-time defaulting)', () => {
+      const incomplete: Record<string, unknown> = { ...makeState('TICKET') };
+      delete incomplete.challengeResolutions;
+      expect(() => SessionState.parse(incomplete)).toThrow();
+    });
+
+    it('SessionState rejects a state missing mutationEpisodes / mutationEpisodeResolutions / pendingAuditOperations', () => {
+      const withoutEpisodes: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutEpisodes.mutationEpisodes;
+      expect(() => SessionState.parse(withoutEpisodes)).toThrow();
+
+      const withoutResolutions: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutResolutions.mutationEpisodeResolutions;
+      expect(() => SessionState.parse(withoutResolutions)).toThrow();
+
+      const withoutOutbox: Record<string, unknown> = { ...makeState('TICKET') };
+      delete withoutOutbox.pendingAuditOperations;
+      expect(() => SessionState.parse(withoutOutbox)).toThrow();
+    });
+
+    it('SessionState rejects an implementationRework missing the exhausted authority flag', () => {
+      const state = makeState('TICKET');
+      expect(() =>
+        SessionState.parse({
+          ...state,
+          implementationRework: { rejectedDigest: 'rejected-implementation-digest' },
+        }),
+      ).toThrow();
+      expect(
+        SessionState.parse({
+          ...state,
+          implementationRework: {
+            rejectedDigest: 'rejected-implementation-digest',
+            exhausted: false,
+          },
+        }).implementationRework,
+      ).toEqual({ rejectedDigest: 'rejected-implementation-digest', exhausted: false });
+    });
+
     it('SessionState parses legacy state without risk classification fields', () => {
       const state = makeState('TICKET', { claimedTaskClass: 'HIGH-RISK' });
       const legacy: Record<string, unknown> = { ...state };
@@ -137,31 +210,39 @@ describe('state schemas', () => {
       expect(parsed.riskGate).toBeUndefined();
     });
 
-    it('SessionState treats implementationBaseline as optional (absent/null/populated all parse)', () => {
+    it('SessionState rejects missing baseline fields and accepts independent capture availability', () => {
       const state = makeState('TICKET');
-      // Absent (legacy session created before the baseline field existed).
       const legacy: Record<string, unknown> = { ...state };
       delete legacy.implementationBaseline;
-      expect(SessionState.parse(legacy).implementationBaseline).toBeUndefined();
-      // Null is accepted and treated like absent.
-      expect(() => SessionState.parse({ ...state, implementationBaseline: null })).not.toThrow();
-      // Populated parses and round-trips.
+      expect(() => SessionState.parse(legacy)).toThrow();
+      expect(() => SessionState.parse({ ...state, implementationBaseline: null })).toThrow();
       const populated = SessionState.parse({
         ...state,
         implementationBaseline: {
           dirtyFiles: [{ path: 'stale/a.txt', hash: 'abc123' }],
           capturedAt: FIXED_TIME,
+          controlPlaneMarker: null,
         },
       });
-      expect(populated.implementationBaseline?.dirtyFiles).toEqual([
+      expect(populated.implementationBaseline.dirtyFiles).toEqual([
         { path: 'stale/a.txt', hash: 'abc123' },
       ]);
+      expect(
+        SessionState.safeParse({
+          ...state,
+          implementationBaseline: {
+            dirtyFiles: null,
+            capturedAt: FIXED_TIME,
+            controlPlaneMarker: 'marker-1',
+          },
+        }).success,
+      ).toBe(true);
     });
 
-    it('SessionState normalizes legacy regulated/team-ci snapshots to risk enforcement on', () => {
+    it('SessionState rejects snapshots missing risk authority fields (no read-time defaulting)', () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeState('TICKET');
-        const legacy = {
+        const incomplete = {
           ...state,
           policySnapshot: {
             ...state.policySnapshot,
@@ -169,26 +250,52 @@ describe('state schemas', () => {
             requestedMode: mode,
           },
         };
-        delete (legacy.policySnapshot as Record<string, unknown>).enforceRiskClassification;
-        delete (legacy.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
+        delete (incomplete.policySnapshot as Record<string, unknown>).enforceRiskClassification;
 
-        const parsed = SessionState.parse(legacy);
-        expect(parsed.policySnapshot.enforceRiskClassification).toBe(true);
-        expect(parsed.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+        expect(() => SessionState.parse(incomplete)).toThrow();
       }
+    });
+
+    it('requires the nullable risk-assessment slot and risk triggers when populated', () => {
+      const state = makeState('IMPLEMENTATION');
+      const withoutAssessment: Record<string, unknown> = { ...state };
+      delete withoutAssessment.implementationRiskAssessment;
+      expect(SessionState.safeParse(withoutAssessment).success).toBe(false);
+
+      expect(
+        SessionState.safeParse({
+          ...state,
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'TRIVIAL',
+            effectiveTaskClass: 'TRIVIAL',
+            declaredTaskClass: null,
+            declarationKind: 'absent',
+            ticketDigest: null,
+            touchedSurfaces: [],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 0,
+            implementationDigest: 'implementation-digest',
+          },
+        }).success,
+      ).toBe(false);
     });
 
     it('AuditEvent parses valid event with hash chain fields', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: FIXED_SESSION_UUID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
+        auditFormatVersion: 'audit-chain.v3',
+        auditSequence: 1,
+        recordedAt: FIXED_TIME,
+        semanticEventDigest: 'a'.repeat(64),
+        prevHash: 'genesis',
+        chainHash: 'b'.repeat(64),
         actor: 'system',
         detail: {},
-        prevHash: 'genesis',
-        chainHash: 'abc123',
       };
       expect(() => AuditEvent.parse(event)).not.toThrow();
     });
@@ -196,10 +303,17 @@ describe('state schemas', () => {
     it('AuditEvent accepts OpenCode-style non-UUID session IDs', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'READY',
         event: 'tool_call:flowguard_hydrate',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
+        auditFormatVersion: 'audit-chain.v3',
+        auditSequence: 1,
+        recordedAt: FIXED_TIME,
+        semanticEventDigest: 'a'.repeat(64),
+        prevHash: 'genesis',
+        chainHash: 'b'.repeat(64),
         actor: 'system',
         detail: {},
       };
@@ -224,6 +338,7 @@ describe('state schemas', () => {
           digest: 'abc',
           source: 'user',
           createdAt: FIXED_TIME,
+          riskDeclaration: { kind: 'absent' },
         }),
       ).toThrow();
     });
@@ -231,7 +346,7 @@ describe('state schemas', () => {
     it('BindingInfo rejects unsafe session IDs', () => {
       expect(() =>
         BindingInfo.parse({
-          sessionId: '../etc/passwd',
+          hostSessionId: '../etc/passwd',
           worktree: '/tmp/test',
           fingerprint: 'abcdef0123456789abcdef01',
           resolvedAt: FIXED_TIME,
@@ -243,10 +358,16 @@ describe('state schemas', () => {
       expect(() =>
         AuditEvent.parse({
           id: FIXED_UUID,
-          sessionId: 'bad/session',
+          flowguardSessionId: 'bad/session',
           phase: 'READY',
           event: 'tool_call:flowguard_hydrate',
-          timestamp: FIXED_TIME,
+          occurredAt: FIXED_TIME,
+          auditFormatVersion: 'audit-chain.v3',
+          auditSequence: 1,
+          recordedAt: FIXED_TIME,
+          semanticEventDigest: 'a'.repeat(64),
+          prevHash: 'genesis',
+          chainHash: 'b'.repeat(64),
           actor: 'system',
           detail: {},
         }),
@@ -260,6 +381,7 @@ describe('state schemas', () => {
           digest: 'abc',
           source: 'unknown',
           createdAt: FIXED_TIME,
+          riskDeclaration: { kind: 'absent' },
         }),
       ).toThrow();
     });
@@ -299,8 +421,48 @@ describe('state schemas', () => {
     });
 
     it('SessionState rejects invalid schemaVersion', () => {
-      const state = { ...makeState('TICKET'), schemaVersion: 'v2' };
+      const state = { ...makeState('TICKET'), schemaVersion: 'v1' };
       expect(() => SessionState.parse(state)).toThrow();
+    });
+
+    it('ReducedCeremonyDecision requires implementation, policy and verification binding', () => {
+      const decision = {
+        profile: 'reduced' as const,
+        reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL' as const,
+        computedMinimumTaskClass: 'TRIVIAL' as const,
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
+        touchedSurfaces: [],
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        implementationDigest: 'impl-digest',
+        policyDigest: VALID_POLICY_DIGEST,
+        verificationBasis: {
+          checkIds: ['test'],
+          attempts: [
+            {
+              checkId: 'test',
+              attemptId: '00000000-0000-4000-8000-0000000000bb',
+              executedAt: FIXED_TIME,
+            },
+          ],
+        },
+        decidedAt: FIXED_TIME,
+      };
+      expect(ReducedCeremonyDecision.parse(decision)).toBeDefined();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, implementationDigest: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, policyDigest: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, verificationBasis: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, implementationId: 'not-a-uuid' }),
+      ).toThrow();
     });
 
     it('SessionState rejects null actorInfo', () => {
@@ -311,13 +473,13 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects snapshot missing actorClassification', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
       };
@@ -327,12 +489,12 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects snapshot missing requestedMode', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
@@ -343,12 +505,11 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects snapshot missing effectiveGateBehavior', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
@@ -370,38 +531,31 @@ describe('state schemas', () => {
 
     it('PlanRecord with empty history is valid', () => {
       const record = {
-        current: {
-          body: 'Plan',
-          digest: 'abc',
-          sections: [],
-          createdAt: FIXED_TIME,
-        },
+        current: makePlanRevision({ body: 'Plan', createdAt: FIXED_TIME }),
         history: [],
+        reviewFindings: [],
+        reviewCompletion: 'pending' as const,
       };
       expect(() => PlanRecord.parse(record)).not.toThrow();
     });
 
     it('PlanEvidence with empty sections array is valid', () => {
-      const plan = {
-        body: 'No headers here',
-        digest: 'abc',
-        sections: [],
-        createdAt: FIXED_TIME,
-      };
+      const plan = makePlanRevision({ body: 'No headers here', createdAt: FIXED_TIME });
       expect(() => PlanEvidence.parse(plan)).not.toThrow();
     });
 
-    it('AuditEvent hash chain fields are optional (legacy compat)', () => {
+    it('AuditEvent rejects records without chain fields (legacy artifacts unsupported)', () => {
       const event = {
         id: FIXED_UUID,
-        sessionId: FIXED_SESSION_UUID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: FIXED_TIME,
+        occurredAt: FIXED_TIME,
         actor: 'system',
         detail: {},
       };
-      expect(() => AuditEvent.parse(event)).not.toThrow();
+      expect(() => AuditEvent.parse(event)).toThrow();
     });
 
     it('validation array can be empty', () => {
@@ -449,23 +603,21 @@ describe('state schemas', () => {
       expect(() => ReviewObligationType.parse('')).toThrow();
     });
 
-    it('ArchitectureDecision accepts optional reviewFindings array (F13 slice 7c)', () => {
-      // F13 slice 7c adds an optional reviewFindings array to ArchitectureDecision
-      // mirroring plan.reviewFindings and implementation.reviewFindings, so the
-      // independent review history of an ADR is auditable across iterations.
-      // The field MUST be optional for backwards-compat with sessions created
-      // before F13 — schema MUST accept both absent and empty array.
+    it('ArchitectureDecision requires the reviewFindings array', () => {
+      // v10 requires the independent review history on every ADR: no findings
+      // is the empty array, never an absent field.
       const baseAdr = {
         id: 'ADR-1',
         title: 'Test',
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
         status: 'proposed' as const,
+        reviewCompletion: 'pending' as const,
         createdAt: '2026-01-01T00:00:00.000Z',
         digest: 'sha256-deadbeef',
       };
-      // Absent reviewFindings: valid (legacy).
-      expect(() => ArchitectureDecision.parse(baseAdr)).not.toThrow();
-      // Empty array: valid (initial state after F13).
+      // Absent reviewFindings: rejected.
+      expect(() => ArchitectureDecision.parse(baseAdr)).toThrow();
+      // Empty array: valid.
       expect(() => ArchitectureDecision.parse({ ...baseAdr, reviewFindings: [] })).not.toThrow();
       // Populated array of well-formed ReviewFindings: valid.
       const findings = {
@@ -478,6 +630,7 @@ describe('state schemas', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'sess-test' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
       };
@@ -489,20 +642,40 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema validates nested audit object', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
+        minimumActorAssuranceForApproval: 'best_effort',
+        identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerAttempts: 1,
+        enforceRiskClassification: false,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
-        reviewOutputPolicy: 'text_compat_allowed',
         actorClassification: {
           flowguard_decision: 'human',
         },
@@ -513,17 +686,25 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema accepts typed jwks identityProvider', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
-        reviewOutputPolicy: 'text_compat_allowed',
+        enforceRiskClassification: false,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerAttempts: 1,
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         identityProvider: {
           mode: 'jwks',
           issuer: 'https://issuer.example.com',
@@ -536,6 +717,15 @@ describe('state schemas', () => {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         actorClassification: {
           flowguard_decision: 'human',
@@ -547,16 +737,14 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema rejects mixed jwks+signingKeys identityProvider', () => {
       const snapshot = {
         mode: 'team',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
         identityProvider: {
           mode: 'jwks',
           issuer: 'https://issuer.example.com',
@@ -581,7 +769,8 @@ describe('state schemas', () => {
     it('PolicySnapshotSchema accepts P29 applied-policy provenance fields', () => {
       const snapshot = {
         mode: 'regulated',
-        hash: 'abc',
+        hash: VALID_POLICY_DIGEST,
+        hashVersion: POLICY_DIGEST_VERSION,
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         source: 'central',
@@ -592,15 +781,33 @@ describe('state schemas', () => {
         policyVersion: '2026.04',
         policyPathHint: 'basename:org-policy.json',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: false,
-        requireVerifiedActorsForApproval: false,
-        reviewOutputPolicy: 'structured_required',
+        minimumActorAssuranceForApproval: 'best_effort',
+        identityProviderMode: 'optional',
+        maxIncoherentReviewerCaptureRetries: 1,
+        maxReviewerAttempts: 1,
+        enforceRiskClassification: true,
+        allowReducedCeremony: false,
+        discoveryHealth: { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' },
+        validationEvidence: { enforcement: 'required', allowNoCommands: false },
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
         },
         actorClassification: {
           flowguard_decision: 'human',
@@ -612,6 +819,7 @@ describe('state schemas', () => {
     it('ReviewReport validates overall status enum', () => {
       expect(() =>
         ReviewReport.parse({
+          reviewKind: 'lifecycle_review',
           schemaVersion: 'flowguard-review-report.v1',
           sessionId: FIXED_UUID,
           generatedAt: FIXED_TIME,
@@ -621,20 +829,17 @@ describe('state schemas', () => {
           validationSummary: [],
           findings: [],
           overallStatus: 'clean',
-          completeness: {
-            sessionId: FIXED_UUID,
-            phase: 'COMPLETE',
-            policyMode: 'solo',
-            overallComplete: true,
-            slots: [],
-            fourEyes: {
-              required: false,
-              satisfied: true,
-              initiatedBy: 'test',
-              decidedBy: null,
-              detail: 'Four-eyes not required by policy',
-            },
-            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          peerReviewCoverage: {
+            targetResolved: false,
+            targetFrozen: false,
+            repositoryIdentityVerified: null,
+            baseSha: null,
+            headSha: null,
+            changedPathCount: 0,
+            objectivesCovered: 0,
+            objectivesTotal: 0,
+            reviewAssurance: null,
+            missingVerification: [],
           },
         }),
       ).not.toThrow();
@@ -693,6 +898,40 @@ describe('state schemas', () => {
         /Zod validation.*requestedMode|requestedMode.*Required/s,
       );
     });
+
+    it.each([
+      [
+        'archiveStatus',
+        (state: Record<string, unknown>) => ({ ...state, archiveStatus: 'archived' }),
+      ],
+      [
+        'policySnapshot.selfReview',
+        (state: Record<string, unknown>) => ({
+          ...state,
+          policySnapshot: {
+            ...(state.policySnapshot as Record<string, unknown>),
+            selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+          },
+        }),
+      ],
+      [
+        'policySnapshot.requireVerifiedActorsForApproval',
+        (state: Record<string, unknown>) => ({
+          ...state,
+          policySnapshot: {
+            ...(state.policySnapshot as Record<string, unknown>),
+            requireVerifiedActorsForApproval: false,
+          },
+        }),
+      ],
+    ])('readState rejects v4/v3 state containing removed %s', async (_field, addRemovedField) => {
+      const state = JSON.parse(JSON.stringify(makeState('TICKET'))) as Record<string, unknown>;
+      await fs.writeFile(
+        path.join(tmpDir, 'session-state.json'),
+        JSON.stringify(addRemovedField(state)),
+      );
+      await expect(readState(tmpDir)).rejects.toMatchObject({ code: 'SCHEMA_VALIDATION_FAILED' });
+    });
   });
 
   // ─── PERF ──────────────────────────────────────────────────
@@ -709,5 +948,257 @@ describe('state schemas', () => {
       );
       expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.stateSerializeMs);
     });
+  });
+});
+
+describe('schema field-boundary contracts', () => {
+  const NOW = '2026-09-17T10:00:00.000Z';
+  const DIGEST = 'a'.repeat(64);
+  const UUID = '00000000-0000-4000-8000-000000000001';
+
+  it('requires non-empty reduced-ceremony reasons', () => {
+    const decision = {
+      profile: 'reduced',
+      reason: 'maintenance-only change',
+      effectiveTaskClass: 'STANDARD',
+      computedMinimumTaskClass: 'STANDARD',
+      declaredTaskClass: null,
+      declarationKind: 'absent',
+      ticketDigest: null,
+      touchedSurfaces: [],
+      implementationId: UUID,
+      implementationDigest: DIGEST,
+      policyDigest: DIGEST,
+      verificationBasis: { checkIds: ['test'], attempts: [] },
+      decidedAt: NOW,
+    };
+
+    expect(ReducedCeremonyDecision.safeParse(decision).success).toBe(true);
+    expect(ReducedCeremonyDecision.safeParse({ ...decision, reason: '' }).success).toBe(false);
+  });
+
+  it('requires a non-empty implementation digest in the risk assessment', () => {
+    const assessment = {
+      computedMinimumTaskClass: 'STANDARD',
+      effectiveTaskClass: 'STANDARD',
+      declaredTaskClass: null,
+      declarationKind: 'absent',
+      ticketDigest: null,
+      touchedSurfaces: [],
+      riskTriggers: [],
+      assessedFrom: 'implementation_changed_files',
+      assessedFileCount: 3,
+      implementationDigest: DIGEST,
+    };
+
+    expect(ImplementationRiskAssessment.safeParse(assessment).success).toBe(true);
+    expect(
+      ImplementationRiskAssessment.safeParse({ ...assessment, implementationDigest: '' }).success,
+    ).toBe(false);
+  });
+
+  it('enforces the risk gate variants', () => {
+    expect(RiskGate.safeParse({ status: 'clear' }).success).toBe(true);
+    expect(RiskGate.safeParse({ status: 'clear', lastDecisionId: 'decision-1' }).success).toBe(
+      true,
+    );
+    expect(RiskGate.safeParse({ status: 'clear', lastDecisionId: '' }).success).toBe(false);
+
+    const blocked = {
+      status: 'blocked',
+      code: 'RISK_BLOCKED',
+      message: 'risk gate blocked',
+      blockedAt: NOW,
+      lastDecisionId: 'decision-1',
+    };
+    expect(RiskGate.safeParse(blocked).success).toBe(true);
+    expect(RiskGate.safeParse({ ...blocked, code: '' }).success).toBe(false);
+    expect(RiskGate.safeParse({ ...blocked, message: '' }).success).toBe(false);
+    expect(RiskGate.safeParse({ ...blocked, lastDecisionId: '' }).success).toBe(false);
+  });
+
+  it('enforces semantic audit operation fields', () => {
+    const operation = {
+      operationId: UUID,
+      preStateDigest: DIGEST,
+      mutationDigest: DIGEST,
+      postStateDigest: DIGEST,
+      auditEventDigest: DIGEST,
+      status: 'state_committed',
+      kind: 'semantic',
+      semantic: { phase: 'PLAN', event: 'plan_recorded', occurredAt: NOW, detail: {} },
+    };
+
+    expect(
+      SessionState.safeParse({ ...makeState('READY'), pendingAuditOperations: [operation] })
+        .success,
+    ).toBe(true);
+    expect(
+      SessionState.safeParse({
+        ...makeState('READY'),
+        pendingAuditOperations: [{ ...operation, semantic: { ...operation.semantic, event: '' } }],
+      }).success,
+    ).toBe(false);
+    expect(
+      SessionState.safeParse({
+        ...makeState('READY'),
+        pendingAuditOperations: [
+          { ...operation, semantic: { ...operation.semantic, occurredAt: 'not-a-date' } },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires a non-empty active profile identity when one is resolved', () => {
+    const state = makeState('READY');
+    const withProfile = (id: string, name: string) => ({
+      ...state,
+      activeProfile: { id, name, ruleContent: 'rules' },
+    });
+
+    expect(SessionState.safeParse(withProfile('profile-1', 'Profile')).success).toBe(true);
+    expect(SessionState.safeParse(withProfile('', 'Profile')).success).toBe(false);
+    expect(SessionState.safeParse(withProfile('profile-1', '')).success).toBe(false);
+  });
+
+  it('requires a non-empty initiator identity', () => {
+    const state = makeState('READY');
+    expect(SessionState.safeParse({ ...state, initiatedBy: 'initiator-1' }).success).toBe(true);
+    expect(SessionState.safeParse({ ...state, initiatedBy: '' }).success).toBe(false);
+  });
+
+  it('requires explicit nullable control-plane marker and dirty-file capture result', () => {
+    const state = makeState('READY');
+    const baseline = { dirtyFiles: [], capturedAt: NOW };
+
+    expect(SessionState.safeParse({ ...state, implementationBaseline: baseline }).success).toBe(
+      false,
+    );
+    expect(
+      SessionState.safeParse({
+        ...state,
+        implementationBaseline: { ...baseline, controlPlaneMarker: 'marker-1', dirtyFiles: [] },
+      }).success,
+    ).toBe(true);
+    expect(
+      SessionState.safeParse({
+        ...state,
+        implementationBaseline: { ...baseline, controlPlaneMarker: '', dirtyFiles: [] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a state whose flowguardSessionId diverges from id', () => {
+    const state = makeState('READY');
+    const divergentUuid = '00000000-0000-4000-8000-0000000000ff';
+    expect(divergentUuid).not.toBe(state.id);
+    const result = SessionState.safeParse({
+      ...state,
+      flowguardSessionId: divergentUuid,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === 'flowguardSessionId')).toBe(
+        true,
+      );
+    }
+  });
+});
+
+describe('schema invariant contracts', () => {
+  const NOW = '2026-09-17T10:00:00.000Z';
+  const DIGEST = 'b'.repeat(64);
+  const OPERATION_ID = '00000000-0000-4000-8000-0000000000aa';
+
+  function semanticOperation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      operationId: OPERATION_ID,
+      preStateDigest: DIGEST,
+      mutationDigest: DIGEST,
+      postStateDigest: DIGEST,
+      auditEventDigest: DIGEST,
+      status: 'state_committed',
+      kind: 'semantic',
+      semantic: { phase: 'PLAN', event: 'plan_recorded', occurredAt: NOW, detail: {} },
+      ...overrides,
+    };
+  }
+
+  it('rejects a risk gate with an unknown status', () => {
+    expect(RiskGate.safeParse({ status: 'bogus' }).success).toBe(false);
+    expect(RiskGate.safeParse({ status: 'clear' }).success).toBe(true);
+  });
+
+  it('requires non-empty semantic actors when the field is present', () => {
+    const withActor = (actor: string) =>
+      SessionState.safeParse({
+        ...makeState('READY'),
+        pendingAuditOperations: [
+          semanticOperation({
+            semantic: { phase: 'PLAN', event: 'e', occurredAt: NOW, actor, detail: {} },
+          }),
+        ],
+      });
+
+    expect(withActor('agent-1').success).toBe(true);
+    expect(withActor('').success).toBe(false);
+  });
+
+  it('rejects duplicate pending audit operation ids', () => {
+    const result = SessionState.safeParse({
+      ...makeState('READY'),
+      pendingAuditOperations: [semanticOperation(), semanticOperation()],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === 'pendingAuditOperations')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('accepts a state whose review assurance carries only non-review obligations', () => {
+    const planObligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerAttempts: 1,
+      },
+      obligationType: 'plan',
+      reviewCycle: 1,
+      iteration: 0,
+      planVersion: 1,
+      now: NOW,
+      subjectDigest: 'plan-digest',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '## body', 'plan-digest'),
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+    });
+    const state = makeState('PEER_REVIEW');
+    const result = SessionState.safeParse({
+      ...state,
+      reviewAssurance: { ...ensureReviewAssurance(undefined), obligations: [planObligation] },
+      peerReviewEvidence: [],
+    });
+
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('isTaskClass', () => {
+  it('HAPPY: accepts every canonical task class', () => {
+    for (const taskClass of TaskClass.options) {
+      expect(isTaskClass(taskClass)).toBe(true);
+    }
+  });
+
+  it('BAD: rejects unknown and non-string values', () => {
+    for (const invalid of ['TRIVIAL ', 'high-risk', '', 'unknown', null, undefined, 0, {}, []]) {
+      expect(isTaskClass(invalid)).toBe(false);
+    }
   });
 });

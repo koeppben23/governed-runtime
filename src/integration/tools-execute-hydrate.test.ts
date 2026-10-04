@@ -27,7 +27,6 @@ import {
   plan,
   decision,
   implement,
-  validate,
   review,
   abort_session,
   archive,
@@ -48,6 +47,14 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { GitError } from '../adapters/git-command.js';
+
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('./git-control-plane.js')>(),
+  );
+});
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -124,6 +131,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -362,16 +370,16 @@ describe('hydrate', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
-      expect(state!.implementationBaseline).toBeDefined();
-      expect(state!.implementationBaseline!.dirtyFiles.map((d) => d.path)).toEqual(
-        GIT_MOCK_DEFAULTS.changedFiles,
-      );
+      const baseline = state!.implementationBaseline;
+      expect(baseline.dirtyFiles).not.toBeNull();
+      if (baseline.dirtyFiles === null) throw new TypeError('Expected dirty-file baseline capture');
+      expect(baseline.dirtyFiles.map((d) => d.path)).toEqual(GIT_MOCK_DEFAULTS.changedFiles);
       // Each entry carries a content hash slot (null when the path is not
       // hashable in this fixture worktree).
-      for (const entry of state!.implementationBaseline!.dirtyFiles) {
+      for (const entry of baseline.dirtyFiles) {
         expect(entry).toHaveProperty('hash');
       }
-      expect(state!.implementationBaseline!.capturedAt).toBeTruthy();
+      expect(baseline.capturedAt).toBeTruthy();
     });
 
     it('auto-detects TypeScript profile from repo signals', async () => {
@@ -566,10 +574,31 @@ describe('hydrate', () => {
     });
 
     it('fails closed when repo signals are unavailable on fresh hydrate', async () => {
-      vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce(undefined as never);
+      vi.mocked(gitMock.listRepoSignals).mockRejectedValueOnce(
+        new GitError('NOT_GIT_REPO', 'Directory is not inside a git repository: /plain'),
+      );
       const result = await hydrateSession();
       expect(result.error).toBe(true);
       expect(result.code).toBe('DISCOVERY_RESULT_MISSING');
+      expect(result.message).toContain('NOT_GIT_REPO');
+    });
+
+    it('preserves a missing git executable as a discovery failure on fresh hydrate', async () => {
+      vi.mocked(gitMock.listRepoSignals).mockRejectedValueOnce(
+        new GitError('GIT_NOT_FOUND', 'git executable not found in PATH. Ensure git is installed.'),
+      );
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('DISCOVERY_RESULT_MISSING');
+      expect(result.message).toContain('GIT_NOT_FOUND');
+    });
+
+    it('propagates unexpected repository-signal errors instead of masking them', async () => {
+      vi.mocked(gitMock.listRepoSignals).mockRejectedValueOnce(new TypeError('boom'));
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INTERNAL_ERROR');
+      expect(result.message).toContain('boom');
     });
 
     it('maps actor claim resolution errors to structured hydrate errors', async () => {
@@ -606,7 +635,7 @@ describe('hydrate', () => {
         claimedTaskClass: 'TRIVIAL',
         riskGate: {
           status: 'blocked',
-          code: 'RISK_CLASSIFICATION_MISMATCH',
+          code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
           message: 'blocked',
           blockedAt: '2026-01-01T00:00:00.000Z',
           lastDecisionId: 'RISK-1',
@@ -621,7 +650,7 @@ describe('hydrate', () => {
       expect(stateAfter!.claimedTaskClass).toBe('HIGH-RISK');
       expect(stateAfter!.riskGate).toEqual({
         status: 'blocked',
-        code: 'RISK_CLASSIFICATION_MISMATCH',
+        code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         message: 'blocked',
         blockedAt: '2026-01-01T00:00:00.000Z',
         lastDecisionId: 'RISK-1',
@@ -1056,11 +1085,11 @@ describe('hydrate', () => {
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
       // sessionID lives in binding, actorInfo is separate
-      expect(state!.binding.sessionId).toBe(ctx.sessionID);
+      expect(state!.binding.hostSessionId).toBe(ctx.sessionID);
       expect(state!.actorInfo).toBeDefined();
       expect(state!.initiatedBy).toBe(state!.actorInfo!.id);
-      expect(state!.binding.sessionId).not.toBe(state!.actorInfo!.id);
-      expect(state!.binding.sessionId).not.toBe(state!.initiatedBy);
+      expect(state!.binding.hostSessionId).not.toBe(state!.actorInfo!.id);
+      expect(state!.binding.hostSessionId).not.toBe(state!.initiatedBy);
     });
   });
 });

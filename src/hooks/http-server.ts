@@ -20,6 +20,8 @@
  * Configuration:
  * - FLOWGUARD_HOOK_PORT (env): port number (default: 18462)
  * - FLOWGUARD_HOOK_HOST (env): bind address (default: 127.0.0.1)
+ * - FLOWGUARD_HOOK_TOKEN (env): required bearer token for governance routes
+ * - FLOWGUARD_HOOK_ALLOW_REMOTE (env): set to 1 to allow a non-loopback bind
  *
  * @see https://docs.anthropic.com/en/docs/claude-code/hooks (HTTP hook mode)
  * @see https://github.com/koeppben23/governed-runtime/issues/244
@@ -27,7 +29,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { formatDenyOutput } from './shared/stdout-writer.js';
@@ -39,11 +41,12 @@ import {
 } from './shared/phase-gate.js';
 import {
   assessObligationEscalation,
+  formatUnresolvedBlockingObligationReason,
   unresolvedBlockingObligations,
 } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import { ensureWorkspace, sessionDir, computeFingerprint } from '../adapters/workspace/index.js';
-import type { AuditEvent } from '../state/evidence-audit.js';
+import { ensureWorkspace } from '../adapters/workspace/index.js';
+import type { AuditEventBody } from '../state/evidence-audit.js';
 import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -51,9 +54,76 @@ import type { HookEventName, HttpHookResponse } from './shared/types.js';
 const DEFAULT_PORT = 18462;
 const DEFAULT_HOST = '127.0.0.1';
 export const MAX_HOOK_BODY_BYTES = 1_048_576;
+const MINIMUM_HOOK_TOKEN_LENGTH = 32;
 
-const PORT = parseInt(process.env['FLOWGUARD_HOOK_PORT'] ?? '', 10) || DEFAULT_PORT;
-const HOST = process.env['FLOWGUARD_HOOK_HOST'] ?? DEFAULT_HOST;
+export type HttpHookServerConfig =
+  | {
+      readonly binding: 'loopback';
+      readonly host: '127.0.0.1' | '::1';
+      readonly port: number;
+      readonly token: string;
+    }
+  | {
+      readonly binding: 'remote';
+      readonly host: string;
+      readonly port: number;
+      readonly token: string;
+      readonly allowRemote: true;
+    };
+
+function parsePort(rawPort: string | undefined): number {
+  if (rawPort === undefined) return DEFAULT_PORT;
+  if (!/^[0-9]+$/.test(rawPort)) {
+    throw new TypeError('FLOWGUARD_HOOK_PORT must be an integer from 1 through 65535');
+  }
+  const port = Number(rawPort);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
+    throw new TypeError('FLOWGUARD_HOOK_PORT must be an integer from 1 through 65535');
+  }
+  return port;
+}
+
+function readRequiredHookToken(env: Readonly<Record<string, string | undefined>>): string {
+  const token = env['FLOWGUARD_HOOK_TOKEN'];
+  if (token === undefined || token.trim().length < MINIMUM_HOOK_TOKEN_LENGTH || /\s/.test(token)) {
+    throw new TypeError(
+      'FLOWGUARD_HOOK_TOKEN must contain at least 32 non-whitespace characters and is required',
+    );
+  }
+  return token;
+}
+
+function readAllowRemoteFlag(env: Readonly<Record<string, string | undefined>>): string {
+  const raw = env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  if (raw !== undefined && raw !== '' && raw !== '1') {
+    throw new TypeError('FLOWGUARD_HOOK_ALLOW_REMOTE must be exactly 1 when set');
+  }
+  return raw ?? '';
+}
+
+/** Validates all externally supplied HTTP listener configuration before binding. */
+export function readHttpHookServerConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): HttpHookServerConfig {
+  const host = env['FLOWGUARD_HOOK_HOST'] ?? DEFAULT_HOST;
+  if (host.length === 0) throw new TypeError('FLOWGUARD_HOOK_HOST must not be empty');
+
+  const token = readRequiredHookToken(env);
+  const allowRemoteRaw = readAllowRemoteFlag(env);
+  const port = parsePort(env['FLOWGUARD_HOOK_PORT']);
+
+  if (host === '127.0.0.1' || host === '::1') {
+    return { binding: 'loopback', host, port, token };
+  }
+  if (allowRemoteRaw !== '1') {
+    throw new TypeError(
+      'FLOWGUARD_HOOK_HOST is non-loopback; set FLOWGUARD_HOOK_ALLOW_REMOTE=1 with an explicit token to allow it',
+    );
+  }
+  return { binding: 'remote', host, port, token, allowRemote: true };
+}
+
+let serverConfig: HttpHookServerConfig | undefined;
 
 // ─── Request Handling ────────────────────────────────────────────────────────
 
@@ -93,6 +163,45 @@ function jsonResponse(res: ServerResponse, status: number, body: unknown): void 
   res.end(json);
 }
 
+function headerValues(req: IncomingMessage, name: string): string[] {
+  const values: string[] = [];
+  const rawHeaders = req.rawHeaders ?? [];
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    if (rawHeaders[index]?.toLowerCase() === name) values.push(rawHeaders[index + 1] ?? '');
+  }
+  if (values.length > 0) return values;
+
+  const value = req.headers[name];
+  if (typeof value === 'string') return [value];
+  return Array.isArray(value) ? value : [];
+}
+
+function secureTokenEquals(actual: string, expected: string): boolean {
+  const actualBuffer = Buffer.from(actual, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  return (
+    actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+}
+
+function isAuthorizedHookRequest(req: IncomingMessage, token: string): boolean {
+  const authorization = headerValues(req, 'authorization');
+  const [authorizationHeader] = authorization;
+  if (authorization.length !== 1 || authorizationHeader === undefined) return false;
+  const match = /^Bearer ([^\s]+)$/i.exec(authorizationHeader);
+  if (match === null) return false;
+  const [, bearerToken] = match;
+  return bearerToken !== undefined && secureTokenEquals(bearerToken, token);
+}
+
+function hasJsonContentType(req: IncomingMessage): boolean {
+  const contentTypes = headerValues(req, 'content-type');
+  const [contentType] = contentTypes;
+  if (contentTypes.length !== 1 || contentType === undefined) return false;
+  const [mediaType] = contentType.split(';', 1);
+  return mediaType !== undefined && mediaType.trim().toLowerCase() === 'application/json';
+}
+
 function log(message: string): void {
   process.stderr.write(`[FlowGuard HTTP Hook] ${message}\n`);
 }
@@ -128,9 +237,7 @@ export async function handlePreToolUse(
     return {
       decision: 'deny',
       code: 'REVIEW_OBLIGATION_UNRESOLVED',
-      reason:
-        `${unresolved.length} unresolved review obligation(s) block mutating host tool use: ` +
-        unresolved.map((ob) => ob.obligationId).join(', '),
+      reason: formatUnresolvedBlockingObligationReason(unresolved),
     };
   }
 
@@ -153,12 +260,13 @@ async function handlePostToolUse(payload: Record<string, unknown>): Promise<Http
   }
 
   const now = new Date().toISOString();
-  const auditEvent: AuditEvent = {
+  const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: resolution.state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: resolution.state.phase,
     event: 'tool_call',
-    timestamp: now,
+    occurredAt: now,
     actor: 'machine',
     detail: {
       tool: tool_name,
@@ -205,36 +313,41 @@ export async function handleSessionStart(
     return { decision: 'allow', reason: 'workspace bootstrap failed (non-blocking)' };
   }
 
-  // Attempt audit event persistence — split into focused error boundaries.
-  let sessDir: string | null = null;
+  // Resolve the governed session. Audit v3 events require the explicit
+  // FlowGuard identity; without resolved state the session_start event is
+  // skipped — no polymorphic sessionId records.
+  let resolution: Awaited<ReturnType<typeof resolveSession>>;
   try {
-    const fpResult = await computeFingerprint(cwd);
-    sessDir = sessionDir(fpResult.fingerprint, session_id);
+    resolution = await resolveSession(cwd, session_id);
   } catch (err) {
     log(
-      `WARN: session-resolution-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
+      `INFO: session resolution failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
     );
+    return { decision: 'allow' };
+  }
+  if (!resolution.ok) {
+    log(`INFO: session state not available (${resolution.code}) — session_start audit skipped`);
+    return { decision: 'allow' };
   }
 
-  if (sessDir) {
-    try {
-      const now = new Date().toISOString();
-      const auditEvent: AuditEvent = {
-        id: randomUUID(),
-        sessionId: session_id,
-        phase: 'READY',
-        event: 'lifecycle',
-        timestamp: now,
-        actor: 'system',
-        detail: { action: 'session_start', hookSource: 'http_hook', platform, cwd },
-        enforcementLevel: 'hook_gated',
-      };
-      await appendAuditEvent(sessDir, auditEvent);
-    } catch (err) {
-      log(
-        `WARN: audit-append-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+  try {
+    const now = new Date().toISOString();
+    const auditEvent: AuditEventBody = {
+      id: randomUUID(),
+      flowguardSessionId: resolution.state.flowguardSessionId,
+      hostSessionId: session_id,
+      phase: 'READY',
+      event: 'lifecycle',
+      occurredAt: now,
+      actor: 'system',
+      detail: { action: 'session_start', hookSource: 'http_hook', platform, cwd },
+      enforcementLevel: 'hook_gated',
+    };
+    await appendAuditEvent(resolution.sessionDir, auditEvent);
+  } catch (err) {
+    log(
+      `WARN: audit-append-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   return { decision: 'allow' };
@@ -263,12 +376,13 @@ async function handleStop(payload: Record<string, unknown>): Promise<HttpHookRes
   }
 
   const now = new Date().toISOString();
-  const auditEvent: AuditEvent = {
+  const auditEvent: AuditEventBody = {
     id: randomUUID(),
-    sessionId: session_id,
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: session_id,
     phase: state.phase,
     event: 'lifecycle',
-    timestamp: now,
+    occurredAt: now,
     actor: 'system',
     detail: {
       action: 'session_stop',
@@ -308,79 +422,74 @@ function truncateInput(input: Record<string, unknown>): Record<string, unknown> 
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
-const ROUTES: Record<string, (payload: Record<string, unknown>) => Promise<HttpHookResponse>> = {
-  '/hooks/pre-tool-use': handlePreToolUse,
-  '/hooks/post-tool-use': handlePostToolUse,
-  '/hooks/session-start': handleSessionStart,
-  '/hooks/stop': handleStop,
-};
+interface HookRoute {
+  readonly event: HookEventName;
+  readonly handle: (payload: Record<string, unknown>) => Promise<HttpHookResponse>;
+}
 
-/** Map route path to hook event name for deny response formatting. */
-const ROUTE_EVENTS: Record<string, HookEventName> = {
-  '/hooks/pre-tool-use': 'PreToolUse',
-  '/hooks/post-tool-use': 'PostToolUse',
-  '/hooks/session-start': 'SessionStart',
-  '/hooks/stop': 'Stop',
+const ROUTES: Record<string, HookRoute> = {
+  '/hooks/pre-tool-use': { event: 'PreToolUse', handle: handlePreToolUse },
+  '/hooks/post-tool-use': { event: 'PostToolUse', handle: handlePostToolUse },
+  '/hooks/session-start': { event: 'SessionStart', handle: handleSessionStart },
+  '/hooks/stop': { event: 'Stop', handle: handleStop },
 };
 
 // ─── Server ──────────────────────────────────────────────────────────────────
 
-/** @internal Exported for unit testing only. */
-export async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const url = req.url ?? '/';
-  const method = req.method ?? 'GET';
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
-  // Health check.
-  if (method === 'GET' && url === '/health') {
-    jsonResponse(res, 200, { status: 'ok', port: PORT, pid: process.pid });
-    return;
-  }
-
-  // Only POST for hook endpoints.
-  if (method !== 'POST') {
-    jsonResponse(res, 405, { error: 'Method not allowed' });
-    return;
-  }
-
-  const handler = ROUTES[url];
-  if (!handler) {
-    jsonResponse(res, 404, { error: `Unknown route: ${url}` });
-    return;
-  }
-
-  let body: string;
+async function readRequestBodyOrRespond(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<string | undefined> {
   try {
-    body = await readBody(req);
+    return await readBody(req);
   } catch (err) {
     if (err instanceof BodyTooLargeError) {
       jsonResponse(res, 413, { error: 'Request body too large' });
-      return;
+      return undefined;
     }
     jsonResponse(res, 400, { error: 'Failed to read request body' });
-    return;
+    return undefined;
   }
+}
 
-  let payload: Record<string, unknown>;
+function parseJsonObjectOrRespond(
+  body: string,
+  res: ServerResponse,
+): Record<string, unknown> | undefined {
   try {
-    const parsed = JSON.parse(body);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    const parsed: unknown = JSON.parse(body);
+    if (!isJsonObject(parsed)) {
       jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
-      return;
+      return undefined;
     }
-    payload = parsed as Record<string, unknown>;
+    return parsed;
   } catch {
     jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
-    return;
+    return undefined;
   }
+}
 
+async function dispatchHookRoute(
+  url: string,
+  route: HookRoute,
+  payload: Record<string, unknown>,
+  res: ServerResponse,
+): Promise<void> {
   try {
-    const result = await handler(payload);
+    const result = await route.handle(payload);
 
     // For pre-tool-use denials, also include the hookSpecificOutput format
     // so Claude Code can interpret it directly.
     if (result.decision === 'deny' && url === '/hooks/pre-tool-use') {
-      const eventName = ROUTE_EVENTS[url]!;
-      const denyOutput = formatDenyOutput(eventName, result.code ?? 'DENIED', result.reason ?? '');
+      const denyOutput = formatDenyOutput(
+        route.event,
+        result.code ?? 'DENIED',
+        result.reason ?? '',
+      );
       jsonResponse(res, 200, { ...result, ...denyOutput });
     } else {
       jsonResponse(res, 200, result);
@@ -389,9 +498,8 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     log(`ERROR: ${url} handler failed: ${err instanceof Error ? err.message : String(err)}`);
     // Fail-closed for pre-tool-use: return deny on internal error.
     if (url === '/hooks/pre-tool-use') {
-      const eventName = ROUTE_EVENTS[url]!;
       const denyOutput = formatDenyOutput(
-        eventName,
+        route.event,
         'INTERNAL_ERROR',
         `Hook server internal error: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -402,13 +510,71 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
   }
 }
 
+/** @internal Exported for unit testing only. */
+export async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = req.url ?? '/';
+  const method = req.method ?? 'GET';
+
+  // Health check.
+  if (method === 'GET' && url === '/health') {
+    jsonResponse(res, 200, { status: 'ok' });
+    return;
+  }
+
+  // All governance requests authenticate before dispatch so callers without a
+  // token cannot distinguish routes or supported methods.
+  if (serverConfig === undefined || !isAuthorizedHookRequest(req, serverConfig.token)) {
+    jsonResponse(res, 401, { error: 'Unauthorized' });
+    return;
+  }
+
+  // Only POST for hook endpoints.
+  if (method !== 'POST') {
+    jsonResponse(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  const route = ROUTES[url];
+  if (!route) {
+    jsonResponse(res, 404, { error: `Unknown route: ${url}` });
+    return;
+  }
+
+  if (!hasJsonContentType(req)) {
+    jsonResponse(res, 415, { error: 'Content-Type must be application/json' });
+    return;
+  }
+
+  const body = await readRequestBodyOrRespond(req, res);
+  if (body === undefined) return;
+
+  const payload = parseJsonObjectOrRespond(body, res);
+  if (payload === undefined) return;
+
+  await dispatchHookRoute(url, route, payload, res);
+}
+
 const server = createServer(handleHttpRequest);
 
-server.listen(PORT, HOST, () => {
-  log(`listening on ${HOST}:${PORT}`);
-  log(`PID: ${process.pid}`);
-  log(`routes: ${Object.keys(ROUTES).join(', ')}`);
-});
+function startServer(): void {
+  let config: HttpHookServerConfig;
+  try {
+    config = readHttpHookServerConfig();
+  } catch (err) {
+    log(`ERROR: invalid configuration: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+  serverConfig = config;
+
+  server.listen(config.port, config.host, () => {
+    log(`listening on ${config.host}:${config.port}`);
+    log(`PID: ${process.pid}`);
+    log(`routes: ${Object.keys(ROUTES).join(', ')}`);
+  });
+}
+
+startServer();
 
 // Graceful shutdown.
 function shutdown(): void {

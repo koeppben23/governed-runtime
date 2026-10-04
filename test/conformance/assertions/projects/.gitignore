@@ -1,0 +1,10 @@
+# Conformance project build/IDE artifacts
+.gradle/
+build/
+target/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+.flowguard/

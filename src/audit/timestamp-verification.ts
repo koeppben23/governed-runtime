@@ -21,6 +21,7 @@ import { TsaError } from './errors.js';
  * Fail-closed: throws on non-hex input or odd-length strings.
  */
 export function canonicalDigestToUint8Array(hex: string): Uint8Array {
+  // Covered by the direct unit tests (odd length, invalid hex, round-trip).
   if (hex.length % 2 !== 0) {
     throw new TsaError(
       'TSA_HEX_ODD_LENGTH',
@@ -44,21 +45,73 @@ export interface TimestampMonotonicityResult {
 }
 
 /**
- * Verify that audit event timestamps are monotonically non-decreasing.
+ * Parse an audit timestamp into a numeric UTC instant (AC11). Unparseable
+ * values are NEVER sortable — no lexical fallback, no best effort.
+ */
+function epochOf(value: string): number | null {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Verify that audit event RECORD timestamps are monotonically
+ * non-decreasing, comparing PARSED UTC instants — never lexical strings
+ * (offset formats such as `+02:00` vs `Z` must not yield ordering artifacts).
+ * An unparseable timestamp makes the trail invalid, not ignorable.
+ *
+ * The chain-order authority is `recordedAt` (stamped by the append authority
+ * under the audit write lock), NOT `occurredAt`: the durable audit outbox
+ * reconciles older operations after newer direct appends, so an event whose
+ * `occurredAt` predates its successor's is a legitimate deferred record —
+ * only a RECORD order regression is a clock anomaly.
+ *
+ * Additionally verifies, per event, that the producer-supplied `occurredAt`
+ * does not postdate the host-stamped `recordedAt`. An event cannot be recorded
+ * before it happened, so a producer timestamp from the future is a clock
+ * anomaly. Only this direction is constrained; the opposite gap is the
+ * legitimate deferred-outbox case described above.
+ *
+ * Every event is checked, including the first: a single-event trail must not
+ * escape timestamp verification.
  *
  * @param events - Audit events in chronological order.
  */
 export function verifyTimestampMonotonicity(
   events: readonly AuditEvent[],
 ): TimestampMonotonicityResult {
-  for (let i = 1; i < events.length; i++) {
-    if (events[i]!.timestamp < events[i - 1]!.timestamp) {
+  let previous: { readonly recorded: number; readonly recordedAt: string } | null = null;
+  for (const [i, event] of events.entries()) {
+    const recorded = epochOf(event.recordedAt);
+    if (recorded === null) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Timestamp non-monotonic at index ${i}: "${events[i]!.timestamp}" < "${events[i - 1]!.timestamp}"`,
+        message: `Record timestamp at index ${i} is not a parseable UTC instant: "${event.recordedAt}"`,
       };
     }
+    const occurred = epochOf(event.occurredAt);
+    if (occurred === null) {
+      return {
+        valid: false,
+        firstBreak: i,
+        message: `Occurrence timestamp at index ${i} is not a parseable UTC instant: "${event.occurredAt}"`,
+      };
+    }
+    if (occurred > recorded) {
+      return {
+        valid: false,
+        firstBreak: i,
+        message: `Occurrence timestamp at index ${i} postdates its record timestamp: "${event.occurredAt}" > "${event.recordedAt}"`,
+      };
+    }
+    if (previous !== null && recorded < previous.recorded) {
+      return {
+        valid: false,
+        firstBreak: i,
+        message: `Record timestamp non-monotonic at index ${i}: "${event.recordedAt}" < "${previous.recordedAt}"`,
+      };
+    }
+    previous = { recorded, recordedAt: event.recordedAt };
   }
   return { valid: true, firstBreak: null, message: null };
 }
@@ -68,83 +121,119 @@ export interface TimestampEvidenceCheck {
   readonly reason: string | null;
   /** When true, the event has tokenDerBase64 and must be cryptographically verified before the imprint can be trusted. */
   readonly needsTokenVerification: boolean;
+  /**
+   * When true, stronger TSA evidence payload exists but the recorded status was
+   * downgraded (AC2): a degraded status must never silently weaken assurance.
+   */
+  readonly downgraded: boolean;
+}
+
+/** AC2: the status values that must never weaken present TSA evidence. */
+function isDegradedStatus(status: string | undefined): boolean {
+  // Covered exhaustively by the AC2 matrix test (all three statuses).
+  return status === 'local' || status === 'ntp_checked' || status === 'tsa_failed';
 }
 
 /**
  * Verify TSA message imprint against recomputed canonical event digest.
  *
- * Only checks events that have TSA evidence. Events without TSA evidence pass
- * (backward compat — legacy events). Stored canonicalEventDigest is cross-check
- * evidence only; it is not the digest authority during verification.
+ * Only checks events that have TSA evidence. Events without timestamp evidence
+ * are not timestamp failures at this layer: presence and fatality are decided
+ * by the chain and policy gates, not by this imprint check. Stored
+ * canonicalEventDigest is cross evidence only; it is not the digest authority
+ * during verification.
  *
  * Trust model:
- * - When tokenDerBase64 is present: mutable timestampEvidence.tsa.messageImprint
- *   cannot be trusted. Returns needsTokenVerification=true to signal that async
- *   cryptographic token verification is required.
- * - When tokenDerBase64 is absent (mock/internal TSA): messageImprint is the
- *   trusted internal imprint and is compared against the recomputed canonical digest.
+ * - AC2: the downgrade decision comes FIRST — a degraded status must never
+ *   weaken assurance when STRONGER evidence payload exists, whether that is a
+ *   token, an imprint, or both.
+ * - When tokenDerBase64 is present and non-empty with a coherent status:
+ *   mutable timestampEvidence.tsa.messageImprint cannot be trusted. Returns
+ *   needsTokenVerification=true to signal that async cryptographic token
+ *   verification is required.
+ * - When tokenDerBase64 is absent or the empty string (mock/internal TSA,
+ *   the canonical internal-imprint model): messageImprint is the trusted
+ *   internal imprint and is compared against the recomputed canonical digest.
+ *   A `tsa` payload that omits the tokenDerBase64 FIELD entirely is
+ *   schema-invalid and never reaches this function via verifyChain — the
+ *   canonical TsaEvidenceSchema requires the field.
  *
  * @param event - Audit event with optional timestampEvidence.
  */
 export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceCheck {
   const evidence = (event as Record<string, unknown>).timestampEvidence as
     Record<string, unknown> | undefined;
-  const storedCanonicalDigest = (event as Record<string, unknown>).canonicalEventDigest as
-    string | undefined;
 
   if (!evidence) {
-    return { valid: true, reason: null, needsTokenVerification: false };
+    return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
   }
 
   const tsa = evidence.tsa as Record<string, unknown> | undefined;
   const status = evidence.status as string | undefined;
 
-  if (!tsa || status === 'local' || status === 'ntp_checked') {
-    return { valid: true, reason: null, needsTokenVerification: false };
-  }
-
-  if (status === 'tsa_failed') {
-    return { valid: true, reason: null, needsTokenVerification: false };
+  if (!tsa) {
+    return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
   }
 
   const imprint = tsa.messageImprint as string | undefined;
   const tokenDerBase64 = tsa.tokenDerBase64 as string | undefined;
 
+  // Covered by the AC2 matrix test (token / imprint / token+imprint).
+  const hasStrongerEvidence = typeof tokenDerBase64 === 'string' || typeof imprint === 'string';
+  if (hasStrongerEvidence && isDegradedStatus(status)) {
+    return {
+      valid: false,
+      reason: `TSA evidence present but status downgraded to ${status} — a degraded status must never weaken timestamp assurance`,
+      needsTokenVerification: false,
+      downgraded: true,
+    };
+  }
+
+  // Covered by the token-required and matrix tests.
   if (tokenDerBase64) {
     return {
       valid: false,
       reason: 'TSA token verification required — cannot trust mutable cached messageImprint',
       needsTokenVerification: true,
+      downgraded: false,
     };
   }
 
+  // Covered by the missing-imprint tests.
   if (!imprint) {
     return {
       valid: false,
       reason: 'TSA evidence missing messageImprint',
       needsTokenVerification: false,
+      downgraded: false,
     };
   }
 
   const recomputedDigest = computeCanonicalEventDigest(event);
 
-  if (storedCanonicalDigest && storedCanonicalDigest !== recomputedDigest) {
+  // Covered by the stored-digest cross-check tests.
+  const storedSemanticDigest = (event as Record<string, unknown>).semanticEventDigest as
+    string | undefined;
+  if (storedSemanticDigest && storedSemanticDigest !== recomputedDigest) {
     return {
       valid: false,
-      reason: 'stored canonicalEventDigest does not match recomputed canonical event digest',
+      reason: 'stored semanticEventDigest does not match recomputed canonical event digest',
       needsTokenVerification: false,
+      downgraded: false,
     };
   }
 
+  // Covered by the imprint-mismatch tests.
   if (imprint !== recomputedDigest) {
     return {
       valid: false,
       reason: 'TSA messageImprint does not match recomputed canonical event digest',
       needsTokenVerification: false,
+      downgraded: false,
     };
   }
 
-  return { valid: true, reason: null, needsTokenVerification: false };
+  return { valid: true, reason: null, needsTokenVerification: false, downgraded: false };
 }
 
 export interface EvidencePresenceCheck {
@@ -165,14 +254,14 @@ export function verifyTimestampEvidencePresence(
 ): EvidencePresenceCheck {
   const missingCriticalEvents: number[] = [];
 
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i]!;
+  for (const [i, event] of events.entries()) {
     const evidence = (event as Record<string, unknown>).timestampEvidence as
       Record<string, unknown> | undefined;
 
     const eventKind = extractEventKind(event.event);
 
     if (criticalKinds.includes(eventKind)) {
+      // Covered by the presence tests (critical/decision/lifecycle).
       const isMissing =
         !evidence || evidence.status === 'local' || evidence.status === 'tsa_failed';
       if (isMissing) {
@@ -187,7 +276,8 @@ export function verifyTimestampEvidencePresence(
   };
 }
 
-function extractEventKind(eventString: string): string {
+export function extractEventKind(eventString: string): string {
+  // Covered by the presence tests across decision/lifecycle/other kinds.
   if (eventString.startsWith('decision:')) return 'decision';
   if (eventString.startsWith('lifecycle:')) return 'lifecycle';
   if (eventString.startsWith('transition:')) return 'transition';

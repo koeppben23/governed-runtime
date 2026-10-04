@@ -13,22 +13,11 @@ FlowGuard supports per-repository configuration via `flowguard.json`.
 
 ```json
 {
-  "schemaVersion": "v1",
-  "logging": {
-    "level": "info"
-  },
-  "policy": {
-    "defaultMode": "solo"
-  },
-  "profile": {},
-  "archive": {
-    "redaction": {
-      "mode": "basic",
-      "includeRaw": false
-    }
-  }
+  "schemaVersion": "v1"
 }
 ```
+
+With no policy override, FlowGuard resolves the built-in `team` mode (human-gated).
 
 ## Settings Reference
 
@@ -63,6 +52,14 @@ Controls where FlowGuard writes structured log output.
 
 **CLI `--log-mode` flag**: The CLI uses a separate flag (`--log-mode console|file|file+console`) because it has no OpenCode plugin context and cannot use `ui` or `both`. The CLI defaults to `console` if `--log-mode` is omitted.
 
+**Workspace-root creation contract:** the file sink never creates the workspace
+root. Until `ensureWorkspace()` — the workspace-root creation SSOT used by
+`/start` and the session bootstrap — has materialized `{workspace}`, the sink
+stays dormant: records are discarded without filesystem mutation and without a
+failure. Once the root exists, the sink lazily creates only
+`{workspace}/.opencode/logs` and applies the normal write/rotation/retention
+semantics. File logs are diagnostic only and never audit evidence.
+
 ### logging.retentionDays
 
 **Type:** `number` (1-90)
@@ -78,7 +75,7 @@ All adapter modules (persistence, git, archive, init, evidence-artifacts, gh-cli
 - `git executable not found` / `Failed to resolve current branch` (git)
 - `Discovery snapshot missing during archive creation` (archive)
 - `JWT verification failed` (identity, redacted)
-- `Legacy selfReview config normalized to mandatory strict` (policy)
+- `Removed policy configuration rejected` (policy)
 
 Adapter logs route to whichever log mode is configured — file, console, or both.
 
@@ -126,27 +123,27 @@ Re-install with `--force` updates the value; without `--force`, the existing con
 
 Invalid or unrecognized policy mode values are rejected with an explicit `PolicyConfigurationError` (fail-stop). No productive path silently maps unknown modes to a fallback.
 
-### policy.maxSelfReviewIterations
+### policy.reviewBudget
 
-**Type:** `number` (1-20)
-**Default:** Preset value (solo=2, team/team-ci/regulated=3)
+**Type:** object with integer `plan`, `architecture`, and `implementation` fields (1-10)
+**Default:** `3` for every budget in every policy preset
 
-Overrides the maximum independent review iterations in PLAN phase. The field name is retained as the persisted policy contract:
+Overrides review-loop budgets field-wise:
 
 ```json
 {
   "policy": {
-    "maxSelfReviewIterations": 5
+    "reviewBudget": {
+      "plan": 5,
+      "architecture": 4,
+      "implementation": 7
+    }
   }
 }
 ```
 
-**Resolution priority:**
-
-1. Config override (`config.policy.maxSelfReviewIterations`)
-2. Policy preset value (solo=2, team=3, team-ci=3, regulated=3)
-
-Applies only to new sessions. Existing sessions retain their snapshot value.
+Omitted budget fields use the resolved policy preset value. Applies only to new
+sessions. Existing sessions retain their snapshot value.
 
 ### policy.identityProvider
 
@@ -257,66 +254,44 @@ Minimum required actor assurance for `approve` verdicts at user gates. The
 approver's resolved assurance tier must be `>=` this value, otherwise
 `/review-decision approve` is rejected with `ACTOR_ASSURANCE_INSUFFICIENT`.
 
-### policy.requireVerifiedActorsForApproval
-
-**Type:** `boolean`
-**Default:** `false`
-
-Legacy precedence flag. When `true`, the approver is required to be at
-assurance `claim_validated` or higher (the same effect as
-`minimumActorAssuranceForApproval: 'claim_validated'`).
-
-> **Precedence:** `requireVerifiedActorsForApproval` is evaluated **first**.
-> When it is `true`, the runtime ignores `minimumActorAssuranceForApproval`
-> for the decision rail and uses the legacy gate. Operators relaxing the
-> stricter legacy gate by setting `minimumActorAssuranceForApproval` to a
-> lower tier MUST also set `requireVerifiedActorsForApproval: false` —
-> otherwise the legacy gate keeps winning. See
-> `src/rails/review-decision.ts` (`verifyAssuranceThreshold`) and
-> `docs/actor-assurance-architecture.md`.
-
-### policy.maxImplReviewIterations
-
-**Type:** `number` (1-20)
-**Default:** Preset value (solo=1, team/team-ci/regulated=3)
-
-Overrides the maximum impl-review iterations in IMPL_REVIEW phase:
-
-```json
-{
-  "policy": {
-    "maxImplReviewIterations": 7
-  }
-}
-```
-
-**Resolution priority:**
-
-1. Config override (`config.policy.maxImplReviewIterations`)
-2. Policy preset value (solo=1, team=3, team-ci=3, regulated=3)
-
-Applies only to new sessions. Existing sessions retain their snapshot value.
-
 ### policy.allowReducedCeremony
 
 **Type:** `boolean`
 **Default:** `false`
 
-Permits reduced implementation-review ceremony only after FlowGuard has runtime evidence that the changed files are low risk. This setting is fail-closed and does not let `claimedTaskClass` choose pipeline depth.
+Permits reduced implementation-review ceremony only after FlowGuard has **post-implementation** runtime evidence that the delivered change is low risk. FlowGuard resolves one effective risk class as `max(runtime-computed minimum, ticket-declared floor, optional escalation claim)`; no manual claim is required. `policy.requireHumanGates` must also be `true`: reduction never removes the human evidence gate.
 
 Reduced ceremony can apply only when all of these are true:
 
-- `policy.allowReducedCeremony` is `true` in the frozen policy snapshot.
-- `claimedTaskClass` is present and exactly `TRIVIAL`.
-- Runtime-computed minimum task class is `TRIVIAL`.
+- `policy.allowReducedCeremony` is `true` and `policy.requireHumanGates` is `true` in the frozen policy snapshot.
+- The **effective risk class** is exactly `TRIVIAL`. It is resolved as `max(runtime-computed minimum, ticket-declared floor, optional escalation claim)`:
+  - the ticket may bind a minimum class with an explicit `Risk:` / `Risikoklasse:` / `Risk Class:` line in its canonical content; contradictory valid declarations apply the highest declared class as conservative floor and deny reduction,
+  - an invalid declaration denies reduction and blocks risk-relevant mutations at the pre-tool gate until the ticket is corrected,
+  - `claimedTaskClass` is an optional, raise-only escalation; it can never lower a ticket declaration and is never required.
 - `riskGate` is clear or absent.
-- Changed-file evidence is available and touches no governance, security, policy, state, audit, archive, release, installer, CI, persistence, migration, or trust-boundary surface.
-- Validation evidence for all active checks is complete and passing.
-- Implementation evidence, `state.reducedCeremony`, and transition audit are recorded.
-- `reviewInvocationPolicy` does not require host-task review.
+- Changed-file evidence is available and touches no instruction, permission, governance, security, policy, state, audit, archive, release, installer, CI, persistence, migration, or trust-boundary surface (root and nested `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `.claude/**`, `.gemini/**`, `.opencode/**`, copilot instructions, and root tool configs are always excluded).
+- **Every** active check was re-run after `/implement`: each has a latest decisive PASS plus a passing implementation-scoped attempt bound to the current `implementationId`. No active checks means no reduction.
+- The governed file set and its worktree bytes re-attest to the frozen implementation digest at decision, approval and export time.
+- Implementation evidence, `state.reducedCeremony` (with implementation digest, frozen policy digest and exact check/attempt basis), and transition audit are recorded.
 - No outstanding review obligation exists.
 
-If any condition fails, FlowGuard keeps the full existing ceremony. Sensitive surfaces escalate to the computed minimum, often `HIGH-RISK`; they do not downgrade to `STANDARD` by default. Reduced ceremony never writes synthetic `implReview` approval evidence.
+If any condition fails, FlowGuard keeps the full existing ceremony. Sensitive surfaces escalate to the computed minimum, often `HIGH-RISK`; they do not downgrade to `STANDARD` by default. Reduced ceremony never writes synthetic `implReview` approval evidence; completeness reports the review slot as `waived`.
+
+### policy.maxIncoherentReviewerCaptureRetries
+
+**Type:** integer `0` through `5`
+**Default:** `1`
+
+Caps fresh `flowguard-reviewer` Task calls after a host-task capture is internally
+incoherent: `overallVerdict: "accept"` with a non-empty `blockingIssues` array (F12).
+The initial incoherent capture is retained as audit evidence; a default budget of `1`
+allows one fresh reviewer call for the same pending obligation. A second incoherent
+capture exhausts the budget and requires the governed artifact to be re-submitted for
+a new review obligation.
+
+This is intentionally **not** a general parser-recovery budget. Missing, malformed, or
+schema-invalid reviewer output follows its own fail-closed recovery path and does not
+consume this F12-specific budget.
 
 ### Runtime Policy Resolution
 
@@ -343,8 +318,8 @@ fails closed rather than silently auto-approving.
 
 Config values are resolved once at session creation (first `/hydrate`). The resolved values become part of the immutable session snapshot:
 
-- `policySnapshot.maxSelfReviewIterations`
-- `policySnapshot.maxImplReviewIterations`
+- `policySnapshot.reviewBudget`
+- `policySnapshot.maxIncoherentReviewerCaptureRetries`
 - `policySnapshot.allowReducedCeremony`
 - `profileResolution.activeChecks`
 
@@ -384,38 +359,53 @@ Optional fields:
 FlowGuard policy authority is resolved from explicit mode, repo default mode, and (optionally)
 `FLOWGUARD_POLICY_PATH` central minimum semantics.
 
-### Audit Chain Verification Mode
+### Audit Chain Verification
 
-The `verifyChain` function accepts an optional `{ strict: boolean }` parameter:
+`verifyChain` has no strict-vs-legacy mode. Every record must satisfy the
+canonical `audit-chain.v3` event envelope: anything that is not a valid v3
+record fails closed with reason `AUDIT_ENVELOPE_INVALID` and is never handed to
+secondary assurance authorities. No records are skipped or tolerated.
 
-- **Default (`strict: false`):** Legacy events without chain fields are skipped and counted.
-  The chain remains valid. Suitable for migration and diagnostic workflows.
-- **Strict (`strict: true`):** Legacy events without chain fields are treated as integrity
-  failures. Regulated verification paths must use strict mode.
+`verifyChain(events, options?)` accepts:
 
-Archive verification (`verifyArchive`) selects strict mode automatically when
-`manifest.policyMode === 'regulated'`. Unknown or non-regulated policy modes remain
-legacy-tolerant for backward compatibility.
+- `strictTimestamps` — when `true`, missing timestamp evidence, TSA imprint
+  mismatches, and pending token verification are failures rather than
+  diagnostics. Clock monotonicity is always enforced and is never gated by this
+  option.
+- `expectedFlowguardSessionId` — binds the trail to a state-owned FlowGuard
+  session identity; a mismatch is reported as `CHAIN_BREAK`.
 
-### archive.redaction.mode
+Failure reason priority: `CHAIN_BREAK` > `AUDIT_ENVELOPE_INVALID` >
+`CLOCK_ANOMALY` / `TIMESTAMP_EVIDENCE_MISSING` / `TSA_MESSAGE_IMPRINT_MISMATCH` /
+`TOKEN_VERIFICATION_REQUIRED`.
+
+### Archive export redaction
 
 **Type:** `enum`
-**Values:** `none`, `basic`, `strict`
-**Default:** `basic`
+**Values:** `none`, `basic`, `pseudonymous`
+**Default:** `basic` for the `/archive` and `/export` tool arguments
 
-Controls export-time redaction for archive artifacts.
+`basic` and `pseudonymous` create redacted sharing archives. They are intentionally
+`not_verifiable`, because canonical audit-chain verification requires raw state
+and audit evidence.
 
-FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
+`none` requires `includeRaw=true` and `archive.redaction.allowRawExport=true`; it
+creates a confidential raw-evidence package eligible for verification.
 
-### archive.redaction.includeRaw
+This permission applies to user-requested exports. A regulated clean completion
+always creates its mandatory local raw-evidence archive and verifies it; that
+system-owned completion path does not depend on the manual-export setting.
 
-**Type:** `boolean`
+### `/archive` `includeRaw` Argument
+
+**Type:** `boolean` tool argument
 **Default:** `false`
 
-When `false` (default), only redacted export artifacts are included in archives.
-When `true`, raw artifacts are included alongside redacted artifacts and the archive manifest is marked with a risk flag.
+Set `true` only for authorized raw-evidence exports. Archive manifests then record
+`rawIncluded: true` and the `raw_audit_evidence_export` risk flag.
 
-**Scope of redaction:** Only `decision-receipts.*.json` and `review-report.*.json` are redacted. `session-state.json` and `audit.jsonl` are always included as raw.
+With `false`, the archive is a redacted sharing package and reports
+`not_verifiable` rather than an integrity failure.
 
 ### Discovery
 
@@ -439,7 +429,7 @@ Results are included in `discovery-snapshot.json` archives and used for profile 
 
 **Advisory verification authority:**
 
-Verification commands (test, lint, build, typecheck) are derived via `planVerificationCandidates` and surfaced as `verificationCandidates` in `flowguard_status`. This is the single canonical advisory verification source. The `validationHints` field in `DiscoveryResult` is a legacy intermediate signal retained for digest stability and must not be consumed for agent guidance.
+Verification commands (test, lint, build, typecheck) are derived via `planVerificationCandidates` and surfaced as `verificationCandidates` in `flowguard_status`. This is the single canonical advisory verification source. Discovery v2 carries no `validationHints` field; `DiscoveryResult` exposes only `verificationCandidates`.
 
 ### profile.defaultId
 
@@ -506,14 +496,45 @@ Applies only to new sessions. Existing sessions retain their snapshot value.
 > (global override) or by registering a custom profile (see
 > `docs/profiles.md#custom-profiles`).
 
+### presentation.opencode.glyphProfile
+
+**Type:** `enum`
+**Values:** `unicode`, `ascii`
+**Default:** `unicode`
+
+Selects the status-marker vocabulary for transient OpenCode
+`presentation.markdown` output:
+
+```json
+{
+  "presentation": {
+    "opencode": {
+      "glyphProfile": "ascii"
+    }
+  }
+}
+```
+
+This is an OpenCode-only presentation preference, not workflow, policy, or
+audit authority. `unicode` uses the canonical markers (such as `✓`, `⚠`, and
+`→`); `ascii` substitutes only renderer-owned status and action markers (such
+as `[OK]`, `[WARN]`, and `[NEXT]`) for terminals or fonts that cannot display
+them. It does not transliterate arbitrary Markdown, embedded artifact content,
+or user-authored text.
+
+Canonical `reviewCard` artifacts remain Unicode and are preserved verbatim.
+The profile affects the separate, host-visible `presentation.markdown` field.
+Repository config takes precedence over global config, as described in
+[Config File Location](#config-file-location).
+
 ## Environment Variables
 
-| Variable                    | Description                                                                                    | Default              |
-| --------------------------- | ---------------------------------------------------------------------------------------------- | -------------------- |
-| `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode` |
-| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                |
-| `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default) |
-| `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | unset (host default) |
+| Variable                    | Description                                                                                    | Default                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode`                 |
+| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                                |
+| `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default)                 |
+| `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | `none` for OpenCode; unset otherwise |
 
 Log level is sourced exclusively from `config.logging.level` (see the
 **logging** section above). There is no `FLOWGUARD_LOG_LEVEL` env override at
@@ -532,16 +553,17 @@ Values are validated fail-closed at install time:
 
 - `FLOWGUARD_REVIEWER_MODEL` — alphanumerics, dots, slashes, `@`, colons, and
   hyphens only; newlines rejected (YAML-injection guard).
-- `FLOWGUARD_REVIEWER_EFFORT` — lowercase letters only (e.g. `low`, `medium`,
-  `high`, `xhigh`, `max`). Any other value aborts the install.
+- `FLOWGUARD_REVIEWER_EFFORT` — one of `none`, `low`, `medium`, `high`,
+  `xhigh`, or `max`. `none` is supported by OpenCode only and is the required
+  default for its structured reviewer transport. Any other value aborts the install.
 
 Per-host support matrix (the injected frontmatter key differs by host):
 
-| Host          | `model:` injection | Effort frontmatter key | Notes                                               |
-| ------------- | ------------------ | ---------------------- | --------------------------------------------------- |
-| `opencode`    | yes                | `reasoningEffort:`     | Provider passthrough.                               |
-| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`. |
-| `codex`       | no                 | unsupported            | See limitation below.                               |
+| Host          | `model:` injection | Effort frontmatter key | Notes                                                                                        |
+| ------------- | ------------------ | ---------------------- | -------------------------------------------------------------------------------------------- |
+| `opencode`    | yes                | `reasoningEffort:`     | Defaults to `none`: Thinking Mode conflicts with OpenCode's required structured-output tool. |
+| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.                                          |
+| `codex`       | no                 | unsupported            | See limitation below.                                                                        |
 
 **Codex limitation:** FlowGuard ships the Codex reviewer as a markdown subagent,
 which does not honor `model`/`model_reasoning_effort` directives. Codex configures
@@ -576,8 +598,8 @@ install, or configure the Codex custom agent directly.
   },
   "archive": {
     "redaction": {
-      "mode": "strict",
-      "includeRaw": false
+      "allowedModes": ["none", "basic", "pseudonymous"],
+      "allowRawExport": true
     }
   }
 }

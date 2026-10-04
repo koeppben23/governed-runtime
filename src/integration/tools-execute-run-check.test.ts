@@ -28,7 +28,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import {
   status,
   hydrate,
@@ -68,7 +68,15 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
@@ -116,6 +124,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -266,21 +275,43 @@ async function fulfillReview(
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('run_check', () => {
-  /** Helper: reach VALIDATION phase. */
-  async function reachValidation(): Promise<void> {
+  /**
+   * Reach VALIDATION through the canonical plan-approval path. Solo plan
+   * convergence auto-approves PLAN_REVIEW into VALIDATION and the runtime runs
+   * the active checks automatically (discovery detects TypeScript →
+   * activeChecks=['typecheck']). The returned plan response is superseded by the
+   * automatic run_check response when checks ran.
+   */
+  async function reachValidation(): Promise<Record<string, unknown>> {
     await hydrateAndTicket();
-    await plan.execute({ planText: '## Plan' }, ctx);
+    await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillReview('plan', 0, 'accept');
-    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
-    // Solo: auto-advances PLAN_REVIEW → VALIDATION
-    // (Discovery detects TypeScript → activeChecks=['typecheck'])
+    return parseToolResult(await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx));
+  }
+
+  /**
+   * Reach VALIDATION and reset the validation projection to the pending wait
+   * state so the explicit run_check compatibility surface can be exercised
+   * directly (the automatic runner already advanced to IMPLEMENTATION).
+   */
+  async function reachPendingValidation(): Promise<void> {
+    await reachValidation();
+    const sessDir = await currentSessionDir();
+    const state = await readState(sessDir);
+    const patched = {
+      ...state!,
+      phase: 'VALIDATION' as const,
+      validation: [],
+      validationAttempts: [],
+      implementation: null,
+    };
+    delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+    await writeState(sessDir, patched);
   }
 
   describe('HAPPY', () => {
-    it('passing check advances to IMPLEMENTATION', async () => {
-      await reachValidation();
-      const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
-      const result = parseToolResult(raw);
+    it('passing checks advance to IMPLEMENTATION automatically', async () => {
+      const result = await reachValidation();
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('IMPLEMENTATION');
       expect(result.evidence).toBeDefined();
@@ -288,6 +319,38 @@ describe('run_check', () => {
       expect(evidence.passed).toBe(true);
       expect(evidence.exitCode).toBe(0);
       expect(evidence.kind).toBe('typecheck');
+
+      // The automatic run persisted the execution evidence, not just the response.
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('IMPLEMENTATION');
+      expect(state!.validation).toHaveLength(1);
+      expect(state!.validation[0]).toMatchObject({
+        checkId: 'typecheck',
+        passed: true,
+        exitCode: 0,
+        outputDigest: 'a'.repeat(64),
+      });
+    });
+
+    it('persists the host-observed execution continuity with the attempt', async () => {
+      const result = await reachValidation();
+      const state = await readState(await currentSessionDir());
+      const attempt = state!.validationAttempts[0];
+      expect(attempt).toBeDefined();
+      if (!attempt) throw new TypeError('Expected a validation attempt');
+
+      // The persisted observation is the same canonical pair the tool response
+      // reports: one host-observed digest before execution, one under the lock.
+      expect(attempt.executionObservation.executionObservedStateDigest).toBe(
+        result.executionObservedStateDigest,
+      );
+      expect(attempt.executionObservation.preCommitStateDigest).toBe(result.preCommitStateDigest);
+      expect(attempt.executionObservation.executionObservedStateDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(attempt.executionObservation.preCommitStateDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.stateChangedDuringExecution).toBe(
+        attempt.executionObservation.executionObservedStateDigest !==
+          attempt.executionObservation.preCommitStateDigest,
+      );
     });
   });
 
@@ -301,9 +364,11 @@ describe('run_check', () => {
   });
 
   describe('CORNER', () => {
-    it('failed check returns to PLAN', async () => {
-      await reachValidation();
-      // Override executor to return failure
+    it('failed check routes to PLAN through the automatic path', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
+      // Override executor to return failure — consumed by the automatic
+      // validation run triggered by the plan approval.
       vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
         kind: 'typecheck',
         command: 'npx tsc --noEmit',
@@ -316,14 +381,25 @@ describe('run_check', () => {
         timedOut: false,
         startedAt: new Date().toISOString(),
       });
-      const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
-      const result = parseToolResult(raw);
+      const reviewFindings = await fulfillReview('plan', 0, 'accept');
+      const result = parseToolResult(
+        await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx),
+      );
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PLAN');
+
+      // Failure evidence is persisted before the routing decision.
+      const state = await readState(await currentSessionDir());
+      expect(state!.validation[0]).toMatchObject({
+        checkId: 'typecheck',
+        passed: false,
+        exitCode: 1,
+        outputDigest: 'f'.repeat(64),
+      });
     });
 
     it('blocks when kind is not in verificationCandidates', async () => {
-      await reachValidation();
+      await reachPendingValidation();
       const raw = await run_check.execute({ kind: 'security' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
@@ -332,7 +408,6 @@ describe('run_check', () => {
 
     it('execution evidence is persisted in state', async () => {
       await reachValidation();
-      await run_check.execute({ kind: 'typecheck' }, ctx);
       const s = parseToolResult(await status.execute({}, ctx));
       const vr = s.validationResults as Array<{
         checkId: string;
@@ -344,17 +419,21 @@ describe('run_check', () => {
         timedOut: boolean;
       }>;
       expect(vr).toHaveLength(1);
-      expect(vr[0].checkId).toBe('typecheck');
-      expect(vr[0].passed).toBe(true);
-      expect(vr[0].kind).toBe('typecheck');
-      expect(typeof vr[0].command).toBe('string');
-      expect(vr[0].exitCode).toBe(0);
-      expect(typeof vr[0].executionMs).toBe('number');
-      expect(vr[0].timedOut).toBe(false);
+      const result = vr[0];
+      expect(result).toBeDefined();
+      if (!result) throw new TypeError('Expected a validation result');
+      expect(result.checkId).toBe('typecheck');
+      expect(result.passed).toBe(true);
+      expect(result.kind).toBe('typecheck');
+      expect(typeof result.command).toBe('string');
+      expect(result.exitCode).toBe(0);
+      expect(typeof result.executionMs).toBe('number');
+      expect(result.timedOut).toBe(false);
     });
 
     it('timed out check records timedOut evidence', async () => {
-      await reachValidation();
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
         kind: 'typecheck',
         command: 'npx tsc --noEmit',
@@ -367,10 +446,14 @@ describe('run_check', () => {
         timedOut: true,
         startedAt: new Date().toISOString(),
       });
-      const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
-      const result = parseToolResult(raw);
+      const reviewFindings = await fulfillReview('plan', 0, 'accept');
+      const result = parseToolResult(
+        await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx),
+      );
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('PLAN'); // Timeout = failure → back to PLAN
+      // F5: an execution error (timeout) is not a plan deficiency — stay in
+      // VALIDATION for a retry (CHECK_ERRORED) instead of routing back to PLAN.
+      expect(result.phase).toBe('VALIDATION');
       const evidence = result.evidence as Record<string, unknown>;
       expect(evidence.timedOut).toBe(true);
       expect(evidence.passed).toBe(false);

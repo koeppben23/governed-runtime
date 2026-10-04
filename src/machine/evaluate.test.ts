@@ -16,8 +16,14 @@ import {
   ERROR_INFO,
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
+  VERIFICATION_CANDIDATES,
 } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import type { SessionState } from '../state/schema.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+
+const TEST_ATTEMPT_ID = '00000000-0000-4000-8000-0000000000b1';
+const LINT_ATTEMPT_ID = '00000000-0000-4000-8000-0000000000b2';
 
 describe('evaluate', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -33,7 +39,7 @@ describe('evaluate', () => {
     });
 
     it('REVIEW_COMPLETE → terminal', () => {
-      const result = evaluate(makeProgressedState('REVIEW_COMPLETE'));
+      const result = evaluate(makeProgressedState('PEER_REVIEW_COMPLETE'));
       expect(result.kind).toBe('terminal');
     });
 
@@ -170,9 +176,17 @@ describe('evaluate', () => {
         reducedCeremony: {
           profile: 'reduced',
           reason: 'RUNTIME_VERIFIED_TRIVIAL',
-          claimedTaskClass: 'TRIVIAL',
+          effectiveTaskClass: 'TRIVIAL',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          escalatedTaskClass: 'TRIVIAL',
           computedMinimumTaskClass: 'TRIVIAL',
-          touchedSurfaces: [],
+          touchedSurfaces: ['docs/usage-notes.md'],
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'digest-of-impl',
+          policyDigest: 'a'.repeat(64),
+          verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
           decidedAt: '2026-01-01T00:00:00.000Z',
         },
         policySnapshot: {
@@ -193,21 +207,99 @@ describe('evaluate', () => {
       expect(result.kind).toBe('transition');
       if (result.kind === 'transition') {
         expect(result.event).toBe('IMPL_COMPLETE');
-        expect(result.target).toBe('IMPL_REVIEW');
+        expect(result.target).toBe('IMPL_VALIDATION');
       }
     });
 
-    it('IMPLEMENTATION with reduced ceremony evidence → transition REDUCED_CEREMONY', () => {
+    it('IMPLEMENTATION with reduced ceremony evidence still requires IMPL_VALIDATION (negative)', () => {
       const state = makeState('IMPLEMENTATION', {
         implementation: IMPL_EVIDENCE,
         reducedCeremony: {
           profile: 'reduced',
           reason: 'RUNTIME_VERIFIED_TRIVIAL',
-          claimedTaskClass: 'TRIVIAL',
+          effectiveTaskClass: 'TRIVIAL',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          escalatedTaskClass: 'TRIVIAL',
           computedMinimumTaskClass: 'TRIVIAL',
-          touchedSurfaces: [],
+          touchedSurfaces: ['docs/usage-notes.md'],
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'digest-of-impl',
+          policyDigest: 'a'.repeat(64),
+          verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
           decidedAt: '2026-01-01T00:00:00.000Z',
         },
+      });
+      const result = evaluate(state);
+      expect(result.kind).toBe('transition');
+      if (result.kind === 'transition') {
+        expect(result.event).toBe('IMPL_COMPLETE');
+        expect(result.target).toBe('IMPL_VALIDATION');
+      }
+    });
+
+    it('IMPL_VALIDATION with a fully bound reduced decision → REDUCED_CEREMONY', () => {
+      const attempt = (checkId: string): SessionState['validationAttempts'][number] => ({
+        attemptId: checkId === 'test' ? TEST_ATTEMPT_ID : LINT_ATTEMPT_ID,
+        scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        implementationDigest: 'digest-of-impl',
+        executionObservation: TEST_EXECUTION_OBSERVATION,
+        result: {
+          ...VALIDATION_PASSED[checkId === 'test' ? 0 : 1]!,
+          checkId,
+          passed: true,
+        },
+      });
+      const state = makeState('IMPL_VALIDATION', {
+        claimedTaskClass: 'TRIVIAL',
+        verificationCandidates: VERIFICATION_CANDIDATES,
+        // Reduction binds to an eligible docs-only change: the guard
+        // reclassifies the frozen file list itself.
+        implementation: {
+          ...IMPL_EVIDENCE,
+          changedFiles: ['docs/usage-notes.md'],
+          domainFiles: [],
+        },
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'TRIVIAL',
+          effectiveTaskClass: 'TRIVIAL',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          escalatedTaskClass: 'TRIVIAL',
+          touchedSurfaces: ['docs/usage-notes.md'],
+          riskTriggers: [],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 1,
+          implementationDigest: 'digest-of-impl',
+        },
+        implValidation: VALIDATION_PASSED,
+        validationAttempts: [attempt('test'), attempt('lint')],
+        reducedCeremony: {
+          profile: 'reduced',
+          reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+          effectiveTaskClass: 'TRIVIAL',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          escalatedTaskClass: 'TRIVIAL',
+          computedMinimumTaskClass: 'TRIVIAL',
+          touchedSurfaces: ['docs/usage-notes.md'],
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'digest-of-impl',
+          policyDigest: POLICY_SNAPSHOT.hash,
+          verificationBasis: {
+            checkIds: ['test', 'lint'],
+            attempts: [
+              { checkId: 'test', attemptId: TEST_ATTEMPT_ID, executedAt: FIXED_TIME },
+              { checkId: 'lint', attemptId: LINT_ATTEMPT_ID, executedAt: FIXED_TIME },
+            ],
+          },
+          decidedAt: FIXED_TIME,
+        },
+        policySnapshot: { ...POLICY_SNAPSHOT, allowReducedCeremony: true },
       });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');
@@ -217,13 +309,13 @@ describe('evaluate', () => {
       }
     });
 
-    it('REVIEW → transition REVIEW_DONE → REVIEW_COMPLETE', () => {
-      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
+    it('PEER_REVIEW → transition PEER_REVIEW_DONE → PEER_REVIEW_COMPLETE', () => {
+      const state = makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');
       if (result.kind === 'transition') {
-        expect(result.event).toBe('REVIEW_DONE');
-        expect(result.target).toBe('REVIEW_COMPLETE');
+        expect(result.event).toBe('PEER_REVIEW_DONE');
+        expect(result.target).toBe('PEER_REVIEW_COMPLETE');
       }
     });
   });
@@ -274,7 +366,7 @@ describe('evaluate', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('solo mode: user gates auto-approve via APPROVE event', () => {
+    it('solo mode auto-approves plan and evidence gates but never architecture approval', () => {
       const soloPolicy = { requireHumanGates: false };
 
       const planReview = evaluate(makeProgressedState('PLAN_REVIEW'), soloPolicy);
@@ -288,14 +380,44 @@ describe('evaluate', () => {
       expect(evidenceReview.kind).toBe('transition');
       if (evidenceReview.kind === 'transition') {
         expect(evidenceReview.event).toBe('APPROVE');
-        expect(evidenceReview.target).toBe('COMPLETE');
+        expect(evidenceReview.target).toBe('EXPORT_READY');
       }
 
       const archReview = evaluate(makeProgressedState('ARCH_REVIEW'), soloPolicy);
-      expect(archReview.kind).toBe('transition');
-      if (archReview.kind === 'transition') {
-        expect(archReview.event).toBe('APPROVE');
-        expect(archReview.target).toBe('ARCH_COMPLETE');
+      expect(archReview.kind).toBe('waiting');
+      if (archReview.kind === 'waiting') {
+        expect(archReview.phase).toBe('ARCH_REVIEW');
+      }
+    });
+
+    it('solo mode never auto-approves an exhausted plan gate', () => {
+      const exhausted = makeState('PLAN_REVIEW', {
+        ticket: TICKET,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: SELF_REVIEW_CONVERGED,
+      });
+      const result = evaluate(exhausted, { requireHumanGates: false });
+      expect(result.kind).toBe('waiting');
+      if (result.kind === 'waiting') {
+        expect(result.phase).toBe('PLAN_REVIEW');
+      }
+    });
+
+    it('solo mode never auto-approves an exhausted evidence gate', () => {
+      const exhausted = makeState('EVIDENCE_REVIEW', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        validation: VALIDATION_PASSED,
+        implementation: IMPL_EVIDENCE,
+        implValidation: VALIDATION_PASSED,
+        implReview: IMPL_REVIEW_CONVERGED,
+        implementationRework: { rejectedDigest: IMPL_EVIDENCE.digest, exhausted: true },
+      });
+      const result = evaluate(exhausted, { requireHumanGates: false });
+      expect(result.kind).toBe('waiting');
+      if (result.kind === 'waiting') {
+        expect(result.phase).toBe('EVIDENCE_REVIEW');
       }
     });
 
@@ -341,7 +463,21 @@ describe('evaluate', () => {
     it('VALIDATION with only some checks passed → pending, not CHECK_FAILED (#502)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: true,
+            detail: 'ok',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        ],
       });
       const result = evaluate(state);
       expect(result.kind).toBe('pending');
@@ -366,10 +502,10 @@ describe('evaluate', () => {
     it('evaluateWithEvent resolves known phase+event combos', () => {
       expect(evaluateWithEvent('PLAN_REVIEW', 'APPROVE')).toBe('VALIDATION');
       expect(evaluateWithEvent('PLAN_REVIEW', 'CHANGES_REQUESTED')).toBe('PLAN');
-      expect(evaluateWithEvent('PLAN_REVIEW', 'REJECT')).toBe('TICKET');
+      expect(evaluateWithEvent('PLAN_REVIEW', 'REJECT')).toBe('REJECTED');
       expect(evaluateWithEvent('ARCH_REVIEW', 'APPROVE')).toBe('ARCH_COMPLETE');
       expect(evaluateWithEvent('ARCH_REVIEW', 'CHANGES_REQUESTED')).toBe('ARCHITECTURE');
-      expect(evaluateWithEvent('ARCH_REVIEW', 'REJECT')).toBe('READY');
+      expect(evaluateWithEvent('ARCH_REVIEW', 'REJECT')).toBe('REJECTED');
     });
 
     it('evaluateWithEvent returns undefined for invalid combo', () => {

@@ -1,0 +1,267 @@
+/**
+ * @module discovery/verification-script-analysis
+ * @description Provider-aware analysis of package.json script command strings.
+ *
+ * Detects which known assertion provider a script invokes by matching against
+ * declarative ScriptSignatures from the provider catalog. Contains no provider
+ * switches — all matching is driven by the catalog's signature descriptors.
+ *
+ * Conservative, fail-closed: compound shell commands, conflicting reporters,
+ * and unrecognized tool invocations all produce non-enrichable results.
+ *
+ * @version v1
+ */
+
+import type { ProviderId } from '../state/assertion-identity.js';
+import type { ScriptSignature } from '../providers/registry.js';
+import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+export interface ScriptAnalysis {
+  readonly scriptName: string;
+  readonly command: string;
+
+  readonly provider:
+    | {
+        readonly status: 'identified';
+        readonly providerId: ProviderId;
+        readonly executionProfileId: string;
+        readonly candidateKind: VerificationCandidateKind;
+        readonly confidence: 'high' | 'medium';
+        readonly evidence: string;
+        /** Exact executable token matched by the provider signature, when applicable. */
+        readonly matchedExecutable?: string;
+      }
+    | {
+        readonly status: 'unidentified';
+      };
+
+  readonly argumentForwarding: 'supported' | 'unsupported' | 'unknown';
+  readonly reporterConfigurationPresent: boolean;
+  readonly isCompound: boolean;
+}
+
+// ─── Unsafe shell patterns ──────────────────────────────────────────────────
+
+/** Patterns that make a script unsafe for argument forwarding. */
+const UNSAFE_SHELL_RE = /&&|\|\||[;&|]|\$\(|`/;
+
+/** Arguments that indicate an already-configured reporter. */
+const REPORTER_FLAGS = [
+  /--reporter[=\s]/,
+  /--json/,
+  /--json-report/,
+  /--outputFile[=\s]/,
+  /--junitxml/,
+];
+
+/** Env var prefixes that can be safely stripped. */
+const ENV_VAR_RE = /^[A-Z_][A-Z0-9_]*=[^\s]+/;
+
+/** Package manager exec wrappers that can be safely stripped. */
+const EXEC_PREFIXES = ['npx', 'pnpm exec', 'yarn exec', 'bunx'];
+
+/**
+ * Represents a tokenized script command view after prefix stripping.
+ */
+interface TokenizedCommand {
+  readonly tokens: readonly string[];
+  readonly viaExecPrefix: boolean;
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+export function analyzeVerificationScript(
+  scriptName: string,
+  command: string,
+  signatures: ReadonlyMap<ProviderId, readonly ScriptSignature[]>,
+): ScriptAnalysis {
+  const trimmed = command.trim();
+
+  const isCompound = UNSAFE_SHELL_RE.test(trimmed);
+  const reporterConfigurationPresent = checkExistingReporterConfig(trimmed);
+
+  const base: Omit<ScriptAnalysis, 'provider'> = {
+    scriptName,
+    command: trimmed,
+    argumentForwarding: isCompound ? 'unsupported' : 'supported',
+    reporterConfigurationPresent,
+    isCompound,
+  };
+
+  const tokenized = tokenize(trimmed);
+  if (!tokenized) {
+    return { ...base, provider: { status: 'unidentified' } };
+  }
+
+  const match = matchSignatures(tokenized.tokens, signatures);
+  if (!match) {
+    return { ...base, provider: { status: 'unidentified' } };
+  }
+
+  const confidence = match.viaModuleInvocation
+    ? 'high'
+    : tokenized.viaExecPrefix
+      ? 'medium'
+      : 'high';
+
+  return {
+    ...base,
+    provider: {
+      status: 'identified',
+      providerId: match.providerId,
+      executionProfileId: match.executionProfileId,
+      candidateKind: match.candidateKind,
+      confidence,
+      evidence: match.evidence,
+      ...(match.matchedExecutable ? { matchedExecutable: match.matchedExecutable } : {}),
+    },
+  };
+}
+
+// ─── Tokenization ────────────────────────────────────────────────────────────
+
+function tokenize(command: string): TokenizedCommand | null {
+  let remaining = command.trim();
+
+  // Strip cross-env: cross-env FOO=bar vitest run → vitest run
+  while (remaining.startsWith('cross-env ')) {
+    remaining = remaining.slice('cross-env '.length).trim();
+    // Also consume env var settings after cross-env
+    while (ENV_VAR_RE.test(remaining)) {
+      remaining = remaining.replace(ENV_VAR_RE, '').trim();
+    }
+  }
+
+  // Strip env var prefixes: FOO=bar vitest run → vitest run
+  while (ENV_VAR_RE.test(remaining)) {
+    remaining = remaining.replace(ENV_VAR_RE, '').trim();
+  }
+
+  // Detect exec prefixes
+  let viaExecPrefix = false;
+  for (const prefix of EXEC_PREFIXES) {
+    if (remaining.startsWith(prefix + ' ')) {
+      remaining = remaining.slice(prefix.length).trim();
+      viaExecPrefix = true;
+      break;
+    }
+  }
+
+  const tokens = remaining.split(/\s+/);
+  if (tokens.length === 0) return null;
+
+  return { tokens, viaExecPrefix };
+}
+
+// ─── Signature Matching ──────────────────────────────────────────────────────
+
+interface SignatureMatch {
+  providerId: ProviderId;
+  executionProfileId: string;
+  candidateKind: VerificationCandidateKind;
+  evidence: string;
+  matchedExecutable?: string;
+  viaModuleInvocation: boolean;
+}
+
+function matchModuleInvocation(
+  providerId: ProviderId,
+  signature: Extract<ScriptSignature, { moduleInvocation: { executable: string; module: string } }>,
+  tokens: readonly string[],
+): SignatureMatch | null {
+  const mi = signature.moduleInvocation;
+  const [firstToken] = tokens;
+  if (
+    firstToken === mi.executable &&
+    tokens.length >= 3 &&
+    tokens[1] === '-m' &&
+    tokens[2] === mi.module
+  ) {
+    return {
+      providerId,
+      executionProfileId: signature.executionProfileId,
+      candidateKind: signature.candidateKind,
+      evidence: `script:${mi.executable} -m ${mi.module}`,
+      matchedExecutable: mi.executable,
+      viaModuleInvocation: true,
+    };
+  }
+  if (firstToken === mi.module) {
+    return {
+      providerId,
+      executionProfileId: signature.executionProfileId,
+      candidateKind: signature.candidateKind,
+      evidence: `script:${mi.module}`,
+      matchedExecutable: mi.module,
+      viaModuleInvocation: false,
+    };
+  }
+  return null;
+}
+
+function hasRequiredArgsPrefix(tokens: readonly string[], prefix: readonly string[]): boolean {
+  for (let i = 0; i < prefix.length; i++) {
+    if (tokens[i + 1] !== prefix[i]) return false;
+  }
+  return true;
+}
+
+function matchExecutableSignature(
+  providerId: ProviderId,
+  signature: Extract<ScriptSignature, { executable: string }>,
+  tokens: readonly string[],
+  firstToken: string | undefined,
+): SignatureMatch | null {
+  if (firstToken !== signature.executable) return null;
+
+  const prefix = signature.requiredArgsPrefix;
+  if (prefix && prefix.length > 0) {
+    if (!hasRequiredArgsPrefix(tokens, prefix)) return null;
+    return {
+      providerId,
+      executionProfileId: signature.executionProfileId,
+      candidateKind: signature.candidateKind,
+      evidence: `script:${signature.executable} ${prefix.join(' ')}`,
+      matchedExecutable: signature.executable,
+      viaModuleInvocation: false,
+    };
+  }
+
+  return {
+    providerId,
+    executionProfileId: signature.executionProfileId,
+    candidateKind: signature.candidateKind,
+    evidence: `script:${signature.executable}`,
+    matchedExecutable: signature.executable,
+    viaModuleInvocation: false,
+  };
+}
+
+function matchSignatures(
+  tokens: readonly string[],
+  signatures: ReadonlyMap<ProviderId, readonly ScriptSignature[]>,
+): SignatureMatch | null {
+  if (tokens.length === 0) return null;
+  const [firstToken] = tokens;
+
+  for (const [providerId, sigs] of signatures) {
+    for (const sig of sigs) {
+      const match =
+        'moduleInvocation' in sig
+          ? matchModuleInvocation(providerId, sig, tokens)
+          : matchExecutableSignature(providerId, sig, tokens, firstToken);
+      if (match !== null) return match;
+    }
+  }
+
+  return null;
+}
+
+// ─── Reporter Detection ──────────────────────────────────────────────────────
+
+function checkExistingReporterConfig(command: string): boolean {
+  const lower = command.toLowerCase();
+  return REPORTER_FLAGS.some((re) => re.test(lower));
+}

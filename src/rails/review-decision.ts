@@ -3,127 +3,90 @@
  * @description /review-decision rail — human verdict at a User Gate.
  *
  * Works at all three User Gate phases:
- * - PLAN_REVIEW:     approve → VALIDATION, changes → PLAN, reject → TICKET
- * - EVIDENCE_REVIEW: approve → COMPLETE, changes → IMPLEMENTATION, reject → TICKET
- * - ARCH_REVIEW:     approve → ARCH_COMPLETE, changes → ARCHITECTURE, reject → READY
+ * - PLAN_REVIEW:     approve → VALIDATION, changes → PLAN, reject → REJECTED
+ * - EVIDENCE_REVIEW: approve → COMPLETE, changes → IMPLEMENTATION, reject → REJECTED
+ * - ARCH_REVIEW:     approve → ARCH_COMPLETE, changes → ARCHITECTURE, reject → REJECTED
  *
  * Four-eyes principle enforcement (regulated mode):
  * For approval decisions only, when policy.allowSelfApproval === false,
- * the reviewer (decidedBy) MUST be different from the session initiator
- * (state.initiatedBy).
+ * the reviewer (decisionIdentity.actorId) MUST be different from the session
+ * initiator (state.initiatedByIdentity.actorId).
  * This satisfies MaRisk AT 7.2 (5) — separation of duties.
  *
- * State clearing patterns (FlowGuard-critical):
+ * State clearing patterns (FlowGuard-critical). The table distinguishes three
+ * effects precisely:
+ * - clear:    the field is set to null/empty
+ * - reset:    a sub-state is rewound to its pre-review value (not cleared)
+ * - preserve: the field survives the decision unchanged
  *
- * | Gate            | Verdict            | Keep                    | Clear                                    |
- * |-----------------|--------------------|-------------------------|------------------------------------------|
- * | PLAN_REVIEW     | approve            | ticket, plan, selfReview| reviewDecision                           |
- * | PLAN_REVIEW     | changes_requested  | ticket, plan            | selfReview, reviewDecision               |
- * | PLAN_REVIEW     | reject             | ticket                  | plan, selfReview, validation, impl, ...  |
- * | EVIDENCE_REVIEW | approve            | everything              | (nothing — complete)                     |
- * | EVIDENCE_REVIEW | changes_requested  | ticket, plan, validation| impl, implReview, reviewDecision         |
- * | EVIDENCE_REVIEW | reject             | ticket                  | plan, selfReview, validation, impl, ...  |
- * | ARCH_REVIEW     | approve            | architecture, selfReview| (nothing — complete)                     |
- * | ARCH_REVIEW     | changes_requested  | architecture            | selfReview                               |
- * | ARCH_REVIEW     | reject             | (nothing)               | architecture, selfReview                 |
+ * | Gate            | Verdict           | Actual persisted behavior                                                                                                  |
+ * |-----------------|-------------------|----------------------------------------------------------------------------------------------------------------------------|
+ * | PLAN_REVIEW     | approve           | reviewDecision preserved; nothing is cleared                                                                               |
+ * | PLAN_REVIEW     | changes_requested | selfReview and reviewDecision cleared; reviewCycles.plan + 1                                                               |
+ * | EVIDENCE_REVIEW | approve           | everything preserved, including reviewDecision                                                                             |
+ * | EVIDENCE_REVIEW | changes_requested | implementation, implValidation, implReview, reducedCeremony, reviewDecision cleared; reviewCycles.implementation + 1       |
+ * | ARCH_REVIEW     | approve           | architecture marked accepted; reviewDecision preserved; nothing is cleared                                                 |
+ * | ARCH_REVIEW     | changes_requested | architecture kept but reviewCompletion reset to 'pending' and approvalCertificate reset; selfReview cleared; reviewDecision preserved; reviewCycles.architecture + 1 |
+ *
+ * A `changes_requested` verdict also increments exactly the owning loop's human
+ * review-cycle counter (`state.reviewCycles.plan|architecture|implementation`):
+ * the cleared loop restarts `iteration` at 1, and the counter keeps the two
+ * iteration-1 passes distinguishable in persisted evidence and audit. Approve
+ * and reject NEVER change a counter.
  *
  * @version v1
  */
 
 import type { SessionState, Event } from '../state/schema.js';
-import type {
-  ReviewDecision,
-  ReviewVerdict,
-  ValidationResult,
-  DecisionIdentity,
-} from '../state/evidence.js';
+import type { ReviewDecision, ReviewVerdict } from '../state/evidence.js';
+import { isApprovalVerdict } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
-import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
+import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import { applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
+import {
+  approvalCertificatePatch,
+  enforceApprovalPreconditions,
+  enforceImplementationReviewSubject,
+  enforceOverrideAgreement,
+  type ReviewDecisionInput,
+} from './review-decision-gates.js';
 
-// ─── Input ────────────────────────────────────────────────────────────────────
-
-/**
- * Input for /review-decision rail.
- *
- * P30: Includes decisionIdentity for regulated approval attribution.
- * The decidedBy field remains for backward compatibility;
- * decisionIdentity provides full provenance for audit and four-eyes proof.
- */
-export interface ReviewDecisionInput {
-  readonly verdict: ReviewVerdict;
-  readonly rationale: string;
-  readonly decidedBy: string;
-  readonly decisionIdentity?: DecisionIdentity;
-}
+export type { ReviewDecisionInput };
 
 // ─── Verdict → Event mapping ──────────────────────────────────────────────────
 
 const VERDICT_TO_EVENT: Record<ReviewVerdict, Event> = {
   approve: 'APPROVE',
+  approve_with_governance_override: 'APPROVE',
   changes_requested: 'CHANGES_REQUESTED',
   reject: 'REJECT',
 };
 
-// ─── State Clearing ───────────────────────────────────────────────────────────
-
 /**
- * State fields cleared on reject (from PLAN_REVIEW or EVIDENCE_REVIEW).
- * Everything downstream of TICKET is wiped — plan must be rebuilt from scratch.
- * Ticket itself is preserved (session returns to TICKET phase).
- */
-const REJECT_CLEAR = {
-  plan: null,
-  selfReview: null,
-  validation: [] as ValidationResult[],
-  implementation: null,
-  implReview: null,
-  reviewDecision: null,
-};
-
-/**
- * State fields cleared on reject from PLAN_REVIEW.
- * Ticket is also cleared — user must re-enter ticket text.
- */
-const REJECT_CLEAR_FROM_PLAN = {
-  ticket: null,
-  plan: null,
-  selfReview: null,
-  validation: [] as ValidationResult[],
-  implementation: null,
-  implReview: null,
-  reviewDecision: null,
-};
-
-/**
- * State fields cleared on reject at ARCH_REVIEW.
- * Architecture flow is wiped — user returns to READY to choose a new flow.
- */
-const ARCH_REJECT_CLEAR = {
-  architecture: null,
-  selfReview: null,
-};
-
-/**
- * Apply state clearing pattern based on gate + verdict.
+ * Apply the gate- and verdict-specific state pattern.
  *
- * Clearing rules (FlowGuard-critical):
- * - approve: keep everything (state flows forward)
- * - changes_requested at PLAN_REVIEW: clear selfReview (fresh review loop)
- * - changes_requested at IMPL_REVIEW: cleared by handleChangesRequestedReview in implement.ts
- * - changes_requested at EVIDENCE_REVIEW: clear impl + implReview + reducedCeremony (re-implement)
- * - changes_requested at ARCH_REVIEW: clear selfReview (fresh review loop)
- * - reject at PLAN_REVIEW/EVIDENCE_REVIEW: clear everything downstream of TICKET
- * - reject at ARCH_REVIEW: clear architecture + selfReview (back to READY)
+ * - approve:      preserve everything (at ARCH_REVIEW the architecture status is
+ *                 additionally marked 'accepted'); nothing is cleared
+ * - reject:       preserve the reviewed evidence and the recorded decision at
+ *                 the REJECTED terminal position
+ * - changes_requested: clear the owning loop state, reset the architecture
+ *                 review sub-state at ARCH_REVIEW (reviewCompletion back to
+ *                 'pending', approvalCertificate back to undefined), and advance
+ *                 exactly the owning `reviewCycles` counter. `reviewDecision`
+ *                 itself is preserved at ARCH_REVIEW and cleared at
+ *                 PLAN_REVIEW / EVIDENCE_REVIEW — see the module table.
+ *
+ * `changes_requested` at the implementation readiness loop (IMPL_REVIEW) is
+ * handled by `handleChangesRequestedReview` in
+ * `integration/tools/implementation/implement-review.ts`.
  *
  * reducedCeremony is revoked on any changes_requested that loops back to IMPLEMENTATION
  * because the prior TRIVIAL determination is invalidated by the review finding issues.
  */
 function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict): SessionState {
-  if (verdict === 'approve') {
+  if (isApprovalVerdict(verdict)) {
     // At ARCH_REVIEW, set architecture status to "accepted" on approval
     if (state.phase === 'ARCH_REVIEW' && state.architecture) {
       return { ...state, architecture: { ...state.architecture, status: 'accepted' } };
@@ -131,112 +94,51 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
     return state;
   }
 
-  if (verdict === 'reject') {
-    if (state.phase === 'ARCH_REVIEW') {
-      return { ...state, ...ARCH_REJECT_CLEAR };
-    }
-    if (state.phase === 'PLAN_REVIEW') {
-      return { ...state, ...REJECT_CLEAR_FROM_PLAN };
-    }
-    return { ...state, ...REJECT_CLEAR, reducedCeremony: null };
-  }
+  if (verdict === 'reject') return state;
 
   // changes_requested
+  // A human request-changes decision ends the current human review cycle and
+  // starts a new one: the owning loop's counter advances exactly once and the
+  // corresponding loop state (and its `iteration`) is cleared below, so the
+  // restarted loop mints its next obligations/projections in the new cycle.
   if (state.phase === 'PLAN_REVIEW') {
-    return { ...state, selfReview: null, reviewDecision: null };
+    return {
+      ...state,
+      selfReview: null,
+      reviewDecision: null,
+      reviewCycles: { ...state.reviewCycles, plan: state.reviewCycles.plan + 1 },
+    };
   }
   if (state.phase === 'EVIDENCE_REVIEW') {
     return {
       ...state,
       implementation: null,
+      implValidation: [],
       implReview: null,
       reducedCeremony: null,
       reviewDecision: null,
+      reviewCycles: {
+        ...state.reviewCycles,
+        implementation: state.reviewCycles.implementation + 1,
+      },
     };
   }
   if (state.phase === 'ARCH_REVIEW') {
-    return { ...state, selfReview: null };
+    return {
+      ...state,
+      architecture: state.architecture
+        ? {
+            ...state.architecture,
+            reviewCompletion: 'pending',
+            approvalCertificate: undefined,
+          }
+        : null,
+      selfReview: null,
+      reviewCycles: { ...state.reviewCycles, architecture: state.reviewCycles.architecture + 1 },
+    };
   }
 
   return state;
-}
-
-// ─── Identity Enforcement ─────────────────────────────────────────────────────
-
-/**
- * Enforce four-eyes principle and assurance thresholds for approval decisions.
- *
- * Regulated mode (allowSelfApproval === false):
- * - Both initiator and reviewer must have structured identity.
- * - Neither may have actorSource 'unknown'.
- * - Initiator and reviewer actorId must differ (MaRisk AT 7.2 separation of duties).
- *
- * Assurance enforcement (P33 legacy + P34 explicit threshold):
- * - requireVerifiedActorsForApproval: true → minimum 'claim_validated'
- * - minimumActorAssuranceForApproval → explicit ordinal comparison via actor-info
- *
- * @returns RailBlocked if enforcement fails, null if approval may proceed.
- */
-function verifyFourEyes(state: SessionState, input: ReviewDecisionInput): RailBlocked | null {
-  if (!state.initiatedByIdentity) return blocked('DECISION_IDENTITY_REQUIRED');
-  if (!input.decisionIdentity) return blocked('DECISION_IDENTITY_REQUIRED');
-  if (state.initiatedByIdentity.actorSource === 'unknown')
-    return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'initiator' });
-  if (input.decisionIdentity.actorSource === 'unknown')
-    return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'reviewer' });
-  const actorComparison = compareActorIdentity(input.decisionIdentity, state.initiatedByIdentity);
-  if (actorComparison === 'same')
-    return blocked('FOUR_EYES_ACTOR_MATCH', { initiator: state.initiatedByIdentity.actorId });
-  if (actorComparison === 'uncomparable') return blocked('DECISION_IDENTITY_REQUIRED');
-  return null;
-}
-
-function checkRequireVerified(input: ReviewDecisionInput): RailBlocked | null {
-  if (
-    input.decisionIdentity?.actorAssurance !== 'claim_validated' &&
-    input.decisionIdentity?.actorAssurance !== 'idp_verified'
-  )
-    return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-      minimum: 'claim_validated',
-      current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-    });
-  return null;
-}
-
-function checkMinAssurance(
-  input: ReviewDecisionInput,
-  minimum: 'claim_validated' | 'idp_verified',
-): RailBlocked | null {
-  if (!isAssuranceAtLeast(input.decisionIdentity?.actorAssurance, minimum))
-    return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-      minimum,
-      current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-    });
-  return null;
-}
-
-function verifyAssuranceThreshold(
-  input: ReviewDecisionInput,
-  ctx: RailContext,
-): RailBlocked | null {
-  const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
-  const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
-  if (requireVerified) return checkRequireVerified(input);
-  if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified')
-    return checkMinAssurance(input, minimumAssurance);
-  return null;
-}
-
-function enforceApprovalIdentity(
-  state: SessionState,
-  input: ReviewDecisionInput,
-  ctx: RailContext,
-): RailBlocked | null {
-  if (ctx.policy?.allowSelfApproval === false) {
-    const block = verifyFourEyes(state, input);
-    if (block) return block;
-  }
-  return verifyAssuranceThreshold(input, ctx);
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -260,11 +162,19 @@ export function executeReviewDecision(
     return blocked('INVALID_VERDICT', { verdict: String(input.verdict) });
   }
 
-  // 3. Four-eyes and decision identity enforcement (approval only).
-  if (input.verdict === 'approve') {
-    const identityBlock = enforceApprovalIdentity(state, input, ctx);
-    if (identityBlock) return identityBlock;
-  }
+  // 2b. The human intent must match the gate type derived from persisted state.
+  const overrideBlock = enforceOverrideAgreement(state, input);
+  if (overrideBlock) return overrideBlock;
+  const implementationSubjectBlock = enforceImplementationReviewSubject(state, input);
+  if (implementationSubjectBlock) return implementationSubjectBlock;
+
+  // 3. Approval preconditions (four-eyes, identity, architecture/plan evidence, ProofGraph).
+  const {
+    block: preconditionBlock,
+    evidence: architectureEvidenceResolution,
+    planEvidence: planReviewEvidence,
+  } = enforceApprovalPreconditions(state, input, ctx);
+  if (preconditionBlock) return preconditionBlock;
 
   // 4. Resolve target phase via topology
   const target = evaluateWithEvent(state.phase, event);
@@ -276,18 +186,32 @@ export function executeReviewDecision(
   }
 
   // 5. Create evidence
-  // P30: Include structured decisionIdentity for regulated approval attribution
+  // P30: Persist the structured decisionIdentity as the sole attribution authority.
   const decision: ReviewDecision = {
     verdict: input.verdict,
     rationale: input.rationale,
     decidedAt: ctx.now(),
-    decidedBy: input.decidedBy,
-    ...(input.decisionIdentity ? { decisionIdentity: input.decisionIdentity } : {}),
+    decisionIdentity: input.decisionIdentity,
   };
+
+  // A certificate is created only for the first human approval at its flow's gate;
+  // an existing immutable certificate is never rewritten.
+  const architectureReviewBinding =
+    architectureEvidenceResolution?.kind === 'bound'
+      ? architectureEvidenceResolution.binding
+      : null;
+  const certificatePatch = approvalCertificatePatch(state, input, decision, ctx, {
+    architectureReviewBinding,
+    planReviewEvidence,
+  });
 
   // 6. Apply state clearing pattern based on gate + verdict
   const clearedState = applyStateClearingPattern(
-    { ...state, reviewDecision: decision },
+    {
+      ...state,
+      reviewDecision: decision,
+      ...certificatePatch,
+    },
     input.verdict,
   );
 
@@ -306,5 +230,11 @@ export function executeReviewDecision(
   // 8. Re-evaluate at new phase to get the eval result for the caller (policy-aware)
   const evalResult = evaluate(finalState, ctx.policy);
 
-  return { kind: 'ok', state: finalState, evalResult, transitions: [transition] };
+  return {
+    kind: 'ok',
+    state: finalState,
+    evalResult,
+    transitions: [transition],
+    decisionEvidence: decision,
+  };
 }

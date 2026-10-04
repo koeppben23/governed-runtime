@@ -2,27 +2,58 @@
 
 FlowGuard distinguishes between **Workflow Commands** (drive session state) and **Operational Tools** (operate on session artifacts).
 
+## Daily Workflow Summary
+
+Use the product commands in the normal sequence: `/start`, `/task`, `/plan`,
+`/approve`, `/implement`, and `/export`. The command-surface, flow, and product
+command sections below define their exact routing and phase behavior.
+
+## Diagnose Summary
+
+Use `/status`, `/finish`, `/help`, and `/commands` to inspect the current
+session without changing it. `flowguard_status` provides that session view to
+scripts; `flowguard inspect` instead reports workspace sessions and their
+audit/compliance data.
+
+## Recovery Summary
+
+Use `/check` or `/validate` only when a validation run must be continued or
+recorded manually, `/continue` for explicit deterministic routing, and `/abort`
+for irreversible emergency termination. Missing safety-critical headless input
+returns `BLOCKED`; see [Distribution Model](./distribution-model.md).
+
+## Advanced Summary
+
+Canonical workflow commands and operational tools remain available for scripts,
+CI, and manual recovery. They are documented under their existing headings
+below to preserve stable links.
+
 ## Command Surface
 
 FlowGuard uses a two-level command surface:
 
 | Level           | Syntax                  | Example                                 | Purpose                |
 | --------------- | ----------------------- | --------------------------------------- | ---------------------- |
-| **User-facing** | `/<command>`            | `/hydrate`, `/ticket`                   | OpenCode chat commands |
+| **User-facing** | `/<command>`            | `/start`, `/task`, `/plan`              | OpenCode chat commands |
 | **Internal**    | `flowguard_<tool-name>` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
 
 The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool internally.
 
 **Naming exceptions** (slash command and tool name differ):
 
-| Slash command         | Tool binding              | Reason                                                                                        |
-| --------------------- | ------------------------- | --------------------------------------------------------------------------------------------- |
-| `/review-decision`    | `flowguard_decision`      | Tool kept short; verdict-routing is the surface                                               |
-| `/abort`              | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                            |
-| `/validate`, `/check` | `flowguard_run_check`     | The tool runs verification checks; `/validate` and the `/check` product alias both bind to it |
+| Slash command                                                  | Tool binding              | Reason                                                                                                         |
+| -------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/start`                                                       | `flowguard_hydrate`       | Product name for session bootstrap                                                                             |
+| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                          |
+| `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | One decision tool; the product commands carry the verdict intent                                               |
+| `/abort`                                                       | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                                             |
+| `/review-decision` (compatibility)                             | `flowguard_decision`      | Verdict-routing surface, kept for scripts; the product variants above are the recommended interface            |
+| `/validate`, `/check` (compatibility)                          | `flowguard_run_check`     | Validation runs automatically; the explicit compatibility surfaces remain for scripts and manual evidence runs |
+| `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                      |
+| `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                             |
 
-For all other commands, slash and tool names match `1:1` (`/hydrate` →
-`flowguard_hydrate`, `/architecture` → `flowguard_architecture`, etc.).
+All other commands map directly after replacing command hyphens with underscores
+(`/plan` → `flowguard_plan`, `/architecture` → `flowguard_architecture`).
 
 ### Interactive vs Non-Interactive Execution
 
@@ -36,37 +67,42 @@ For all other commands, slash and tool names match `1:1` (`/hydrate` →
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:
 
-| Flow             | Command         | Phases                                                                                                       | Purpose                                              |
-| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                           |
-| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR)         |
-| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance or content-aware review report |
+| Flow             | Command         | Phases                                                                                                                                        | Purpose                                            |
+| ---------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **Development**  | `/task`         | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE | Full development lifecycle                         |
+| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                                                            | Create an Architecture Decision Record (ADR)       |
+| **Peer review**  | `/review`       | READY → PEER_REVIEW → PEER_REVIEW_COMPLETE                                                                                                    | Review a foreign PR, branch, commit, diff, or text |
 
 ## Product Commands
 
-Product commands invoke canonical FlowGuard tools. Runtime enforcement remains in the canonical command policy or in the target tool's fail-closed checks.
+Product commands are the recommended human surface. They invoke canonical FlowGuard tools; runtime enforcement remains in the canonical command policy, the workflow directive, or the target tool's fail-closed checks.
 
-| Product command    | Canonical command                    | Description                                               |
-| ------------------ | ------------------------------------ | --------------------------------------------------------- |
-| `/start`           | `/hydrate`                           | Start a governed session                                  |
-| `/task`            | `/ticket`                            | Capture a governed task                                   |
-| `/plan`            | `/plan`                              | Generate an implementation plan (same name)               |
-| `/approve`         | `/review-decision approve`           | Approve the current review gate                           |
-| `/request-changes` | `/review-decision changes_requested` | Request changes at the current review gate                |
-| `/reject`          | `/review-decision reject`            | Reject the current review gate                            |
-| `/implement`       | `/implement`                         | Execute the approved plan (same name)                     |
-| `/check`           | `/validate`                          | Run validation checks                                     |
-| `/export`          | `/archive`                           | Export a verifiable audit package                         |
-| `/status`          | `/status`                            | Show current phase, evidence, and next action (same name) |
-| `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                          |
-| `/review`          | `/review`                            | Generate a compliance/content review report (same name)   |
-| `/architecture`    | `/architecture`                      | Create an ADR (same name)                                 |
+| Product command     | Canonical target                     | Tool binding             | Description                                                          |
+| ------------------- | ------------------------------------ | ------------------------ | -------------------------------------------------------------------- |
+| `/start`            | `/hydrate`                           | `flowguard_hydrate`      | Bootstrap a governed session (persisted state starts at READY)       |
+| `/task`             | `/ticket`                            | `flowguard_ticket`       | Capture a governed task                                              |
+| `/plan`             | `/plan`                              | `flowguard_plan`         | Generate or revise the implementation plan                           |
+| `/approve`          | `/review-decision approve`           | `flowguard_decision`     | Approve a reviewer-accepted gate                                     |
+| `/override-approve` | `/override-approve`                  | `flowguard_decision`     | Accept an exhausted review gate with a recorded governance override  |
+| `/request-changes`  | `/review-decision changes_requested` | `flowguard_decision`     | Request changes at the current review gate                           |
+| `/reject`           | `/review-decision reject`            | `flowguard_decision`     | End the governed workflow at the terminal REJECTED position          |
+| `/implement`        | `/implement`                         | `flowguard_implement`    | Execute the approved plan                                            |
+| `/check`            | `/validate`                          | `flowguard_run_check`    | Compatibility: run the active checks manually (normally automatic)   |
+| `/export`           | `/export`                            | `flowguard_export`       | Materialize the required verifiable export and complete the workflow |
+| `/status`           | `/status`                            | `flowguard_status`       | Show current phase, directive, and evidence                          |
+| `/why`              | `/status --why-blocked`              | `flowguard_status`       | Explain the current blocker                                          |
+| `/review`           | `/review`                            | `flowguard_review`       | Run the peer review flow for a foreign target                        |
+| `/architecture`     | `/architecture`                      | `flowguard_architecture` | Create an ADR                                                        |
 
-Product commands are the recommended surface for daily use. Advanced/canonical commands are documented below and remain fully supported for scripts, CI, and power users.
+Compatibility surfaces such as `/hydrate`, `/ticket`, `/validate`, `/check`,
+`/review-decision`, and `/continue` remain invocable for scripts, CI, and manual
+recovery, but they are never recommended by the runtime directive and are not
+part of the happy path. The runtime directive resolved from persisted state is
+the single authority for what to do next.
 
-## Workflow Commands (Advanced/Canonical)
+## Diagnose
 
-These are the canonical commands that drive the session through the workflow phases. All governance assertions, audit records, and reason codes use canonical command names.
+Use these read-only commands to understand the active session before taking the next action.
 
 ### /status
 
@@ -90,9 +126,47 @@ Optional focused views:
 - `/status --context` — actor/policy/archive context projection
 - `/status --readiness` — compact operational readiness projection
 
-When multiple flags are provided simultaneously, flag precedence is deterministic: `--why-blocked` > `--evidence` > `--context` > `--readiness`. Only the highest-precedence matching flag is applied.
+When multiple flags are provided simultaneously, flag precedence is deterministic: `--finish` > `--why-blocked` > `--evidence` > `--context` > `--readiness`. Only the highest-precedence matching flag is applied.
 
 `/status` maps internally to `flowguard_status`.
+
+### /finish
+
+Read-only readiness overview rendered before `/export`, PR, or archive decisions.
+
+`/finish` is a **status aggregator, not an approval, merge, or archive-finalization command**. It never approves anything, never consumes review obligations, never writes state, and never triggers `/export`. It only reports and recommends; the user decides.
+
+It composes existing authorities (the readiness projection, evidence completeness, and the canonical next action) and renders a Finish Card:
+
+- `overallStatus` — one of `READY`, `READY_WITH_WARNINGS`, `BLOCKED`, or `NOT_VERIFIED`. Missing or failed required evidence is reported as `NOT_VERIFIED`, never as a pass. `BLOCKED` takes precedence over `NOT_VERIFIED`.
+- `readiness`, `evidence`, `warnings` — the underlying projection results, unmodified.
+- `nextAction` — the canonical next action.
+- `actionGuidance` — non-normative labels (`recommended` / `not_recommended` / `not_verified`) for candidate actions (create PR, export evidence, keep branch). These are presentation labels only; they are **not** command-policy decisions and must not be consumed for enforcement.
+- `exitOptions` — user-owned exit choices such as `abandon`, which are never rendered as forbidden.
+
+Difference from `/status --readiness`: `/status --readiness` returns the compact readiness projection; `/finish` additionally derives the single `overallStatus`, the non-normative action guidance, and the exit options as a curated pre-export card. Fail-closed enforcement remains with `/export` and the existing gates — `/finish` reports a blocker, it does not enforce one.
+
+Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`). When no session exists, `/finish` reports this and recommends `/hydrate`.
+
+`/finish` maps internally to `flowguard_status` with `{ finish: true }`.
+
+### /help
+
+Read-only, context-sensitive FlowGuard guidance. `/help` shows the current phase,
+one recommended next action, and a compact list of relevant commands. Use
+`/help <command>` for command details; use `--verbose` only when phase IDs,
+preflight reasons, or canonical aliases are needed.
+
+### /commands
+
+Read-only command listing for the current session. `/commands` shows currently
+relevant commands. `/commands --all` shows the complete installed command
+reference, including visible compatibility invocations.
+
+## Daily Workflow
+
+These commands drive a normal governed task. All governance assertions, audit
+records, and reason codes use canonical command names.
 
 ### /hydrate
 
@@ -119,12 +193,15 @@ resolution evidence.
 
 ### /ticket
 
-Record the task description. Starts the ticket flow from READY or updates ticket in TICKET phase.
+Record the task description. Starts the development flow from READY or updates the task in TICKET phase. Compatibility surface: use the product command `/task` in normal work.
 
 **Allowed in:** READY, TICKET
 **Arguments:**
 
-- `text` (required): Task description
+- `text` (optional): The complete task/ticket content. Mutually exclusive with `ticketSource`.
+- `ticketSource` (optional): `{ kind: "repository_file", path }` — the runtime reads the repository
+  file itself, requires the realpath-resolved target to stay inside the worktree, and binds its
+  content digest. Mutually exclusive with `text`.
 - `inputOrigin` (optional): Where the text came from — `manual_text` (typed by user), `external_reference` (extracted from URL/tracker), or `mixed` (both)
 - `references` (optional): Array of external references with audit provenance. Each reference has:
   - `ref` (required): URL, ticket ID, or reference string
@@ -133,10 +210,24 @@ Record the task description. Starts the ticket flow from READY or updates ticket
   - `source` (optional): Platform — `jira`, `ados`, `github`, `gitlab`, `confluence`, etc.
   - `extractedAt` (optional): ISO timestamp — only set when content was actually extracted
 
+Exactly one content source must be provided: `text` and `ticketSource` together are rejected with
+`TICKET_SOURCE_CONFLICT`, neither is rejected as `EMPTY_TICKET`, and a bare file path, URL or issue
+ID passed as `text` is rejected with `TICKET_REFERENCE_WITHOUT_CONTENT`.
+
+**External import contract (read-side):** the agent adopts title, description and — only when the
+FIELD NAME explicitly denotes a risk class (`Risk`, `Risk Class`, `Risikoklasse`) with an exact
+`TRIVIAL` / `STANDARD` / `HIGH-RISK` value — that field as its own canonical `Risk: <CLASS>` line.
+The description is never rewritten; a pre-existing different `Risk:` line stays and the parser
+applies the higher floor. `Priority`, `Severity`, `Impact`, `Business Criticality`,
+`Production Relevance` and similar fields are never interpreted as a risk class. If the extracted
+provider content shows an explicit risk field that cannot be read/verified, `flowguard_ticket` is
+not called. Comments, attachments and provider state are not part of this contract; provider
+adapters, configured field mappings and freshness/change detection are future integration work.
+
 **Examples:**
 
 - `/ticket Fix the auth bug in login.ts`
-- `/ticket https://jira.example.com/browse/PROJ-123` — agent fetches Jira, extracts title+description, stores URL as reference
+- `/ticket https://jira.example.com/browse/PROJ-123` — agent fetches Jira and adopts the content it can read (title, description, and an explicitly named risk field if present); the URL stays as the reference
 - `/ticket PROJ-123 Fix login redirect` — mixed: manual text + ticket ID
 
 **Derived artifacts:** On successful state persistence, FlowGuard materializes append-only evidence artifacts:
@@ -171,6 +262,8 @@ FlowGuard fail-closes governance commands when required ticket/plan artifacts ar
 ### /review-decision
 
 Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
+Compatibility surface: the product commands are `/approve`, `/override-approve`,
+`/request-changes`, and `/reject`.
 The slash command name `review-decision` differs from the tool name; the tool is
 registered as `flowguard_decision`.
 
@@ -178,9 +271,16 @@ registered as `flowguard_decision`.
 
 **Verdicts:**
 
-- `approve` → advance to next phase
+- `approve` → advance a reviewer-accepted gate
+- `approve_with_governance_override` → accept an exhausted review gate; legal only when the directive requires the override intent
 - `changes_requested` → return to previous phase for revision
-- `reject` → restart (TICKET for ticket flow, READY for architecture flow)
+- `reject` → terminal `REJECTED`; the reviewed evidence and decision remain available for audit
+
+The intent must match the gate type derived from persisted state: a plain
+`approve` at an exhausted gate is blocked with `GOVERNANCE_OVERRIDE_REQUIRED`,
+and a governance override at a reviewer-accepted gate is blocked with
+`GOVERNANCE_OVERRIDE_NOT_REQUIRED`. Override bindings are hardened to exact
+reviewed-subject equality.
 
 **Four-eyes (regulated mode):** `approve` requires reviewer identity different
 from session initiator, and both identities must be known. Same-actor approve
@@ -196,18 +296,8 @@ the approver cannot be IdP-verified, returns BLOCKED `ACTOR_IDP_MODE_REQUIRED`.
 See `docs/policies.md` "Actor Identity & Assurance" for configuration.
 
 Every successful `/review-decision` emits a decision receipt in the audit trail
-(`decision:DEC-xxx`) and a redacted-by-default companion artifact
-`decision-receipts.redacted.v1.json` is written on archive.
-
-### /validate
-
-Run validation checks against the approved plan.
-
-**Allowed in:** VALIDATION
-**Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
-**ALL_PASSED** → advance to IMPLEMENTATION
-
-When `flowguard_run_check` executes, a failed or timed-out check includes an advisory `derivedRepairGuidance` projection parsed from stdout/stderr. Guidance is bounded (excerpts, locations, categories) and labelled `NOT_VERIFIED`. It never determines pass/fail — the `exitCode`, `passed`, `timedOut`, and `outputDigest` remain the authoritative execution evidence. Unknown or unparseable failures return `status: "unavailable"` without fabricated advice. Passing checks surface no repair guidance. Guidance is persisted only so `/status` can surface it later; raw subprocess output is never persisted.
+(`decision:DEC-xxx`). Archive Layout v2 writes the raw companion projection as
+`audit/decision-receipts.v1.json`.
 
 ### /implement
 
@@ -216,14 +306,67 @@ Execute the implementation plan.
 1. LLM implements using OpenCode tools
 2. Changed files recorded via git
 3. Independent implementation review loop (`IMPLEMENTATION` → `IMPL_REVIEW` →
-   `REVIEW_MET` convergence; bounded by `maxImplReviewIterations`)
+   `REVIEW_MET` convergence; bounded by `reviewBudget.implementation`)
 4. Advances to EVIDENCE_REVIEW
 
 **Allowed in:** IMPLEMENTATION
 
-The convergence event fired by the machine is `REVIEW_MET`; the human-visible
-verdict surface is still `approve` / `changes_requested`. See
-`docs/phases.md#review-loop` for the loop semantics.
+The convergence event fired by the machine is `REVIEW_MET`; the reviewer
+subagent's loop verdict is `accept` / `changes_requested` (the human
+EVIDENCE_REVIEW gate separately uses `approve` / `changes_requested` / `reject`).
+See `docs/phases.md#review-loop` for the loop semantics.
+
+### /resolve-implementation-challenge
+
+Record advisory `NOT_VERIFIED` evidence that a prior implementation challenge was addressed.
+
+**Allowed in:** IMPL_REVIEW
+
+Provide the challenge ID from the prior implementation review and one or more passing
+post-implementation validation attempt IDs for the current implementation digest. This
+does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
+
+### /export
+
+Materialize the required verifiable export and complete the ticket flow. This is
+a canonical workflow command (tool binding `flowguard_export`), not an archive
+alias: the session advances to COMPLETE only after the export rail materializes
+a verifiable package and persists completion evidence.
+
+**Allowed in:** EXPORT_READY
+
+On success the workflow reaches COMPLETE. If the tool is blocked or fails, the
+session remains in EXPORT_READY and must not be described as complete.
+
+## Advanced
+
+### Workflow Commands (Advanced/Canonical)
+
+Use these specialized workflow surfaces for governance overrides, recovery of
+unobservable host mutations, architecture work, or standalone peer review.
+
+### /override-approve
+
+Accept an exhausted review gate with an explicit, recorded governance override.
+
+**Allowed in:** PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW — only when the independent
+review exhausted its authorized budget without reviewer acceptance.
+
+The override binds only the exact reviewed subject digest. A plain `/approve` at an
+exhausted gate is blocked with `GOVERNANCE_OVERRIDE_REQUIRED`; a reviewer-accepted
+revision uses `/approve` instead.
+
+### /reconcile-mutation-episode
+
+Resolve a host mutation episode whose outcome can never be observed (the host process
+died between the Before- and After-hook). Appends an append-only resolution record
+(`reconciled_after_unknown_outcome`, basis `worktree_recapture`).
+
+After resolution, **all** prior implementation, validation, and review evidence is
+unreliable: re-apply the work, record it with `/implement`, re-run the checks, and
+submit a fresh review. Never use this command for a host call with a known outcome.
+
+**Allowed in:** any phase with an unresolved `dispatch_authorized` host mutation episode.
 
 ### /architecture
 
@@ -231,10 +374,12 @@ Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
 
-- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**.
+- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**. A referenced task file (e.g. `ADR_TICKET.md`) is read by the agent as context; the ADR text is passed explicitly as `adrText`. Unlike `/task`, `/architecture` has no reference-adoption contract and no `--file`/`--ref` flags — the ADR itself is never adopted from a file by the runtime.
 - **Mode B (ADR review):** Provide `reviewVerdict` plus `reviewFindings` from the `flowguard-reviewer` subagent. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
+
+On approval (`ARCH_COMPLETE`), FlowGuard writes the MADR artifact with its own metadata envelope: `FlowGuard Decision Status` records the FlowGuard decision, and `Reviewed ADR digest` identifies the exact ADR text that was independently reviewed. The submitted `adrText` is embedded byte-identically — including any `## Status` section or `- Status:` line it carries — and is never rewritten; the envelope is FlowGuard metadata, not ADR content.
 
 ADR review is **subagent-driven by default** in solo, team, and regulated profiles, parity with `/plan` and `/implement`. The plugin invokes the reviewer deterministically; manual self-review is rejected in strict mode (fail-closed). The reviewer applies ADR-specific criteria (Context completeness, Decision concreteness, Consequences honesty, MADR structure) defined in the `flowguard-reviewer` agent body.
 
@@ -242,14 +387,14 @@ ADR review is **subagent-driven by default** in solo, team, and regulated profil
 
 ### /review
 
-Start the standalone review flow. Supports content-aware review (PR, branch, URL, text) with subagent-attested findings and an obligation-bound lifecycle.
+Start the peer review flow: review a foreign PR, branch, commit, diff, or text and produce findings for another developer. This flow never mutates the reviewed target and has no approval gate; `changes_requested` is a valid review outcome, not an instruction for FlowGuard to change the foreign work. Supports content-aware review (PR, branch, URL, text) with subagent-attested findings and an obligation-bound lifecycle.
 
 **Allowed in:** READY
 **Arguments (all optional):**
 
 - `text` (optional): Direct text blob to review.
 - `prNumber` (optional): GitHub PR number — loads PR diff via `gh` CLI.
-- `branch` (optional): Git branch name — loads diff against detected base branch via `git diff`.
+- `branch` (optional): Git branch name. FlowGuard resolves and freezes the local or remote branch at exact base/head commits, then loads the canonical diff. No remote is required when both refs exist locally.
 - `url` (optional): URL content to review.
 - `inputOrigin` (optional): Where the content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
 - `references` (optional): Array of external references with audit provenance. Same structure as `/ticket` references with types like `pr`, `branch`, `commit`, etc.
@@ -257,7 +402,7 @@ Start the standalone review flow. Supports content-aware review (PR, branch, URL
 
 **Examples:**
 
-- `/review` — plain compliance report (no external content)
+- `/review` — plain peer review report (no external content)
 - `/review prNumber=42` — content-aware review with PR diff (blocked, agent invokes subagent)
 - `/review prNumber=42 reviewFindings=<ReviewFindings>` — submit subagent findings
 
@@ -265,18 +410,35 @@ Start the standalone review flow. Supports content-aware review (PR, branch, URL
 
 - `requiredReviewAttestation` (blocked response with obligation UUID — content-aware only)
 - `reviewCard` (markdown, display verbatim)
-- Evidence completeness matrix
-- Four-eyes status
+- `peerReviewCoverage` (target resolved/frozen, repository identity, base/head SHA, changed-path count, objectives covered/total, review assurance, missing verification)
 - Validation summary
 - Findings
 - External references (if provided)
 - `flowguard-review-report.v1` artifact
 
+## Recovery
+
+Use these commands only for an explicit recovery action or a terminal operation.
+
+### /validate
+
+Run validation checks against the approved plan. This is a compatibility surface:
+FlowGuard records validation automatically when the phase is entered, and
+`/validate` (or `/check`) remains available to record results explicitly.
+
+**Allowed in:** VALIDATION
+**Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
+**ALL_PASSED** → advance to IMPLEMENTATION
+
+When `flowguard_run_check` executes, a failed or timed-out check includes an advisory `derivedRepairGuidance` projection parsed from stdout/stderr. Guidance is bounded (excerpts, locations, categories) and labelled `NOT_VERIFIED`. It never determines pass/fail — the `exitCode`, `passed`, `timedOut`, and `outputDigest` remain the authoritative execution evidence. Unknown or unparseable failures return `status: "unavailable"` without fabricated advice. Passing checks surface no repair guidance. Guidance is persisted only so `/status` can surface it later; raw subprocess output is never persisted.
+
 ### /continue
 
-Universal routing command. Inspects current phase and does the next appropriate action.
+Compatibility routing surface. The canonical runtime directive is the next-action
+authority; `/continue` inspects the current phase and performs the next appropriate
+action only when explicitly requested.
 
-- At user gates: returns "waiting" (use /review-decision)
+- At user gates: returns "waiting" (use the gate commands from the runtime directive: `/approve`, `/override-approve`, `/request-changes`, or `/reject`)
 - At PLAN: runs one independent subagent review iteration
 - At ARCHITECTURE: runs one ADR review iteration
 - At IMPL_REVIEW: runs one independent implementation review iteration
@@ -285,15 +447,12 @@ Universal routing command. Inspects current phase and does the next appropriate 
 
 ### /abort
 
-Emergency session termination. Bypasses the topology and directly sets phase
-to `COMPLETE` with `error.code = 'ABORTED'`. Irreversible. Allowed in any
-non-terminal phase, **including the architecture and review flows**: aborted
-sessions always land in `COMPLETE`, not `ARCH_COMPLETE` or `REVIEW_COMPLETE`.
-Compliance consumers filtering for the natural terminal of each flow should
-therefore include `phase === 'COMPLETE' && error?.code === 'ABORTED'` as a
-distinct case. Aborting from a terminal phase (`COMPLETE`, `ARCH_COMPLETE`,
-`REVIEW_COMPLETE`) is an idempotent no-op that preserves state. Aborted
-sessions remain identifiable post-mortem via `state.error.code === 'ABORTED'`.
+Emergency session termination. The explicit `ABORT` topology event transitions
+every non-terminal phase to the terminal `ABORTED` position and records
+`error.code = 'ABORTED'`. It is irreversible. Aborting from any terminal phase
+(`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`, `REJECTED`, or `ABORTED`) is
+an idempotent no-op that preserves state. Aborted sessions remain identifiable
+post-mortem via both `phase === 'ABORTED'` and `state.error.code === 'ABORTED'`.
 
 ## Operational Tools
 
@@ -309,6 +468,10 @@ In addition to phase and evidence summary, status now surfaces:
 
 - `detectedStack` — compact stack evidence derived from discovery
 - `verificationCandidates` — advisory, evidence-backed verification command candidates
+- `reviewFeedback` — focused, read-only feedback from one exact bound,
+  unconsumed `changes_requested` review. Call
+  `flowguard_status({ reviewFeedback: true })`; reviewer-authored text is
+  untrusted data and the projection never accepts or consumes findings.
 
 `verificationCandidates` are planner outputs only (never auto-executed by FlowGuard).
 
@@ -321,26 +484,36 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 
 - `{workspace}/sessions/archive/{sessionId}.tar.gz`
 - `{sessionId}.tar.gz.sha256`
+
+Regulated clean completion stores its mandatory raw-evidence package separately
+as `regulated-{sessionId}.tar.gz`; later sharing exports cannot overwrite it.
+
 - `archive-manifest.json`
-- `decision-receipts.redacted.v1.json` (default)
-- `review-report.redacted.json` (when review report exists)
+- `audit/decision-receipts.v1.json`
+- `reports/review-report.json` (when review report exists)
 
-Default export policy is redacted-only (`archive.redaction.mode=basic`, `includeRaw=false`).
-If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_export_enabled` is set.
+Archive Layout v2 defaults to a redacted sharing archive (`basic`,
+`includeRaw=false`). It reports `not_verifiable` because canonical state and the
+audit chain are intentionally omitted. A confidential raw export requires
+`archive.redaction.allowRawExport=true` and `redactionMode=none, includeRaw=true`;
+it records `rawIncluded: true` with the `raw_audit_evidence_export` risk flag and
+is eligible for `verifyArchive()`.
 
-External references recorded via `/ticket` are part of authoritative runtime state and remain raw in `session-state.json` (not redacted). References in `review-report.*.json` are redacted in redacted export artifacts.
+External references recorded via `/ticket` remain raw in the canonical
+`state/session-state.json` and `reports/review-report.json` of a raw-evidence
+archive. Redacted sharing archives contain only their redacted projections.
 
 **Verification:** `verifyArchive()` (defined in
-`src/adapters/workspace/archive.ts`) validates integrity. Possible finding
-codes are enumerated in `docs/archive.md#verification-finding-codes` and the
-source enum in `src/archive/types.ts` (`AUDIT_CHAIN_*`, `MANIFEST_*`,
-`FILE_DIGEST_*`, `CONTENT_DIGEST_*`, `ARCHIVE_CHECKSUM_*`,
-`TIMESTAMP_UNANCHORED`, `TSA_VERIFICATION_FAILED`, plus per-artifact binding
-codes).
+`src/adapters/workspace/archive-verify-chain.ts`) validates integrity. Possible
+finding codes are enumerated in `docs/archive.md#finding-codes`
+and the source enum `ArchiveFindingCodeSchema` in `src/archive/types.ts`
+(lowercase codes such as `missing_manifest`, `file_digest_mismatch`,
+`audit_chain_invalid`, `timestamp_unanchored`, `tsa_verification_failed`, plus
+per-artifact binding codes).
 
 **Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers
-synchronous archive creation + verification. The `archiveStatus` field on session state tracks the lifecycle
-(`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode.
+synchronous archive creation + verification. The `regulatedArchiveStatus` field on session state tracks the lifecycle
+(`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode. Manual redacted sharing exports use `not_verifiable`, never `failed`, when raw evidence was intentionally excluded.
 
 **Note:** This is an operational export action. The original session is preserved.
 
