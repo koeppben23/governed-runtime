@@ -21,19 +21,23 @@ function readChangelog(): string {
 function unreleasedSection(): string {
   const marker = '## [Unreleased]\n';
   const afterMarker = readChangelog().split(marker)[1];
-  expect(afterMarker, 'CHANGELOG.md must contain an [Unreleased] section').toBeTruthy();
-  return afterMarker!.split(/\n## \[/)[0];
+  if (!afterMarker) throw new TypeError('CHANGELOG.md must contain an [Unreleased] section');
+  const [section] = afterMarker.split(/\n## \[/);
+  if (section === undefined) throw new TypeError('missing Unreleased section');
+  return section;
 }
 
 function unreleasedCategoryHeadings(): string[] {
-  return Array.from(unreleasedSection().matchAll(/^### (.+)$/gm), (match) => match[1]);
+  return Array.from(unreleasedSection().matchAll(/^### (.+)$/gm), (match) => match[1] ?? '');
 }
 
 function rc3Section(): string {
   const marker = '## [1.2.0-rc.3] - 2026-05-14\n';
   const afterMarker = readChangelog().split(marker)[1];
-  expect(afterMarker, 'CHANGELOG.md must contain a [1.2.0-rc.3] section').toBeTruthy();
-  return afterMarker!.split(/\n## \[/)[0];
+  if (!afterMarker) throw new TypeError('CHANGELOG.md must contain a [1.2.0-rc.3] section');
+  const [section] = afterMarker.split(/\n## \[/);
+  if (section === undefined) throw new TypeError('missing rc.3 section');
+  return section;
 }
 
 describe('documentation/changelog-sections', () => {
@@ -63,14 +67,17 @@ describe('documentation/changelog-sections', () => {
       const section = rc3Section();
       const addedSection = section.match(/### Added\n([\s\S]*?)(?=\n### |$)/);
       expect(addedSection, 'rc.3 must contain an Added category').toBeTruthy();
-      expect(addedSection![1]).toContain('Rail unit tests for 6 untested rails (P10b)');
+      const addedContent = addedSection?.[1];
+      if (!addedContent) throw new TypeError('rc.3 must contain Added content');
+      expect(addedContent).toContain('Rail unit tests for 6 untested rails (P10b)');
     });
 
     it('keeps the PR-0b entry under Added in rc.2 section', () => {
       const marker = '## [1.2.0-rc.2] - 2026-05-03\n';
       const afterMarker = readChangelog().split(marker)[1];
-      expect(afterMarker, 'CHANGELOG.md must contain a [1.2.0-rc.2] section').toBeTruthy();
-      const section = afterMarker!.split(/\n## \[/)[0];
+      if (!afterMarker) throw new TypeError('CHANGELOG.md must contain a [1.2.0-rc.2] section');
+      const [section] = afterMarker.split(/\n## \[/);
+      if (!section) throw new TypeError('missing rc.2 section');
       const addedSection = section.match(/### Added\n([\s\S]*?)(?=\n### |$)/);
       expect(addedSection, 'rc.2 must contain an Added category').toBeTruthy();
       expect(addedSection![1]).toContain('Documentation drift guards (PR-0b)');

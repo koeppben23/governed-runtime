@@ -8,12 +8,18 @@
  * PERF: not applicable; pure function under test.
  */
 import { describe, expect, it } from 'vitest';
-import { canonicalCommandName } from './command-aliases.js';
+import { getInstalledCommand } from './installed-commands.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import type { Phase } from '../state/schema.js';
 
+/** Canonical machine command for an installed invocation, or the input when unknown. */
+function canonicalMachineCommand(input: string): string {
+  const normalized = input.trim().replace(/^\/+/, '');
+  return getInstalledCommand(`/${normalized}`)?.target.workflowCommand ?? normalized;
+}
+
 function isAliasAllowed(phase: Phase, aliasInput: string): boolean {
-  const canonical = canonicalCommandName(aliasInput);
+  const canonical = canonicalMachineCommand(aliasInput);
   // Must match a known Command enum value — otherwise fail-closed
   const cmd = canonical as (typeof Command)[keyof typeof Command];
   if (!Object.values(Command).includes(cmd)) return false;
@@ -62,14 +68,10 @@ describe('alias → command policy integration', () => {
       expect(isAliasAllowed('VALIDATION', 'check')).toBe(true);
     });
 
-    it('/export maps to archive; enforcement is handled by flowguard_archive', () => {
-      // archive is not in the Command enum, it's a template-only command.
-      // But /hydrate IS the canonical for /start, and /export maps to archive.
-      // archive tool is not admissibility-gated via isCommandAllowed — it's a
-      // template-layer tool. The command policy only gates the 10 canonical commands.
-      // We test that the alias maps correctly; the archive tool itself routes
-      // through the simple-tools layer which has its own checks.
-      expect(canonicalCommandName('export')).toBe('archive');
+    it('/export is canonical and allowed only after final approval', () => {
+      expect(canonicalMachineCommand('export')).toBe('export');
+      expect(isAliasAllowed('EXPORT_READY', 'export')).toBe(true);
+      expect(isAliasAllowed('COMPLETE', 'export')).toBe(false);
     });
   });
 
@@ -118,7 +120,7 @@ describe('alias → command policy integration', () => {
 
     it('alias for non-existent canonical returns false', () => {
       // Use an alias that passes through to an unknown canonical
-      expect(canonicalCommandName('nonexistent')).toBe('nonexistent');
+      expect(canonicalMachineCommand('nonexistent')).toBe('nonexistent');
       expect(isAliasAllowed('READY', 'nonexistent')).toBe(false);
     });
   });

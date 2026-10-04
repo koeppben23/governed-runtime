@@ -35,8 +35,8 @@ interface SurfaceRule {
 
 const API_RULES: readonly SurfaceRule[] = [
   {
-    id: 'express-routes',
-    label: 'Express/Fastify routes',
+    id: 'route-controller-convention',
+    label: 'Route/controller convention',
     patterns: [/routes?\//i, /controllers?\//i, /api\//i],
     classification: 'derived_signal',
   },

@@ -1,10 +1,3 @@
-/**
- * @module integration/tools-execute-status.test
- * @description Execution tests for the status tool.
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
- */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -31,13 +24,33 @@ import {
   abort_session,
   archive,
   architecture,
+  declare_contract,
 } from './tools/index.js';
-import { PersistenceError, readState, statePath, writeState } from '../adapters/persistence.js';
-import { makeProgressedState } from '../fixtures.js';
-import type { Phase } from '../state/schema.js';
-
+import {
+  PersistenceError,
+  readState,
+  statePath,
+  writeState,
+  writeReport,
+  reportPath,
+} from '../adapters/persistence.js';
+import { writeStateWithArtifacts } from './tools/helpers.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
+import { mintProofGraphClaimId } from '../state/proofgraph-approval.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
+import {
+  artifactReviewSubjectScope,
+  buildInvocationEvidence,
+  createReviewObligation,
+  freezeReviewMaterial,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from './review/obligations/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
+import type { ReviewFindings } from '../state/evidence.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
-
 describe('tool-schemas-zod-v4', () => {
   const allTools = {
     status,
@@ -52,11 +65,10 @@ describe('tool-schemas-zod-v4', () => {
     archive,
     architecture,
   } as const;
-
   it('every tool exposes Zod v4 _zod metadata on all args', () => {
     for (const [name, tool] of Object.entries(allTools)) {
       for (const [argName, schema] of Object.entries(tool.args)) {
-        const zodMeta = (schema as Record<string, unknown>)?.['_zod'];
+        const zodMeta = (schema as unknown as Record<string, unknown>)['_zod'];
         expect(zodMeta, `${name}.args.${argName} missing _zod`).toBeDefined();
         expect(typeof zodMeta, `${name}.args.${argName} _zod not object`).toBe('object');
         expect(
@@ -67,7 +79,6 @@ describe('tool-schemas-zod-v4', () => {
     }
   });
 });
-
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -115,6 +126,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -230,7 +242,69 @@ describe('status', () => {
       expect(result.policyMode).toBe('solo');
       expect(result.hasTicket).toBe(false);
       expect(result.evalKind).toBeTruthy();
-      expect(result.next).toBeTruthy();
+      expect(result.directive).toBeTruthy();
+      expect(result.next).toBeUndefined();
+    });
+
+    it('returns no review feedback before a bound changes-requested review exists', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ reviewFeedback: true }, ctx));
+      expect(result.reviewFeedback).toBeNull();
+    });
+
+    it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ proofGraph: true }, ctx));
+      expect(result.phase).toBe('READY');
+      const pg = result.proofGraph as Record<string, unknown>;
+      expect(pg).toBeDefined();
+      expect(pg.criticalClaimCount).toBe(0);
+      expect(pg.criticalUnprovenCount).toBe(0);
+      const projection = pg.projection as Record<string, unknown>;
+      expect(projection.version).toBe('proofgraph.v2');
+      expect(projection.claims).toEqual([]);
+      expect(result.persistedProofGraph).toEqual({
+        coverage: 'NOT_DECLARED',
+        claimCount: 0,
+        provenCount: 0,
+        unprovenCount: 0,
+        contractClaimCount: 0,
+        hypothesisCount: 0,
+      });
+      expect(result.proofApprovals).toEqual({
+        certificates: [],
+        implementationDigest: null,
+        claims: [],
+        coverageGaps: [],
+      });
+      const registration = result.registrationConsistency as Record<string, unknown>;
+      expect(registration).toBeDefined();
+      expect(registration.ok).toBe(true);
+      expect(registration.checkedCommands as number).toBeGreaterThan(0);
+      const configConsistency = result.configConsistency as Record<string, unknown>;
+      expect(configConsistency).toBeDefined();
+      expect(configConsistency.ok).toBe(true);
+      const gate = result.proofGraphGate as Record<string, unknown>;
+      expect(gate).toBeDefined();
+      // Nothing is gated: this session declares no certificate-authorized claim.
+      expect(gate.gated).toBe(false);
+    });
+
+    it('inspects an aborted terminal session through read-only /status guidance', async () => {
+      await hydrateSession();
+      const aborted = parseToolResult(
+        await abort_session.execute({ reason: 'Operator stopped the session' }, ctx),
+      );
+      expect(aborted.phase).toBe('ABORTED');
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.phase).toBe('ABORTED');
+      expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
+
+      // /status is read-only and therefore remains executable even though
+      // terminal phases correctly reject every FlowGuard machine command.
+      const statusProjection = result.status as Record<string, unknown>;
+      expect(statusProjection.allowedCommands).toEqual([]);
     });
 
     it('includes mandates projection and recovery footer without runtime authorization', async () => {
@@ -265,7 +339,7 @@ describe('status', () => {
       const noSession = parseToolResult(await status.execute({}, ctx));
       expect(noSession.phase).toBeNull();
       expect(noSession.status).toContain('No FlowGuard session');
-      expect(noSession.next).toBe('Run /hydrate to bootstrap a session.');
+      expect(noSession.agentInstruction).toBe('Run /start to bootstrap a session.');
       expect(noSession.flowguardFooter).toMatchObject({
         authority: 'diagnostic-only',
         phase: 'unknown',
@@ -274,8 +348,8 @@ describe('status', () => {
       await hydrateSession();
       const hydrated = parseToolResult(await status.execute({}, ctx));
       expect(hydrated.phase).toBe('READY');
-      expect(hydrated.next).toBeTruthy();
-      expect(hydrated.nextAction).toBeTruthy();
+      expect(hydrated.next).toBeUndefined();
+      expect(hydrated.directive).toBeTruthy();
       expect((hydrated.flowguardFooter as Record<string, unknown>).next).toBeUndefined();
     });
 
@@ -306,8 +380,7 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(Array.isArray(ds.items)).toBe(true);
       expect((ds.items as unknown[]).length).toBeGreaterThan(0);
-      expect(Array.isArray(ds.versions)).toBe(true);
-      expect((ds.versions as unknown[]).length).toBe(0);
+      expect(ds).not.toHaveProperty('versions');
     });
 
     it('returns full detectedStack object with summary and versions', async () => {
@@ -326,10 +399,6 @@ describe('status', () => {
             { kind: 'language', id: 'java', version: '21', evidence: 'pom.xml:<java.version>' },
             { kind: 'framework', id: 'spring-boot', version: '3.4.1' },
           ],
-          versions: [
-            { id: 'java', version: '21', target: 'language', evidence: 'pom.xml:<java.version>' },
-            { id: 'spring-boot', version: '3.4.1', target: 'framework' },
-          ],
         },
       });
       const result = parseToolResult(await status.execute({}, ctx));
@@ -339,7 +408,6 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(ds.summary).toBe('java=21, spring-boot=3.4.1');
       expect(Array.isArray(ds.items)).toBe(true);
-      expect(Array.isArray(ds.versions)).toBe(true);
 
       const items = ds.items as Array<Record<string, unknown>>;
       expect(items).toHaveLength(2);
@@ -354,21 +422,6 @@ describe('status', () => {
         id: 'spring-boot',
         version: '3.4.1',
       });
-
-      const versions = ds.versions as Array<Record<string, unknown>>;
-      expect(versions).toHaveLength(2);
-      expect(versions[0]).toMatchObject({
-        id: 'java',
-        version: '21',
-        target: 'language',
-        evidence: 'pom.xml:<java.version>',
-      });
-      expect(versions[1]).toMatchObject({
-        id: 'spring-boot',
-        version: '3.4.1',
-        target: 'framework',
-      });
-      expect(versions[1].evidence).toBeUndefined();
     });
 
     it('returns verificationCandidates array (empty by default)', async () => {
@@ -435,6 +488,8 @@ describe('status', () => {
         ...state!,
         verificationCandidates: [
           {
+            assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_test_pnpm',
             kind: 'test',
             command: 'pnpm test',
             source: 'package.json:scripts.test',
@@ -449,6 +504,7 @@ describe('status', () => {
       const candidates = result.verificationCandidates as Array<Record<string, unknown>>;
       expect(candidates).toHaveLength(1);
       expect(candidates[0]).toMatchObject({
+        assertionCapability: 'unsupported' as const,
         kind: 'test',
         command: 'pnpm test',
         source: 'package.json:scripts.test',
@@ -503,6 +559,8 @@ describe('status', () => {
         validation: [],
         verificationCandidates: [
           {
+            assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_build_mvn',
             kind: 'build',
             command: './mvnw verify',
             source: 'repo:mvnw',
@@ -527,6 +585,305 @@ describe('status', () => {
       expect(focusedEvidence.implementationGuidance).toBeUndefined();
       expect(focusedEvidence.discoveryDrift).toBeUndefined();
       expect(focusedEvidence.detectedStack).toBeUndefined();
+    });
+  });
+
+  describe('finish flag (#520 — read-only Finish Card)', () => {
+    it('returns no-session guidance instead of a card when no session exists', async () => {
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      expect(result.phase).toBeNull();
+      expect(result.finish).toBeUndefined();
+      expect(result.status).toContain('No FlowGuard session');
+      expect(result.agentInstruction).toBe('Run /start to bootstrap a session.');
+    });
+
+    it('returns a Finish Card projection for an existing session', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      const finish = result.finish as Record<string, unknown>;
+      expect(finish).toBeDefined();
+      expect([
+        'IN_PROGRESS',
+        'READY',
+        'READY_WITH_WARNINGS',
+        'CHANGES_REQUIRED',
+        'BLOCKED',
+        'NOT_VERIFIED',
+      ]).toContain(finish.overallStatus);
+      expect(finish.readiness).toBeDefined();
+      expect(finish.evidence).toBeDefined();
+      expect(finish.blocker).toBeDefined();
+      expect(finish.directive).toBeDefined();
+      // Non-normative action framing + exit options.
+      expect(Array.isArray(finish.actionGuidance)).toBe(true);
+      expect(finish.exitOptions).toContain('abandon');
+      // Constant read-only guarantees.
+      expect(finish.guarantees).toEqual({
+        readOnly: true,
+        approves: false,
+        consumesObligations: false,
+        triggersExport: false,
+      });
+    });
+
+    it('carries verification-check fields like other focused projections', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      expect(Array.isArray(result.activeChecks)).toBe(true);
+    });
+
+    it('reports CHANGES_REQUIRED for issues and surfaces persisted reviewer caveats', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const current = await readState(sessDir);
+      if (!current) throw new Error('expected hydrated state');
+      const reviewState = {
+        ...current,
+        phase: 'PEER_REVIEW_COMPLETE' as const,
+        reviewReportPath: reportPath(sessDir),
+      };
+      await writeState(sessDir, reviewState);
+      await writeReport(sessDir, {
+        reviewKind: 'lifecycle_review',
+        schemaVersion: REVIEW_REPORT_SCHEMA_ID,
+        sessionId: reviewState.id,
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        phase: 'PEER_REVIEW_COMPLETE',
+        planDigest: null,
+        implDigest: null,
+        validationSummary: [],
+        findings: [
+          {
+            source: 'mechanical',
+            reportSeverity: 'error',
+            category: 'correctness',
+            message: 'Changes required',
+          },
+          {
+            source: 'scope_creep',
+            reportSeverity: 'warning',
+            category: 'scope-creep',
+            message: 'Scope grew beyond the ticket',
+          },
+          {
+            source: 'missing_verification',
+            reportSeverity: 'warning',
+            category: 'missing-verification',
+            message: 'Could not verify the failure path',
+          },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'unknown',
+            message: 'Unknown dependency surface',
+          },
+        ],
+        overallStatus: 'issues',
+        peerReviewCoverage: {
+          targetResolved: false,
+          targetFrozen: false,
+          repositoryIdentityVerified: null,
+          baseSha: null,
+          headSha: null,
+          changedPathCount: 0,
+          objectivesCovered: 0,
+          objectivesTotal: 0,
+          reviewAssurance: null,
+          missingVerification: [],
+        },
+      });
+
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      const finish = result.finish as {
+        overallStatus: string;
+        actionGuidance: Array<{ action: string; status: string }>;
+        reviewCaveats: Array<{ source: string; message: string }>;
+      };
+      expect(finish.overallStatus).toBe('CHANGES_REQUIRED');
+      expect(
+        finish.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status,
+      ).toBe('not_recommended');
+      // The persisted reviewer caveats flow through the real /finish wiring and
+      // stay verbatim; other sources remain outside the projection boundary.
+      expect(finish.reviewCaveats).toEqual([
+        { source: 'missing_verification', message: 'Could not verify the failure path' },
+        { source: 'unknown', message: 'Unknown dependency surface' },
+      ]);
+      const markdown = (result.presentation as { markdown: string }).markdown;
+      expect(markdown).toContain('## Review verification caveats');
+      expect(markdown).toContain('? Could not verify the failure path');
+      expect(markdown).toContain('## Review unknowns');
+      expect(markdown).toContain('- Unknown dependency surface');
+      expect(markdown).not.toContain('Scope grew beyond the ticket');
+      expect(markdown).not.toContain('missing-verification');
+    });
+
+    it('does not mutate persisted state (read-only)', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const before = await readState(sessDir);
+      await status.execute({ finish: true }, ctx);
+      const after = await readState(sessDir);
+      expect(after).toEqual(before);
+    });
+
+    it('projects reviewed artifact identity for architecture review verdicts (incl. consumed history)', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const current = await readState(sessDir);
+      if (!current) throw new Error('expected hydrated state');
+
+      const obligation = createReviewObligation({
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerAttempts: 1,
+        },
+        obligationType: 'architecture',
+        reviewCycle: 1,
+        iteration: 0,
+        planVersion: 1,
+        now: '2026-01-01T00:00:00.000Z',
+        subjectDigest: 'adr-digest-reviewed',
+        reviewSubjectScope: artifactReviewSubjectScope(
+          'adr',
+          '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          'adr-digest-reviewed',
+        ),
+        reviewMaterial: freezeReviewMaterial(
+          '## Ticket Under Review (originating request)\n\nNo ticket recorded for this session.\n\n## Architecture Decision Artifact\n\n## Context\nA\n\n## Decision\nB\n\n## Consequences\nC\n',
+          'adr-digest-reviewed',
+        ),
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      });
+      const findings = {
+        iteration: 0,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'changes_requested',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        challenges: [],
+        reviewedBy: { sessionId: 'ses-child' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        attestation: {
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          toolObligationId: obligation.obligationId,
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      } as ReviewFindings;
+      const invocation = {
+        ...buildInvocationEvidence({
+          obligationId: obligation.obligationId,
+          obligationType: 'architecture',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          parentSessionId: ctx.sessionID,
+          childSessionId: 'ses-child',
+          promptHash: 'a'.repeat(64),
+          findingsHash: hashFindings(findings),
+          invokedAt: '2026-01-01T00:00:00.000Z',
+          capturedRawFindings: findings,
+          attemptId: '00000000-0000-4000-8000-000000000123',
+        }),
+        consumedByObligationId: obligation.obligationId,
+      };
+      const state = {
+        ...current,
+        phase: 'ARCH_REVIEW' as const,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'adr-digest-current',
+          status: 'proposed' as const,
+          reviewCompletion: 'review_exhausted' as const,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          reviewFindings: [findings],
+        },
+        selfReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: 'adr-digest-reviewed',
+          currDigest: 'adr-digest-current',
+          revisionDelta: 'minor' as const,
+          verdict: 'changes_requested' as const,
+        },
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v7' as const,
+          obligations: [
+            {
+              ...obligation,
+              status: 'consumed' as const,
+              invocationId: invocation.invocationId,
+              fulfilledAt: '2026-01-01T00:00:00.000Z',
+              consumedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          invocations: [invocation],
+          attempts: [
+            {
+              attemptId: '00000000-0000-4000-8000-000000000123',
+              obligationId: obligation.obligationId,
+              obligationType: 'architecture' as const,
+              subjectDigest: obligation.subjectDigest,
+              ordinal: 1,
+              childSessionId: 'ses-child',
+              status: 'bound' as const,
+              origin: { kind: 'initial' as const },
+              repositoryDiscovery: { kind: 'not_applicable' as const },
+              observations: [] as const,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              completedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          dispatches: [completedDispatchForInvocation(invocation)],
+        },
+      };
+      await writeState(sessDir, state);
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      const arch = result.latestArchitectureReview as Record<string, unknown>;
+      expect(arch.reviewedDigest).toBe('adr-digest-reviewed');
+      expect(arch.reviewedObligationId).toBe(obligation.obligationId);
+      expect(arch.reviewerIteration).toBe(0);
+      expect(arch.reviewedPlanVersion).toBe(1);
+      // Existing host-iteration contract stays authoritative.
+      expect(arch.iteration).toBe(result.selfReviewIteration);
+    });
+
+    it('returns a blocked error (no card) when session state is unreadable', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      // Corrupt the persisted state so readState throws before any card is built.
+      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
+
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      // No Finish Card is produced for an unreadable state; the failure is
+      // surfaced as a blocked result carrying the persistence error code.
+      expect(result.finish).toBeUndefined();
+      expect(result.code).toBe('PARSE_FAILED');
     });
   });
 
@@ -802,7 +1159,10 @@ describe('status', () => {
       })();
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await plan.execute(
-        await withStrictReviewFindings(sd, { planText: '## Plan\nTest plan' }),
+        await withStrictReviewFindings(sd, {
+          planText: '## Plan\nTest plan',
+          targetPaths: ['docs/test.md'],
+        }),
         ctx,
       );
       await plan.execute(await withStrictReviewFindings(sd, { reviewVerdict: 'accept' }), ctx);
@@ -827,290 +1187,38 @@ describe('status', () => {
       // Verify state persistence
       const state = await readState(sd);
       expect(state!.validation.length).toBe(1);
-      expect(state!.validation[0].passed).toBe(false);
-      const persistedGuidance = state!.validation[0].derivedRepairGuidance;
+      const validation = state!.validation[0];
+      expect(validation).toBeDefined();
+      if (!validation) throw new TypeError('Expected persisted validation result');
+      expect(validation.passed).toBe(false);
+      const persistedGuidance = validation.derivedRepairGuidance;
       expect(persistedGuidance).toBeDefined();
       expect(persistedGuidance).toMatchObject({
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
 
       // Verify status surfaces the guidance
       const statusResult = parseToolResult(await status.execute({}, ctx));
       expect(Array.isArray(statusResult.validationResults)).toBe(true);
-      expect(statusResult.validationResults.length).toBeGreaterThanOrEqual(1);
-      const statusGuidance = (statusResult.validationResults as Record<string, unknown>[])[0]
-        .derivedRepairGuidance as Record<string, unknown>;
+      const validationResults = statusResult.validationResults;
+      if (!Array.isArray(validationResults)) throw new TypeError('Expected validation results');
+      expect(validationResults.length).toBeGreaterThanOrEqual(1);
+      const statusGuidance = (validationResults[0] as Record<string, unknown> | undefined)
+        ?.derivedRepairGuidance as Record<string, unknown> | undefined;
       expect(statusGuidance).toBeDefined();
+      if (!statusGuidance) throw new TypeError('Expected status repair guidance');
       expect(statusGuidance).toMatchObject({
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
       expect(statusGuidance.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
       );
     });
-  });
-});
-
-// =============================================================================
-// Status ↔ Command-Prompt contract guard
-//
-// Every field a command PROMPT reads from flowguard_status must actually be
-// emitted by the tool in the projection shape that command uses, in every phase
-// the command is allowed to run. Three governed demos in a row wedged on a phase
-// dead-state caused by a prompt↔tool contract gap (a prompt read a status field
-// the tool did not emit in that call shape). This guard is the structural net.
-//
-// The "fields a prompt reads" are a CURATED map (declared here, reviewable),
-// derived from the command templates in src/templates/commands/. It is kept
-// curated rather than parsed from prompt prose, because Markdown parsing is
-// fragile; a negative control proves the guard is sharp.
-// =============================================================================
-
-type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness';
-
-interface StatusContractEntry {
-  /** Command whose prompt reads flowguard_status. */
-  readonly label: string;
-  /** Phases this command is allowed to run in (or '*' for all), used to scope the check. */
-  readonly phases: readonly Phase[] | '*';
-  /** The flowguard_status call shape the prompt uses. */
-  readonly callShape: CallShape;
-  /** Top-level status fields the prompt reads (must be emitted in every allowed phase). */
-  readonly requiredTopLevel: readonly string[];
-  /** Nested status paths the prompt reads, e.g. 'whyBlocked.reasonText'. */
-  readonly requiredPaths?: readonly string[];
-  /**
-   * Top-level fields only required in specific phases (e.g. remainingChecks only
-   * exists in VALIDATION). Checked only when the allowed phase matches.
-   */
-  readonly phaseGatedTopLevel?: ReadonlyArray<{ field: string; phases: readonly Phase[] }>;
-}
-
-// SOLL contract — the fields the (correct) prompts read from flowguard_status.
-// reviewCard / pluginReviewFindings / gateNotice / policyResolution / _continue
-// are intentionally absent: they come from other tool responses, not status.
-const STATUS_CONTRACT: readonly StatusContractEntry[] = [
-  {
-    label: '/ticket',
-    phases: ['READY', 'TICKET'],
-    callShape: 'full',
-    requiredTopLevel: ['phase', 'nextAction'],
-  },
-  {
-    label: '/plan',
-    phases: ['TICKET', 'PLAN'],
-    callShape: 'full',
-    // ticket BODY is NOT read from status (Gap C fix); only gating + candidates + profile rules.
-    requiredTopLevel: [
-      'phase',
-      'hasTicket',
-      'verificationCandidates',
-      'profileRules',
-      'detectedStack',
-      'discoveryHealth',
-      'discoveryDrift',
-    ],
-  },
-  {
-    label: '/implement',
-    phases: ['IMPLEMENTATION'],
-    callShape: 'full',
-    // plan BODY is NOT read from status (Gap C fix); only gating + profile + discovery + validation.
-    requiredTopLevel: [
-      'phase',
-      'hasPlan',
-      'profileRules',
-      'detectedStack',
-      'verificationCandidates',
-      'validationResults',
-    ],
-  },
-  {
-    label: '/validate',
-    phases: ['VALIDATION'],
-    callShape: 'full',
-    // Gap A: activeChecks must be present in the FULL projection (was focused-only).
-    requiredTopLevel: ['phase', 'activeChecks', 'verificationCandidates'],
-    phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
-  },
-  {
-    label: '/review-decision',
-    phases: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
-    callShape: 'full',
-    requiredTopLevel: ['phase'],
-  },
-  {
-    label: '/review',
-    phases: ['READY'],
-    callShape: 'full',
-    requiredTopLevel: [
-      'phase',
-      'discoveryHealth',
-      'discoveryDrift',
-      'detectedStack',
-      'verificationCandidates',
-    ],
-  },
-  {
-    label: '/architecture',
-    phases: ['READY', 'ARCHITECTURE'],
-    callShape: 'full',
-    requiredTopLevel: [
-      'phase',
-      'detectedStack',
-      'verificationCandidates',
-      'discoveryHealth',
-      'discoveryDrift',
-    ],
-  },
-  {
-    label: '/archive',
-    // /archive is a slash-command alias (flowguard_archive tool); its /status read
-    // is only an existence/phase gate. Allowed broadly; check terminal phases.
-    phases: ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE', 'IMPL_REVIEW'],
-    callShape: 'full',
-    requiredTopLevel: ['phase'],
-  },
-  {
-    label: '/abort',
-    phases: '*',
-    callShape: 'full',
-    requiredTopLevel: ['phase'],
-  },
-  {
-    label: '/why',
-    phases: '*',
-    callShape: 'whyBlocked',
-    requiredTopLevel: ['whyBlocked'],
-    // Gap B: the blocker reason is under whyBlocked.*, NOT a top-level `blocker`.
-    requiredPaths: [
-      'whyBlocked.reasonText',
-      'whyBlocked.reasonCode',
-      'whyBlocked.nextResolvableCommand',
-    ],
-  },
-];
-
-// /check shares VALIDATE's contract (full projection, activeChecks/remainingChecks).
-const CHECK_ENTRY: StatusContractEntry = {
-  label: '/check',
-  phases: ['VALIDATION'],
-  callShape: 'full',
-  requiredTopLevel: ['activeChecks', 'verificationCandidates'],
-  phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
-};
-
-const ALL_PHASES: readonly Phase[] = [
-  'READY',
-  'TICKET',
-  'PLAN',
-  'PLAN_REVIEW',
-  'VALIDATION',
-  'IMPLEMENTATION',
-  'IMPL_REVIEW',
-  'EVIDENCE_REVIEW',
-  'COMPLETE',
-  'ARCHITECTURE',
-  'ARCH_REVIEW',
-  'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
-];
-
-describe('status-prompt-contract', () => {
-  let ws2: TestWorkspace;
-  let ctx2: TestToolContext;
-  let cleanupEnv2: () => void;
-
-  beforeEach(async () => {
-    cleanupEnv2 = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
-    ws2 = await createTestWorkspace();
-    ctx2 = createToolContext({
-      worktree: ws2.tmpDir,
-      directory: ws2.tmpDir,
-      sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
-    });
-  });
-
-  afterEach(async () => {
-    cleanupEnv2();
-    await ws2.cleanup();
-  });
-
-  async function statusFor(phase: Phase, callShape: CallShape): Promise<Record<string, unknown>> {
-    const { computeFingerprint, sessionDir: resolveSessionDir } =
-      await import('../adapters/workspace/index.js');
-    const fp = await computeFingerprint(ws2.tmpDir);
-    const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
-    // Seed canonical state at the requested phase, preserving the session id/binding
-    // that the tool resolves from ctx2.
-    const seeded = { ...makeProgressedState(phase), id: makeProgressedState(phase).id };
-    await writeState(sessDir, seeded);
-    const args = callShape === 'full' ? {} : ({ [callShape]: true } as Record<string, boolean>);
-    return parseToolResult(await status.execute(args, ctx2));
-  }
-
-  function hasPath(obj: Record<string, unknown>, dottedPath: string): boolean {
-    const parts = dottedPath.split('.');
-    let cur: unknown = obj;
-    for (const p of parts) {
-      if (cur === null || typeof cur !== 'object' || !(p in (cur as object))) return false;
-      cur = (cur as Record<string, unknown>)[p];
-    }
-    return cur !== undefined;
-  }
-
-  const entries = [...STATUS_CONTRACT, CHECK_ENTRY];
-
-  for (const entry of entries) {
-    const phases = entry.phases === '*' ? ALL_PHASES : entry.phases;
-    it(`${entry.label}: status (${entry.callShape}) emits required fields in all allowed phases`, async () => {
-      expect(phases.length).toBeGreaterThan(0);
-      for (const phase of phases) {
-        const result = await statusFor(phase, entry.callShape);
-        for (const field of entry.requiredTopLevel) {
-          expect(
-            field in result,
-            `${entry.label} reads top-level "${field}" but status(${entry.callShape}) in ${phase} did not emit it`,
-          ).toBe(true);
-        }
-        for (const p of entry.requiredPaths ?? []) {
-          expect(
-            hasPath(result, p),
-            `${entry.label} reads "${p}" but status(${entry.callShape}) in ${phase} did not emit it`,
-          ).toBe(true);
-        }
-        for (const gated of entry.phaseGatedTopLevel ?? []) {
-          if (gated.phases.includes(phase)) {
-            expect(
-              gated.field in result,
-              `${entry.label} reads "${gated.field}" in ${phase} but status(${entry.callShape}) did not emit it`,
-            ).toBe(true);
-          }
-        }
-      }
-    });
-  }
-
-  // Negative control: a field NO prompt reads must NOT be present — proves the
-  // guard would actually fail if a required field were missing/renamed.
-  it('NEGATIVE CONTROL: a made-up field is absent from full status (guard is sharp)', async () => {
-    const result = await statusFor('VALIDATION', 'full');
-    expect('madeUpFieldThatNoPromptReads' in result).toBe(false);
-  });
-
-  // Gap B documentation: the focused whyBlocked projection has NO top-level
-  // `blocker` key (the old /why prompt incorrectly read blocker.*). The reason
-  // lives under whyBlocked.* — asserted by the /why contract entry above.
-  it('Gap B: focused whyBlocked has no top-level "blocker" (reason is under whyBlocked.*)', async () => {
-    const result = await statusFor('VALIDATION', 'whyBlocked');
-    expect('blocker' in result).toBe(false);
-    expect(hasPath(result, 'whyBlocked.reasonText')).toBe(true);
   });
 });

@@ -15,14 +15,17 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { repoRelative } from './repo-path.js';
+import { isTestSourcePath } from './module-classification.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
 /** Production source file blocker threshold (LOC). Exceeding this fails the build. */
-export const PROD_FILE_LOC_BLOCKER = 750;
+export const PROD_FILE_LOC_BLOCKER = 650;
 /**
  * Test file blocker threshold (LOC). Test suites are allowed to be broader than
  * production modules before they must split; the repo's established convention
@@ -50,11 +53,8 @@ function collectFiles(dir: string, acc: SourceFile[]): void {
       continue;
     }
     if (!entry.isFile() || !full.endsWith('.ts')) continue;
-    const rel = relative(SRC_ROOT, full).split(sep).join('/');
-    const isTest =
-      full.endsWith('.test.ts') ||
-      full.endsWith('.spec.ts') ||
-      rel.split('/').includes('__tests__');
+    const rel = repoRelative(SRC_ROOT, full);
+    const isTest = isTestSourcePath(rel);
     acc.push({ rel, loc: countLoc(readFileSync(full, 'utf8')), isTest });
   }
 }

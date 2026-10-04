@@ -8,10 +8,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC_ROOT = join(__dirname, '..');
 
 const PRODUCER_BY_OBLIGATION_TYPE: Readonly<Record<string, string>> = {
-  plan: 'integration/tools/plan.ts',
-  implement: 'integration/tools/implement-record.ts',
-  architecture: 'integration/tools/architecture-submit.ts',
-  review: 'integration/tools/review-tool/obligation.ts',
+  plan: 'integration/tools/plan/plan-response.ts',
+  implement: 'integration/tools/implementation-review-activation.ts',
+  architecture: 'integration/tools/architecture/architecture-submit.ts',
+  review: 'integration/tools/review-tool/obligation-creation.ts',
 };
 
 const TEMPLATE_BY_OBLIGATION_TYPE: Readonly<Record<string, string>> = {
@@ -37,9 +37,9 @@ describe('state/ReviewObligationType completeness', () => {
   describe('BAD', () => {
     it('each producer emits its matching obligationType literal', () => {
       for (const obligationType of ReviewObligationType.options) {
-        expect(readSource(PRODUCER_BY_OBLIGATION_TYPE[obligationType])).toContain(
-          `obligationType: '${obligationType}'`,
-        );
+        const producer = PRODUCER_BY_OBLIGATION_TYPE[obligationType];
+        expect(producer).toBeDefined();
+        expect(readSource(producer!)).toContain(`obligationType: '${obligationType}'`);
       }
     });
   });
@@ -48,7 +48,9 @@ describe('state/ReviewObligationType completeness', () => {
     it('each command template documents unable_to_review handling for its obligation type', () => {
       const sharedReviewLoop = readSource('templates/commands/shared-review-loop.ts');
       for (const obligationType of ReviewObligationType.options) {
-        const template = readSource(TEMPLATE_BY_OBLIGATION_TYPE[obligationType]);
+        const templatePath = TEMPLATE_BY_OBLIGATION_TYPE[obligationType];
+        expect(templatePath).toBeDefined();
+        const template = readSource(templatePath!);
         const combined = template + sharedReviewLoop;
         expect(combined).toContain('unable_to_review');
         expect(combined).toContain('SUBAGENT_UNABLE_TO_REVIEW');

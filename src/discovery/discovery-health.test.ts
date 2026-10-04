@@ -10,8 +10,6 @@
  * - Degraded: read failures
  * - Degraded: multiple degradation types → healthy: false
  * - No healthy when any degradation present
- * - Missing diagnostics: sensible defaults
- * - Missing codeSurfaces: null status, no budget/read data
  * - ageWarning computed from collectedAt
  * - ageWarning null for recent discovery
  * - ageWarning null for missing/NaN collectedAt
@@ -19,20 +17,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { extractDiscoveryHealth, unavailableDiscoveryHealth } from './discovery-health.js';
+import type { DiscoveryHealthAvailableProjection } from './discovery-health.js';
 import type { DiscoveryResult } from './types.js';
 
 function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResult {
   return {
-    schemaVersion: 'discovery.v1',
+    schemaVersion: 'discovery.v2',
     collectedAt: new Date().toISOString(),
-    collectors: {
-      'repo-metadata': 'complete',
-      'stack-detection': 'complete',
-      topology: 'complete',
-      'surface-detection': 'complete',
-      'code-surface-analysis': 'complete',
-      'domain-signals': 'complete',
-    },
     diagnostics: [
       { name: 'repo-metadata', status: 'complete', durationMs: 12, timedOut: false },
       { name: 'stack-detection', status: 'complete', durationMs: 34, timedOut: false },
@@ -55,6 +46,9 @@ function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResul
       buildTools: [],
       testFrameworks: [],
       runtimes: [],
+      tools: [],
+      qualityTools: [],
+      databases: [],
     },
     topology: {
       kind: 'unknown',
@@ -64,17 +58,39 @@ function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResul
       ignorePaths: [],
     },
     surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
+    codeSurfaces: {
+      status: 'ok',
+      endpoints: [],
+      authBoundaries: [],
+      dataAccess: [],
+      integrations: [],
+      budget: {
+        scannedFiles: 0,
+        scannedBytes: 0,
+        maxFiles: 200,
+        maxBytesPerFile: 65536,
+        maxTotalBytes: 2097152,
+        timedOut: false,
+      },
+    },
     domainSignals: { keywords: [], glossarySources: [] },
-    validationHints: { commands: [], lintTools: [] },
     ...overrides,
   };
+}
+
+function extractAvailableHealth(result: DiscoveryResult): DiscoveryHealthAvailableProjection {
+  const health = extractDiscoveryHealth(result);
+  if (health.status !== 'available') {
+    throw new TypeError('Expected an available discovery health projection');
+  }
+  return health;
 }
 
 describe('discovery-health', () => {
   describe('extractDiscoveryHealth', () => {
     it('healthy result: all complete, no budget/read issues', () => {
       const result = makeHealthyResult();
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.healthy).toBe(true);
       expect(health.completeCollectors).toBe(6);
       expect(health.partialCollectors).toBe(0);
@@ -82,7 +98,7 @@ describe('discovery-health', () => {
       expect(health.failedCollectorNames).toEqual([]);
       expect(health.hasBudgetExhaustion).toBe(false);
       expect(health.readFailureCount).toBe(0);
-      expect(health.codeSurfaceStatus).toBe(null);
+      expect(health.codeSurfaceStatus).toBe('ok');
       expect(health.kind).toBe('derived_discovery_health');
       expect(health.advisory).toBe(true);
       expect(health.source).toBe('persisted_discovery_result');
@@ -106,7 +122,7 @@ describe('discovery-health', () => {
           { name: 'domain-signals', status: 'complete', durationMs: 5, timedOut: false },
         ],
       });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.healthy).toBe(false);
       expect(health.completeCollectors).toBe(5);
       expect(health.failedCollectors).toBe(1);
@@ -131,7 +147,7 @@ describe('discovery-health', () => {
           { name: 'domain-signals', status: 'complete', durationMs: 5, timedOut: false },
         ],
       });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.healthy).toBe(false);
       expect(health.completeCollectors).toBe(5);
       expect(health.partialCollectors).toBe(1);
@@ -158,7 +174,7 @@ describe('discovery-health', () => {
           },
         },
       });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.healthy).toBe(false);
       expect(health.hasBudgetExhaustion).toBe(true);
       expect(health.codeSurfaceStatus).toBe('partial');
@@ -187,7 +203,7 @@ describe('discovery-health', () => {
           },
         },
       });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.healthy).toBe(false);
       expect(health.readFailureCount).toBe(2);
     });
@@ -238,7 +254,7 @@ describe('discovery-health', () => {
           readStatuses: { 'a.ts': 'denied' },
         },
       });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.healthy).toBe(false);
       expect(health.completeCollectors).toBe(3);
       expect(health.partialCollectors).toBe(1);
@@ -248,41 +264,23 @@ describe('discovery-health', () => {
       expect(health.readFailureCount).toBe(1);
     });
 
-    it('missing diagnostics: defaults to zero counts', () => {
-      const result = makeHealthyResult({ diagnostics: undefined });
-      const health = extractDiscoveryHealth(result);
-      expect(health.completeCollectors).toBe(0);
-      expect(health.partialCollectors).toBe(0);
-      expect(health.failedCollectors).toBe(0);
-      expect(health.failedCollectorNames).toEqual([]);
-      expect(health.healthy).toBe(true);
-    });
-
-    it('missing codeSurfaces: null status, no budget/read data', () => {
-      const result = makeHealthyResult({ codeSurfaces: undefined });
-      const health = extractDiscoveryHealth(result);
-      expect(health.codeSurfaceStatus).toBe(null);
-      expect(health.hasBudgetExhaustion).toBe(false);
-      expect(health.readFailureCount).toBe(0);
-    });
-
     it('ageWarning computed correctly for old discovery', () => {
       const oldDate = new Date(Date.now() - 48 * 3_600_000).toISOString();
       const result = makeHealthyResult({ collectedAt: oldDate });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.ageWarning).not.toBeNull();
       expect(health.ageWarning).toContain('48h');
     });
 
     it('ageWarning null for recent discovery', () => {
       const result = makeHealthyResult({ collectedAt: new Date().toISOString() });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.ageWarning).toBeNull();
     });
 
     it('ageWarning null when collectedAt is missing', () => {
       const result = makeHealthyResult({ collectedAt: '' as unknown as string });
-      const health = extractDiscoveryHealth(result);
+      const health = extractAvailableHealth(result);
       expect(health.ageWarning).toBeNull();
     });
   });

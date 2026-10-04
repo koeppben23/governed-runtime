@@ -2,78 +2,109 @@
  * @module presentation/review-report-card
  * @description Pure presentation builder for the Review Report Card.
  *
- * Builds a markdown card presenting standalone /review findings with
- * completeness matrix and audit evidence. Called when /review completes
- * (phase REVIEW_COMPLETE).
+ * Builds the Review Report Card as a typed PresentationDocument rendered
+ * through the shared Markdown renderer (renderMarkdown). Presents standalone
+ * /review findings with explicit target coverage and audit evidence. Called
+ * when /review completes (phase PEER_REVIEW_COMPLETE).
  *
  * This is a pure function — no state dependency, no side effects.
  * All fields are derived from the ReviewReport and State already available
  * in the tool handler.
  *
- * @version v1
+ * @version v2
  */
 
 import type { Phase } from '../state/schema.js';
+import type { PeerReviewCoverage, ReviewReportFinding } from '../state/evidence.js';
+import type { FrozenReviewSubject } from '../state/evidence.js';
+import type { ReviewInvocationEvidence } from '../state/evidence-review-invocation.js';
+import type {
+  ReviewCardDocument,
+  PresentationSection,
+  KeyValueItem,
+  FindingGroup,
+  FindingItem,
+  FindingRelationPresentation,
+  FindingRepositoryLocation,
+} from './model.js';
+import { projectFindingRelation } from './finding-relation.js';
+import { directiveLabel } from './directive-copy.js';
+import type { DirectiveProjection } from './review-decision.js';
+import { renderMarkdown } from './markdown.js';
+import type { PresentationRenderOptions } from './glyph-profile.js';
+import type { CompactProofPresentation } from './proof-model.js';
+import { buildProofGraphSection } from './proof-summary.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
 export interface ReviewReportCardInput {
-  /** Current workflow phase (expected: REVIEW_COMPLETE). */
+  /** Current workflow phase (expected: PEER_REVIEW_COMPLETE). */
   phase: Phase;
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
-  /** Derived from report.completeness.overallComplete. */
+  /** Derived from report.overallStatus. */
   overallStatus: 'clean' | 'warnings' | 'issues';
   /** Review findings from the report. */
-  findings: Array<{
-    severity: string;
-    category: string;
-    message: string;
-    location?: string;
-  }>;
-  /** Completeness summary. */
-  completeness: {
-    overallComplete: boolean;
-    fourEyes: boolean;
-    summary: string;
-  };
-  /** Where the review input originated (pr, branch, url, manual_text). */
-  inputOrigin?: string;
-  /** External references provided with the review. */
-  references?: Array<{ ref: string; type: string }>;
+  findings: ReviewReportFinding[];
+  /** Explicit target coverage persisted with the peer review report. */
+  coverage: PeerReviewCoverage;
+  /** Host-validated immutable identity of the reviewed content. */
+  reviewSubject?: FrozenReviewSubject;
   /** Obligation UUID — present when content-aware review was performed. */
   obligationId?: string;
-  /** Evidence source: host-orchestrated or agent-submitted-attested. */
-  invocationSource?: string;
-  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, or manual_attested. */
-  invocationMode?: string;
+  /** Bound invocation evidence source (always host-orchestrated). */
+  invocationSource?: ReviewInvocationEvidence['source'];
+  /**
+   * How the reviewer was invoked. The only sanctioned transport is a
+   * host-observed SDK session prompt.
+   */
+  invocationMode?: ReviewInvocationEvidence['invocationMode'];
   /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
   hostVisible?: boolean;
   /** Subagent session ID from invocation evidence. */
   reviewerSessionId?: string;
-  reviewOutputMode?: string;
-  structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: string;
-  extractionMethod?: string;
+  /** Findings provenance (always host-observed structured model output). */
+  reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
+  /** Host-observed structured model output was used. */
+  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  /** Output assurance tier for host-observed structured output. */
+  reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
+  /** Mandatory state-derived ProofGraph summary. */
+  proofSummary: CompactProofPresentation;
+  /** Canonical workflow directive projection (code + commands verbatim). */
+  directive: DirectiveProjection;
+  /**
+   * Pre-computed canonical conclusion action (with intent from installed
+   * metadata). Absent when the directive carries no command, e.g. after a
+   * terminal peer review; the card then renders the terminal conclusion.
+   */
+  conclusionAction?: import('./model.js').PresentationAction;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Severity / Category Projection ─────────────────────────────────────────────
 
-const SEVERITY_GROUP: Record<string, { label: string; order: number }> = {
-  critical: { label: 'Critical', order: 0 },
-  major: { label: 'Major', order: 1 },
-  error: { label: 'Issues', order: 2 },
-  minor: { label: 'Warnings', order: 3 },
-  warning: { label: 'Warnings', order: 3 },
-  info: { label: 'Notes', order: 4 },
+/**
+ * Maps a raw finding severity to a presentation FindingGroup: a display label,
+ * a sort order, and a severity from the closed FindingGroup.severity union.
+ */
+const SEVERITY_GROUP: Record<
+  string,
+  { label: string; order: number; severity: FindingGroup['severity'] }
+> = {
+  critical: { label: 'Critical', order: 0, severity: 'critical' },
+  major: { label: 'Major', order: 1, severity: 'major' },
+  error: { label: 'Issues', order: 2, severity: 'major' },
+  minor: { label: 'Warnings', order: 3, severity: 'warning' },
+  warning: { label: 'Warnings', order: 3, severity: 'warning' },
+  info: { label: 'Notes', order: 4, severity: 'info' },
 };
 
-function severityLabel(severity: string): string {
-  return SEVERITY_GROUP[severity]?.label ?? severity;
-}
-
-function severityOrder(severity: string): number {
-  return SEVERITY_GROUP[severity]?.order ?? 99;
+function severityGroup(severity: string): {
+  label: string;
+  order: number;
+  severity: FindingGroup['severity'];
+} {
+  return SEVERITY_GROUP[severity] ?? { label: severity, order: 99, severity: 'info' };
 }
 
 function categoryLabel(category: string): string {
@@ -93,160 +124,332 @@ function categoryLabel(category: string): string {
 // ─── Card Builder ────────────────────────────────────────────────────────────
 
 /**
- * Build a Review Report Card as a markdown string.
+ * Build a Review Report Card as a Markdown string via the shared renderer.
  *
- * Sections:
- * 1. Header with status and input origin
- * 2. Findings grouped by severity (critical > major > warnings > notes)
- * 3. Completeness (4-eyes status + summary)
- * 4. Evidence (obligationId, invocation source, reviewer — when present)
- * 5. Recommended follow-up (orientation, no governance commands)
+ * Sections (all typed, spacing enforced by renderMarkdown):
+ * 1. Title (H1)
+ * 2. Metadata (status, overall, reviewed subject)
+ * 3. Findings grouped by severity (critical > major > issues > warnings > notes)
+ * 4. Target coverage (target, revisions, objectives, assurance)
+ * 5. Evidence (obligationId, invocation source, reviewer — when present)
+ * 6. Recommended follow-up (orientation, no governance commands)
+ *
+ * /review is terminal orientation, not a decision gate. It still has a typed
+ * terminal conclusion so every visible result has one authoritative closure.
  */
-export function buildReviewReportCard(input: ReviewReportCardInput): string {
+export function buildReviewReportCard(
+  input: ReviewReportCardInput,
+  options?: PresentationRenderOptions,
+): string {
+  return renderMarkdown(buildReviewReportDocument(input), options);
+}
+
+/** Build the typed peer-review document before Markdown rendering. */
+export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewCardDocument {
+  const sections: PresentationSection[] = [];
+
+  // ── Title ──────────────────────────────────────────────────────────
+  sections.push({ kind: 'title', text: 'FlowGuard Review Report' });
+
+  // ── Metadata ───────────────────────────────────────────────────────
+  sections.push(buildMetadataSection(input));
+  sections.push(buildProofGraphSection(input.proofSummary));
+
+  // ── Findings ───────────────────────────────────────────────────────
+  sections.push(buildFindingsSection(input.findings));
+
+  // ── Target coverage ────────────────────────────────────────────────
+  sections.push(buildCoverageSection(input.coverage));
+
+  // ── Evidence ───────────────────────────────────────────────────────
+  const evidence = buildEvidenceSection(input);
+  if (evidence) sections.push(evidence);
+
+  // ── Recommended follow-up ──────────────────────────────────────────
+  sections.push({
+    kind: 'bulletList',
+    heading: 'Recommended follow-up',
+    items: buildFollowUpItems(input.findings),
+  });
+
+  const conclusion = buildConclusion(input);
+  return {
+    kind: 'review_card',
+    form: input.conclusionAction ? 'success' : 'terminal',
+    sections,
+    ...(conclusion !== undefined ? { conclusion } : {}),
+  };
+}
+
+function buildMetadataSection(input: ReviewReportCardInput): PresentationSection {
+  const metadata: KeyValueItem[] = [
+    { label: 'Status', value: input.phaseLabel },
+    { label: 'Overall', value: input.overallStatus },
+  ];
+  if (input.reviewSubject) {
+    metadata.push({
+      label: 'Reviewed subject',
+      value: presentReviewSubject(input.reviewSubject),
+    });
+  }
+  return { kind: 'keyValue', items: metadata };
+}
+
+function buildFindingsSection(findings: ReviewReportCardInput['findings']): PresentationSection {
+  if (findings.length === 0) {
+    return {
+      kind: 'bulletList',
+      heading: 'Findings',
+      items: ['No issues found.'],
+    };
+  }
+
+  const grouped = new Map<
+    number,
+    { label: string; severity: FindingGroup['severity']; items: FindingItem[] }
+  >();
+  for (const reportFinding of findings) {
+    const f = projectReviewReportFinding(reportFinding);
+    const g = severityGroup(f.severity);
+    let bucket = grouped.get(g.order);
+    if (!bucket) {
+      bucket = { label: g.label, severity: g.severity, items: [] };
+      grouped.set(g.order, bucket);
+    }
+    bucket.items.push({
+      category: categoryLabel(f.category),
+      message: f.message,
+      ...(f.relation !== undefined ? projectFindingRelation(f.relation) : {}),
+    });
+  }
+  const groups: FindingGroup[] = [...grouped.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, bucket]) => ({
+      severity: bucket.severity,
+      label: bucket.label,
+      items: bucket.items,
+    }));
+  return { kind: 'findings', heading: 'Findings', detail: 'expanded', groups };
+}
+
+function buildCoverageSection(coverage: ReviewReportCardInput['coverage']): PresentationSection {
+  return {
+    kind: 'keyValue',
+    heading: 'Target coverage',
+    items: [
+      { label: 'Target resolved', value: coverage.targetResolved ? 'yes' : 'no' },
+      { label: 'Target frozen', value: coverage.targetFrozen ? 'yes' : 'no' },
+      {
+        label: 'Repository identity',
+        value:
+          coverage.repositoryIdentityVerified === null
+            ? 'not applicable'
+            : coverage.repositoryIdentityVerified
+              ? 'verified'
+              : 'missing',
+      },
+      { label: 'Base SHA', value: coverage.baseSha ?? 'not recorded' },
+      { label: 'Head SHA', value: coverage.headSha ?? 'not recorded' },
+      { label: 'Changed paths', value: String(coverage.changedPathCount) },
+      {
+        label: 'Objectives covered',
+        value: `${coverage.objectivesCovered}/${coverage.objectivesTotal}`,
+      },
+      { label: 'Review assurance', value: coverage.reviewAssurance ?? 'not recorded' },
+      {
+        label: 'Missing verification',
+        value:
+          coverage.missingVerification.length === 0
+            ? 'none'
+            : coverage.missingVerification.join('; '),
+      },
+    ],
+  };
+}
+
+function hasEvidence(input: ReviewReportCardInput): boolean {
   const {
-    phaseLabel,
-    overallStatus,
-    findings,
-    completeness,
-    inputOrigin,
-    references,
     obligationId,
     invocationSource,
     invocationMode,
     hostVisible,
     reviewerSessionId,
     reviewOutputMode,
-    structuredOutputUsed,
     reviewAssuranceLevel,
-    extractionMethod,
   } = input;
-
-  const lines: string[] = [];
-
-  // ── Header ──────────────────────────────────────────────────────
-  lines.push('# FlowGuard Review Report');
-  lines.push('');
-  lines.push(`> **Status:** ${phaseLabel}`);
-  lines.push(`> **Overall:** ${overallStatus}`);
-  if (inputOrigin) {
-    lines.push(`> **Input:** ${inputOrigin}`);
-  }
-  if (references && references.length > 0) {
-    const refList = references
-      .map((r) => {
-        const value =
-          (r as Record<string, unknown>).ref ??
-          (r as Record<string, unknown>).source ??
-          (r as Record<string, unknown>).title ??
-          JSON.stringify(r);
-        const type = (r as Record<string, unknown>).type;
-        return type ? `${type}: ${value}` : String(value);
-      })
-      .join(', ');
-    lines.push(`> **References:** ${refList}`);
-  }
-  lines.push('');
-
-  // ── Findings ────────────────────────────────────────────────────
-  if (findings.length > 0) {
-    const grouped = new Map<number, typeof findings>();
-    for (const f of findings) {
-      const order = severityOrder(f.severity);
-      if (!grouped.has(order)) grouped.set(order, []);
-      grouped.get(order)!.push(f);
-    }
-    const sorted = [...grouped.entries()].sort(([a], [b]) => a - b);
-
-    lines.push('---');
-    lines.push('');
-    lines.push('## Findings');
-    lines.push('');
-
-    for (const [, group] of sorted) {
-      const first = group[0];
-      if (!first) continue;
-      const sev = severityLabel(first.severity);
-      lines.push(`### ${sev} (${group.length})`);
-      lines.push('');
-      for (const f of group) {
-        const location = f.location ? ` \`${f.location}\`` : '';
-        lines.push(`- **${categoryLabel(f.category)}:** ${f.message}${location}`);
-      }
-      lines.push('');
-    }
-  } else {
-    lines.push('---');
-    lines.push('');
-    lines.push('## Findings');
-    lines.push('');
-    lines.push('No issues found.');
-    lines.push('');
-  }
-
-  // ── Completeness ────────────────────────────────────────────────
-  lines.push('---');
-  lines.push('');
-  lines.push('## Completeness');
-  lines.push('');
-  lines.push(`- **Overall:** ${completeness.overallComplete ? 'Complete' : 'Incomplete'}`);
-  lines.push(
-    `- **Four-eyes principle:** ${
-      completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded'
-    }`,
-  );
-  lines.push(`- ${completeness.summary}`);
-  lines.push('');
-
-  // ── Evidence ────────────────────────────────────────────────────
-  const hasEvidence =
+  return Boolean(
     obligationId ||
     invocationSource ||
     invocationMode ||
     typeof hostVisible === 'boolean' ||
     reviewerSessionId ||
     reviewOutputMode ||
-    reviewAssuranceLevel;
-  if (hasEvidence) {
-    lines.push('---');
-    lines.push('');
-    lines.push('## Evidence');
-    lines.push('');
-    if (obligationId) lines.push(`- **Obligation:** \`${obligationId}\``);
-    if (invocationSource) lines.push(`- **Invocation source:** ${invocationSource}`);
-    if (invocationMode) lines.push(`- **Invocation mode:** ${invocationMode}`);
-    if (typeof hostVisible === 'boolean') {
-      lines.push(`- **Host visible:** ${hostVisible ? 'yes' : 'no'}`);
-    }
-    if (reviewerSessionId) lines.push(`- **Reviewer session:** \`${reviewerSessionId}\``);
-    if (reviewOutputMode) lines.push(`- **Review output mode:** ${reviewOutputMode}`);
-    if (typeof structuredOutputUsed === 'boolean') {
-      lines.push(`- **Structured output used:** ${structuredOutputUsed ? 'yes' : 'no'}`);
-    }
-    if (reviewAssuranceLevel) lines.push(`- **Review assurance:** ${reviewAssuranceLevel}`);
-    if (extractionMethod) lines.push(`- **Extraction method:** ${extractionMethod}`);
-    lines.push('');
-  }
-
-  // ── Recommended follow-up ───────────────────────────────────────
-  lines.push('---');
-  lines.push('');
-  lines.push('## Recommended follow-up');
-  lines.push('');
-  const hasCriticalOrMajor = findings.some(
-    (f) => f.severity === 'critical' || f.severity === 'major' || f.severity === 'error',
+    reviewAssuranceLevel,
   );
-  if (findings.length === 0) {
-    lines.push(
-      '- No follow-up required from this review. Re-run `/review` after changes if needed.',
-    );
-  } else {
-    if (hasCriticalOrMajor) {
-      lines.push('- Address critical and major findings before merging.');
-    }
-    lines.push('- Add missing verification where listed.');
-    lines.push('- Re-run `/review` after changes if needed.');
-  }
-  lines.push('');
+}
 
-  return lines.join('\n');
+/** Invocation identity rows, in canonical render order. */
+function appendInvocationEvidenceItems(
+  evidence: KeyValueItem[],
+  input: ReviewReportCardInput,
+): void {
+  const { obligationId, invocationSource, invocationMode } = input;
+  if (obligationId) evidence.push({ label: 'Obligation', value: `\`${obligationId}\`` });
+  if (invocationSource) evidence.push({ label: 'Invocation source', value: invocationSource });
+  if (invocationMode) evidence.push({ label: 'Invocation mode', value: invocationMode });
+}
+
+/** Host-observed invocation assurance rows, in canonical render order. */
+function appendHostEvidenceItems(evidence: KeyValueItem[], input: ReviewReportCardInput): void {
+  const {
+    hostVisible,
+    reviewerSessionId,
+    reviewOutputMode,
+    structuredOutputUsed,
+    reviewAssuranceLevel,
+  } = input;
+  if (typeof hostVisible === 'boolean') {
+    evidence.push({ label: 'Host visible', value: hostVisible ? 'yes' : 'no' });
+  }
+  if (reviewerSessionId) {
+    evidence.push({ label: 'Reviewer session', value: `\`${reviewerSessionId}\`` });
+  }
+  if (reviewOutputMode) evidence.push({ label: 'Review output mode', value: reviewOutputMode });
+  if (typeof structuredOutputUsed === 'boolean') {
+    evidence.push({
+      label: 'Structured output used',
+      value: structuredOutputUsed ? 'yes' : 'no',
+    });
+  }
+  if (reviewAssuranceLevel) {
+    evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
+  }
+}
+
+function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection | null {
+  if (!hasEvidence(input)) return null;
+  const evidence: KeyValueItem[] = [];
+  appendInvocationEvidenceItems(evidence, input);
+  appendHostEvidenceItems(evidence, input);
+  return { kind: 'keyValue', heading: 'Evidence', items: evidence };
+}
+
+function buildFollowUpItems(findings: ReviewReportCardInput['findings']): string[] {
+  if (findings.length === 0) {
+    return ['No follow-up required from this review. Re-run `/review` after changes if needed.'];
+  }
+
+  const followUp: string[] = [];
+  const hasCriticalOrMajor = findings.some(
+    (finding) =>
+      finding.reportSeverity === 'error' ||
+      (finding.source === 'material_finding' &&
+        (finding.finding.severity === 'critical' || finding.finding.severity === 'major')),
+  );
+  if (hasCriticalOrMajor) {
+    followUp.push('Address critical and major findings before merging.');
+  }
+  followUp.push('Add missing verification where listed.');
+  followUp.push('Re-run `/review` after changes if needed.');
+  return followUp;
+}
+
+function buildConclusion(input: ReviewReportCardInput): ReviewCardDocument['conclusion'] {
+  return input.conclusionAction
+    ? { kind: 'next_action', action: input.conclusionAction }
+    : { kind: 'terminal', message: directiveLabel(input.directive.code) };
+}
+
+/** Project only the frozen, host-validated subject metadata into Markdown-safe text. */
+function presentReviewSubject(subject: FrozenReviewSubject): string {
+  if (subject.kind === 'repository_change') {
+    if (subject.source.kind === 'pull_request') {
+      return `Pull request #${subject.source.pullRequestNumber} (${subject.changedPaths.length} changed paths)`;
+    }
+    return `Branch ${safeMarkdownText(subject.source.branch)} (${subject.changedPaths.length} changed paths)`;
+  }
+  if (subject.source.kind === 'inline') {
+    return `Inline ${subject.source.mediaType} (${subject.lineCount} lines)`;
+  }
+  const location = subject.source.url.resolved ?? subject.source.url.requested;
+  return `URL ${safeMarkdownText(`${location.origin}${location.pathname}`)} (${subject.lineCount} lines)`;
+}
+
+function safeMarkdownText(value: string): string {
+  return value.replace(/[\\`*_{}\x5b\x5d<>()#+.!|\x2d\n\r]/g, '\\$&');
+}
+
+type ReviewReportFindingRelation = Extract<
+  ReviewReportFinding,
+  { source: 'material_finding' }
+>['finding']['relation'];
+
+function projectRepositoryLocation(
+  location: ReviewReportFindingRelation['evidenceLocations'][number],
+): FindingRepositoryLocation {
+  return {
+    path: location.path,
+    revision: location.revision,
+    ...(location.line !== undefined ? { line: location.line } : {}),
+    ...(location.endLine !== undefined ? { endLine: location.endLine } : {}),
+  };
+}
+
+function projectFindingRelationPresentation(
+  relation: ReviewReportFindingRelation,
+): FindingRelationPresentation {
+  return {
+    subjectAnchors: relation.subjectAnchors.map((subject) => {
+      if (subject.kind === 'repository_location') {
+        return {
+          kind: 'repository_location',
+          location: projectRepositoryLocation(subject.location),
+        };
+      }
+      if (subject.kind === 'content') {
+        const range = subject.range;
+        return {
+          kind: 'content',
+          subjectDigest: subject.subjectDigest,
+          ...(range !== undefined
+            ? {
+                range: {
+                  startLine: range.startLine,
+                  ...(range.endLine !== undefined ? { endLine: range.endLine } : {}),
+                },
+              }
+            : {}),
+        };
+      }
+      return subject;
+    }),
+    evidenceLocations: relation.evidenceLocations.map(projectRepositoryLocation),
+  };
+}
+
+function projectReviewReportFinding(entry: ReviewReportFinding): {
+  readonly severity: string;
+  readonly category: string;
+  readonly message: string;
+  readonly relation?: FindingRelationPresentation;
+} {
+  switch (entry.source) {
+    case 'material_finding':
+      return {
+        severity: entry.reportSeverity,
+        category: entry.finding.category,
+        message: entry.finding.message,
+        relation: projectFindingRelationPresentation(entry.finding.relation),
+      };
+    case 'mechanical':
+    case 'missing_verification':
+    case 'scope_creep':
+    case 'unknown':
+    case 'challenge':
+      return {
+        severity: entry.reportSeverity,
+        category: entry.category,
+        message: entry.message,
+      };
+  }
 }

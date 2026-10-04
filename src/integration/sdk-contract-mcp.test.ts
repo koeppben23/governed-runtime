@@ -9,7 +9,7 @@
  * - Description changes (informational)
  *
  * Evidence sources:
- * - .sdk-baselines/mcp/ (13 tool schema files + version.json)
+ * - .sdk-baselines/mcp/ (14 tool schema files + version.json)
  * - src/mcp-server/server.ts (tool registry)
  * - src/integration/tools/ (tool definitions with Zod args)
  *
@@ -20,6 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import * as path from 'node:path';
+import { FLOWGUARD_TOOLS } from '../mcp-server/server.js';
 
 // ─── Baseline Loading ────────────────────────────────────────────────────────
 
@@ -46,7 +47,11 @@ const EXPECTED_TOOLS = [
   'flowguard_review',
   'flowguard_abort_session',
   'flowguard_archive',
+  'flowguard_export',
   'flowguard_continue',
+  'flowguard_help',
+  'flowguard_declare_contract',
+  'flowguard_record_mutation_evidence',
 ] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -54,6 +59,10 @@ const EXPECTED_TOOLS = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('SDK Contract: MCP tool registry', () => {
+  it('registers flowguard_declare_contract in the live MCP server tool map', () => {
+    expect(FLOWGUARD_TOOLS.declare_contract).toBeDefined();
+  });
+
   describe('HAPPY: baseline directory and version.json exist', () => {
     it('.sdk-baselines/mcp/ directory exists', () => {
       expect(existsSync(mcpBaseDir)).toBe(true);
@@ -62,19 +71,19 @@ describe('SDK Contract: MCP tool registry', () => {
     it('version.json exists and records server metadata', () => {
       const version = loadSchema('version.json');
       expect(version.platform).toBe('mcp');
-      expect((version as Record<string, Record<string, unknown>>).server.name).toBe('flowguard');
-      expect((version as Record<string, Record<string, unknown>>).server.version).toBe(
+      expect((version as Record<string, Record<string, unknown>>).server!.name).toBe('flowguard');
+      expect((version as Record<string, Record<string, unknown>>).server!.version).toBe(
         '1.2.0-tp.1',
       );
     });
 
-    it('version.json lists all 13 tool schemas', () => {
+    it('version.json lists all 17 tool schemas', () => {
       const version = loadSchema('version.json');
-      expect((version.schemas as string[]).length).toBe(13);
+      expect((version.schemas as string[]).length).toBe(17);
     });
   });
 
-  describe('HAPPY: all 13 tool schema files exist', () => {
+  describe('HAPPY: all 15 tool schema files exist', () => {
     for (const tool of EXPECTED_TOOLS) {
       it(`${tool}.json exists`, () => {
         expect(existsSync(path.join(mcpBaseDir, `${tool}.json`))).toBe(true);
@@ -136,34 +145,43 @@ describe('SDK Contract: MCP tool registry', () => {
   });
 
   describe('HAPPY: enum values are pinned', () => {
+    it('flowguard_help view enum has 3 values', () => {
+      const schema = loadSchema('flowguard_help.json');
+      const props = schema.properties as Record<string, Record<string, unknown>>;
+      expect(props.view!.enum).toEqual(['context', 'commands', 'command']);
+    });
     it('flowguard_hydrate policyMode enum has 4 values', () => {
       const schema = loadSchema('flowguard_hydrate.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.policyMode.enum).toEqual(['solo', 'team', 'team-ci', 'regulated']);
+      expect(props.policyMode!.enum).toEqual(['solo', 'team', 'team-ci', 'regulated']);
     });
 
     it('flowguard_hydrate claimedTaskClass enum has 3 values', () => {
       const schema = loadSchema('flowguard_hydrate.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.claimedTaskClass.enum).toEqual(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
+      expect(props.claimedTaskClass!.enum).toEqual(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
     });
 
     it('flowguard_decision verdict enum has 3 values', () => {
       const schema = loadSchema('flowguard_decision.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.verdict.enum).toEqual(['approve', 'changes_requested', 'reject']);
+      expect(props.verdict!.enum).toEqual(['approve', 'changes_requested', 'reject']);
     });
 
     it('flowguard_plan reviewVerdict enum has 2 values', () => {
       const schema = loadSchema('flowguard_plan.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.reviewVerdict.enum).toEqual(['accept', 'changes_requested']);
+      expect(props.reviewVerdict!.enum).toEqual(['accept', 'changes_requested']);
     });
 
-    it('flowguard_review_implementation reviewVerdict enum has 2 values', () => {
+    it('flowguard_review_implementation reviewVerdict enum has 3 values', () => {
       const schema = loadSchema('flowguard_review_implementation.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.reviewVerdict.enum).toEqual(['accept', 'changes_requested']);
+      expect(props.reviewVerdict!.enum).toEqual([
+        'accept',
+        'changes_requested',
+        'unable_to_review',
+      ]);
     });
   });
 

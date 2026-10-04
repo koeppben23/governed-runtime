@@ -9,16 +9,64 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  executeReview,
+  executeReview as executeReviewUnsafe,
   loadExternalContent,
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
 import { makeProgressedState } from '../fixtures.js';
+import type { ReviewReportDraft, ReviewReportFinding } from '../state/evidence.js';
+import type { RailBlocked } from './types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 const NOW = '2026-01-15T10:00:00.000Z';
+
+type RenderedReviewReport = Omit<ReviewReportDraft, 'findings'> & {
+  readonly findings: Array<{
+    readonly source: ReviewReportFinding['source'];
+    readonly severity: 'info' | 'warning' | 'error';
+    readonly category: string;
+    readonly message: string;
+  }>;
+};
+
+function renderReviewReport(report: ReviewReportDraft): RenderedReviewReport {
+  return {
+    ...report,
+    findings: report.findings.map((finding) =>
+      finding.source === 'material_finding'
+        ? {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.finding.category,
+            message: finding.finding.message,
+          }
+        : {
+            source: finding.source,
+            severity: finding.reportSeverity,
+            category: finding.category,
+            message: finding.message,
+          },
+    ),
+  };
+}
+
+async function executeReview(
+  ...args: Parameters<typeof executeReviewUnsafe>
+): Promise<ReviewReportDraft | RailBlocked> {
+  return executeReviewUnsafe(...args);
+}
+
+async function executeReviewReport(
+  ...args: Parameters<typeof executeReviewUnsafe>
+): Promise<RenderedReviewReport> {
+  const result = await executeReviewUnsafe(...args);
+  if (!result || !('reviewKind' in result)) {
+    throw new Error(result?.reason ?? 'Review did not produce a report');
+  }
+  return renderReviewReport(result);
+}
 
 // =============================================================================
 // PR-E: Content-Aware /review
@@ -39,14 +87,15 @@ describe('PR-E: content-aware /review', () => {
           capturedContent.push(content ?? 'NO_CONTENT');
           return [
             {
-              severity: 'info',
+              source: 'unknown',
+              reportSeverity: 'info',
               category: 'analysis',
               message: `Analyzed: ${content?.slice(0, 20)}`,
             },
           ];
         },
       };
-      const report = await executeReview(state, NOW, llmExecutors, refInput);
+      const report = await executeReviewReport(state, NOW, llmExecutors, refInput);
       expect(capturedContent[0]).toBe('function add(a, b) { return a + b; }');
       expect(report.findings).toHaveLength(1);
       expect(report.findings[0]!.category).toBe('analysis');
@@ -112,7 +161,7 @@ describe('PR-E: content-aware /review', () => {
       // This test verifies the code path exists (mock would be needed for full test)
       const state = makeProgressedState('COMPLETE');
       const refInput: ReviewReferenceInput = {
-        inputOrigin: 'url',
+        inputOrigin: 'external_reference',
         url: 'https://example.com/spec.md',
       };
       // Without mocking fetch, this will fail at runtime, but the code path is covered
@@ -129,7 +178,7 @@ describe('PR-E: content-aware /review', () => {
         inputOrigin: 'manual_text',
         references: [{ type: 'ticket', ref: 'PROJ-123', title: 'My ticket' }],
       };
-      const report = await executeReview(state, NOW, undefined, refInput);
+      const report = await executeReviewReport(state, NOW, undefined, refInput);
       expect(report.schemaVersion).toBe('flowguard-review-report.v1');
       expect(report.references).toHaveLength(1);
     });
@@ -157,26 +206,25 @@ describe('PR-E: content-aware /review', () => {
 describe('HAPPY: loadExternalContent content path', () => {
   it('text field returns content branch with the text', async () => {
     const result = await loadExternalContent({ text: 'analysis content' });
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(true);
+    if ('content' in result!) {
       expect(result.content).toBe('analysis content');
     }
   });
 
   it('empty string text returns content branch with empty string', async () => {
     const result = await loadExternalContent({ text: '' });
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(true);
+    if ('content' in result!) {
       expect(result.content).toBe('');
     }
   });
 
-  it('no input fields returns content branch with empty string', async () => {
+  it('no input fields returns null', async () => {
     const result = await loadExternalContent({});
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
-      expect(result.content).toBe('');
-    }
+    expect(result).toBeNull();
   });
 
   it('skipExternalContentLoad skips content loading', async () => {
@@ -193,28 +241,49 @@ describe('HAPPY: loadExternalContent content path', () => {
 describe('BAD: blocked paths', () => {
   it('loadExternalContent with prNumber returns blocked (no gh CLI)', async () => {
     const result = await loadExternalContent({ prNumber: 42 });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
+      expect(result!.code).toBe('COMMAND_BLOCKED');
     }
   });
 
-  it('loadExternalContent with branch returns blocked (no gh CLI)', async () => {
+  it('loadExternalContent with branch without provenance returns blocked', async () => {
     const result = await loadExternalContent({ branch: 'feature/x' });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
+    expect(result).not.toBeNull();
+    expect(!('content' in (result ?? {}))).toBe(true);
+    if (result && 'kind' in result) {
       expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+      expect(result.code).toBe('REVIEW_BRANCH_PROVENANCE_MISSING');
+    }
+  });
+
+  it('loadExternalContent with a branch but no repository identity returns blocked', async () => {
+    // Defense in depth: the identity was previously asserted non-null, so a
+    // missing one produced a frozen subject without `baseRepository` that only
+    // surfaced later as an opaque schema error, with the subject already unusable.
+    const result = await loadExternalContent({
+      branch: 'feature/x',
+      resolvedBranchSha: 'a'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+
+    expect(result).not.toBeNull();
+    expect('content' in (result ?? {})).toBe(false);
+    if (result && 'kind' in result) {
+      expect(result.kind).toBe('blocked');
+      expect(result.code).toBe('REVIEW_REPOSITORY_IDENTITY_MISSING');
     }
   });
 
   it('loadExternalContent with blocked URL returns blocked', async () => {
     const result = await loadExternalContent({ url: 'http://0.0.0.0/secret' });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
+      expect(result!.code).toBe('COMMAND_BLOCKED');
     }
   });
 });
@@ -225,9 +294,9 @@ describe('CORNER: mixed input fields', () => {
       prNumber: 42,
       text: 'should be ignored',
     });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
     }
   });
 
@@ -237,9 +306,9 @@ describe('CORNER: mixed input fields', () => {
       url: 'https://example.com',
       text: 'fallback',
     });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
     }
   });
 
@@ -248,10 +317,10 @@ describe('CORNER: mixed input fields', () => {
       url: 'http://0.0.0.0/test-priority',
       text: 'fallback',
     });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
+      expect(result!.code).toBe('COMMAND_BLOCKED');
     }
   });
 });
@@ -263,16 +332,56 @@ describe('EDGE: empty and undefined input', () => {
     expect('kind' in report).toBe(false);
   });
 
-  it('all undefined fields returns content with empty string', async () => {
-    const result = await loadExternalContent({
-      text: undefined,
-      prNumber: undefined,
-      branch: undefined,
-      url: undefined,
-    });
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
-      expect(result.content).toBe('');
-    }
+  it('all undefined fields returns null', async () => {
+    const result = await loadExternalContent({});
+    expect(result).toBeNull();
+  });
+});
+
+// =============================================================================
+// F11: standalone content-review omits lifecycle ticket/plan warnings
+// =============================================================================
+
+describe('F11: content-review suppresses lifecycle ticket/plan findings', () => {
+  const textRefInput: ReviewReferenceInput = {
+    inputOrigin: 'branch',
+    references: [{ ref: 'feature/x', type: 'branch', source: 'local' }],
+    text: 'diff --git a/A.java b/A.java\n+ // change',
+    skipExternalContentLoad: true,
+  };
+
+  it('does NOT emit "No ticket evidence" / "No plan evidence" for a branch content review', async () => {
+    // READY state has no ticket and no plan — exactly the standalone /review case
+    // from the demo log. Those warnings describe the session lifecycle and are
+    // meaningless when reviewing an external diff.
+    const state = makeProgressedState('READY');
+    const report = await executeReviewReport(state, NOW, undefined, textRefInput);
+
+    const messages = report.findings.map((f) => f.message);
+    expect(messages).not.toContain('No ticket evidence');
+    expect(messages).not.toContain('No plan evidence');
+  });
+
+  it('reports overallStatus consistent with its own finding set (no phantom warnings)', async () => {
+    const state = makeProgressedState('READY');
+    const report = await executeReviewReport(state, NOW, undefined, textRefInput);
+
+    // With the lifecycle warnings suppressed and no other findings, the report is
+    // not artificially in a "warnings" status driven by irrelevant lifecycle notes.
+    const hasLifecycleWarnings = report.findings.some(
+      (f) => f.message === 'No ticket evidence' || f.message === 'No plan evidence',
+    );
+    expect(hasLifecycleWarnings).toBe(false);
+  });
+
+  it('STILL emits the lifecycle warnings for a non-content lifecycle review (refInput undefined)', async () => {
+    // Guard: the suppression is scoped to content reviews only. A lifecycle
+    // /review with no external content (refInput undefined) keeps the warnings.
+    const state = makeProgressedState('READY');
+    const report = await executeReviewReport(state, NOW, undefined, undefined);
+
+    const messages = report.findings.map((f) => f.message);
+    expect(messages).toContain('No ticket evidence');
+    expect(messages).toContain('No plan evidence');
   });
 });

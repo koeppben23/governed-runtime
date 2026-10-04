@@ -4,7 +4,7 @@
  *
  * Covers:
  * - ARCHITECTURE → guidance with /architecture command
- * - REVIEW phase → guidance
+ * - PEER_REVIEW phase → guidance
  * - READY → CONTINUE_AMBIGUOUS block
  * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) → manual_decision
  * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) → terminal
@@ -14,47 +14,76 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 
+import type { SessionState } from '../../state/schema.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Shared mock handle ──────────────────────────────────────────────────────
 
-const mocks = vi.hoisted(() => ({
-  readOnlySession: null as unknown,
-  changedFilesResult: [] as string[],
-  state: null as unknown,
-  // helpers
-  resolveWorkspacePaths: vi.fn(async () => ({
-    sessDir: '/tmp/sess',
-    worktree: '/tmp/worktree',
-  })),
-  requireStateForMutation: vi.fn(async () => mocks.state),
-  resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
-  createPolicyContext: vi.fn(() => ({
-    policy: { maxSelfReviewIterations: 3 },
-    now: () => '2026-01-01T00:00:00.000Z',
-    digest: (s: string) => `digest:${s}`,
-  })),
-  formatBlocked: vi.fn((code: string) => JSON.stringify({ error: true, code })),
-  formatError: vi.fn((err: unknown) =>
-    JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
-  ),
-  appendNextAction: vi.fn((p: string) => p),
-  writeStateWithArtifacts: vi.fn(async () => undefined),
-  formatEval: vi.fn(() => 'next'),
-  // commands
-  isCommandAllowed: vi.fn(() => true),
-  Command: { IMPLEMENT: 'IMPLEMENT' as const },
-  // git
-  changedFiles: vi.fn(async () => mocks.changedFilesResult),
-  // evaluate
-  evaluate: vi.fn(() => ({ kind: 'pending' as const })),
-  bindExternalReviewEvidence: vi.fn(async () => ({ status: 'none' as const })),
+const mocks = vi.hoisted(() => {
+  const state: unknown = null;
+  const readOnlySession: unknown = null;
+  return {
+    readOnlySession,
+    changedFilesResult: [] as string[],
+    state,
+    // helpers
+    resolveWorkspacePaths: vi.fn(async () => ({
+      sessDir: '/tmp/sess',
+      worktree: '/tmp/worktree',
+      fingerprint: 'test',
+      wsDir: '/tmp/ws',
+    })),
+    requireStateForMutation: vi.fn(async () => mocks.state),
+    resolvePolicyFromState: vi.fn(() => ({ reviewBudget: { plan: 3, architecture: 3 } })),
+    createPolicyContext: vi.fn(() => ({
+      policy: { reviewBudget: { plan: 3, architecture: 3 } },
+      now: () => '2026-01-01T00:00:00.000Z',
+      digest: (s: string) => `digest:${s}`,
+    })),
+    formatBlocked: vi.fn((code: string) => JSON.stringify({ error: true, code })),
+    formatError: vi.fn((err: unknown) =>
+      JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
+    ),
+    enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => ({
+      ...value,
+      directive: {
+        code: `DIRECTIVE_${value.phase}`,
+        // The canonical command surface for the peer-review flow remains /review
+        // (and its terminal label) after the PEER_REVIEW phase rename.
+        commands: [
+          `/${String(value.phase)
+            .toLowerCase()
+            .replace(/^peer_/, '')}`,
+        ],
+      },
+    })),
+    writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
+    // commands
+    isCommandAllowed: vi.fn(() => true),
+    Command: { IMPLEMENT: 'IMPLEMENT' as const },
+    // git
+    changedFiles: vi.fn(async () => mocks.changedFilesResult),
+    // evaluate
+    evaluate: vi.fn(() => ({ kind: 'pending' as const })),
+  };
+});
+
+vi.mock('../git-control-plane', async (importOriginal) => {
+  const { gitControlPlaneAdapterMock } = await import('../adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('../git-control-plane.js')>(),
+  );
+});
+
+vi.mock('../blocked-result.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../blocked-result.js')>()),
+  formatBlocked: mocks.formatBlocked,
 }));
 
 vi.mock('./helpers.js', () => ({
   withReadOnlySession: vi.fn(async () => mocks.readOnlySession),
   withMutableSession: vi.fn(async (ctx) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -69,7 +98,7 @@ vi.mock('./helpers.js', () => ({
     };
   }),
   withMutableSessionTransaction: vi.fn(async (ctx, fn) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -87,11 +116,12 @@ vi.mock('./helpers.js', () => ({
   requireStateForMutation: mocks.requireStateForMutation,
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
-  formatBlocked: mocks.formatBlocked,
-  formatError: mocks.formatError,
-  appendNextAction: mocks.appendNextAction,
+  enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
-  formatEval: mocks.formatEval,
+}));
+
+vi.mock('./error-format.js', () => ({
+  formatError: mocks.formatError,
 }));
 
 vi.mock('../../machine/commands.js', () => ({
@@ -101,14 +131,12 @@ vi.mock('../../machine/commands.js', () => ({
 
 vi.mock('../../adapters/git.js', () => ({
   changedFiles: mocks.changedFiles,
+  isGitRepo: vi.fn().mockResolvedValue(true),
+  isGitRepoStrict: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../machine/evaluate.js', () => ({
   evaluate: mocks.evaluate,
-}));
-
-vi.mock('../review/transport-evidence.js', () => ({
-  bindExternalReviewEvidence: mocks.bindExternalReviewEvidence,
 }));
 
 // ── Continue tool ───────────────────────────────────────────────────────────
@@ -127,33 +155,63 @@ describe('flowguard_continue (runtime)', () => {
 
   // ── HAPPY: deterministic guidance ─────────────────────────────────────────
 
-  it('ARCHITECTURE phase returns guidance with /architecture', async () => {
+  it('ARCHITECTURE phase derives its action from the canonical product projection', async () => {
     setPhase('ARCHITECTURE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCHITECTURE');
-    expect(parsed.next).toBe('/architecture');
+    expect(parsed.directive.commands).toEqual(['/architecture']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
-  it('REVIEW phase returns guidance with /review', async () => {
-    setPhase('REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+  it('PEER_REVIEW phase derives its action from the canonical product projection', async () => {
+    setPhase('PEER_REVIEW');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.phase).toBe('REVIEW');
-    expect(parsed.next).toBe('/review');
+    expect(parsed.phase).toBe('PEER_REVIEW');
+    expect(parsed.directive.commands).toEqual(['/review']);
     expect(parsed._continue.action).toBe('deterministic');
+  });
+
+  it('IMPL_REVIEW does not introduce a local reviewer command', async () => {
+    setPhase('IMPL_REVIEW');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.phase).toBe('IMPL_REVIEW');
+    expect(parsed.directive.commands).toEqual(['/impl_review']);
+    expect(parsed.status).toBe('Implementation review is pending.');
+  });
+
+  it('IMPL_REVIEW with a blocked implement obligation surfaces the blocker instead of claiming a pending review', async () => {
+    setPhase('IMPL_REVIEW');
+    mocks.state = {
+      phase: 'IMPL_REVIEW',
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationType: 'implement',
+            status: 'blocked',
+            blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
+          },
+        ],
+      },
+    };
+    mocks.readOnlySession = { state: mocks.state, policy: null };
+    const { continue_cmd } = await import('./simple/continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.status).toContain('blocked (REVIEW_ATTEMPT_UNAVAILABLE)');
+    expect(parsed.status).not.toContain('Implementation review is pending.');
   });
 
   // ── BAD: blocking on ambiguous / unknown ──────────────────────────────────
 
   it('blocks READY phase with CONTINUE_AMBIGUOUS', async () => {
     setPhase('READY');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     expect(mocks.formatBlocked).toHaveBeenCalledWith('CONTINUE_AMBIGUOUS', expect.anything());
     const parsed = JSON.parse(String(res));
@@ -162,18 +220,17 @@ describe('flowguard_continue (runtime)', () => {
 
   it('VALIDATION phase returns guidance with /check', async () => {
     setPhase('VALIDATION');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('VALIDATION');
-    expect(parsed.next).toBe('/check');
+    expect(parsed.directive.commands).toEqual(['/validation']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
   it('blocks unknown phase with CONTINUE_UNKNOWN_PHASE', async () => {
     setPhase('BOGUS_ZONE');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     expect(mocks.formatBlocked).toHaveBeenCalledWith('CONTINUE_UNKNOWN_PHASE', expect.anything());
     const parsed = JSON.parse(String(res));
@@ -184,21 +241,18 @@ describe('flowguard_continue (runtime)', () => {
 
   it('PLAN_REVIEW returns user-gate manual_decision', async () => {
     setPhase('PLAN_REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('PLAN_REVIEW');
     expect(parsed._continue.action).toBe('manual_decision');
-    expect(parsed.next).toContain('/approve');
-    expect(parsed.next).toContain('/request-changes');
-    expect(parsed.next).toContain('/reject');
+    expect(parsed.directive.commands).toEqual(['/plan_review']);
+    expect(parsed.decisionRequired).toBe(true);
   });
 
   it('EVIDENCE_REVIEW returns user-gate manual_decision', async () => {
     setPhase('EVIDENCE_REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('EVIDENCE_REVIEW');
@@ -207,8 +261,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('ARCH_REVIEW returns user-gate manual_decision', async () => {
     setPhase('ARCH_REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCH_REVIEW');
@@ -219,43 +272,55 @@ describe('flowguard_continue (runtime)', () => {
 
   it('COMPLETE returns terminal action', async () => {
     setPhase('COMPLETE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/export');
+    expect(parsed.directive.commands).toEqual(['/complete']);
   });
 
   it('ARCH_COMPLETE returns terminal action', async () => {
     setPhase('ARCH_COMPLETE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCH_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/export');
+    expect(parsed.directive.commands).toEqual(['/arch_complete']);
   });
 
   it('REVIEW_COMPLETE returns terminal action', async () => {
-    setPhase('REVIEW_COMPLETE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
-    const { continue_cmd } = await import('./continue-tool.js');
+    setPhase('PEER_REVIEW_COMPLETE');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.phase).toBe('REVIEW_COMPLETE');
+    expect(parsed.phase).toBe('PEER_REVIEW_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/export');
+    expect(parsed.directive.commands).toEqual(['/review_complete']);
+  });
+
+  it('COMPLETE aborted → redirects to /status, never /review or /export', async () => {
+    // Governance integrity: an aborted terminal session must not be routed to
+    // /export as an audit package.
+    const state = { phase: 'COMPLETE', error: { code: 'ABORTED', message: 'Operator aborted' } };
+    mocks.state = state;
+    mocks.readOnlySession = { state, policy: null };
+    const { continue_cmd } = await import('./simple/continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.phase).toBe('COMPLETE');
+    expect(parsed._continue.action).toBe('terminal');
+    expect(parsed.directive.commands).toEqual(['/complete']);
+    expect(String(parsed.status).toLowerCase()).toContain('aborted');
   });
 
   // ── ERROR: catch handler ──────────────────────────────────────────────────
 
   it('returns INTERNAL_ERROR when dependency throws', async () => {
     setPhase('TICKET');
-    const { continue_cmd } = await import('./continue-tool.js');
-    mocks.appendNextAction.mockImplementation(() => {
+    const { continue_cmd } = await import('./simple/continue-tool.js');
+    mocks.enrichWithWorkflowDirective.mockImplementation(() => {
       throw new Error('catastrophic');
     });
     const res = await continue_cmd.execute({}, {} as never);
@@ -271,7 +336,13 @@ describe('flowguard_continue (runtime)', () => {
 describe('implement: empty evidence guard (P8a.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.appendNextAction.mockImplementation((p: string) => p);
+    mocks.enrichWithWorkflowDirective.mockImplementation((value: Record<string, unknown>) => ({
+      ...value,
+      directive: {
+        code: `DIRECTIVE_${value.phase}`,
+        commands: [`/${String(value.phase).toLowerCase()}`],
+      },
+    }));
     mocks.state = {
       phase: 'IMPLEMENTATION',
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
@@ -286,6 +357,14 @@ describe('implement: empty evidence guard (P8a.1)', () => {
           { body: 'test plan', digest: 'pd', sections: [], createdAt: '2026-01-01T00:00:00.000Z' },
         ],
       },
+      mutationEpisodes: [],
+      mutationEpisodeResolutions: [],
+      validationAttempts: [],
+      implementationBaseline: {
+        dirtyFiles: [],
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        controlPlaneMarker: 'test-control-plane-marker',
+      },
     };
     mocks.isCommandAllowed.mockReturnValue(true);
     mocks.changedFilesResult = [];
@@ -293,7 +372,7 @@ describe('implement: empty evidence guard (P8a.1)', () => {
 
   it('blocks when worktree has no changed files (empty implementation)', async () => {
     mocks.changedFilesResult = [];
-    const { implement } = await import('./implement.js');
+    const { implement } = await import('./implementation/implement.js');
     const res = await implement.execute({}, {} as never);
     expect(mocks.formatBlocked).toHaveBeenCalledWith(
       'IMPLEMENTATION_EVIDENCE_EMPTY',
@@ -306,7 +385,7 @@ describe('implement: empty evidence guard (P8a.1)', () => {
 
   it('does NOT block when worktree has changed files', async () => {
     mocks.changedFilesResult = ['src/foo.ts'];
-    const { implement } = await import('./implement.js');
+    const { implement } = await import('./implementation/implement.js');
     await implement.execute({}, {} as never);
     const blockedCalls = mocks.formatBlocked.mock.calls.filter(
       (c: [string]) => c[0] === 'IMPLEMENTATION_EVIDENCE_EMPTY',

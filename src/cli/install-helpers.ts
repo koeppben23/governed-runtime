@@ -1,98 +1,53 @@
 /**
  * @module cli/install-helpers
- * @description Path resolution, tarball integrity, and file helpers for the FlowGuard CLI installer.
+ * @description Path resolution, reviewer agent transport, and file helpers for the FlowGuard CLI installer.
  *
  * Types and JSON merge logic extracted to install-types.ts and install-json.ts
- * following FG-REL-042. This module re-exports everything for backward compatibility.
+ * following FG-REL-042. Tarball integrity and rollback helpers live in
+ * install-helpers-integrity.ts and install-helpers-rollback.ts.
  *
  * @version v2
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile, unlink, rename } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { ensureDir } from '../adapters/persistence.js';
-import { join, resolve, dirname, basename } from 'node:path';
+import { join, resolve, dirname, basename, relative as relativePath } from 'node:path';
 import { homedir } from 'node:os';
-import { timingSafeEqual } from 'node:crypto';
-import { hashText, hashFile } from '../shared/hashing.js';
+import { hashText } from '../shared/hashing.js';
 import {
   CLAUDE_REVIEWER_AGENT,
   CODEX_REVIEWER_SUBAGENT,
   REVIEWER_AGENT_FILENAME,
   REVIEWER_AGENT,
-  FLOWGUARD_MANDATES_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
+  MANDATES_FILENAME,
 } from './templates.js';
 
 // ─── Typed Errors ────────────────────────────────────────────────────────────
 
-export type InstallErrorCode =
-  | 'TARBALL_CHECKSUMS_UNREADABLE'
-  | 'TARBALL_DUPLICATE_ENTRY'
-  | 'TARBALL_NOT_FOUND'
-  | 'TARBALL_SHA256_MISMATCH'
-  | 'REVIEWER_CONFIG_REJECTED'
-  | 'REVIEWER_CONFIG_INVALID'
-  | 'REVIEWER_TUNING_UNSUPPORTED';
+export type { InstallErrorCode } from './install-types.js';
+import { InstallError } from './install-recovery.js';
+export { InstallError };
 
-export class InstallError extends Error {
-  readonly code: InstallErrorCode;
-
-  constructor(code: InstallErrorCode, message: string) {
-    super(message);
-    this.name = 'InstallError';
-    this.code = code;
-  }
-}
-
-// ---- re-export everything from split modules for backward compatibility ----
-export type {
-  InstallScope,
-  InstallPlatform,
-  CliAction,
-  CliArgs,
-  FileOp,
-  CliResult,
-  DoctorStatus,
-  DoctorCheck,
-  PolicyMode,
-} from './install-types.js';
-export {
-  PACKAGE_VERSION,
-  resolvePackageRoot,
-  SHIPPED_EXECUTABLE_CHECK,
-  BUILD_INFO_CHECK,
-  FLOWGUARD_OWNED_FILES,
-  FLOWGUARD_TARBALL_PATTERN,
-  FLOWGUARD_INSTRUCTION_ENTRIES,
-  hasNonFlowGuardInstructions,
-} from './install-types.js';
 import {
   FLOWGUARD_REVIEWER_MODEL_ENV,
   VALID_MODEL_ID_PATTERN,
   FLOWGUARD_REVIEWER_EFFORT_ENV,
+  REVIEWER_EFFORT_VALUES,
   VALID_EFFORT_PATTERN,
   OPENCODE_CONFIG_FILENAMES,
 } from './install-types.js';
-export {
-  FLOWGUARD_REVIEWER_MODEL_ENV,
-  VALID_MODEL_ID_PATTERN,
-  FLOWGUARD_REVIEWER_EFFORT_ENV,
-  VALID_EFFORT_PATTERN,
-  OPENCODE_CONFIG_FILENAMES,
-} from './install-types.js';
-export {
-  parseJsonc,
-  createMalformedJsonBackup,
-  vendorDependency,
-  mergePackageJson,
-  mergeReviewerTaskPermission,
-  mergeOpencodeJson,
-  removeFromOpencodeJson,
-} from './install-json.js';
 export { hashText as sha256 };
 
-import type { InstallScope, InstallPlatform, FileOp } from './install-types.js';
+import type {
+  InstallScope,
+  InstallPlatform,
+  FileOp,
+  ArtifactDetection,
+  ReviewerEffort,
+} from './install-types.js';
 
 // ---- Path Resolution ----
 
@@ -106,6 +61,13 @@ export function resolveTarget(scope: InstallScope, platform: InstallPlatform = '
   if (platform === 'claude-code') return resolve('.claude');
   if (platform === 'codex') return resolve('plugins', 'flowguard');
   return resolve('.opencode');
+}
+
+export function formatTargetPath(target: string, scope: InstallScope, cwd: string): string {
+  if (scope === 'global') return target.replace(homedir(), '~');
+  const rel = relativePath(cwd, target);
+  if (!rel) return './';
+  return `./${rel.replace(/\\/g, '/')}`;
 }
 
 export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
@@ -132,83 +94,7 @@ export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
 }
 
 export function computeMandatesDigest(): string {
-  return hashText(FLOWGUARD_MANDATES_BODY);
-}
-
-// ---- Tarball Integrity Verification ----
-
-const SHA256_HEX_RE = /^[0-9a-fA-F]{64}$/;
-const CHECKSUM_LINE_RE = /^([0-9a-fA-F]{64})\s+[*]?\s*(.+)$/;
-
-function safeHashHexEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a, 'utf8');
-  const right = Buffer.from(b, 'utf8');
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
-
-export async function verifyTarballChecksum(
-  tarballPath: string,
-  checksumsFilePath: string,
-): Promise<void> {
-  const tarballName = basename(tarballPath);
-
-  let content: string;
-  try {
-    content = readFileSync(checksumsFilePath, 'utf-8');
-  } catch (err) {
-    throw new InstallError(
-      'TARBALL_CHECKSUMS_UNREADABLE',
-      `Cannot read checksums file: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  const lines = content.split('\n');
-  let matchedHash: string | undefined;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    const match = trimmed.match(CHECKSUM_LINE_RE);
-    if (!match) continue;
-
-    const hashHex = match[1]!;
-    const filename = match[2]!;
-
-    if (!SHA256_HEX_RE.test(hashHex)) continue;
-
-    if (basename(filename) === tarballName) {
-      if (matchedHash !== undefined) {
-        throw new InstallError(
-          'TARBALL_DUPLICATE_ENTRY',
-          `Duplicate entry for "${tarballName}" in checksums file. ` +
-            `Ambiguous integrity verification is denied.`,
-        );
-      }
-      matchedHash = hashHex.toLowerCase();
-    }
-  }
-
-  if (matchedHash === undefined) {
-    throw new InstallError(
-      'TARBALL_NOT_FOUND',
-      `Tarball "${tarballName}" not found in checksums file "${checksumsFilePath}".`,
-    );
-  }
-
-  const expectedHash = matchedHash;
-  const actualHash = await hashFile(tarballPath);
-
-  if (!safeHashHexEqual(actualHash, expectedHash)) {
-    throw new InstallError(
-      'TARBALL_SHA256_MISMATCH',
-      `Tarball SHA-256 mismatch.\n` +
-        `  Expected: ${expectedHash}\n` +
-        `  Actual:   ${actualHash}\n` +
-        `  The tarball may be corrupted or tampered.`,
-    );
-  }
+  return hashText(FLOWGUARD_MANDATES_KERNEL);
 }
 
 // ---- Reviewer Agent Capability Transport (model + reasoning effort) ----
@@ -262,20 +148,24 @@ function readReviewerModelEnv(): string | null {
   return model;
 }
 
-function readReviewerEffortEnv(): string | null {
+function readReviewerEffortEnv(platform: InstallPlatform): ReviewerEffort | null {
   const raw = process.env[FLOWGUARD_REVIEWER_EFFORT_ENV];
   if (!raw) return null;
   const effort = raw.trim();
   if (!effort) return null;
 
-  if (!VALID_EFFORT_PATTERN.test(effort)) {
+  const supported: readonly ReviewerEffort[] =
+    platform === 'opencode'
+      ? REVIEWER_EFFORT_VALUES
+      : REVIEWER_EFFORT_VALUES.filter((value) => value !== 'none');
+  if (!VALID_EFFORT_PATTERN.test(effort) || !supported.includes(effort as ReviewerEffort)) {
     throw new InstallError(
       'REVIEWER_CONFIG_INVALID',
       `${FLOWGUARD_REVIEWER_EFFORT_ENV} contains invalid value: "${effort}" — ` +
-        'only lowercase letters are allowed (e.g. low, medium, high, xhigh, max).',
+        `allowed values for ${platform} are: ${supported.join(', ')}.`,
     );
   }
-  return effort;
+  return effort as ReviewerEffort;
 }
 
 /**
@@ -309,13 +199,10 @@ function assertReviewerTuningSupported(platform: InstallPlatform): void {
 /**
  * Inject operator-configured reviewer transport tuning into agent frontmatter.
  *
- * Host defaults to opencode for backward compatibility. Returns the template
- * unchanged when no override is set or the template has no frontmatter line.
+ * Returns the template unchanged when no override is set or the template has
+ * no frontmatter line.
  */
-export function buildReviewerAgentContent(
-  template: string,
-  platform: InstallPlatform = 'opencode',
-): string {
+export function buildReviewerAgentContent(template: string, platform: InstallPlatform): string {
   const lines: string[] = [];
 
   const model = readReviewerModelEnv();
@@ -323,7 +210,9 @@ export function buildReviewerAgentContent(
     lines.push(`model: ${model}`);
   }
 
-  const effort = readReviewerEffortEnv();
+  // OpenCode models that default to Thinking mode reject the host's required
+  // structured-output tool. The reviewer is always non-thinking by default.
+  const effort = readReviewerEffortEnv(platform) ?? (platform === 'opencode' ? 'none' : null);
   const effortField = reviewerEffortFieldForPlatform(platform);
   if (effort && effortField) {
     lines.push(`${effortField}: ${effort}`);
@@ -395,86 +284,80 @@ export async function writeIfAbsent(
   content: string,
   force: boolean,
 ): Promise<FileOp> {
-  if (!force && existsSync(filePath)) {
-    return { path: filePath, action: 'skipped', reason: 'already exists' };
+  if (!force) {
+    try {
+      const dir = dirname(filePath);
+      if (dir) await ensureDir(dir);
+      await writeFile(filePath, content, { encoding: 'utf-8', flag: 'wx' });
+      return { path: filePath, action: 'written' };
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
+        return { path: filePath, action: 'skipped', reason: 'already exists' };
+      }
+      throw err;
+    }
   }
+
+  const tmpPath = `${filePath}.tmp.${process.pid}.${randomUUID()}`;
   const dir = dirname(filePath);
   if (dir) await ensureDir(dir);
-  await writeFile(filePath, content, 'utf-8');
+  try {
+    await writeFile(tmpPath, content, { encoding: 'utf-8', flag: 'wx' });
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    try {
+      await unlink(tmpPath);
+    } catch {
+      /* ok */
+    }
+    throw err;
+  }
   return { path: filePath, action: 'written' };
 }
 
-// ─── Rollback utilities (moved from install-command.ts to break circular dep) ─
+// ─── Structured Error Helpers (in install-recovery.ts) ────────────────────────
 
-/** Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm. */
-export function detectPackageManager(): 'bun' | 'npm' | null {
-  const opts = { stdio: 'ignore' as const, timeout: 5_000 };
-  try {
-    execSync('bun --version', opts);
-    return 'bun';
-  } catch {
-    // bun not available
-  }
-  try {
-    execSync('npm --version', opts);
-    return 'npm';
-  } catch {
-    // npm not available
-  }
-  return null;
+export { formatRecoveryLines, pushError, toCliError } from './install-recovery.js';
+
+// ─── Artifact Detection ──────────────────────────────────────────────────────
+
+function checkArtifactExistence(
+  target: string,
+  relativePath: string,
+): { file: string; ok: boolean } {
+  const fullPath = join(target, relativePath);
+  return { file: relativePath, ok: existsSync(fullPath) };
 }
 
-/** Pre-install snapshot for transactional rollback. */
-export interface RollbackEntry {
-  path: string;
-  existed: boolean;
-  originalContent?: Buffer;
-}
+export function detectInstalledArtifacts(
+  target: string,
+  platform: InstallPlatform,
+): ArtifactDetection {
+  const results: { file: string; ok: boolean }[] = [];
 
-/**
- * Snapshot a file path before any modification.
- * Reads original content as Buffer so binary artifacts (e.g. tarball) are preserved exactly.
- */
-export async function snapshotForRollback(filePath: string): Promise<RollbackEntry> {
-  if (existsSync(filePath)) {
-    try {
-      const content = await readFile(filePath);
-      return { path: filePath, existed: true, originalContent: content };
-    } catch {
-      return { path: filePath, existed: true };
-    }
+  if (platform === 'opencode') {
+    results.push(checkArtifactExistence(target, MANDATES_FILENAME));
+    results.push(checkArtifactExistence(target, 'tools/flowguard.ts'));
+    results.push(checkArtifactExistence(target, 'plugins/flowguard-audit.ts'));
+    results.push(checkArtifactExistence(target, 'flowguard.json'));
+  } else if (platform === 'claude-code') {
+    results.push(
+      checkArtifactExistence(target, join('flowguard-plugin', '.claude-plugin', 'plugin.json')),
+    );
+    results.push(checkArtifactExistence(target, '.mcp.json'));
+    results.push(checkArtifactExistence(target, join('hooks', 'hooks.json')));
+    results.push(
+      checkArtifactExistence(target, join('flowguard-plugin', 'agents', 'flowguard-reviewer.md')),
+    );
+  } else {
+    results.push(checkArtifactExistence(target, join('.codex-plugin', 'plugin.json')));
+    results.push(checkArtifactExistence(target, '.mcp.json'));
+    results.push(checkArtifactExistence(target, join('hooks', 'hooks.json')));
+    results.push(checkArtifactExistence(target, join('subagents', 'flowguard-reviewer.md')));
   }
-  return { path: filePath, existed: false };
-}
 
-/**
- * Rollback install artifacts after a failed auto-install step.
- *
- * Uniform semantics:
- * - existed before install (has originalContent) -> restore original content
- * - existed before install (no content, e.g. directory) -> leave untouched
- * - did not exist before install -> delete (remove file/directory)
- */
-export async function rollbackArtifacts(
-  entries: RollbackEntry[],
-  ops: FileOp[],
-  warnings: string[],
-): Promise<void> {
-  for (const entry of [...entries].reverse()) {
-    try {
-      if (entry.existed && entry.originalContent !== undefined) {
-        await writeFile(entry.path, entry.originalContent);
-        ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
-      } else if (entry.existed) {
-        continue;
-      } else if (existsSync(entry.path)) {
-        await rm(entry.path, { recursive: true, force: true });
-        ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
-      }
-    } catch (rollbackErr) {
-      warnings.push(
-        `Rollback failed for ${entry.path}: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
-      );
-    }
-  }
+  const found = results.some((r) => r.ok);
+  const artifacts = results.filter((r) => r.ok).map((r) => r.file);
+
+  return { found, artifacts };
 }

@@ -7,6 +7,7 @@
  */
 
 import type { CollectorDiagnostic, CollectorStatus } from './types.js';
+import { DiscoveryError } from './errors.js';
 
 /** Result of running a single collector through the diagnostic runner. */
 export interface CollectorRunResult<T> {
@@ -72,7 +73,13 @@ export async function runCollectorWithDiagnostics<T>(
  */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Collector timed out after ${ms}ms`)), ms);
+    const timer = setTimeout(
+      () =>
+        reject(
+          new DiscoveryError('DISCOVERY_COLLECTOR_TIMEOUT', `Collector timed out after ${ms}ms`),
+        ),
+      ms,
+    );
     promise
       .then((v) => {
         clearTimeout(timer);

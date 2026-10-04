@@ -1,0 +1,103 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 1,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 1,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 1,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 1,
+  "numTotalTests": 3,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1786089243036,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "outer",
+            "inner"
+          ],
+          "duration": 1,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "outer inner nested passes",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 1,
+          "retryReasons": [],
+          "status": "passed",
+          "title": "nested passes"
+        },
+        {
+          "ancestorTitles": [
+            "outer",
+            "inner"
+          ],
+          "duration": 1,
+          "failureDetails": [
+            {
+              "matcherResult": {
+                "actual": 2,
+                "expected": 3,
+                "message": "expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 2",
+                "name": "toBe",
+                "pass": false
+              }
+            }
+          ],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 2\n    at Object.toBe (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/src/nested.test.js:8:21)\n    at Promise.then.completed (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at _runTest (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/jest/node_modules/jest-runner/build/runTest.js:444:34)"
+          ],
+          "fullName": "outer inner nested fails",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "failed",
+          "title": "nested fails"
+        },
+        {
+          "ancestorTitles": [
+            "outer"
+          ],
+          "duration": null,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "outer outer skipped",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "pending",
+          "title": "outer skipped"
+        }
+      ],
+      "endTime": 1786089243183,
+      "message": "  \u25cf outer \u203a inner \u203a nested fails\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: 3\n    Received: 2\n\n       6 |\n       7 |     test('nested fails', () => {\n    >  8 |       expect(1 + 1).toBe(3);\n         |                     ^\n       9 |     });\n      10 |   });\n      11 |\n\n      at Object.toBe (src/nested.test.js:8:21)\n",
+      "name": "src/nested.test.js",
+      "startTime": 1786089243059,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

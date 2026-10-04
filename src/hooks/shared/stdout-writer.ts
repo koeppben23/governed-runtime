@@ -92,7 +92,7 @@ function writeStdout(payload: string): Promise<void> {
       process.stdout.once('error', onError);
       process.stdout.write(payload, (err?: Error | null) => finish(err));
     } catch (err) {
-      finish(err instanceof Error ? err : new Error(String(err)));
+      finish(err instanceof Error ? err : new DenyOutputError(String(err), { cause: err }));
     }
   });
 }

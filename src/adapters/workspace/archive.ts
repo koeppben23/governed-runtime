@@ -1,230 +1,506 @@
 /**
  * @module workspace/archive
- * @description Session archive build pipeline only.
- *
- * Creates compressed tar.gz archives of completed sessions with:
- * - Archive manifest (file inventory + SHA-256 digests)
- * - SHA-256 checksum sidecar file (fatal in regulated mode — P26)
- * - Discovery snapshot soft-check
- *
- * Does NOT perform archive verification — that is owned by
- * archive-verify-chain.ts and archive-verify-manifest.ts.
- *
- * Fail-closed invariants (P4a):
- * - State read failure (corrupt/unreadable) blocks archive creation.
- * - Audit trail read failure blocks archive creation.
- * - ENOENT (no file yet) is safe — readState returns null, readAuditTrail returns empty.
- *
- * @version v4
+ * @description Creates Archive Layout v2 packages for raw evidence or redacted sharing.
  */
 
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { atomicWrite, readState } from '../persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { hashBuffer } from '../../shared/hashing.js';
-import { readConfig } from '../persistence-config.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
-import { getLastChainHash } from '../../audit/integrity.js';
-import {
-  ARCHIVE_MANIFEST_SCHEMA_VERSION,
-  MANIFEST_POLICY_MODE_UNKNOWN,
-  type ArchiveManifest,
-} from '../../archive/types.js';
-import { computeArchiveContentDigest } from '../../archive/content-digest.js';
-import { decisionReceipts } from '../../audit/query.js';
-import {
-  redactDecisionReceipts,
-  redactReviewReport,
-  type RedactionMode,
-} from '../../redaction/export-redaction.js';
-
+import { readConfig } from '../persistence-config.js';
+import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
 import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
-import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
-import { fileExists, listSessionFiles } from './archive-files.js';
-import { findBindingArtifacts } from './archive-verify-helpers.js';
+import { createArchiveStaging } from './archive-staging.js';
+import { listSessionFiles } from './archive-files.js';
+import { ARCHIVE_MANIFEST_FILE, archiveArtifactPath } from './archive-layout.js';
+import type { RedactionMode } from '../../redaction/export-redaction.js';
 import {
   type ArtifactBindingEntry,
   ARTIFACT_BINDING_EVENT,
   ARTIFACT_BINDING_SCHEMA_VERSION,
+  ARCHIVE_PUBLICATION_BINDING_EVENT,
+  ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION,
+  archivePublicationBinding,
+  type ArchivePublicationBinding,
 } from './archive-artifact-binding.js';
+import {
+  findBindingArtifacts,
+  findPublicationBinding,
+  lastPublicationBinding,
+} from './archive-verify-helpers.js';
+import { inspectArchiveTar } from './archive-tar.js';
+import { publishArchiveArtifacts, removeArchiveArtifacts } from './archive-publish.js';
 
-// -- Session Archive ----------------------------------------------------------
+export interface ArchiveSessionOptions {
+  readonly redactionMode: RedactionMode;
+  readonly includeRaw: boolean;
+}
+
+export function archiveFileName(sessionId: string, regulatedEvidence = false): string {
+  return `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`;
+}
+
+export async function archiveSession(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchiveSessionOptions,
+): Promise<string> {
+  return archiveWithAuthorization(fingerprint, sessionId, opts, {
+    authorizedRaw: false,
+    regulatedEvidence: false,
+  });
+}
 
 /**
- * Archive a completed session as a tar.gz file.
+ * Create the mandatory raw-evidence package for a regulated completion.
  *
- * Creates: ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz
- *          ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz.sha256
- *
- * Archive process:
- * 1. Soft-check: warn if discoveryDigest is set but snapshots are missing
- * 2. Build archive-manifest.json (file inventory + SHA-256 digests)
- * 3. Write manifest into session dir (becomes part of the archive)
- * 4. Create tar.gz from session dir
- * 5. Write .sha256 sidecar file for the archive
- *
- * Uses the system `tar` command (available on Windows 10+, macOS, Linux).
- *
- * @param fingerprint - Validated workspace fingerprint.
- * @param sessionId - Session ID to archive.
- * @returns Absolute path to the created archive file.
- * @throws WorkspaceError if the session directory doesn't exist or archiving fails.
+ * This is intentionally separate from the user-requested archive API: the
+ * regulated completion service is the only production caller. It is not a
+ * configurable sharing export and is not re-exported by the workspace barrel.
  */
-export async function archiveSession(fingerprint: string, sessionId: string): Promise<string> {
+export async function archiveRegulatedEvidence(
+  fingerprint: string,
+  sessionId: string,
+): Promise<string> {
+  return archiveWithAuthorization(
+    fingerprint,
+    sessionId,
+    { redactionMode: 'none', includeRaw: true },
+    { authorizedRaw: true, regulatedEvidence: true },
+  );
+}
+
+/**
+ * Create the mandatory completion export package for the canonical export rail.
+ *
+ * Completion is a workflow obligation, not a user-configured sharing export, so
+ * raw evidence is authorized by the workflow itself — exactly like the regulated
+ * evidence package. The package uses the non-regulated archive name: a regulated
+ * session's immutable `regulated-{sessionId}.tar.gz` is produced separately by
+ * the regulated completion chain, which runs only after completion evidence
+ * exists, and must never be overwritten by a pre-completion export.
+ */
+export async function archiveCompletionExport(
+  fingerprint: string,
+  sessionId: string,
+): Promise<string> {
+  return archiveWithAuthorization(
+    fingerprint,
+    sessionId,
+    { redactionMode: 'none', includeRaw: true },
+    { authorizedRaw: true, regulatedEvidence: false },
+  );
+}
+
+interface ArchiveAuthorization {
+  readonly authorizedRaw: boolean;
+  readonly regulatedEvidence: boolean;
+}
+
+async function archiveWithAuthorization(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchiveSessionOptions,
+  authorization: ArchiveAuthorization,
+): Promise<string> {
   return withSpan(
     'archive.create',
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return archiveSessionImpl(fingerprint, sessionId);
+      return archiveSessionImpl(fingerprint, sessionId, opts, authorization);
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
 }
 
-async function archiveSessionImpl(fingerprint: string, sessionId: string): Promise<string> {
+function validateArchiveOptions(
+  opts: ArchiveSessionOptions,
+  config: Awaited<ReturnType<typeof readConfig>>,
+  rawEvidenceAuthorized: boolean,
+): void {
+  const { redactionMode, includeRaw } = opts;
+  const rc = config.archive.redaction;
+
+  if (!rawEvidenceAuthorized && !rc.allowedModes.includes(redactionMode)) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Redaction mode '${redactionMode}' is not allowed (config allows: ${rc.allowedModes.join(', ')}).`,
+    );
+  }
+
+  if (redactionMode === 'none' && !includeRaw) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      'Invalid combination: redactionMode=none requires includeRaw=true. Choose basic or pseudonymous for redacted-only export.',
+    );
+  }
+
+  if (includeRaw && !rc.allowRawExport && !rawEvidenceAuthorized) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      'Raw export is not enabled. Set archive.redaction.allowRawExport=true in flowguard.json.',
+    );
+  }
+}
+
+function assertRegulatedEvidenceState(
+  state: import('../../state/schema.js').SessionState | null,
+): void {
+  if (state?.policySnapshot.mode === 'regulated' && !state.error) {
+    return;
+  }
+  throw new WorkspaceError(
+    'ARCHIVE_FAILED',
+    'Mandatory regulated evidence archive requires a clean regulated session.',
+  );
+}
+
+function assertCompletionAuditEvent(
+  events: readonly { readonly event: string; readonly detail: Record<string, unknown> }[],
+): void {
+  if (
+    events.some(
+      (event) =>
+        event.event === 'lifecycle:session_completed' &&
+        event.detail.action === 'session_completed',
+    )
+  ) {
+    return;
+  }
+  throw new WorkspaceError(
+    'ARCHIVE_FAILED',
+    'Mandatory regulated evidence archive requires the canonical session_completed audit event.',
+  );
+}
+
+async function archiveSessionImpl(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchiveSessionOptions,
+  authorization: ArchiveAuthorization,
+): Promise<string> {
+  const { authorizedRaw, regulatedEvidence } = authorization;
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
-
   const sessDir = sessionDir(fingerprint, validSessionId);
   const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archivePath = path.join(archiveDir, `${validSessionId}.tar.gz`);
-  const checksumPath = `${archivePath}.sha256`;
-
-  // Verify session directory exists
+  const archivePath = path.join(archiveDir, archiveFileName(validSessionId, regulatedEvidence));
   try {
     await fs.access(sessDir);
-  } catch {
-    throw new WorkspaceError('ARCHIVE_FAILED', `Session directory does not exist: ${sessDir}`);
+    await fs.mkdir(archiveDir, { recursive: true });
+  } catch (error) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Archive setup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
-  // ── Fail-closed: state must be readable if it exists ────────────
-  // readState returns null for ENOENT (no state file = fresh session),
-  // but throws PersistenceError for corrupt/unreadable state.
-  // An archive without verifiable state cannot prove what was governed.
   const state = await readState(sessDir);
+  if (state) await verifyEvidenceArtifacts(sessDir, state);
+  if (regulatedEvidence) assertRegulatedEvidenceState(state);
+  const archiveConfig = authorizedRaw ? undefined : await readConfig();
+  if (archiveConfig) validateArchiveOptions(opts, archiveConfig, false);
 
-  // Fail-closed: if ticket/plan evidence exists in state, derived artifacts must be present.
-  if (state) {
-    await verifyEvidenceArtifacts(sessDir, state);
-  }
+  await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
+  const events = await readAuditTrail(sessDir);
+  if (regulatedEvidence) assertCompletionAuditEvent(events);
 
-  if (state?.discoveryDigest) {
-    const snapshotPath = path.join(sessDir, 'discovery-snapshot.json');
-    try {
-      await fs.access(snapshotPath);
-    } catch {
-      // Soft warning — log but don't fail. The archive will just lack the snapshot.
-      getAdapterLogger().warn('archive', 'Discovery snapshot missing during archive creation', {
-        sessionId: validSessionId,
-        fingerprint,
-      });
+  if (opts.redactionMode !== 'none') {
+    if (archiveConfig === undefined) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        'Archive audit-trail limits require loaded archive configuration.',
+      );
+    }
+    if (events.length > archiveConfig.archive.redaction.maxAuditEvents) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
+      );
     }
   }
 
-  // Archive redaction uses GLOBAL config only (no worktree param). Rationale:
-  // Archives are stored in the centralized workspace store (~/.config/opencode/workspaces/).
-  // The originating worktree may no longer exist at archive time. Redaction policy
-  // is a platform-level concern, not a per-repo override.
-  const config = await readConfig();
-  const redactionMode = config.archive.redaction.mode;
-  const includeRaw = config.archive.redaction.includeRaw;
-
-  // ── Fail-closed: audit trail must be readable if it exists ─────
-  // readAuditTrail returns { events: [], skipped: 0 } for ENOENT,
-  // but throws PersistenceError for unreadable files.
-  // An archive without its audit chain is governance-worthless.
-  const { events } = await readAuditTrail(sessDir);
-
-  // ── Build and write archive manifest ──────────────────────────
-  const receipts = decisionReceipts(events).filter((r) => r.sessionId === validSessionId);
-  const receiptsPayload = {
-    schemaVersion: 'decision-receipts.v1',
+  await stagePublishAndBind({
+    archiveDir,
+    archivePath,
+    fingerprint,
     sessionId: validSessionId,
-    generatedAt: new Date().toISOString(),
-    count: receipts.length,
-    receipts,
-  };
-  await atomicWrite(
-    path.join(sessDir, 'decision-receipts.v1.json'),
-    JSON.stringify(receiptsPayload, null, 2) + '\n',
-  );
-
-  const redaction = await applyArchiveRedaction(sessDir, redactionMode, includeRaw);
-  await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
-
-  const manifest = await buildArchiveManifest(sessDir, state, fingerprint, validSessionId, {
-    redactionMode,
-    rawIncluded: includeRaw || redactionMode === 'none',
-    redactedArtifacts: redaction.redactedArtifacts,
-    excludedFiles: redaction.excludedFiles,
-    riskFlags: redaction.riskFlags,
+    sessDir,
+    state,
+    events,
+    redactionMode: opts.redactionMode,
+    includeRaw: opts.includeRaw,
   });
-  const manifestJson = JSON.stringify(manifest, null, 2) + '\n';
-  await atomicWrite(path.join(sessDir, 'archive-manifest.json'), manifestJson);
-
-  await createArchiveBundle(fingerprint, validSessionId, archiveDir, archivePath, {
-    excludedFiles: redaction.excludedFiles,
+  getAdapterLogger().info('archive', 'archive_created', {
+    sessionId: validSessionId,
+    layoutVersion: 2,
   });
-
-  await writeArchiveChecksum(archivePath, checksumPath, state);
-
-  getAdapterLogger().info('archive', 'archive_created', { sessionId: validSessionId });
-
   return archivePath;
 }
 
-interface ArchiveRedactionResult {
-  redactedArtifacts: string[];
-  excludedFiles: string[];
-  riskFlags: string[];
+function stripTrailingPublicationBindings(
+  events: Awaited<ReturnType<typeof readAuditTrail>>,
+): Awaited<ReturnType<typeof readAuditTrail>> {
+  let end = events.length;
+  while (end > 0) {
+    const event = events[end - 1];
+    if (event === undefined || event.event !== ARCHIVE_PUBLICATION_BINDING_EVENT) break;
+    end -= 1;
+  }
+  return events.slice(0, end);
 }
 
-async function applyArchiveRedaction(
-  sessDir: string,
-  redactionMode: string,
-  includeRaw: boolean,
-): Promise<ArchiveRedactionResult> {
-  const redactedArtifacts: string[] = [];
-  const excludedFiles: string[] = [];
-  const riskFlags: string[] = [];
-
-  if (redactionMode !== 'none') {
-    await writeRedactedExportArtifact(
-      sessDir,
-      'decision-receipts.v1.json',
-      'decision-receipts.redacted.v1.json',
-      redactionMode as RedactionMode,
-      redactDecisionReceipts,
-    );
-    redactedArtifacts.push('decision-receipts.redacted.v1.json');
-    if (!includeRaw) excludedFiles.push('decision-receipts.v1.json');
-
-    const reviewPath = path.join(sessDir, 'review-report.json');
-    if (await fileExists(reviewPath)) {
-      await writeRedactedExportArtifact(
-        sessDir,
-        'review-report.json',
-        'review-report.redacted.json',
-        redactionMode as RedactionMode,
-        redactReviewReport,
+async function stagePublishAndBind(input: {
+  readonly archiveDir: string;
+  readonly archivePath: string;
+  readonly fingerprint: string;
+  readonly sessionId: string;
+  readonly sessDir: string;
+  readonly state: import('../../state/schema.js').SessionState | null;
+  readonly events: Awaited<ReturnType<typeof readAuditTrail>>;
+  readonly redactionMode: RedactionMode;
+  readonly includeRaw: boolean;
+}): Promise<void> {
+  // Publication bindings are external authorities and must never alter the
+  // self-contained v2 audit snapshot they attest. Only the trailing run can
+  // belong to this publication attempt: a binding followed by later events has
+  // become part of the historical chain, and dropping it would break chain
+  // verification of the snapshot (the mandatory completion export publishes
+  // before terminal events are appended).
+  const archiveEvents = stripTrailingPublicationBindings(input.events);
+  const staging = await createArchiveStaging({
+    archiveDir: input.archiveDir,
+    sessionId: input.sessionId,
+    fingerprint: input.fingerprint,
+    sessDir: input.sessDir,
+    state: input.state,
+    events: archiveEvents,
+    redactionMode: input.redactionMode,
+    includeRaw: input.includeRaw,
+  });
+  const temporaryArchivePath = `${input.archivePath}.${crypto.randomUUID()}.tmp`;
+  const checksumPath = `${input.archivePath}.sha256`;
+  const temporaryChecksumPath = `${checksumPath}.${crypto.randomUUID()}.tmp`;
+  const archiveArtifacts = {
+    archivePath: input.archivePath,
+    checksumPath,
+    temporaryArchivePath,
+    temporaryChecksumPath,
+  };
+  const existingPublication = lastPublicationBinding(input.events);
+  try {
+    let publication: ArchivePublicationBinding;
+    try {
+      publication = await createAndPublishArchive(
+        staging,
+        input.sessionId,
+        archiveArtifacts,
+        staging.manifest.contentDigest,
+        existingPublication,
       );
-      redactedArtifacts.push('review-report.redacted.json');
-      if (!includeRaw) excludedFiles.push('review-report.json');
+    } catch (error) {
+      await removeArchiveArtifacts(archiveArtifacts);
+      throw error;
     }
+    if (existingPublication?.publicationId === publication.publicationId) return;
+    await appendPublicationBindingAuditEvent(
+      input.sessDir,
+      input.sessionId,
+      input.state,
+      publication,
+    );
+  } finally {
+    await fs.rm(staging.stagingRoot, { recursive: true, force: true });
+  }
+}
+
+async function createAndPublishArchive(
+  staging: Awaited<ReturnType<typeof createArchiveStaging>>,
+  sessionId: string,
+  artifacts: {
+    readonly archivePath: string;
+    readonly checksumPath: string;
+    readonly temporaryArchivePath: string;
+    readonly temporaryChecksumPath: string;
+  },
+  manifestContentDigest: string,
+  existingPublication: ArchivePublicationBinding | undefined,
+): Promise<ArchivePublicationBinding> {
+  await createArchiveBundle(
+    staging.stagingRoot,
+    sessionId,
+    staging.manifest.includedFiles,
+    artifacts.temporaryArchivePath,
+  );
+  await writeArchiveChecksum(
+    artifacts.temporaryArchivePath,
+    artifacts.temporaryChecksumPath,
+    path.basename(artifacts.archivePath),
+  );
+  const publication = await publicationBindingFor(
+    artifacts.temporaryArchivePath,
+    artifacts.temporaryChecksumPath,
+    path.basename(artifacts.archivePath),
+    manifestContentDigest,
+  );
+  if (
+    existingPublication?.publicationId === publication.publicationId &&
+    (await publishedArtifactsMatch(artifacts, existingPublication))
+  ) {
+    await fs.rm(artifacts.temporaryArchivePath, { force: true });
+    await fs.rm(artifacts.temporaryChecksumPath, { force: true });
+    return publication;
+  }
+  await Promise.all([
+    fs.rm(artifacts.archivePath, { force: true }),
+    fs.rm(artifacts.checksumPath, { force: true }),
+  ]);
+  await publishArchiveArtifacts(artifacts);
+  return publication;
+}
+
+async function publicationBindingFor(
+  archivePath: string,
+  checksumPath: string,
+  archiveFile: string,
+  manifestContentDigest: string,
+): Promise<ArchivePublicationBinding> {
+  const [archive, sidecar] = await Promise.all([
+    fs.readFile(archivePath),
+    fs.readFile(checksumPath),
+  ]);
+  return archivePublicationBinding(archive, sidecar, archiveFile, manifestContentDigest);
+}
+
+async function publishedArtifactsMatch(
+  paths: { readonly archivePath: string; readonly checksumPath: string },
+  expected: ArchivePublicationBinding,
+): Promise<boolean> {
+  try {
+    const actual = await publicationBindingFor(
+      paths.archivePath,
+      paths.checksumPath,
+      expected.archiveFile,
+      expected.manifestContentDigest,
+    );
+    return actual.publicationId === expected.publicationId;
+  } catch {
+    return false;
+  }
+}
+
+async function createArchiveBundle(
+  stagingRoot: string,
+  sessionId: string,
+  includedFiles: readonly string[],
+  archivePath: string,
+): Promise<void> {
+  const members = await resolveArchiveMembers(stagingRoot, sessionId, includedFiles);
+  try {
+    await promisify(execFile)(
+      'tar',
+      ['--format=ustar', '-czf', archivePath, '-C', stagingRoot, ...members],
+      {
+        timeout: 30_000,
+        windowsHide: true,
+        env: { ...process.env, COPYFILE_DISABLE: '1' },
+      },
+    );
+    const inspection = await inspectArchiveTar(archivePath, sessionId, members);
+    if (inspection.kind === 'blocked') {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `archive bundle verification failed: ${inspection.reason}`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof WorkspaceError) throw error;
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `tar command failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function resolveArchiveMembers(
+  stagingRoot: string,
+  sessionId: string,
+  includedFiles: readonly string[],
+): Promise<string[]> {
+  const relativeMembers = [...includedFiles, ARCHIVE_MANIFEST_FILE];
+  if (new Set(relativeMembers).size !== relativeMembers.length) {
+    throw new WorkspaceError('ARCHIVE_FAILED', 'Archive manifest contains duplicate member paths.');
   }
 
-  if (includeRaw) {
-    riskFlags.push('raw_export_enabled');
+  const archiveRoot = path.resolve(stagingRoot, sessionId);
+  const members: string[] = [];
+  for (const relativePath of relativeMembers) {
+    if (!isSafeArchiveMemberPath(relativePath)) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive manifest has unsafe member path: ${relativePath}`,
+      );
+    }
+    const member = path.posix.join(sessionId, relativePath);
+    const fullPath = path.resolve(stagingRoot, member);
+    if (!fullPath.startsWith(`${archiveRoot}${path.sep}`)) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive member escapes staging root: ${relativePath}`,
+      );
+    }
+    let stat: import('node:fs').Stats;
+    try {
+      stat = await fs.lstat(fullPath);
+    } catch {
+      throw new WorkspaceError('ARCHIVE_FAILED', `Archive member is missing: ${relativePath}`);
+    }
+    if (!stat.isFile()) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive member is not a regular file: ${relativePath}`,
+      );
+    }
+    members.push(member);
   }
+  return members;
+}
 
-  return { redactedArtifacts, excludedFiles, riskFlags };
+function isSafeArchiveMemberPath(relativePath: string): boolean {
+  return (
+    relativePath.length > 0 &&
+    !path.posix.isAbsolute(relativePath) &&
+    !relativePath
+      .split('/')
+      .some((segment) => segment.length === 0 || segment === '.' || segment === '..') &&
+    !relativePath.includes('\\')
+  );
+}
+
+async function writeArchiveChecksum(
+  archivePath: string,
+  checksumPath: string,
+  archiveFileName: string,
+): Promise<void> {
+  try {
+    await atomicWrite(
+      checksumPath,
+      `${hashBuffer(await fs.readFile(archivePath))}  ${archiveFileName}\n`,
+    );
+  } catch (error) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Checksum sidecar write failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function appendArtifactBindingAuditEvent(
@@ -234,23 +510,17 @@ async function appendArtifactBindingAuditEvent(
 ): Promise<void> {
   const artifacts = await collectArtifactBindings(sessDir);
   if (artifacts.length === 0) return;
-
-  // Idempotency (#archive-race): if the audit trail already ends with an
-  // artifact-binding event for the SAME artifact set (paths + content hashes),
-  // do not append a duplicate. Two archive runs of the same completed session
-  // (e.g. the fire-and-forget auto-archive on COMPLETE plus a manual /export)
-  // would otherwise each append a binding event, leaving the live trail with one
-  // more event than the manifest anchor recorded -> verify reports
-  // audit_chain_truncated -> archiveStatus:"failed" on a perfectly valid archive.
-  const { events } = await readAuditTrail(sessDir);
-  if (artifactBindingMatches(findBindingArtifacts(events), artifacts)) return;
-
-  const body = {
+  if (!state) return;
+  const events = await readAuditTrail(sessDir);
+  const previous = findBindingArtifacts(events);
+  if (bindingMatches(previous, artifacts)) return;
+  await appendAuditEvent(sessDir, {
     id: crypto.randomUUID(),
-    sessionId,
-    phase: state?.phase ?? 'unknown',
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: sessionId,
+    phase: state.phase,
     event: ARTIFACT_BINDING_EVENT,
-    timestamp: new Date().toISOString(),
+    occurredAt: new Date().toISOString(),
     actor: 'system',
     detail: {
       kind: 'archive_artifact_binding',
@@ -258,258 +528,50 @@ async function appendArtifactBindingAuditEvent(
       artifactCount: artifacts.length,
       artifacts,
     },
-  };
-  await appendAuditEvent(sessDir, body);
+  });
 }
 
-/**
- * True when a previously-recorded artifact-binding set (from the last binding
- * event in the trail) is identical to the freshly-collected set, compared by
- * sorted (path, sha256) pairs so ordering is irrelevant.
- */
-function artifactBindingMatches(
+async function appendPublicationBindingAuditEvent(
+  sessDir: string,
+  sessionId: string,
+  state: import('../../state/schema.js').SessionState | null,
+  publication: ArchivePublicationBinding,
+): Promise<void> {
+  if (!state) return;
+  const events = await readAuditTrail(sessDir);
+  if (findPublicationBinding(events, publication)) return;
+  await appendAuditEvent(sessDir, {
+    id: crypto.randomUUID(),
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: sessionId,
+    phase: state.phase,
+    event: ARCHIVE_PUBLICATION_BINDING_EVENT,
+    occurredAt: new Date().toISOString(),
+    actor: 'system',
+    detail: {
+      kind: 'archive_publication_binding',
+      schemaVersion: ARCHIVE_PUBLICATION_BINDING_SCHEMA_VERSION,
+      ...publication,
+    },
+  });
+}
+
+function bindingMatches(
   previous: unknown[] | undefined,
   current: readonly ArtifactBindingEntry[],
 ): boolean {
   if (!previous || previous.length !== current.length) return false;
-  const key = (p: string, h: string): string => `${p}\u0000${h}`;
-  const prevKeys = new Set<string>();
-  for (const entry of previous) {
-    if (!entry || typeof entry !== 'object') return false;
-    const e = entry as Record<string, unknown>;
-    if (typeof e.path !== 'string' || typeof e.sha256 !== 'string') return false;
-    prevKeys.add(key(e.path, e.sha256));
-  }
-  return current.every((c) => prevKeys.has(key(c.path, c.sha256)));
+  const prior = new Set(previous.map((entry) => JSON.stringify(entry)));
+  return current.every((entry) => prior.has(JSON.stringify(entry)));
 }
 
 async function collectArtifactBindings(sessDir: string): Promise<ArtifactBindingEntry[]> {
-  const artifactsDir = path.join(sessDir, 'artifacts');
-  if (!(await fileExists(artifactsDir))) return [];
-  const files = await listFilesUnder(artifactsDir, 'artifacts');
-  const entries: ArtifactBindingEntry[] = [];
-  for (const relPath of files) {
-    const content = await fs.readFile(path.join(sessDir, relPath));
-    entries.push({
-      path: relPath,
-      sha256: hashBuffer(content),
-      artifactType: inferArtifactType(relPath),
-    });
-  }
-  return entries.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-async function listFilesUnder(absDir: string, relPrefix: string): Promise<string[]> {
-  const files: string[] = [];
-  const entries = await fs.readdir(absDir, { withFileTypes: true });
-  for (const entry of entries) {
-    const relPath = `${relPrefix}/${entry.name}`;
-    const absPath = path.join(absDir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await listFilesUnder(absPath, relPath)));
-    } else if (entry.isFile()) {
-      files.push(relPath);
-    }
-  }
-  return files.sort();
-}
-
-function inferArtifactType(relPath: string): string | null {
-  const filename = path.posix.basename(relPath);
-  const match = filename.match(/^([a-z-]+)\./);
-  return match?.[1] ?? null;
-}
-
-async function createArchiveBundle(
-  fingerprint: string,
-  validSessionId: string,
-  archiveDir: string,
-  archivePath: string,
-  opts: { excludedFiles: string[] },
-): Promise<void> {
-  const execFileAsync = promisify(execFile);
-
-  try {
-    await fs.mkdir(archiveDir, { recursive: true });
-  } catch (err) {
-    getAdapterLogger().error('archive', 'Failed to create archive directory', {
-      archiveDir,
-      sessionId: validSessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `Failed to create archive directory: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  try {
-    const sessionsParent = path.join(workspacesHome(), fingerprint, 'sessions');
-    const tarArgs = [
-      'czf',
-      archivePath,
-      '-C',
-      sessionsParent,
-      ...opts.excludedFiles.map(
-        (relPath) => `--exclude=${path.posix.join(validSessionId, relPath)}`,
-      ),
-      validSessionId,
-    ];
-    await execFileAsync('tar', tarArgs, {
-      timeout: 30_000,
-      windowsHide: true,
-    });
-  } catch (err) {
-    getAdapterLogger().error('archive', 'tar command failed', {
-      archivePath,
-      sessionId: validSessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `tar command failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
-async function writeArchiveChecksum(
-  archivePath: string,
-  checksumPath: string,
-  state: import('../../state/schema.js').SessionState | null,
-): Promise<void> {
-  const validSessionId = path.basename(path.dirname(archivePath));
-  try {
-    const archiveBuffer = await fs.readFile(archivePath);
-    const archiveHash = hashBuffer(archiveBuffer);
-    await atomicWrite(checksumPath, `${archiveHash}  ${path.basename(archivePath)}\n`);
-  } catch (err) {
-    getAdapterLogger().error('archive', 'Checksum sidecar write failed', {
-      checksumPath,
-      sessionId: validSessionId,
-      policyMode: state?.policySnapshot?.mode,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    if (state?.policySnapshot?.mode === 'regulated') {
-      throw new WorkspaceError(
-        'ARCHIVE_FAILED',
-        `Checksum sidecar write failed in regulated mode: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-}
-
-/**
- * Build an archive manifest from the session directory contents.
- *
- * Inventories all files, computes SHA-256 digests, and builds
- * a deterministic content digest from sorted file digests.
- */
-async function buildArchiveManifest(
-  sessDir: string,
-  state: import('../../state/schema.js').SessionState | null,
-  fingerprint: string,
-  sessionId: string,
-  redaction: {
-    redactionMode: RedactionMode;
-    rawIncluded: boolean;
-    redactedArtifacts: string[];
-    excludedFiles: string[];
-    riskFlags: string[];
-  },
-): Promise<ArchiveManifest> {
-  const files = await listSessionFiles(sessDir, new Set(redaction.excludedFiles));
-  const fileDigests: Record<string, string> = {};
-
-  for (const relPath of files) {
-    const content = await fs.readFile(path.join(sessDir, relPath));
-    fileDigests[relPath] = hashBuffer(content);
-  }
-
-  // Audit completeness anchor — read AFTER the artifact-binding append so head and
-  // count reflect the final, digested audit.jsonl. Truncation anchor (#420).
-  const { events } = await readAuditTrail(sessDir);
-  const auditChainHead = getLastChainHash(events);
-  const auditEventCount = events.length;
-
-  // includedFiles lists only session artifacts — NOT the manifest itself.
-  // The manifest is metadata ABOUT the archive content. Self-referential
-  // inclusion is impossible (the manifest cannot contain its own digest)
-  // and would create fragile accidental-correctness in verification.
-  // The manifest file IS physically present in the archive but is not
-  // part of the content-digest computation.
-  const includedFiles = [...files].sort();
-  const policyMode = state?.policySnapshot?.mode ?? MANIFEST_POLICY_MODE_UNKNOWN;
-  const discoveryDigest = state?.discoveryDigest ?? null;
-
-  // Content digest binds file digests AND integrity metadata (single SSOT formula).
-  const contentDigest = computeArchiveContentDigest({
-    includedFiles,
-    fileDigests,
-    policyMode,
-    auditChainHead,
-    auditEventCount,
-    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
-    sessionId,
-    fingerprint,
-    discoveryDigest,
-  });
-
-  return {
-    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
-    createdAt: new Date().toISOString(),
-    sessionId,
-    fingerprint,
-    policyMode,
-    profileId: state?.activeProfile?.id ?? 'baseline',
-    discoveryDigest,
-    auditChainHead,
-    auditEventCount,
-    includedFiles,
-    fileDigests,
-    contentDigest,
-    redactionMode: redaction.redactionMode,
-    rawIncluded: redaction.rawIncluded,
-    redactedArtifacts: [...redaction.redactedArtifacts],
-    excludedFiles: [...redaction.excludedFiles],
-    riskFlags: [...redaction.riskFlags],
-  };
-}
-
-async function writeRedactedExportArtifact(
-  sessDir: string,
-  rawFile: string,
-  redactedFile: string,
-  mode: RedactionMode,
-  redact: (payload: Record<string, unknown>, mode: RedactionMode) => Record<string, unknown>,
-): Promise<void> {
-  const rawPath = path.join(sessDir, rawFile);
-
-  let rawContent: string;
-  try {
-    rawContent = await fs.readFile(rawPath, 'utf-8');
-  } catch (err) {
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `Redaction source read failed (${rawFile}): ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(rawContent) as Record<string, unknown>;
-  } catch {
-    throw new WorkspaceError('ARCHIVE_FAILED', `Redaction source is invalid JSON: ${rawFile}`);
-  }
-
-  let redacted: Record<string, unknown>;
-  try {
-    redacted = redact(payload, mode);
-  } catch (err) {
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `Redaction failed for ${rawFile}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  await atomicWrite(path.join(sessDir, redactedFile), JSON.stringify(redacted, null, 2) + '\n');
+  const files = (await listSessionFiles(sessDir)).filter((file) => file.startsWith('artifacts/'));
+  return Promise.all(
+    files.map(async (file) => ({
+      path: archiveArtifactPath(path.posix.basename(file)),
+      sha256: hashBuffer(await fs.readFile(path.join(sessDir, file))),
+      artifactType: path.posix.basename(file).split('.')[0] ?? null,
+    })),
+  );
 }

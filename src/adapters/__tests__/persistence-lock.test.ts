@@ -33,19 +33,21 @@ function errno(code: string, message: string): NodeJS.ErrnoException {
 
 function restoreFsMocks(): void {
   const actual = actualFs();
-  vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) =>
-    actual.readFile(...args)) as typeof fs.readFile);
+  vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) =>
+    actual.readFile(...args),
+  );
   vi.mocked(fs.writeFile).mockImplementation(((...args: Parameters<typeof fs.writeFile>) =>
     actual.writeFile(...args)) as typeof fs.writeFile);
-  vi.mocked(fs.unlink).mockImplementation(((...args: Parameters<typeof fs.unlink>) =>
-    actual.unlink(...args)) as typeof fs.unlink);
+  vi.mocked(fs.unlink).mockImplementation((...args: Parameters<typeof fs.unlink>) =>
+    actual.unlink(...args),
+  );
 }
 
 function mockProcessKillOnce(code: string, expectedPid: number): void {
-  vi.spyOn(process, 'kill').mockImplementation(((pid: number) => {
+  vi.spyOn(process, 'kill').mockImplementation((pid: number) => {
     if (pid === expectedPid) throw errno(code, `${code} for ${expectedPid}`);
     return true;
-  }) as typeof process.kill);
+  });
 }
 
 describe('persistence-lock', () => {
@@ -168,13 +170,17 @@ describe('persistence-lock', () => {
   it('BAD: unreadable lockfile is treated as alive and fails closed', async () => {
     const lockPath = sessionLockPath(sessionDir);
     await fs.writeFile(lockPath, `pid=${process.pid}\ntoken=unreadable-token\n`);
-    vi.mocked(fs.readFile).mockImplementation(((
-      file: Parameters<typeof fs.readFile>[0],
-      ...args: unknown[]
-    ) => {
-      if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-      return actualFs().readFile(file, ...(args as []));
-    }) as typeof fs.readFile);
+    vi.mocked(fs.readFile).mockImplementation(
+      (
+        file: Parameters<typeof fs.readFile>[0],
+        ...args: [options?: Parameters<typeof fs.readFile>[1]]
+      ) => {
+        if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
+        return args[0] === undefined
+          ? actualFs().readFile(file)
+          : actualFs().readFile(file, args[0]);
+      },
+    );
 
     await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
       code: 'LOCK_TIMEOUT',
@@ -184,15 +190,202 @@ describe('persistence-lock', () => {
     await expect(fs.readFile(lockPath, 'utf-8')).resolves.toContain('unreadable-token');
   });
 
+  it('CORNER: snapshot mismatch that resolves lets acquisition succeed with waited=true', async () => {
+    const stalePid = 727_272;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw errno('ESRCH', 'dead');
+    });
+
+    // Iteration 1: snapshot=dead, re-verify=changed → poll path (waited=true).
+    // Then the churning process's lock disappears, so iteration 2 acquires.
+    let reads = 0;
+    vi.mocked(fs.readFile).mockImplementation(
+      async (
+        file: Parameters<typeof fs.readFile>[0],
+        ...args: [options?: Parameters<typeof fs.readFile>[1]]
+      ) => {
+        if (String(file) === lockPath) {
+          reads += 1;
+          if (reads === 1) return `pid=${stalePid}\ntoken=dead-token\n`;
+          // Re-verify differs → mismatch path; then remove the file so the next
+          // writeFile(wx) succeeds.
+          await actualFs().unlink(lockPath);
+          return `pid=${stalePid}\ntoken=changed\n`;
+        }
+        return args[0] === undefined
+          ? actualFs().readFile(file)
+          : actualFs().readFile(file, args[0]);
+      },
+    );
+
+    const lock = await acquireSessionWriteLock(sessionDir, 1000);
+    expect(lock.waited).toBe(true);
+
+    restoreFsMocks();
+    await lock.release();
+  });
+
+  it('CORNER: stale unlink ENOENT (already removed) is tolerated and acquisition proceeds', async () => {
+    const stalePid = 838_383;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    mockProcessKillOnce('ESRCH', stalePid);
+
+    // Snapshot and re-verify match (stale), but the unlink races with another
+    // remover and returns ENOENT. This must NOT throw; acquisition proceeds.
+    vi.mocked(fs.unlink).mockImplementationOnce(async (file: Parameters<typeof fs.unlink>[0]) => {
+      if (String(file) === lockPath) {
+        await actualFs().unlink(lockPath);
+        throw errno('ENOENT', 'already gone');
+      }
+      return actualFs().unlink(file);
+    });
+
+    const lock = await acquireSessionWriteLock(sessionDir, 1000);
+    const raw = await fs.readFile(lockPath, 'utf-8');
+    expect(raw).toContain(`pid=${process.pid}\n`);
+
+    await lock.release();
+  });
+
+  it('BAD: repeated stale-snapshot churn honours the timeout and polls (no busy loop)', async () => {
+    const stalePid = 616_161;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    // Every liveness probe reports dead, so each iteration re-enters recovery.
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw errno('ESRCH', 'dead');
+    });
+
+    const unlinkSpy = vi.mocked(fs.unlink);
+    // Each acquisition iteration reads twice (snapshot, then re-verify). Return a
+    // DIFFERENT body on every read so the re-verify never matches the snapshot,
+    // forcing the churn path indefinitely — bounded only by the timeout.
+    let reads = 0;
+    vi.mocked(fs.readFile).mockImplementation(
+      (
+        file: Parameters<typeof fs.readFile>[0],
+        ...args: [options?: Parameters<typeof fs.readFile>[1]]
+      ) => {
+        if (String(file) === lockPath) {
+          reads += 1;
+          return Promise.resolve(`pid=${stalePid}\ntoken=churn-${reads}\n`);
+        }
+        return args[0] === undefined
+          ? actualFs().readFile(file)
+          : actualFs().readFile(file, args[0]);
+      },
+    );
+
+    const timerSpy = vi.spyOn(global, 'setTimeout');
+
+    const start = Date.now();
+    await expect(acquireSessionWriteLock(sessionDir, 250)).rejects.toMatchObject({
+      code: 'LOCK_TIMEOUT',
+    });
+    const elapsed = Date.now() - start;
+
+    // Timeout was actually enforced (did not return immediately, did not hang).
+    expect(elapsed).toBeGreaterThanOrEqual(200);
+    expect(elapsed).toBeLessThan(5_000);
+    // Never deleted the churning foreign lock.
+    expect(unlinkSpy.mock.calls.filter((c) => String(c[0]) === lockPath)).toHaveLength(0);
+    // At least one poll delay was used (proves the churn path went through poll,
+    // not a tight continue loop).
+    const pollCalls = timerSpy.mock.calls.filter(([, delay]) => delay === 100);
+    expect(pollCalls.length).toBeGreaterThanOrEqual(1);
+
+    restoreFsMocks();
+  });
+
+  it('BAD: stale lock replaced by a fresh foreign lock before unlink is not deleted', async () => {
+    const stalePid = 424_242;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    mockProcessKillOnce('ESRCH', stalePid);
+
+    // First read (staleness snapshot) sees the dead lock. Between snapshot and
+    // re-verify, materialize a real foreign lock on disk so the second read
+    // observes the actual replaced content — then assert it survives.
+    const foreign = `pid=${process.pid}\ntoken=fresh-foreign\n`;
+    let reads = 0;
+    const unlinkSpy = vi.mocked(fs.unlink);
+    vi.mocked(fs.readFile).mockImplementation(
+      async (
+        file: Parameters<typeof fs.readFile>[0],
+        ...args: [options?: Parameters<typeof fs.readFile>[1]]
+      ) => {
+        if (String(file) === lockPath) {
+          reads += 1;
+          if (reads === 1) return `pid=${stalePid}\ntoken=dead-token\n`;
+          // Actually replace the file on disk before returning the fresh body.
+          await actualFs().writeFile(lockPath, foreign, 'utf-8');
+          return foreign;
+        }
+        return args[0] === undefined
+          ? actualFs().readFile(file)
+          : actualFs().readFile(file, args[0]);
+      },
+    );
+
+    // Zero-timeout: after refusing to delete the foreign lock, acquisition must
+    // fail closed rather than clobber it.
+    await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
+      code: 'LOCK_TIMEOUT',
+    });
+    expect(unlinkSpy.mock.calls.filter((c) => String(c[0]) === lockPath)).toHaveLength(0);
+
+    restoreFsMocks();
+    // The freshly-materialized foreign lock is intact and untouched.
+    await expect(fs.readFile(lockPath, 'utf-8')).resolves.toBe(foreign);
+  });
+
+  it('BAD: stale lock that becomes unreadable at re-verify is not deleted', async () => {
+    const stalePid = 515_151;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    mockProcessKillOnce('ESRCH', stalePid);
+
+    const unlinkSpy = vi.mocked(fs.unlink);
+    let reads = 0;
+    vi.mocked(fs.readFile).mockImplementation(
+      (
+        file: Parameters<typeof fs.readFile>[0],
+        ...args: [options?: Parameters<typeof fs.readFile>[1]]
+      ) => {
+        if (String(file) === lockPath) {
+          reads += 1;
+          // Snapshot read sees the dead lock; the re-verify read fails EACCES,
+          // which must be treated as "alive/unknown" → do not unlink.
+          if (reads === 1) return Promise.resolve(`pid=${stalePid}\ntoken=dead-token\n`);
+          return Promise.reject(errno('EACCES', 'permission denied'));
+        }
+        return args[0] === undefined
+          ? actualFs().readFile(file)
+          : actualFs().readFile(file, args[0]);
+      },
+    );
+
+    await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
+      code: 'LOCK_TIMEOUT',
+    });
+    expect(unlinkSpy.mock.calls.filter((c) => String(c[0]) === lockPath)).toHaveLength(0);
+
+    restoreFsMocks();
+    await expect(fs.readFile(lockPath, 'utf-8')).resolves.toContain('dead-token');
+  });
+
   it('BAD: stale lock unlink EACCES returns LOCK_TIMEOUT instead of falling back', async () => {
     const stalePid = 135_791;
     const lockPath = sessionLockPath(sessionDir);
     await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
     mockProcessKillOnce('ESRCH', stalePid);
-    vi.mocked(fs.unlink).mockImplementation(((file: Parameters<typeof fs.unlink>[0]) => {
+    vi.mocked(fs.unlink).mockImplementation((file: Parameters<typeof fs.unlink>[0]) => {
       if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
       return actualFs().unlink(file);
-    }) as typeof fs.unlink);
+    });
 
     await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
       code: 'LOCK_TIMEOUT',
@@ -209,22 +402,26 @@ describe('persistence-lock', () => {
 
     vi.mocked(fs.writeFile).mockImplementation(((
       file: Parameters<typeof fs.writeFile>[0],
-      ...args: unknown[]
+      ...args: [data: string, options?: Parameters<typeof fs.writeFile>[2]]
     ) => {
       if (String(file) === lockPath && writeAttempts === 0) {
         writeAttempts += 1;
         throw errno('EEXIST', 'lock already exists');
       }
       writeAttempts += 1;
-      return actualFs().writeFile(file, ...(args as []));
+      return actualFs().writeFile(file, args[0], args[1]);
     }) as typeof fs.writeFile);
-    vi.mocked(fs.readFile).mockImplementation(((
-      file: Parameters<typeof fs.readFile>[0],
-      ...args: unknown[]
-    ) => {
-      if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
-      return actualFs().readFile(file, ...(args as []));
-    }) as typeof fs.readFile);
+    vi.mocked(fs.readFile).mockImplementation(
+      (
+        file: Parameters<typeof fs.readFile>[0],
+        ...args: [options?: Parameters<typeof fs.readFile>[1]]
+      ) => {
+        if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
+        return args[0] === undefined
+          ? actualFs().readFile(file)
+          : actualFs().readFile(file, args[0]);
+      },
+    );
 
     const lock = await acquireSessionWriteLock(sessionDir, 1000);
 
@@ -293,7 +490,7 @@ describe('persistence-lock', () => {
       const lockPath = sessionLockPath(sessionDir);
       vi.mocked(fs.writeFile).mockImplementation(((file: Parameters<typeof fs.writeFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-        return actualFs().writeFile(file, ...([] as never));
+        return actualFs().writeFile(file, '', { encoding: 'utf-8' });
       }) as typeof fs.writeFile);
 
       // EACCES should propagate directly, not be treated as EEXIST
@@ -308,22 +505,26 @@ describe('persistence-lock', () => {
 
       vi.mocked(fs.writeFile).mockImplementation(((
         file: Parameters<typeof fs.writeFile>[0],
-        ...args: unknown[]
+        ...args: [data: string, options?: Parameters<typeof fs.writeFile>[2]]
       ) => {
         if (String(file) === lockPath && writeAttempts === 0) {
           writeAttempts += 1;
           throw errno('EEXIST', 'lock already exists');
         }
         writeAttempts += 1;
-        return actualFs().writeFile(file, ...(args as []));
+        return actualFs().writeFile(file, args[0], args[1]);
       }) as typeof fs.writeFile);
-      vi.mocked(fs.readFile).mockImplementation(((
-        file: Parameters<typeof fs.readFile>[0],
-        ...args: unknown[]
-      ) => {
-        if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
-        return actualFs().readFile(file, ...(args as []));
-      }) as typeof fs.readFile);
+      vi.mocked(fs.readFile).mockImplementation(
+        (
+          file: Parameters<typeof fs.readFile>[0],
+          ...args: [options?: Parameters<typeof fs.readFile>[1]]
+        ) => {
+          if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
+          return args[0] === undefined
+            ? actualFs().readFile(file)
+            : actualFs().readFile(file, args[0]);
+        },
+      );
 
       const lock = await acquireSessionWriteLock(sessionDir, 1000);
       // Key assertion: ENOENT during stale check = stale → no contention wait
@@ -338,10 +539,10 @@ describe('persistence-lock', () => {
       const lock = await acquireSessionWriteLock(sessionDir);
 
       // Mock readFile in release to throw EACCES
-      vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
+      vi.mocked(fs.readFile).mockImplementation((file: Parameters<typeof fs.readFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-        return actualFs().readFile(file, ...([] as never));
-      }) as typeof fs.readFile);
+        return actualFs().readFile(file, { encoding: 'utf-8' });
+      });
 
       // Release should throw EACCES (not swallow it)
       await expect(lock.release()).rejects.toMatchObject({ code: 'EACCES' });
@@ -358,10 +559,10 @@ describe('persistence-lock', () => {
       const firstLock = await acquireSessionWriteLock(sessionDir);
 
       // Mock readFile to throw in the timeout path (so blockingPid stays undefined)
-      vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
+      vi.mocked(fs.readFile).mockImplementation((file: Parameters<typeof fs.readFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-        return actualFs().readFile(file, ...([] as never));
-      }) as typeof fs.readFile);
+        return actualFs().readFile(file, { encoding: 'utf-8' });
+      });
 
       try {
         await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({

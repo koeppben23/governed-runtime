@@ -29,9 +29,9 @@ export interface TimestampResolutionInput {
   readonly canonicalEventDigest: string;
   readonly eventKind: string;
   readonly localTimestamp: string;
-  readonly tsaProvider?: TimestampAuthorityProvider;
-  readonly tsaVerifier?: TimestampVerifier;
-  readonly ntpResult?: NtpCheckResult;
+  readonly tsaProvider?: TimestampAuthorityProvider | undefined;
+  readonly tsaVerifier?: TimestampVerifier | undefined;
+  readonly ntpResult?: NtpCheckResult | undefined;
 }
 
 export interface TimestampResolutionResult {
@@ -107,7 +107,7 @@ async function resolveTsaCriticalTimestamp(
   }
   if (!input.tsaProvider) return tsaProviderUnavailableResult(input);
   try {
-    const tsaResponse = await requestTimestamp(input);
+    const tsaResponse = await requestTimestamp(input, input.tsaProvider);
     const verification = await verifyTimestampResponse(input, tsaResponse.tokenDerBase64);
     return verification?.status === 'invalid'
       ? invalidTsaResult(input, tsaResponse, verification.reason ?? 'invalid_timestamp_token')
@@ -131,8 +131,11 @@ function tsaProviderUnavailableResult(input: TimestampResolutionInput): Timestam
   };
 }
 
-async function requestTimestamp(input: TimestampResolutionInput) {
-  return input.tsaProvider!.requestTimestamp({
+async function requestTimestamp(
+  input: TimestampResolutionInput,
+  tsaProvider: TimestampAuthorityProvider,
+) {
+  return tsaProvider.requestTimestamp({
     digest: canonicalDigestToUint8Array(input.canonicalEventDigest),
     digestAlgorithm: 'sha256',
     tsaUrl: input.policy.tsaUrl ?? '',
@@ -141,14 +144,21 @@ async function requestTimestamp(input: TimestampResolutionInput) {
 }
 
 async function verifyTimestampResponse(input: TimestampResolutionInput, tokenDerBase64: string) {
-  return input.tsaVerifier
-    ? input.tsaVerifier.verifyToken({
-        tokenDerBase64,
-        expectedDigest: canonicalDigestToUint8Array(input.canonicalEventDigest),
-        digestAlgorithm: 'sha256',
-        trustAnchors: [...(input.policy.trustAnchors ?? [])],
-      })
-    : undefined;
+  if (!input.tsaVerifier) return undefined;
+  // Stamp-time verification only ever requests SHA-256 imprints from the TSA,
+  // so only the SHA-256 expected digest exists here. The sha384/sha512 slots
+  // are deliberately EMPTY: a token declaring a different imprint algorithm
+  // fails the constant-time comparison closed (length folding) instead of
+  // being compared against an arbitrary placeholder.
+  return input.tsaVerifier.verifyToken({
+    tokenDerBase64,
+    expectedDigests: {
+      sha256: canonicalDigestToUint8Array(input.canonicalEventDigest),
+      sha384: new Uint8Array(0),
+      sha512: new Uint8Array(0),
+    },
+    trustAnchors: [...(input.policy.trustAnchors ?? [])],
+  });
 }
 
 function invalidTsaResult(

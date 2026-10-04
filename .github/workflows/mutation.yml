@@ -1,14 +1,15 @@
 name: Mutation Testing
 
-# Scope: scheduled (weekly) + release branches + manual dispatch — NOT a PR gate.
-#
-# A per-PR mutation gate was evaluated and rejected: Stryker 9 has no git-since
-# mode, and restricting `--mutate` to changed files produces unreliable results
-# with this repo's `perTest` coverageAnalysis + vitest-runner patch (spurious
-# test-runner errors and artificially low scores). The supported `--incremental`
-# cache mode still pays a full cold run and needs cross-run cache plumbing. Until
-# that is solved, mutation testing runs on the nightly/release cadence and is
-# intentionally NOT a required PR check (see .github/BRANCH-PROTECTION.md).
+# Scope: scheduled (weekly) + release branches + manual dispatch — NOT a PR
+# gate. A per-PR mutation gate was evaluated and rejected: the full-suite
+# Stryker run is too expensive for per-PR execution, and restricting
+# `--mutate` to changed files produces unreliable results with this repo's
+# `perTest` coverageAnalysis + vitest-runner patch (spurious test-runner
+# errors and artificially low scores). The supported `--incremental` cache
+# mode still pays a full cold run and needs cross-run cache plumbing. Until
+# that is solved, the full-suite mutation run stays on the nightly/release
+# cadence and is intentionally NOT a required PR check
+# (see .github/BRANCH-PROTECTION.md).
 
 on:
   schedule:
@@ -20,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,15 +31,15 @@ jobs:
   mutation:
     name: mutation
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
         with:
-          node-version: '20'
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -47,6 +49,11 @@ jobs:
       - name: Run mutation tests
         run: npm run mutation
 
+      - name: Write and verify mutation admission manifest
+        run: |
+          node scripts/verify-mutation-admission.mjs --profile base --write-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile base --verify-profile-manifest --require-admitted
+
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
@@ -54,3 +61,22 @@ jobs:
           name: mutation-report
           path: reports/mutation/
           retention-days: 1
+
+      - name: Report failure
+        if: github.event_name == 'schedule' && failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled workflow failed: ${{ github.workflow }}"
+          existing=$(gh issue list --state open --limit 100 --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          if [ -z "$existing" ]; then
+            gh issue create --title "$title" --body "## Scheduled workflow failure
+
+          The scheduled \`${{ github.workflow }}\` workflow run failed.
+
+          **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Review the failed step for root cause."
+          fi

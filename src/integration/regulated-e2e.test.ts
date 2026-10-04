@@ -31,6 +31,7 @@ import {
   run_check,
   implement,
   review_implementation,
+  export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -38,17 +39,36 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
+import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
+
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('./git-control-plane.js')>(),
+  );
+});
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
+    isGitRepo: vi.fn().mockResolvedValue(true),
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 vi.mock('../adapters/actor', async (importOriginal) => {
@@ -112,10 +132,7 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
-async function callOk(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callOk(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await sessDir(), args);
   recordDecisionIntentForTool(tool, finalArgs);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));
@@ -125,10 +142,7 @@ async function callOk(
   return result;
 }
 
-async function callBlocked(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callBlocked(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   recordDecisionIntentForTool(tool, args);
   const result = parseToolResult(await tool.execute(args, ctx));
   expect(result.error).toBe(true);
@@ -136,10 +150,7 @@ async function callBlocked(
   return result;
 }
 
-function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): void {
+function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void {
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
@@ -162,7 +173,10 @@ async function sessDir(): Promise<string> {
 async function bootstrapRegulatedPlanReview(): Promise<void> {
   await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
   await callOk(ticket, { text: 'Regulated task', source: 'user' });
-  await callOk(plan, { planText: '## Plan\nImplement the task with tests.' });
+  await callOk(plan, {
+    planText: '## Plan\nImplement the task with tests.',
+    targetPaths: ['docs/test.md'],
+  });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
     await callOk(plan, { reviewVerdict: 'accept' });
   }
@@ -182,17 +196,20 @@ async function approveWithReviewer(id = 'regulated-reviewer'): Promise<void> {
 
 async function driveToEvidenceReview(): Promise<void> {
   await approveWithReviewer('plan-reviewer');
-  expect(await phase()).toBe('VALIDATION');
-  // Discovery detects TypeScript → activeChecks=['typecheck']
-  // Run all active checks to pass VALIDATION
-  const dir = await sessDir();
-  const state = await readState(dir);
-  if (state && state.activeChecks.length > 0) {
-    for (const kind of state.activeChecks) {
-      await callOk(run_check, { kind });
-    }
-  }
+  // Approval enters VALIDATION and the runtime runs the active checks
+  // automatically (discovery detects TypeScript → activeChecks=['typecheck']),
+  // advancing to IMPLEMENTATION.
+  expect(await phase()).toBe('IMPLEMENTATION');
+  const postValidation = await readState(await sessDir());
+  expect(postValidation!.validation.length).toBeGreaterThan(0);
+
   await callOk(implement, {});
+  // Entering IMPL_VALIDATION runs the checks automatically against the
+  // recorded revision before advancing to IMPL_REVIEW.
+  expect(await phase()).toBe('IMPL_REVIEW');
+  const postImplValidation = await readState(await sessDir());
+  expect(postImplValidation!.implValidation.length).toBeGreaterThan(0);
+
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
@@ -205,11 +222,49 @@ describe('regulated-e2e critical path', () => {
     await driveToEvidenceReview();
     await approveWithReviewer('evidence-reviewer');
 
-    expect(await phase()).toBe('COMPLETE');
+    expect(await phase()).toBe('EXPORT_READY');
+    const exportResult = await callOk(exportTool, {});
+    expect(exportResult.phase).toBe('COMPLETE');
+    expect(exportResult.archiveStatus).toBe('verified');
+
     const state = await readState(await sessDir());
     expect(state?.phase).toBe('COMPLETE');
     expect(state?.policySnapshot.mode).toBe('regulated');
-    expect(state?.archiveStatus).toBeDefined();
+    expect(state?.regulatedArchiveStatus).toBe('verified');
+    expect(state?.exportCompletionEvidence).not.toBeNull();
+    const events = await readAuditTrail(await sessDir());
+    const approvalTransitionIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'transition' &&
+        event.detail.from === 'EVIDENCE_REVIEW' &&
+        event.detail.to === 'EXPORT_READY' &&
+        event.detail.event === 'APPROVE',
+    );
+    const exportTransitionIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'transition' &&
+        event.detail.from === 'EXPORT_READY' &&
+        event.detail.to === 'COMPLETE' &&
+        event.detail.event === 'EXPORT_MATERIALIZED',
+    );
+    const decisionIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'decision' &&
+        event.detail.fromPhase === 'EVIDENCE_REVIEW' &&
+        event.detail.toPhase === 'EXPORT_READY',
+    );
+    const lifecycleIndex = events.findIndex(
+      (event) => event.event === 'lifecycle:session_completed',
+    );
+    expect(approvalTransitionIndex).toBeGreaterThanOrEqual(0);
+    expect(exportTransitionIndex).toBeGreaterThan(approvalTransitionIndex);
+    expect(decisionIndex).toBeGreaterThan(approvalTransitionIndex);
+    expect(lifecycleIndex).toBeGreaterThan(decisionIndex);
+    expect(lifecycleIndex).toBeGreaterThan(exportTransitionIndex);
+    const fingerprint = await computeFingerprint(ctx.worktree);
+    expect((await verifyRegulatedArchive(fingerprint.fingerprint, ctx.sessionID)).passed).toBe(
+      true,
+    );
   });
 
   it('blocks same actor approval with FOUR_EYES_ACTOR_MATCH', async () => {
@@ -250,31 +305,53 @@ describe('regulated-e2e critical path', () => {
   it('blocks run_check for a kind not in verificationCandidates', async () => {
     await bootstrapRegulatedPlanReview();
     await approveWithReviewer();
+    // Reset the validation projection to the pending wait state so the explicit
+    // run_check compatibility surface is gated directly (automatic validation
+    // already advanced to IMPLEMENTATION).
+    const dir = await sessDir();
+    const state = await readState(dir);
+    const patched = {
+      ...state!,
+      phase: 'VALIDATION' as const,
+      validation: [],
+      validationAttempts: [],
+      implementation: null,
+    };
+    delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+    await writeState(dir, patched);
 
     const result = await callBlocked(run_check, { kind: 'security' });
     expect(result.code).toBe('CHECK_KIND_NOT_AVAILABLE');
     expect(await phase()).toBe('VALIDATION');
   });
 
-  it('strict regulated audit verification rejects legacy unchained events', async () => {
+  it('audit verification rejects non-v3 unchained records in every mode', async () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     const dir = await sessDir();
     const legacyEvent = {
       id: crypto.randomUUID(),
       sessionId: ctx.sessionID,
       phase: 'READY',
-      event: 'legacy_event',
-      timestamp: new Date().toISOString(),
+      event: 'non_v3_event',
+      occurredAt: new Date().toISOString(),
       actor: 'legacy',
       detail: { source: 'test' },
     };
     await fs.appendFile(path.join(dir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
 
-    const { events } = await readAuditTrail(dir);
-    const result = verifyChain(events as unknown as Array<Record<string, unknown>>, {
-      strict: true,
+    // The epoch reader itself rejects the non-v3 record.
+    await expect(readAuditTrail(dir)).rejects.toMatchObject({
+      code: 'AUDIT_ENVELOPE_INVALID',
     });
+
+    // Verification over raw lines also fails closed.
+    const raw = await fs.readFile(path.join(dir, 'audit.jsonl'), 'utf-8');
+    const events = raw
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const result = verifyChain(events);
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+    expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
   });
 });

@@ -34,14 +34,18 @@ const ALL_PHASES: Phase[] = [
   'PLAN_REVIEW',
   'VALIDATION',
   'IMPLEMENTATION',
+  'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
+  'EXPORT_READY',
   'COMPLETE',
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ];
 
 const POLICY_MODES = ['solo', 'team', 'regulated'] as const;
@@ -59,7 +63,7 @@ describe('state machine fuzz', () => {
           const policy = { requireHumanGates: mode !== 'solo' };
 
           for (let i = 0; i < steps && !TERMINAL.has(phase); i++) {
-            const state = makeState(phase) as SessionState;
+            const state = makeState(phase);
             const result = evaluate(state, policy);
             expect(result).toBeDefined();
             expect(['transition', 'waiting', 'terminal', 'pending']).toContain(result.kind);
@@ -104,7 +108,7 @@ describe('state machine fuzz', () => {
           'IMPLEMENTATION',
           'IMPL_REVIEW',
           'ARCHITECTURE',
-          'REVIEW' as Phase,
+          'PEER_REVIEW' as Phase,
         ),
         (phase) => {
           const state = makeState(phase, {
@@ -114,7 +118,7 @@ describe('state machine fuzz', () => {
               recoveryHint: 'none',
               occurredAt: new Date().toISOString(),
             },
-          }) as SessionState;
+          });
 
           const result = evaluate(state, {});
           expect(result.kind).toBe('transition');
@@ -134,9 +138,15 @@ describe('state machine fuzz', () => {
   it('terminal phases return kind: terminal', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE' as Phase),
+        fc.constantFrom(
+          'COMPLETE',
+          'ARCH_COMPLETE',
+          'PEER_REVIEW_COMPLETE',
+          'REJECTED',
+          'ABORTED' as Phase,
+        ),
         (phase) => {
-          const state = makeState(phase) as SessionState;
+          const state = makeState(phase);
           const result = evaluate(state, {});
           expect(result.kind).toBe('terminal');
         },
@@ -154,7 +164,7 @@ describe('state machine fuzz', () => {
       fc.property(
         fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW' as Phase),
         (phase) => {
-          const state = makeState(phase) as SessionState;
+          const state = makeState(phase);
           const result = evaluate(state, { requireHumanGates: true });
           expect(result.kind).toBe('waiting');
         },
@@ -167,19 +177,30 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('user gates auto-approve when requireHumanGates is false', () => {
+  it('solo mode auto-approves only plan and evidence gates', () => {
     fc.assert(
-      fc.property(
-        fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW' as Phase),
-        (phase) => {
-          const state = makeState(phase) as SessionState;
-          const result = evaluate(state, { requireHumanGates: false });
-          expect(result.kind).toBe('transition');
-          if (result.kind === 'transition') {
-            expect(result.event).toBe('APPROVE');
-          }
-        },
-      ),
+      fc.property(fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW' as Phase), (phase) => {
+        const state = makeState(phase);
+        const result = evaluate(state, { requireHumanGates: false });
+        expect(result.kind).toBe('transition');
+        if (result.kind === 'transition') {
+          expect(result.event).toBe('APPROVE');
+        }
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('architecture review always waits for an explicit human decision', () => {
+    fc.assert(
+      fc.property(fc.boolean(), (requireHumanGates) => {
+        const result = evaluate(makeState('ARCH_REVIEW'), { requireHumanGates });
+        expect(result.kind).toBe('waiting');
+      }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
         seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
@@ -206,28 +227,21 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('REJECT and CHANGES_REQUESTED resolve to expected backward phases', () => {
+  it('REJECT ends the workflow at REJECTED and CHANGES_REQUESTED returns to revision', () => {
     fc.assert(
       fc.property(
         fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW' as Phase),
         (gatePhase) => {
-          // REJECT always goes far backward.
+          // REJECT terminates the governed workflow at the dedicated terminal.
           const rejectTarget = resolveTransition(gatePhase, 'REJECT');
-          expect(rejectTarget).toBeDefined();
-          // CHANGES_REQUESTED goes one step backward.
+          expect(rejectTarget).toBe('REJECTED');
+          expect(TERMINAL.has(rejectTarget!)).toBe(true);
+
+          // CHANGES_REQUESTED returns to the subject's revision position.
           const crTarget = resolveTransition(gatePhase, 'CHANGES_REQUESTED');
           expect(crTarget).toBeDefined();
-
-          // Both targets must be valid phases.
-          expect(ALL_PHASES).toContain(rejectTarget!);
-          expect(ALL_PHASES).toContain(crTarget!);
-
-          // REJECT and CHANGES_REQUESTED should resolve to different targets
-          // (different reversal distance).
-          if (gatePhase !== 'ARCH_REVIEW') {
-            // PLAN_REVIEW and EVIDENCE_REVIEW: REJECT goes further than CHANGES_REQUESTED.
-            expect(rejectTarget).not.toBe(crTarget);
-          }
+          expect(['PLAN', 'IMPLEMENTATION', 'ARCHITECTURE']).toContain(crTarget!);
+          expect(crTarget).not.toBe(rejectTarget);
         },
       ),
       {
@@ -258,11 +272,16 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('ABORT is never reachable through topology — always fail-closed', () => {
+  it('ABORT resolves to ABORTED from every non-terminal phase and fails closed at terminals', () => {
     fc.assert(
       fc.property(fc.constantFrom(...ALL_PHASES), (phase) => {
         const target = resolveTransition(phase, 'ABORT');
-        expect(target).toBeUndefined();
+        if (TERMINAL.has(phase)) {
+          // Already terminal: abort is a no-op, never a second transition.
+          expect(target).toBeUndefined();
+        } else {
+          expect(target).toBe('ABORTED');
+        }
       }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
@@ -272,14 +291,41 @@ describe('state machine fuzz', () => {
     );
   });
 
+  it('EXPORT_READY completes only through EXPORT_MATERIALIZED', () => {
+    const events = TRANSITIONS.get('EXPORT_READY')!;
+    expect([...events.keys()].sort()).toEqual(['ABORT', 'EXPORT_MATERIALIZED']);
+    expect(resolveTransition('EXPORT_READY', 'EXPORT_MATERIALIZED')).toBe('COMPLETE');
+    expect(resolveTransition('EXPORT_READY', 'ABORT')).toBe('ABORTED');
+    // No approval or validation event may complete the workflow directly.
+    for (const event of [
+      'APPROVE',
+      'CHANGES_REQUESTED',
+      'ALL_PASSED',
+      'IMPL_COMPLETE',
+    ] as Event[]) {
+      expect(resolveTransition('EXPORT_READY', event)).toBeUndefined();
+    }
+  });
+
+  it('REVIEW_EXHAUSTED routes the exhausted implementation loop to the final gate', () => {
+    expect(resolveTransition('IMPL_REVIEW', 'REVIEW_EXHAUSTED')).toBe('EVIDENCE_REVIEW');
+    // Ordinary convergence still routes to the same gate; exhaustion changes the
+    // gate type via the directive, never the topology target.
+    expect(resolveTransition('IMPL_REVIEW', 'REVIEW_MET')).toBe('EVIDENCE_REVIEW');
+  });
+
   it('flow-selection events (TICKET_SELECTED, ARCHITECTURE_SELECTED, REVIEW_SELECTED) resolve from READY', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('TICKET_SELECTED', 'ARCHITECTURE_SELECTED', 'REVIEW_SELECTED' as Event),
+        fc.constantFrom(
+          'TICKET_SELECTED',
+          'ARCHITECTURE_SELECTED',
+          'PEER_REVIEW_SELECTED' as Event,
+        ),
         (event) => {
           const target = resolveTransition('READY', event);
           expect(target).toBeDefined();
-          expect(['TICKET', 'ARCHITECTURE', 'REVIEW']).toContain(target!);
+          expect(['TICKET', 'ARCHITECTURE', 'PEER_REVIEW']).toContain(target!);
         },
       ),
       {
@@ -290,12 +336,24 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('REDUCED_CEREMONY and IMPL_COMPLETE resolve from IMPLEMENTATION', () => {
+  it('REDUCED_CEREMONY resolves only from IMPL_VALIDATION, never from IMPLEMENTATION', () => {
     fc.assert(
-      fc.property(fc.constantFrom('REDUCED_CEREMONY', 'IMPL_COMPLETE' as Event), (event) => {
-        const target = resolveTransition('IMPLEMENTATION', event);
-        expect(target).toBeDefined();
-        expect(['EVIDENCE_REVIEW', 'IMPL_REVIEW']).toContain(target!);
+      fc.property(fc.constant('REDUCED_CEREMONY'), (event) => {
+        expect(resolveTransition('IMPL_VALIDATION', event)).toBe('EVIDENCE_REVIEW');
+        expect(resolveTransition('IMPLEMENTATION', event)).toBeUndefined();
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('IMPL_COMPLETE resolves from IMPLEMENTATION to IMPL_VALIDATION', () => {
+    fc.assert(
+      fc.property(fc.constant('IMPL_COMPLETE'), (event) => {
+        expect(resolveTransition('IMPLEMENTATION', event)).toBe('IMPL_VALIDATION');
       }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,

@@ -15,6 +15,7 @@ describe('evidence-ticket', () => {
         digest: 'abc123',
         source: 'user',
         createdAt: FIXED_TIME,
+        riskDeclaration: { kind: 'absent' },
       };
       expect(TicketEvidence.parse(ticket)).toEqual(ticket);
     });
@@ -25,6 +26,7 @@ describe('evidence-ticket', () => {
         digest: 'def456',
         source: 'external' as const,
         createdAt: FIXED_TIME,
+        riskDeclaration: { kind: 'absent' },
         inputOrigin: 'external_reference' as const,
         references: [{ ref: 'https://github.com/org/repo/issues/1' }],
       };
@@ -40,6 +42,7 @@ describe('evidence-ticket', () => {
           digest: 'abc',
           source: 'user',
           createdAt: FIXED_TIME,
+          riskDeclaration: { kind: 'absent' },
         }),
       ).toThrow();
     });
@@ -51,6 +54,7 @@ describe('evidence-ticket', () => {
           digest: 'abc',
           source: 'unknown',
           createdAt: FIXED_TIME,
+          riskDeclaration: { kind: 'absent' },
         }),
       ).toThrow();
     });
@@ -58,7 +62,13 @@ describe('evidence-ticket', () => {
 
   describe('CORNER', () => {
     it('TicketEvidence source must be user or external', () => {
-      const ticket = { text: 'Test', digest: 'abc', source: 'user', createdAt: FIXED_TIME };
+      const ticket = {
+        text: 'Test',
+        digest: 'abc',
+        source: 'user',
+        createdAt: FIXED_TIME,
+        riskDeclaration: { kind: 'absent' as const },
+      };
       expect(() => TicketEvidence.parse({ ...ticket, source: 'user' })).not.toThrow();
       expect(() => TicketEvidence.parse({ ...ticket, source: 'external' })).not.toThrow();
     });

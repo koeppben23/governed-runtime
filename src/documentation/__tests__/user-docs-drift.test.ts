@@ -10,10 +10,15 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES } from '../../integration/command-aliases.js';
+import {
+  INSTALLED_COMMANDS,
+  INSTALLED_TEMPLATE_FILES,
+  preferredInvocationForTool,
+  type InstalledCommandDefinition,
+} from '../../integration/installed-commands.js';
 import { TRANSITIONS, USER_GATES } from '../../machine/topology.js';
 import { Phase } from '../../state/schema.js';
-import { COMMANDS } from '../../templates/commands/index.js';
+import { FlowGuardConfigSchema } from '../../config/flowguard-config.js';
 import { REGULATED_POLICY, SOLO_POLICY, TEAM_CI_POLICY, TEAM_POLICY } from '../../config/policy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,29 +32,58 @@ function slash(name: string): string {
   return `/${name}`;
 }
 
+/**
+ * A product alias is a product-facing identity whose invocation differs from
+ * the canonical machine command it resolves to. Canonical same-name identities
+ * (for example `/override-approve`) are not aliases.
+ */
+function isProductAlias(definition: InstalledCommandDefinition): boolean {
+  const productKind =
+    definition.kind === 'preferred_name' ||
+    definition.kind === 'action_variant' ||
+    definition.kind === 'convenience';
+  if (!productKind) return false;
+  const canonical = definition.target.workflowCommand;
+  return canonical === undefined || definition.invocation !== slash(canonical);
+}
+
+const productAliasDefinitions = INSTALLED_COMMANDS.filter(isProductAlias);
+const productAliasTemplates = new Set<string>(
+  productAliasDefinitions.map((definition) => definition.templateFile),
+);
+
+function canonicalTargetFor(definition: InstalledCommandDefinition): string {
+  if (definition.target.workflowCommand) return slash(definition.target.workflowCommand);
+  const invocation = preferredInvocationForTool(definition.target.toolName);
+  if (!invocation) throw new TypeError(`no primary invocation for ${definition.id}`);
+  return invocation;
+}
+
 function installedCoreCommands(): string[] {
-  const aliases = new Set(Object.keys(COMMAND_ALIASES).map(slash));
-  return Object.keys(COMMANDS)
-    .map((fileName) => slash(fileName.replace(/\.md$/, '')))
-    .filter((command) => !aliases.has(command))
+  return INSTALLED_TEMPLATE_FILES.filter((templateFile) => !productAliasTemplates.has(templateFile))
+    .map((templateFile) => slash(templateFile.replace(/\.md$/, '')))
     .sort();
 }
 
 function extractCommandHeadings(content: string): string[] {
-  return Array.from(content.matchAll(/^### (\/[a-z][a-z-]*)$/gm), (match) => match[1]).sort();
+  return Array.from(content.matchAll(/^### (\/[a-z][a-z-]*)$/gm), (match) => match[1] ?? '').sort();
 }
 
 function extractProductCommandRows(content: string): Map<string, string> {
   const rows = new Map<string, string>();
   for (const match of content.matchAll(/^\| `(\/[a-z][a-z-]*)`\s+\| `([^`]+)`/gm)) {
-    rows.set(match[1], match[2]);
+    const alias = match[1];
+    const target = match[2];
+    if (alias && target) rows.set(alias, target);
   }
   return rows;
 }
 
 function extractPhaseTableNames(content: string): string[] {
   return [
-    ...new Set(Array.from(content.matchAll(/^\| ([A-Z][A-Z_]+)\s+\|/gm), (match) => match[1])),
+    ...new Set(
+      Array.from(content.matchAll(/^\| ([A-Z][A-Z_]+)\s+\|/gm), (match) => match[1] ?? ''),
+    ),
   ].sort();
 }
 
@@ -59,27 +93,66 @@ function policyModes(): string[] {
     .sort();
 }
 
+function extractSettingSection(content: string, setting: string): string {
+  const heading = `### ${setting}`;
+  const startIdx = content.indexOf(heading);
+  if (startIdx < 0) throw new Error(`Missing documentation section for ${setting}`);
+  const afterHeading = content.indexOf('\n', startIdx) + 1;
+  let endIdx = content.indexOf('\n### ', afterHeading);
+  if (endIdx < 0) endIdx = content.length;
+  return content.slice(afterHeading, endIdx).trim();
+}
+
+function extractJsonExample(content: string, sectionHeading: string): unknown {
+  const sectionIdx = content.indexOf(sectionHeading);
+  if (sectionIdx < 0) throw new Error(`Missing section: ${sectionHeading}`);
+  const blockMatch = content.slice(sectionIdx).match(/```json\s*\n([\s\S]*?)\n```/);
+  if (!blockMatch?.[1]) throw new Error(`Missing JSON example in ${sectionHeading}`);
+  try {
+    return JSON.parse(blockMatch[1]);
+  } catch (error) {
+    throw new Error(
+      `Invalid JSON in ${sectionHeading}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
 describe('documentation/user-docs-drift', () => {
   describe('HAPPY — docs/commands.md command surface', () => {
     it('advanced command headings match installed core command templates', () => {
       expect(extractCommandHeadings(readDoc('docs/commands.md'))).toEqual(installedCoreCommands());
     });
 
-    it('product command table maps aliases to COMMAND_ALIASES targets', () => {
+    it('product command table maps product aliases to canonical targets', () => {
       const rows = extractProductCommandRows(readDoc('docs/commands.md'));
 
-      for (const [alias, resolution] of Object.entries(COMMAND_ALIASES)) {
-        const documentedTarget = rows.get(slash(alias));
-        expect(documentedTarget, `docs/commands.md must document /${alias}`).toBeTruthy();
-        expect(documentedTarget).toContain(slash(resolution.canonicalCommand));
+      for (const definition of productAliasDefinitions) {
+        const documentedTarget = rows.get(definition.invocation);
+        expect(
+          documentedTarget,
+          `docs/commands.md must document ${definition.invocation}`,
+        ).toBeTruthy();
+        expect(documentedTarget).toContain(canonicalTargetFor(definition));
 
-        if (resolution.defaultArgs?.verdict !== undefined) {
-          expect(documentedTarget).toContain(String(resolution.defaultArgs.verdict));
+        if (definition.target.fixedArgs?.verdict !== undefined) {
+          expect(documentedTarget).toContain(String(definition.target.fixedArgs.verdict));
         }
-        if (resolution.defaultArgs?.whyBlocked === true) {
+        if (definition.target.fixedArgs?.whyBlocked === true) {
           expect(documentedTarget).toContain('--why-blocked');
         }
       }
+    });
+  });
+
+  describe('HAPPY — installation links to the canonical command reference', () => {
+    it('does not duplicate product alias mappings', () => {
+      const content = readDoc('docs/installation.md');
+
+      expect(content).toContain('[Commands](./commands.md)');
+      expect(content).not.toContain('**Product aliases');
+      expect(content).not.toContain('`/ticket` + `/plan`');
     });
   });
 
@@ -90,8 +163,16 @@ describe('documentation/user-docs-drift', () => {
 
     it('documented phase and flow counts match schema/topology', () => {
       const content = readDoc('docs/phases.md');
+      const readyTransitions = TRANSITIONS.get('READY');
+      // READY also carries the emergency ABORT transition; the documented flow
+      // count is the number of flow-selection targets, not the raw event count.
+      const flowCount = [...(readyTransitions?.values() ?? [])].filter(
+        (phase) => phase !== 'ABORTED',
+      ).length;
+      expect(flowCount).toBe(3);
       expect(content).toContain(`${Phase.options.length} explicit workflow phases`);
-      expect(content).toContain(`${TRANSITIONS.get('READY')?.size} independent flows`);
+      expect(content).toContain(`${flowCount} independent flows`);
+      expect(content).toContain(`${readyTransitions?.size} transitions from READY`);
     });
 
     it('documented user gates match topology USER_GATES', () => {
@@ -114,12 +195,68 @@ describe('documentation/user-docs-drift', () => {
 
     it('review iteration defaults match policy presets', () => {
       const content = readDoc('docs/configuration.md');
+      for (const budget of ['plan', 'architecture', 'implementation'] as const) {
+        expect(SOLO_POLICY.reviewBudget[budget]).toBe(TEAM_POLICY.reviewBudget[budget]);
+        expect(TEAM_CI_POLICY.reviewBudget[budget]).toBe(REGULATED_POLICY.reviewBudget[budget]);
+      }
       expect(content).toContain(
-        `solo=${SOLO_POLICY.maxSelfReviewIterations}, team=${TEAM_POLICY.maxSelfReviewIterations}, team-ci=${TEAM_CI_POLICY.maxSelfReviewIterations}, regulated=${REGULATED_POLICY.maxSelfReviewIterations}`,
+        `**Default:** \`${TEAM_POLICY.reviewBudget.plan}\` for every budget in every policy preset`,
       );
-      expect(content).toContain(
-        `solo=${SOLO_POLICY.maxImplReviewIterations}, team=${TEAM_POLICY.maxImplReviewIterations}, team-ci=${TEAM_CI_POLICY.maxImplReviewIterations}, regulated=${REGULATED_POLICY.maxImplReviewIterations}`,
+    });
+
+    it('configuration schema example validates against FlowGuardConfigSchema', () => {
+      const example = extractJsonExample(
+        readDoc('docs/configuration.md'),
+        '## Configuration Schema',
       );
+      const result = FlowGuardConfigSchema.safeParse(example);
+      expect(result.success).toBe(true);
+    });
+
+    it('documents the built-in policy default from TEAM_POLICY authority', () => {
+      const content = readDoc('docs/configuration.md');
+      expect(TEAM_POLICY.mode).toBe('team');
+      expect(content).toContain('**Default:** `team`');
+      expect(content).toContain('Built-in default: `team`');
+    });
+
+    it('review iteration bounds match schema max(10) for each budget', () => {
+      const content = readDoc('docs/configuration.md');
+      const section = extractSettingSection(content, 'policy.reviewBudget');
+      expect(section).toContain('(1-10)');
+      expect(section).not.toContain('(1-20)');
+    });
+
+    it('distinguishes explicit, persisted, and built-in policy mode sources', () => {
+      const content = readDoc('docs/configuration.md');
+      const section = extractSettingSection(content, 'policy.defaultMode');
+      expect(section).toContain('Explicit `/hydrate` tool argument');
+      expect(section).toContain('`flowguard.json`');
+      expect(section).toContain('Built-in default: `team`');
+      expect(section).toContain('installer persists `--policy-mode`');
+    });
+
+    it('host-selection matrix documents enforcement levels and restart activation', () => {
+      const content = readDoc('docs/installation.md');
+      expect(content).toContain('## Host Selection Matrix');
+
+      // All three hosts present
+      expect(content).toContain('OpenCode');
+      expect(content).toContain('Claude Code');
+      expect(content).toContain('Codex');
+
+      // Enforcement levels from authority
+      expect(content).toContain('`synchronous`');
+      expect(content).toContain('`hook_gated`');
+
+      // Each host requires restart for activation
+      expect(content).toMatch(/Restart OpenCode/);
+      expect(content).toMatch(/Restart Claude/);
+      expect(content).toMatch(/Restart Codex/);
+
+      // Key limitations present
+      expect(content).toContain('Hook timeout');
+      expect(content).toContain('NOT_VERIFIED_NATIVE_LOAD');
     });
   });
 

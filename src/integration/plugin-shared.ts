@@ -23,9 +23,19 @@ import type { ToolHookBeforeInput, ToolHookAfterInput } from './types.js';
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
 
-export const FG_PREFIX = 'flowguard_';
 const TRACE_REGISTRY_LIMIT = 1000;
 
+/** Limits tool use until the host observes the next explicit user command. */
+export type ActiveCommandScope = 'check';
+
+/**
+ * Session IDs whose /check command is inside a reviewer-requested repair
+ * continuation. The persisted `implementationRework` marker is retained across
+ * re-records and closed only on the full validation pass into IMPL_REVIEW; the
+ * command-scope-local latch additionally keeps the repair surface unlocked
+ * through IMPLEMENTATION → IMPL_VALIDATION → IMPLEMENTATION until the review
+ * loop's terminal verdict even if the marker were absent.
+ */
 export interface FlowGuardPluginRuntime {
   readonly ws: PluginWorkspaceRuntime;
   readonly log: PluginLogger;
@@ -35,8 +45,26 @@ export interface FlowGuardPluginRuntime {
   readonly orchestratorDeps: OrchestratorDeps;
   readonly auditDeps: AuditDeps;
   readonly toolTraceIds: Map<string, string>;
-  readonly setCurrentSessionId: (sessionId: string) => void;
+  readonly activeCommandScopes: Map<string, ActiveCommandScope>;
+  readonly checkReworkContinuations: Set<string>;
   readonly logError: (message: string, err: unknown) => void;
+}
+
+/**
+ * Remove all session-scoped runtime ephemera for a terminated session.
+ *
+ * Single cleanup authority for host session termination: persists nothing,
+ * drops enforcement/chain state plus the in-memory maps held by the plugin
+ * runtime (command scopes, rework continuations, tool trace correlation).
+ */
+export function cleanupSessionRuntime(runtime: FlowGuardPluginRuntime, sessionId: string): void {
+  runtime.ws.invalidateChainState(sessionId);
+  runtime.activeCommandScopes.delete(sessionId);
+  runtime.checkReworkContinuations.delete(sessionId);
+  const traceKeyPrefix = `${sessionId}:`;
+  for (const key of runtime.toolTraceIds.keys()) {
+    if (key.startsWith(traceKeyPrefix)) runtime.toolTraceIds.delete(key);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

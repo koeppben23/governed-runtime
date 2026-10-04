@@ -1,22 +1,44 @@
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { readState } from '../adapters/persistence.js';
-import { buildEnforcementError } from './plugin-helpers.js';
+import { workspacesHome } from '../adapters/workspace/index.js';
+import { buildEnforcementError } from './blocked-result.js';
+
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
-import {
-  enforceBeforeVerdict,
-  enforceBeforeSubagentCall,
-  enforceReviewerObligation,
-} from './review/enforcement/enforcement.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
+import { isMutatingFlowGuardTool } from './tool-classification.js';
+import { enforceBeforeVerdict } from './review/enforcement/enforcement.js';
 import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
-import { getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
-import { isFlowGuardVerdictTool } from './tool-names.js';
+import {
+  getToolTraceId,
+  type ActiveCommandScope,
+  type FlowGuardPluginRuntime,
+} from './plugin-shared.js';
+import {
+  FLOWGUARD_TOOL_PREFIX,
+  isFlowGuardVerdictTool,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
+  TOOL_FLOWGUARD_STATUS,
+} from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
+import { resolveAttemptByCapability } from './review/observations/observation-resolution.js';
+import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
+import { auditEnforcementDenied } from './plugin-audit.js';
+import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { recoverRegulatedCompletion } from './plugin-regulated-recovery.js';
+import { writeStateWithAuditOperationsAlreadyLocked } from './audit-outbox.js';
+import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
+import { getRuntimeInstanceId } from './runtime-instance.js';
+import { acquireRuntimeLease } from './runtime-lease.js';
+import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -31,14 +53,18 @@ export async function commandBefore(
       return;
     }
 
+    // Stryker disable next-line OptionalChaining — equivalent: sessionID-missing inputs return at the guard above before this line is reached.
+    updateCommandScope(runtime, rawSessionId, hookInput?.command ?? '');
+
     const intent = recordUserDecisionIntentFromCommand({
       sessionId: rawSessionId,
+      // Stryker disable next-line OptionalChaining — equivalent: the `?? ''` fallback keeps removed optional chains observationally identical.
       command: hookInput?.command ?? '',
+      // Stryker disable next-line OptionalChaining — equivalent: decision commands ignore the arguments value when absent; the `?? ''` fallback neutralizes single-`?.` removals.
       arguments: hookInput?.arguments ?? '',
     });
     if (!intent) return;
 
-    runtime.setCurrentSessionId(rawSessionId);
     runtime.log.info('decision', 'recorded user decision command intent', {
       sessionId: rawSessionId,
       command: intent.command,
@@ -54,39 +80,70 @@ export async function toolBefore(
   output: unknown,
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
-    const toolName = (input as ToolHookBeforeInput)?.tool ?? '';
-    const sessionId = (input as ToolHookBeforeInput)?.sessionID ?? 'unknown';
+    const hookInput = input as ToolHookBeforeInput;
+    const toolName = hookInput?.tool ?? '';
+    const sessionId = hookInput?.sessionID ?? 'unknown';
     const traceId = getToolTraceId(runtime, input, 'before');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
-      runtime.setCurrentSessionId(sessionId);
+      if (toolName.startsWith(FLOWGUARD_TOOL_PREFIX) || isMutatingHostTool(toolName)) {
+        await recoverRegulatedCompletion(runtime, sessionId);
+      }
       const args = (output as ToolHookBeforeOutput)?.args ?? {};
       runtime.log.info('hook', 'tool.execute.before', {
         tool: toolName,
       });
-      await enforceBeforeRules(runtime, toolName, sessionId, args);
+      try {
+        await enforceBeforeRules(runtime, toolName, sessionId, hookInput?.callID ?? '', args);
+      } catch (err) {
+        if (!toolName.startsWith(FLOWGUARD_TOOL_PREFIX)) {
+          const reasonCode = enforcementReasonCode(err);
+          if (reasonCode) {
+            await auditEnforcementDenied({
+              deps: runtime.auditDeps,
+              sessionId,
+              tool: toolName,
+              reasonCode,
+              hostCallId: hookInput?.callID ?? '',
+              traceId,
+            });
+          }
+        }
+        throw err;
+      }
     });
   });
+}
+
+function enforcementReasonCode(err: unknown): string | undefined {
+  if (!(err instanceof Error) || err.name !== 'FlowGuardEnforcementError') return undefined;
+  const { message } = err;
+  const prefix = '[FlowGuard] ';
+  if (!message.startsWith(prefix)) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(message.slice(prefix.length));
+    return typeof (parsed as { code?: unknown }).code === 'string'
+      ? (parsed as { code: string }).code
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function resolveEnforcement(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
   context: 'subagent' | 'verdict',
-): Promise<{ strictEnforcement: boolean; sessionState: SessionState | null }> {
+): Promise<SessionState | null> {
   try {
     const sessDir = runtime.ws.getSessionDir(sessionId);
-    const sessionState = sessDir ? await readState(sessDir) : null;
-    return {
-      sessionState,
-      strictEnforcement: sessionState?.policySnapshot?.selfReview?.strictEnforcement === true,
-    };
+    return sessDir ? await readState(sessDir) : null;
   } catch {
     runtime.log.warn(
       'enforcement',
       `Failed to read session state for ${context} enforcement check`,
       { sessionId },
     );
-    return { strictEnforcement: true, sessionState: null };
+    return null;
   }
 }
 
@@ -94,85 +151,233 @@ async function enforceBeforeRules(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
   sessionId: string,
+  callId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
-  if (toolName === 'task') {
-    await enforceTaskBefore(runtime, toolName, sessionId, args);
+  await enforceCommandScope(runtime, toolName, sessionId);
+
+  const mutatingHost = isMutatingHostTool(toolName);
+
+  let hostResolution: { sessDir: string; state: SessionState } | null = null;
+  if (mutatingHost) {
+    hostResolution = await resolveHostToolStateOrThrow(runtime, toolName, sessionId);
+  }
+
+  await enforceVerdictCheck(runtime, toolName, sessionId, args);
+
+  if (toolName === TOOL_FLOWGUARD_OBSERVE_REPOSITORY) {
+    await reconcileObservationParent(runtime, args);
     return;
   }
-  await enforceMutatingToolCheck(runtime, toolName, sessionId, args);
-  await enforceVerdictCheck(runtime, toolName, sessionId, args);
+
+  if (isMutatingFlowGuardTool(toolName) || mutatingHost) {
+    await reconcileBeforeMutation(runtime, sessionId, toolName);
+  }
+
+  if (mutatingHost && hostResolution) {
+    const freshState = await readFreshStateAfterReconcile(runtime, sessionId, hostResolution);
+    await enforceGitPrerequisiteBeforeMutation(runtime.riskDeps, toolName);
+    await enforceRiskBefore(runtime.riskDeps, hostResolution.sessDir, freshState, toolName, args);
+    await enforceDiscoveryHealthBefore(
+      runtime.discoveryHealthDeps,
+      hostResolution.sessDir,
+      freshState,
+      toolName,
+    );
+    await recordMutationDispatch(runtime, hostResolution.sessDir, sessionId, callId, toolName);
+  }
 }
 
-async function enforceTaskBefore(
+async function recordMutationDispatch(
+  runtime: FlowGuardPluginRuntime,
+  sessDir: string,
+  sessionId: string,
+  callId: string,
+  toolName: string,
+): Promise<void> {
+  if (!callId) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'A mutating host tool requires a host callID for durable dispatch authorization.',
+    );
+  }
+  await withSessionWriteLock(sessDir, async () => {
+    const state = await readState(sessDir);
+    if (!state) {
+      throw buildEnforcementError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        'FlowGuard session state disappeared before mutation dispatch authorization.',
+      );
+    }
+    enforceHostToolPhase(runtime, toolName, sessionId, state);
+    const leaseAcquisition = acquireRuntimeLease({
+      current: state.runtimeLease,
+      runtimeInstanceId: getRuntimeInstanceId(),
+      pid: process.pid,
+      now: new Date().toISOString(),
+    });
+    if (leaseAcquisition.kind === 'blocked') {
+      throw buildEnforcementError(
+        'MUTATION_EPISODE_LEASE_UNAVAILABLE',
+        `Session is governed by another live runtime instance (generation ${leaseAcquisition.lease.generation}). ` +
+          'The host mutation dispatch is blocked.',
+        {
+          activeLeaseGeneration: String(leaseAcquisition.lease.generation),
+        },
+      );
+    }
+    const result = authorizeMutationEpisode(state.mutationEpisodes, {
+      episodeId: randomUUID(),
+      hostCallId: callId,
+      toolName,
+      runtimeInstanceId: getRuntimeInstanceId(),
+      leaseGeneration: leaseAcquisition.lease.generation,
+      authorizedAt: new Date().toISOString(),
+    });
+    if (result.kind === 'replay_blocked') {
+      throw buildEnforcementError(
+        'MUTATION_EPISODE_REPLAY_BLOCKED',
+        `hostCallId ${callId} already authorizes a host mutation dispatch for tool ${result.existing.toolName}. ` +
+          'The host call identity must be unique per dispatch.',
+        { hostCallId: callId, toolName, existingEpisodeId: result.existing.episodeId },
+      );
+    }
+    await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
+      ...state,
+      runtimeLease: leaseAcquisition.lease,
+      mutationEpisodes: result.episodes,
+    });
+  });
+}
+
+async function readFreshStateAfterReconcile(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  hostResolution: { sessDir: string; state: SessionState },
+): Promise<SessionState> {
+  const fresh = await readState(hostResolution.sessDir);
+  if (!fresh) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'FlowGuard session state disappeared during audit reconciliation. Run FlowGuard doctor or re-hydrate the session.',
+      { sessionId, stateReadable: 'false' },
+    );
+  }
+  return fresh;
+}
+
+async function reconcileBeforeMutation(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  toolName: string,
+): Promise<void> {
+  const audit = await reconcilePendingAuditOperations(runtime.auditDeps, sessionId, toolName);
+  if (audit?.block) {
+    throw buildEnforcementError(audit.code ?? 'AUDIT_PERSISTENCE_FAILED', audit.reason ?? '');
+  }
+}
+
+async function reconcileObservationParent(
+  runtime: FlowGuardPluginRuntime,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const capability = typeof args.capability === 'string' ? args.capability : '';
+  if (!capability) return;
+  const fingerprint = runtime.auditDeps.cachedFingerprint ?? runtime.ws.cachedFingerprint;
+  if (!fingerprint) {
+    throw buildEnforcementError(
+      'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+      'Cannot resolve the observation capability authority: workspace fingerprint unavailable.',
+    );
+  }
+  const resolution = await resolveAttemptByCapability({
+    workspaceHome: workspacesHome(),
+    fingerprint,
+    capability,
+  });
+  if (!resolution) return;
+  await reconcileBeforeMutation(runtime, resolution.sessionId, TOOL_FLOWGUARD_OBSERVE_REPOSITORY);
+}
+
+function updateCommandScope(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  command: string,
+): void {
+  runtime.checkReworkContinuations.delete(sessionId);
+  const normalized = command.trim().replace(/^\/+/, '');
+  const scope: ActiveCommandScope | undefined = normalized === 'check' ? 'check' : undefined;
+  if (scope) {
+    runtime.activeCommandScopes.set(sessionId, scope);
+    return;
+  }
+  runtime.activeCommandScopes.delete(sessionId);
+}
+
+async function readScopedState(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+): Promise<SessionState | null> {
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  return sessDir ? await readState(sessDir) : null;
+}
+
+async function isAllowedInImplReview(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
   sessionId: string,
-  args: Record<string, unknown>,
-): Promise<void> {
-  const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
-  if (subagentType === REVIEWER_SUBAGENT_TYPE) {
-    const eState = runtime.ws.getEnforcementState(sessionId);
-    const { strictEnforcement, sessionState } = await resolveEnforcement(
-      runtime,
-      sessionId,
-      'subagent',
-    );
-    await enforceReviewerObligationCheck(runtime, sessionState, strictEnforcement);
+): Promise<boolean> {
+  const reviewSurface =
+    toolName === TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION ||
+    toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
+  if (!reviewSurface) return false;
+  return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
+}
 
-    const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
-    if (result.allowed) return;
-    runtime.log.warn('enforcement', 'blocked subagent call', {
-      tool: toolName,
-      sessionId,
-      code: result.code,
-    });
-    throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+async function enforceCommandScope(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+): Promise<void> {
+  const scope = runtime.activeCommandScopes.get(sessionId);
+  if (scope !== 'check') return;
+
+  const allowed = new Set([TOOL_FLOWGUARD_STATUS, TOOL_FLOWGUARD_RUN_CHECK]);
+  if (await isAllowedInImplReview(runtime, toolName, sessionId)) {
+    allowed.add(toolName);
   }
-  if (subagentType === '') return;
-  runtime.log.warn('enforcement', 'blocked unauthorized subagent type', {
-    tool: toolName,
-    subagentType,
-    sessionId,
-  });
+  if (await isAllowedReworkContinuation(runtime, toolName, sessionId)) {
+    allowed.add(toolName);
+  }
+  if (allowed.has(toolName)) return;
+
   throw buildEnforcementError(
-    'SUBAGENT_TYPE_UNAUTHORIZED',
-    `Subagent type '${subagentType}' is not authorized by FlowGuard governance. Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
+    'COMMAND_SCOPE_DENIED',
+    `Tool '${toolName}' is not permitted while the explicit /check command is active. Report the check result and wait for the user to invoke the next command.`,
+    { sessionId, tool: toolName, command: '/check' },
   );
 }
 
-async function enforceReviewerObligationCheck(
-  runtime: FlowGuardPluginRuntime,
-  sessionState: SessionState | null,
-  strictEnforcement: boolean,
-): Promise<void> {
-  const obligationResult = enforceReviewerObligation({
-    obligations: sessionState?.reviewAssurance?.obligations ?? [],
-    reviewInvocationPolicy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-    strictEnforcement,
-    stateAvailable: sessionState !== null,
-  });
-  if (!obligationResult.allowed) {
-    const obligations = sessionState?.reviewAssurance?.obligations ?? [];
-    runtime.log.warn('enforcement', `reviewer task blocked — ${obligationResult.code}`, {
-      policy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-      pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
-    });
-    throw buildEnforcementError(obligationResult.code, obligationResult.reason);
-  }
-}
-
-async function enforceMutatingToolCheck(
+async function resolveHostToolStateOrThrow(
   runtime: FlowGuardPluginRuntime,
   toolName: string,
   sessionId: string,
-  args: Record<string, unknown>,
-): Promise<void> {
-  if (!isMutatingHostTool(toolName)) return;
+): Promise<{ sessDir: string; state: SessionState }> {
   const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) return;
+  if (!sessDir) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'Cannot verify host tool phase gate because no authoritative FlowGuard session mapping exists. Run /hydrate before mutating the workspace.',
+      { sessionId, tool: toolName, sessionMapping: 'unresolved' },
+    );
+  }
   const state = await readRequiredHostToolState(sessDir, sessionId, toolName);
   if (state.error) {
+    // A persisted blocking error (e.g. strict TSA assurance failure) is a
+    // durable fail-closed latch: the next governed host mutation must not
+    // extend a session whose recorded authority is already broken. Surface the
+    // persisted code so the root cause — not a downstream phase-gate symptom —
+    // is what the host sees.
     throw buildEnforcementError(state.error.code, state.error.message, {
       sessionId,
       tool: toolName,
@@ -181,8 +386,7 @@ async function enforceMutatingToolCheck(
     });
   }
   enforceHostToolPhase(runtime, toolName, sessionId, state);
-  await enforceRiskBefore(runtime.riskDeps, sessDir, state, toolName, args);
-  await enforceDiscoveryHealthBefore(runtime.discoveryHealthDeps, sessDir, state, toolName);
+  return { sessDir, state };
 }
 
 async function readRequiredHostToolState(
@@ -251,13 +455,9 @@ function enforceHostToolPhase(
     allowed: gateResult.allowed,
   });
   if (gateResult.allowed) return;
-  // The denial reason is phase-specific only for HOST_TOOL_PHASE_DENIED (a
-  // mutating tool blocked in an investigation-only phase). HOST_TOOL_UNKNOWN_DENIED
-  // is a phase-independent default-deny of an unrecognized host tool, so do not
-  // claim "investigation-only phase" for it.
   const logMessage =
     gateResult.code === 'HOST_TOOL_PHASE_DENIED'
-      ? 'blocked host tool in investigation-only phase'
+      ? 'blocked host tool outside implementation phase'
       : 'blocked unknown host tool (default deny)';
   runtime.log.warn('enforcement', logMessage, {
     tool: toolName,
@@ -265,7 +465,7 @@ function enforceHostToolPhase(
     phase: state.phase,
     code: gateResult.code,
   });
-  throw buildEnforcementError(gateResult.code!, gateResult.reason!, {
+  throw buildEnforcementError(gateResult.code, gateResult.reason, {
     sessionId,
     tool: toolName,
     phase: state.phase,
@@ -281,17 +481,13 @@ async function enforceVerdictCheck(
   if (!isFlowGuardVerdictTool(toolName)) return;
   for (const key of Object.keys(args)) if (args[key] === null) delete args[key];
   const eState = runtime.ws.getEnforcementState(sessionId);
-  const { strictEnforcement, sessionState } = await resolveEnforcement(
-    runtime,
-    sessionId,
-    'verdict',
-  );
-  const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strictEnforcement);
+  const sessionState = await resolveEnforcement(runtime, sessionId, 'verdict');
+  const result = enforceBeforeVerdict(eState, toolName, args, sessionState);
   if (result.allowed) return;
   runtime.log.warn('enforcement', 'blocked verdict submission', {
     tool: toolName,
     sessionId,
     code: result.code,
   });
-  throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+  throw buildEnforcementError(result.code, result.reason);
 }

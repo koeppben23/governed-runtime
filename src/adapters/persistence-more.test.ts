@@ -1,0 +1,311 @@
+/**
+ * @module adapters/persistence-more.test
+ * @description Direct coverage for the persistence read/write authority:
+ *              readState failure modes, legacy verdict/validation/assurance
+ *              migrations, writeStateAlreadyLocked validation, and report
+ *              operations.
+ *
+ * @test-policy HAPPY, BAD, CORNER
+ * @version v1
+ */
+
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import {
+  readState,
+  writeState,
+  writeStateAlreadyLocked,
+  writeReport,
+  readReport,
+  stateExists,
+  PersistenceError,
+} from './persistence.js';
+import { makeState, VALIDATION_PASSED } from '../fixtures.js';
+import type { SessionState } from '../state/schema.js';
+import type { ReviewReport } from '../state/evidence-review-report.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+
+let tmpDirs: string[] = [];
+
+async function tmpDir(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-persistence-more-'));
+  tmpDirs.push(dir);
+  return dir;
+}
+
+afterEach(async () => {
+  await Promise.all(tmpDirs.map((d) => fs.rm(d, { recursive: true, force: true })));
+  tmpDirs = [];
+});
+
+const FIXED_TIME = '2026-05-15T12:00:00.000Z';
+
+describe('readState failure modes', () => {
+  it('returns null when the state file does not exist', async () => {
+    const dir = await tmpDir();
+    await expect(readState(dir)).resolves.toBeNull();
+  });
+
+  it('throws PARSE_FAILED for malformed JSON', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'session-state.json'), '{ corrupt', 'utf8');
+    await expect(readState(dir)).rejects.toMatchObject({ code: 'PARSE_FAILED' });
+  });
+
+  it('throws SESSION_STATE_INCOMPATIBLE for non-current state JSON', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'session-state.json'), '{"not":"a session"}', 'utf8');
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it.each([
+    ['missing assurance epoch', (state: Record<string, unknown>) => delete state.assuranceEpoch],
+    [
+      'unknown assurance epoch',
+      (state: Record<string, unknown>) => (state.assuranceEpoch = 'assurance-epoch.v999'),
+    ],
+    [
+      'missing state digest format',
+      (state: Record<string, unknown>) => delete state.stateDigestFormat,
+    ],
+    [
+      'unknown state digest format',
+      (state: Record<string, unknown>) => (state.stateDigestFormat = 'state-digest.v999'),
+    ],
+    [
+      'missing audit chain format',
+      (state: Record<string, unknown>) => delete state.auditChainFormat,
+    ],
+    [
+      'unknown audit chain format',
+      (state: Record<string, unknown>) => (state.auditChainFormat = 'audit-chain.v999'),
+    ],
+    [
+      'previous session state schema version',
+      (state: Record<string, unknown>) => (state.schemaVersion = 'v5'),
+    ],
+  ])('rejects a current schema state with %s before schema parsing', async (_caseName, mutate) => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const state = JSON.parse(JSON.stringify(makeState())) as Record<string, unknown>;
+    mutate(state);
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it('throws READ_FAILED when the state path cannot be read as a file', async () => {
+    const dir = await tmpDir();
+    const stateFile = path.join(dir, 'session-state.json');
+    // A directory at the state path is a structural, identity-independent
+    // read failure: fs.readFile() rejects on Linux, macOS, and Windows, unlike
+    // chmod(0o000), which root or an elevated runner can still read.
+    await fs.mkdir(stateFile);
+
+    await expect(readState(dir)).rejects.toMatchObject({ code: 'READ_FAILED' });
+  });
+});
+
+describe('readState legacy migrations', () => {
+  it('rejects a legacy selfReview approve verdict state (no read migration)', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const state = makeState('PLAN', {
+      selfReview: {
+        iteration: 0,
+        reviewCycle: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest',
+        revisionDelta: 'major',
+        verdict: 'accept',
+      },
+    });
+    const json = {
+      ...(state as unknown as Record<string, unknown>),
+      selfReview: { ...state.selfReview, verdict: 'approve' },
+    };
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(json), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects legacy review-assurance v3 states (no shape migration)', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const state = makeState('PLAN', {
+      reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v3' as never,
+        obligations: [],
+        invocations: [],
+        attempts: [],
+        dispatches: [],
+      },
+    });
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects legacy validation outcomes without the explicit outcome field', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const legacyEntry = { ...VALIDATION_PASSED[0]!, outcome: undefined };
+    delete (legacyEntry as Record<string, unknown>).outcome;
+    const state = makeState('PLAN');
+    const json = {
+      ...(state as unknown as Record<string, unknown>),
+      validation: [legacyEntry],
+    };
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(json), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects a failing legacy validation outcome instead of migrating it', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const legacyEntry = { ...VALIDATION_PASSED[0]!, passed: false, outcome: undefined };
+    delete (legacyEntry as Record<string, unknown>).outcome;
+    const state = makeState('PLAN');
+    const json = {
+      ...(state as unknown as Record<string, unknown>),
+      validation: [legacyEntry],
+    };
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(json), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects a v6 state whose validation attempt lacks the execution observation', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const attempt = {
+      attemptId: '00000000-0000-4000-8000-0000000000aa',
+      scope: 'implementation' as const,
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
+      implementationDigest: 'impl-digest',
+      executionObservation: TEST_EXECUTION_OBSERVATION,
+      result: VALIDATION_PASSED[0]!,
+    };
+    const { executionObservation: _omitted, ...withoutObservation } = attempt;
+    const state = makeState('IMPL_VALIDATION', {
+      validationAttempts: [withoutObservation as never],
+    });
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects a v6 state whose execution observation is malformed', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const state = makeState('IMPL_VALIDATION', {
+      validationAttempts: [
+        {
+          attemptId: '00000000-0000-4000-8000-0000000000aa',
+          scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'impl-digest',
+          executionObservation: {
+            executionObservedStateDigest: 'not-hex',
+            preCommitStateDigest: 'c'.repeat(64),
+          },
+          result: VALIDATION_PASSED[0]!,
+        } as never,
+      ],
+    });
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('reads current-generation states unchanged', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    await writeState(dir, makeState('PLAN'));
+    const loaded = await readState(dir);
+    expect(loaded?.phase).toBe('PLAN');
+  });
+});
+
+describe('writeStateAlreadyLocked validation', () => {
+  it('throws SCHEMA_VALIDATION_FAILED for invalid state', async () => {
+    const dir = await tmpDir();
+    await expect(
+      writeStateAlreadyLocked(dir, { not: 'a state' } as unknown as SessionState),
+    ).rejects.toMatchObject({ code: 'SCHEMA_VALIDATION_FAILED' });
+  });
+
+  it('refuses an IMPLEMENTATION state without a frozen base authority', async () => {
+    const dir = await tmpDir();
+    const state = makeState('IMPLEMENTATION');
+    await expect(writeStateAlreadyLocked(dir, state)).rejects.toMatchObject({
+      code: 'REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED',
+    });
+  });
+});
+
+describe('report operations', () => {
+  it('throws SCHEMA_VALIDATION_FAILED for invalid reports', async () => {
+    const dir = await tmpDir();
+    await expect(writeReport(dir, { bad: true } as unknown as ReviewReport)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('returns null for a missing report', async () => {
+    const dir = await tmpDir();
+    await expect(readReport(dir)).resolves.toBeNull();
+  });
+});
+
+describe('stateExists', () => {
+  it('returns true for an existing state file', async () => {
+    const dir = await tmpDir();
+    await writeState(dir, makeState('PLAN'));
+    await expect(stateExists(dir)).resolves.toBe(true);
+  });
+
+  it('returns false for a missing state file', async () => {
+    const dir = await tmpDir();
+    await expect(stateExists(dir)).resolves.toBe(false);
+  });
+});
+
+describe('writeState already locked writes', () => {
+  it('persists the pretty-printed state', async () => {
+    const dir = await tmpDir();
+    await writeStateAlreadyLocked(dir, makeState('PLAN'));
+    const raw = await fs.readFile(path.join(dir, 'session-state.json'), 'utf8');
+    expect(raw.startsWith('{\n')).toBe(true);
+  });
+});
+
+describe('persistence error typing', () => {
+  it('exposes typed codes', () => {
+    const err = new PersistenceError('READ_FAILED', 'boom');
+    expect(err.code).toBe('READ_FAILED');
+    expect(err.name).toBe('PersistenceError');
+  });
+});

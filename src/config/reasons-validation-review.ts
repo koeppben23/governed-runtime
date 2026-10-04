@@ -1,22 +1,150 @@
-/**
- * Review and subagent validation reasons.
- *
- * @internal — do not import directly. Part of VALIDATION_REASONS
- *             in reasons-validation.ts.
- */
-
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { REVIEW_FINDING_VALIDATION_REASONS } from './reasons-validation-review-findings.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'SYSTEM_WORK_STATE_UNREADABLE',
+    category: 'state',
+    messageTemplate:
+      'Canonical system work (validation) cannot run because the session state is unreadable or incompatible: {reason}.',
+    recoverySteps: [
+      'Restore the session state from trusted evidence or start a fresh session',
+      'Do not treat an unreadable session as "no work required"',
+    ],
+  },
+  {
+    code: 'IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'A governance override for the implementation requires the bound independent review result, but no implementation review result is recorded.',
+    recoverySteps: [
+      'Record the implementation and run the independent implementation review before deciding',
+      'Do not approve an implementation that has no bound review evidence',
+    ],
+  },
+  {
+    code: 'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The recorded implementation review covers a different revision (reviewed {reviewedDigest}, current {currentDigest}). A review can never authorize a different revision.',
+    recoverySteps: [
+      'Re-record the current implementation and run a fresh independent review for it',
+      'Never approve a revision that was not the reviewed subject',
+    ],
+  },
+  {
+    code: 'REVIEW_STATE_INCOMPLETE',
+    category: 'state',
+    messageTemplate:
+      'Review state has neither a pending reviewer obligation nor a persisted report and cannot be completed.',
+    recoverySteps: [
+      'Inspect the session state and audit trail before further workflow actions',
+      'Abort the session if the missing review state cannot be recovered from trusted evidence',
+    ],
+  },
+  {
+    code: 'REVIEW_BRANCH_PROVENANCE_MISSING',
+    category: 'input',
+    messageTemplate: 'Branch review requires resolved immutable base and head commit provenance.',
+    recoverySteps: [
+      'Provide a branch and base that both resolve to commits in the current worktree',
+      'For local repositories, ensure the branch and base refs exist; no remote is required',
+    ],
+  },
+  {
+    code: 'REVIEW_REPOSITORY_IDENTITY_MISSING',
+    category: 'state',
+    messageTemplate:
+      'Branch review cannot freeze a reviewed subject without a repository identity: {reason}.',
+    recoverySteps: [
+      'Re-run the review from its original content input so the repository identity is resolved again',
+      'Ensure the worktree is a git repository; a repository without a parseable remote resolves to a local identity',
+      'Do not submit a verdict to recover this state',
+    ],
+  },
+  {
+    code: 'REVIEW_SUBJECT_DIGEST_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Re-derived review subject does not match the frozen obligation subject ({reason}). The reviewed subject is immutable once frozen.',
+    recoverySteps: [
+      'Do not submit a verdict for a subject that differs from the reviewed one',
+      'Start a new review for the changed content instead of continuing this obligation',
+    ],
+  },
+  {
+    code: 'REVIEW_URL_CONTENT_ENCODING_INVALID',
+    category: 'input',
+    messageTemplate: 'URL review content could not be materialized as strict UTF-8: {reason}.',
+    recoverySteps: [
+      'Serve the reviewed URL as valid UTF-8, with charset=utf-8 when a charset is declared',
+      'Provide the content directly as review text if the source uses another encoding',
+    ],
+  },
+  {
+    code: 'REVIEW_GENERATION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Review obligation generation does not match the current reviewer criteria or mandate generation. The stale obligation was not executed.',
+    recoverySteps: [
+      'Re-hydrate the session or start a fresh review cycle so FlowGuard creates an obligation with current reviewer semantics',
+      'Do not execute, attest, or submit findings for the stale obligation',
+    ],
+  },
+  {
+    code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    category: 'state',
+    messageTemplate:
+      'Frozen review material integrity verification failed: {reason}. The reviewer was not invoked.',
+    recoverySteps: [
+      'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
+      'Restore the persisted review obligation and material from a trusted source',
+      'Abort the session if the frozen material cannot be restored from trusted evidence',
+    ],
+  },
+  {
+    code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'No bindable review attempt exists for obligation {obligationId}: {reason}. The frozen review material itself was not invalidated.',
+    recoverySteps: [
+      'Re-run the originating FlowGuard command for the same frozen subject so an available bindable attempt can be re-emitted',
+      'An obligation with no bindable attempt is deterministically closed; submit the artifact again to mint a fresh review obligation',
+      'Do NOT submit a verdict to recover this state',
+    ],
+  },
+  {
+    code: 'REVIEWER_CONTEXT_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'The canonical reviewer context could not be materialized for obligation {obligationId}: {reason}. No review attempt was created.',
+    recoverySteps: [
+      'Restore the persisted Discovery basis or resolve the workspace fingerprint, then re-run the review',
+      'A degraded or unchecked Discovery snapshot does NOT block: only a structurally unbuildable reviewer context does',
+      'Do NOT free-compose a reviewer prompt without the canonical context, and do NOT fabricate findings',
+    ],
+  },
+  {
+    code: 'IMPL_VALIDATION_EVIDENCE_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'Implementation review cannot be accepted: active verification checks have no passing execution evidence for the current implementation ({message}). Reviewer acceptance is gated on executed validation, not review verdict alone.',
+    recoverySteps: [
+      'Run flowguard_run_check for each active check in IMPL_VALIDATION until all pass',
+      'Re-record the implementation with flowguard_implement if the code changed, then re-run checks',
+      'Only submit reviewVerdict: "accept" after every active check has passing execution evidence',
+    ],
+  },
+
+  {
     code: 'SUBAGENT_REVIEW_REQUIRED',
     category: 'input',
-    messageTemplate: `reviewFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,
+    messageTemplate: `Independent review evidence must come from a host-observed structured ${REVIEWER_SUBAGENT_TYPE} reviewer child session. The supplied evidence does not establish that origin.`,
     recoverySteps: [
-      `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}"`,
-      'Pass the subagent output as reviewFindings',
-      `Ensure findings include reviewedBy.sessionId containing "${REVIEWER_SUBAGENT_TYPE}" or attestation.reviewedBy === "${REVIEWER_SUBAGENT_TYPE}"`,
+      'Re-run the originating FlowGuard command so the host can create the reviewer child session',
+      'Submit only the bound reviewVerdict; FlowGuard resolves the host-observed structured reviewer evidence automatically',
+      'Do not submit, copy, or reconstruct reviewer findings',
     ],
   },
 
@@ -68,7 +196,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Multiple flows are available from phase {phase}. /continue cannot choose — pick one explicitly.',
     recoverySteps: [
-      'Choose a flow: /task (development), /architecture (ADR), /review (compliance/content)',
+      'Choose your workflow: /task (development), /architecture (ADR), /review (compliance/content)',
       'Or use one of the recommended commands in the /status output',
     ],
   },
@@ -86,11 +214,12 @@ export const REVIEW_VALIDATION_REASONS = [
   {
     code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
     category: 'state',
-    messageTemplate: 'External review evidence transport is invalid: {reason}',
+    messageTemplate:
+      'Review evidence could not be established from a host-observed structured reviewer invocation: {reason}',
     recoverySteps: [
-      'Regenerate ReviewFindings from the flowguard-reviewer agent or subagent',
-      'Ensure the transport JSON contains a complete ReviewFindings object with obligation attestation',
-      'Do not treat review-evidence file presence as review approval',
+      'Re-run the originating FlowGuard command so the host can create a fresh reviewer child session',
+      'Do not treat reviewer-evidence file presence or reconstructed findings as review approval',
+      'Do not submit, copy, or reconstruct reviewer findings',
     ],
   },
 
@@ -98,11 +227,11 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_FINDINGS_HASH_MISMATCH',
     category: 'state',
     messageTemplate:
-      'Submitted review findings do not match the persisted subagent invocation evidence for obligation {obligationId}.',
+      'Captured reviewer findings do not match the persisted reviewer invocation evidence for obligation {obligationId}.',
     recoverySteps: [
-      'Discard the modified review findings',
-      `Use the exact ReviewFindings returned by the fulfilled ${REVIEWER_SUBAGENT_TYPE} invocation`,
-      'If the evidence is stale, rerun the reviewer for the current obligation',
+      'Do not submit a verdict from the mismatched capture',
+      'Re-run the originating FlowGuard command to authorize a fresh reviewer child session',
+      'If the evidence is stale, re-run the review for the current obligation',
     ],
   },
 
@@ -191,7 +320,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
     recoverySteps: [
-      'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan or flowguard_implement)',
+      'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review)',
       'Verify the response contains the reviewObligation field with iteration and planVersion',
       'If the issue persists in regulated mode, re-hydrate the session',
     ],
@@ -201,11 +330,10 @@ export const REVIEW_VALIDATION_REASONS = [
   {
     code: 'SUBAGENT_SESSION_MISMATCH',
     category: 'state',
-    messageTemplate: `Submitted reviewFindings.reviewedBy.sessionId ({provided}) does not match the actual subagent session ({expected}). Findings must come from the invoked ${REVIEWER_SUBAGENT_TYPE}.`,
+    messageTemplate: `Captured reviewer session id ({provided}) does not match the invoked ${REVIEWER_SUBAGENT_TYPE} child session ({expected}). Findings must come from the host-observed reviewer invocation.`,
     recoverySteps: [
-      `Use the exact reviewFindings object returned by the ${REVIEWER_SUBAGENT_TYPE} subagent`,
-      'Do not modify reviewedBy.sessionId after the subagent produces the findings',
-      'Re-invoke the subagent if the findings came from a different session',
+      'Do not modify or reconstruct reviewer output',
+      'Re-run the originating FlowGuard command if the captured findings came from a different session',
     ],
   },
 
@@ -213,11 +341,11 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_ITERATION_MISMATCH',
     category: 'state',
     messageTemplate:
-      'Submitted review findings target iteration {provided}, but the active review obligation expects iteration {expected}.',
+      'Captured reviewer findings target iteration {provided}, but the active review obligation expects iteration {expected}.',
     recoverySteps: [
-      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer for the active obligation`,
-      'Submit findings whose iteration matches the reviewObligationIteration from the current FlowGuard response',
-      'Do not reuse review findings from a previous iteration',
+      `Re-run the originating FlowGuard command so the host creates a fresh ${REVIEWER_SUBAGENT_TYPE} reviewer child session for the active obligation`,
+      'Do not submit a verdict while the captured reviewer evidence targets a different iteration',
+      'Do not reuse captured findings from a previous iteration',
     ],
   },
 
@@ -225,11 +353,11 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_PLAN_VERSION_MISMATCH',
     category: 'state',
     messageTemplate:
-      'Submitted review findings target plan version {provided}, but the active review obligation expects plan version {expected}.',
+      'Captured reviewer findings target plan version {provided}, but the active review obligation expects plan version {expected}.',
     recoverySteps: [
-      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer for the active plan version`,
-      'Submit findings whose planVersion matches the reviewObligationPlanVersion from the current FlowGuard response',
-      'Do not reuse review findings from an older plan version',
+      `Re-run the originating FlowGuard command so the host creates a fresh ${REVIEWER_SUBAGENT_TYPE} reviewer child session for the active plan version`,
+      'Do not submit a verdict while the captured reviewer evidence targets a different plan version',
+      'Do not reuse captured findings from an older plan version',
     ],
   },
 
@@ -237,10 +365,10 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_MODE_SELF_NOT_ALLOWED',
     category: 'state',
     messageTemplate:
-      'Review findings must come from the independent reviewer subagent; reviewMode=self is not accepted.',
+      'Review findings must come from a host-observed structured independent reviewer subagent invocation; reviewMode=self is not accepted.',
     recoverySteps: [
-      `Invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer subagent`,
-      'Submit only reviewFindings with reviewMode=subagent',
+      'Re-run the originating FlowGuard command so the host can create the reviewer child session',
+      'Submit only the bound reviewVerdict; FlowGuard resolves the host-observed structured reviewer evidence automatically',
       'Do not use self-review findings to satisfy an independent review obligation',
     ],
   },
@@ -249,11 +377,11 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
     category: 'state',
     messageTemplate:
-      'Submitted reviewFindings.overallVerdict ({provided}) does not match the actual subagent verdict ({expected}). Findings must not be modified.',
+      'Submitted reviewVerdict ({provided}) does not match the captured reviewer verdict ({expected}). The captured reviewer evidence must not be overridden.',
     recoverySteps: [
-      `Submit the verdict exactly as the ${REVIEWER_SUBAGENT_TYPE} subagent returned it`,
-      'Do not override the subagent verdict with a different value',
-      'If you disagree with the subagent verdict, run another review iteration with revised input',
+      `Submit the verdict exactly as the host-captured ${REVIEWER_SUBAGENT_TYPE} result records it`,
+      'Do not override the captured reviewer verdict with a different value',
+      'If you disagree with the reviewer verdict, run another review iteration with revised input',
     ],
   },
 
@@ -261,11 +389,22 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'SUBAGENT_FINDINGS_ISSUES_MISMATCH',
     category: 'state',
     messageTemplate:
-      'Submitted reviewFindings.blockingIssues count ({provided}) does not match the actual subagent count ({expected}).',
+      'Captured reviewer blockingIssues count ({provided}) does not match the actual subagent count ({expected}).',
     recoverySteps: [
-      `Submit the exact reviewFindings object returned by the ${REVIEWER_SUBAGENT_TYPE} subagent`,
-      'Do not add, remove, or modify blockingIssues entries after the subagent produces them',
-      'Re-invoke the subagent if the captured findings are stale',
+      'Do not add, remove, or modify blockingIssues after the reviewer produces them',
+      'Re-run the originating FlowGuard command if the captured findings are stale',
+    ],
+  },
+
+  {
+    code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+    category: 'state',
+    messageTemplate:
+      'overallVerdict "accept" is incoherent with {count} blocking issue(s). An accepted review must contain no blocking issues. Return a non-accept verdict or remove/reclassify the findings after resolving the inconsistency.',
+    recoverySteps: [
+      'Return a non-accept verdict (changes_requested, or unable_to_review where the artifact is genuinely unreviewable) when blocking issues are present',
+      'Or resolve the inconsistency and re-run the review so the reviewer emits coherent findings',
+      'Do not accept a review whose findings still report blocking issues',
     ],
   },
 
@@ -285,10 +424,10 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_SELF_APPROVAL_DENIED',
     category: 'state',
     messageTemplate:
-      'Manual-attested review findings must come from a different reviewer session than the governed parent session.',
+      'Review findings must come from a reviewer child session distinct from the governed parent session.',
     recoverySteps: [
-      `Invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer in a distinct session`,
-      'Do not submit reviewFindings authored by the same session that performed the governed work',
+      `Re-run the originating FlowGuard command so the host creates an independent ${REVIEWER_SUBAGENT_TYPE} reviewer child session`,
+      'Do not submit findings authored by the same session that performed the governed work',
     ],
   },
 
@@ -301,6 +440,31 @@ export const REVIEW_VALIDATION_REASONS = [
       'Re-hydrate the session with /hydrate',
       'Run /continue before submitting a verdict to restore enforcement state',
       'Verify session-state.json is readable and contains a reviewAssurance object',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
+    code: 'SUBAGENT_EVIDENCE_MISSING',
+    category: 'state',
+    messageTemplate: `No persisted ${REVIEWER_SUBAGENT_TYPE} invocation evidence was found for review obligation {obligationId}. Strict review cannot approve without a fulfilled reviewer invocation.`,
+    recoverySteps: [
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer subagent for the active obligation before submitting a verdict`,
+      'Submit only the bound reviewVerdict; the host resolves the host-observed structured reviewer evidence automatically',
+      'Run /continue to restore enforcement state if the invocation evidence is missing after a reload',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
+    code: 'SUBAGENT_MANDATE_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The persisted subagent invocation evidence is bound to a different obligation than the active review obligation {obligationId}.',
+    recoverySteps: [
+      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer for the current obligation`,
+      'Do not submit a verdict for invocation evidence captured for a previous obligation, iteration, or plan version',
+      'Run /continue to confirm the active obligation before retrying the verdict',
     ],
     quickFixCommand: '/continue',
   },
@@ -320,7 +484,7 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
       'Review the subagent findings — addressing the outstanding issues may allow convergence in the next attempt',
-      'If the policy limit is too restrictive, adjust maxSelfReviewIterations in the policy configuration',
+      'If the policy limit is too restrictive, adjust reviewBudget in the policy configuration',
     ],
   },
 
@@ -330,13 +494,11 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} subagent reported it is unable to review obligation {obligationId} ({reason}). The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.`,
     recoverySteps: [
       'Do NOT retry the same submission — the reviewer has already declared the input unreviewable',
-      'Inspect reviewFindings.missingVerification[] and reviewFindings.unknowns[] for the specific tool-failure cause',
+      'Inspect the captured reviewer findings (missingVerification[], unknowns[]) for the specific tool-failure cause',
       'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
       'If the cause is a corrupted mandate digest or template hash mismatch, re-hydrate the session before retrying',
     ],
   },
-
-  // ─── Verification Execution Reasons (flowguard_run_check) ───────────────────
 
   {
     code: 'CHECK_KIND_NOT_AVAILABLE',
@@ -362,8 +524,6 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
 
-  // ─── Validation Evidence Enforcement (#400) ─────────────────────────────────
-
   {
     code: 'VALIDATION_EVIDENCE_REQUIRED',
     category: 'admissibility',
@@ -388,6 +548,18 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
 
+  {
+    code: 'VALIDATION_EVIDENCE_STACK_NO_COMMANDS',
+    category: 'admissibility',
+    messageTemplate:
+      'Discovery detected a technology stack for this repository, but no verification commands were derived, so VALIDATION cannot pass vacuously. A detected stack with zero active checks is treated as a mis-detection hazard, not a verified "no commands" property.',
+    recoverySteps: [
+      'Re-run flowguard_hydrate so repo-native verification commands (build/test/lint) are detected from the stack',
+      'Ensure the stack wrapper/manifest (package.json scripts, mvnw/gradlew, pyproject) is at the resolved worktree root',
+      'If this stack genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
+    ],
+  },
+
   // ─── Auto-Advance Safety Guard (#428) ───────────────────────────────────────
 
   {
@@ -401,4 +573,5 @@ export const REVIEW_VALIDATION_REASONS = [
       'Do not retry the command until the misconfigured transition path is fixed',
     ],
   },
+  ...REVIEW_FINDING_VALIDATION_REASONS,
 ] as const satisfies readonly BlockedReason[];

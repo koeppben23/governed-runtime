@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -17,14 +18,9 @@ import {
 } from './install.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
-import {
-  COMMANDS,
-  MANDATES_FILENAME,
-  mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
-} from './templates.js';
+import { COMMANDS, MANDATES_FILENAME, mandatesInstructionEntry } from './templates.js';
 import { measureAsync } from '../test-policy.js';
-import { SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
+import { SHIPPED_EXECUTABLE_CHECK } from './install-types.js';
 import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import {
@@ -95,6 +91,7 @@ describe('cli/doctor', () => {
         (c) =>
           !c.file.startsWith('trust://') &&
           c.check !== SHIPPED_EXECUTABLE_CHECK &&
+          c.check !== 'opencode-instruction-source-activation' &&
           !c.file.includes('build-info.json'),
       );
       const allOk = fileChecks.every((c) => c.status === 'ok');
@@ -113,7 +110,7 @@ describe('cli/doctor', () => {
         true,
       );
       const runtime = checks.find((c) => c.file === 'trust://claude-code/runtime');
-      expect(runtime?.status).toBe('warn');
+      expect(runtime?.status).toBe('info');
       expect(runtime?.detail).toContain('NOT_VERIFIED_RUNTIME');
       const approval = checks.find((c) => c.file === 'trust://claude-code/approval-primitive');
       expect(approval?.detail).toContain('FlowGuard /review-decision');
@@ -172,7 +169,8 @@ describe('cli/doctor', () => {
         1 +
         1 +
         1 +
-        11 +
+        1 + // opencode-instruction-source-activation (instruction-source gate)
+        12 + // platform-trust rows for opencode (7 fixed + 5 receipt-preservation)
         executableChecks +
         buildInfoChecks;
       expect(checks.length).toBe(expectedChecks);
@@ -207,7 +205,7 @@ describe('cli/doctor', () => {
 
       const toolPath = path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p =
           args[0] instanceof Buffer
             ? args[0].toString()
@@ -217,7 +215,7 @@ describe('cli/doctor', () => {
         if (p.replace(/\\/g, '/').includes('tools/flowguard.ts'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -237,12 +235,12 @@ describe('cli/doctor', () => {
 
       const pluginPath = path.join(tmpDir, '.opencode', 'plugins', 'flowguard-audit.ts');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         if (p.replace(/\\/g, '/').includes('plugins/flowguard-audit.ts'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -262,12 +260,12 @@ describe('cli/doctor', () => {
 
       const pkgPath = path.join(tmpDir, '.opencode', 'package.json');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         if (p.replace(/\\/g, '/').includes('.opencode/package.json'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -287,12 +285,12 @@ describe('cli/doctor', () => {
 
       const cmdPath = path.join(tmpDir, '.opencode', 'commands', 'plan.md');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         if (p.replace(/\\/g, '/').includes('commands/plan.md'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -312,14 +310,14 @@ describe('cli/doctor', () => {
 
       const opencodePath = path.join(tmpDir, 'opencode.json');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         // Match opencode.json at project root, not inside .opencode/
         const norm = p.replace(/\\/g, '/');
         if (norm.endsWith('/opencode.json') && !norm.includes('.opencode/'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -395,8 +393,10 @@ describe('cli/doctor', () => {
 
         const checks = await checkLastSessionHandshake('global');
         expect(checks.length).toBeGreaterThan(0);
-        expect(checks[0].status).toBe('error');
-        expect(checks[0].detail).toContain('plugin handshake');
+        const [check] = checks;
+        if (!check) throw new TypeError('expected handshake check');
+        expect(check.status).toBe('error');
+        expect(check.detail).toContain('plugin handshake');
       } finally {
         restoreEnv();
       }
@@ -420,8 +420,10 @@ describe('cli/doctor', () => {
         );
         const checks = await checkLastSessionHandshake('global');
         expect(checks.length).toBe(1);
-        expect(checks[0].status).toBe('warn');
-        expect(checks[0].detail).toContain('sessionId');
+        const [check] = checks;
+        if (!check) throw new TypeError('expected handshake check');
+        expect(check.status).toBe('warn');
+        expect(check.detail).toContain('sessionId');
       } finally {
         restoreEnv();
       }
@@ -442,8 +444,10 @@ describe('cli/doctor', () => {
 
         const checks = await checkLastSessionHandshake('global');
         expect(checks.length).toBe(1);
-        expect(checks[0].status).toBe('warn');
-        expect(checks[0].detail).toContain('Session state');
+        const [check] = checks;
+        if (!check) throw new TypeError('expected handshake check');
+        expect(check.status).toBe('warn');
+        expect(check.detail).toContain('Session state');
       } finally {
         restoreEnv();
       }
@@ -454,7 +458,17 @@ describe('cli/doctor', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
       const original = await fs.readFile(mandatesPath, 'utf-8');
-      await fs.writeFile(mandatesPath, original + '\n# Extra section\n', 'utf-8');
+      const modified = original.replace(
+        'You are a senior software engineering agent.',
+        'You are a modified agent.',
+      );
+      const body = modified.split('\n\n').slice(1).join('\n\n');
+      const digest = createHash('sha256').update(body, 'utf-8').digest('hex');
+      await fs.writeFile(
+        mandatesPath,
+        modified.replace(/sha256:[a-f0-9]{64}/, `sha256:${digest}`),
+        'utf-8',
+      );
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const mandatesCheck = checks.find((c) => c.file.includes(MANDATES_FILENAME));
@@ -502,20 +516,52 @@ describe('cli/doctor', () => {
       expect(ocCheck?.detail).toContain(mandatesInstructionEntry('repo'));
     });
 
-    it('detects instruction_stale (legacy AGENTS.md entry)', async () => {
+    it('activation: reports warn — activation is NOT_VERIFIED (never claims supported)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
+      expect(compat).toBeDefined();
+      expect(compat?.status).toBe('warn');
+      expect(compat?.detail).toContain('host contract');
+      expect(compat?.detail).toContain('activation is NOT_VERIFIED');
+      expect(compat?.detail).toContain('cannot prove');
+      expect(compat?.detail).not.toContain('supported');
+      expect(compat?.detail).not.toContain('instruction source configured');
+    });
+
+    it('activation: desktop-owned config reports warn (NOT_VERIFIED, not error)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
       const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
-      content.instructions.push(LEGACY_INSTRUCTION_ENTRY);
+      // Simulate a desktop-owned config (plugin field present).
+      content.plugin = ['some-desktop-plugin'];
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const staleCheck = checks.find(
-        (c) => c.file.includes('opencode.json') && c.status === 'instruction_stale',
-      );
-      expect(staleCheck).toBeDefined();
-      expect(staleCheck?.detail).toContain('AGENTS.md');
+      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
+      expect(compat?.status).toBe('warn');
+      expect(compat?.detail).toContain('activation');
+      expect(compat?.detail).not.toContain('instruction source configured');
+      expect(
+        checks.some(
+          (c) => c.check === 'opencode-instruction-source-activation' && c.status === 'error',
+        ),
+      ).toBe(false);
+    });
+
+    it('does not classify customer AGENTS.md as a FlowGuard instruction', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const ocPath = path.join(tmpDir, 'opencode.json');
+      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
+      content.instructions.push('AGENTS.md');
+      await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const configCheck = checks.find((c) => c.file.includes('opencode.json') && c.status === 'ok');
+      expect(configCheck).toBeDefined();
     });
 
     it('reports missing config as error', async () => {
@@ -801,6 +847,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              c.check !== 'opencode-instruction-source-activation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),
@@ -821,6 +868,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              c.check !== 'opencode-instruction-source-activation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),
@@ -840,17 +888,17 @@ describe('cli/hasNonFlowGuardInstructions', () => {
     expect(hasNonFlowGuardInstructions([])).toBe(false);
   });
 
-  it('returns false for FlowGuard-only entries', () => {
+  it('distinguishes FlowGuard-owned entries from customer instructions', () => {
     expect(hasNonFlowGuardInstructions(['flowguard-mandates.md'])).toBe(false);
     expect(hasNonFlowGuardInstructions(['.opencode/flowguard-mandates.md'])).toBe(false);
-    expect(hasNonFlowGuardInstructions(['AGENTS.md'])).toBe(false);
+    expect(hasNonFlowGuardInstructions(['AGENTS.md'])).toBe(true);
     expect(
       hasNonFlowGuardInstructions([
         'flowguard-mandates.md',
         '.opencode/flowguard-mandates.md',
         'AGENTS.md',
       ]),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('returns true for non-FlowGuard entries', () => {
@@ -872,7 +920,7 @@ describe('cli/hasNonFlowGuardInstructions', () => {
   it('FLOWGUARD_INSTRUCTION_ENTRIES contains exactly the known entries', () => {
     expect(FLOWGUARD_INSTRUCTION_ENTRIES).toContain('flowguard-mandates.md');
     expect(FLOWGUARD_INSTRUCTION_ENTRIES).toContain('.opencode/flowguard-mandates.md');
-    expect(FLOWGUARD_INSTRUCTION_ENTRIES).toContain('AGENTS.md');
-    expect(FLOWGUARD_INSTRUCTION_ENTRIES).toHaveLength(3);
+    expect(FLOWGUARD_INSTRUCTION_ENTRIES).not.toContain('AGENTS.md');
+    expect(FLOWGUARD_INSTRUCTION_ENTRIES).toHaveLength(2);
   });
 });

@@ -65,7 +65,10 @@ describe('Adapter logging — real sinks', () => {
       const tmpDir = await mkdtemp(join(tmpdir(), 'fg-rs-'));
 
       try {
-        const log = createLogger('debug', [createConsoleSink(), createFileSink(tmpDir, 7)]);
+        const log = createLogger('debug', [
+          createConsoleSink(),
+          createFileSink(tmpDir, { retentionDays: 7 }),
+        ]);
         const adapter = toAdapter(log);
 
         runWithAdapterLogger(adapter, () => {
@@ -139,8 +142,10 @@ describe('Adapter logging — real sinks', () => {
       });
 
       expect(mockWarn).toHaveBeenCalledTimes(1);
-      expect(mockWarn.mock.calls[0][0]).toBe('git');
-      expect(mockWarn.mock.calls[0][1]).toBe('Failed to resolve current branch');
+      const [call] = mockWarn.mock.calls;
+      if (!call) throw new TypeError('expected warning call');
+      expect(call[0]).toBe('git');
+      expect(call[1]).toBe('Failed to resolve current branch');
     });
 
     it('warnOnce allows different messages but deduplicates same message', () => {

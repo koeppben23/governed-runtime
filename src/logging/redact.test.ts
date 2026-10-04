@@ -7,7 +7,7 @@
  * redaction (with deliberate non-matches to prevent over-redaction), deep/
  * null-safe extra redaction, and a through-the-logger pipeline check.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, REDACTION
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { describe, it, expect } from 'vitest';
@@ -150,6 +150,7 @@ describe('redactExtra', () => {
       list: ['/var/run/secrets/token', 'plain'],
     });
     const inner = (out!.outer as Record<string, Record<string, string>>).inner;
+    if (!inner) throw new TypeError('expected nested redaction result');
     expect(inner.secret).toContain('token=[redacted]');
     const list = out!.list as string[];
     expect(list[0]).not.toContain('/var/run/secrets/token');
@@ -255,7 +256,7 @@ describe('redactExtra', () => {
 
     it('a Map subclass with a throwing size getter does not throw', () => {
       class BadMap extends Map {
-        get size(): number {
+        override get size(): number {
           throw new Error('size boom');
         }
       }

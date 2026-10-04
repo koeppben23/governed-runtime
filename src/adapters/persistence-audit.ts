@@ -1,55 +1,104 @@
 /**
  * @module persistence-audit
- * @description Append-only JSONL audit trail operations.
+ * @description Append-only JSONL audit trail operations (audit-chain.v3 only).
  *
  * Audit events are appended as single-line JSON with trailing newline.
- * Reads tolerate corrupted lines and report a skipped count.
+ * Records that do not satisfy the canonical audit-chain.v3 envelope are
+ * rejected with AUDIT_ENVELOPE_INVALID — the boundary never identifies,
+ * accepts, or migrates older formats.
  *
- * @version v1
+ * @version v3
  */
 
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as crypto from 'node:crypto';
-import { AuditEvent } from '../state/evidence.js';
+import { AuditEvent, AuditEventBodySchema } from '../state/evidence.js';
+import type { AuditEventBody } from '../state/evidence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import { auditPath, ensureDir, PersistenceError, isEnoent } from './persistence.js';
+import {
+  auditPath,
+  durableAtomicWrite,
+  ensureDir,
+  PersistenceError,
+  isEnoent,
+} from './persistence.js';
 import { getLastChainHash } from '../audit/integrity.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import {
   computeChainHash,
   CURRENT_AUDIT_FORMAT_VERSION,
   type ChainedAuditEvent,
 } from '../audit/types.js';
 
+class AuditFormatError extends Error {
+  readonly code = 'AUDIT_ENVELOPE_INVALID' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuditFormatError';
+  }
+}
+
+import { acquireNamedWriteLock } from './persistence-lock.js';
+
 const AUDIT_LOCK_FILE = 'audit.jsonl.lock';
 const AUDIT_LOCK_TIMEOUT_MS = 10_000;
-const AUDIT_LOCK_POLL_MS = 100;
 
 /**
  * Append a single audit event to the JSONL audit trail.
  *
  * Design:
- * - Zod-validates before appending (fail-closed)
+ * - Zod-validates the semantic body before appending (fail-closed)
  * - Single-line JSON (no pretty-print -- JSONL format)
  * - Trailing newline ensures clean append semantics
- * - Takes the session write lock to serialize concurrent appenders
+ * - Takes the audit write lock to serialize concurrent appenders
  * - Rewrites via temp file + fsync + atomic rename to avoid partial trailing JSON
+ * - The append authority stamps every positional/authority field under the
+ *   lock: auditFormatVersion, auditSequence, recordedAt, semanticEventDigest,
+ *   prevHash, and chainHash. Producer-supplied values for those fields are
+ *   never accepted or persisted.
  *
  * @param sessionDir - Absolute path to the session directory.
- * @param event - AuditEvent body to append. prevHash/chainHash are recomputed under lock.
- * @returns The exact chained event persisted to audit.jsonl.
+ * @param event - Audit event semantic body (no positional/hash fields).
+ * @returns The exact v3 event persisted to audit.jsonl.
  */
-export async function appendAuditEvent(sessionDir: string, event: AuditEvent): Promise<AuditEvent> {
-  const result = AuditEvent.safeParse(event);
+export async function appendAuditEvent(
+  sessionDir: string,
+  event: AuditEventBody,
+): Promise<AuditEvent> {
+  return appendAuditEventWithLock(sessionDir, event, true);
+}
+
+/**
+ * Append under a caller-held {@link withAuditTrailLock}.
+ *
+ * Callers that must make a durability decision and append atomically with
+ * respect to other appenders hold the lock and use this entry point; the
+ * lock is never acquired here.
+ */
+export async function appendAuditEventAlreadyLocked(
+  sessionDir: string,
+  event: AuditEventBody,
+): Promise<AuditEvent> {
+  return appendAuditEventWithLock(sessionDir, event, false);
+}
+
+async function appendAuditEventWithLock(
+  sessionDir: string,
+  event: AuditEventBody,
+  acquireLock: boolean,
+): Promise<AuditEvent> {
+  const result = AuditEventBodySchema.safeParse(event);
   if (!result.success) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
-      `Refusing to append invalid audit event: ${result.error.message}`,
+      `Refusing to append invalid audit event body: ${result.error.message}`,
     );
   }
 
   try {
-    return await appendAuditLineAtomically(sessionDir, result.data);
+    return acquireLock
+      ? await appendAuditLineAtomically(sessionDir, result.data)
+      : await appendAuditLineCore(sessionDir, result.data);
   } catch (err: unknown) {
     getAdapterLogger().error('persistence-audit', 'Failed to append audit event', {
       sessionDir,
@@ -59,98 +108,154 @@ export async function appendAuditEvent(sessionDir: string, event: AuditEvent): P
   }
 }
 
-async function appendAuditLineAtomically(
-  sessionDir: string,
-  event: AuditEvent,
-): Promise<AuditEvent> {
-  return await withAuditWriteLock(sessionDir, async () => {
-    await ensureDir(sessionDir);
-    const filePath = auditPath(sessionDir);
-    const dir = path.dirname(filePath);
-    const base = path.basename(filePath);
-    const tempPath = path.join(dir, `.${base}.${crypto.randomUUID()}.tmp`);
-    let existing = '';
-
-    try {
-      existing = await fs.readFile(filePath, 'utf-8');
-    } catch (err) {
-      if (!isEnoent(err)) throw err;
-    }
-    const existingTrail = parseAuditTrail(existing);
-
-    if (existingTrail.skipped > 0) {
-      throw new PersistenceError(
-        'READ_FAILED',
-        `Refusing to append: existing audit trail contains ${existingTrail.skipped} unparseable line(s). ` +
-          'The corrupt portion must be repaired before new events can be appended.',
-      );
-    }
-
-    const eventBody = { ...event } as Record<string, unknown>;
-    delete eventBody.prevHash;
-    delete eventBody.chainHash;
-    const prevHash = getLastChainHash(existingTrail.events);
-    const bodyWithPrevHash = {
-      ...eventBody,
-      auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-      prevHash,
-    } as Omit<ChainedAuditEvent, 'chainHash'>;
-    const chained = {
-      ...bodyWithPrevHash,
-      chainHash: computeChainHash(prevHash, bodyWithPrevHash),
-    };
-    const chainedResult = AuditEvent.safeParse(chained);
-    if (!chainedResult.success) {
-      throw new PersistenceError(
-        'SCHEMA_VALIDATION_FAILED',
-        `Refusing to append invalid chained audit event: ${chainedResult.error.message}`,
-      );
-    }
-    const line = JSON.stringify(chainedResult.data) + '\n';
-
-    try {
-      const handle = await fs.open(tempPath, 'wx', 0o600);
-      try {
-        await handle.writeFile(existing + line, 'utf-8');
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await fs.rename(tempPath, filePath);
-      return chainedResult.data;
-    } catch (err) {
-      try {
-        await fs.unlink(tempPath);
-      } catch {
-        /* temp may not exist or may already have been renamed */
-      }
-      throw err;
-    }
-  });
+/**
+ * Normalize any audit body or persisted record to the canonical
+ * `audit-chain.v3` commit body: semantic content plus the current format
+ * version, with every positional/authority field removed.
+ *
+ * This is the single normalization used both when stamping a new event and
+ * when comparing a re-delivered event against an already-persisted one, so
+ * the exactly-once comparison is performed on exactly the shape the writer
+ * commits. Without it, a raw producer body (which carries no
+ * `auditFormatVersion`) never digests equal to its own persisted record —
+ * which carries the writer-stamped version — and an honest retry would fail
+ * closed as a duplicate-id-with-different-content violation.
+ *
+ * This is not a legacy or migration path: producer-supplied positional values
+ * are dropped rather than interpreted, and the version is always forced to
+ * CURRENT_AUDIT_FORMAT_VERSION. Non-v3 records are rejected before this point.
+ */
+function normalizeCurrentAuditBody(event: AuditEventBody | AuditEvent): Record<string, unknown> {
+  const {
+    auditFormatVersion: _format,
+    auditSequence: _sequence,
+    recordedAt: _recordedAt,
+    semanticEventDigest: _semanticDigest,
+    prevHash: _prevHash,
+    chainHash: _chainHash,
+    ...semantic
+  } = event as Record<string, unknown>;
+  return { ...semantic, auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION };
 }
 
-function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number } {
+async function appendAuditLineAtomically(
+  sessionDir: string,
+  event: AuditEventBody,
+): Promise<AuditEvent> {
+  return await withAuditWriteLock(sessionDir, () => appendAuditLineCore(sessionDir, event));
+}
+
+async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): Promise<AuditEvent> {
+  await ensureDir(sessionDir);
+  const filePath = auditPath(sessionDir);
+  let existing = '';
+
+  try {
+    existing = await fs.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+  }
+  const existingEvents = parseAuditTrail(existing);
+
+  // Exactly-once under the audit write lock: an event id is a commit
+  // identity. A crash between append and acknowledgement may re-deliver the
+  // SAME event — return the persisted record instead of appending a
+  // duplicate. The same id with different content is a chain violation and
+  // fails closed.
+  const sameId = existingEvents.find((candidate) => candidate.id === event.id);
+  if (sameId) {
+    if (
+      computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
+      computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
+    ) {
+      return sameId;
+    }
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to append audit event with duplicate id ${event.id} and different content`,
+    );
+  }
+
+  // Stamp the positional/authority fields. Producers cannot influence
+  // chain position, sequence authority, or record time — any
+  // producer-supplied positional/hash value is dropped before stamping so
+  // it can never leak into a computed digest.
+  const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
+    ...normalizeCurrentAuditBody(event),
+    auditSequence: existingEvents.length + 1,
+    recordedAt: new Date().toISOString(),
+    prevHash: getLastChainHash(existingEvents),
+  } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+  const semanticEventDigest = computeCanonicalEventDigest(bodyWithPosition);
+  const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
+    ...bodyWithPosition,
+    semanticEventDigest,
+  };
+  const chained = {
+    ...finalized,
+    chainHash: computeChainHash(finalized.prevHash, finalized),
+  };
+  const chainedResult = AuditEvent.safeParse(chained);
+  if (!chainedResult.success) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to append invalid chained audit event: ${chainedResult.error.message}`,
+    );
+  }
+  const line = JSON.stringify(chainedResult.data) + '\n';
+
+  // Durability is delegated to the canonical writer: it fsyncs the file AND
+  // the parent directory, so a crash after the rename cannot resurrect the
+  // pre-append trail. A hand-rolled temp+sync+rename here previously omitted
+  // the directory fsync, which silently dropped the whole batch of appends
+  // since the last directory sync while leaving a chain-valid prefix that
+  // verifyChain still reports as valid.
+  await durableAtomicWrite(filePath, existing + line);
+  return chainedResult.data;
+}
+
+function parseAuditTrail(raw: string): AuditEvent[] {
   const events: AuditEvent[] = [];
-  let skipped = 0;
 
   for (const line of raw.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
+    let json: unknown;
     try {
-      const json = JSON.parse(trimmed);
-      const result = AuditEvent.safeParse(json);
-      if (result.success) {
-        events.push(result.data);
-      } else {
-        skipped++;
-      }
+      json = JSON.parse(trimmed);
     } catch {
-      skipped++;
+      throw new AuditFormatError(
+        'Audit trail contains a record that is not valid JSONL. Malformed audit ' +
+          'records are unsupported and cannot be treated as verifiable evidence.',
+      );
     }
+    const result = AuditEvent.safeParse(json);
+    if (!result.success) {
+      // Fail closed with an explicit envelope error: any record that does not
+      // satisfy the canonical audit-chain.v3 schema is rejected here — the
+      // boundary never identifies, accepts, or migrates older formats.
+      throw new AuditFormatError(
+        'Audit trail contains a record that violates the canonical audit-chain.v3 event ' +
+          'envelope. Non-v3 assurance artifacts are unsupported.',
+      );
+    }
+    events.push(result.data);
   }
 
-  return { events, skipped };
+  return events;
+}
+
+/**
+ * Run a function under the canonical audit write lock.
+ *
+ * This is the explicit serialization point for callers that must make a
+ * durability decision and append atomically with respect to every other
+ * appender: hold this lock, re-check the trail, then append via
+ * {@link appendAuditEventAlreadyLocked}.
+ */
+export async function withAuditTrailLock<T>(sessionDir: string, fn: () => Promise<T>): Promise<T> {
+  return withAuditWriteLock(sessionDir, fn);
 }
 
 async function withAuditWriteLock<T>(sessionDir: string, fn: () => Promise<T>): Promise<T> {
@@ -163,59 +268,32 @@ async function withAuditWriteLock<T>(sessionDir: string, fn: () => Promise<T>): 
 }
 
 async function acquireAuditWriteLock(sessionDir: string): Promise<() => Promise<void>> {
-  await ensureDir(sessionDir);
-  const lockPath = path.join(sessionDir, AUDIT_LOCK_FILE);
-  const token = crypto.randomUUID();
-  const deadline = Date.now() + AUDIT_LOCK_TIMEOUT_MS;
-
-  while (true) {
-    try {
-      await fs.writeFile(lockPath, `pid=${process.pid}\ntoken=${token}\n`, {
-        encoding: 'utf-8',
-        flag: 'wx',
-        mode: 0o600,
-      });
-      return async () => {
-        try {
-          const current = await fs.readFile(lockPath, 'utf-8');
-          if (current.split('\n').includes(`token=${token}`)) await fs.unlink(lockPath);
-        } catch (err) {
-          if (!isEnoent(err)) throw err;
-        }
-      };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      if (Date.now() >= deadline) {
-        throw new PersistenceError(
-          'LOCK_TIMEOUT',
-          `Could not acquire audit write lock within ${AUDIT_LOCK_TIMEOUT_MS}ms.\n  Lock file: ${lockPath}`,
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, AUDIT_LOCK_POLL_MS));
-    }
-  }
+  const lock = await acquireNamedWriteLock(
+    sessionDir,
+    AUDIT_LOCK_FILE,
+    'audit write',
+    AUDIT_LOCK_TIMEOUT_MS,
+  );
+  return lock.release;
 }
 
 /**
  * Read all audit events from the JSONL trail.
  *
- * Returns empty array if no audit file exists.
- * Skips malformed lines with best-effort tolerance:
- * - The audit trail is append-only. A single corrupt line should not
- *   prevent reading all other events.
- * - Corrupted lines are counted in the returned metadata for diagnostics.
+ * Returns an empty array if no audit file exists.
+ * Fails closed with AUDIT_ENVELOPE_INVALID on any record that does not
+ * satisfy the canonical audit-chain.v3 schema — malformed or non-v3 records
+ * are never reinterpreted, migrated, or skipped.
  *
  * @param sessionDir - Absolute path to the session directory.
- * @returns Object with events array and optional skipped count.
+ * @returns Every canonical audit event in trail order.
  */
-export async function readAuditTrail(
-  sessionDir: string,
-): Promise<{ events: AuditEvent[]; skipped: number }> {
+export async function readAuditTrail(sessionDir: string): Promise<AuditEvent[]> {
   let raw: string;
   try {
     raw = await fs.readFile(auditPath(sessionDir), 'utf-8');
   } catch (err: unknown) {
-    if (isEnoent(err)) return { events: [], skipped: 0 };
+    if (isEnoent(err)) return [];
     getAdapterLogger().error('persistence-audit', 'Failed to read audit trail', {
       filePath: auditPath(sessionDir),
       error: err instanceof Error ? err.message : String(err),

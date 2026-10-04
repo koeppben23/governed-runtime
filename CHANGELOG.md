@@ -7,6 +7,1115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [2.0.0-tp.1] - 2026-10-04
+
+### Added
+
+- **Standalone evidence-package verification.** `computeArchiveContentDigest`
+  (with its input type) and `verifyRegulatedCompletionCompleteness` are now
+  exported from `@flowguard/core` as re-exports of the canonical authorities —
+  no algorithm change. The Java demo ships
+  `demos/java-task-manager/verify-evidence-package.mjs` plus
+  `EVIDENCE_PACKAGE.md`: it snapshots the package into a private copy, rejects
+  unsafe prefixes, unsafe member paths, non-regular entries, and duplicate
+  members before any extraction starts, validates the archived state with the
+  canonical `SessionState` schema, and checks the checksum, member inventory,
+  file digests, canonical content digest, expected session assignment,
+  flow/phase, and the archived audit chain. Every `includedFiles` path is
+  validated before any payload is opened, and an invalid inventory fails closed
+  without a single payload read. Regulated packages must carry policy mode
+  `regulated` and an admissible archive-time lifecycle status (`pending` or
+  `created`; missing/`null` fails closed before the canonical validator could
+  silently skip), and are validated against the archived completion evidence
+  (the mandatory archive necessarily snapshots `regulatedArchiveStatus:
+pending`) instead of the later live verification status. A small
+  `evidence-manifest.example.json` binds the three demo sessions to their
+  FlowGuard packages and external host chat exports (manually assigned,
+  hash-secured supplementary evidence, never authority), enforces distinct
+  session ids, requires exactly one `flowguard-package` for the development
+  flow, and fails on byte-identical artifacts across flows — the "peer-review
+  export is a copy of the architecture export" defect. Redacted sharing
+  archives are never presented as fully verifiable raw evidence, and the
+  offline, TSA, publication-binding, and authenticity limits are documented. A smoke-project
+  contract builds real `/export` and `archiveRegulatedEvidence` packages and
+  proves valid (including the `EXPORT_READY` snapshot), file-byte,
+  manifest-metadata, session-swap, unsafe-prefix, duplicate-member, and
+  manifest-copy cases. The demo docs also document the
+  `HOST_CAPABILITY_UNVERIFIED` contract-attested host-capability boundary and
+  add an optional adversarial host-tool denial step (`HOST_TOOL_PHASE_DENIED` /
+  `enforcement:denied`).
+
+- **Reviewer execution-continuity provenance (state schema v6).** Every
+  runtime-executed validation attempt now persists the host-observed execution
+  continuity (`executionObservedStateDigest`, `preCommitStateDigest`), and the
+  reviewer projection derives `stateChangedDuringExecution` from that pair
+  instead of persisting a second boolean authority. The frozen implementation
+  review material carries the attempt identity plus the continuity observation
+  to the reviewer, so an executed PASS can be re-bound to the concrete attempt
+  and the session state it was observed under; a changed continuity is surfaced
+  as a host-owned continuity caveat in the canonical reviewer prompt, never as
+  a silent re-verdict. `committedStateDigest`
+  deliberately stays response-only (the attempt is part of the committed state).
+  State `schemaVersion` advances to `v6`; pre-v6 state is rejected with
+  `SESSION_STATE_INCOMPATIBLE` at the `readState` contract preflight (no
+  migration).
+
+- **RFC 3161 TSA trust enforcement and timestamp evidence hardening (TSA1–TSA4,
+  AR2, AC2, AC9, AC11 — closes #643).** External timestamps can only increase
+  archive assurance when every part of the chain is independently validated:
+  - **TSA signer contract (TSA1/TSA3):** the pinned signer certificate MUST
+    carry a critical extendedKeyUsage with id-kp-timeStamping and no other key
+    purposes and exactly one EKU extension (`missing_tsa_eku` /
+    `duplicate_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
+    extensions reject (`unhandled_critical_extension`), unknown non-critical
+    ones are tolerated per RFC 5280.
+  - **Algorithm allowlists (TSA2):** message-imprint and CMS signature hashes
+    are independently allowlisted to SHA-256/384/512. CMS digest and signature
+    algorithm remain internally coherent (RFC 8933 §3.5), but need not equal
+    the message-imprint algorithm. RSASSA-PSS is accepted
+    only against the explicit profile (MGF1 with a matching hash,
+    trailerField 1, saltLength within 8..digest byte length). Divergences fail
+    closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
+    structured diagnostics. The verifier interface now receives the full
+    admissible digest family (`expectedDigests`), computed canonically in
+    `computeCanonicalEventDigests`; stamp-time verification only ever accepts
+    the SHA-256 imprint the request used.
+  - **Signer certificate binding:** each token requires a signed
+    `SigningCertificate`/`ESSCertID` or `SigningCertificateV2`/`ESSCertIDv2`
+    binding that matches the embedded, pinned signer certificate.
+  - **Constant-time imprints (TSA4):** all imprint comparisons use
+    `constantTimeBytesEqual` (`src/audit/constant-time.ts`).
+  - **No downgrade trust (AC2):** stronger TSA evidence — a token, an imprint,
+    or both — whose recorded status was degraded (`local`/`ntp_checked`/
+    `tsa_failed`) is a chain failure **before** any token-verification branch:
+    `TSA_EVIDENCE_DOWNGRADED`, surfaced as the dedicated
+    `tsa_evidence_downgraded` archive finding.
+  - **Missing-cache findings (AC9):** a TSA-stamped event whose cached imprint
+    is missing or malformed is an explicit verification finding, never a
+    silent pass.
+  - **Parsed time ordering (AC11):** audit timestamp monotonicity and
+    ProofGraph counterexample freshness compare parsed UTC instants;
+    unparseable values are never sortable (audit: trail invalid; ProofGraph:
+    ranked oldest, deterministic).
+  - **Trusted severity authority (AR2):** archive timestamp-finding severity
+    derives exclusively from the trusted `resolveStrictMode(state)` resolution;
+    the manifest policy mode is cross-checked but never a severity authority.
+
+- **Certificate evidence trust hardening (CE1–CE5).** Approval certificates
+  now rest exclusively on canonical, verdict-coherent review evidence — for
+  both the architecture and the plan authority:
+  - **Canonical linkage only (CE2):** `obligation.invocationId` is the single
+    resolver key, and the linkage must be a COHERENT relation — the invocation
+    must back-reference the same `obligationId` AND `obligationType`; incoherent
+    back-references are rejected at the schema boundary and resolve nothing at
+    the authority. The `obligationId`-scoped newest-first fallback is removed;
+    `obligationId` on invocation evidence is diagnostic/provenance information.
+    A single `resolveEvidenceForObligation` is the SSOT for what counts as
+    canonical evidence possession (architecture and plan paths alike).
+  - **Identity uniqueness in review assurance (CE2):** `obligationId`,
+    `invocationId`, and `attemptId` are uniqueness-enforced at the schema
+    boundary (`refineAssuranceIdentityUniqueness`) — one invocation can never
+    canonically support several review subjects, and `.find()` can never pick
+    an arbitrary row as the authority.
+  - **Explicit verdict requirement (CE1):** `current_review` bindings demand a
+    captured verdict of `accept`. Evidence without a verdict resolves as
+    `verdict_missing` and blocks with `ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED` /
+    `PLAN_REVIEW_EVIDENCE_REQUIRED`. The legacy `approve` vocabulary is
+    normalized at hydration only — never manufactured at the authority
+    boundary.
+  - **Plan certificates carry a discriminated `reviewBinding`** and the plan
+    state records a `reviewCompletion` (`pending` | `reviewer_accepted` |
+    `review_exhausted`) derived at review time by the canonical
+    `resolvePlanReviewCompletion`. Gate and mint share ONE resolution; the
+    binding co-signs the `certificateId`.
+  - **Strict plan exhaustion override:** a `review_exhausted_override` requires
+    a non-accept verdict AND `reviewedSubjectDigest === approvedSubjectDigest`
+    — an unreviewed plan revision is never releasable by an override
+    (`PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH`). Verdict/completion
+    contradictions block with `PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.
+  - **Fail-closed legacy handling:** legacy plan certificates without a
+    `reviewBinding` remain readable but are no longer gate-authoritative for
+    critical claims; legacy `PLAN_REVIEW` sessions without a recorded
+    completion cannot approve until a review loop converges again (see
+    KNOWN_ISSUES CE6/CE7).
+
+- **Unconditional ProofGraph enforcement and a fail-closed claim contract
+  (#762).** The gate previously depended on a `proofGraphPolicy` switch that no
+  config, preset, or resolver could reach — it could never fire. A switch is also
+  wrong in principle: it would mean an author declares a claim critical, has it
+  human-approved, and the system then ignores whether it was ever proven.
+  - **Enforcement is unconditional.** `proofGraphPolicy`,
+    `PROOFGRAPH_POLICY_DISABLED`, and `ProofGraphPolicy` are removed. The blast
+    radius is bounded by eligibility instead: only at the `EVIDENCE_REVIEW`
+    approval, only for `critical` `fact` claims that carry a plan/ADR **approval
+    certificate**. A claim self-declared through `flowguard_declare_contract`
+    has provenance but no certificate and stays advisory, so an author cannot
+    impose a blocking obligation that no human approved.
+  - **Unprovable claims are rejected where they are authored.** A critical claim
+    requires executed adversarial evidence, so a critical declaration without a
+    counterexample check could never become `PROVEN`. `/plan` and
+    `/declare-contract` now share one validator
+    (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`) that also rejects inactive checks,
+    unregistered structural surfaces and mutation profiles, duplicate claim
+    identities, and plan claims without a governing section. Nothing is
+    persisted and no digest is computed unless the whole set validates.
+    Diagnostics use each tool's public field names.
+  - **Revision-bound risk assessment.** `implementationRiskAssessment` persists
+    the computed task class, touched surfaces, and the implementation digest it
+    was derived from, so a superseded classification can never justify a gate
+    decision.
+  - **Early, non-binding warning.** `/plan` surfaces `proofGraphRiskWarning` when
+    declared `targetPaths` look HIGH-RISK and no critical claim is declared.
+    Explicitly heuristic: target paths are a forecast, the binding assessment
+    comes from the implementation's actual changed files.
+  - **Specific HIGH-RISK triggers require a critical fact.** The implementation
+    assessment now retains `riskTriggers` beside its existing path list. A
+    current assessment with `state_integrity`, `audit_authority`,
+    `identity_boundary`, `approval_authority`, `policy_authority`, `migration`,
+    `distribution_integrity`, or `command_contract` requires at least one
+    certificate-authorized critical `fact` claim at final evidence approval.
+    `ceremony_only` retains HIGH-RISK review ceremony without creating a claim
+    requirement. Assessments written before trigger classification are
+    superseded and cannot justify final approval.
+  - **Missing evaluations fail closed.** A certificate-authorized critical plan
+    claim missing from the persisted ProofGraph projection now blocks final
+    evidence approval (`PROOFGRAPH_EVALUATION_UNAVAILABLE`) rather than being
+    interpreted as an empty graph.
+
+- **ProofGraph product-path integration (completes #762).** The claim surface was
+  implemented but unreachable through the product: the tool schemas accepted
+  `claims` while every installed command instructed a claim-free submission, and
+  the reviewer prompt actually delivered under `host_task_*` policy carried no
+  ProofGraph context. Sessions therefore completed with an empty contract while
+  the feature looked complete.
+  - **Claims reach the tools.** `/plan` now submits
+    `flowguard_plan({ planText, claims })` and `/architecture` submits
+    `flowguard_architecture({ title, adrText, claims })`, in the installed
+    commands and the Claude Code plugin skills. A contract test fails on any
+    reintroduced claim-free call form.
+  - **Reviewers receive the graph.** One renderer now feeds every transport, so
+    the host-task Task prompt carries the same persisted ProofGraph context,
+    declaration preview, certificate binding and coverage gaps as the SDK path.
+  - **Declaration preview before approval.** Plan and ADR declarations are shown
+    to the reviewer as explicit pre-evidence intent. They are deliberately not
+    materialized as graph claims before approval, since no implementation
+    revision exists to bind them to.
+  - **Architecture claims are materialized advisorily.** Approved ADR
+    declarations become certificate-bound `derived_signal` claims. They are never
+    `fact`: an ADR binds to named review evidence that no provider can execute, so
+    gating them would block every architecture approval permanently.
+  - **Auditable approval chain.** `flowguard_status` projects
+    `proofApprovals`: certificate digests, the bound implementation revision, and
+    per-claim evidence counts and verification state.
+  - **Readable coverage.** The status summary separates `contractClaimCount` from
+    `hypothesisCount`, so `NOT_DECLARED` beside a non-zero claim count is no
+    longer contradictory.
+
+- **ProofGraph evidence providers, mutation reporting and reviewer projection
+  (completes #762).** Builds on the ProofGraph foundation:
+  - **Structural and schema providers.** The cross-artifact consistency checks
+    now produce real evidence: `command-registration` (`structural_assertion`)
+    and `config-defaults` (`schema_compare`). Each result is bound to a canonical
+    digest over the covered registry/schema **data**, so it is identical in a
+    checkout and an installed package and goes `STALE` when the surface changes.
+    Claims opt in via `structuralSurface`, which also makes the assertion
+    _required_ evidence.
+  - **Selective semantic mutation (opt-in).** Recorded, never executed: an
+    existing Stryker report is ingested for explicitly selected profiles
+    (`proofgraph-evaluator`, `proofgraph-gate`) and surfaced as `fault_injection`
+    evidence with survivor status. `Survived`/`NoCoverage` are survivors;
+    `CompileError`/`RuntimeError`/`Ignored`/`Pending` are excluded rather than
+    counted as detected; a missing or uncovered profile is `NOT_VERIFIED`, never
+    a pass. The repository-wide mutation job remains **not** a PR requirement.
+  - **Complete reviewer projection.** `flowguard_status({ proofGraph: true })`
+    now surfaces `counterexamples` (outcome + bound digest + `stale`), `mutation`
+    (per-profile verdicts incl. surviving mutant ids), and
+    `unresolvedAssumptions` (each non-`PROVEN` claim with an explicit reason)
+    instead of leaving them implied by the verification state.
+  - One critical claim now demonstrates an executed positive test, a
+    negative/fault scenario, and a structural consistency assertion together.
+
+- **FlowGuard ProofGraph foundation (part of #762).** A versioned, deterministic
+  executable evidence graph that makes each critical change claim traceable from
+  approved intent to a review outcome, surfaced advisorily and never altering
+  review acceptance. New `flowguard_declare_contract` tool (admissible in
+  `IMPL_VALIDATION`/`IMPL_REVIEW`) records claims; `flowguard_status({ proofGraph:
+true })` returns the evaluated projection. Key invariants:
+  - Governing **provenance** (an approved ticket/plan/ADR/canonical authority) is
+    a distinct type from executable **evidence** (validation attempt / impl /
+    content); a claim is a governing `fact` only when an approved authority
+    resolves, otherwise a `NOT_VERIFIED` hypothesis. Validation evidence can
+    never confer provenance.
+  - Every passing provider result is **digest-bound** and freshness-checked
+    (implementation revision, or a `surface_set` digest for structural/schema
+    assertions); a changed bound surface makes evidence `STALE`, which cannot
+    satisfy a gate.
+  - Provider results carry reproducible metadata (provider id/version, exact
+    input, source + stable id, digest binding, result digest).
+  - A critical `fact` claim cannot be `PROVEN` without a **`supported`
+    counterexample** (adversarial evidence); missing/`not_verified` adversarial
+    evidence yields `NOT_VERIFIED`.
+  - Explicit states (`PROVEN`, `UNPROVEN`, `CONTRADICTED`, `STALE`, `BLOCKED`,
+    `NOT_VERIFIED`) surface residual uncertainty; unconditional enforcement only
+    considers certificate-authorized critical `fact` claims. See
+    `docs/proofgraph.md`.
+
+- **Archive redaction wired into pipeline (#649, #666 follow-up).** The
+  redaction engine (`src/redaction/export-redaction.ts`) is now integrated
+  into the archive staging pipeline. Two mandatory tool parameters control
+  every export: `redactionMode` (`none`, `basic`, `pseudonymous`) and
+  `includeRaw`. Config constrains allowed combinations via `allowedModes`,
+  `allowRawExport` (default `false` — secure), and `maxAuditEvents`. The
+  pipeline is fail-closed: redacted payloads are generated first, raw
+  files copied second, manifest built last. Any redaction failure leaves
+  the staging tree empty. `excludedFiles` in the manifest is computed from
+  the canonical raw-source-path list. Tool response includes a `guidance`
+  field that suggests the complementary parameter combination (or notes
+  that raw export is not configured).
+- **`redactAuditEvent()`** redacts top-level `actorInfo` PII (`id`, `email`,
+  `displayName`) in addition to `detail`. Always clones — no reference to
+  original event survives.
+- **Redaction mode renamed:** `strict` → `pseudonymous` (stable correlation
+  tokens, not stronger than basic irreversible masking).
+
+- **Defense-in-depth validation gate on reviewer acceptance.** Accepting an
+  implementation review now re-checks that every active verification check has a
+  passing execution attempt bound to the **current** `implementation.digest`
+  (via `state.validationAttempts`) before advancing to `EVIDENCE_REVIEW`.
+  Previously reviewer acceptance relied solely on the state-machine topology
+  (reaching `IMPL_REVIEW` only through the `IMPL_VALIDATION` gate); this adds an
+  independent, digest-bound barrier so any future inbound path to `IMPL_REVIEW`, a
+  topology regression, or a future mutation of `implementation` that failed to
+  clear stale `implValidation`, cannot accept unvalidated or prior-revision code.
+  Sessions with no active checks are unaffected (the deliberate zero-check
+  behavior is preserved). Blocks with the new `IMPL_VALIDATION_EVIDENCE_REQUIRED`
+  reason code.
+
+- **Evidence-grounded implementation review.** The implementation reviewer
+  prompt now carries FlowGuard-executed verification evidence (`exitCode`,
+  `passed`, `command`, `executionMs`, and the tamper-evident `outputDigest`) for
+  the current implementation, so the reviewer falsifies verification claims
+  against ground truth instead of inferring them. Only `implementation`-scope
+  validation attempts bound to the current implementation digest are injected;
+  stale, baseline, and foreign-digest attempts are excluded. When no bound
+  evidence exists the prompt renders an explicit `NOT_VERIFIED` line rather than
+  omitting the section. The reviewer remains strictly read-only — FlowGuard
+  executes the checks, not the reviewer model — and the reviewer criteria are
+  unchanged.
+
+- **Versioned frozen challenge policy (#747).** New sessions persist
+  `challenge-policy.v1` in the policy snapshot, and every review obligation reads
+  its requirement matrix from that frozen value before invocation. Snapshots from
+  before this policy remain compatible: missing `challengePolicy` disables
+  challenge count/kind enforcement rather than applying current defaults.
+
+- **Enforced review challenge matrix (#747).** Review obligations now freeze runtime-derived
+  challenge coverage (TRIVIAL 0, STANDARD 1, HIGH-RISK 2) and their flow-native challenge
+  kind. Submitted and host-captured findings reject incoherent coverage. An author-recorded
+  implementation resolution remains NOT_VERIFIED until a later independent reviewer returns
+  `resolved`, `still_failing`, or `not_verified`.
+
+- **Advisory implementation challenge resolution evidence (#747).**
+  `flowguard_resolve_implementation_challenge` is available in `IMPL_REVIEW` after
+  post-implementation validation. It persistently binds one prior implementation
+  challenge to the current implementation digest and immutable validation attempt
+  IDs, rejects unknown, duplicate, wrong-scope, and wrong-digest references, and
+  records resolved actor identity when available. Resolutions are surfaced as
+  `NOT_VERIFIED` reviewer/status context only; they do not change review acceptance
+  or policy enforcement.
+
+- **Mandatory `core` review coverage profile (Wave 1 of #730).** Every plan,
+  implementation, architecture, and standalone `/review` now runs under a
+  canonical, non-optional `core` review profile. The profile is frozen into the
+  review obligation at creation — before the reviewer is invoked — and is
+  audit-visible in the `review:obligation_created` and `review:subagent_invoked`
+  events (`reviewProfile`, `profileSource`). A new `reviewProfile` field
+  (`core` | `full`) is added to the policy snapshot; every preset defaults to
+  `core`. Any missing or invalid frozen profile resolves fail-closed to `core`
+  (there is no `off` mode) and legacy snapshots without the field degrade to
+  `core`. The `core` profile reuses the existing canonical reviewer criteria
+  (`src/templates/mandates-reviewer-criteria.ts`) — it introduces no second
+  review authority. `full` is a reserved, forward-compatible value; parallel
+  specialist coverage and automatic HIGH-RISK escalation are deferred to Wave 2
+  of #730 and are pending host-capability verification (#732). See
+  `docs/independent-review.md`.
+
+- **Honest OpenCode instruction-source status (configured ≠ activated).**
+  `flowguard install` and `flowguard doctor` no longer claim an OpenCode
+  installation is "supported", "active", or "compatible" based solely on a
+  present `instructions[]` mandate entry. A present entry is reported as
+  **configured** only; the doctor detail states explicitly that activation is
+  not verifiable by FlowGuard (the Desktop app exposes no version/API and
+  OpenCode offers no resolved-instruction surface). An unknown or Desktop
+  runtime is never classified as compatible. A runtime that is positively known
+  — with cited evidence — to accept the entry without resolving it fails closed
+  with the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason (deny-list, seeded
+  empty); install then writes artifacts but refuses to report an active install
+  ("write but refuse"). Detected runtime facts (version best-effort, kind,
+  executable path, OS, install method, date) are still logged. See
+  `docs/platform-limitations.md`. `NOT_VERIFIED`: FlowGuard does not prove
+  activation on any runtime.
+
+- **Golden baseline tests for all four review cards.** Eight exact-match
+  golden fixtures cover the reachable key states of the Plan Review Card
+  (approval-ready, changes-requested), Architecture Review Card (accepted,
+  changes-requested), Implementation Review Card (accepted, issues), and
+  Compliance Review Card (clean, issues-found). Each fixture is compared
+  byte-for-byte via `toBe()` to the shared renderer output.
+
+- **Deterministic presentation rendering for `/status`.** New `src/presentation/`
+  primitives (`model.ts`, `markdown.ts`, `labels.ts`) establish a central visual
+  contract: PresentationDocument with typed sections (keyValue, commandList,
+  blocker, artifactList, findings, checklist, text, code, notice) and
+  deterministic Markdown output. Constructions enforce spacing invariants
+  (no `\n\n\n`, no trailing whitespace, exactly one conclusion), code-fence
+  safety, and label normalisation.
+- `/status` now includes a `presentation.markdown` field in full-status and
+  no-session responses. The renderer produces structurally invariant output
+  so that every model run renders `/status` identically.
+- Status conclusion projected upstream from `evalResult` and `productNextAction`
+  via `projectStatusConclusion()` — the presentation builder never derives
+  authority.
+- Golden fixture tests and projection tests for READY, blocked, and degraded
+  Discovery states.
+- **Shared presentation primitives extended with bulletList, guidance sections,
+  and notice multi-message support.** The presentation model gains `BulletListSection`,
+  `GuidanceSection` (with `GuidanceStatus`/`GuidanceItem`), and `NoticeSection.additionalMessages`
+  for structured rendering of lists, action recommendations, and multi-line warnings.
+- **`/why` and `/finish` migrate to the shared presentation renderer.** Both
+  surfaces now produce deterministic Markdown via dedicated builders
+  (`buildWhyDocument` / `buildFinishDocument`) consuming canonical upstream
+  projections (`WhyPresentationProjection` / `FinishPresentationProjection`).
+  Templates no longer ask agents to interpret structured JSON; the existing
+  `whyBlocked` and `finish` JSON responses remain structurally unchanged.
+  Golden tests cover blocked, evidence-gap, active, terminal, ready,
+  ready-with-warnings, and not-verified states. Archive labels are exhaustively
+  normalised from the state domain.
+
+- **Contextual help commands (`/help` and `/commands`).** New read-only `flowguard_help`
+  tool with installed `/help` (phase-sensitive next action and relevant commands),
+  `/commands` (available commands for the current context), and `/commands --all`
+  (complete reference). Help derives availability and recommendations from canonical
+  authorities (command policy, next-action resolver, readiness projection). Also
+  introduces a typed installed-command interface catalogue, archive preflight shared
+  between the tool and projection layers, and `/export` as the sole primary
+  audit-package recommendation.
+- **Post-implementation validation gate: `IMPL_VALIDATION` phase (F1).** The ticket
+  flow now re-runs the verification checks against the IMPLEMENTED code before the
+  independent review and the human evidence gate, closing the gap where validation
+  only ran on the pre-fix baseline. `/implement` records evidence and advances to the
+  new `IMPL_VALIDATION` phase; `/check` (now admissible in `IMPL_VALIDATION`) executes
+  the checks and records them in a separate `implValidation` slot (distinct from the
+  pre-implementation `validation` baseline). Passing checks advance to `IMPL_REVIEW`; a
+  genuine failure routes back to `IMPLEMENTATION` (the code is wrong, not the plan); a
+  timeout/executor error retries in place. Universal across policy modes; reduced
+  ceremony still bypasses. **Forward-only:** rolling back the release abandons any
+  in-flight session sitting at `IMPL_VALIDATION` (the phase is unknown to an older
+  build's fail-closed schema). Workflow phase count 14 → 15.
+
+- **Read-only `/finish` Finish Card (#520).** New read-only command that renders
+  a curated readiness overview before `/export`, PR, or archive decisions. It is
+  a status aggregator — never approves, never consumes obligations, never writes
+  state, and never triggers `/export`. Implemented as a thin presentation wrapper
+  (`flowguard_status` `{ finish: true }`) composing the existing readiness,
+  evidence-completeness, and next-action authorities; the only new logic is a
+  single non-normative overall-status classifier (`READY`, `READY_WITH_WARNINGS`,
+  `BLOCKED`, `NOT_VERIFIED`) plus non-normative action guidance and exit options.
+- **Diagnostics and /help migrated to the shared presentation renderer.**
+  `formatDiagnosticCard()` now uses `renderMarkdown()` instead of a plaintext
+  engine, producing structured Markdown via `buildBlockedDiagnosticDocument()`.
+  `/help` uses new structured primitives (`DetailedCommandListSection` with
+  per-command preflight and `blocked_recoverable` visibility, `HelpSummarySection`,
+  `HelpArtifactSection`, `EmbeddedMarkdownSection`) to produce visually identical
+  output through `renderHelp()` + `buildHelpDocument()`. The JSON path and
+  `HelpResult` types are unchanged. `DiagnosticCardDocument.conclusion` is now
+  optional.
+  Available in all phases including terminal phases.
+
+- **Architecture approval certificates bind review evidence (certificate
+  provenance).** `ArchitectureApprovalCertificate` now requires a discriminated
+  `reviewBinding` (`current_review` | `review_exhausted_override`); the whole
+  binding block co-signs the `certificateId` digest, so relabeling the kind or
+  swapping the reviewed digest changes the certificate identity.
+  `reviewer_accepted` binds exact-subject evidence for the current ADR digest
+  (no cross-digest fallback); `review_exhausted` mints an explicit override
+  provenance. Gate and mint share ONE evidence resolution per decision
+  operation. New reason codes `ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED` and
+  `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`; the latter fires when
+  the bound `capturedVerdict` contradicts the recorded review completion.
+  Evidence without a captured verdict stays legacy-tolerant. Certificates
+  persisted before this change carry no `reviewBinding` and fail the now
+  required schema field — re-approve after the review cycle produces bound
+  evidence.
+
+- **Implementation review subject model and frozen base authority (#816).**
+  Implementation review obligations mint an `implementation` subject scope
+  whose digest equals the obligation subject digest; the frozen implementation
+  base persists at a single boundary
+  (`adapters/implementation-base-authority.ts`), and the SDK orchestration path
+  requires the exact implement obligation.
+
+- **Non-blocking CI hints.** `known-issues-note` warns when a PR changes
+  trust-boundary paths without updating KNOWN_ISSUES.md; `unused-exports-note`
+  warns on new unused exports against a committed, line-independent baseline
+  (`knip --exports`). Both jobs always exit 0 and are not part of the CI gate.
+
+### Changed
+
+- **BREAKING — session state v10 requires the review findings histories.**
+  `PlanRecord.reviewFindings`, `ArchitectureDecision.reviewFindings`,
+  `SessionState.implReviewFindings`, and `SessionState.peerReviewFindings` are
+  now required: no findings is the empty array, never an absent field, and all
+  writers emit `[]` from the start. `v9` and earlier states are rejected at
+  the read boundary with `SESSION_STATE_INCOMPATIBLE`; there is no read default
+  or migration. This is also a breaking TypeScript API change to the exported
+  `PlanRecord`, `ArchitectureDecision`, and `SessionState` contracts (the
+  review findings arrays are now required). `assurance-epoch.v3`,
+  `state-digest.v2`, `audit-chain.v3`, and the nullable peer-review
+  `findingsDigest` are unchanged.
+
+- **BREAKING — card presentation documents require a form discriminator.**
+  `CompactCardDocument`, `ReviewCardDocument`, and `DiagnosticCardDocument`
+  now require `form`, and the Markdown contract validates every card instead
+  of skipping validation when the discriminator was absent. `plan_document`
+  and `help_document` remain form-less and are explicitly exempt. This is a
+  breaking internal presentation contract; card documents without a form are
+  rejected before rendering.
+
+- **BREAKING — canonical empty plan claim declarations.** Plan review
+  obligations now use the single canonical empty declaration shape
+  (`{ flow: 'plan', version: 'v2', claims: [] }` from `emptyClaimDeclarations`)
+  instead of an unversioned legacy fallback. `claimDeclarationsDigest` for
+  future empty-declaration obligations changes accordingly; already persisted
+  obligations keep their digests. Rendered review material for empty
+  declarations is unchanged.
+
+- **BREAKING — repository signals fail closed when git is unavailable.**
+  `listRepoSignals` no longer collapses git failures into empty signals:
+  `GIT_NOT_FOUND`, `GIT_TIMEOUT`, `GIT_COMMAND_FAILED`, and `NOT_GIT_REPO`
+  (normalized outside a repository) propagate as typed `GitError`s, and
+  `flowguard_hydrate` aborts with `DISCOVERY_RESULT_MISSING` while preserving
+  the git cause in the message. Previously an empty signal list could classify
+  as an empty risk surface (`discoveryRiskPaths` → `TRIVIAL`), so a missing
+  repository could weaken risk classification instead of blocking. Unexpected
+  (non-git) errors keep propagating unmasked.
+
+- **BREAKING — repository signal paths are the canonical `RepoSignals` representation.**
+  The exported `RepoSignals` type now carries `files`, `packageFilePaths`, and
+  `configFilePaths` only; the `packageFiles` / `configFiles` basename fields were
+  removed (breaking TypeScript API change). Consumers derive basenames locally
+  from the normalized relative paths, preserving dedupe and first-occurrence
+  order. Discovery persistence (`discovery.v2`), profile selection, profile
+  evidence, collector outputs, the `/hydrate` response, and git enumeration
+  semantics are unchanged.
+
+- **BREAKING — archive manifest v4: regulated receipt actor hard cut.**
+  `ARCHIVE_MANIFEST_SCHEMA_VERSION` is now `archive-manifest.v4`. The regulated
+  completion verifier accepts exactly one decision-receipt actor
+  representation — the frozen policy classification for `flowguard_decision`
+  (with the `system` fallback when the classification map omits the tool). The
+  pre-classification `decisionIdentity.actorId` form is rejected as
+  `regulated_terminal_decision_invalid` instead of being tolerated. Because
+  `schemaVersion` is integrity-covered, v4 content digests differ from v3;
+  `v1`–`v3` archives fail closed with `manifest_parse_error` at schema
+  validation. `audit-chain.v3`, session state, and the decision-receipt
+  projection are unchanged.
+
+- **BREAKING — reduced ceremony is now post-verification and digest-bound (#819).**
+  The persisted session schema is `v7`: `ImplEvidence` and implementation-scope
+  `ValidationAttempt` carry a required `implementationId`, and
+  `ReducedCeremonyDecision` requires the implementation digest, the frozen
+  policy digest and the exact check/attempt basis. `v6` and earlier snapshots
+  fail closed with `SESSION_STATE_INCOMPATIBLE`; there is no migration or dual
+  reader. Reduced ceremony exists only as `IMPL_VALIDATION → EVIDENCE_REVIEW`
+  after every active check re-ran against the frozen governed bytes and the
+  worktree re-attests to the frozen implementation digest. The human evidence
+  gate always remains, `implReview` is reported as an explicit `waived` status
+  instead of fabricated evidence, and approval/export re-attest the frozen
+  bytes before proceeding.
+
+- **Shared state-write preparation and recovery regression coverage.** Governed
+  writes now finalize the Implementation Base and refresh the ProofGraph once
+  before binding outbox digests and materializing artifacts. Tests pin the
+  persisted state, audit and artifact bindings, and recovery after failures on
+  either side of the atomic state rename; existing error codes remain unchanged.
+
+- **MADR artifact envelope v2 (`madr-artifact.v2`).** The artifact written on
+  `ARCH_COMPLETE` now labels its metadata as FlowGuard's own:
+  `FlowGuard Decision Status` carries the FlowGuard decision status and
+  `Reviewed ADR digest` identifies the exact independently reviewed ADR text.
+  The ambiguous `- Status:` / `- Digest:` envelope labels are removed. The
+  submitted `adrText` is embedded byte-identically and is never rewritten —
+  including any `## Status` section or `- Status:` line it carries.
+
+- **Default-wide maintainability metrics with recalibrated ceilings.** The
+  `complexity`, `max-params`, and `max-lines-per-function` rules now apply to
+  every production file under `src/` (test suites remain the only excluded file
+  class) instead of eight directory globs. The first repo-wide measurement
+  produced 84 findings across 57 files. The tail above the new repository-wide
+  ceilings (`complexity` 25, `max-lines-per-function` 120, `max-params` 5) was
+  refactored — 13 functions across `providers`, `discovery`, `presentation`,
+  the state evidence refinements, the MCP tool adapter, the assertion report
+  collector, and the JUnit/pytest parsers — and 17 `eslint-disable` directives
+  the historical thresholds had required were removed because they no longer
+  suppress anything. The architecture lint-scope guard pins the metric contract
+  and its ceilings, so directory carve-outs and silent weakening fail CI.
+
+- **BREAKING (hard epoch): ProofGraph manual claim identity comes from the
+  single identity authority.** `/declare-contract` carried a second UUIDv5
+  minting implementation seeded only by the raw statement, with its own copy of
+  the claim namespace and no canonical statement normalization. Two
+  semantically identical manual declarations could therefore receive different
+  ids, and the merged-collision check ran outside the canonical identity space.
+  Manual claims now mint through `mintProofGraphClaimId` in the `manual`
+  identity domain; the authority fixes the reserved manual scope internally
+  (`manual` identity inputs carry no authority section) and normalizes the
+  statement seed. The duplicate mint in `integration/tools/declare-contract.ts`
+  is removed and an architecture guard forbids a second claim-id authority and
+  any consumer naming the reserved scope. Domains stay distinct by contract:
+  the same statement in the plan or architecture domain is a different claim,
+  never a collision. Manual claim ids created by earlier prereleases are not
+  migrated (no compatibility path); a re-declaration of such a claim is no
+  longer detected as an existing identity.
+
+- **BREAKING: prerelease session-state compatibility is explicitly bounded (UP1).**
+  A stable `schemaVersion` does not guarantee forward compatibility when a
+  release requires a stronger persisted evidence contract. In particular,
+  sessions with the unversioned policy digest emitted by `v1.2.0-tp.2` and
+  earlier are intentionally rejected by releases requiring `policy-digest.v2`.
+  Do not edit state to bridge this boundary: use the previous artifact to
+  archive or complete active sessions before upgrading, then start a new
+  session.
+
+- **BREAKING (`flowguard_declare_contract`): `critical` is now required.** It
+  previously defaulted to `true`, which would silently create claims capable of
+  blocking the final approval. The MCP schema baseline is updated accordingly.
+- `proofGraphGate.enforced` is now always `true` for compatibility; the gate no
+  longer supports policy disablement.
+
+- **Config `archive.redaction` restructured.** Old `mode` and `includeRaw`
+  fields replaced with constraint model: `allowedModes` (`.min(1)`, defaults
+  to all three), `allowRawExport` (default `false`), `maxAuditEvents`
+  (default `10_000`). Migration: set `allowRawExport: true` for raw archive
+  support.
+- **`archiveSession()` signature** now takes `ArchiveSessionOptions` with
+  `redactionMode` and `includeRaw`. Callers updated (auto-archive uses
+  `basic`/`raw=false`, regulated-completion uses `none`/`raw=true`).
+
+- Restructured the `/plan` authoring template around an implementation-plan
+  visual contract. The seven mandatory planning dimensions are preserved across
+  the new structural sections: `# Implementation Plan` with metadata header,
+  `## Approach`, `## Implementation` (per-step Files/Changes/Edge Cases/
+  Validation), `## Change Inventory` (table with CREATE/MODIFY/DELETE/RENAME),
+  `## Acceptance Criteria` (checklist), and `## Verification` (Source-cited).
+
+- `/status` template instructs the agent to render `presentation.markdown`
+  verbatim when present, without rephrasing.
+
+- **Implementation evidence is content-bound and captures a diff artifact (F3).**
+  `ImplEvidence.digest` now hashes the CURRENT content of each changed file (path +
+  git blob hash) instead of the sorted file-name list, so two different edits to the
+  same file set produce different digests. `/implement` also captures a unified diff
+  of the change to a content-addressed `implementation-diff.<digest>.patch` under the
+  session directory (covered by the archive manifest checksums) and records its hash
+  as the optional, backward-compatible `ImplEvidence.diffDigest`.
+
+- **VALIDATION fails closed when a stack is detected but no checks are derived (F4).**
+  Under lenient validation-evidence enforcement (`off`/`advisory` — e.g. the default
+  `team` mode), an empty active-check list previously passed VALIDATION vacuously.
+  When Discovery has detected a technology stack, that empty list is now treated as a
+  mis-detection hazard and blocks with `VALIDATION_EVIDENCE_STACK_NO_COMMANDS`. The
+  sole opt-out is the explicit `validationEvidence.allowNoCommands=true` policy flag;
+  the stricter `required` path (regulated/team-ci) is unchanged. `validation-evidence.ts`
+  is now mutation-covered.
+
+- **Node toolchain reproducible at 22.22.2 (#619).** `.node-version` and
+  `devEngines` define the dev baseline; runtime support narrowed from `>=20` to
+  `^20.0.0 || ^22.0.0 || ^24.0.0` and verified via artifact consumer jobs.
+
+- **Typecheck all test sources (#652).** `tsconfig.test.json` coverage expanded
+  to include all test files; 114 type errors resolved across test suites.
+
+- **CI workflows hardened from lead-level audit (#661).** Scan for
+  unconfigured/unpin actions and platform configuration gaps; multi-OS install
+  verification gated on clean build; concurrency groups, timeouts, and
+  least-privilege permissions audited and corrected across all 12 workflows.
+
+- **GitHub Actions SHA-pinning verified against upstream (#658).**
+  `check:actions-pinned` now resolves each pinned SHA against the upstream
+  repository to catch force-pushed or deleted refs before they break CI.
+
+- **Integration PERF gate restored with dedicated CI job (#664).**
+  Non-instrumented integration performance testing moved to a dedicated job,
+  keeping coverage instrumentation out of the perf measurement path.
+
+- **Integration execution deduplicated (#663).** Integration tests run once
+  in the `coverage` job (v8-instrumented) instead of twice across separate
+  `unit` and `integration` jobs.
+
+- **SDK updater uses gh CLI for PR management (#656).** Scheduled
+  `opencode-sdk-update` workflow now creates and updates PRs via `gh pr` CLI
+  instead of raw API calls; successful runs auto-close stale drift issues.
+
+- **Mutation scope restored to 82.88 % (break: 80).** Missing test files were
+  re-admitted to the stryker include list (discovery/verification suites,
+  materialize-contract, review-validation host-resolution, gate/integrity/
+  claim-contract edge tests), `Regex` joined the excluded mutators, and the
+  execution-subject/planner/evidence-resolution coverage gaps were closed with
+  targeted tests. `review-evidence-resolution.ts` is in the mutate scope at
+  100 %.
+
+- **Reason-code registry split and registered gaps.** Architecture-domain codes
+  moved to `reasons-architecture.ts`; the previously unregistered
+  `SUBAGENT_MANDATE_MISSING` now renders through the registry instead of
+  `[UNREGISTERED_REASON: …]`. Registry totals 267 codes.
+
+- **Developer-facing structural polish (#817, #818).** Byte-identical
+  `digestToId()` and `emptyClaimDeclarations()` consolidation, dead gh-cli
+  exports and a dead telemetry barrel removed, repository-identity unions
+  canonicalized, presentation `ReviewDecisionProjectionInput` rename, drifted
+  test-helper builders and the seven review-assurance envelope builders
+  consolidated into single canonical implementations.
+
+### Fixed
+
+- **Discovery enumerates tracked and untracked repository signals.** Repository
+  signals now come from a single NUL-delimited
+  `git ls-files --cached --others --exclude-standard` call, so untracked
+  manifests and config files are detected (`.gitignore` still applies) and
+  paths with spaces or non-ASCII characters are no longer C-quoted. Existing
+  sessions whose persisted discovery omitted relevant untracked files may
+  report discovery drift after this change; a same-session `/hydrate` does not
+  regenerate discovery, so policies with `onDrift=block` may require starting a
+  fresh governed session so discovery is captured under the corrected
+  enumeration semantics.
+
+- **Diagnostic file logging no longer materializes an uninitialized workspace.**
+  The file sink previously created the full `{workspaces}/<fingerprint>/` root
+  as a side effect of its first log record (`mkdir -p` down to
+  `.opencode/logs`), which bypassed `ensureWorkspace()` — the documented SSOT
+  for workspace-root creation — and produced torn fingerprint folders for
+  worktrees that were opened but never started. The sink is now dormant until
+  the workspace root exists: records are discarded without I/O and without a
+  failure, activation is lazy, and only `.opencode/logs` is created after
+  `ensureWorkspace()` materialized the root. Log directories are created
+  non-recursively, so a root that disappears between the probe and setup fails
+  the sink instead of being re-created. A root path (or log path component)
+  that exists but is not a directory, and any non-`ENOENT` stat failure, keep
+  the existing reject-plus-`onFailure` semantics instead of being silently
+  treated as absent.
+
+- **Archive verification documentation matched to the real API.** The
+  `docs/archive.md` example called `verifyArchive('/path/to/archive.tar.gz')`,
+  but the public function signature is `verifyArchive(fingerprint, sessionId)`
+  and resolves the package from the workspace archive directory; the example
+  and the verification section now state the real contract and point package-
+  only recipients to the standalone offline verifier. The
+  `docs/bsi-c5-mapping.md` reference now names
+  `src/adapters/workspace/archive-verify-chain.ts` as the owning module.
+
+- **Discovery health classifies every persistence error code.** The advisory
+  discovery-health projection previously routed `SESSION_STATE_INCOMPATIBLE`,
+  `LOCK_TIMEOUT_EXHAUSTED`, and `MISSING_FILE_DIGEST` through the generic
+  `read_failed` reason. They now map to `schema_invalid`, `read_failed`, and
+  `corrupt` respectively, so an incompatible or damaged artifact surfaces the
+  actionable recovery instead of a filesystem-access hint. Unknown errors
+  still fail closed to `read_failed`.
+
+- **`audit-chain.v3` contract defects in append, query, and diagnostics.** Six
+  bugs in the contract introduced by the hard Assurance epoch cutover (#852),
+  repaired without new events, outbox concepts, policy fields, or a format
+  version bump:
+  - **Exactly-once append was broken for raw producer bodies.** The writer
+    strips the producer `auditFormatVersion` and stamps
+    `CURRENT_AUDIT_FORMAT_VERSION`, but `computeCanonicalEventDigest()` does
+    not exclude that field, so a re-delivered raw body never digested equal to
+    its own persisted record. An honest retry after a crash between append and
+    acknowledgement failed closed as `duplicate id ... and different content`
+    instead of returning the persisted event. Both sides of the comparison are
+    now normalized to the same v3 commit body, which also owns the stamping
+    path. `EXCLUDED_FIELDS` is unchanged: no digest or chain-format change, and
+    no legacy interpretation of absent fields.
+  - **`byKind()` could not reach `state_write` or `enforcement_denied`.** It
+    matched a `${kind}:` prefix, but those factories emit `state_write` and
+    `enforcement:denied`. Both names are now shared constants in
+    `audit/types.ts`, so factory and consumer cannot drift.
+  - **`countByKind()` bucketed `enforcement:denied` as `enforcement`.** Free
+    namespaces such as `review:*` keep their own prefix.
+  - **`timeSpan()` read the first and last array element.** The trail is
+    ordered by `recordedAt`, and a reconciled outbox event may carry an older
+    `occurredAt`, so the reported span could be wrong or negative. Now min/max
+    over parsed instants.
+  - **`emitTransitions: false` disabled the durable state↔audit binding.** The
+    producer suppressed all state-write outbox generation rather than only the
+    transition projection, and the reconciler returned before reading any
+    pending operations at all — so a committed operation was never drained to
+    `audit.jsonl`. Both ends are fixed: `emitTransitions` now governs only which
+    operations the producer creates and the legacy transition-gap assertion; a
+    committed operation is authority and is always reconciled. Latent — no
+    shipped preset sets it false.
+  - **Audit diagnostics bypassed redaction.** `tool_call.detail.errorMessage`,
+    `error.detail.message`, and `error:SESSION_ERROR` (message, stack, and
+    supplementary host context) reached the raw `audit.jsonl` unfiltered while
+    the operational log was redacted centrally. Scalar diagnostics now pass
+    through the existing `sanitizeDiagnosticString()`; host-supplied
+    supplementary context — which is `z.record(z.string(), z.unknown())` and so
+    may nest objects and arrays — is deep-redacted through the existing
+    `redactExtra()` SSOT. Rationale, findings, and evidence content are
+    untouched.
+
+- **Duplicated standalone-review hypotheses (#762).** Review completion rebound
+  evidence via a recomputed `taskDigest`. Because a branch subject only resolves
+  to an immutable SHA after preparation, the digest legitimately changed, forking
+  the evidence chain and doubling every hypothesis claim in the projection
+  (3 objectives surfaced as 6 claims). Completion now binds to the outstanding
+  prepared entry by `evidenceId`.
+
+- **Documentation inventory corrected.** 15 documentation drift findings fixed
+  across PRODUCT_IDENTITY.md, delivery-scope.md, platform-limitations.md,
+  distribution-model.md, installation.md, and phases.md. Introduced
+  `src/shared/product-inventory.ts` as the canonical SSOT for all product
+  counts, guarded by drift tests that verify every count against live code
+  authorities.
+
+- **Stryker mutate scope updated to 47 files (was 23 in tp.2).** The
+  `[1.2.0-tp.2]` changelog entry below has been corrected from `35→39` to the
+  actual `23→35` expansion; three of the four files named in the original entry
+  were never present in the tp.2 release.
+
+- **Hardened the review challenge feature against gaming (#747 follow-up).** Five
+  enforcement gaps in the challenge coverage feature were closed:
+  - _Distinctness + substance (B1/B2):_ the N required challenges must now be
+    substantively distinct (no duplicate `challengeId` or claim/locations/evidence
+    signature) and clear a low anti-placeholder claim floor. New codes
+    `SUBAGENT_CHALLENGE_NOT_DISTINCT`, `SUBAGENT_CHALLENGE_INSUBSTANTIAL`.
+  - _Contradicted falsification (B4):_ a `design_challenge`/`content_challenge`
+    whose outcome is `contradicted` can no longer accompany `accept`. New code
+    `SUBAGENT_CHALLENGE_CONTRADICTED`.
+  - _Evidence binding on all paths (B3/B5):_ `allowedEvidenceRefs` and
+    `expectedObligationId` are now wired on the plan, architecture, and standalone
+    review paths (previously implement-only), so a fabricated ADR section / digest
+    / content digest or a foreign obligation id is rejected.
+  - _Task-class floor (C1):_ the challenge count is floored by the author's
+    `claimedTaskClass` (`counts[max(computed, claimed)]`), so a high-risk change
+    can no longer collapse the count to 0 by declaring doc-only paths.
+  - _Fail-closed absent policy (A2):_ an absent `challengePolicy` now fails closed
+    to the canonical matrix in `team`/`team-ci`/`regulated` (solo stays
+    legacy-tolerant), matching the discoveryHealth/validationEvidence normalizers.
+
+- **Architecture ADR submission no longer dead-ends under an active challenge
+  policy.** An ADR carries no diff, so challenge classification for
+  `flowguard_architecture` (Mode A) previously resolved to `unavailable` and
+  hard-blocked with `RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE` whenever a
+  `challengePolicy` was active (`team`/`team-ci`/`regulated`) — a state the A2
+  fail-closed normalization made unavoidable for those modes. Classification now
+  derives the changed-file set from the session's persisted discovery risk
+  surfaces (a new `discoveryRiskPaths` SSOT extractor over api/persistence/cicd/
+  security surface evidence and code-surface signal locations), unioned with an
+  optional, newly accepted author-supplied `targetPaths` tool argument, and never
+  returns `unavailable`. The count stays floored by the author's `claimedTaskClass`
+  (`counts[max(computed, claimed)]`, finding C1), so the discovery-derived set and
+  any author `targetPaths` can only raise the requirement, never lower it. With no
+  detected risk surface and no `targetPaths`, the ADR classifies as TRIVIAL
+  (count 0) — a genuine "no detected risk" signal, not a block.
+
+- **Bound implementation-challenge freshness on the directly-submitted review
+  path.** Challenge evidence freshness (an `implementation_challenge` must cite a
+  validation attempt for the current implementation digest, from the obligation's
+  allowed set, under the active obligation id) was enforced only on the
+  host-captured findings path. Directly-submitted `reviewFindings` reached
+  `validateReviewFindings` without `allowedEvidenceRefs` or `expectedObligationId`,
+  so a stale, failed, or foreign validation attempt could satisfy a challenge.
+  Both ingestion routes now pass identical binding context, so the freshness and
+  obligation-scope checks in `findings-consistency.ts` apply symmetrically.
+
+- **Registered three fail-closed review reason codes (#747).**
+  `VALIDATION_SUBJECT_CHANGED` (validation subject digest changed mid-execution),
+  `SUBAGENT_EVIDENCE_MISSING`, and `SUBAGENT_MANDATE_MISMATCH` are emitted on
+  strict review/validation block paths via `formatBlocked(...)` but were absent
+  from the reason registry, so operators saw an `[UNREGISTERED_REASON: ...]`
+  placeholder instead of a message and recovery steps. All three are now
+  registered with recovery guidance. The completeness guard was strengthened to
+  also scan `formatBlocked('CODE')` / `strictBlockedOutput('CODE')` call sites,
+  not only `code:` object literals, so this class of gap fails CI in future.
+
+- **Fail-closed normalization of a malformed challenge policy (#747).** A policy
+  snapshot that carried a present-but-malformed `challengePolicy` was silently
+  coerced to `undefined`, disabling frozen challenge enforcement and downgrading
+  a required review. Malformed-but-present policies now fall back to the canonical
+  frozen `challenge-policy.v1` matrix (mirroring the `discoveryHealth` /
+  `validationEvidence` fail-closed normalizers). An absent `challengePolicy` still
+  stays legacy-compatible and does not activate enforcement.
+
+  transitive `postcss` dependency to `8.5.23` and refreshed related lockfile
+  entries. `npm audit --audit-level=high` now reports no high-severity findings.
+
+- **Configuration documentation safe by default (#688).** The primary configuration
+  example now uses minimal `{ "schemaVersion": "v1" }` instead of explicitly setting
+  `policy.defaultMode` to `solo` (auto-approval). Documented `maxSelfReviewIterations`
+  and `maxImplReviewIterations` ranges corrected from `1-20` to `1-10`, matching
+  `FlowGuardConfigSchema`. New documentation-contract drift tests added.
+
+- **Lifecycle guidance and phase labels runtime-accurate (#686).** `/start` alias
+  corrected to `/hydrate` in installation docs. Ticket-flow table now includes
+  `IMPL_VALIDATION`. `IMPL_REVIEW` label distinguished from final evidence review.
+  `/implement` template auto-chains through post-implementation validation
+  (`IMPL_VALIDATION` → `flowguard_run_check`) before entering the review loop,
+  closing the gate that was visible in README but missing from the template.
+
+- **CLI errors, defaults, doctor outcomes, and host targets actionable (#687).**
+  Shared `CliParseResult` discriminated-union contract (`ok`/`help`/`error`)
+  adopted across all CLI parsers. Invalid commands and flags emit precise errors
+  to stderr with exit 2; `--help` (root and subcommand) exits 0. Usage corrected
+  from `solo (default)` to `team (default)`. Install/uninstall/doctor output
+  names the selected host and resolved target path. `flowguard run --` joins all
+  tokens after the separator. Doctor output now renders `HEALTHY`,
+  `HEALTHY_WITH_WARNINGS`, or `NOT_VERIFIED` with classified recovery guidance.
+  Installation docs include host-selection matrix. 16 black-box smoke tests added.
+
+- **Contextual help as scannable Markdown with artifact resume (#689).** `/help` and
+  `/commands` now render Markdown guidance (phase, readiness, blocker, next action,
+  commands, aliases, artifact metadata) as the default chat output, replacing the
+  previous raw JSON. Structured JSON remains available via `verbose: true` for
+  machine consumers. `flowguard_help` supports `includeArtifactContent: true` to
+  retrieve complete canonical ticket and plan text from the rehydrated session
+  state after compaction — bounded, read-only, no file paths. `/implement` and
+  `/plan` templates include two-stage resume guidance.
+
+- **Reviewer children are isolated from FlowGuard workflow tools (F14).** The OpenCode
+  reviewer capability profile now denies both direct `flowguard_*` and MCP-prefixed
+  `mcp__flowguard__*` tools and denies `task`, while retaining `read`, `glob`, and
+  `grep` for research. This prevents a reviewer child from hydrating, delegating, or
+  creating a parallel FlowGuard session directory; review provenance remains in the
+  parent obligation and audit trail. Team sessions still require explicit `/export` and
+  are not auto-archived on completion. The capability contract advances reviewer
+  criteria from `p38-v1` to `p39-v1` for direct/MCP denials and to `p40-v1` for the
+  `task` denial; existing obligations remain bound to their persisted values and require
+  a new review cycle after upgrade or rollback.
+
+- **Incoherent reviewer captures recover without deadlocking the review obligation (F13).**
+  Reviewer mandate criteria now require `changes_requested` whenever `blockingIssues`
+  is non-empty, matching the runtime F12 invariant. This changes the installed reviewer
+  mandate digest and advances `criteriaVersion` from `p37-v1` to `p38-v1`. A persisted
+  incoherent host-task capture remains audit evidence but no longer masks a later
+  coherent capture for the same obligation. The frozen policy field
+  `maxIncoherentReviewerCaptureRetries` defaults to one fresh retry and accepts config
+  overrides from `0` through `5`; it counts only the F12 `accept` plus blocking-issues
+  shape, not malformed or unparseable output. Existing obligations remain bound to
+  their persisted mandate values; start a new review cycle to use p38 criteria.
+
+- **Standalone content reviews no longer emit lifecycle ticket/plan warnings (F11).**
+  A standalone `/review` of an external branch/PR/text diff previously reported
+  `No ticket evidence` and `No plan evidence` as `completeness`-category warnings
+  even though the same report stated `Overall: Complete` / `0/0 complete, 0 missing` —
+  a self-contradictory presentation that inflated the finding and warning counts.
+  Those two mechanical findings describe the session LIFECYCLE and are meaningless
+  when reviewing external content, so they are now suppressed in content-review mode
+  (`buildMechanicalFindings` receives `refInput`; content reviews are exactly those
+  where `refInput` is defined, per `buildReviewReferenceInput`). Lifecycle `/review`
+  runs with no external content keep the warnings unchanged. No new reason codes or
+  finding categories; presentation-semantics fix only. Changes: `src/rails/review.ts`,
+  `CHANGELOG.md`, plus tests.
+
+- **Reviewer Task prompt is handed to the agent verbatim, eliminating the first-attempt review block (F10).**
+  In the host-task review path the agent had to free-compose the `flowguard-reviewer`
+  Task prompt from prose and routinely omitted the literal `iteration=`/`planVersion=`
+  tokens that enforcement (`promptContainsValue`) requires, so the FIRST Task call was
+  blocked with `SUBAGENT_PROMPT_MISSING_CONTEXT` and only a retry succeeded (reproduced
+  in the standalone `/review` demo run). F9 unified the emitter side but did not remove
+  this root cause. FlowGuard now emits a canonical, copy-ready `reviewerTaskPrompt` in the
+  host-task blocked output (and the pending-review instruction), built by the SAME
+  `renderReviewContext` serializer the enforcement matcher validates against — making the
+  emitter/validator agreement structural rather than dependent on the agent echoing the
+  values. The `/review`, `/check`, and shared review-loop command templates now instruct
+  the agent to paste `reviewerTaskPrompt` verbatim as the Task `prompt`. Enforcement itself
+  is unchanged (not loosened); a free-composed prompt without the context tokens is still
+  blocked. New `renderReviewerTaskPrompt` authority in `prompt-builders.ts`. Changes:
+  `src/integration/review/prompt-builders.ts`, `src/integration/review/host-task-policy.ts`,
+  `src/integration/review/pending-instruction.ts`,
+  `src/templates/commands/{review,check,shared-review-loop}.ts`,
+  `src/cli/templates-hash.test.ts` (expected COMMANDS hash refreshed), plus tests.
+
+- **Reviewer prompt context is emitted from one canonical serializer (F9).**
+  The `iteration`/`planVersion` context an agent must echo into the reviewer
+  subagent prompt was built by two independent string builders
+  (`pending-instruction.ts` produced `iteration=X, and planVersion=Y`;
+  `host-task-policy.ts` produced `Context: iteration=X, planVersion=Y`) while a
+  third path (`promptContainsValue` / `extractContentMeta`) validated it. The
+  subtly divergent forms made a plausibly-constructed reviewer prompt fail the
+  first-attempt `SUBAGENT_PROMPT_MISSING_CONTEXT` check, forcing a wasted
+  reviewer Task round-trip (observed in both the plan and standalone-review
+  demo flows). Both builders now emit the single canonical
+  `renderReviewContext({ iteration, planVersion })` form, so the emitted context
+  is byte-identical and satisfies enforcement on the first attempt. Changes:
+  `src/integration/review/prompt-builders.ts`,
+  `src/integration/review/pending-instruction.ts`,
+  `src/integration/review/host-task-policy.ts`, plus tests.
+
+- **VALIDATION timeouts and executor errors no longer invalidate the plan (F5).**
+  A verification command that times out or cannot be executed (command-not-found,
+  exit 124/127) is now classified as an execution error (`CHECK_ERRORED`) that keeps
+  the session in VALIDATION for a retry, instead of being treated as a failing check
+  that routes to PLAN and clears the approved plan and self-review evidence. Genuine
+  check failures (non-zero exit) still route to PLAN as before.
+
+- **Reviewer loop-verdict documentation corrected to `accept`.** Independent-review,
+  phases, commands, and agent-guidance docs (plus internal convergence comments)
+  now describe the reviewer subagent's `LoopVerdict` as `accept` (not the stale
+  `approve`), matching the runtime enum and installed reviewer prompt. The human
+  EVIDENCE_REVIEW gate keeps its distinct `approve` / `changes_requested` / `reject`
+  verdict. Also aligned the Java demo `/check` narration to the command FlowGuard
+  actually executes (`./mvnw verify`, a superset that includes the test phase).
+
+- **HTTP dispatch and audit-lock recovery hardened (#670, #672).** `GET /health`
+  remains public while all other hook requests authenticate before route or method
+  dispatch. Audit writes now recover dead-process lockfiles without weakening
+  fail-closed handling for live, malformed, or undeletable locks.
+
+- **MCP execution boundaries hardened (#645).** Server-scoped admission limits
+  and response deadlines protect tool execution without cancelling live work;
+  arbitrary executor errors are mapped to sanitized MCP diagnostics.
+
+- **HTTP hook trust boundary and command-hook obligation parity (#646).** HTTP
+  governance routes require a configured bearer token and JSON content type;
+  non-loopback listeners require explicit opt-in. Command hooks now deny
+  mutating tools with unresolved review obligations identically to HTTP hooks.
+
+- **Redaction fail-closed for archive export, audit summarization, and
+  telemetry payloads (#666).** Fixed four HIGH-severity secret-leak paths
+  (AC3, R1, R2, R4) from the 2026-06 integrity analysis.
+  - AC3: `summarizeArgs()` now masks scalar values on secret-bearing keys
+    (`api_key`, `token`, `password`, etc.) with substring and
+    delimiter-boundary detection before audit trail persistence.
+  - R1: Export redaction switched from default-allow whitelist to
+    default-deny deep walk with context-specific allow-lists; active-path
+    cycle detection fails closed on circular references.
+  - R2: Archive pipeline extended to produce `session-state.redacted.json`
+    and `audit.redacted.jsonl`; raw originals excluded by default
+    (`includeRaw: false`).
+  - R4: Telemetry span error status and recorded exceptions use
+    `serializeError()` + `sanitizeDiagnosticString()` instead of raw
+    `err.message` and `Error` objects.
+
+- **Download-artifact action pinned SHA corrected (#657).** Fixed an invalid
+  SHA reference for `actions/download-artifact` that pointed to a
+  non-existent v5 commit.
+
+- **devEngines runtime version relaxed to >=22.22.2.** `devEngines.runtime`
+  onFail behavior changed from `error` at exact pin to `>=22.22.2` minimum,
+  allowing forward-compatible runtime versions.
+
+- **Claude Code plugin mutation score hardened (#653).** Added 320 mutation
+  tests to the Claude Code plugin template, bringing the per-template
+  mutation score to 100% for all governed hook entrypoints.
+
+- **Java Task Manager demo pitch flow hardened.** Pre-flight and pitch flow
+  assertion gaps fixed; demo boundary protections restored.
+
+- **Installer transactional dependency install, hardened rollback, and atomic
+  writes (#667).** Fixed four HIGH-severity installer safety gaps (C2, C3, C4,
+  C5) from the 2026-06 integrity analysis.
+  - C2: Install lock with ownership-token-based release; pre-flight check for
+    existing installation.
+  - C3: Journal-based write-ahead dependency transaction with staging directory,
+    atomic `rename()` swap, and granular crash-recoverable rollback phases.
+  - C4: Marketplace lock for mutual exclusion on `marketplace.json` read-modify-write.
+  - C5: `snapshotForRollback()` uses O_NOFOLLOW with type coherence fail-closed;
+    `rollbackArtifacts()` uses `lstat`-based symlink rejection, temp+rename atomic
+    restore; `writeIfAbsent()` uses `wx` exclusive-create for `force=false`.
+
+- **`REVIEWER_UNAVAILABLE_STRICT` rendered stray literal braces.** The message
+  template used double-brace placeholders, so the interpolated `{reason}` and
+  `{recovery}` displayed as `{…}` in user output; fixed to single braces.
+
+- **Reviewer-task pending-obligation guidance listed an incomplete tool set.**
+  Message, recovery steps, enforcement reason, and troubleshooting docs now name
+  all four review-requesting entry points (`flowguard_plan`,
+  `flowguard_implement`, `flowguard_architecture`, `flowguard_review`).
+
+- **Documentation drift corrected.** The reviewer verdict table now documents
+  `accept` (not `approve`); `CENTRAL_POLICY_INVALID_MODE` no longer lists
+  `team-ci` as a valid `minimumMode`; several recovery and copy strings were
+  aligned with their registry wording.
+
+### Security
+
+- **Release tag provenance and control-plane drift.** The tag-triggered release
+  workflow now runs a POST-TAG preflight before any write-capable step: the
+  pushed tag must be an annotated tag object with a GitHub-verified signature
+  pointing at the exact current protected `main` commit, and the relied-upon
+  tag rulesets and `release` environment must match the executable contract in
+  `scripts/control-plane-contract.js`. `v*` tags are protected by separate
+  creation-authority and immutability rulesets. SemVer prereleases are
+  published as GitHub prereleases. The PRE-TAG assertion and the CI preflight
+  share one decision authority in `scripts/release-preflight.js`.
+
+- **Release control-plane verification is fully fail-closed.** The
+  control-plane contract now pins the exact `v*` ref target
+  (`refs/tags/v*`, no excludes), the exact tag bypass actor and mode
+  (`User:57482452:always` for creation, none for immutability), the active
+  environment deployment-policy mode, and the repository Actions policy
+  (Actions enabled, all actions allowed, SHA pinning required, all required
+  checks bound to the GitHub Actions app). Trusted runs (scheduled drift and
+  the release POST-TAG preflight) fail closed when `bypass_actors` or the
+  Actions policy cannot be read, and require the read-only
+  `CONTROL_PLANE_READ_TOKEN` secret; only pull-request drift runs may report
+  `PARTIAL_VERIFICATION`.
+
+- **Self-contradictory reviewer findings can no longer accept a review gate (F12).**
+  A reviewer verdict of `accept` carrying a non-empty `blockingIssues` array is now
+  rejected fail-closed at every ingestion boundary. Previously the only rule requiring
+  `accept` to be free of blocking issues lived as prose in the reviewer mandate with no
+  runtime enforcement, so a review could converge (and archive) with `blockingIssueCount`
+  greater than zero shown next to an accepted status — the exact contradiction observed
+  in a demo run. The canonical, dependency-free invariant
+  (`validateReviewFindingsConsistency`, strict emptiness) is the single source of truth
+  and is called at both the verdict-submission boundary (`validateReviewFindings`, all
+  four review kinds) and the host-task evidence-resolution boundary
+  (`resolveHostTaskFindings`), plus asserted at the plugin enforcement layer as
+  defense-in-depth — one rule implementation, multiple protection sites. Coherence is
+  checked before anti-tampering, so a contradictory record never masks (or is masked by)
+  a hash/verdict mismatch, and never becomes effective evidence. The runtime is
+  intentionally stricter than the current mandate prose (which still permits minor-only
+  blocking issues); severity-aware separation via a schema change is deferred so the
+  taxonomy becomes structurally guaranteed rather than interpreted. New reason code
+  `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`. The reviewer mandate digest and
+  `criteriaVersion` are deliberately unchanged: this fix does not touch mandate content,
+  so no in-flight obligation is invalidated.
+
+- **Reviewer provenance is host-authoritative; malformed findings are assurance-downgraded (F8).**
+  The reviewer subagent (an LLM) is no longer treated as an authority for its own
+  execution time or session identity. At host-task binding, `normalizeHostTaskFindings`
+  now rebuilds the ENTIRE `reviewedBy` block host-authoritatively — `sessionId` from the
+  resolved child session and `actorId`/`actorSource`/`actorAssurance` from host-known
+  neutral values (`flowguard-reviewer` / `unknown` / `best_effort`); no model-supplied
+  actor field is carried into the canonical block, so a reviewer echoing the correct
+  session id can no longer smuggle a fabricated `actorSource`/`actorAssurance`. It also
+  overwrites `reviewedAt` with the real host binding timestamp. The complete original
+  model block is always preserved as diagnostics-only `reviewerClaimedBy`, and the model
+  time as `reviewerClaimedAt` (new optional Zod fields on `ReviewFindings`, intentionally
+  absent from the SDK output schema — documented drift in the findings-schema drift
+  guard). Findings recovered only from an embedded/brace-balanced JSON block in mixed
+  model output now bind at a new `structured_recovered` assurance tier with a consistent
+  transport contract (`reviewOutputMode: text_compat`, `structuredOutputUsed: false`,
+  `extractionMethod: outermost_braces`) instead of silently claiming `structured_high`
+  alongside structured-output defaults; binding still proceeds (downgrade, not
+  fail-closed). Changes: `src/state/evidence-review.ts`,
+  `src/integration/review/evidence-binding.ts`, `src/integration/review/assurance.ts`,
+  `src/integration/review/enforcement/extraction.ts`,
+  `src/integration/review/enforcement/types.ts`,
+  `src/integration/review/findings-schema-drift.test.ts`, plus tests.
+
+- **OpenCode SDK and host baselines updated (#655).** `@opencode-ai/plugin`
+  and host version baselines bumped with contract, integration, smoke, and
+  end-to-end verification.
+
+- **Known issues inventory re-triaged (#651).** Static-analysis findings
+  re-verified against develop; three previously-open findings confirmed
+  fixed in existing code, one merged fix confirmed, four partial fixes
+  documented. `KNOWN_ISSUES.md` updated as authoritative inventory.
+
 ## [1.2.0-tp.2] - 2026-07-08
 
 ### Added
@@ -63,9 +1172,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Stryker mutation scope expanded 35→39 (Tier 3, #595).** Four canonical
-  authority files added: `flowguard-config.ts`, `policy-presets.ts`,
-  `policy-snapshot-normalize.ts`, `profile.ts`.
+- **Stryker mutation scope expanded 23→35 (Tier 3, #595).** The mutate
+  array gained `archive/content-digest.ts`, `config/profile.ts`,
+  `integration/tools/review-validation-mode.ts`, `shared/canonical-json.ts`,
+  `templates/codex-plugin.ts`, `templates/mandates.ts`, and several review
+  orchestrator sub-modules.
   `vitest.stryker.config.ts` unchanged — existing globs cover all test files.
 
 - **KNOWN_ISSUES.md structural sync (#589).** MUT1 `Tracked`→`Fixed`,

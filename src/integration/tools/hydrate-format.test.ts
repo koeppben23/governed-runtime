@@ -10,9 +10,10 @@ import {
   buildExistingPolicyInput,
   buildNewPolicyInput,
   buildPolicyInput,
-} from './hydrate-format.js';
-import type { HydratePolicyResolution } from './hydrate.js';
+} from './hydrate/hydrate-format.js';
+import type { HydratePolicyResolution } from './hydrate/hydrate.js';
 import type { PolicyMode } from '../../state/policy-mode.js';
+import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ const EXISTING = {
 
 function policyResolution(overrides = {}): HydratePolicyResolution {
   return {
+    ...DEFAULT_CONFIG,
     effectiveMode: 'team' as PolicyMode,
     requestedMode: 'team' as PolicyMode,
     effectiveSource: 'default' as const,
@@ -40,21 +42,7 @@ function policyResolution(overrides = {}): HydratePolicyResolution {
 
 function hydrateConfig(overrides = {}) {
   return {
-    idp: null,
-    trustAnchors: [],
-    tsaUrl: '',
-    profile: { defaultId: '', activeChecks: [] },
-    policy: {
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 5,
-      requireVerifiedActorsForApproval: false,
-      identityProvider: null,
-      identityProviderMode: 'optional' as const,
-      minimumActorAssuranceForApproval: null,
-      enforceRiskClassification: false,
-      allowRiskDowngradeOverride: false,
-      allowReducedCeremony: false,
-    },
+    ...DEFAULT_CONFIG,
     ...overrides,
   };
 }
@@ -78,10 +66,7 @@ describe('buildExistingPolicyInput', () => {
 describe('buildNewPolicyInput', () => {
   it('maps policy resolution to hydrate policy input', () => {
     const res = policyResolution();
-    const result = buildNewPolicyInput(
-      res,
-      hydrateConfig() as Parameters<typeof buildNewPolicyInput>[1],
-    );
+    const result = buildNewPolicyInput(res, hydrateConfig());
     expect(result.policyMode).toBe('team');
     expect(result.policySource).toBe('default');
     expect(result.effectiveGateBehavior).toBe('human_gated');
@@ -95,7 +80,7 @@ describe('buildPolicyInput', () => {
     const result = buildPolicyInput(
       EXISTING as Parameters<typeof buildPolicyInput>[0],
       policyResolution(),
-      hydrateConfig() as Parameters<typeof buildPolicyInput>[2],
+      hydrateConfig(),
       undefined,
     );
     expect(result.policyMode).toBe('team');

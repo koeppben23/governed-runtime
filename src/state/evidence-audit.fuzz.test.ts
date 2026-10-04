@@ -21,15 +21,20 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { verifyChain } from '../audit/integrity.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION, GENESIS_HASH } from '../audit/types.js';
 import type { ChainedAuditEvent } from '../audit/types.js';
 
 interface ChainedRecord extends Record<string, unknown> {
   id: string;
-  sessionId: string;
+  flowguardSessionId: string;
+  hostSessionId?: string;
   phase: string;
   event: string;
-  timestamp: string;
+  auditSequence: number;
+  occurredAt: string;
+  recordedAt: string;
+  semanticEventDigest: string;
   actor: string;
   auditFormatVersion: string;
   detail: Record<string, unknown>;
@@ -44,20 +49,36 @@ function makeId(chainSeed: number, idx: number): string {
 }
 
 function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
-  const body: Omit<ChainedRecord, 'chainHash'> = {
+  const bodyWithoutDigest = {
     id,
-    sessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
+    flowguardSessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
     phase: 'PLAN',
-    event: `transition:STEP_${idx}`,
-    timestamp: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
+    event: 'transition:PLAN_READY',
+    auditSequence: idx + 1,
+    occurredAt: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
+    recordedAt: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-    detail: { kind: 'transition', from: 'TICKET', to: 'PLAN', idx },
+    detail: {
+      kind: 'transition' as const,
+      from: 'TICKET' as const,
+      to: 'PLAN' as const,
+      event: 'PLAN_READY' as const,
+      autoAdvanced: false,
+      chainIndex: idx,
+    },
     prevHash,
   };
+  // The semantic digest authority is recomputed by the verifier — a synthetic
+  // placeholder would make every compliant chain invalid.
+  const semanticEventDigest = computeCanonicalEventDigest(bodyWithoutDigest);
+  const body = {
+    ...bodyWithoutDigest,
+    semanticEventDigest,
+  } satisfies Omit<ChainedAuditEvent, 'chainHash'>;
   return {
     ...body,
-    chainHash: computeChainHash(prevHash, body as unknown as Omit<ChainedAuditEvent, 'chainHash'>),
+    chainHash: computeChainHash(prevHash, body),
   };
 }
 
@@ -118,9 +139,7 @@ describe('audit chain fuzz', () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 50 }), (length) => {
         const chain = buildChain(length);
-        const result = verifyChain(chain as unknown as Record<string, unknown>[], {
-          strict: true,
-        });
+        const result = verifyChain(chain);
         expect(result.valid).toBe(true);
         expect(result.verifiedCount).toBe(length);
         expect(result.firstBreak).toBeNull();
@@ -150,14 +169,12 @@ describe('audit chain fuzz', () => {
           const op: TamperOp = { kind: opKind, index: rawIdx };
           const tampered = applyTamper(chain, op);
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered);
 
           expect(result.valid).toBe(false);
-          expect(['CHAIN_BREAK', 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE']).toContain(
-            result.reason,
-          );
+          // The generated data is explicitly v3 and the current epoch removed
+          // the legacy strict-mode reason — only CHAIN_BREAK is admissible.
+          expect(result.reason).toBe('CHAIN_BREAK');
         },
       ),
       {
@@ -179,9 +196,7 @@ describe('audit chain fuzz', () => {
           const idx = rawIdx % (chainLength - 1); // 0 .. chainLength-2
           const tampered = applyTamper(chain, { kind: 'delete', index: idx });
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered);
 
           expect(result.valid).toBe(false);
           expect(result.reason).toBe('CHAIN_BREAK');
@@ -214,14 +229,12 @@ describe('audit chain fuzz', () => {
             index: reorderIdx % (tampered.length - 1 || 1),
           });
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered);
 
           expect(result.valid).toBe(false);
-          expect(['CHAIN_BREAK', 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE']).toContain(
-            result.reason,
-          );
+          // The generated data is explicitly v3 and the current epoch removed
+          // the legacy strict-mode reason — only CHAIN_BREAK is admissible.
+          expect(result.reason).toBe('CHAIN_BREAK');
         },
       ),
       {
@@ -243,9 +256,7 @@ describe('audit chain fuzz', () => {
           const mutateIdx = rawIdx % chainLength;
           const tampered = applyTamper(chain, { kind: 'mutate', index: mutateIdx });
 
-          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
-            strict: true,
-          });
+          const result = verifyChain(tampered);
 
           expect(result.valid).toBe(false);
           expect(result.reason).toBe('CHAIN_BREAK');

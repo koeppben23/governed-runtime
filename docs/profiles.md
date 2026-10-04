@@ -61,8 +61,9 @@ detected, VALIDATION is vacuously passed.
 
 Verification commands are discovered automatically from the repository
 (`package.json` scripts, Java wrappers, detected tool defaults). They
-surface as `verificationCandidates` in `flowguard_status`. Use
-`/check` to execute them.
+surface as `verificationCandidates` in `flowguard_status` and execute
+automatically in VALIDATION; `/check` remains available as a compatibility
+surface to execute them explicitly.
 
 Refer to `docs/configuration.md#profileactivechecks` for overriding active
 checks at the config level.

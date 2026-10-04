@@ -11,12 +11,14 @@
  * Audit digests/chain hashes and discovery digests both route through it, so
  * there is no risk of two divergent serializers silently producing different
  * digests (the #434 C1 defect class). Enforced by
- * `architecture/__tests__/audit-canonicalization-ssot.test.ts`.
+ * `architecture/__tests__/canonical-json-ssot.test.ts`; the usage rule that
+ * hash inputs must not bypass this serializer is enforced default-wide by
+ * `architecture/__tests__/digest-authority-ssot.test.ts`.
  *
  * Note on `undefined`: object properties whose value is `undefined` are dropped
- * before serialization (JSON.stringify drops them anyway); `undefined` array
- * elements become `null` (standard JSON.stringify behaviour). Both rules are
- * applied consistently here.
+ * before serialization (JSON.stringify drops them anyway); `undefined` and
+ * sparse array elements become `null` (standard JSON.stringify behaviour).
+ * Both rules are applied consistently here.
  *
  * @version v1
  */

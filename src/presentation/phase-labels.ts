@@ -25,14 +25,18 @@ export const PHASE_LABELS = {
   PLAN_REVIEW: 'Ready for plan approval',
   VALIDATION: 'Validation',
   IMPLEMENTATION: 'Implementation in progress',
-  IMPL_REVIEW: 'Ready for evidence review',
+  IMPL_VALIDATION: 'Re-validating implementation',
+  IMPL_REVIEW: 'Implementation review in progress',
   EVIDENCE_REVIEW: 'Ready for final review',
+  EXPORT_READY: 'Ready to export',
   COMPLETE: 'Complete',
   ARCHITECTURE: 'Architecture in progress',
   ARCH_REVIEW: 'Ready for architecture review',
   ARCH_COMPLETE: 'Architecture complete',
-  REVIEW: 'Compliance review',
-  REVIEW_COMPLETE: 'Review complete',
+  PEER_REVIEW: 'Peer review',
+  PEER_REVIEW_COMPLETE: 'Peer review complete',
+  REJECTED: 'Workflow rejected',
+  ABORTED: 'Workflow aborted',
 } satisfies Record<Phase, string>;
 
 /**

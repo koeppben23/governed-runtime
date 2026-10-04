@@ -3,7 +3,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { IdpConfigSchema, IdpError, resolveIdpToken } from './index.js';
+import { IdpConfigSchema, resolveIdpToken } from './index.js';
 import { JwksRemoteKeyResolver } from './key-resolver.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
@@ -95,22 +95,22 @@ describe('identity resolveIdpToken (P35b1)', () => {
     expect(actor.verificationMeta.keyId).toBe('static-key-1');
   });
 
-  it('HAPPY parses legacy static config without mode (backward-compat)', () => {
-    const parsed = IdpConfigSchema.parse({
-      issuer: 'https://issuer.example.com',
-      audience: ['flowguard'],
-      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
-      signingKeys: [
-        {
-          kind: 'pem',
-          kid: 'legacy-static-key',
-          alg: 'RS256',
-          pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----',
-        },
-      ],
-    });
-
-    expect(parsed.mode).toBe('static');
+  it('BAD rejects static config without a mode discriminator', () => {
+    expect(() =>
+      IdpConfigSchema.parse({
+        issuer: 'https://issuer.example.com',
+        audience: ['flowguard'],
+        claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+        signingKeys: [
+          {
+            kind: 'pem',
+            kid: 'legacy-static-key',
+            alg: 'RS256',
+            pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----',
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it('HAPPY jwks mode verifies token by kid from multi-key JWKS', async () => {
@@ -226,10 +226,12 @@ describe('identity resolveIdpToken (P35b1)', () => {
       cacheTtlSeconds: 1,
     });
 
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
     await resolveIdpToken(tokenPath, config);
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    vi.mocked(Date.now).mockReturnValue(now + 1_001);
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_FETCH_FAILED',
     });
   });
@@ -253,7 +255,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       jwksPath,
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_TOKEN_KID_MISSING',
     });
   });
@@ -269,7 +271,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       signingKeys: [{ kind: 'pem', kid: 'static-key-1', alg: 'RS256', pem: fixture.publicPem }],
     });
 
-    await expect(resolveIdpToken(tempDir, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tempDir, config)).rejects.toMatchObject({
       code: 'IDP_TOKEN_MISSING',
     });
   });
@@ -286,7 +288,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       signingKeys: [{ kind: 'pem', kid: 'static-key-1', alg: 'RS256', pem: fixture.publicPem }],
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_TOKEN_MISSING',
     });
   });
@@ -310,7 +312,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       jwksPath,
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_KEY_NOT_FOUND',
     });
   });
@@ -327,7 +329,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       signingKeys: [{ kind: 'pem', kid: 'static-key-1', alg: 'RS256', pem: fixture.publicPem }],
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_TOKEN_INVALID',
     });
   });
@@ -349,7 +351,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       signingKeys: [{ kind: 'pem', kid: 'static-key-1', alg: 'RS256', pem: fixture.publicPem }],
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_ISSUER_MISMATCH',
     });
   });
@@ -371,7 +373,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       signingKeys: [{ kind: 'pem', kid: 'static-key-1', alg: 'RS256', pem: fixture.publicPem }],
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_AUDIENCE_MISMATCH',
     });
   });
@@ -395,7 +397,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       signingKeys: [{ kind: 'pem', kid: 'static-key-1', alg: 'RS256', pem: fixture.publicPem }],
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_EXPIRED',
     });
   });
@@ -419,7 +421,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       signingKeys: [{ kind: 'pem', kid: 'static-key-1', alg: 'RS256', pem: fixture.publicPem }],
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_NOT_YET_VALID',
     });
   });
@@ -443,7 +445,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       jwksPath,
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_ALGORITHM_MISMATCH',
     });
   });
@@ -463,7 +465,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       jwksPath,
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_INVALID',
     });
   });
@@ -492,7 +494,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       jwksPath,
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_INVALID',
     });
   });
@@ -516,7 +518,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       cacheTtlSeconds: 300,
     });
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_FETCH_FAILED',
     });
   });
@@ -533,7 +535,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       level: string;
       service: string;
       message: string;
-      extra?: Record<string, unknown>;
+      extra?: Record<string, unknown> | undefined;
     }> = [];
     const logger: AdapterLogger = {
       info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
@@ -552,7 +554,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
 
     await expect(
       runWithAdapterLoggerAsync(logger, () => resolveIdpToken(tokenPath, config)),
-    ).rejects.toMatchObject<Partial<IdpError>>({ code: 'IDP_JWKS_FETCH_FAILED' });
+    ).rejects.toMatchObject({ code: 'IDP_JWKS_FETCH_FAILED' });
 
     const entry = logs.find(
       (log) =>
@@ -579,7 +581,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       level: string;
       service: string;
       message: string;
-      extra?: Record<string, unknown>;
+      extra?: Record<string, unknown> | undefined;
     }> = [];
     const logger: AdapterLogger = {
       info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
@@ -598,7 +600,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
 
     await expect(
       runWithAdapterLoggerAsync(logger, () => resolveIdpToken(tokenPath, config)),
-    ).rejects.toMatchObject<Partial<IdpError>>({ code: 'IDP_JWKS_FETCH_FAILED' });
+    ).rejects.toMatchObject({ code: 'IDP_JWKS_FETCH_FAILED' });
 
     const entry = logs.find(
       (log) =>
@@ -629,7 +631,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       cacheTtlSeconds: 300,
     } as unknown as Parameters<typeof resolveIdpToken>[1];
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_URI_INVALID',
     });
   });
@@ -649,7 +651,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       cacheTtlSeconds: 300,
     } as unknown as Parameters<typeof resolveIdpToken>[1];
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_URI_INVALID',
     });
   });
@@ -669,7 +671,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       cacheTtlSeconds: 300,
     } as unknown as Parameters<typeof resolveIdpToken>[1];
 
-    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
+    await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_URI_INVALID',
     });
   });

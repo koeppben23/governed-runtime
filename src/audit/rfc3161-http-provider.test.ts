@@ -26,7 +26,7 @@ function makeResponse(status = PKIStatus.granted): ArrayBuffer {
 describe('HttpTimestampAuthorityProvider', () => {
   it('posts RFC3161 TimeStampReq and returns TimeStampToken DER base64', async () => {
     let requestBody: ArrayBuffer | undefined;
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
       requestBody = init?.body as ArrayBuffer;
       return new Response(makeResponse(), { status: 200 });
     });
@@ -70,7 +70,7 @@ describe('HttpTimestampAuthorityProvider', () => {
 
   it('fails explicitly for non-2xx TSA response', async () => {
     const provider = new HttpTimestampAuthorityProvider({
-      fetchImpl: vi.fn(async () => new Response('denied', { status: 503 })) as typeof fetch,
+      fetchImpl: vi.fn(async () => new Response('denied', { status: 503 })),
     });
 
     await expect(
@@ -85,9 +85,7 @@ describe('HttpTimestampAuthorityProvider', () => {
 
   it('fails explicitly for malformed ASN.1 response', async () => {
     const provider = new HttpTimestampAuthorityProvider({
-      fetchImpl: vi.fn(
-        async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
-      ) as typeof fetch,
+      fetchImpl: vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 })),
     });
 
     await expect(
@@ -104,7 +102,7 @@ describe('HttpTimestampAuthorityProvider', () => {
     const provider = new HttpTimestampAuthorityProvider({
       fetchImpl: vi.fn(
         async () => new Response(makeResponse(PKIStatus.rejection), { status: 200 }),
-      ) as typeof fetch,
+      ),
     });
 
     await expect(

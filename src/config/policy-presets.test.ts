@@ -17,6 +17,7 @@ import {
   validateExistingPolicyAgainstCentral,
 } from '../config/policy.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Shared Constants ─────────────────────────────────────────────────────────
 
@@ -39,10 +40,10 @@ describe('config/policy', () => {
       expect(getPolicyPreset('regulated')).toBe(REGULATED_POLICY);
     });
 
-    it('getPolicyPreset vs resolvePolicyWithContext — team-ci authority is in WithContext', () => {
+    it('getPolicyPreset vs resolvePolicyWithContext — runtime authority degrades to canonical team', () => {
       expect(getPolicyPreset('team-ci')).toBe(TEAM_CI_POLICY);
       const withContext = resolvePolicyWithContext('team-ci', false);
-      expect(withContext.policy.mode).toBe('team-ci');
+      expect(withContext.policy).toBe(TEAM_POLICY);
       expect(withContext.effectiveMode).toBe('team');
       expect(withContext.degradedReason).toBe('ci_context_missing');
     });
@@ -58,7 +59,7 @@ describe('config/policy', () => {
 
     it('resolvePolicyWithContext degrades team-ci to team without CI context', () => {
       const result = resolvePolicyWithContext('team-ci', false);
-      expect(result.policy.mode).toBe('team-ci');
+      expect(result.policy).toBe(TEAM_POLICY);
       expect(result.requestedMode).toBe('team-ci');
       expect(result.effectiveMode).toBe('team');
       expect(result.effectiveGateBehavior).toBe('human_gated');
@@ -104,9 +105,6 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyForHydrate threads configValidationEvidence into the frozen snapshot (#400)', async () => {
-      // Falsification of the config→resolver→snapshot path: a team base defaults to
-      // validationEvidence off; an explicit config override must survive resolution
-      // AND land in the frozen policy snapshot operators actually run under.
       const result = await resolvePolicyForHydrate({
         repoMode: 'team',
         defaultMode: 'solo',
@@ -115,14 +113,12 @@ describe('config/policy', () => {
         configValidationEvidence: { enforcement: 'required', allowNoCommands: true },
       });
 
-      // Override reflected in the resolved policy.
       expect(result.policy.validationEvidence).toEqual({
         enforcement: 'required',
         allowNoCommands: true,
       });
 
-      // And preserved through snapshot freezing.
-      const snap = createPolicySnapshot(result.policy, '2026-01-01T00:00:00.000Z', digestFn);
+      const snap = createPolicySnapshot(result.policy, '2026-01-01T00:00:00.000Z', hashText);
       expect(snap.validationEvidence).toEqual({
         enforcement: 'required',
         allowNoCommands: true,
@@ -130,8 +126,6 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyForHydrate partial configValidationEvidence merges onto preset default (#400)', async () => {
-      // Only enforcement overridden; allowNoCommands must fall back to the preset
-      // default (false), preserving the fail-closed posture.
       const result = await resolvePolicyForHydrate({
         explicitMode: 'regulated',
         defaultMode: 'solo',
@@ -146,35 +140,29 @@ describe('config/policy', () => {
       });
     });
 
-    it('SOLO has no human gates and 1 iteration', () => {
+    it('SOLO has no human gates and default review budgets', () => {
       expect(SOLO_POLICY.requireHumanGates).toBe(false);
-      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
-      expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
+      expect(SOLO_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(SOLO_POLICY.allowSelfApproval).toBe(true);
       expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
       expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
       expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
       expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(SOLO_POLICY.identityProviderMode).toBe('optional');
       expect(SOLO_POLICY.enforceRiskClassification).toBe(false);
-      expect(SOLO_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(SOLO_POLICY.allowReducedCeremony).toBe(false);
     });
 
-    it('TEAM has human gates and 3 iterations', () => {
+    it('TEAM has human gates and default review budgets', () => {
       expect(TEAM_POLICY.requireHumanGates).toBe(true);
-      expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_POLICY.enforceRiskClassification).toBe(false);
-      expect(TEAM_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(TEAM_POLICY.allowReducedCeremony).toBe(false);
     });
 
@@ -183,31 +171,35 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
       expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
       expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('claim_validated');
-      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
       expect(REGULATED_POLICY.enforceRiskClassification).toBe(true);
-      expect(REGULATED_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(REGULATED_POLICY.allowReducedCeremony).toBe(false);
+    });
+
+    it('every preset freezes challenge-policy.v1', () => {
+      for (const policy of [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]) {
+        expect(policy.challengePolicy).toEqual({
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        });
+      }
     });
 
     it('TEAM-CI enables auto-approval with full audit', () => {
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
-      expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_CI_POLICY.enforceRiskClassification).toBe(true);
-      expect(TEAM_CI_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(TEAM_CI_POLICY.allowReducedCeremony).toBe(false);
     });
 
     it('createPolicySnapshot produces deterministic hash', () => {
-      const digest = (s: string) => `hash-of-${s.length}`;
+      const digest = hashText;
       const snap1 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
       const snap2 = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
       expect(snap1.hash).toBe(snap2.hash);
@@ -225,69 +217,53 @@ describe('config/policy', () => {
     it('all SOLO_POLICY fields match expected values', () => {
       expect(SOLO_POLICY.mode).toBe('solo');
       expect(SOLO_POLICY.requireHumanGates).toBe(false);
-      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
-      expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
+      expect(SOLO_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(SOLO_POLICY.allowSelfApproval).toBe(true);
       expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
       expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
       expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
       expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(SOLO_POLICY.identityProviderMode).toBe('optional');
-      expect(SOLO_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(SOLO_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(SOLO_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all TEAM_POLICY fields match expected values', () => {
       expect(TEAM_POLICY.mode).toBe('team');
       expect(TEAM_POLICY.requireHumanGates).toBe(true);
-      expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_POLICY.identityProviderMode).toBe('optional');
-      expect(TEAM_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(TEAM_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(TEAM_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all REGULATED_POLICY fields match expected values', () => {
       expect(REGULATED_POLICY.mode).toBe('regulated');
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
-      expect(REGULATED_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(REGULATED_POLICY.maxImplReviewIterations).toBe(3);
+      expect(REGULATED_POLICY.reviewBudget).toEqual({
+        plan: 3,
+        architecture: 3,
+        implementation: 3,
+      });
       expect(REGULATED_POLICY.allowSelfApproval).toBe(false);
       expect(REGULATED_POLICY.audit.emitTransitions).toBe(true);
       expect(REGULATED_POLICY.audit.emitToolCalls).toBe(true);
       expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
       expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('claim_validated');
-      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
-      expect(REGULATED_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(REGULATED_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(REGULATED_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all TEAM_CI_POLICY fields match expected values', () => {
       expect(TEAM_CI_POLICY.mode).toBe('team-ci');
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
-      expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
       expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
-      expect(TEAM_CI_POLICY.selfReview?.subagentEnabled).toBe(true);
-      expect(TEAM_CI_POLICY.selfReview?.fallbackToSelf).toBe(false);
-      expect(TEAM_CI_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('detectCiContext recognizes common CI signals', () => {
@@ -367,48 +343,34 @@ describe('config/policy', () => {
       ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_PATH_EMPTY' });
     });
 
-    it('resolvePolicyForHydrate applies config maxSelfReviewIterations override', async () => {
+    it('resolvePolicyForHydrate applies a plan review-budget override', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
-        configMaxSelfReviewIterations: 5,
+        configReviewBudget: { plan: 5 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(5);
-      expect(result.policy.maxImplReviewIterations).toBe(1); // preset unchanged
+      expect(result.policy.reviewBudget).toEqual({ plan: 5, architecture: 3, implementation: 3 });
     });
 
-    it('resolvePolicyForHydrate applies config maxImplReviewIterations override', async () => {
+    it('resolvePolicyForHydrate applies an implementation review-budget override', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'team',
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
-        configMaxImplReviewIterations: 10,
+        configReviewBudget: { implementation: 10 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(3); // preset unchanged
-      expect(result.policy.maxImplReviewIterations).toBe(10);
+      expect(result.policy.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 10 });
     });
 
-    it('resolvePolicyForHydrate applies both config iteration overrides', async () => {
+    it('resolvePolicyForHydrate applies field-wise review-budget overrides', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'team',
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
-        configMaxSelfReviewIterations: 7,
-        configMaxImplReviewIterations: 14,
+        configReviewBudget: { plan: 7, architecture: 9, implementation: 10 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(7);
-      expect(result.policy.maxImplReviewIterations).toBe(14);
-    });
-
-    it('resolvePolicyForHydrate applies config requireVerifiedActorsForApproval override', async () => {
-      const result = await resolvePolicyForHydrate({
-        defaultMode: 'regulated',
-        ciContext: false,
-        digestFn: (s) => `sha256:${s.length}`,
-        configRequireVerifiedActorsForApproval: true,
-      });
-      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
+      expect(result.policy.reviewBudget).toEqual({ plan: 7, architecture: 9, implementation: 10 });
     });
 
     it('resolvePolicyForHydrate uses preset when config undefined', async () => {
@@ -417,8 +379,7 @@ describe('config/policy', () => {
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(2); // SOLO preset
-      expect(result.policy.maxImplReviewIterations).toBe(1); // SOLO preset
+      expect(result.policy.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
     });
 
     it('resolvePolicyForHydrate applies config overrides with central policy', async () => {
@@ -429,13 +390,9 @@ describe('config/policy', () => {
         centralPolicyPath: '/tmp/org-policy.json',
         digestFn: (s) => `sha256:${s.length}`,
         readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
-        configMaxSelfReviewIterations: 8,
-        configMaxImplReviewIterations: 16,
-        configRequireVerifiedActorsForApproval: true,
+        configReviewBudget: { plan: 8, architecture: 9, implementation: 10 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(8);
-      expect(result.policy.maxImplReviewIterations).toBe(16);
-      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
+      expect(result.policy.reviewBudget).toEqual({ plan: 8, architecture: 9, implementation: 10 });
       expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
@@ -450,6 +407,7 @@ describe('config/policy', () => {
           audience: ['flowguard'],
           claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/flowguard/jwks.json',
+          cacheTtlSeconds: 300,
         },
         configIdentityProviderMode: 'required',
       });
@@ -460,6 +418,7 @@ describe('config/policy', () => {
         audience: ['flowguard'],
         claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
         jwksPath: '/etc/flowguard/jwks.json',
+        cacheTtlSeconds: 300,
       });
       expect(result.policy.identityProviderMode).toBe('required');
     });
@@ -467,12 +426,11 @@ describe('config/policy', () => {
 
   describe('CORNER', () => {
     it('snapshot preserves all FlowGuard-critical fields', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
       expect(snap.mode).toBe('regulated');
       expect(snap.requireHumanGates).toBe(true);
-      expect(snap.maxSelfReviewIterations).toBe(3);
-      expect(snap.maxImplReviewIterations).toBe(3);
+      expect(snap.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(snap.allowSelfApproval).toBe(false);
       expect(snap.audit.enableChainHash).toBe(true);
       expect(snap.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
@@ -480,7 +438,7 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
         identityProvider: {
@@ -489,6 +447,7 @@ describe('config/policy', () => {
           audience: ['flowguard'],
           claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/flowguard/jwks.json',
+          cacheTtlSeconds: 300,
         },
         identityProviderMode: 'required' as const,
       };
@@ -499,14 +458,14 @@ describe('config/policy', () => {
     });
 
     it('different policies produce different hashes', () => {
-      const digest = (s: string) => `hash-${s}`;
+      const digest = hashText;
       const solo = createPolicySnapshot(SOLO_POLICY, '2026-01-01T00:00:00.000Z', digest);
       const team = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest);
       expect(solo.hash).not.toBe(team.hash);
     });
 
     it('resolvePolicyFromSnapshot reconstructs actorClassification from snapshot only', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
       const reconstructed = resolvePolicyFromSnapshot(snap);
       expect(reconstructed.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
@@ -514,19 +473,17 @@ describe('config/policy', () => {
     });
 
     it('resolvePolicyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
-      const digest = (s: string) => `hash-${s.length}`;
-      // Create a snapshot with modified actorClassification
+      const digest = hashText;
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
         actorClassification: { custom_tool: 'auditor' },
       };
       const reconstructed = resolvePolicyFromSnapshot(snap);
-      // Must use snapshot value, not preset
       expect(reconstructed.actorClassification).toEqual({ custom_tool: 'auditor' });
     });
 
     it('snapshot includes requestedMode and effectiveGateBehavior', () => {
-      const digest = (s: string) => `hash-${s.length}`;
+      const digest = hashText;
       const snap = createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest, {
         requestedMode: 'team-ci',
         effectiveGateBehavior: 'human_gated',
@@ -626,13 +583,6 @@ describe('config/policy', () => {
         flowguard_decision: 'human',
         flowguard_abort_session: 'human',
       });
-    });
-
-    it('solo selfReview is default config', () => {
-      const r = resolvePolicyWithContext('solo', false);
-      expect(r.policy.selfReview.subagentEnabled).toBe(true);
-      expect(r.policy.selfReview.fallbackToSelf).toBe(false);
-      expect(r.policy.selfReview.strictEnforcement).toBe(true);
     });
 
     it('solo preset: validationEvidence off (#400)', () => {

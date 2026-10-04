@@ -8,6 +8,24 @@ import type { BlockedReason } from './reasons-types.js';
 
 export const INFRA_REASONS: readonly BlockedReason[] = [
   {
+    code: 'MCP_TOOL_TIMEOUT',
+    category: 'adapter',
+    messageTemplate: 'MCP tool response deadline exceeded.',
+    recoverySteps: [
+      'Retry the tool call',
+      'Increase FLOWGUARD_MCP_TOOL_TIMEOUT_MS if the host permits it',
+    ],
+  },
+  {
+    code: 'MCP_RATE_LIMITED',
+    category: 'adapter',
+    messageTemplate: 'MCP tool execution limit reached.',
+    recoverySteps: [
+      'Retry after active tool calls complete',
+      'Adjust MCP execution limits if appropriate',
+    ],
+  },
+  {
     code: 'DISCOVERY_RESULT_MISSING',
     category: 'adapter',
     messageTemplate: 'Discovery did not produce a valid result: {message}',
@@ -203,10 +221,22 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   {
     code: 'GIT_NOT_FOUND',
     category: 'adapter',
-    messageTemplate: 'git executable not found on PATH',
+    messageTemplate: 'git operation failed: {message}',
     recoverySteps: [
-      'Install git: https://git-scm.com/downloads',
-      'Ensure git is on the system PATH',
+      'Ensure git is installed and available on the system PATH',
+      'Verify that the worktree is a git repository',
+      'Check that the referenced branch or ref exists',
+    ],
+  },
+
+  {
+    code: 'GIT_TIMEOUT',
+    category: 'adapter',
+    messageTemplate: 'git operation timed out: {message}',
+    recoverySteps: [
+      'Retry the operation; the git command exceeded its time limit',
+      'Check repository size and filesystem performance',
+      'Review any active git lock files or stalled operations',
     ],
   },
 
@@ -253,6 +283,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'ARTIFACT_SCHEMA_VALIDATION_FAILED',
+    category: 'adapter',
+    messageTemplate: 'A generated artifact failed canonical schema validation: {issues}',
+    recoverySteps: [
+      'Treat this as a stop condition; the artifact was not persisted',
+      'Report the listed field paths — they identify the offending contract',
+      'Do not retry the same call unchanged; the failure is deterministic',
+    ],
+  },
+
+  {
     code: 'WRITE_FAILED',
     category: 'adapter',
     messageTemplate: 'Failed to write FlowGuard state: {message}',
@@ -294,6 +335,39 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+    category: 'adapter',
+    messageTemplate: 'Audit session authority is unavailable: {message}',
+    recoverySteps: [
+      'Run /hydrate to bootstrap or restore the FlowGuard session mapping',
+      'Check that the plugin workspace fingerprint resolution succeeded',
+      'Re-run the command after the audit session authority is resolvable',
+    ],
+  },
+
+  {
+    code: 'AUDIT_TRANSITION_EVIDENCE_GAP',
+    category: 'adapter',
+    messageTemplate: 'Persisted transition lacks durable audit evidence: {message}',
+    recoverySteps: [
+      'The session predates the durable audit outbox and its transition was never audited',
+      'Do not advance the session — contemporaneous audit evidence is absent',
+      'Start a new session with /hydrate to re-establish the audit contract',
+    ],
+  },
+
+  {
+    code: 'AUDIT_TERMINAL_TRANSITION_AUTHORITY_UNAVAILABLE',
+    category: 'adapter',
+    messageTemplate: 'Terminal transition audit authority is unavailable: {message}',
+    recoverySteps: [
+      'Do not rely on completion evidence from this session',
+      'Inspect the durable transition audit operation for the terminal transition',
+      'Start a new session with /hydrate if the terminal authority cannot be recovered',
+    ],
+  },
+
+  {
     code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
     category: 'adapter',
     messageTemplate: 'Timestamp authority assurance failed: {message}',
@@ -308,9 +382,9 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     code: 'DECISION_RECEIPT_ACTOR_MISSING',
     category: 'identity',
     messageTemplate:
-      'Decision receipt skipped because decidedBy is missing on the review-decision output.',
+      'Decision receipt skipped because decisionIdentity is missing on the review-decision output.',
     recoverySteps: [
-      'Ensure /review-decision output includes reviewDecision.decidedBy',
+      'Ensure /review-decision output includes reviewDecision.decisionIdentity',
       'Set FLOWGUARD_ACTOR_ID before running /review-decision',
       'Re-run /review-decision with a verified actor identity',
     ],
@@ -382,18 +456,6 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Check filesystem permissions on the session state file',
       'Run flowguard doctor to diagnose state file corruption',
       'Re-hydrate the session if the state is irrecoverable',
-    ],
-  },
-
-  {
-    code: 'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
-    category: 'adapter',
-    messageTemplate:
-      'Session state could not be read. The flowguard-reviewer Task cannot run without verifiable state.',
-    recoverySteps: [
-      'Check filesystem permissions on the session state directory',
-      'Run flowguard doctor to diagnose session state issues',
-      'Restart the session and re-run /hydrate if state is corrupt',
     ],
   },
 

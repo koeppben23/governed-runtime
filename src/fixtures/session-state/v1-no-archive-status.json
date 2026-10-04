@@ -77,11 +77,9 @@
     "requestedMode": "regulated",
     "effectiveGateBehavior": "human_gated",
     "requireHumanGates": true,
-    "maxSelfReviewIterations": 3,
-    "maxImplReviewIterations": 3,
+    "reviewBudget": { "plan": 3, "architecture": 3, "implementation": 3 },
     "allowSelfApproval": false,
     "minimumActorAssuranceForApproval": "best_effort",
-    "requireVerifiedActorsForApproval": false,
     "identityProviderMode": "optional",
     "audit": {
       "emitTransitions": true,

@@ -1,8 +1,7 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
-export const WHY_COMMAND = `
----
-description: Explain why the current workflow is blocked and how to unblock it.
+export const WHY_COMMAND = `---
+description: FlowGuard — Explain why the current workflow is blocked and how to unblock it.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -15,14 +14,21 @@ Show the user what is blocking progress and how to resolve it.
 
 1. Call \`flowguard_status({ whyBlocked: true })\`.
 2. Read the \`whyBlocked\` object (\`whyBlocked.reasonText\`, \`whyBlocked.reasonCode\`, \`whyBlocked.recoveryHint\`, \`whyBlocked.nextResolvableCommand\`).
-3. Report in plain language: what is blocking, why, and exactly one recommended command to resolve it (use \`whyBlocked.nextResolvableCommand\` / \`whyBlocked.recoveryHint\`).
+3. If \`presentation.markdown\` is present in the response, output it verbatim —
+   do not rephrase or interpret it.
+   Otherwise output the projection without inventing semantics.
 
 ## Rules
 
 - Use only the recovery guidance from the tool output — never guess how to resolve a block.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Blocker reason and recovery action reported.
-- Response ends with \`Next action:\` line with the recommended command.
+- If \`presentation.markdown\` was present, it was printed verbatim and its
+  rendered conclusion (the trailing \`→\`/\`•\` command line or the
+  \`## Decision required\` block) is the next-action guidance — do NOT append a
+  separate \`Next action:\` line.
+- Only on the fallback projection (no \`presentation.markdown\`): response ends
+  with a \`Next action:\` line with the recommended command.
 `;

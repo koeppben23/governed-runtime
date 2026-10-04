@@ -30,7 +30,7 @@ describe('languages/rust', () => {
         [],
         [],
       );
-      expect(languages[0].version).toBe('1.77.0');
+      expect(languages[0]!.version).toBe('1.77.0');
     });
 
     it('detects clippy and rustfmt from rust-toolchain.toml components', async () => {
@@ -62,7 +62,7 @@ components = ["clippy", "rustfmt"]
         [],
         [],
       );
-      expect(languages[0].version).toBe('1.76.0');
+      expect(languages[0]!.version).toBe('1.76.0');
     });
   });
 
@@ -82,7 +82,7 @@ edition = "2021"
         [],
         [],
       );
-      expect(languages[0].compilerTarget).toBe('2021');
+      expect(languages[0]!.compilerTarget).toBe('2021');
     });
 
     it('does not overwrite existing rust edition', async () => {
@@ -101,7 +101,7 @@ edition = "2021"
         [],
         [],
       );
-      expect(languages[0].compilerTarget).toBe('2018');
+      expect(languages[0]!.compilerTarget).toBe('2018');
     });
 
     it('removes cargo when Cargo.toml is absent', async () => {

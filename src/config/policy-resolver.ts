@@ -3,7 +3,8 @@
  * @description Runtime and hydrate-time policy resolution authority.
  */
 
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import { isActorAssurance, type ActorAssurance } from '../shared/actor-assurance.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type {
   EffectiveGateBehavior,
@@ -14,12 +15,13 @@ import type {
   PolicyDegradedReason,
   PolicyMode,
   PolicySource,
+  ReviewBudget,
   ValidationEvidencePolicy,
 } from './policy-types.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 import { detectCiContext } from './policy-ci.js';
 import { loadCentralPolicyEvidence, modeStrength } from './policy-central.js';
-import { getPolicyPreset, TEAM_CI_POLICY } from './policy-presets.js';
+import { getPolicyPreset, TEAM_POLICY } from './policy-presets.js';
 import { normalizePolicyMode } from './policy-presets.js';
 
 /** Detailed policy resolution result (requested vs effective). */
@@ -39,10 +41,10 @@ export interface HydratePolicyOptions {
   centralPolicyPath?: string;
   digestFn: (text: string) => string;
   readFileFn?: (path: string) => Promise<string>;
-  configMaxSelfReviewIterations?: number;
-  configMaxImplReviewIterations?: number;
-  configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
-  configRequireVerifiedActorsForApproval?: boolean;
+  configReviewBudget?: Partial<ReviewBudget>;
+  configMaxIncoherentReviewerCaptureRetries?: number;
+  configMaxReviewerOutputRepairAttempts?: number;
+  configMinimumActorAssuranceForApproval?: ActorAssurance;
   configIdentityProvider?: IdpConfig;
   configIdentityProviderMode?: IdentityProviderMode;
   configEnforceRiskClassification?: boolean;
@@ -59,19 +61,8 @@ interface RequestedPolicyContext {
   readonly policyWithOverrides: FlowGuardPolicy;
 }
 
-function resolveMinAssurance(
-  base: FlowGuardPolicy,
-  configMin?: string,
-  requireVerified?: boolean,
-): 'best_effort' | 'claim_validated' | 'idp_verified' {
-  if (
-    configMin === 'best_effort' ||
-    configMin === 'claim_validated' ||
-    configMin === 'idp_verified'
-  )
-    return configMin;
-  if (requireVerified === true) return 'claim_validated';
-  return base.minimumActorAssuranceForApproval;
+function resolveMinAssurance(base: FlowGuardPolicy, configMin?: string): ActorAssurance {
+  return isActorAssurance(configMin) ? configMin : base.minimumActorAssuranceForApproval;
 }
 
 function resolveDiscoveryHealth(
@@ -95,14 +86,22 @@ function resolveValidationEvidence(
   };
 }
 
+function resolveReviewBudget(base: ReviewBudget, override?: Partial<ReviewBudget>): ReviewBudget {
+  return {
+    plan: override?.plan ?? base.plan,
+    architecture: override?.architecture ?? base.architecture,
+    implementation: override?.implementation ?? base.implementation,
+  };
+}
+
 /** Apply user-level config overrides (iteration limits, assurance, IdP) to a base policy. */
 function applyConfigOverrides(
   basePolicy: FlowGuardPolicy,
   opts: {
-    configMaxSelfReviewIterations?: number;
-    configMaxImplReviewIterations?: number;
-    configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
-    configRequireVerifiedActorsForApproval?: boolean;
+    configReviewBudget?: Partial<ReviewBudget>;
+    configMaxIncoherentReviewerCaptureRetries?: number;
+    configMaxReviewerOutputRepairAttempts?: number;
+    configMinimumActorAssuranceForApproval?: ActorAssurance;
     configIdentityProvider?: IdpConfig;
     configIdentityProviderMode?: IdentityProviderMode;
     configEnforceRiskClassification?: boolean;
@@ -114,23 +113,22 @@ function applyConfigOverrides(
 ): FlowGuardPolicy {
   return {
     ...basePolicy,
-    maxSelfReviewIterations:
-      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
-    maxImplReviewIterations:
-      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    reviewBudget: resolveReviewBudget(basePolicy.reviewBudget, opts.configReviewBudget),
+    maxIncoherentReviewerCaptureRetries:
+      opts.configMaxIncoherentReviewerCaptureRetries ??
+      basePolicy.maxIncoherentReviewerCaptureRetries,
+    maxReviewerAttempts:
+      opts.configMaxReviewerOutputRepairAttempts ?? basePolicy.maxReviewerAttempts,
     minimumActorAssuranceForApproval: resolveMinAssurance(
       basePolicy,
       opts.configMinimumActorAssuranceForApproval,
-      opts.configRequireVerifiedActorsForApproval,
     ),
-    requireVerifiedActorsForApproval:
-      opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
-    identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
+    ...(opts.configIdentityProvider !== undefined
+      ? { identityProvider: opts.configIdentityProvider }
+      : {}),
     identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
     enforceRiskClassification:
       opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
-    allowRiskDowngradeOverride:
-      opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
     allowReducedCeremony: opts.configAllowReducedCeremony ?? basePolicy.allowReducedCeremony,
     discoveryHealth: resolveDiscoveryHealth(basePolicy.discoveryHealth, opts.configDiscoveryHealth),
     validationEvidence: resolveValidationEvidence(
@@ -160,7 +158,9 @@ function hydrateFromRequested(ctx: RequestedPolicyContext): HydratePolicyResolut
     effectiveMode: ctx.requestedResolution.effectiveMode,
     effectiveSource: ctx.requestedSource,
     effectiveGateBehavior: ctx.requestedResolution.effectiveGateBehavior,
-    degradedReason: ctx.requestedResolution.degradedReason,
+    ...(ctx.requestedResolution.degradedReason !== undefined
+      ? { degradedReason: ctx.requestedResolution.degradedReason }
+      : {}),
     policy: ctx.policyWithOverrides,
   };
 }
@@ -221,7 +221,9 @@ function resolveCentralUplift(
     effectiveMode: centralResolution.effectiveMode,
     effectiveSource: 'central',
     effectiveGateBehavior: centralResolution.effectiveGateBehavior,
-    degradedReason: centralResolution.degradedReason,
+    ...(centralResolution.degradedReason !== undefined
+      ? { degradedReason: centralResolution.degradedReason }
+      : {}),
     policy: centralPolicyWithOverrides,
     resolutionReason:
       ctx.requestedSource === 'repo' ? 'repo_weaker_than_central' : 'default_weaker_than_central',
@@ -253,16 +255,12 @@ export function resolvePolicyWithContext(
   const requestedMode = normalizePolicyMode(mode);
   if (requestedMode === 'team-ci' && !ciContext) {
     getAdapterLogger().warn('policy', 'team-ci mode degraded to team — no CI context detected');
-    const degradedPolicy: FlowGuardPolicy = {
-      ...TEAM_CI_POLICY,
-      requireHumanGates: true,
-    };
     return {
       requestedMode,
       effectiveMode: 'team',
       effectiveGateBehavior: 'human_gated',
       degradedReason: 'ci_context_missing',
-      policy: degradedPolicy,
+      policy: TEAM_POLICY,
     };
   }
 

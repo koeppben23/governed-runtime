@@ -30,13 +30,6 @@ export default defineConfig({
         // Test infrastructure (helpers/fixtures), not product code.
         'src/integration/test-helpers.ts',
         'src/integration/*-test-helpers.ts',
-        'src/integration/*-helpers.ts',
-        // Thin SDK hook entrypoints (glue; exercised only via the real host runtime).
-        'src/hooks/post-tool-use.ts',
-        'src/hooks/pre-tool-use.ts',
-        'src/hooks/session-start.ts',
-        'src/hooks/stop.ts',
-        'src/hooks/subagent-stop.ts',
       ],
       thresholds: {
         branches: 80,
@@ -63,6 +56,10 @@ export default defineConfig({
             'src/cli/doctor-cli-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
             'src/cli/inspect-command.test.ts',
+            'src/cli/opencode-reviewer-capability.test.ts',
+            'src/cli/opencode-reviewer-structured-live.test.ts',
+            'src/cli/demo-evidence-verify.test.ts',
+            'src/hooks/command-hooks-smoke.test.ts',
           ],
           globals: false,
           restoreMocks: true,
@@ -90,7 +87,11 @@ export default defineConfig({
             'src/cli/doctor-cli-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
             'src/cli/inspect-command.test.ts',
+            'src/cli/opencode-reviewer-capability.test.ts',
+            'src/cli/opencode-reviewer-structured-live.test.ts',
+            'src/cli/demo-evidence-verify.test.ts',
             'src/mcp-server/mcp-protocol.test.ts',
+            'src/hooks/command-hooks-smoke.test.ts',
           ],
           globals: false,
           restoreMocks: true,
@@ -99,9 +100,41 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'scripts',
+          include: ['scripts/**/*.test.ts'],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 15_000,
+        },
+      },
+      {
+        test: {
+          name: 'evals',
+          include: ['evals/**/*.test.ts'],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
           name: 'fuzz',
           setupFiles: ['./vitest.setup.ts'],
           include: ['src/**/*.fuzz.test.ts'],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 120_000,
+        },
+      },
+      {
+        test: {
+          name: 'conformance',
+          setupFiles: ['./vitest.setup.ts'],
+          include: ['test/conformance/assertions/**/*.test.ts'],
+          exclude: [
+            'test/conformance/assertions/projects/**',
+            'test/conformance/assertions/fixtures/**',
+          ],
           globals: false,
           restoreMocks: true,
           testTimeout: 120_000,

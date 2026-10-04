@@ -1,803 +1,979 @@
-/**
- * @module workspace.test
- * @description Tests for the workspace registry module.
- *
- * Covers:
- * - Fingerprint computation (remote canonical + local path fallback)
- * - URL canonicalization (HTTPS, SSH, SCP-style, edge cases)
- * - Path normalization for fingerprint
- * - Path segment validation (fingerprint, sessionId)
- * - Workspace/session directory resolution
- * - initWorkspace idempotency and mismatch detection
- * - Session pointer read/write (non-authoritative)
- * - archiveSession (requires tar)
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
- */
-
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {
-  canonicalizeOriginUrl,
-  normalizeForFingerprint,
-  computeFingerprintFromRemote,
-  computeFingerprintFromPath,
-  validateFingerprint,
-  validateSessionId,
-  workspacesHome,
-  workspaceDir,
-  sessionDir,
-  ensureWorkspace,
-  initWorkspace,
-  readWorkspaceInfo,
-  writeSessionPointer,
-  readSessionPointer,
-  archiveSession,
-  verifyArchive,
-  WorkspaceError,
-  type WorkspaceInfo,
-} from './workspace/index.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.js';
+import { archiveFileName, archiveRegulatedEvidence } from './workspace/archive.js';
+import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
+import { writeState, readState } from './persistence.js';
+import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
+import * as persistenceAudit from './persistence-audit.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
+import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
+import { verifyChain } from '../audit/integrity.js';
+import { makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
+import type { SessionState } from '../state/schema.js';
 import { withTestEnv } from '../integration/test-helpers.js';
-import { benchmarkSync, measureAsync } from '../test-policy.js';
-import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
-import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
-import { readAuditTrail } from './persistence-audit.js';
-import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
-import { computeArchiveContentDigest } from '../archive/content-digest.js';
-import type { ArchiveManifest } from '../archive/types.js';
 
-// ─── Test Helpers ─────────────────────────────────────────────────────────────
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+});
 
-let tmpDir: string;
+async function createArchive() {
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+  const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+  cleanups.push(async () => {
+    restore();
+    await fs.rm(configDir, { recursive: true, force: true });
+  });
+  const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+  const worktree = path.resolve('.');
+  const initialized = await initWorkspace(worktree, sessionId);
+  await writeState(initialized.sessionDir, makeState('COMPLETE'));
 
-async function createTmpDir(): Promise<string> {
-  return await fs.mkdtemp(path.join(os.tmpdir(), 'ws-test-'));
+  // Write config to both global and repo-scoped locations.
+  const configBody = {
+    schemaVersion: 'v1' as const,
+    archive: { redaction: { allowedModes: ['none'] as const, allowRawExport: true } },
+  };
+  await fs.writeFile(path.join(configDir, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
+  const repoOpenCode = path.join(worktree, '.opencode');
+  await fs.mkdir(repoOpenCode, { recursive: true });
+  await fs.writeFile(path.join(repoOpenCode, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
+  cleanups.push(async () => {
+    await fs.rm(path.join(repoOpenCode, 'flowguard.json'), { force: true });
+  });
+
+  const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
+    redactionMode: 'none',
+    includeRaw: true,
+  });
+  return { ...initialized, sessionId, archivePath };
 }
 
-async function cleanTmpDir(dir: string): Promise<void> {
-  try {
-    await fs.rm(dir, { recursive: true, force: true });
-  } catch {
-    // Best effort on Windows (file locks)
+async function writeConfigForTest(
+  configDir: string,
+  redactionMode: string,
+  allowRawExport: boolean,
+  worktree?: string,
+): Promise<void> {
+  const config = {
+    schemaVersion: 'v1',
+    archive: {
+      redaction: {
+        allowedModes: [redactionMode],
+        allowRawExport,
+      },
+    },
+  };
+  // Write global config
+  await fs.writeFile(path.join(configDir, 'flowguard.json'), JSON.stringify(config), 'utf8');
+  // Also write repo-scoped config (takes priority over global)
+  if (worktree) {
+    const repoDir = path.join(worktree, '.opencode');
+    await fs.mkdir(repoDir, { recursive: true });
+    await fs.writeFile(path.join(repoDir, 'flowguard.json'), JSON.stringify(config), 'utf8');
   }
 }
 
-describe('archiveSession', () => {
-  let cleanupEnv: () => void;
+async function extract(archivePath: string): Promise<string> {
+  const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-extract-'));
+  cleanups.push(async () => fs.rm(destination, { recursive: true, force: true }));
+  await promisify(execFile)('tar', ['xzf', archivePath, '-C', destination]);
+  return destination;
+}
 
-  beforeEach(async () => {
-    tmpDir = await createTmpDir();
-    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
+async function repack(archivePath: string, root: string, sessionId: string): Promise<void> {
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(root, sessionId, 'archive-manifest.json'), 'utf8'),
+  ) as { includedFiles: string[] };
+  const members = [...manifest.includedFiles, 'archive-manifest.json'].map(
+    (file) => `${sessionId}/${file}`,
+  );
+  await promisify(execFile)('tar', ['--format=ustar', '-czf', archivePath, '-C', root, ...members]);
+}
+
+async function appendCompletionAuditEvent(sessDir: string, sessionId: string): Promise<void> {
+  const state = await readState(sessDir);
+  await appendAuditEvent(sessDir, {
+    id: crypto.randomUUID(),
+    flowguardSessionId: state!.flowguardSessionId,
+    hostSessionId: sessionId,
+    phase: 'COMPLETE',
+    event: 'lifecycle:session_completed',
+    occurredAt: '2026-01-01T00:00:00.000Z',
+    actor: 'machine',
+    detail: { action: 'session_completed' },
+  });
+}
+
+function resealAuditTrailWithClockAnomaly(
+  events: readonly ChainedAuditEvent[],
+): ChainedAuditEvent[] {
+  let previousHash = 'genesis';
+  return events.map((event, index) => {
+    const { chainHash: _chainHash, semanticEventDigest: _semanticEventDigest, ...body } = event;
+    const recordedAt =
+      index === events.length - 2
+        ? '2026-01-02T00:00:00.000Z'
+        : index === events.length - 1
+          ? '2026-01-01T00:00:00.000Z'
+          : body.recordedAt;
+    const finalized = {
+      ...body,
+      recordedAt,
+      prevHash: previousHash,
+    };
+    const resealed = {
+      ...finalized,
+      semanticEventDigest: computeCanonicalEventDigest(finalized),
+    };
+    const chained = {
+      ...resealed,
+      chainHash: computeChainHash(previousHash, resealed),
+    } as ChainedAuditEvent;
+    previousHash = chained.chainHash;
+    return chained;
+  });
+}
+
+describe('Archive Layout v2', () => {
+  it('uses a distinct filename for mandatory regulated evidence', () => {
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+
+    expect(archiveFileName(sessionId)).toBe(`${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, true)).toBe(`regulated-${sessionId}.tar.gz`);
   });
 
-  afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
+  it('fails closed when the session directory disappears during archive setup', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeConfigForTest(configDir, 'none', true);
+    await fs.rm(initialized.sessionDir, { recursive: true, force: true });
+
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'none',
+        includeRaw: true,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
-  it('archives a session directory as tar.gz', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = 'archive-test-001';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // Write a test file into the session directory
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    const archivePath = await archiveSession(fingerprint, sessionId);
-    expect(archivePath).toContain('.tar.gz');
-    expect(archivePath).toContain(sessionId);
-
-    // Archive file should exist
-    const stats = await fs.stat(archivePath);
-    expect(stats.size).toBeGreaterThan(0);
-
-    const receiptsPath = path.join(sessDir, 'decision-receipts.v1.json');
-    const receiptsRaw = await fs.readFile(receiptsPath, 'utf-8');
-    const receipts = JSON.parse(receiptsRaw);
-    expect(receipts.schemaVersion).toBe('decision-receipts.v1');
-    expect(Array.isArray(receipts.receipts)).toBe(true);
-
+  it('exports complete canonical evidence into the structured archive tree', async () => {
+    const { archivePath, sessionId } = await createArchive();
+    const root = path.join(await extract(archivePath), sessionId);
     const manifest = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
+      await fs.readFile(path.join(root, 'archive-manifest.json'), 'utf8'),
     );
-    expect(manifest.redactionMode).toBe('basic');
-    expect(manifest.rawIncluded).toBe(false);
-    expect(manifest.redactedArtifacts).toContain('decision-receipts.redacted.v1.json');
-    expect(manifest.excludedFiles).toContain('decision-receipts.v1.json');
+    expect(manifest.layoutVersion).toBe(2);
+    expect(manifest.rawIncluded).toBe(true);
+    expect(manifest.includedFiles).toContain('state/session-state.json');
+    // Decision receipts are only written when decision events exist.
+    // This test does not append any audit events, so receipts are skipped.
+    await expect(fs.access(path.join(root, 'state/session-state.json'))).resolves.toBeUndefined();
   });
 
-  it('includes raw artifacts only when includeRaw=true', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = 'archive-test-raw-opt-in';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+  it('packs only manifest-declared regular files', async () => {
+    const { archivePath, sessionId } = await createArchive();
+    const { stdout: manifestRaw } = await promisify(execFile)('tar', [
+      'xOf',
+      archivePath,
+      `${sessionId}/archive-manifest.json`,
+    ]);
+    const manifest = JSON.parse(manifestRaw) as { includedFiles: string[] };
+    const expectedMembers = [
+      ...manifest.includedFiles.map((file) => `${sessionId}/${file}`),
+      `${sessionId}/archive-manifest.json`,
+    ];
+    const { stdout: names } = await promisify(execFile)('tar', ['tzf', archivePath]);
+    const { stdout: details } = await promisify(execFile)('tar', ['tvzf', archivePath]);
 
-    await writeState(sessDir, makeState('COMPLETE'));
+    expect(names.split(/\r?\n/).filter(Boolean)).toEqual(expectedMembers);
+    const detailLines = details.split(/\r?\n/).filter(Boolean);
+    expect(detailLines).toHaveLength(expectedMembers.length);
+    expect(detailLines.every((detail) => detail.startsWith('-'))).toBe(true);
+  });
+
+  it('projects canonical decision events into decision receipts', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    // Write config with raw export enabled.
     await fs.writeFile(
-      path.join(process.env.OPENCODE_CONFIG_DIR!, 'flowguard.json'),
+      path.join(configDir, 'flowguard.json'),
       JSON.stringify({
         schemaVersion: 'v1',
-        archive: { redaction: { mode: 'basic', includeRaw: true } },
+        archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
       }),
-      'utf-8',
+      'utf8',
     );
-
-    await archiveSession(fingerprint, sessionId);
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
-    );
-    expect(manifest.rawIncluded).toBe(true);
-    expect(manifest.riskFlags).toContain('raw_export_enabled');
-    expect(manifest.excludedFiles).not.toContain('decision-receipts.v1.json');
-  });
-
-  it('binds evidence artifact hashes into the audit chain before manifest finalization', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440013';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    await fs.mkdir(path.join(sessDir, 'artifacts'), { recursive: true });
-    await fs.writeFile(
-      path.join(sessDir, 'artifacts', 'manual.v1.md'),
-      'bound artifact\n',
-      'utf-8',
-    );
-
-    await archiveSession(fingerprint, sessionId);
-
-    const { events } = await readAuditTrail(sessDir);
-    const binding = events.find((event) => event.event === 'archive:artifacts_bound');
-    expect(binding).toBeDefined();
-    expect(binding!.prevHash).toBeTruthy();
-    expect(binding!.chainHash).toBeTruthy();
-    expect(binding!.detail).toMatchObject({
-      kind: 'archive_artifact_binding',
-      schemaVersion: 'flowguard-archive-artifact-binding.v1',
-      artifactCount: 1,
-    });
-    expect((binding!.detail.artifacts as Array<{ path: string }>)[0]!.path).toBe(
-      'artifacts/manual.v1.md',
-    );
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
-    );
-    expect(manifest.includedFiles).toContain('audit.jsonl');
-    expect(manifest.fileDigests['audit.jsonl']).toBeTruthy();
-  });
-
-  it('fails archive verification when a bound evidence artifact is tampered', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440014';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    await fs.mkdir(path.join(sessDir, 'artifacts'), { recursive: true });
-    await fs.writeFile(path.join(sessDir, 'artifacts', 'manual.v1.md'), 'original\n', 'utf-8');
-    await archiveSession(fingerprint, sessionId);
-
-    await fs.writeFile(path.join(sessDir, 'artifacts', 'manual.v1.md'), 'tampered\n', 'utf-8');
-
-    const result = await verifyArchive(fingerprint, sessionId);
-    expect(result.passed).toBe(false);
-    expect(result.findings.some((finding) => finding.code === 'artifact_binding_mismatch')).toBe(
-      true,
-    );
-  });
-
-  it('fails archive verification when an audit-bound artifact is removed from manifest', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440015';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    await fs.mkdir(path.join(sessDir, 'artifacts'), { recursive: true });
-    await fs.writeFile(path.join(sessDir, 'artifacts', 'manual.v1.md'), 'original\n', 'utf-8');
-    await archiveSession(fingerprint, sessionId);
-
-    const manifestPath = path.join(sessDir, 'archive-manifest.json');
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as ArchiveManifest;
-    manifest.includedFiles = manifest.includedFiles.filter(
-      (file) => file !== 'artifacts/manual.v1.md',
-    );
-    delete manifest.fileDigests['artifacts/manual.v1.md'];
-    // Re-seal with the canonical v2 formula so this test isolates artifact-binding
-    // detection (not an incidental content_digest_mismatch).
-    manifest.contentDigest = computeArchiveContentDigest(manifest);
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
-
-    const result = await verifyArchive(fingerprint, sessionId);
-    expect(result.passed).toBe(false);
-    expect(
-      result.findings.some(
-        (finding) =>
-          finding.code === 'artifact_binding_mismatch' &&
-          finding.message.includes('missing from archive manifest'),
-      ),
-    ).toBe(true);
-  });
-
-  it('redacts review-report and excludes raw report by default', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = 'archive-test-review-report-redaction';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    await fs.writeFile(
-      path.join(sessDir, 'review-report.json'),
-      JSON.stringify({ findings: [{ message: 'contains secret' }] }),
-      'utf-8',
-    );
-
-    await archiveSession(fingerprint, sessionId);
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
-    );
-    expect(manifest.redactedArtifacts).toContain('review-report.redacted.json');
-    expect(manifest.excludedFiles).toContain('review-report.json');
-  });
-
-  it('mode=none: raw receipts included, no redacted artifact, rawIncluded=true', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440010';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    const wsDir = workspaceDir(fingerprint);
-    const ts = '2026-04-17T00:00:00.000Z';
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    const event = createDecisionEvent({
-      sessionId: sessionId,
-      gatePhase: 'PLAN_REVIEW',
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    await appendAuditEvent(initialized.sessionDir, {
+      id: '11111111-1111-4111-8111-111111111111',
+      flowguardSessionId: makeState().flowguardSessionId,
+      hostSessionId: sessionId,
+      phase: 'PLAN_REVIEW',
+      event: 'decision:DEC-ARCHIVE-001',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      actor: 'human',
       detail: {
-        decisionId: 'DEC-NONE-01',
+        kind: 'decision',
+        decisionId: 'DEC-ARCHIVE-001',
         decisionSequence: 1,
+        gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
-        rationale: 'secret-alice',
-        decidedBy: 'alice',
-        decidedAt: ts,
+        rationale: 'Approved for archive projection test.',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
+        decidedAt: '2026-01-01T00:00:00.000Z',
         fromPhase: 'PLAN_REVIEW',
         toPhase: 'VALIDATION',
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      timestamp: ts,
-      actor: 'alice',
-      prevHash: GENESIS_HASH,
     });
-    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
-    await fs.writeFile(
-      path.join(process.env.OPENCODE_CONFIG_DIR!, 'flowguard.json'),
-      JSON.stringify({ schemaVersion: 'v1', archive: { redaction: { mode: 'none' } } }),
-      'utf-8',
-    );
 
-    const archivePath = await archiveSession(fingerprint, sessionId);
-    expect(archivePath).toContain('.tar.gz');
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
-    );
-    expect(manifest.redactionMode).toBe('none');
-    expect(manifest.rawIncluded).toBe(true);
-    expect(manifest.redactedArtifacts ?? []).toHaveLength(0);
-    expect(manifest.excludedFiles ?? []).not.toContain('decision-receipts.v1.json');
-
+    const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'none',
+      includeRaw: true,
+    });
+    const root = path.join(await extract(archivePath), sessionId);
     const receipts = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'decision-receipts.v1.json'), 'utf-8'),
+      await fs.readFile(path.join(root, 'audit', 'decision-receipts.v1.json'), 'utf8'),
     );
+
     expect(receipts.count).toBe(1);
-    const rawEntry = receipts.receipts[0] as Record<string, unknown>;
-    expect(String(rawEntry.decidedBy ?? '')).toBe('alice');
-    expect(String(rawEntry.rationale ?? '')).toBe('secret-alice');
-
-    const redactedExists = await fs
-      .access(path.join(sessDir, 'decision-receipts.redacted.v1.json'))
-      .then(() => true)
-      .catch(() => false);
-    expect(redactedExists).toBe(false);
-  });
-
-  it('mode=strict: redacted artifact with deterministic tokens, raw excluded by default', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440011';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    const wsDir = workspaceDir(fingerprint);
-    const ts = '2026-04-17T00:00:00.000Z';
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    const event = createDecisionEvent({
-      sessionId: sessionId,
-      gatePhase: 'PLAN_REVIEW',
-      detail: {
-        decisionId: 'DEC-STRICT-01',
-        decisionSequence: 1,
+    expect(receipts.receipts).toEqual([
+      expect.objectContaining({
+        decisionId: 'DEC-ARCHIVE-001',
+        gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
-        rationale: 'Token: ghp_SECRET',
-        decidedBy: 'bob@secret.io',
-        decidedAt: ts,
-        fromPhase: 'PLAN_REVIEW',
-        toPhase: 'VALIDATION',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
         transitionEvent: 'APPROVE',
-        policyMode: 'team',
-      },
-      timestamp: ts,
-      actor: 'bob',
-      prevHash: GENESIS_HASH,
+      }),
+    ]);
+  });
+
+  it.each([
+    { mode: 'basic' as const, includeRaw: false },
+    { mode: 'pseudonymous' as const, includeRaw: true },
+  ])('creates archive with redaction $mode includeRaw=$includeRaw', async (redaction) => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
     });
-    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
     await fs.writeFile(
-      path.join(process.env.OPENCODE_CONFIG_DIR!, 'flowguard.json'),
-      JSON.stringify({ schemaVersion: 'v1', archive: { redaction: { mode: 'strict' } } }),
-      'utf-8',
+      path.join(configDir, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        archive: {
+          redaction: {
+            allowedModes: [redaction.mode],
+            allowRawExport: redaction.includeRaw,
+          },
+        },
+      }),
+      'utf8',
     );
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
 
-    const archivePath = await archiveSession(fingerprint, sessionId);
-    expect(archivePath).toContain('.tar.gz');
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
-    );
-    expect(manifest.redactionMode).toBe('strict');
-    expect(manifest.rawIncluded).toBe(false);
-    expect(manifest.redactedArtifacts).toContain('decision-receipts.redacted.v1.json');
-    expect(manifest.excludedFiles).toContain('decision-receipts.v1.json');
-
-    const redacted = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'decision-receipts.redacted.v1.json'), 'utf-8'),
-    );
-    const entry = redacted.receipts[0] as Record<string, unknown>;
-    const decidedByStr = String(entry.decidedBy ?? '');
-    const rationaleStr = String(entry.rationale ?? '');
-    expect(decidedByStr).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
-    expect(rationaleStr).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
-    expect(decidedByStr).not.toContain('bob');
-    expect(rationaleStr).not.toContain('ghp_');
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: redaction.mode,
+        includeRaw: redaction.includeRaw,
+      }),
+    ).resolves.toBeDefined();
   });
 
-  it('pipeline end-to-end: archive produces correctly redacted decision-receipts with sensitive data removed', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440012';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    const ts = '2026-04-17T00:00:00.000Z';
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    const event = createDecisionEvent({
-      sessionId: sessionId,
-      gatePhase: 'PLAN_REVIEW',
-      detail: {
-        decisionId: 'DEC-E2E-01',
-        decisionSequence: 1,
-        verdict: 'approve',
-        rationale: 'PII: carol@corp.com, IP 10.0.0.1',
-        decidedBy: 'carol',
-        decidedAt: ts,
-        fromPhase: 'PLAN_REVIEW',
-        toPhase: 'VALIDATION',
-        transitionEvent: 'APPROVE',
-        policyMode: 'team',
-      },
-      timestamp: ts,
-      actor: 'carol',
-      prevHash: GENESIS_HASH,
+  it('rejects archive with redactionMode=none and includeRaw=false', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
     });
-    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
-
-    await archiveSession(fingerprint, sessionId);
-
-    const redacted = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'decision-receipts.redacted.v1.json'), 'utf-8'),
-    );
-    expect(redacted.schemaVersion).toBe('decision-receipts.v1');
-    expect(redacted.count).toBe(1);
-
-    const raw = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'decision-receipts.v1.json'), 'utf-8'),
-    );
-    const rawEntry = raw.receipts[0] as Record<string, unknown>;
-    expect(rawEntry.decidedBy).toBe('carol');
-    expect(String(rawEntry.rationale ?? '')).toContain('carol@corp.com');
-
-    const entry = redacted.receipts[0] as Record<string, unknown>;
-    expect(entry.decidedBy).toBe('[REDACTED]');
-    expect(entry.rationale).toBe('[REDACTED]');
-    expect(String(entry.decidedBy)).not.toContain('carol');
-    expect(String(entry.rationale)).not.toContain('carol@corp.com');
-    expect(String(entry.rationale)).not.toContain('10.0.0.1');
-  });
-
-  it('fails closed when redaction source is invalid JSON', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = 'archive-test-redaction-fail';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    await fs.writeFile(path.join(sessDir, 'review-report.json'), '{invalid-json', 'utf-8');
-
-    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-  });
-
-  it('throws ARCHIVE_FAILED for non-existent session', async () => {
-    await expect(archiveSession('a1b2c3d4e5f6a1b2c3d4e5f6', 'no-such-session')).rejects.toThrow(
-      'ARCHIVE_FAILED',
-    );
-  });
-
-  it('rejects invalid fingerprint', async () => {
-    await expect(archiveSession('bad', 'session')).rejects.toThrow(WorkspaceError);
-  });
-
-  it('rejects unsafe session ID', async () => {
-    await expect(archiveSession('a1b2c3d4e5f6a1b2c3d4e5f6', '../escape')).rejects.toThrow(
-      WorkspaceError,
-    );
-  });
-});
-
-// =============================================================================
-// archiveSession failure paths
-// =============================================================================
-
-describe('archiveSession failure paths', () => {
-  let cleanupEnv: () => void;
-
-  beforeEach(async () => {
-    tmpDir = await createTmpDir();
-    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
-  });
-
-  afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
-  });
-
-  it('throws ARCHIVE_FAILED when archive directory cannot be created (permission denied)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440100';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    // Set OPENCODE_CONFIG_DIR to a path that mkdir cannot create. Opt out of
-    // the suite-global test-config guard so this exercises the archive
-    // permission-failure path (not the guard's non-temp rejection).
-    const cleanup = withTestEnv({
-      OPENCODE_CONFIG_DIR: '/root/fail-permission-test',
-      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: undefined,
-    });
-    try {
-      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-    } finally {
-      cleanup();
-    }
-  });
-
-  it('throws ARCHIVE_FAILED when tar execution fails (missing binary)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440101';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    const cleanup = withTestEnv({ PATH: '/nonexistent/path/with/no/tar' });
-    try {
-      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-    } finally {
-      cleanup();
-    }
-  });
-
-  it('throws ARCHIVE_FAILED when archive path collides with existing file', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440106';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    const archiveCollisionPath = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-    await fs.writeFile(archiveCollisionPath, 'not-a-directory', 'utf-8');
-
-    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-  });
-
-  it('verifyArchive warns but passes when checksum sidecar is missing (non-fatal)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440102';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    // Create archive (includes sidecar)
-    const archivePath = await archiveSession(fingerprint, sessionId);
-    expect(archivePath).toContain('.tar.gz');
-
-    // Delete the checksum sidecar to simulate write failure (non-fatal by design)
-    const checksumPath = `${archivePath}.sha256`;
-    await fs.unlink(checksumPath);
-
-    // verifyArchive must pass (non-fatal) and emit a warning about missing sidecar
-    const verification = await verifyArchive(fingerprint, sessionId);
-    expect(verification.passed).toBe(true);
-    const checksumWarning = verification.findings.find(
-      (f: { code: string }) => f.code === 'archive_checksum_missing',
-    );
-    expect(checksumWarning).toBeDefined();
-    expect(checksumWarning?.severity).toBe('warning');
-  });
-
-  it('archives nested directories and verifies without unexpected file findings', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440103';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await writeState(sessDir, makeState('COMPLETE'));
-    await fs.mkdir(path.join(sessDir, 'nested', 'deeper'), { recursive: true });
     await fs.writeFile(
-      path.join(sessDir, 'nested', 'deeper', 'trace.json'),
-      '{"ok":true}',
-      'utf-8',
+      path.join(configDir, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
+      }),
+      'utf8',
     );
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
 
-    await archiveSession(fingerprint, sessionId);
-    const verification = await verifyArchive(fingerprint, sessionId);
-
-    expect(verification.findings.some((f) => f.code === 'unexpected_file')).toBe(false);
-    expect(verification.findings.some((f) => f.code === 'missing_file')).toBe(false);
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'none',
+        includeRaw: false,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
-  it('fails closed when redaction transform throws non-Error value', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440104';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+  it('fails closed for an unparseable audit-trail record', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.writeFile(path.join(sessionDir, 'audit.jsonl'), 'not valid json\n', 'utf8');
 
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    // Write a config file so readConfig() inside archiveSession does NOT call
-    // structuredClone(DEFAULT_CONFIG) — we only want to test that the redaction
-    // transform's structuredClone call is wrapped correctly.
-    await fs.writeFile(
-      path.join(process.env.OPENCODE_CONFIG_DIR!, 'flowguard.json'),
-      JSON.stringify({ schemaVersion: 'v1' }),
-      'utf-8',
-    );
-
-    const originalStructuredClone = globalThis.structuredClone;
-    globalThis.structuredClone = (() => {
-      throw 'clone-failed';
-    }) as typeof globalThis.structuredClone;
-
-    try {
-      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-    } finally {
-      globalThis.structuredClone = originalStructuredClone;
-    }
+    await expect(
+      archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+    ).rejects.toMatchObject({
+      code: 'AUDIT_ENVELOPE_INVALID',
+    });
   });
 
-  // fs.chmod does not enforce POSIX permissions on Windows NTFS — skip on win32
-  it.skipIf(process.platform === 'win32')(
-    'fails closed when redaction source read fails',
-    async () => {
-      const worktree = path.resolve('.');
-      const sessionId = '550e8400-e29b-41d4-a716-446655440105';
-      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-      // Write a VALID state (passes Zod validation) but make the review report unreadable
-      await writeState(sessDir, makeState('COMPLETE'));
-
-      const reviewPath = path.join(sessDir, 'review-report.json');
-      await fs.writeFile(
-        reviewPath,
-        JSON.stringify({ findings: [{ message: 'sensitive' }] }),
-        'utf-8',
-      );
-      await fs.chmod(reviewPath, 0o000);
-
-      try {
-        await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-      } finally {
-        await fs.chmod(reviewPath, 0o644);
-      }
-    },
-  );
-
-  // ── P26: Sidecar regulated hardening ────────────────────────────────────────
-
-  it('regulated + sidecar write failure → throws ARCHIVE_FAILED (fail-closed)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440200';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // Write a valid regulated state so archiveSessionImpl reads policyMode
-    const regulatedState = makeState('COMPLETE', {
-      policySnapshot: {
-        ...POLICY_SNAPSHOT,
-        mode: 'regulated',
-        requestedMode: 'regulated',
-        allowSelfApproval: false,
-        requireHumanGates: true,
-        audit: { ...POLICY_SNAPSHOT.audit, enableChainHash: true },
+  it('allows a redacted archive at the configured audit-event limit', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    const config = JSON.stringify({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 1 },
       },
     });
-    await writeState(sessDir, regulatedState);
+    await fs.writeFile(path.join(configDir, 'flowguard.json'), config, 'utf8');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
-    // Pre-create a directory at the checksumPath location.
-    // fs.writeFile to a directory path throws EISDIR/EPERM.
-    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-    const checksumPath = path.join(archiveDir, `${sessionId}.tar.gz.sha256`);
-    await fs.mkdir(checksumPath, { recursive: true });
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'basic',
+        includeRaw: false,
+      }),
+    ).resolves.toBeDefined();
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
-    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'basic',
+        includeRaw: false,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
-  it('non-regulated + sidecar write failure → archive succeeds (tolerant)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440201';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // Write a valid team state so archiveSessionImpl reads policyMode = team
-    const teamState = makeState('COMPLETE', {
-      policySnapshot: {
-        ...POLICY_SNAPSHOT,
-        mode: 'team',
-        requestedMode: 'team',
-      },
+  it('rejects sharing exports outside the configured redaction and raw-export policy', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
     });
-    await writeState(sessDir, teamState);
+    await writeConfigForTest(configDir, 'basic', false);
 
-    // Pre-create a directory at the checksumPath location.
-    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-    const checksumPath = path.join(archiveDir, `${sessionId}.tar.gz.sha256`);
-    await fs.mkdir(checksumPath, { recursive: true });
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
 
-    // Non-regulated: sidecar failure is non-fatal, archive succeeds
-    const archivePath = await archiveSession(fingerprint, sessionId);
-    expect(archivePath).toContain('.tar.gz');
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'pseudonymous',
+        includeRaw: false,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'basic',
+        includeRaw: true,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
-  // ── #420: strict-mode sourced from integrity-covered state, fail-closed ─────
+  it('allows the regulated completion chain to create required raw evidence in a sharing-only configuration', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
 
-  it('non-regulated archive with resolvable state keeps sidecar-missing tolerant', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440420';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
     await writeState(
-      sessDir,
+      initialized.sessionDir,
+      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+    );
+    const state = await readState(initialized.sessionDir);
+    await appendAuditEvent(initialized.sessionDir, {
+      id: crypto.randomUUID(),
+      flowguardSessionId: state!.flowguardSessionId,
+      hostSessionId: sessionId,
+      phase: 'COMPLETE',
+      event: 'lifecycle:session_completed',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      actor: 'machine',
+      detail: { action: 'preparation_completed' },
+    });
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
+
+    await expect(
+      archiveRegulatedEvidence(initialized.fingerprint, sessionId),
+    ).resolves.toBeDefined();
+  });
+
+  it('preserves immutable regulated evidence when a later sharing export is created', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(
+      initialized.sessionDir,
+      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+    );
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
+
+    const regulatedPath = await archiveRegulatedEvidence(initialized.fingerprint, sessionId);
+    const sharingPath = await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'basic',
+      includeRaw: false,
+    });
+
+    expect(regulatedPath).not.toBe(sharingPath);
+    await expect(fs.access(regulatedPath)).resolves.toBeUndefined();
+    expect((await verifyRegulatedArchive(initialized.fingerprint, sessionId)).passed).toBe(true);
+  });
+
+  it('rejects the regulated evidence path for a non-regulated session', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
+
+    await expect(
+      archiveRegulatedEvidence(initialized.fingerprint, sessionId),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  it('rejects the regulated evidence path without a clean regulated state', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const missingStateSession = '550e8400-e29b-41d4-a716-446655440000';
+    const missingState = await initWorkspace(path.resolve('.'), missingStateSession);
+    await expect(
+      archiveRegulatedEvidence(missingState.fingerprint, missingStateSession),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+
+    const abortedSession = '550e8400-e29b-41d4-a716-446655440001';
+    const aborted = await initWorkspace(path.resolve('.'), abortedSession);
+    await writeState(
+      aborted.sessionDir,
       makeState('COMPLETE', {
-        policySnapshot: { ...POLICY_SNAPSHOT, mode: 'team', requestedMode: 'team' },
+        policySnapshot: REGULATED_POLICY_SNAPSHOT,
+        error: {
+          code: 'ABORTED',
+          message: 'emergency exit',
+          recoveryHint: 'start a new session',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        },
       }),
     );
-    await archiveSession(fingerprint, sessionId);
+    await expect(
+      archiveRegulatedEvidence(aborted.fingerprint, abortedSession),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
 
-    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-    await fs.unlink(path.join(archiveDir, `${sessionId}.tar.gz.sha256`));
+  it('requires the canonical regulated completion event', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'basic', false);
 
-    const result = await verifyArchive(fingerprint, sessionId);
-    // Resolvable non-regulated mode → NOT escalated to strict; missing sidecar is a warning.
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(
+      initialized.sessionDir,
+      makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
+    );
+    await appendAuditEvent(initialized.sessionDir, {
+      id: crypto.randomUUID(),
+      flowguardSessionId: makeState().flowguardSessionId,
+      hostSessionId: sessionId,
+      phase: 'COMPLETE',
+      event: 'lifecycle:session_completed',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      actor: 'machine',
+      detail: { action: 'other_action' },
+    });
+
+    await expect(
+      archiveRegulatedEvidence(initialized.fingerprint, sessionId),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
+  });
+
+  it('binds evidence artifacts once and publishes every changed archive candidate', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', true);
+
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    await fs.mkdir(path.join(initialized.sessionDir, 'artifacts'), { recursive: true });
+    await fs.writeFile(path.join(initialized.sessionDir, 'artifacts', 'proof.json'), '{}', 'utf8');
+
+    const options = { redactionMode: 'none' as const, includeRaw: true };
+    const archivePath = await archiveSession(initialized.fingerprint, sessionId, options);
+    await archiveSession(initialized.fingerprint, sessionId, options);
+    let bindings = (await readAuditTrail(initialized.sessionDir)).filter(
+      (event) => event.event === 'archive:artifacts_bound',
+    );
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]?.detail).toMatchObject({
+      artifactCount: 1,
+      artifacts: [
+        expect.objectContaining({ path: 'artifacts/other/proof.json', artifactType: 'proof' }),
+      ],
+    });
+
+    await fs.writeFile(
+      path.join(initialized.sessionDir, 'artifacts', 'report.txt'),
+      'report',
+      'utf8',
+    );
+    await archiveSession(initialized.fingerprint, sessionId, options);
+    bindings = (await readAuditTrail(initialized.sessionDir)).filter(
+      (event) => event.event === 'archive:artifacts_bound',
+    );
+    expect(bindings).toHaveLength(2);
+    expect(bindings[1]?.detail).toMatchObject({ artifactCount: 2 });
+    const publications = (await readAuditTrail(initialized.sessionDir)).filter(
+      (event) => event.event === 'archive:publication_bound',
+    );
+    expect(publications).toHaveLength(3);
+    expect(publications[2]?.detail).toMatchObject({
+      schemaVersion: 'flowguard-archive-publication-binding.v1',
+      archiveFile: path.basename(archivePath),
+    });
+  });
+
+  it('rebinds artifacts when their bytes change without changing their count', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', true);
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const proofPath = path.join(initialized.sessionDir, 'artifacts', 'proof.json');
+    await fs.mkdir(path.dirname(proofPath), { recursive: true });
+    await fs.writeFile(proofPath, '{"version":1}', 'utf8');
+    await fs.writeFile(path.join(path.dirname(proofPath), 'report.txt'), 'unchanged', 'utf8');
+    const options = { redactionMode: 'none' as const, includeRaw: true };
+    await archiveSession(initialized.fingerprint, sessionId, options);
+    await fs.writeFile(proofPath, '{"version":2}', 'utf8');
+
+    await archiveSession(initialized.fingerprint, sessionId, options);
+
+    const bindings = (await readAuditTrail(initialized.sessionDir)).filter(
+      (event) => event.event === 'archive:artifacts_bound',
+    );
+    expect(bindings).toHaveLength(2);
+    expect(bindings[1]?.detail).toMatchObject({ artifactCount: 2 });
+  });
+
+  it('fails closed when a published archive has no external publication binding', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.writeFile(path.join(sessionDir, 'audit.jsonl'), '', 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+    expect(verification.passed).toBe(false);
     expect(
-      result.findings.some(
-        (f) => f.code === 'archive_checksum_missing' && f.severity === 'warning',
+      verification.findings.some((finding) => finding.code === 'archive_publication_unbound'),
+    ).toBe(true);
+  });
+
+  it('detects a valid but truncated audit-chain prefix in a tampered archive', async () => {
+    const { archivePath, fingerprint, sessionId, sessionDir } = await createArchive();
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const extracted = await extract(archivePath);
+    const auditPath = path.join(extracted, sessionId, 'audit', 'audit.jsonl');
+    const events = (await fs.readFile(auditPath, 'utf8')).trim().split('\n');
+    expect(events.length).toBeGreaterThan(1);
+    await fs.writeFile(auditPath, `${events.slice(0, -1).join('\n')}\n`, 'utf8');
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.slice(0, 2).map(({ code, severity, file }) => ({
+        code,
+        severity,
+        file,
+      })),
+    ).toEqual([
+      { code: 'file_digest_mismatch', severity: 'error', file: 'audit/audit.jsonl' },
+      { code: 'audit_chain_truncated', severity: 'error', file: 'audit.jsonl' },
+    ]);
+    expect(verification.findings[1]).toEqual({
+      code: 'audit_chain_truncated',
+      severity: 'error',
+      message: `Audit trail does not match manifest anchor: expected ${events.length} event(s), found ${events.length - 1}`,
+      file: 'audit.jsonl',
+    });
+  });
+
+  it('fails closed when the manifest policy mode differs from governed state', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    const extracted = await extract(archivePath);
+    const manifestPath = path.join(extracted, sessionId, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, policyMode: 'regulated' }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings[0]).toEqual({
+      code: 'manifest_policy_mode_mismatch',
+      severity: 'error',
+      message: "Manifest policyMode 'regulated' does not match governed state mode 'team'",
+      file: 'archive-manifest.json',
+    });
+  });
+
+  it('reports a missing checksum sidecar even when publication binding cannot be evaluated', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    await fs.rm(`${archivePath}.sha256`);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toEqual([
+      {
+        code: 'archive_checksum_missing',
+        severity: 'warning',
+        message: 'Archive checksum sidecar (.sha256) not found',
+        file: undefined,
+      },
+      {
+        code: 'archive_publication_binding_invalid',
+        severity: 'error',
+        message: expect.stringMatching(
+          /^Published archive binding could not be evaluated: ENOENT: .*\.tar\.gz\.sha256'$/,
+        ),
+        file: undefined,
+      },
+    ]);
+  });
+
+  it('rejects a checksum sidecar with multiple digest tokens', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    const checksum = await fs.readFile(`${archivePath}.sha256`, 'utf8');
+    await fs.writeFile(`${archivePath}.sha256`, `${checksum.trim()} ${'a'.repeat(64)}\n`, 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_mismatch', severity: 'error' }),
+    );
+  });
+
+  it('rejects a validly formatted checksum that does not match the archive bytes', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    await fs.writeFile(`${archivePath}.sha256`, `${'a'.repeat(64)}  archive.tar.gz\n`, 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_mismatch', severity: 'error' }),
+    );
+  });
+
+  it('rejects an archive whose audit event count matches but head does not', async () => {
+    const { archivePath, fingerprint, sessionId, sessionDir } = await createArchive();
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const extracted = await extract(archivePath);
+    const manifestPath = path.join(extracted, sessionId, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, auditChainHead: '0'.repeat(64) }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'audit_chain_truncated', severity: 'error' }),
+    );
+  });
+
+  it('reports both artifact bytes and manifest digests that disagree with the audit binding', async () => {
+    const { archivePath, fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.mkdir(path.join(sessionDir, 'artifacts'), { recursive: true });
+    await fs.writeFile(path.join(sessionDir, 'artifacts', 'proof.json'), '{"valid":true}', 'utf8');
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const extracted = await extract(archivePath);
+    const root = path.join(extracted, sessionId);
+    const manifestPath = path.join(root, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as {
+      fileDigests: Record<string, string>;
+    };
+    const artifact = Object.keys(manifest.fileDigests).find((file) =>
+      file.startsWith('artifacts/'),
+    );
+    expect(artifact).toBeDefined();
+    await fs.writeFile(path.join(root, artifact!), '{"valid":false}', 'utf8');
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...manifest,
+        fileDigests: { ...manifest.fileDigests, [artifact!]: 'b'.repeat(64) },
+      }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.filter((finding) => finding.code === 'artifact_binding_mismatch'),
+    ).toHaveLength(2);
+  });
+
+  it('fails closed for an unreadable archive before attempting extraction', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    await fs.writeFile(archivePath, 'not a gzip archive', 'utf8');
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.manifest).toBeNull();
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'unexpected_file', severity: 'error' }),
+    );
+  });
+
+  it('surfaces missing state and discovery snapshots before payload integrity findings', async () => {
+    const { archivePath, fingerprint, sessionId } = await createArchive();
+    const extracted = await extract(archivePath);
+    const manifestPath = path.join(extracted, sessionId, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as {
+      includedFiles: string[];
+      fileDigests: Record<string, string>;
+    };
+    await fs.rm(path.join(extracted, sessionId, 'state', 'session-state.json'));
+    const { 'state/session-state.json': _stateDigest, ...fileDigests } = manifest.fileDigests;
+    await fs.writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...manifest,
+        includedFiles: manifest.includedFiles.filter((file) => file !== 'state/session-state.json'),
+        fileDigests,
+        discoveryDigest: 'a'.repeat(64),
+      }),
+      'utf8',
+    );
+    await repack(archivePath, extracted, sessionId);
+
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings.slice(0, 3)).toMatchObject([
+      { code: 'state_missing', severity: 'error' },
+      { code: 'snapshot_missing', file: 'context/discovery-snapshot.json', severity: 'warning' },
+      {
+        code: 'snapshot_missing',
+        file: 'context/profile-resolution-snapshot.json',
+        severity: 'warning',
+      },
+    ]);
+  });
+
+  it('rejects a non-regulated archive with a re-sealed clock anomaly', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+    const events = await readAuditTrail(sessionDir);
+    const resealed = resealAuditTrailWithClockAnomaly(events);
+    await fs.writeFile(
+      path.join(sessionDir, 'audit.jsonl'),
+      `${resealed.map((event) => JSON.stringify(event)).join('\n')}\n`,
+      'utf-8',
+    );
+    expect(verifyChain(resealed as unknown as Record<string, unknown>[]).reason).toBe(
+      'CLOCK_ANOMALY',
+    );
+
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(
+      expect.objectContaining({ code: 'audit_chain_invalid', severity: 'error' }),
+    );
+  });
+
+  it('fails closed when a non-regulated tsa_critical+strict policy is violated', async () => {
+    // Production plumbing: the archive mode (team) resolves to NON-strict,
+    // but the explicit timestampAssurance.strict policy must still make the
+    // token-layer findings fatal — a tsa_critical violation may never pass
+    // with a mere warning.
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    const state = await readState(sessionDir);
+    const strictTsaState: SessionState = {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        mode: 'team',
+        audit: {
+          ...state!.policySnapshot.audit,
+          timestampAssurance: {
+            enabled: true,
+            mode: 'tsa_critical',
+            strict: true,
+            criticalEvents: ['decision', 'lifecycle'],
+            tsaUrl: 'https://tsa.example.test',
+            trustAnchors: ['not a pem certificate'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+          },
+        },
+      },
+    };
+    await writeState(sessionDir, strictTsaState);
+    // A critical lifecycle event WITHOUT any external TSA token.
+    await appendCompletionAuditEvent(sessionDir, sessionId);
+
+    await archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true });
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.findings.some(
+        (finding) =>
+          finding.code === 'tsa_token_required_by_policy' && finding.severity === 'error',
       ),
     ).toBe(true);
   });
 
-  it('unresolvable state defaults to strict so sidecar-missing becomes fatal (#420)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440421';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await writeState(
-      sessDir,
-      makeState('COMPLETE', {
-        policySnapshot: { ...POLICY_SNAPSHOT, mode: 'team', requestedMode: 'team' },
-      }),
+  it('retains a published-but-unbound archive after binding append failure and recovers on retry', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    await writeConfigForTest(configDir, 'none', true, path.resolve('.'));
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+    const archivePath = path.join(
+      configDir,
+      'workspaces',
+      initialized.fingerprint,
+      'sessions',
+      'archive',
+      `${sessionId}.tar.gz`,
     );
-    await archiveSession(fingerprint, sessionId);
-
-    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-    await fs.unlink(path.join(archiveDir, `${sessionId}.tar.gz.sha256`));
-    // Remove the integrity-covered authority: mode can no longer be resolved.
-    await fs.unlink(path.join(sessDir, 'session-state.json'));
-
-    const result = await verifyArchive(fingerprint, sessionId);
-    expect(result.passed).toBe(false);
-    // Fail-closed default: unresolvable mode → strict → missing sidecar is fatal.
-    expect(
-      result.findings.some((f) => f.code === 'archive_checksum_missing' && f.severity === 'error'),
-    ).toBe(true);
-  });
-
-  // ── P4a: Fail-closed — state and audit trail read failures ──────────────────
-
-  it('BAD: archive fails when session-state.json is corrupt JSON (P4a fail-closed)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440300';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // Write corrupt JSON to session-state.json
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{{invalid json', 'utf-8');
-
-    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
-  });
-
-  it('BAD: archive fails when audit-trail.jsonl is unreadable (P4a fail-closed)', async () => {
-    // On Windows, fs.chmod has no effect on read permissions.
-    // Simulate unreadable audit trail by writing state + replacing audit file with a directory.
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440301';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // Write valid state so archive proceeds past state read
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    // Create a directory at the audit trail path — fs.readFile on a directory throws EISDIR
-    const trailPath = auditPath(sessDir);
-    await fs.mkdir(trailPath, { recursive: true });
-
-    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
-  });
-
-  it('CORNER: archive succeeds when session-state.json does not exist (ENOENT is safe)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440302';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // No session-state.json written — readState returns null (ENOENT)
-    // No audit-trail.jsonl — readAuditTrail returns empty (ENOENT)
-    // Archive should still succeed (fresh session with no artifacts)
-    const archivePath = await archiveSession(fingerprint, sessionId);
-    expect(archivePath).toContain('.tar.gz');
-  });
-
-  it('CORNER: archive succeeds when audit-trail.jsonl does not exist (ENOENT is safe)', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440303';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // Write valid state but no audit trail
-    await writeState(sessDir, makeState('COMPLETE'));
-
-    const archivePath = await archiveSession(fingerprint, sessionId);
-    expect(archivePath).toContain('.tar.gz');
-  });
-
-  it('EDGE: PersistenceError from corrupt state includes error code', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440304';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{{corrupt', 'utf-8');
+    const append = vi
+      .spyOn(persistenceAudit, 'appendAuditEvent')
+      .mockRejectedValueOnce(new Error('injected publication binding failure'));
 
     try {
-      await archiveSession(fingerprint, sessionId);
-      expect.unreachable('should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(PersistenceError);
-      expect((err as PersistenceError).code).toBe('PARSE_FAILED');
+      await expect(
+        archiveSession(initialized.fingerprint, sessionId, {
+          redactionMode: 'none',
+          includeRaw: true,
+        }),
+      ).rejects.toThrow('injected publication binding failure');
+    } finally {
+      append.mockRestore();
     }
+
+    await expect(fs.access(archivePath)).resolves.toBeUndefined();
+    await expect(fs.access(`${archivePath}.sha256`)).resolves.toBeUndefined();
+    expect((await verifyArchive(initialized.fingerprint, sessionId)).passed).toBe(false);
+
+    await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'none',
+      includeRaw: true,
+    });
+    expect((await verifyArchive(initialized.fingerprint, sessionId)).passed).toBe(true);
   });
 
-  it('EDGE: PersistenceError from schema-invalid state includes error code', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440305';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-
-    // Valid JSON but invalid schema (missing required fields)
-    await fs.writeFile(
-      path.join(sessDir, 'session-state.json'),
-      JSON.stringify({ not_a_valid_state: true }),
-      'utf-8',
-    );
-
-    try {
-      await archiveSession(fingerprint, sessionId);
-      expect.unreachable('should have thrown');
-    } catch (err) {
-      expect(err).toBeInstanceOf(PersistenceError);
-      expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
-    }
+  it('verifies the tarball independently of later live-session mutations', async () => {
+    const { fingerprint, sessionId, sessionDir } = await createArchive();
+    await fs.writeFile(path.join(sessionDir, 'session-state.json'), 'tampered', 'utf8');
+    expect((await verifyArchive(fingerprint, sessionId)).passed).toBe(true);
   });
 });
-
-// =============================================================================
-// verifyArchive
-// =============================================================================

@@ -86,7 +86,7 @@ FlowGuard supports two roles within a session:
 - CLI commands for session control
 - `/hydrate`, `/ticket`, `/plan`, etc.
 - `/archive` for session export
-- `/review` for compliance reporting
+- `/review` for peer review reporting
 
 ### Installation Management
 
@@ -262,5 +262,5 @@ User → Installation Owner → FlowGuard Maintainer (via GitHub)
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-15_

@@ -103,7 +103,7 @@ Expected `doctor` output:
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/plugins/flowguard-audit.ts
   [ok] ~/.config/opencode/commands/hydrate.md
-  ... (20 command files — 12 canonical + 8 product aliases)
+  ... (installed command files)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json
@@ -136,7 +136,7 @@ where outbound access or local listeners are prohibited**:
 
 | Surface               | Trigger                                                                           | Avoidance / mitigation                                                                                                                                                                                                                                                                                                                                          |
 | --------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/review url=...`     | Operator passes a URL to `/review`                                                | Do not pass `url=...`; use `text=...`, `prNumber=`, or `branch=` with locally-resolved content.                                                                                                                                                                                                                                                                 |
+| `/review url=...`     | Operator passes a URL to `/review`                                                | Do not pass `url=...`; use `text=...`, `prNumber=`, or `branch=`. FlowGuard resolves branch refs and materializes local review content without network access.                                                                                                                                                                                                  |
 | Remote JWKS           | `policy.identityProvider.mode = 'jwks'` with a `jwksUri`                          | Use `mode: 'static'` with pre-staged signing keys, or point `jwksUri` at an internal mirror reachable from the air-gapped network.                                                                                                                                                                                                                              |
 | Claude Code HTTP hook | `flowguard-hook-server` started for the Claude Code host integration              | Use the OpenCode plugin path instead; or run the HTTP hook only when its localhost listener is acceptable.                                                                                                                                                                                                                                                      |
 | RFC 3161 TSA          | `policy.audit.timestampAssurance.mode = 'tsa_critical'` with `tsaUrl` set         | Keep the default `mode: 'local_only'`, or set `tsaUrl` to an internal RFC 3161 timestamp authority and pin its `trustAnchors`.                                                                                                                                                                                                                                  |
@@ -214,5 +214,5 @@ chmod 755 ~/.config/opencode/
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-15_

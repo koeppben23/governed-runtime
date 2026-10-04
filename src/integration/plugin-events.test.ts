@@ -4,11 +4,11 @@
  *
  * Validates:
  * - session.error events are logged via deps.log.error
- * - session.delete events call cleanupSession
+ * - session.deleted events call cleanupSession
  * - Unhandled event types are silently ignored (no-op)
  * - Fail-safe behavior: handler never throws
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE ÔÇö all categories present.
+ * @test-policy HAPPY, BAD, CORNER, EDGE ÔÇö all applicable categories present.
  * @version v1
  */
 
@@ -33,6 +33,10 @@ function createMockDeps(): EventHandlerDeps & {
       error(service, message, extra) {
         calls.push({ method: 'log.error', args: [service, message, extra] });
       },
+    },
+    resumePendingSystemWork(sessionId: string) {
+      calls.push({ method: 'resumePendingSystemWork', args: [sessionId] });
+      return Promise.resolve();
     },
     cleanupSession(sessionId: string) {
       calls.push({ method: 'cleanupSession', args: [sessionId] });
@@ -71,11 +75,11 @@ describe('integration/plugin-events', () => {
       });
     });
 
-    it('session.delete event calls cleanupSession with sessionId', async () => {
+    it('session.deleted event calls cleanupSession with sessionId', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 'sess-xyz' },
+        type: 'session.deleted',
+        properties: { info: { id: 'sess-xyz' } },
       };
 
       await handleEvent(deps, event);
@@ -87,6 +91,37 @@ describe('integration/plugin-events', () => {
       const infoCall = deps.calls.find((c) => c.method === 'log.info');
       expect(infoCall).toBeDefined();
       expect(infoCall!.args[2]).toEqual({ sessionId: 'sess-xyz' });
+    });
+
+    it('session.idle resumes pending system work for the session', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, { type: 'session.idle', properties: { sessionID: 'sess-idle' } });
+
+      const resumeCall = deps.calls.find((c) => c.method === 'resumePendingSystemWork');
+      expect(resumeCall).toBeDefined();
+      expect(resumeCall!.args[0]).toBe('sess-idle');
+    });
+
+    it('session.status idle resumes pending system work; busy does not', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, {
+        type: 'session.status',
+        properties: { sessionID: 'sess-status', status: { type: 'idle' } },
+      });
+      await handleEvent(deps, {
+        type: 'session.status',
+        properties: { sessionID: 'sess-status', status: { type: 'busy' } },
+      });
+
+      const resumeCalls = deps.calls.filter((c) => c.method === 'resumePendingSystemWork');
+      expect(resumeCalls).toHaveLength(1);
+      expect(resumeCalls[0]!.args[0]).toBe('sess-status');
+    });
+
+    it('session.idle without a session id is ignored fail-safe', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, { type: 'session.idle', properties: {} });
+      expect(deps.calls.some((c) => c.method === 'resumePendingSystemWork')).toBe(false);
     });
 
     it('session.error falls back to message property if error is missing', async () => {
@@ -124,10 +159,10 @@ describe('integration/plugin-events', () => {
       expect(deps.calls).toHaveLength(0);
     });
 
-    it('session.delete with no sessionID does not call cleanup', async () => {
+    it('session.deleted with no info does not call cleanup', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
+        type: 'session.deleted',
         properties: {},
       };
 
@@ -141,7 +176,6 @@ describe('integration/plugin-events', () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
         type: 'session.error',
-        properties: undefined,
       };
 
       await handleEvent(deps, event);
@@ -182,11 +216,11 @@ describe('integration/plugin-events', () => {
       );
     });
 
-    it('session.delete with non-string sessionID does not call cleanup', async () => {
+    it('session.deleted with non-string info.id does not call cleanup', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 12345 },
+        type: 'session.deleted',
+        properties: { info: { id: 12345 } },
       };
 
       await handleEvent(deps, event);
@@ -206,8 +240,8 @@ describe('integration/plugin-events', () => {
       };
 
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 'sess-boom' },
+        type: 'session.deleted',
+        properties: { info: { id: 'sess-boom' } },
       };
 
       // Must not throw
@@ -264,10 +298,21 @@ describe('integration/plugin-events', () => {
     it('handles 1000 rapid events without memory leaks or throws', async () => {
       const deps = createMockDeps();
 
-      const events: PluginEvent[] = Array.from({ length: 1000 }, (_, i) => ({
-        type: i % 3 === 0 ? 'session.error' : i % 3 === 1 ? 'session.delete' : 'session.start',
-        properties: { sessionID: `sess-${i}`, error: `error-${i}` },
-      }));
+      const events: PluginEvent[] = Array.from({ length: 1000 }, (_, i) => {
+        if (i % 3 === 0) {
+          return {
+            type: 'session.error',
+            properties: { sessionID: `sess-${i}`, error: `error-${i}` },
+          };
+        }
+        if (i % 3 === 1) {
+          return {
+            type: 'session.deleted',
+            properties: { info: { id: `sess-${i}` } },
+          };
+        }
+        return { type: 'session.start' };
+      });
 
       const start = performance.now();
       await Promise.all(events.map((e) => handleEvent(deps, e)));
@@ -315,7 +360,11 @@ describe('integration/plugin-events', () => {
       expect(errorCall).toBeDefined();
       const extra = errorCall!.args[2] as Record<string, unknown>;
       expect(extra.errorCode).toBe('E42');
-      expect(extra.errorStack).toBe('Error: boom\n    at foo.ts:1:1');
+      // The stack is sanitized at the source (it is shared with the audit
+      // detail, which is not redacted downstream). sanitizeDiagnosticString
+      // strips line:column references, so the frame keeps its file but not
+      // its position.
+      expect(extra.errorStack).toBe('Error: boom\n    at foo.ts');
     });
 
     // T2 -- HAPPY: unknown properties land in supplementary
@@ -502,12 +551,12 @@ describe('integration/plugin-events', () => {
       expect(auditCall!.args[1]).toBe('unspecified session error');
     });
 
-    // T11 -- CORNER: session.delete does NOT call emitSessionErrorAudit
-    it('session.delete does not call emitSessionErrorAudit', async () => {
+    // T11 -- CORNER: session.deleted does NOT call emitSessionErrorAudit
+    it('session.deleted does not call emitSessionErrorAudit', async () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
-        type: 'session.delete',
-        properties: { sessionID: 'S1' },
+        type: 'session.deleted',
+        properties: { info: { id: 'S1' } },
       };
 
       await handleEvent(deps, event);
@@ -531,6 +580,132 @@ describe('integration/plugin-events', () => {
       expect(logIdx).toBeGreaterThanOrEqual(0);
       expect(auditIdx).toBeGreaterThanOrEqual(0);
       expect(logIdx).toBeLessThan(auditIdx);
+    });
+  });
+
+  // ─── Audit confidentiality ──────────────────────────────────
+  describe('session.error diagnostics are redacted before reaching the audit trail', () => {
+    // The logger redacts centrally before its sinks, but the audit append
+    // does not — so anything handed to emitSessionErrorAudit must already be
+    // sanitized, or credentials land verbatim in the raw audit.jsonl.
+    const SECRETS = [
+      'Bearer abcdef0123456789',
+      'password=hunter2',
+      'sk-proj-0123456789abcdef',
+      '/Users/alice/private-project/secrets.env',
+    ];
+
+    async function auditPayload(properties: Record<string, unknown>): Promise<string> {
+      const deps = createMockDeps();
+      await handleEvent(deps, { type: 'session.error', properties });
+      const call = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
+      expect(call).toBeDefined();
+      return JSON.stringify([call!.args[1], call!.args[2]]);
+    }
+
+    it('redacts secrets in the error message', async () => {
+      const payload = await auditPayload({
+        sessionID: 'S1',
+        error: `auth failed: ${SECRETS[0]} ${SECRETS[1]}`,
+      });
+      expect(payload).not.toContain('abcdef0123456789');
+      expect(payload).not.toContain('hunter2');
+    });
+
+    it('redacts secrets and absolute paths in the stack', async () => {
+      const payload = await auditPayload({
+        sessionID: 'S1',
+        error: 'boom',
+        stack: `Error: boom\n    at ${SECRETS[3]}\n    ${SECRETS[2]}`,
+      });
+      expect(payload).not.toContain('/Users/alice/private-project');
+      expect(payload).not.toContain('sk-proj-0123456789abcdef');
+    });
+
+    it('redacts secrets in supplementary host context', async () => {
+      const payload = await auditPayload({
+        sessionID: 'S1',
+        error: 'boom',
+        requestUrl: 'https://user:pass@internal.example.com/v1/keys',
+        upstreamAuth: SECRETS[0],
+      });
+      expect(payload).not.toContain('user:pass');
+      expect(payload).not.toContain('abcdef0123456789');
+    });
+
+    it('redacts secrets nested inside supplementary objects and arrays', async () => {
+      // detail is z.record(z.string(), z.unknown()), so host context reaches
+      // the raw trail with its structure intact. A shallow string-only pass
+      // would leave everything below the top level unredacted.
+      const payload = await auditPayload({
+        sessionID: 'S1',
+        error: 'boom',
+        request: { headers: { authorization: SECRETS[0] } },
+        attempts: [{ token: SECRETS[2] }, { note: SECRETS[1] }],
+        deep: { a: { b: { c: SECRETS[3] } } },
+      });
+      expect(payload).not.toContain('abcdef0123456789');
+      expect(payload).not.toContain('sk-proj-0123456789abcdef');
+      expect(payload).not.toContain('hunter2');
+      expect(payload).not.toContain('/Users/alice/private-project');
+    });
+
+    it('preserves supplementary structure while redacting', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, {
+        type: 'session.error',
+        properties: {
+          sessionID: 'S1',
+          error: 'boom',
+          request: { headers: { authorization: SECRETS[0] }, retries: 2 },
+          attempts: [{ ok: false }],
+        },
+      });
+
+      const call = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
+      const supplementary = (call!.args[2] as Record<string, unknown>).supplementary as Record<
+        string,
+        unknown
+      >;
+      const request = supplementary.request as Record<string, unknown>;
+      // Shape survives: nesting, non-string values, and arrays are preserved.
+      expect(request.retries).toBe(2);
+      expect((request.headers as Record<string, unknown>).authorization).toBe('Bearer [redacted]');
+      expect(supplementary.attempts).toEqual([{ ok: false }]);
+    });
+
+    it('does not throw on cyclic supplementary context', async () => {
+      const cyclic: Record<string, unknown> = { name: 'ctx' };
+      cyclic.self = cyclic;
+      const deps = createMockDeps();
+
+      await expect(
+        handleEvent(deps, {
+          type: 'session.error',
+          properties: { sessionID: 'S1', error: 'boom', cyclic },
+        }),
+      ).resolves.not.toThrow();
+      expect(deps.calls.find((c) => c.method === 'emitSessionErrorAudit')).toBeDefined();
+    });
+
+    it('preserves non-string supplementary values and the diagnostic shape', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, {
+        type: 'session.error',
+        properties: {
+          sessionID: 'S1',
+          error: 'plain failure',
+          code: 'E_BOOM',
+          attempt: 3,
+          retriable: true,
+        },
+      });
+
+      const call = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
+      expect(call!.args[1]).toBe('plain failure');
+      const detail = call!.args[2] as Record<string, unknown>;
+      expect(detail.errorCode).toBe('E_BOOM');
+      expect(detail.supplementary).toEqual({ attempt: 3, retriable: true });
     });
   });
 });

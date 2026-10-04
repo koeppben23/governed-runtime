@@ -4,6 +4,14 @@ FlowGuard's governance model was designed for in-process enforcement within the 
 
 This document enumerates each gap with its impact assessment, mitigation strategy, and residual risk classification.
 
+## Glyph Display Fallback
+
+OpenCode terminals or fonts that cannot display FlowGuard's canonical Unicode
+status markers can set `presentation.opencode.glyphProfile` to `ascii` in
+`flowguard.json`. This affects only transient `presentation.markdown` markers;
+canonical Unicode `reviewCard` artifacts and arbitrary content are unchanged.
+See [Configuration](./configuration.md#presentationopencodeglyphprofile).
+
 ## Gap Summary
 
 | #   | Gap                                                                | Impact | Residual Risk                  | Affected Platforms |
@@ -126,7 +134,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Mitigation implemented**:
 
 1. **Explicit instructions**: FlowGuard tools return unambiguous instructions for invoking the native reviewer transport.
-2. **Evidence binding**: Claude/Codex review completion requires validated, obligation-bound `manual_attested` / transport ReviewInvocationEvidence. File presence, copied JSON, and `flowguard_decision` are not review evidence.
+2. **Evidence binding**: review completion requires a host-observed structured child-session invocation bound to the active obligation. Claude/Codex currently expose no such in-process structured session, so their review paths fail closed; file presence, copied JSON, and `flowguard_decision` are not review evidence.
 3. **Gate enforcement**: PreToolUse hook blocks mutating tools until review evidence exists on disk where the host can enforce hooks.
 4. **Escalating warnings**: PostToolUse hook surfaces time-based escalating warnings when review obligations remain pending (info → warn → critical).
 5. **Defense-in-depth**: `isSubagentAuthorized()` blocks unauthorized subagent types.
@@ -137,7 +145,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 - `src/hooks/post-tool-use.ts:104-107` (escalation integration)
 - `src/hooks/shared/phase-gate.ts:isSubagentAuthorized()` (defense-in-depth)
 
-**Residual Risk**: MEDIUM — LLM may ignore reviewer instructions, or hook-gated hosts may fail open on hook failure. FlowGuard does not silently accept this: `host_task_required` still requires OpenCode host-visible plugin evidence, and Claude/Codex Mode B convergence is accepted only through validated `manual_attested` evidence bound to the active obligation, findings hash, session id, mandate digest, criteria version, and strict attestation.
+**Residual Risk**: MEDIUM — LLM may ignore reviewer instructions, or hook-gated hosts may fail open on hook failure. FlowGuard does not silently accept this: review convergence requires validated evidence bound to the active obligation, findings hash, session id, mandate digest, criteria version, and strict attestation.
 
 ---
 
@@ -154,14 +162,14 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 **Mitigation implemented**:
 
-1. **Self-documenting tool output**: All 12 FlowGuard MCP tools return `phase` in their response. Governance state is embedded in every tool interaction.
+1. **Self-documenting tool output**: All 14 FlowGuard MCP tools return `phase` in their response. Governance state is embedded in every tool interaction.
 2. **AGENTS.md instructions**: Document `flowguard_status` as the re-orientation command after compaction.
 3. **Status tool**: `flowguard_status` returns comprehensive governance state (phase, policy mode, obligations, completeness matrix).
 
 **Code references**:
 
 - All tool implementations in `src/integration/tools/` include `phase` in output
-- `src/integration/tools/status-tool.ts` (full governance projection)
+- `src/integration/tools/status/status-tool.ts` (full governance projection)
 
 **Residual Risk**: LOW — Self-documenting output ensures governance context is available in every FlowGuard tool response. Post-compaction re-orientation may require one extra `flowguard_status` call if hook-gated context injection did not run.
 
@@ -232,6 +240,55 @@ governed capability is lost.
 | LOW           | Acceptable for all deployments              | Standard audit trail review                                        |
 | MEDIUM        | Acceptable with documented awareness        | Audit trail + obligation escalation warnings                       |
 | HIGH (Gap 3)  | Requires explicit organizational acceptance | External process monitoring, health checks, incident response plan |
+
+## OpenCode instruction-source: configured is not activated
+
+FlowGuard installs its mandates by registering an entry in the OpenCode
+`instructions[]` array. Per the official OpenCode documentation this is the
+documented mechanism for loading instruction sources, exposed to both the CLI
+and the Desktop app:
+
+- <https://opencode.ai/docs/config#instructions> (retrieved 2026-07)
+- <https://opencode.ai/docs/rules> (retrieved 2026-07)
+
+**A present `instructions[]` entry means the instruction source is _configured_.
+It does not prove the runtime loaded the mandates into the model context.**
+FlowGuard has no reliable surface to verify activation: the Desktop app exposes
+no `opencode --version` executable and OpenCode offers no documented API that
+reports the resolved instruction sources or the composed system prompt.
+FlowGuard therefore never claims the mandates are "active", "supported", or that
+a runtime is "compatible".
+
+What the tools report honestly:
+
+- `flowguard doctor` — the instruction-source check is `ok` only in the sense
+  that the entry is **configured**. Its detail states explicitly that
+  activation is not verifiable by FlowGuard. It does not turn the installation
+  green under a false "supported" claim.
+- `flowguard install` — writes the config and mandate file, then emits a notice
+  that mandates are **configured** and that activation is not verified by
+  install. It does not claim the runtime is governed.
+- An unknown or Desktop runtime is **never** classified as compatible. It is
+  simply `configured` (present, activation unverified).
+
+Fail-closed exception (deny-list): if a runtime is _positively known_ — with
+cited evidence — to accept the `instructions[]` entry without resolving it, it
+yields the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason in `flowguard
+doctor` and a non-clean `flowguard install` result (artifacts are written but
+mandates are reported as NOT active — "write but refuse"). The deny-list
+(`KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES` in
+`src/cli/opencode-runtime-compat.ts`) is seeded empty; no such runtime is
+currently known.
+
+`flowguard doctor` and `flowguard install` record the detected OpenCode version
+(best-effort, CLI only), runtime kind, executable path, OS, install method, and
+install date to the FlowGuard logs. The Desktop app exposes no
+`opencode --version` executable, so its version is logged as `null`; this is a
+detection limitation and does not by itself imply activation either way.
+
+`NOT_VERIFIED`: FlowGuard does not prove instruction-source activation on any
+runtime. A future mechanism could verify activation if OpenCode exposes the
+resolved instruction sources or the composed agent system prompt.
 
 ## References
 

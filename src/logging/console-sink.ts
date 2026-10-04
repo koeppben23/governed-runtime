@@ -42,7 +42,7 @@ function escapeControlChars(s: string): string {
  * Console sink options.
  */
 export interface ConsoleSinkOptions {
-  /** Output format. 'text' is the backward-compatible default. */
+  /** Output format. 'text' is the default. */
   format?: 'text' | 'json';
 }
 

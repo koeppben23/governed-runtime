@@ -23,16 +23,19 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionState } from '../state/schema.js';
+import { buildStatusProjection } from './status/status.js';
 import {
-  buildStatusProjection,
   buildEvidenceDetailProjection,
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
-} from './status.js';
+} from './status/status-detail-projections.js';
 import { getPolicyPreset } from '../config/policy.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -49,8 +52,8 @@ const ALL_PHASES = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
 ] as const;
 const TICKET_FLOW_PHASES = [
   'READY',
@@ -64,32 +67,20 @@ const TICKET_FLOW_PHASES = [
   'COMPLETE',
 ] as const;
 const ARCH_FLOW_PHASES = ['READY', 'ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE'] as const;
-const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
+const REVIEW_FLOW_PHASES = ['READY', 'PEER_REVIEW', 'PEER_REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {
-    id: 'ses_test_0001',
+    ...makeState(phase),
+    id: '00000000-0000-4000-8000-000000000001',
     phase,
     initiatedBy: 'tester@corp.com',
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    policySnapshot: {
-      mode: 'solo',
-      source: 'default',
-      requestedMode: 'solo',
-      effectiveGateBehavior: 'auto',
-      allowSelfApproval: true,
-      maxSelfReviewIterations: 2,
-      maxImplReviewIterations: 2,
-      requireHumanGates: false,
-      emitTransitions: true,
-      emitToolCalls: true,
-      enableChainHash: true,
-      actorClassification: 'solo',
-      policyDigest: 'testdigest123',
-      policyVersion: 'v1.0.0',
-      validationEvidence: { enforcement: 'off', allowNoCommands: false },
-    },
+    policySnapshot: createPolicySnapshot(
+      getPolicyPreset('solo'),
+      '2026-01-01T00:00:00.000Z',
+      hashText,
+    ),
     detectedStack: null,
     activeProfile: null,
     activeChecks: [],
@@ -102,8 +93,8 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
-    actorInfo: null,
+    regulatedArchiveStatus: null,
+    actorInfo: undefined,
     error: null,
   };
 }
@@ -112,26 +103,32 @@ function makeActorState(
   phase: SessionState['phase'] = 'READY',
   actorInfo: { id: string; source: 'env' | 'git' | 'claim' | 'unknown'; email: string | null },
 ): SessionState {
-  return { ...makeMinimalState(phase), actorInfo };
+  return {
+    ...makeMinimalState(phase),
+    actorInfo: {
+      ...actorInfo,
+      assurance: actorInfo.source === 'claim' ? 'claim_validated' : 'best_effort',
+    },
+  };
 }
 
-describe('nextAction field mapping', () => {
+describe('directive field mapping', () => {
   const policy = getPolicyPreset('solo');
 
-  it('should map nextAction.primaryCommand to first available primaryCommand', () => {
+  it('should expose directive.commands[0] as the first canonical command', () => {
     const state = makeMinimalState('READY');
     const projection = buildStatusProjection(state, policy);
 
-    expect(projection.nextAction.primaryCommand).toBeTruthy();
-    expect(projection.nextAction.primaryCommand).toMatch(/^\//);
+    expect(projection.directive.commands[0]).toBeTruthy();
+    expect(projection.directive.commands[0]).toMatch(/^\//);
   });
 
-  it('should map nextAction.summary to text from resolveNextAction', () => {
+  it('should map directive.code to the canonical position code', () => {
     const state = makeMinimalState('READY');
     const projection = buildStatusProjection(state, policy);
 
-    expect(projection.nextAction.summary).toBeTruthy();
-    expect(projection.nextAction.summary.length).toBeGreaterThan(0);
+    expect(projection.directive.code).toBe('CHOOSE_FLOW');
+    expect(projection.directive.code.length).toBeGreaterThan(0);
   });
 });
 
@@ -149,12 +146,16 @@ describe('blocker field mapping', () => {
     }
   });
 
-  it('should have null blocker at user gate phases (solo: auto-approve)', () => {
+  it('should auto-approve only plan and evidence gates in solo mode', () => {
     for (const phase of USER_GATES) {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
 
-      expect(projection.blocker).toBeNull();
+      if (phase === 'ARCH_REVIEW') {
+        expect(projection.blocker?.reasonText).toContain('architecture decision review');
+      } else {
+        expect(projection.blocker).toBeNull();
+      }
     }
   });
 
@@ -197,19 +198,38 @@ describe('buildBlockedProjection', () => {
     expect(blocked.reasonCode).toBeNull();
   });
 
-  it('reports blocked=true and missingEvidence on pending phase', () => {
-    const blocked = buildBlockedProjection(makeMinimalState('PLAN'), solo);
-    expect(blocked.blocked).toBe(true);
+  it('reports blocked=false on pending phase (no gate block)', () => {
+    const state = makeMinimalState('PLAN');
+    const blocked = buildBlockedProjection(state, solo);
+    const directive = buildStatusProjection(state, solo).directive;
+    expect(blocked.blocked).toBe(false);
     expect(blocked.missingEvidence.some((slot) => slot.slot === 'plan')).toBe(true);
-    expect(blocked.nextResolvableCommand).toBe('/continue');
+    // PLAN is system work: the directive exposes no user-runnable command.
+    expect(directive).toEqual({
+      kind: 'system_work',
+      code: 'PLAN_REVIEW_IN_PROGRESS',
+      allowedIntents: [],
+      commands: [],
+    });
+    expect(blocked.nextResolvableCommand).toBe(directive.commands[0] ?? null);
+    expect(blocked.nextResolvableCommand).toBeNull();
   });
 
   it('reports waiting reason at user gate under regulated policy', () => {
-    const blocked = buildBlockedProjection(makeMinimalState('PLAN_REVIEW'), regulated);
+    const state = makeMinimalState('PLAN_REVIEW');
+    const blocked = buildBlockedProjection(state, regulated);
+    const directive = buildStatusProjection(state, regulated).directive;
     expect(blocked.blocked).toBe(true);
     expect(typeof blocked.reasonText).toBe('string');
     expect(blocked.reasonText).toContain('Awaiting');
-    expect(blocked.nextResolvableCommand).toBe('/review-decision');
+    expect(directive).toEqual({
+      kind: 'human_gate',
+      code: 'PLAN_DECISION_REQUIRED',
+      allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/approve', '/request-changes', '/reject'],
+    });
+    // The first gate command is the canonical resolvable command.
+    expect(blocked.nextResolvableCommand).toBe('/approve');
     expect(blocked.humanActionRequired).toBe(true);
   });
 });
@@ -220,13 +240,17 @@ describe('context and readiness projections', () => {
   it('buildContextProjection maps actor/policy/archive from state', () => {
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
-      actorInfo: { id: 'operator', source: 'env', email: 'op@example.com' },
-      archiveStatus: 'pending',
+      actorInfo: {
+        id: 'operator',
+        source: 'env',
+        assurance: 'best_effort',
+        email: 'op@example.com',
+      },
+      regulatedArchiveStatus: 'pending',
       policySnapshot: {
-        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot,
         mode: 'regulated' as const,
         allowSelfApproval: false,
-        requireVerifiedActorsForApproval: true,
         centralMinimumMode: 'team' as const,
       },
     };
@@ -251,31 +275,6 @@ describe('context and readiness projections', () => {
     expect(typeof readiness.actorKnown).toBe('boolean');
   });
 
-  it('includes warning when legacy selfReview config is normalized', () => {
-    let state = makeMinimalState('READY');
-    // Inject legacy config
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: true,
-            strictEnforcement: false,
-          },
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-
-    expect(readiness.warnings).toBeDefined();
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  // ─── MUTATION KILL: selfReview config check (lines 350-355) ────────────────
-
   it('readiness HAPPY returns no warnings when selfReview config is correct', () => {
     let state = makeMinimalState('READY');
     if (state.policySnapshot) {
@@ -283,11 +282,6 @@ describe('context and readiness projections', () => {
         ...state,
         policySnapshot: {
           ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          },
         },
       };
     }
@@ -295,119 +289,39 @@ describe('context and readiness projections', () => {
     expect(readiness.warnings).toHaveLength(0);
   });
 
-  it('readiness warning when subagentEnabled is false (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: false,
-            strictEnforcement: true,
-          },
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  it('readiness warning when fallbackToSelf is true (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: true,
-            strictEnforcement: true,
-          },
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  it('readiness warning when strictEnforcement is false (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: false,
-          },
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
-  it('readiness warning when all three selfReview flags are wrong (survivor kill)', () => {
-    let state = makeMinimalState('READY');
-    if (state.policySnapshot) {
-      state = {
-        ...state,
-        policySnapshot: {
-          ...state.policySnapshot,
-          selfReview: {
-            subagentEnabled: false,
-            fallbackToSelf: true,
-            strictEnforcement: false,
-          },
-        },
-      };
-    }
-    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
-    expect(readiness.warnings.length).toBeGreaterThan(0);
-    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
-  });
-
   // ─── MUTATION KILL: actorKnown field (line 371) ───────────────────────────
 
   it('readiness actorKnown is true when actorInfo source is env (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'env', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'env', assurance: 'best_effort', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is git (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'git', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'git', assurance: 'best_effort', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is claim (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'claim', assurance: 'claim_validated', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is oidc (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'oidc', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'oidc', assurance: 'idp_verified', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is false when actorInfo source is unknown (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'unknown', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'unknown', assurance: 'best_effort', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(false);
   });
@@ -422,7 +336,7 @@ describe('context and readiness projections', () => {
     const regulatedState = {
       ...makeMinimalState('READY'),
       policySnapshot: {
-        ...makeMinimalState('READY').policySnapshot!,
+        ...makeMinimalState('READY').policySnapshot,
         mode: 'regulated' as const,
         minimumActorAssuranceForApproval: 'claim_validated' as const,
       },
@@ -458,7 +372,7 @@ describe('context and readiness projections', () => {
 
   it('blocker has null reasonText for pending phases (survivor kill)', () => {
     const policy = getPolicyPreset('solo');
-    const pendingPhases = ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'];
+    const pendingPhases: SessionState['phase'][] = ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'];
     for (const phase of pendingPhases) {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
@@ -471,11 +385,17 @@ describe('context and readiness projections', () => {
 
   it('HAPPY returns readiness surface when readiness flag is set (survivor kill)', () => {
     const state = makeMinimalState('TICKET');
-    state.ticket = { text: 't', digest: 'd', source: 'user', createdAt: new Date().toISOString() };
-    state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
+    state.ticket = {
+      text: 't',
+      digest: 'd',
+      source: 'user',
+      createdAt: new Date().toISOString(),
+      riskDeclaration: { kind: 'absent' },
+    };
+    state.actorInfo = { id: 'u1', source: 'claim', assurance: 'claim_validated', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.phase).toBe('TICKET');
-    expect(readiness.blocked).toBe(true); // pending phase
+    expect(readiness.blocked).toBe(false); // pending phase
     expect(readiness.evidenceComplete).toBe(true);
     expect(readiness.actorKnown).toBe(true);
     expect(readiness.warnings).toEqual([]);

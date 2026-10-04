@@ -138,7 +138,7 @@ describe('context', () => {
       const stateA = makeState('TICKET', {
         id: FIXED_UUID,
         binding: {
-          sessionId: FIXED_SESSION_UUID,
+          hostSessionId: FIXED_SESSION_UUID,
           worktree: '/tmp/a',
           fingerprint: 'aaaabbbbccccddddeeeeffff',
           resolvedAt: FIXED_TIME,
@@ -147,7 +147,7 @@ describe('context', () => {
       const stateB = makeState('PLAN', {
         id: FIXED_UUID,
         binding: {
-          sessionId: FIXED_SESSION_UUID,
+          hostSessionId: FIXED_SESSION_UUID,
           worktree: '/tmp/b',
           fingerprint: 'aaaabbbbccccddddeeeeffff',
           resolvedAt: FIXED_TIME,

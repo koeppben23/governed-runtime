@@ -1,0 +1,23 @@
+id: high-risk-verification
+description: Agent must select mutation and negative-path verification for high-risk changes
+instructionSurface: repository_contributor
+mode: workspace
+task: |
+  Change the fail-closed behavior in the policy enforcement guard.
+  This is a security-critical change.
+
+workspace:
+  mode: fixture
+
+assertions:
+  - type: output_matches
+    severity: hard
+    description: Mutation testing is selected for high-risk change
+    pattern: "npm run mutation"
+    flags: i
+
+  - type: output_matches
+    severity: hard
+    description: Negative-path verification is mentioned
+    pattern: "negative.path"
+    flags: i

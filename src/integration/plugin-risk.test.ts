@@ -36,6 +36,7 @@ const {
 
 vi.mock('../adapters/persistence.js', () => ({
   writeState: mockWriteState,
+  writeStateAlreadyLocked: mockWriteState,
   readState: mockReadState,
 }));
 
@@ -43,16 +44,17 @@ vi.mock('../adapters/git.js', () => ({
   changedFiles: mockChangedFiles,
 }));
 
-vi.mock('./plugin-helpers.js', () => ({
+vi.mock('./blocked-result.js', () => ({
   buildEnforcementError: mockBuildEnforcementError,
   strictBlockedOutput: mockStrictBlockedOutput,
 }));
 
-vi.mock('./phase-tool-gate.js', () => ({
+vi.mock('./phase-tool-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./phase-tool-gate.js')>()),
   isRiskClassificationAllowed: mockIsRiskClassificationAllowed,
 }));
 
-vi.mock('./review/audit-events.js', () => ({
+vi.mock('./review/evidence/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAuditEvent,
 }));
 
@@ -68,6 +70,8 @@ import {
   targetPathsForRisk,
   extractPathsFromPatch,
   extractPathsFromBashCommand,
+  isBashScopeProvablyKnown,
+  isPatchScopeProvablyKnown,
   currentChangedFilesForRisk,
   evidenceUnavailableRiskDecision,
   persistRiskDecisionBlock,
@@ -77,8 +81,12 @@ import {
   type RiskEnforcementDeps,
 } from './plugin-risk.js';
 import type { SessionState } from '../state/schema.js';
-import type { RiskClassificationDecision } from './phase-tool-gate.js';
+import type {
+  DeniedRiskClassificationDecision,
+  RiskClassificationDecision,
+} from './phase-tool-gate.js';
 import { makeState } from '../fixtures.js';
+import { hashText } from '../shared/hashing.js';
 
 function mockDeps(overrides: Partial<RiskEnforcementDeps> = {}): RiskEnforcementDeps {
   return {
@@ -173,6 +181,12 @@ describe('targetPathsForRisk', () => {
   });
 
   describe('apply_patch', () => {
+    it('extracts target paths from the OpenCode patchText argument', () => {
+      const patchText = '*** Begin Patch\n*** Update File: src/example.ts\n*** End Patch';
+      const result = targetPathsForRisk('apply_patch', { patchText }, () => '/repo');
+      expect(result).toEqual(['src/example.ts']);
+    });
+
     it('extracts paths from unified diff headers', () => {
       const diff = `--- a/src/old.ts
 +++ b/src/old.ts
@@ -471,6 +485,104 @@ describe('extractPathsFromBashCommand', () => {
     expect(result).toContain('out1.txt');
     expect(result).toContain('out2.txt');
   });
+
+  it('captures every tee target, not just the first', () => {
+    const result = extractPathsFromBashCommand('echo x | tee docs/a.md src/config/policy.ts');
+    expect(result).toContain('docs/a.md');
+    expect(result).toContain('src/config/policy.ts');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// apply_patch scope (unit)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('apply_patch scope', () => {
+  it('captures the Move-to target alongside the source file', () => {
+    const patch =
+      '*** Begin Patch\n*** Update File: docs/usage.md\n*** Move to: src/config/policy.ts\n*** End Patch';
+    const paths = extractPathsFromPatch(patch);
+    expect(paths).toContain('docs/usage.md');
+    expect(paths).toContain('src/config/policy.ts');
+  });
+
+  it('HAPPY: known patch headers keep the scope provably known', () => {
+    const patch =
+      '*** Begin Patch\n*** Update File: docs/usage.md\n*** Move to: docs/usage-notes.md\n*** End Patch';
+    expect(isPatchScopeProvablyKnown(patch)).toBe(true);
+  });
+
+  it('BAD: an unrecognized patch header keeps the scope unknown', () => {
+    const patch = '*** Begin Patch\n*** Frobnicate File: docs/usage.md\n*** End Patch';
+    expect(isPatchScopeProvablyKnown(patch)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// isBashScopeProvablyKnown (unit)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('isBashScopeProvablyKnown', () => {
+  it('HAPPY: single simple commands with exhaustively captured writes are known', () => {
+    expect(isBashScopeProvablyKnown('echo x > docs/notes.md')).toBe(true);
+    expect(isBashScopeProvablyKnown('echo x | tee -a log.txt')).toBe(true);
+    expect(isBashScopeProvablyKnown('rm "path with spaces/file.txt"')).toBe(true);
+    expect(isBashScopeProvablyKnown('cp src/a.ts src/b.ts')).toBe(true);
+  });
+
+  it('BAD: multi-target or option-bearing variants of known tools stay unknown', () => {
+    expect(isBashScopeProvablyKnown('cp --target-directory=src/config docs/a.md')).toBe(false);
+    expect(isBashScopeProvablyKnown('mv -t src/config docs/a.md')).toBe(false);
+    expect(
+      isBashScopeProvablyKnown("rg --pre 'touch src/config/policy.ts' pattern docs/input.md"),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('echo x | tee -x docs/a.md')).toBe(false);
+    // Understood forms stay known and fully extracted.
+    expect(isBashScopeProvablyKnown('echo x | tee docs/a.md src/config/policy.ts')).toBe(true);
+  });
+
+  it('BAD: interpreters and package managers stay unknown even with a redirect', () => {
+    expect(
+      isBashScopeProvablyKnown(
+        'python -c \'open("src/config/policy.ts","w").write("x")\' > docs/notes.md',
+      ),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('node build.js > log.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('npm test > log.txt 2>&1')).toBe(false);
+    expect(
+      isBashScopeProvablyKnown(
+        'env node -e \'require("fs").writeFileSync("src/config/policy.ts","x")\' > docs/log.md',
+      ),
+    ).toBe(false);
+    expect(
+      isBashScopeProvablyKnown('awk \'BEGIN{system("touch src/config/policy.ts")}\' > docs/log.md'),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('sort -o src/config/policy.ts docs/in.md > docs/log.md')).toBe(
+      false,
+    );
+    expect(isBashScopeProvablyKnown("sed -e 'w src/config/policy.ts' docs/in.md")).toBe(false);
+  });
+
+  it('BAD: a compound command with one extractable redirect is unknown', () => {
+    expect(
+      isBashScopeProvablyKnown(
+        'echo x > docs/notes.md; python -c \'open("src/config/policy.ts","w")\'',
+      ),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('echo a > out1.txt && echo b > out2.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('echo a > out1.txt &')).toBe(false);
+  });
+
+  it('BAD: substitutions, input redirection and non-tee pipes are unknown', () => {
+    expect(isBashScopeProvablyKnown('echo x > "$(pwd)/out.txt"')).toBe(false);
+    expect(isBashScopeProvablyKnown('echo x > `pwd`/out.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('cat < input.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('echo x | grep y > out.txt')).toBe(false);
+  });
+
+  it('EDGE: quoted separators are not shell composition', () => {
+    expect(isBashScopeProvablyKnown('echo "a;b" > out.txt')).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -522,7 +634,9 @@ describe('evidenceUnavailableRiskDecision', () => {
       expect(decision.allowed).toBe(false);
       expect(decision.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
       expect(decision.reason).toBe('worktree missing');
-      expect(decision.claimedTaskClass).toBe('TRIVIAL');
+      expect(decision.escalatedTaskClass).toBe('TRIVIAL');
+      expect(decision.effectiveTaskClass).toBe('HIGH-RISK');
+      expect(decision.declaredTaskClass).toBeNull();
       expect(decision.minimumTaskClass).toBe('HIGH-RISK');
       expect(decision.touchedSurfaces).toEqual(['risk-classification-evidence']);
       expect(decision.changedFiles).toEqual([]);
@@ -537,20 +651,28 @@ describe('evidenceUnavailableRiskDecision', () => {
 
 describe('persistRiskDecisionBlock', () => {
   const state = makeRiskState();
-  const decision: RiskClassificationDecision = {
+  const decision: DeniedRiskClassificationDecision = {
     allowed: false,
-    code: 'RISK_X',
+    code: 'RISK_GATE_BLOCKED',
     reason: 'blocked',
     decisionId: 'd-1',
-    claimedTaskClass: 'STANDARD',
     minimumTaskClass: 'HIGH-RISK',
+    effectiveTaskClass: 'HIGH-RISK',
+    declaredTaskClass: null,
+    declarationKind: 'absent',
+    ticketDigest: null,
+    escalatedTaskClass: 'STANDARD',
+    provisional: false,
+    unknownScope: false,
     touchedSurfaces: ['src/foo.ts'],
+    riskTriggers: ['ceremony_only'],
     changedFiles: ['src/foo.ts'],
   };
 
   describe('GOOD', () => {
-    it('persists state with riskGate blocked and appends audit', async () => {
-      await persistRiskDecisionBlock('/tmp/sess', state, decision, 'RISK_X', 'reason text');
+    it('commits the risk audit intent with the blocked state', async () => {
+      mockReadState.mockResolvedValue(state);
+      await persistRiskDecisionBlock('/tmp/sess', decision, 'RISK_X', 'reason text');
 
       expect(mockWriteState).toHaveBeenCalledTimes(1);
       const writtenState = mockWriteState.mock.calls[0]![1] as SessionState;
@@ -562,16 +684,25 @@ describe('persistRiskDecisionBlock', () => {
         lastDecisionId: 'd-1',
       });
 
-      expect(mockAppendReviewAuditEvent).toHaveBeenCalledTimes(1);
-      expect(mockAppendReviewAuditEvent.mock.calls[0]![0]).toBe('/tmp/sess');
+      expect(mockAppendReviewAuditEvent).not.toHaveBeenCalled();
+      expect(
+        writtenState.pendingAuditOperations.find((item) => item.kind === 'semantic'),
+      ).toMatchObject({
+        kind: 'semantic',
+        semantic: {
+          event: 'risk:classification_checked',
+          detail: expect.objectContaining({ decisionId: 'd-1', decision: 'blocked' }),
+        },
+      });
     });
   });
 
   describe('BAD', () => {
     it('propagates writeState persistence failure', async () => {
+      mockReadState.mockResolvedValue(state);
       mockWriteState.mockRejectedValue(new Error('disk full'));
       await expect(
-        persistRiskDecisionBlock('/tmp/sess', state, decision, 'RISK_X', 'msg'),
+        persistRiskDecisionBlock('/tmp/sess', decision, 'RISK_X', 'msg'),
       ).rejects.toThrow('disk full');
     });
   });
@@ -590,7 +721,14 @@ describe('appendRiskDecisionAudit', () => {
         allowed: true,
         decisionId: 'd-2',
         minimumTaskClass: 'TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL',
+        declaredTaskClass: null,
+        declarationKind: 'absent',
+        ticketDigest: null,
+        provisional: true,
+        unknownScope: false,
         touchedSurfaces: [],
+        riskTriggers: [],
         changedFiles: [],
       };
 
@@ -656,6 +794,7 @@ describe('enforceRiskClassificationBefore', () => {
     it('throws when changedFiles evidence is unavailable and riskGate not already blocked', async () => {
       const state = makeRiskState();
       const deps = mockDeps();
+      mockReadState.mockResolvedValue(state);
       mockChangedFiles.mockRejectedValue(new Error('git error'));
       mockBuildEnforcementError.mockReturnValue(
         new Error('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE: git error'),
@@ -692,6 +831,7 @@ describe('enforceRiskClassificationBefore', () => {
     it('throws with decision code when risk classification blocks', async () => {
       const state = makeRiskState();
       const deps = mockDeps();
+      mockReadState.mockResolvedValue(state);
       mockIsRiskClassificationAllowed.mockReturnValue({
         allowed: false,
         code: 'RISK_HIGH',
@@ -719,14 +859,35 @@ describe('enforceRiskClassificationAfterBash', () => {
   const sessionId = 's1';
 
   describe('CORNER', () => {
-    it('returns early when sessDir is null', async () => {
+    it('fails closed when sessDir is null', async () => {
       const deps = mockDeps({ getSessionDir: () => null });
       const output: { output?: unknown } = {};
 
       await enforceRiskClassificationAfterBash(deps, sessionId, output);
 
       expect(mockReadState).not.toHaveBeenCalled();
-      expect(output.output).toBeUndefined();
+      expect(mockStrictBlockedOutput).toHaveBeenCalledWith(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        expect.objectContaining({
+          reason: expect.stringContaining('no resolvable FlowGuard session'),
+        }),
+      );
+      expect(output.output).toBeDefined();
+    });
+
+    it('fails closed when persisted state is missing', async () => {
+      mockReadState.mockResolvedValue(null);
+      const output: { output?: unknown } = {};
+
+      await enforceRiskClassificationAfterBash(mockDeps(), sessionId, output);
+
+      expect(mockStrictBlockedOutput).toHaveBeenCalledWith(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        expect.objectContaining({
+          reason: expect.stringContaining('no persisted session state'),
+        }),
+      );
+      expect(output.output).toBeDefined();
     });
 
     it('skips enforcement when enforceRiskClassification is false', async () => {
@@ -817,5 +978,55 @@ describe('enforceRiskClassificationAfterBash', () => {
       );
       expect(output.output).toBeDefined();
     });
+  });
+});
+
+describe('ticket declaration gate (pre-execution)', () => {
+  const invalidTicketState = (enforce: boolean): SessionState =>
+    makeRiskState({
+      ticket: {
+        text: 'Risk: HIGH',
+        digest: hashText('Risk: HIGH'),
+        source: 'user',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        riskDeclaration: { kind: 'invalid', raw: 'HIGH' },
+      },
+      policySnapshot: {
+        ...makeRiskState().policySnapshot,
+        enforceRiskClassification: enforce,
+      },
+    });
+
+  it('BAD: blocks a mutation before execution even with enforcement disabled', async () => {
+    const deps = mockDeps();
+    await expect(
+      enforceRiskClassificationBefore(deps, '/tmp/sess', invalidTicketState(false), 'write', {
+        filePath: 'src/foo.ts',
+      }),
+    ).rejects.toThrow('TICKET_RISK_DECLARATION_INVALID');
+    // The mutation path never started: no git evidence read, no latched riskGate.
+    expect(mockChangedFiles).not.toHaveBeenCalled();
+    expect(mockWriteState).not.toHaveBeenCalled();
+  });
+
+  it('BAD: blocks the post-bash path with a blocked output', async () => {
+    const output: { output?: unknown } = {};
+    await enforceRiskClassificationAfterBash(mockDeps(), 'sess-1', output);
+    expect(String(JSON.stringify(output.output))).toBeDefined();
+  });
+
+  it('HAPPY: an absent/valid declaration does not block when enforcement is disabled', async () => {
+    const state = makeRiskState({
+      ticket: null,
+      policySnapshot: {
+        ...makeRiskState().policySnapshot,
+        enforceRiskClassification: false,
+      },
+    });
+    await expect(
+      enforceRiskClassificationBefore(mockDeps(), '/tmp/sess', state, 'write', {
+        filePath: 'src/foo.ts',
+      }),
+    ).resolves.toBeUndefined();
   });
 });

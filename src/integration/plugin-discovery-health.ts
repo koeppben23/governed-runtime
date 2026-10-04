@@ -15,15 +15,20 @@
 import { existsSync } from 'node:fs';
 
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
-import { writeState, readState } from '../adapters/persistence.js';
-import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
+import { PersistenceError, readState } from '../adapters/persistence.js';
+import { strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
+
 import {
-  loadDiscoveryHealthContext,
   unavailableDiscoveryHealth,
   type DiscoveryHealthProjection,
 } from '../discovery/discovery-health.js';
-import { isDiscoveryHealthAllowed, type DiscoveryHealthDecision } from './discovery-health-gate.js';
-import { auditDiscoveryHealthGateTransition } from './discovery-health-audit.js';
+import { loadDiscoveryHealthContext } from './discovery/discovery-health-loader.js';
+import {
+  isDiscoveryHealthAllowed,
+  type DiscoveryHealthDecision,
+} from './discovery/discovery-health-gate.js';
+import { buildDiscoveryHealthGateTransitionDetail } from './discovery/discovery-health-audit.js';
+import { mutateStateWithAuditOperations } from './audit-outbox.js';
 
 export interface DiscoveryHealthEnforcementDeps {
   getSessionDir(sessionId: string): string | null;
@@ -50,23 +55,43 @@ async function seamHealthProjection(
 
 async function persistDiscoveryHealthBlock(
   sessDir: string,
-  state: SessionState,
   decision: DiscoveryHealthDecision,
 ): Promise<void> {
   const blockedAt = new Date().toISOString();
   const code = decision.code ?? 'DISCOVERY_HEALTH_UNAVAILABLE';
   const message = decision.message ?? 'Discovery health gate blocked this mutating tool.';
-  const blockedGate: DiscoveryHealthGate = {
-    status: 'blocked',
-    code,
-    message,
-    blockedAt,
-    lastDriftAssessment: decision.driftStatus ?? state.discoveryHealthGate?.lastDriftAssessment,
-  };
-  const nextState: SessionState = { ...state, discoveryHealthGate: blockedGate };
-  await writeState(sessDir, nextState);
-  // Persist-then-audit, via the single gate-transition audit authority.
-  await auditDiscoveryHealthGateTransition(sessDir, state, state.discoveryHealthGate, blockedGate);
+  const updated = await mutateStateWithAuditOperations(sessDir, (current) => {
+    if (current.discoveryHealthGate?.status === 'blocked') return { next: current };
+    const blockedGate: DiscoveryHealthGate = {
+      status: 'blocked',
+      code,
+      message,
+      blockedAt,
+      lastDriftAssessment: decision.driftStatus ?? current.discoveryHealthGate?.lastDriftAssessment,
+    };
+    const next: SessionState = { ...current, discoveryHealthGate: blockedGate };
+    const detail = buildDiscoveryHealthGateTransitionDetail(
+      next,
+      current.discoveryHealthGate,
+      blockedGate,
+    );
+    return {
+      next,
+      semanticIntents: detail
+        ? [
+            {
+              phase: next.phase,
+              event: 'discovery_health:gate_changed',
+              occurredAt: blockedAt,
+              detail,
+            },
+          ]
+        : [],
+    };
+  });
+  if (updated === null) {
+    throw new PersistenceError('READ_FAILED', `no persisted session state at ${sessDir}`);
+  }
 }
 
 /**
@@ -96,7 +121,7 @@ export async function enforceDiscoveryHealthBefore(
   // Persist + audit ONLY on the transition to blocked (idempotent thereafter).
   if (state.discoveryHealthGate?.status !== 'blocked') {
     try {
-      await persistDiscoveryHealthBlock(sessDir, state, decision);
+      await persistDiscoveryHealthBlock(sessDir, decision);
     } catch (err) {
       throw buildEnforcementError(
         'AUDIT_PERSISTENCE_FAILED',
@@ -106,7 +131,7 @@ export async function enforceDiscoveryHealthBefore(
   }
 
   throw buildEnforcementError(code, reason, {
-    sessionId: state.binding.sessionId,
+    sessionId: state.binding.hostSessionId,
     tool: toolName,
     reason: decision.detail ?? '',
     driftStatus: decision.driftStatus ?? '',
@@ -128,7 +153,7 @@ async function blockOnHealth(
   const reason = decision.message ?? 'Discovery health gate blocked after bash mutation.';
   try {
     if (state.discoveryHealthGate?.status !== 'blocked')
-      await persistDiscoveryHealthBlock(sessDir, state, decision);
+      await persistDiscoveryHealthBlock(sessDir, decision);
     output.output = strictBlockedOutput(code, {
       reason,
       sessionId,
@@ -147,7 +172,16 @@ export async function enforceDiscoveryHealthAfterBash(
   output: { output?: unknown },
 ): Promise<void> {
   const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir || !existsSync(sessDir)) return;
+  if (!sessDir || !existsSync(sessDir)) {
+    // A bash call is governed by the Before-hook boundary, which requires a
+    // resolvable FlowGuard session. Lost context after release is an invariant
+    // violation, so it fails closed instead of silently skipping the gate.
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash discovery-health enforcement has no resolvable FlowGuard session context for a governed mutation.',
+    });
+    return;
+  }
 
   let state: SessionState | null;
   try {
@@ -158,7 +192,14 @@ export async function enforceDiscoveryHealthAfterBash(
     });
     return;
   }
-  if (!state || !enforcementRequired(state)) return;
+  if (!state) {
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash discovery-health enforcement found no persisted session state for an authorized mutation.',
+    });
+    return;
+  }
+  if (!enforcementRequired(state)) return;
 
   const health = await seamHealthProjection(deps);
   const decision = isDiscoveryHealthAllowed({

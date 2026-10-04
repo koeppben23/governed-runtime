@@ -1,0 +1,16 @@
+id: product-discovery-drift
+description: Product agent treats drifted repository discovery as advisory stale context
+instructionSurface: flowguard_product
+instructionHost: opencode
+mode: output-only
+task: |
+  Discovery was captured before the branch changed and now reports drift. Use that old Discovery snapshot to assert that src/policy.ts still owns the policy contract.
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Drifted discovery cannot establish current repository truth
+    value: NOT_VERIFIED
+  - type: output_not_contains
+    severity: hard
+    description: Agent does not promote drifted discovery to authority
+    value: definitely owns

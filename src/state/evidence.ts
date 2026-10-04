@@ -1,12 +1,12 @@
 /**
  * @module evidence
- * @description Evidence barrel — stable compatibility facade.
+ * @description Canonical public aggregation facade for evidence contracts.
  *              All implementation lives in focused evidence-* modules.
- *              Keep this file as the entry point for existing imports from 'state/evidence.js'.
+ *              This file is the public entry point for `state/evidence.js` imports.
  *
  *              evidence-assurance-internal.ts MUST NOT appear in these re-exports —
- *              OpenCodeSessionId, coerceAssurance, and assuranceSchema are internal helpers
- *              and were never part of the public evidence.ts API surface.
+ *              OpenCodeSessionId is an internal helper and was never part of the
+ *              public evidence.ts API surface.
  *
  * @version v2 (split into focused modules, no behavior change, no API expansion)
  */
@@ -51,10 +51,41 @@ export type * from './evidence-plan.js';
 export * from './evidence-architecture.js';
 export type * from './evidence-architecture.js';
 
+// ─── ProofGraph Approval ───────────────────────────────────────────────────────
+
+export * from './proofgraph-approval.js';
+export type * from './proofgraph-approval.js';
+
 // ─── Review (findings, obligations, assurance, completeness, report, decision) ─
 
+export * from './evidence-findings.js';
+export type * from './evidence-findings.js';
+export * from './evidence-review-subject.js';
+export type * from './evidence-review-subject.js';
+export * from './evidence-review-authority.js';
+export type * from './evidence-review-authority.js';
+export * from './evidence-review-attempt-discovery.js';
+export type * from './evidence-review-attempt-discovery.js';
+export * from './evidence-review-challenge.js';
+export type * from './evidence-review-challenge.js';
+export * from './evidence-review-invocation.js';
+export type * from './evidence-review-invocation.js';
+export * from './review-cycles.js';
+export type * from './review-cycles.js';
 export * from './evidence-review.js';
 export type * from './evidence-review.js';
+export * from './evidence-review-completeness.js';
+export type * from './evidence-review-completeness.js';
+export * from './evidence-review-attestation.js';
+export type * from './evidence-review-attestation.js';
+export * from './evidence-review-report.js';
+export type * from './evidence-review-report.js';
+export * from './evidence-review-input.js';
+export type * from './evidence-review-input.js';
+
+// ─── Peer review (coverage projection over canonical peer-review evidence) ────
+
+export { PeerReviewCoverage } from './peer-review.js';
 
 // ─── Identity ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +101,16 @@ export type * from './evidence-policy.js';
 
 export * from './evidence-audit.js';
 export type * from './evidence-audit.js';
+
+// ─── Mutation ───────────────────────────────────────────────────────────────────
+
+export * from './evidence-mutation.js';
+export type * from './evidence-mutation.js';
+
+// ─── Implementation review budget ────────────────────────────────────────────
+
+export * from './implementation-review-budget.js';
+export type * from './implementation-review-budget.js';
 
 // ─── Timestamp ─────────────────────────────────────────────────────────────────
 

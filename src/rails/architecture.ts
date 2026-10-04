@@ -22,7 +22,9 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../state/evidence.js';
+import type { ArchitectureClaimDeclaration } from '../state/proofgraph-approval.js';
 import { validateAdrSections } from '../state/evidence.js';
+import { normalizeReviewArtifactText } from '../shared/review-artifact-text.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import {
@@ -41,6 +43,8 @@ export interface ArchitectureInput {
   readonly title: string;
   /** Full ADR body in Markdown (MADR format). */
   readonly adrText: string;
+  /** Structured claims made by this ADR version. */
+  readonly claims?: ArchitectureClaimDeclaration[];
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -62,12 +66,13 @@ export function executeArchitecture(
   if (!input.title.trim()) {
     return blocked('EMPTY_ADR_TITLE');
   }
-  if (!input.adrText.trim()) {
+  const adrText = normalizeReviewArtifactText(input.adrText);
+  if (!adrText) {
     return blocked('EMPTY_ADR_TEXT');
   }
 
   // 3. Validate MADR sections
-  const missingSections = validateAdrSections(input.adrText);
+  const missingSections = validateAdrSections(adrText);
   if (missingSections.length > 0) {
     return blocked('MISSING_ADR_SECTIONS', {
       sections: missingSections.join(', '),
@@ -80,7 +85,10 @@ export function executeArchitecture(
   let baseTransition = state.transition;
 
   if (state.phase === 'READY') {
-    const tr = buildFlowSelectionTransition('ARCHITECTURE', 'ARCHITECTURE_SELECTED', ctx.now());
+    const tr = buildFlowSelectionTransition('ARCHITECTURE_SELECTED', ctx.now());
+    if (!tr) {
+      return blocked('INVALID_TRANSITION', { event: 'ARCHITECTURE_SELECTED', phase: state.phase });
+    }
     basePhase = tr.to;
     preTransitions.push(tr);
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
@@ -93,14 +101,19 @@ export function executeArchitecture(
   const adr: ArchitectureDecision = {
     id: adrId,
     title: input.title,
-    adrText: input.adrText,
+    adrText,
     status: 'proposed',
+    reviewCompletion: 'pending',
+    reviewFindings: [],
     createdAt: ctx.now(),
-    digest: ctx.digest(input.adrText),
+    digest: ctx.digest(adrText),
+    ...(input.claims
+      ? { claimDeclarations: { flow: 'architecture' as const, claims: input.claims } }
+      : {}),
   };
 
   // 6. Build state with ADR + initial self-review loop
-  const maxIterations = ctx.policy?.maxSelfReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  const maxIterations = ctx.policy?.reviewBudget.architecture ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const nextState: SessionState = {
     ...state,
@@ -109,6 +122,7 @@ export function executeArchitecture(
     architecture: adr,
     selfReview: {
       iteration: 0,
+      reviewCycle: state.reviewCycles.architecture,
       maxIterations,
       prevDigest: null,
       currDigest: adr.digest,

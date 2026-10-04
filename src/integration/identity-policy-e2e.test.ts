@@ -34,6 +34,7 @@ import {
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, status } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { getPolicyPreset } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -45,8 +46,35 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Approval now enters VALIDATION and runs the active checks automatically;
+    // the IMPLEMENTATION transition freezes the pre-mutation base from HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
 });
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
+});
+
+// Mock the verification executor: the automatic validation run must not spawn
+// real subprocesses in the temp worktree.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi.fn().mockImplementation(async (input: { kind: string; command: string }) => ({
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  })),
+}));
 
 // ─── Workspace Mock ──────────────────────────────────────────────────────────
 
@@ -83,6 +111,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -175,7 +204,7 @@ async function resolveSessionDirFor(sessionId: string): Promise<string> {
 async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
-}): Promise<string> {
+}): Promise<Awaited<ReturnType<typeof decision.execute>>> {
   recordUserDecisionIntent({
     sessionId: ctx.sessionID,
     command: '/review-decision',
@@ -226,7 +255,7 @@ describe('identity-policy-e2e', () => {
       expect(ps.actorClassification).toBeDefined();
       expect(ps.audit).toBeDefined();
       expect(ps.requireHumanGates).toBe(false);
-      expect(ps.maxSelfReviewIterations).toBeGreaterThan(0);
+      expect(ps.reviewBudget.plan).toBeGreaterThan(0);
     });
   });
 
@@ -326,7 +355,10 @@ describe('identity-policy-e2e', () => {
      */
     async function advanceToPlanReview(): Promise<void> {
       await ticket.execute({ text: 'Implement identity-gated feature', source: 'user' }, ctx);
-      await plan.execute({ planText: '## Plan\n1. Implement feature' }, ctx);
+      await plan.execute(
+        { planText: '## Plan\n1. Implement feature', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       // Independent review loop: converge to PLAN_REVIEW (team mode auto-approves)
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
@@ -384,7 +416,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Fresh session with team mode
@@ -422,7 +454,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Actor mock default is best_effort — should be blocked
@@ -456,7 +488,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Override actor to claim_validated — still below idp_verified threshold
@@ -496,7 +528,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Override actor to idp_verified — meets threshold
@@ -511,17 +543,20 @@ describe('identity-policy-e2e', () => {
       const raw = await executeDecision({ verdict: 'approve', rationale: 'Approve plan' });
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
+      // Approval enters VALIDATION and the automatic checks advance to
+      // IMPLEMENTATION when they pass.
+      expect(result.phase).toBe('IMPLEMENTATION');
 
       // State must have advanced
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
-      expect(state!.phase).toBe('VALIDATION');
+      expect(state!.phase).toBe('IMPLEMENTATION');
 
       // Decision evidence persisted in state
       expect(state!.reviewDecision).toBeDefined();
       expect(state!.reviewDecision!.verdict).toBe('approve');
-      expect(state!.reviewDecision!.decidedBy).toBe('verified-operator');
+      expect(state!.reviewDecision!.decisionIdentity.actorId).toBe('verified-operator');
+      expect(state!.reviewDecision!.decisionIdentity.actorAssurance).toBe('idp_verified');
     });
 
     // ── Test 5: enforcement uses policySnapshot, not reconstructed defaults ──
@@ -582,7 +617,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Simulate: resolveActor throws because IdP mode is required but no token
@@ -624,7 +659,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Fresh session — hydrate does NOT pass IdP config to resolveActor
@@ -674,9 +709,7 @@ describe('identity-policy-e2e', () => {
       delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
 
       // Use real resolveActor — not mocked
-      vi.mocked(actorMock.resolveActor).mockImplementation(
-        actorOriginal.resolveActor as unknown as typeof actorMock.resolveActor,
-      );
+      vi.mocked(actorMock.resolveActor).mockImplementation(actorOriginal.resolveActor);
 
       const raw = await executeDecision({ verdict: 'approve', rationale: 'runtime idp test' });
       const result = parseToolResult(raw);
@@ -692,21 +725,7 @@ describe('identity-policy-e2e', () => {
 
       await expect(
         resolveActorForPolicy('/fake/worktree', {
-          mode: 'team',
-          requireHumanGates: true,
-          maxSelfReviewIterations: 3,
-          maxImplReviewIterations: 3,
-          allowSelfApproval: true,
-          selfReview: { subagentEnabled: false, fallbackToSelf: false },
-          audit: {
-            emitTransitions: true,
-            emitToolCalls: true,
-            enableChainHash: true,
-          },
-          actorClassification: {},
-          minimumActorAssuranceForApproval: 'best_effort',
-          requireVerifiedActorsForApproval: false,
-          identityProvider: {} as unknown as undefined,
+          ...getPolicyPreset('team'),
           identityProviderMode: 'required',
         }),
       ).rejects.toThrow(ActorIdentityError);
@@ -756,9 +775,7 @@ describe('identity-policy-e2e', () => {
       delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
 
       // 6. Use real resolveActor (not mocked) for the decision call
-      vi.mocked(actorMock.resolveActor).mockImplementation(
-        actorOriginal.resolveActor as unknown as typeof actorMock.resolveActor,
-      );
+      vi.mocked(actorMock.resolveActor).mockImplementation(actorOriginal.resolveActor);
 
       // 7. Decision should block — idpMode=required, idpConfig set, but no token
       const raw = await executeDecision({ verdict: 'approve', rationale: 'e2e enforcement test' });

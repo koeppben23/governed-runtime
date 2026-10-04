@@ -61,7 +61,7 @@ body:
     attributes:
       label: Definition Of Done
       value: |
-        - [ ] Clean conventional branch created from current main.
+        - [ ] Clean conventional branch created according to CONTRIBUTING.md.
         - [ ] Change is scoped to this ticket.
         - [ ] Conventional commit and PR title used.
         - [ ] Tests added or updated where needed.

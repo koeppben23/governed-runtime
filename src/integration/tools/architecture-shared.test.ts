@@ -11,18 +11,13 @@ import {
   hasText,
   validateInitialSubmissionGate,
   buildArchitectureReviewInstruction,
-} from './architecture-shared.js';
+} from './architecture/architecture-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch/dispatch-authority.js';
 
-vi.mock('../review/orchestration-mode.js', () => ({
-  resolveRuntimeReviewPlatform: vi.fn(() => 'unknown'),
-  resolveReviewOrchestrationMode: vi.fn(() => 'self'),
-}));
-
-vi.mock('../review/pending-instruction.js', () => ({
-  buildPendingReviewInstruction: vi.fn((_input: unknown) => ({
-    next: 'faux-review-instruction',
-  })),
+vi.mock('../review/dispatch/orchestration-mode.js', () => ({
+  resolveRuntimeReviewPlatform: vi.fn(() => 'opencode'),
+  resolveReviewOrchestrationMode: vi.fn(() => 'host_structured'),
 }));
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
@@ -58,8 +53,7 @@ function state(phase: Phase, overrides: Partial<SessionState> = {}): SessionStat
       requestedMode: 'team',
       effectiveGateBehavior: 'human_gated',
       requireHumanGates: true,
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 5,
+      reviewBudget: { plan: 3, architecture: 3, implementation: 5 },
       allowSelfApproval: false,
     },
     initiatedBy: 'initiator-1',
@@ -80,6 +74,25 @@ function archObligation(status: string) {
     planVersion: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
   } as NonNullable<SessionState['reviewAssurance']>['obligations'][number];
+}
+
+function archDispatchAuthority(): ReviewDispatchAuthority {
+  const obligation = archObligation('pending');
+  return {
+    obligation,
+    attempt: {
+      attemptId: 'att-pending-1',
+      obligationId: obligation.obligationId,
+      obligationType: 'architecture',
+      subjectDigest: 'subject-1',
+      status: 'created',
+      ordinal: 1,
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      observations: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  };
 }
 
 // ─── hasText ──────────────────────────────────────────────────────────────────
@@ -155,32 +168,31 @@ describe('validateInitialSubmissionGate', () => {
 // ─── buildArchitectureReviewInstruction ───────────────────────────────────────
 
 describe('buildArchitectureReviewInstruction', () => {
-  it('subagentEnabled=false => self-review text prompt', () => {
+  it('returns child-session metadata for mandatory independent review', () => {
+    const authority = archDispatchAuthority();
     const result = buildArchitectureReviewInstruction({
-      policy: {
-        reviewInvocationPolicy: 'self',
-      } as SessionState['policySnapshot'],
-      subagentEnabled: false,
-      obligation: null,
+      authority,
       iteration: 0,
       planVersion: 1,
       subjectLabel: 'ADR',
+      state: state('ARCHITECTURE'),
     });
-    expect(result.next).toContain('Self-review needed');
-    expect(result.reviewInvocation).toBeUndefined();
-  });
-
-  it('subagentEnabled=true => returns next + reviewInvocation', () => {
-    const result = buildArchitectureReviewInstruction({
-      policy: {
-        reviewInvocationPolicy: 'self',
-      } as SessionState['policySnapshot'],
-      subagentEnabled: true,
-      obligation: null,
-      iteration: 0,
-      planVersion: 1,
-      subjectLabel: 'ADR',
+    expect(result.reviewDispatch).toEqual({ required: true });
+    expect(result).not.toHaveProperty('reviewerTaskPrompt');
+    expect(result).toMatchObject({
+      mode: 'host_structured',
+      platform: 'opencode',
+      status: 'pending_review',
+      reviewerSubagentType: 'flowguard-reviewer',
+      authority: 'review_obligation_evidence_binding',
+      obligationId: authority.obligation.obligationId,
+      reviewAttemptId: authority.attempt.attemptId,
+      requiredReviewAttestation: {
+        reviewedBy: 'flowguard-reviewer',
+        toolObligationId: authority.obligation.obligationId,
+        iteration: 0,
+        planVersion: 1,
+      },
     });
-    expect(result.next).toBe('faux-review-instruction');
   });
 });

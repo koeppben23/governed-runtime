@@ -14,12 +14,12 @@ describe('createConsoleSink', () => {
     vi.restoreAllMocks();
   });
   describe('HAPPY', () => {
-    it('logs error entries to stderr', () => {
+    it('logs error entries to stderr', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-      sink({ level: 'error', service: 'test', message: 'something failed' });
+      await sink({ level: 'error', service: 'test', message: 'something failed' });
 
       expect(stderr).toHaveBeenCalledOnce();
       const call = stderr.mock.calls[0]![0] as string;
@@ -29,23 +29,23 @@ describe('createConsoleSink', () => {
       expect(stdout).not.toHaveBeenCalled();
     });
 
-    it('logs warn entries to stderr', () => {
+    it('logs warn entries to stderr', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-      sink({ level: 'warn', service: 'audit', message: 'degraded' });
+      await sink({ level: 'warn', service: 'audit', message: 'degraded' });
 
       expect(stderr).toHaveBeenCalledOnce();
       expect(stdout).not.toHaveBeenCalled();
     });
 
-    it('logs info entries to stderr (not stdout)', () => {
+    it('logs info entries to stderr (not stdout)', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-      sink({ level: 'info', service: 'plugin', message: 'initialized' });
+      await sink({ level: 'info', service: 'plugin', message: 'initialized' });
 
       expect(stderr).toHaveBeenCalledOnce();
       const call = stderr.mock.calls[0]![0] as string;
@@ -55,34 +55,34 @@ describe('createConsoleSink', () => {
       expect(stdout).not.toHaveBeenCalled();
     });
 
-    it('logs debug entries to stderr', () => {
+    it('logs debug entries to stderr', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-      sink({ level: 'debug', service: 'audit', message: 'trace' });
+      await sink({ level: 'debug', service: 'audit', message: 'trace' });
 
       expect(stderr).toHaveBeenCalledOnce();
       expect(stdout).not.toHaveBeenCalled();
     });
 
-    it('includes extra fields in output', () => {
+    it('includes extra fields in output', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-      sink({ level: 'info', service: 'test', message: 'ok', extra: { sessionId: 's1' } });
+      await sink({ level: 'info', service: 'test', message: 'ok', extra: { sessionId: 's1' } });
 
       const call = stderr.mock.calls[0]![0] as string;
       expect(call).toContain('"sessionId":"s1"');
     });
 
-    it('includes timestamp in output', () => {
+    it('includes timestamp in output', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-      sink({ level: 'info', service: 'test', message: 'ts test' });
+      await sink({ level: 'info', service: 'test', message: 'ts test' });
 
       const call = stderr.mock.calls[0]![0] as string;
       expect(call).toMatch(/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
@@ -117,7 +117,7 @@ describe('createConsoleSink', () => {
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
       const circular: Record<string, unknown> = {};
-      (circular as Record<string, unknown>).self = circular;
+      circular.self = circular;
 
       expect(() =>
         sink({ level: 'info', service: 'test', message: 'circular', extra: circular }),
@@ -135,11 +135,11 @@ describe('createConsoleSink', () => {
   });
 
   describe('G4: JSON mode', () => {
-    it('outputs valid JSONL in json format mode', () => {
+    it('outputs valid JSONL in json format mode', async () => {
       const sink = createConsoleSink({ format: 'json' });
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
-      sink({ level: 'info', service: 'plugin', message: 'started' });
+      await sink({ level: 'info', service: 'plugin', message: 'started' });
 
       const call = stderr.mock.calls[0]![0] as string;
       expect(call.endsWith('\n')).toBe(true);
@@ -149,11 +149,11 @@ describe('createConsoleSink', () => {
       expect(parsed.message).toBe('started');
     });
 
-    it('json mode includes extra fields', () => {
+    it('json mode includes extra fields', async () => {
       const sink = createConsoleSink({ format: 'json' });
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
-      sink({
+      await sink({
         level: 'warn',
         service: 'audit',
         message: 'degraded',
@@ -165,11 +165,11 @@ describe('createConsoleSink', () => {
       expect(parsed.extra).toEqual({ code: 'E1' });
     });
 
-    it('json mode includes traceId and sessionId', () => {
+    it('json mode includes traceId and sessionId', async () => {
       const sink = createConsoleSink({ format: 'json' });
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
-      sink({
+      await sink({
         level: 'info',
         service: 'test',
         message: 'scoped',
@@ -185,11 +185,11 @@ describe('createConsoleSink', () => {
   });
 
   describe('G4: text mode with correlation ids', () => {
-    it('includes traceId and sessionId prefix in text mode', () => {
+    it('includes traceId and sessionId prefix in text mode', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
-      sink({
+      await sink({
         level: 'info',
         service: 'test',
         message: 'scoped',
@@ -201,11 +201,11 @@ describe('createConsoleSink', () => {
       expect(call).toContain('[abc12345/session-1]');
     });
 
-    it('omits id prefix when traceId and sessionId are absent', () => {
+    it('omits id prefix when traceId and sessionId are absent', async () => {
       const sink = createConsoleSink();
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
-      sink({ level: 'info', service: 'test', message: 'no context' });
+      await sink({ level: 'info', service: 'test', message: 'no context' });
 
       const call = stderr.mock.calls[0]![0] as string;
       // Should not contain the opening bracket of the id section
@@ -216,25 +216,25 @@ describe('createConsoleSink', () => {
   describe('control-character / log-injection hardening (text mode)', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('escapes a newline in the message so it cannot forge a log line', () => {
+    it('escapes a newline in the message so it cannot forge a log line', async () => {
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const sink = createConsoleSink({ format: 'text' });
-      sink({ level: 'info', service: 'svc', message: 'ok\n[ERROR] forged line' } as LogEntry);
+      await sink({ level: 'info', service: 'svc', message: 'ok\n[ERROR] forged line' });
       const out = stderr.mock.calls[0]![0] as string;
       // exactly one real newline (the trailing one); the injected \n is escaped
       expect(out.match(/\n/g)).toHaveLength(1);
       expect(out).toContain('\\x0a');
     });
 
-    it('escapes control characters in sessionId and service', () => {
+    it('escapes control characters in sessionId and service', async () => {
       const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       const sink = createConsoleSink({ format: 'text' });
-      sink({
+      await sink({
         level: 'info',
         service: 'sv\nc',
         message: 'm',
         sessionId: 'ses\n[FAKE]',
-      } as LogEntry);
+      });
       const out = stderr.mock.calls[0]![0] as string;
       expect(out.match(/\n/g)).toHaveLength(1);
       expect(out).not.toContain('[FAKE]\n');

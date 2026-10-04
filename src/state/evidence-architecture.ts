@@ -6,8 +6,12 @@
  */
 
 import { z } from 'zod';
-import { AdrStatus } from './evidence-primitives.js';
-import { ReviewFindings } from './evidence-review.js';
+import { AdrStatus, ArchitectureReviewCompletion } from './evidence-primitives.js';
+import { ReviewFindings } from './evidence-review-attestation.js';
+import {
+  ArchitectureApprovalCertificate,
+  ArchitectureClaimDeclarations,
+} from './proofgraph-approval.js';
 
 /**
  * Required MADR sections in the ADR text.
@@ -42,6 +46,11 @@ export const ArchitectureDecision = z
     adrText: z.string().min(1),
     /** Lifecycle status of the ADR. */
     status: AdrStatus,
+    /**
+     * Independent-review completion for this ADR text. This is separate from
+     * `digest`, which identifies only `adrText`, and from human approval.
+     */
+    reviewCompletion: ArchitectureReviewCompletion,
     /** When the ADR was created. */
     createdAt: z.string().datetime(),
     /** SHA-256 digest of the adrText for integrity verification. */
@@ -49,13 +58,16 @@ export const ArchitectureDecision = z
     /**
      * Independent review findings, one entry per review iteration (F13).
      *
-     * Parallel to plan.reviewFindings and implementation.reviewFindings:
-     * stored append-only as the architecture review loop progresses, so the
-     * full review history is auditable. Optional for backwards-compat with
-     * sessions created before F13 — absent and empty array MUST be treated
-     * equivalently by all consumers.
+     * Parallel to plan.reviewFindings and implReviewFindings: stored
+     * append-only as the architecture review loop progresses, so the full
+     * review history is auditable. REQUIRED — no findings is the empty array,
+     * never an absent field.
      */
-    reviewFindings: z.array(ReviewFindings).optional(),
+    reviewFindings: z.array(ReviewFindings),
+    /** User-declared ProofGraph claims for this architecture decision. */
+    claimDeclarations: ArchitectureClaimDeclarations.optional(),
+    /** User approval certificate bound to this architecture decision. */
+    approvalCertificate: ArchitectureApprovalCertificate.optional(),
   })
   .readonly();
 export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;

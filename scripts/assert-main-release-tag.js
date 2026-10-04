@@ -3,6 +3,10 @@
  * @module scripts/assert-main-release-tag
  * @description Fails closed unless the current checkout is safe to tag for release.
  *
+ * This is the PRE-TAG evidence phase: the tag must not exist yet. The CI
+ * POST-TAG phase lives in `scripts/verify-release-tag.js`; both share the pure
+ * decisions in `scripts/release-preflight.js`.
+ *
  * Usage:
  *   npm run release:assert-main-tag -- v1.2.0-rc.4
  */
@@ -11,6 +15,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  evaluateReleasePreTag,
+  releaseVersionOf,
+  validateReleaseTagName,
+} from './release-preflight.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
@@ -30,33 +40,18 @@ function git(args, options = {}) {
   }).trim();
 }
 
-if (!tag || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(tag)) {
-  fail('tag argument must look like v1.2.0 or v1.2.0-rc.4');
+const tagError = validateReleaseTagName(tag);
+if (tagError) {
+  fail(tagError);
 }
 
-const version = tag.slice(1);
-const branch = git(['branch', '--show-current']);
-if (branch !== 'main') {
-  fail(`release tags must be created from main, current branch is ${branch || '(detached)'}`);
-}
-
-const status = git(['status', '--porcelain']);
-if (status) {
-  fail('working tree must be clean before tagging');
-}
+const version = releaseVersionOf(tag);
 
 git(['fetch', 'origin', 'main', '--tags']);
 
-const head = git(['rev-parse', 'HEAD']);
-const originMain = git(['rev-parse', 'origin/main']);
-if (head !== originMain) {
-  fail('HEAD must equal origin/main before tagging');
-}
-
-const existingLocal = git(['tag', '--list', tag]);
-if (existingLocal) {
-  fail(`local tag already exists: ${tag}`);
-}
+const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8'));
+const versionFile = readFileSync(join(REPO_ROOT, 'VERSION'), 'utf-8').trim();
+const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf-8');
 
 let existingRemote = '';
 try {
@@ -65,20 +60,21 @@ try {
   existingRemote = '';
 }
 
-if (existingRemote) {
-  fail(`remote tag already exists: ${tag}`);
+const failures = evaluateReleasePreTag({
+  tag,
+  branch: git(['branch', '--show-current']),
+  clean: git(['status', '--porcelain']) === '',
+  head: git(['rev-parse', 'HEAD']),
+  originMain: git(['rev-parse', 'origin/main']),
+  localTagExists: git(['tag', '--list', tag]) !== '',
+  remoteTagExists: existingRemote !== '',
+  packageVersion: packageJson.version,
+  versionFile,
+  changelogHasReleaseSection: changelog.includes(`## [${version}] - `),
+});
+
+if (failures.length > 0) {
+  fail(failures.join('; '));
 }
 
-const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8'));
-const versionFile = readFileSync(join(REPO_ROOT, 'VERSION'), 'utf-8').trim();
-
-if (packageJson.version !== version || versionFile !== version) {
-  fail(`package.json and VERSION must both equal ${version}`);
-}
-
-const changelog = readFileSync(join(REPO_ROOT, 'CHANGELOG.md'), 'utf-8');
-if (!changelog.includes(`## [${version}] - `)) {
-  fail(`CHANGELOG.md must contain a dated [${version}] release section`);
-}
-
-console.log(`Safe to tag ${tag} at ${head}.`);
+console.log(`Safe to tag ${tag} at ${git(['rev-parse', 'HEAD'])}.`);

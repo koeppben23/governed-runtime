@@ -38,7 +38,9 @@ function extractCompleteIndexCodes(content: string): string[] {
     match,
     'docs/troubleshooting.md must contain Complete Registered Code Index text block',
   ).toBeTruthy();
-  return match![1]
+  const index = match?.[1];
+  if (!index) throw new TypeError('missing complete reason-code index');
+  return index
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -46,7 +48,10 @@ function extractCompleteIndexCodes(content: string): string[] {
 }
 
 function extractBacktickedReasonCodes(content: string): string[] {
-  return Array.from(content.matchAll(/^\| `([A-Z][A-Z0-9_]+)`/gm), (match) => match[1]).sort();
+  return Array.from(
+    content.matchAll(/^\| `([A-Z][A-Z0-9_]+)`/gm),
+    (match) => match[1] ?? '',
+  ).sort();
 }
 
 describe('documentation/reasons-doc-drift', () => {

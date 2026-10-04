@@ -4,7 +4,7 @@
  *
  * Since tools depend on the OpenCode runtime context (worktree, sessionID, etc.)
  * and interact with the filesystem, these tests validate:
- * - Export shape: all 12 tools exported with the correct ToolDefinition structure
+ * - Export shape: all tools exported with the correct ToolDefinition structure
  * - Descriptions: non-empty, meaningful descriptions for LLM tool discovery
  * - Args schemas: tools that accept parameters have valid Zod schemas
  * - Barrel re-exports: integration/index.ts re-exports all tools correctly
@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { PERF_ENABLED } from '../test-policy.js';
 import {
   status,
   hydrate,
@@ -24,12 +25,18 @@ import {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue as continueTool,
   abort_session,
   archive,
+  export as exportTool,
   architecture,
+  help,
+  declare_contract,
+  observe_repository,
+  reconcile_mutation_episode,
   attachGovernanceFooter,
 } from './tools/index.js';
 import * as barrel from './index.js';
@@ -37,7 +44,7 @@ import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** All 13 exported tool names, matching the filenames OpenCode will discover. */
+/** All 19 exported tool names, matching the filenames OpenCode will discover. */
 const TOOL_NAMES = [
   'status',
   'hydrate',
@@ -46,12 +53,18 @@ const TOOL_NAMES = [
   'decision',
   'implement',
   'review_implementation',
+  'resolve_implementation_challenge',
   'run_check',
   'review',
   'continue',
   'abort_session',
   'archive',
+  'export',
   'architecture',
+  'help',
+  'declare_contract',
+  'observe_repository',
+  'reconcile_mutation_episode',
 ] as const;
 
 /** Tools imported directly for testing. */
@@ -63,12 +76,18 @@ const TOOLS: Record<string, unknown> = {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue: continueTool,
   abort_session,
   archive,
+  export: exportTool,
   architecture,
+  help,
+  declare_contract,
+  observe_repository,
+  reconcile_mutation_episode,
 };
 
 /** Tools that accept arguments (have non-empty args schema). */
@@ -79,22 +98,27 @@ const TOOLS_WITH_ARGS = [
   'plan',
   'decision',
   'review_implementation',
+  'resolve_implementation_challenge',
   'run_check',
   'abort_session',
   'architecture',
   'review',
+  'help',
+  'declare_contract',
+  'observe_repository',
+  'reconcile_mutation_episode',
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
-const TOOLS_WITHOUT_ARGS = ['archive', 'implement'] as const;
+const TOOLS_WITHOUT_ARGS = ['implement', 'export'] as const;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 13 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(13);
+    it('exports exactly 19 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(19);
     });
 
     for (const name of TOOL_NAMES) {
@@ -114,7 +138,7 @@ describe('integration/tools', () => {
       });
     }
 
-    it('barrel re-exports all 13 tools', () => {
+    it('barrel re-exports all tools', () => {
       for (const name of TOOL_NAMES) {
         expect((barrel as Record<string, unknown>)[name]).toBeDefined();
         expect((barrel as Record<string, unknown>)[name]).toBe(TOOLS[name]);
@@ -168,9 +192,16 @@ describe('integration/tools', () => {
       const h = TOOLS.hydrate as Record<string, unknown>;
       const args = h.args as Record<string, unknown>;
       const policyMode = args.policyMode as Record<string, unknown>;
-      // policyMode is optional — resolved via config fallback chain, not Zod default.
-      // The description should mention the fail-closed fallback to 'team'.
       expect(h.description).toContain('team');
+    });
+
+    it('tool description strings are interned (same reference across accesses)', () => {
+      for (const name of TOOL_NAMES) {
+        const tool = TOOLS[name] as Record<string, unknown>;
+        const desc1 = tool.description;
+        const desc2 = tool.description;
+        expect(desc1).toBe(desc2);
+      }
     });
   });
 
@@ -205,7 +236,7 @@ describe('integration/tools', () => {
       const result = attachGovernanceFooter({
         output: JSON.stringify({
           phase: 'PLAN',
-          next: 'Keep existing next action.',
+          agentInstruction: 'Keep existing agent instruction.',
           blocked: true,
           error: 'Original failure',
         }),
@@ -220,7 +251,7 @@ describe('integration/tools', () => {
       const output = JSON.parse(wrapped.output) as Record<string, unknown>;
 
       expect(output.phase).toBe('PLAN');
-      expect(output.next).toBe('Keep existing next action.');
+      expect(output.agentInstruction).toBe('Keep existing agent instruction.');
       expect(output.blocked).toBe(true);
       expect(output.error).toBe('Original failure');
       expect(output.flowguardFooter).toMatchObject({
@@ -232,15 +263,65 @@ describe('integration/tools', () => {
       expect(wrapped.metadata?.flowguardFooter).toEqual({ source: 'existing-metadata' });
     });
 
-    it('governance footer leaves non-object JSON string outputs unchanged', () => {
+    it('governance footer leaves non-object JSON and Markdown string outputs unchanged', () => {
       expect(attachGovernanceFooter('[{"phase":"PLAN"}]')).toBe('[{"phase":"PLAN"}]');
       expect(attachGovernanceFooter('null')).toBe('null');
       expect(attachGovernanceFooter('"ok"')).toBe('"ok"');
+      expect(attachGovernanceFooter('## FlowGuard Help\n\nUse `/start`.')).toBe(
+        '## FlowGuard Help\n\nUse `/start`.',
+      );
     });
 
-    it('barrel has exactly 14 named exports (13 tools + 1 plugin)', () => {
+    it('adds minimal presentation to blocked OpenCode JSON without changing overflow fields', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({
+          error: true,
+          code: 'AUTO_ADVANCE_OVERFLOW',
+          message: 'Auto-advance exceeded its step limit.',
+          recovery: 'Inspect the workflow topology before retrying.',
+          autoAdvanceOverflow: { phase: 'PLAN', limit: 10 },
+        }),
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.autoAdvanceOverflow).toEqual({ phase: 'PLAN', limit: 10 });
+      expect(output.presentation).toEqual({
+        markdown:
+          '⚠ **Blocked:** `AUTO_ADVANCE_OVERFLOW` — Auto-advance exceeded its step limit.\n' +
+          '**Recovery:** Inspect the workflow topology before retrying.\n\n' +
+          'Inspect the workflow topology before retrying.',
+      });
+    });
+
+    it('uses the requested glyph profile for wrapper-generated blocked presentations', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({ error: true, code: 'BLOCKED', message: 'Operation is blocked.' }),
+        'ascii',
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.presentation).toEqual({
+        markdown: '[WARN] **Blocked:** `BLOCKED` — Operation is blocked.\n\nOperation is blocked.',
+      });
+    });
+
+    it('preserves an existing blocked presentation', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({
+          error: true,
+          code: 'COMMAND_NOT_ALLOWED',
+          message: 'Command is blocked.',
+          presentation: { markdown: 'Existing presentation.' },
+        }),
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.presentation).toEqual({ markdown: 'Existing presentation.' });
+    });
+
+    it('barrel has exactly 20 named exports (19 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(14);
+      expect(exports.length).toBe(20);
     });
   });
 
@@ -276,8 +357,9 @@ describe('integration/tools', () => {
       expect(Object.keys(toolArgs(implement))).toHaveLength(0);
     });
 
-    it('review exposes reviewFindings, not analysisFindings', () => {
-      expect(Object.keys(toolArgs(review))).toContain('reviewFindings');
+    it('review exposes reviewObligationId, not reviewFindings/analysisFindings', () => {
+      expect(Object.keys(toolArgs(review))).toContain('reviewObligationId');
+      expect(Object.keys(toolArgs(review))).not.toContain('reviewFindings');
       expect(Object.keys(toolArgs(review))).not.toContain('analysisFindings');
     });
 
@@ -312,11 +394,11 @@ describe('integration/tools', () => {
   });
 
   // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
+  describe.skipIf(!PERF_ENABLED)('PERF', () => {
     it('importing all tools is effectively free (no side effects)', () => {
       // Tools are just objects with description, args, execute.
       // No database connections, no file reads, no network calls on import.
-      // Verify by checking all 9 tools are already available (loaded on module import).
+      // Verify by checking all tools are already available (loaded on module import).
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
         for (const name of TOOL_NAMES) {
@@ -328,15 +410,6 @@ describe('integration/tools', () => {
       const elapsed = performance.now() - start;
       // 9000 property accesses in < 10ms
       expect(elapsed).toBeLessThan(10);
-    });
-
-    it('tool description strings are interned (same reference across accesses)', () => {
-      for (const name of TOOL_NAMES) {
-        const tool = TOOLS[name] as Record<string, unknown>;
-        const desc1 = tool.description;
-        const desc2 = tool.description;
-        expect(desc1).toBe(desc2); // Same reference, not a new string each time
-      }
     });
   });
 });

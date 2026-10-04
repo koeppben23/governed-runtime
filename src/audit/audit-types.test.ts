@@ -2,28 +2,42 @@ import { describe, it, expect } from 'vitest';
 import {
   computeChainHash,
   CURRENT_AUDIT_FORMAT_VERSION,
+  ENFORCEMENT_DENIED_EVENT_NAME,
   GENESIS_HASH,
+  STATE_WRITE_EVENT_NAME,
   createTransitionEvent,
   createToolCallEvent,
   createErrorEvent,
   createLifecycleEvent,
+  completionLifecycleEventId,
   createDecisionEvent,
+  buildTransitionBody,
+  buildStateWriteBody,
+  buildEnforcementDeniedBody,
+  buildToolCallBody,
+  buildErrorBody,
+  buildLifecycleBody,
+  finalizeWithTimestampEvidence,
   summarizeArgs,
   type ChainedAuditEvent,
-  type ActorInfo,
 } from './types.js';
+import type { ActorInfo } from '../state/evidence.js';
+import { verifyChain } from './integrity.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { SESSION_ID, TS1, TS2, TS3 } from './audit-test-helpers.js';
+import { SESSION_ID, TS1, TS2, TS3, stampChainSequence } from './audit-test-helpers.js';
 describe('audit types', () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('computeChainHash produces 64-char hex string', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'test-id',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -41,7 +55,7 @@ describe('audit types', () => {
         TS1,
         GENESIS_HASH,
       );
-      expect(event.sessionId).toBe(SESSION_ID);
+      expect(event.flowguardSessionId).toBe(SESSION_ID);
       expect(event.phase).toBe('PLAN');
       expect(event.event).toBe('transition:PLAN_READY');
       expect(event.actor).toBe('machine');
@@ -55,7 +69,7 @@ describe('audit types', () => {
 
     it('createToolCallEvent produces valid chained event', () => {
       const event = createToolCallEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         detail: {
           tool: 'flowguard_plan',
@@ -63,7 +77,7 @@ describe('audit types', () => {
           success: true,
           transitionCount: 1,
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user-1',
         prevHash: GENESIS_HASH,
       });
@@ -74,12 +88,13 @@ describe('audit types', () => {
     });
 
     it('createErrorEvent produces valid chained event', () => {
-      const event = createErrorEvent(
-        SESSION_ID,
-        { code: 'TOOL_ERROR', message: 'oops', recoveryHint: 'retry', errorPhase: 'PLAN' },
-        TS1,
-        GENESIS_HASH,
-      );
+      const event = createErrorEvent({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId: undefined,
+        detail: { code: 'TOOL_ERROR', message: 'oops', recoveryHint: 'retry', errorPhase: 'PLAN' },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      });
       expect(event.event).toBe('error:TOOL_ERROR');
       expect(event.phase).toBe('PLAN');
       expect(event.detail.kind).toBe('error');
@@ -87,9 +102,9 @@ describe('audit types', () => {
 
     it('createLifecycleEvent produces valid chained event', () => {
       const event = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
@@ -98,23 +113,42 @@ describe('audit types', () => {
       expect(event.detail.kind).toBe('lifecycle');
     });
 
+    it('derives a SHA-256 UUIDv8 completion ID from the session and terminal operation', () => {
+      const operationId = 'bbbbbbbb-0000-4000-8000-000000000001';
+      const first = completionLifecycleEventId(SESSION_ID, operationId);
+      const second = completionLifecycleEventId(SESSION_ID, operationId);
+
+      expect(first).toBe(second);
+      expect(first).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(
+        completionLifecycleEventId(SESSION_ID, 'cccccccc-0000-4000-8000-000000000001'),
+      ).not.toBe(first);
+    });
+
     it('createDecisionEvent produces valid chained event', () => {
       const event = createDecisionEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
         detail: {
           decisionId: 'DEC-001',
           decisionSequence: 1,
           verdict: 'approve',
           rationale: 'LGTM',
-          decidedBy: 'reviewer-1',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
           decidedAt: TS1,
           fromPhase: 'PLAN_REVIEW',
           toPhase: 'VALIDATION',
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -127,11 +161,16 @@ describe('audit types', () => {
     // ─── P27: Actor Identity ───────────────────────────────────
 
     it('lifecycle event contains actorInfo when provided', () => {
-      const actor: ActorInfo = { id: 'jane', email: 'jane@dev.io', source: 'git' };
+      const actor: ActorInfo = {
+        id: 'jane',
+        email: 'jane@dev.io',
+        source: 'git',
+        assurance: 'best_effort',
+      };
       const event = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -141,12 +180,17 @@ describe('audit types', () => {
     });
 
     it('tool_call event contains actorInfo when provided', () => {
-      const actor: ActorInfo = { id: 'ci-bot', email: null, source: 'env' };
+      const actor: ActorInfo = {
+        id: 'ci-bot',
+        email: null,
+        source: 'env',
+        assurance: 'best_effort',
+      };
       const event = createToolCallEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         detail: { tool: 'flowguard_plan', argsSummary: {}, success: true, transitionCount: 1 },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -156,23 +200,33 @@ describe('audit types', () => {
     });
 
     it('decision event contains actorInfo when provided', () => {
-      const actor: ActorInfo = { id: 'reviewer', email: 'rev@co.com', source: 'env' };
+      const actor: ActorInfo = {
+        id: 'reviewer',
+        email: 'rev@co.com',
+        source: 'env',
+        assurance: 'best_effort',
+      };
       const event = createDecisionEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
         detail: {
           decisionId: 'DEC-002',
           decisionSequence: 1,
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer',
+          decisionIdentity: {
+            actorId: 'reviewer',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
           decidedAt: TS1,
           fromPhase: 'PLAN_REVIEW',
           toPhase: 'VALIDATION',
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
@@ -181,18 +235,18 @@ describe('audit types', () => {
     });
 
     it('sessionID is still present separately from actorInfo', () => {
-      const actor: ActorInfo = { id: 'dev1', email: null, source: 'git' };
+      const actor: ActorInfo = { id: 'dev1', email: null, source: 'git', assurance: 'best_effort' };
       const event = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
         actorInfo: actor,
       });
-      expect(event.sessionId).toBe(SESSION_ID);
+      expect(event.flowguardSessionId).toBe(SESSION_ID);
       expect(event.actorInfo).toBeDefined();
-      expect(event.sessionId).not.toBe(event.actorInfo!.id);
+      expect(event.flowguardSessionId).not.toBe(event.actorInfo!.id);
     });
 
     it('summarizeArgs handles all scalar types', () => {
@@ -223,6 +277,46 @@ describe('audit types', () => {
       expect(result.obj).toBe('[Object]');
       expect(result.emptyArr).toBe('[Array(0)]');
     });
+
+    it('summarizeArgs redacts scalar string values on secret-bearing keys', () => {
+      const result = summarizeArgs({
+        api_key: 'sk-abc123def456',
+        token: 'ghp_secret123',
+        password: 'hunter2',
+        secret: 'my-secret-value',
+        credential: 'creds-xyz',
+        authorization: 'Bearer tok123',
+        access_key: 'AKIA123',
+        private_key: '-----BEGIN RSA PRIVATE KEY-----',
+        passphrase: 'correct horse battery staple',
+        aws_access_key_id: 'AKIAIOSFODNN7EXAMPLE',
+        client_secret_value: 'shhh',
+        github_token_value: 'gh_token',
+      });
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+      expect(result.password).toBe('[REDACTED]');
+      expect(result.secret).toBe('[REDACTED]');
+      expect(result.credential).toBe('[REDACTED]');
+      expect(result.authorization).toBe('[REDACTED]');
+      expect(result.access_key).toBe('[REDACTED]');
+      expect(result.private_key).toBe('[REDACTED]');
+      expect(result.passphrase).toBe('[REDACTED]');
+      expect(result.aws_access_key_id).toBe('[REDACTED]');
+      expect(result.client_secret_value).toBe('[REDACTED]');
+      expect(result.github_token_value).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs redacts non-string values on secret-bearing keys', () => {
+      const result = summarizeArgs({
+        api_key: true,
+        token: 12345,
+        password: null,
+      });
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+      expect(result.password).toBe('[REDACTED]');
+    });
   });
 
   // ─── CORNER ─────────────────────────────────────────────────
@@ -236,6 +330,99 @@ describe('audit types', () => {
 
     it('summarizeArgs handles empty args', () => {
       expect(summarizeArgs({})).toEqual({});
+    });
+
+    it('summarizeArgs redacts only secret-bearing keys, preserving non-secret keys', () => {
+      const result = summarizeArgs({
+        prompt: 'write a function',
+        file: 'src/main.ts',
+        language: 'typescript',
+        api_key: 'sk-abc',
+        token: 'ghp_xyz',
+      });
+      expect(result.prompt).toBe('write a function');
+      expect(result.file).toBe('src/main.ts');
+      expect(result.language).toBe('typescript');
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs secret-key detection is case-insensitive', () => {
+      const result = summarizeArgs({
+        Api_Key: 'val1',
+        API_KEY: 'val2',
+        api_key: 'val3',
+        TOKEN: 'val4',
+      });
+      expect(result.Api_Key).toBe('[REDACTED]');
+      expect(result.API_KEY).toBe('[REDACTED]');
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.TOKEN).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs does not redact false-positive key names', () => {
+      const result = summarizeArgs({
+        monkey: 'a monkey value',
+        keyboard_layout: 'qwerty',
+        donkey: 'not an api key',
+      });
+      expect(result.monkey).toBe('a monkey value');
+      expect(result.keyboard_layout).toBe('qwerty');
+      expect(result.donkey).toBe('not an api key');
+    });
+
+    it('summarizeArgs redacts camelCase secret-bearing keys via contains', () => {
+      const result = summarizeArgs({
+        clientApiKey: 'sk-abc',
+        myAccessKey: 'AKIA123',
+        signingPrivateKey: '-----BEGIN KEY-----',
+        githubToken: 'ghp_xyz',
+      });
+      expect(result.clientApiKey).toBe('[REDACTED]');
+      expect(result.myAccessKey).toBe('[REDACTED]');
+      expect(result.signingPrivateKey).toBe('[REDACTED]');
+      expect(result.githubToken).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs scrubs content-level secrets on non-secret keys via sanitizeDiagnosticString', () => {
+      const result = summarizeArgs({
+        notes: 'token: sk-live-abc123 and Bearer ghp_def456',
+        description: 'key at /home/user/.ssh/id_rsa with password=secret123',
+      });
+      expect(result.notes).not.toContain('sk-live-abc123');
+      expect(result.notes).not.toContain('ghp_def456');
+      expect(result.notes).toContain('[redacted]');
+      expect(result.description).toContain('[path:id_rsa]');
+      expect(result.description).toContain('password=[redacted]');
+      expect(result.description).not.toContain('secret123');
+    });
+
+    it('summarizeArgs preserves diagnostic context after content scrubbing', () => {
+      const result = summarizeArgs({
+        message: 'Connection to https://api.example.com/v2 failed at file: /app/config.ts:42:15',
+      });
+      expect(result.message).toContain('[url:api.example.com]');
+      expect(result.message).toContain('[path:config.ts]');
+      expect(result.message).not.toContain('/app/config.ts');
+      expect(result.message).not.toContain('/v2');
+    });
+
+    it('summarizeArgs sanitizes before truncating so truncated secrets still match regex minimums', () => {
+      const prefix = 'x'.repeat(80);
+      const secret = 'Bearer ghp_abcdefghijklmnopqrstuvwxyz123456';
+      const long = `${prefix} ${secret}`;
+      expect(long.length).toBeGreaterThan(100);
+
+      const result = summarizeArgs({ value: long });
+      expect(result.value).not.toContain('ghp_');
+      expect(result.value).toContain('[redacted]');
+    });
+
+    it('summarizeArgs sanitizes then truncates when result still exceeds limit', () => {
+      const longPlain = 'y'.repeat(120);
+      const result = summarizeArgs({ value: longPlain });
+      expect(result.value).toBe('y'.repeat(100) + '...');
+      expect(result.value!.length).toBe(103);
     });
 
     it("GENESIS_HASH is 'genesis'", () => {
@@ -260,10 +447,13 @@ describe('audit types', () => {
     it('computeChainHash is deterministic (same input → same output)', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'deterministic-test',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -277,10 +467,13 @@ describe('audit types', () => {
     it('computeChainHash differs with different prevHash', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'test-id',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
@@ -300,42 +493,48 @@ describe('audit types', () => {
         GENESIS_HASH,
       );
       const tc = createToolCallEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         detail: { tool: 'test', argsSummary: {}, success: true, transitionCount: 0 },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'user',
         prevHash: GENESIS_HASH,
       });
-      const e = createErrorEvent(
-        SESSION_ID,
-        { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
-        TS1,
-        GENESIS_HASH,
-      );
+      const e = createErrorEvent({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId: undefined,
+        detail: { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      });
       const l = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
       const d = createDecisionEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
         detail: {
           decisionId: 'DEC-001',
           decisionSequence: 1,
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'r',
+          decisionIdentity: {
+            actorId: 'r',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
           decidedAt: TS1,
           fromPhase: 'PLAN_REVIEW',
           toPhase: 'VALIDATION',
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'human',
         prevHash: GENESIS_HASH,
       });
@@ -352,22 +551,25 @@ describe('audit types', () => {
     it('event without actorInfo has same hash as event created before P27', () => {
       // Simulate a "pre-P27" event — no actorInfo parameter
       const withoutActor = createLifecycleEvent({
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
-        timestamp: TS1,
+        occurredAt: TS1,
         actor: 'system',
         prevHash: GENESIS_HASH,
       });
       // actorInfo should be absent from the object (not undefined-as-value)
       expect('actorInfo' in withoutActor).toBe(false);
 
-      // Manually build the same v2 event object as pre-P27 code would have produced.
+      // Manually build the same v3 event object as pre-P27 code would have produced.
       const prePatchEvent: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: withoutActor.id,
-        sessionId: withoutActor.sessionId,
+        flowguardSessionId: withoutActor.flowguardSessionId,
         phase: withoutActor.phase,
         event: withoutActor.event,
-        timestamp: withoutActor.timestamp,
+        occurredAt: withoutActor.occurredAt,
+        auditSequence: withoutActor.auditSequence,
+        recordedAt: withoutActor.recordedAt,
+        semanticEventDigest: withoutActor.semanticEventDigest,
         actor: withoutActor.actor,
         auditFormatVersion: withoutActor.auditFormatVersion,
         detail: withoutActor.detail,
@@ -378,19 +580,22 @@ describe('audit types', () => {
     });
 
     it('actorInfo changes the chain hash (isolated, same event body)', () => {
-      const actor: ActorInfo = { id: 'dev', email: null, source: 'git' };
+      const actor: ActorInfo = { id: 'dev', email: null, source: 'git', assurance: 'best_effort' };
       const sharedId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
       const base = {
         id: sharedId,
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'TICKET',
         event: 'lifecycle:session_created',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'system',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
         prevHash: GENESIS_HASH,
-      };
+      } satisfies Omit<ChainedAuditEvent, 'chainHash'>;
       const withActorInfo = { ...base, actorInfo: actor };
 
       const hashWithout = computeChainHash(GENESIS_HASH, base);
@@ -410,12 +615,13 @@ describe('audit types', () => {
         TS1,
         GENESIS_HASH,
       );
-      const error = createErrorEvent(
-        SESSION_ID,
-        { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
-        TS1,
-        GENESIS_HASH,
-      );
+      const error = createErrorEvent({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId: undefined,
+        detail: { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      });
       expect('actorInfo' in transition).toBe(false);
       expect('actorInfo' in error).toBe(false);
     });
@@ -426,10 +632,13 @@ describe('audit types', () => {
     it('computeChainHash < 1ms (p99 over 200 iterations)', () => {
       const base: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: 'perf-test',
-        sessionId: SESSION_ID,
+        flowguardSessionId: SESSION_ID,
         phase: 'PLAN',
         event: 'transition:PLAN_READY',
-        timestamp: TS1,
+        auditSequence: 1,
+        occurredAt: TS1,
+        recordedAt: TS1,
+        semanticEventDigest: 'a'.repeat(64),
         actor: 'machine',
         auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
@@ -438,5 +647,189 @@ describe('audit types', () => {
       const { p99Ms } = benchmarkSync(() => computeChainHash(GENESIS_HASH, base), 200, 50);
       expect(p99Ms).toBeLessThan(PERF_BUDGETS.evaluateSingleMs); // 1ms
     });
+  });
+
+  // ─── AC3: Audit chain integrity after secret-key redaction ─────────
+
+  describe('AUDIT CHAIN INTEGRITY', () => {
+    it('chain remains valid after summarizeArgs redacts secret-bearing keys', () => {
+      const canary = 'sk-canary-audit-chain-test';
+
+      const event = createToolCallEvent({
+        flowguardSessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: {
+          tool: 'bash',
+          argsSummary: summarizeArgs({ api_key: canary, prompt: 'hello' }),
+          success: true,
+          transitionCount: 1,
+        },
+        occurredAt: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+      });
+
+      expect((event.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
+      expect(JSON.stringify(event)).not.toContain(canary);
+
+      const result = verifyChain([
+        stampChainSequence(event, 1) as unknown as Record<string, unknown>,
+      ]);
+      expect(result.valid).toBe(true);
+    });
+
+    it('multi-event chain with secret-bearing args remains valid', () => {
+      const event1 = stampChainSequence(
+        createToolCallEvent({
+          flowguardSessionId: SESSION_ID,
+          phase: 'PLAN',
+          detail: {
+            tool: 'bash',
+            argsSummary: summarizeArgs({ token: 'ghp_secret', prompt: 'plan' }),
+            success: true,
+            transitionCount: 1,
+          },
+          occurredAt: TS1,
+          actor: 'human',
+          prevHash: GENESIS_HASH,
+        }),
+        1,
+      );
+
+      const event2 = stampChainSequence(
+        createToolCallEvent({
+          flowguardSessionId: SESSION_ID,
+          phase: 'IMPLEMENTATION',
+          detail: {
+            tool: 'write_file',
+            argsSummary: summarizeArgs({ file: 'src/app.ts', api_key: 'sk-abc' }),
+            success: true,
+            transitionCount: 2,
+          },
+          occurredAt: TS2,
+          actor: 'human',
+          prevHash: event1.chainHash,
+        }),
+        2,
+      );
+
+      expect((event1.detail.argsSummary as Record<string, string>).token).toBe('[REDACTED]');
+      expect(JSON.stringify(event1)).not.toContain('ghp_secret');
+      expect((event2.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
+
+      const result = verifyChain([
+        event1 as unknown as Record<string, unknown>,
+        event2 as unknown as Record<string, unknown>,
+      ]);
+      expect(result.valid).toBe(true);
+    });
+  });
+});
+
+describe('host session provenance on event bodies', () => {
+  const buildBodies = {
+    transition: (hostSessionId: string | undefined) =>
+      buildTransitionBody({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId,
+        phase: 'PLAN',
+        detail: { event: 'PLAN_READY' } as never,
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      }),
+    stateWrite: (hostSessionId: string | undefined) =>
+      buildStateWriteBody({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId,
+        phase: 'PLAN',
+        detail: {
+          operationId: 'op-1',
+          preStateDigest: 'a',
+          mutationDigest: 'b',
+          postStateDigest: 'c',
+        },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      }),
+    enforcementDenied: (hostSessionId: string | undefined) =>
+      buildEnforcementDeniedBody({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId,
+        phase: 'PLAN',
+        detail: {
+          tool: 'bash',
+          reasonCode: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+          hostCallId: 'host-call-1',
+          traceId: 'trace-1',
+          policyMode: 'team',
+          enforcementLevel: 'synchronous',
+        } as never,
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      }),
+    toolCall: (hostSessionId: string | undefined) =>
+      buildToolCallBody({
+        flowguardSessionId: SESSION_ID,
+        ...(hostSessionId !== undefined ? { hostSessionId } : {}),
+        phase: 'PLAN',
+        detail: { tool: 'bash', argsSummary: {}, success: true } as never,
+        occurredAt: TS1,
+        actor: 'agent',
+        prevHash: GENESIS_HASH,
+      }),
+    error: (hostSessionId: string | undefined) =>
+      buildErrorBody(
+        SESSION_ID,
+        hostSessionId,
+        { code: 'TEST_ERROR', message: 'm', recoveryHint: 'r', errorPhase: 'PLAN' } as never,
+        TS1,
+        GENESIS_HASH,
+      ),
+    lifecycle: (hostSessionId: string | undefined) =>
+      buildLifecycleBody({
+        flowguardSessionId: SESSION_ID,
+        ...(hostSessionId !== undefined ? { hostSessionId } : {}),
+        detail: { action: 'session_created', finalPhase: 'PLAN' } as never,
+        occurredAt: TS1,
+        actor: 'machine',
+        prevHash: GENESIS_HASH,
+      }),
+  } as const;
+
+  it('carries hostSessionId on every event body when the host provides one', () => {
+    for (const [name, build] of Object.entries(buildBodies)) {
+      expect(build('host-session-1').hostSessionId, name).toBe('host-session-1');
+    }
+  });
+
+  it('omits hostSessionId from every event body when the host provides none', () => {
+    for (const [name, build] of Object.entries(buildBodies)) {
+      expect('hostSessionId' in build(undefined), name).toBe(false);
+    }
+  });
+
+  it('carries the canonical event-core authority names on their bodies', () => {
+    expect(STATE_WRITE_EVENT_NAME).toBe('state_write');
+    expect(ENFORCEMENT_DENIED_EVENT_NAME).toBe('enforcement:denied');
+    expect(buildBodies.stateWrite(undefined).event).toBe('state_write');
+    expect(buildBodies.enforcementDenied(undefined).event).toBe('enforcement:denied');
+  });
+});
+
+describe('finalizeWithTimestampEvidence defaults', () => {
+  it('defaults the TSA digest algorithm to sha256 when evidence omits one', () => {
+    const body = buildTransitionBody({
+      flowguardSessionId: SESSION_ID,
+      hostSessionId: undefined,
+      phase: 'PLAN',
+      detail: { event: 'PLAN_READY' } as never,
+      occurredAt: TS1,
+      prevHash: GENESIS_HASH,
+    });
+    const event = finalizeWithTimestampEvidence(body, GENESIS_HASH, {
+      tsa: { algorithmOid: '1.2.3' },
+    } as never);
+
+    expect(event.timestampEvidence?.tsa?.digestAlgorithm).toBe('sha256');
   });
 });

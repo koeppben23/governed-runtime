@@ -14,8 +14,7 @@ import {
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { readState, statePath } from '../adapters/persistence.js';
 import { status } from './tools/index.js';
-import { resolvePolicyFromSnapshot } from '../config/policy.js';
-import { executeReviewDecision } from '../rails/review-decision.js';
+import { makeState } from '../fixtures.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -59,7 +58,7 @@ async function writeFixtureState(name: string): Promise<string> {
   return sessDir;
 }
 
-describe('session-state upgrade compatibility', () => {
+describe('session-state current epoch boundary', () => {
   beforeEach(async () => {
     ws = await createTestWorkspace();
     ctx = createToolContext({
@@ -74,7 +73,7 @@ describe('session-state upgrade compatibility', () => {
     await ws.cleanup();
   });
 
-  it('status works on old states (read-only compatibility)', async () => {
+  it('rejects legacy snapshots without a versioned digest', async () => {
     const fixtures = [
       'v1-no-identity-provider-mode.json',
       'v1-no-minimum-actor-assurance.json',
@@ -86,68 +85,78 @@ describe('session-state upgrade compatibility', () => {
     for (const file of fixtures) {
       await writeFixtureState(file);
       const result = parseToolResult(await status.execute({}, ctx));
-      expect(result.phase).toBeTruthy();
-      expect(result.error).not.toBe(true);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SESSION_STATE_INCOMPATIBLE');
     }
   });
 
-  it('legacy snapshot resolves with safe defaults (no unsafe uplift)', async () => {
-    const fixture = await loadFixture('v1-legacy-policy-snapshot.json');
-    const snapshot = fixture.policySnapshot as Record<string, unknown>;
-    const policy = resolvePolicyFromSnapshot(snapshot as never);
-
-    expect(policy.identityProviderMode).toBe('optional');
-    expect(policy.minimumActorAssuranceForApproval).toBe('claim_validated');
+  it('rejects v6 snapshots from before the implementation-generation contract', async () => {
+    const sessDir = await writeFixtureState('v6-pre-implementation-generation.json');
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
   });
 
-  it('mutating decision path remains fail-closed for legacy regulated snapshots', async () => {
-    const sessDir = await writeFixtureState('v1-legacy-policy-snapshot.json');
-    const state = await readState(sessDir);
-    expect(state).not.toBeNull();
-
-    const policy = resolvePolicyFromSnapshot(state!.policySnapshot);
-    const result = executeReviewDecision(
-      state!,
-      {
-        verdict: 'approve',
-        rationale: 'legacy approval attempt',
-        decidedBy: 'legacy-reviewer',
-        decisionIdentity: {
-          actorId: 'legacy-reviewer',
-          actorEmail: 'legacy-reviewer@example.com',
-          actorSource: 'env',
-          actorAssurance: 'best_effort',
-        },
-      },
-      {
-        now: () => '2026-04-29T00:00:00.000Z',
-        digest: (text) => text,
-        policy,
-      },
+  it('rejects an otherwise current v9 snapshot at the read boundary (immediate predecessor)', async () => {
+    const fp = await computeFingerprint(ctx.worktree);
+    const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await fs.writeFile(
+      statePath(sessDir),
+      `${JSON.stringify({ ...makeState(), schemaVersion: 'v9' }, null, 2)}\n`,
+      'utf-8',
     );
-
-    expect(result.kind).toBe('blocked');
-    if (result.kind === 'blocked') {
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-    }
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
   });
 
-  it('external references remain optional for legacy ticket evidence', async () => {
+  it('rejects an otherwise current v8 snapshot at the read boundary (immediate predecessor)', async () => {
+    const fp = await computeFingerprint(ctx.worktree);
+    const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await fs.writeFile(
+      statePath(sessDir),
+      `${JSON.stringify({ ...makeState(), schemaVersion: 'v8' }, null, 2)}\n`,
+      'utf-8',
+    );
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it('rejects an otherwise current v7 snapshot at the read boundary', async () => {
+    const fp = await computeFingerprint(ctx.worktree);
+    const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
+    await fs.mkdir(sessDir, { recursive: true });
+    await fs.writeFile(
+      statePath(sessDir),
+      `${JSON.stringify({ ...makeState(), schemaVersion: 'v7' }, null, 2)}\n`,
+      'utf-8',
+    );
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it('rejects legacy regulated snapshots before a decision can execute', async () => {
+    const sessDir = await writeFixtureState('v1-legacy-policy-snapshot.json');
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
+  it('rejects legacy ticket evidence with an unversioned digest', async () => {
     const sessDir = await writeFixtureState('v1-no-external-references.json');
-    const state = await readState(sessDir);
-    expect(state).not.toBeNull();
-    expect(state!.ticket).not.toBeNull();
-    expect(state!.ticket!.references).toBeUndefined();
-
-    const result = parseToolResult(await status.execute({ evidence: true }, ctx));
-    expect(result.phase).toBe('TICKET');
-    expect(result.error).not.toBe(true);
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
   });
 
-  it('missing archiveStatus in legacy state is surfaced as null in status', async () => {
+  it('rejects legacy states with missing archive status and unversioned digests', async () => {
     await writeFixtureState('v1-no-archive-status.json');
     const result = parseToolResult(await status.execute({}, ctx));
-    expect(result.phase).toBe('COMPLETE');
-    expect(result.archiveStatus).toBeNull();
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('SESSION_STATE_INCOMPATIBLE');
   });
 });

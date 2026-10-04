@@ -12,7 +12,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   createToolContext,
   createTestWorkspace,
@@ -32,25 +35,45 @@ import {
   implement,
   review_implementation,
   status,
+  export as exportTool,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION } from '../audit/types.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
+import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
+import { FIXED_SESSION_UUID } from '../fixtures.js';
+
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const { gitControlPlaneAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return gitControlPlaneAdapterMock(
+    await importOriginal<typeof import('./git-control-plane.js')>(),
+  );
+});
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
+    isGitRepo: vi.fn().mockResolvedValue(true),
+    isGitRepoStrict: vi.fn().mockResolvedValue(true),
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const { frozenRepositoryAdapterMock } = await import('./adapter-mock-test-helpers.js');
+  return frozenRepositoryAdapterMock(
+    await importOriginal<typeof import('../adapters/frozen-repository.js')>(),
+  );
 });
 
 vi.mock('../adapters/actor', async (importOriginal) => {
@@ -94,8 +117,18 @@ vi.mock('../adapters/workspace/index.js', async (importOriginal) => {
   };
 });
 
+const regulatedArchiveMock = vi.hoisted(() => ({
+  archiveRegulatedEvidence: vi.fn(),
+  archiveCompletionExport: vi.fn(),
+  archiveFileName: (sessionId: string, regulatedEvidence = false) =>
+    `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`,
+}));
+
+vi.mock('../adapters/workspace/archive.js', () => regulatedArchiveMock);
+
 const actorMock = await import('../adapters/actor.js');
 const workspaceMock = await import('../adapters/workspace/index.js');
+const regulatedArchive = await import('../adapters/workspace/archive.js');
 
 const tarOk = await isTarAvailable();
 
@@ -104,6 +137,15 @@ let ctx: TestToolContext;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
+  // Write config with raw export enabled for archive integrity tests.
+  await fs.writeFile(
+    path.join(process.env.OPENCODE_CONFIG_DIR ?? '', 'flowguard.json'),
+    JSON.stringify({
+      schemaVersion: 'v1',
+      archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
+    }),
+    'utf8',
+  );
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
@@ -123,6 +165,20 @@ beforeEach(async () => {
       )
     ).verifyArchive,
   );
+  vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockImplementation(
+    (
+      await vi.importActual<typeof import('../adapters/workspace/archive.js')>(
+        '../adapters/workspace/archive.js',
+      )
+    ).archiveRegulatedEvidence,
+  );
+  vi.mocked(regulatedArchive.archiveCompletionExport).mockImplementation(
+    (
+      await vi.importActual<typeof import('../adapters/workspace/archive.js')>(
+        '../adapters/workspace/archive.js',
+      )
+    ).archiveCompletionExport,
+  );
 });
 
 afterEach(async () => {
@@ -140,10 +196,7 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
-async function callOk(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callOk(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   const { sessDir } = await workspaceIds();
   const finalArgs = await withStrictReviewFindings(sessDir, args);
   recordDecisionIntentForTool(tool, finalArgs);
@@ -154,10 +207,7 @@ async function callOk(
   return result;
 }
 
-function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): void {
+function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void {
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
@@ -177,6 +227,37 @@ async function workspaceIds(): Promise<{ fingerprint: string; sessDir: string }>
   return { fingerprint: fp.fingerprint, sessDir: resolveSessionDir(fp.fingerprint, ctx.sessionID) };
 }
 
+async function mutateArchive(
+  ids: { fingerprint: string },
+  mutate: (root: string) => Promise<void>,
+): Promise<void> {
+  const archivePath = path.join(
+    process.env.OPENCODE_CONFIG_DIR ?? '',
+    'workspaces',
+    ids.fingerprint,
+    'sessions',
+    'archive',
+    `regulated-${ctx.sessionID}.tar.gz`,
+  );
+  const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-tamper-'));
+  try {
+    await promisify(execFile)('tar', ['xzf', archivePath, '-C', stagingRoot]);
+    await mutate(path.join(stagingRoot, ctx.sessionID));
+    await promisify(execFile)('tar', ['czf', archivePath, '-C', stagingRoot, ctx.sessionID]);
+    const digest = crypto
+      .createHash('sha256')
+      .update(await fs.readFile(archivePath))
+      .digest('hex');
+    await fs.writeFile(
+      `${archivePath}.sha256`,
+      `${digest}  ${path.basename(archivePath)}\n`,
+      'utf-8',
+    );
+  } finally {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+  }
+}
+
 async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDir: string }> {
   vi.mocked(actorMock.resolveActor).mockResolvedValue({
     id: 'archive-initiator',
@@ -187,7 +268,7 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
   });
   await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
   await callOk(ticket, { text: 'Archive integrity task', source: 'user' });
-  await callOk(plan, { planText: '## Plan\nBuild and verify.' });
+  await callOk(plan, { planText: '## Plan\nBuild and verify.', targetPaths: ['docs/test.md'] });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
     await callOk(plan, { reviewVerdict: 'accept' });
   }
@@ -199,21 +280,26 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
     assurance: 'claim_validated' as const,
   });
   await callOk(decision, { verdict: 'approve', rationale: 'Plan approved' });
-  // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
-  {
-    const ids = await workspaceIds();
-    const st = await readState(ids.sessDir);
-    if (st && st.activeChecks.length > 0) {
-      for (const kind of st.activeChecks) {
-        await callOk(run_check, { kind });
-      }
-    }
-  }
+  // Approval enters VALIDATION and the runtime runs the active checks
+  // automatically (discovery detects TypeScript → activeChecks=['typecheck']),
+  // advancing to IMPLEMENTATION.
+  expect(await phase()).toBe('IMPLEMENTATION');
+  const postValidation = await readState((await workspaceIds()).sessDir);
+  expect(postValidation!.validation.length).toBeGreaterThan(0);
+
   await callOk(implement, {});
+  // Entering IMPL_VALIDATION runs the checks automatically against the recorded
+  // revision before advancing to IMPL_REVIEW.
+  expect(await phase()).toBe('IMPL_REVIEW');
+  const postImplValidation = await readState((await workspaceIds()).sessDir);
+  expect(postImplValidation!.implValidation.length).toBeGreaterThan(0);
+
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
   await callOk(decision, { verdict: 'approve', rationale: 'Evidence approved' });
+  expect(await phase()).toBe('EXPORT_READY');
+  await callOk(exportTool, {});
   expect(await phase()).toBe('COMPLETE');
   return workspaceIds();
 }
@@ -221,10 +307,14 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
 function chainedEvent(prevHash: string, event: string): Record<string, unknown> {
   const base = {
     id: crypto.randomUUID(),
-    sessionId: 'ses_chain_test',
+    flowguardSessionId: FIXED_SESSION_UUID,
+    hostSessionId: 'ses_chain_test',
     phase: 'READY',
     event,
-    timestamp: new Date().toISOString(),
+    auditSequence: 1,
+    occurredAt: new Date().toISOString(),
+    recordedAt: new Date().toISOString(),
+    semanticEventDigest: 'a'.repeat(64),
     actor: 'test',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: { event },
@@ -244,30 +334,30 @@ describe('audit and archive integrity fail-closed behavior', () => {
     expect(result.reason).toBe('CHAIN_BREAK');
   });
 
-  it('classifies chained pre-v2 audit events as legacy format, not chain tamper', () => {
+  it('classifies pre-v3 audit records as envelope-invalid, not chain tamper', () => {
     const first = chainedEvent('genesis', 'first');
     const { auditFormatVersion: _auditFormatVersion, ...legacy } = first;
 
-    const result = verifyChain([legacy], { strict: true });
+    const result = verifyChain([legacy]);
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+    expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
   });
 
   it.skipIf(!tarOk)('regulated archive verification flags malformed audit lines', async () => {
     const ids = await completeRegulatedSession();
-    await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), '{not-json}\n', 'utf-8');
+    await mutateArchive(ids, async (root) => {
+      await fs.appendFile(path.join(root, 'audit', 'audit.jsonl'), '{not-json}\n', 'utf-8');
+    });
 
-    const trail = await readAuditTrail(ids.sessDir);
-    expect(trail.skipped).toBeGreaterThan(0);
-
-    const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+    const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
     expect(
       verification.findings.some(
         (f) =>
           f.code === 'audit_chain_invalid' ||
           f.code === 'file_digest_mismatch' ||
-          f.code === 'manifest_parse_error',
+          f.code === 'manifest_parse_error' ||
+          f.code === 'unexpected_file',
       ),
     ).toBe(true);
   });
@@ -276,17 +366,22 @@ describe('audit and archive integrity fail-closed behavior', () => {
     'archive verification detects manifest/file digest mismatch after evidence tamper',
     async () => {
       const ids = await completeRegulatedSession();
-      await fs.appendFile(
-        path.join(ids.sessDir, 'session-state.json'),
-        '\n{"tampered":true}\n',
-        'utf-8',
-      );
+      await mutateArchive(ids, async (root) => {
+        await fs.appendFile(
+          path.join(root, 'archive-manifest.json'),
+          '\n{"tampered":true}\n',
+          'utf-8',
+        );
+      });
 
-      const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
       expect(verification.passed).toBe(false);
       expect(
         verification.findings.some(
-          (f) => f.code === 'file_digest_mismatch' || f.code === 'manifest_parse_error',
+          (f) =>
+            f.code === 'file_digest_mismatch' ||
+            f.code === 'manifest_parse_error' ||
+            f.code === 'unexpected_file',
         ),
       ).toBe(true);
     },
@@ -295,14 +390,14 @@ describe('audit and archive integrity fail-closed behavior', () => {
   it.skipIf(!tarOk)(
     'regulated completion records failed archive status when archive write fails',
     async () => {
-      vi.mocked(workspaceMock.archiveSession).mockRejectedValueOnce(
+      vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockRejectedValueOnce(
         new Error('injected archive failure'),
       );
 
       await completeRegulatedSession();
       const state = await readState((await workspaceIds()).sessDir);
       expect(state?.phase).toBe('COMPLETE');
-      expect(state?.archiveStatus).toBe('failed');
+      expect(state?.regulatedArchiveStatus).toBe('failed');
     },
   );
 
@@ -312,27 +407,31 @@ describe('audit and archive integrity fail-closed behavior', () => {
       const ids = await completeRegulatedSession();
       const legacyEvent = {
         id: crypto.randomUUID(),
-        sessionId: ctx.sessionID,
+        flowguardSessionId: FIXED_SESSION_UUID,
+        hostSessionId: ctx.sessionID,
         phase: 'COMPLETE',
         event: 'legacy_after_archive',
         timestamp: new Date().toISOString(),
         actor: 'legacy',
         detail: { source: 'test' },
       };
-      await fs.appendFile(
-        path.join(ids.sessDir, 'audit.jsonl'),
-        `${JSON.stringify(legacyEvent)}\n`,
-        'utf-8',
-      );
+      await mutateArchive(ids, async (root) => {
+        await fs.appendFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${JSON.stringify(legacyEvent)}\n`,
+          'utf-8',
+        );
+      });
 
-      const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
       expect(verification.passed).toBe(false);
       expect(
         verification.findings.some(
           (f) =>
             f.code === 'audit_chain_invalid' ||
             f.code === 'file_digest_mismatch' ||
-            f.code === 'manifest_parse_error',
+            f.code === 'manifest_parse_error' ||
+            f.code === 'unexpected_file',
         ),
       ).toBe(true);
     },

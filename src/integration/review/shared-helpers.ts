@@ -1,48 +1,18 @@
 /**
  * @module integration/review/shared-helpers
- * @description Shared pure functions and constants for review pipeline orchestration.
+ * @description Shared pure functions and constants for review evidence handling.
  *
  * Extracted from plugin-orchestrator.ts and plugin-workspace.ts so review/ modules
  * do not depend on plugin-* files (FG-QUAL-002).
  *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewInvocationPolicy, ReviewOutputPolicy } from '../../config/policy-types.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import type { ReviewerSuccessResult } from './orchestrator.js';
-import { extractReviewContext } from './orchestrator.js';
-import { parseToolResult } from '../plugin-helpers.js';
-import {
-  buildPlanReviewPrompt,
-  buildImplReviewPrompt,
-  buildArchitectureReviewPrompt,
-  selectReviewerProfileRules,
-} from './prompt-builders.js';
-import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
-import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
-import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  TOOL_FLOWGUARD_ARCHITECTURE,
-} from '../tool-names.js';
-import {
-  ensureReviewAssurance,
-  hasEvidenceReuse,
-  buildInvocationEvidence,
-  appendInvocationEvidence,
-} from './assurance.js';
-import { updateObligation } from './obligation-state.js';
-import type { ReviewObligationType } from '../../state/evidence.js';
-import type {
-  OrchestratorDeps,
-  AttestationResult,
-  EvidenceRecordResult,
-  PipelineContext,
-  ReviewSessionContext,
-} from './pipeline-types.js';
-import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import type { ReviewVerificationEvidenceItem } from './types.js';
+import type { AttestationResult } from './pipeline-types.js';
 
 // ─── Reason Constants ────────────────────────────────────────────────────────
 
@@ -111,281 +81,93 @@ export function validatePipelineAttestation(
   return { valid: true };
 }
 
-// ─── Evidence Recording ──────────────────────────────────────────────────────
+function assertionRequirementKey(checkId: string, providerId: string, localId: string): string {
+  return `${checkId}\u0000${providerId}\u0000${localId}`;
+}
 
-/**
- * Record invocation evidence or block if evidence was reused.
- *
- * Encapsulates the mutable side-channel pattern (`reusedEvidence` flag)
- * into a clean return value. Both pipelines use this to avoid the
- * fragile let-mutate-in-callback anti-pattern.
- */
-export async function recordEvidenceOrBlockReuse(
-  deps: OrchestratorDeps,
-  sessDir: string,
-  params: {
-    obligationId: string;
-    obligationType: ReviewObligationType;
-    sessionId: string;
-    childSessionId: string;
-    promptHash: string;
-    findingsHash: string;
-    reviewerResult: Pick<
-      ReviewerSuccessResult,
-      | 'sessionId'
-      | 'reviewOutputMode'
-      | 'structuredOutputUsed'
-      | 'reviewAssuranceLevel'
-      | 'extractionMethod'
-      | 'modelCapabilityError'
-      | 'findings'
-    >;
-    currentAssuranceInvocations: unknown[];
-  },
-): Promise<EvidenceRecordResult> {
-  let reused = false;
-  await deps.updateReviewAssurance(sessDir, (s, now2) => {
-    const assurance = ensureReviewAssurance(s.reviewAssurance);
-    if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
-      reused = true;
-      return updateObligation(s, params.obligationId, (item) => ({
-        ...item,
-        status: 'blocked',
-        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-      }));
-    }
-
-    const invocation = buildInvocationEvidence({
-      obligationId: params.obligationId,
-      obligationType: params.obligationType,
-      parentSessionId: params.sessionId,
-      childSessionId: params.childSessionId,
-      invocationMode: INVOCATION_MODE_SDK_SESSION,
-      hostVisible: false,
-      promptHash: params.promptHash,
-      findingsHash: params.findingsHash,
-      invokedAt: now2,
-      fulfilledAt: now2,
-      source: EVIDENCE_SOURCE_HOST,
-      reviewOutputMode: params.reviewerResult.reviewOutputMode,
-      structuredOutputUsed: params.reviewerResult.structuredOutputUsed,
-      reviewAssuranceLevel: params.reviewerResult.reviewAssuranceLevel,
-      extractionMethod: params.reviewerResult.extractionMethod,
-      modelCapabilityError: params.reviewerResult.modelCapabilityError,
-      capturedVerdict:
-        params.reviewerResult.findings &&
-        typeof params.reviewerResult.findings.overallVerdict === 'string'
-          ? params.reviewerResult.findings.overallVerdict
-          : undefined,
-    });
-    const withInvocation = {
-      ...s,
-      reviewAssurance: appendInvocationEvidence(
-        ensureReviewAssurance(s.reviewAssurance),
-        invocation,
+function declaredAssertionRequirementKeys(state: SessionState): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const claim of state.plan?.claimDeclarations?.claims ?? []) {
+    const requirement = claim.counterexampleRequirement;
+    if (requirement?.kind !== 'assertion') continue;
+    keys.add(
+      assertionRequirementKey(
+        requirement.checkId,
+        requirement.assertion.providerId,
+        requirement.assertion.localId,
       ),
-    };
-    return updateObligation(withInvocation, params.obligationId, (item) => ({
-      ...item,
-      status: 'fulfilled',
-      invocationId: invocation.invocationId,
-      fulfilledAt: now2,
+    );
+  }
+  return keys;
+}
+
+function projectClaimAssertionEvidence(
+  attempt: Extract<SessionState['validationAttempts'][number], { scope: 'implementation' }>,
+  requirementKeys: ReadonlySet<string>,
+): ReviewVerificationEvidenceItem['claimAssertionEvidence'] {
+  const extraction = attempt.result.assertionExtraction;
+  if (extraction?.status !== 'extracted' || requirementKeys.size === 0) return undefined;
+  const assertions = extraction.assertions
+    .filter((assertion) =>
+      requirementKeys.has(
+        assertionRequirementKey(
+          attempt.result.checkId,
+          assertion.providerId,
+          assertion.assertion.localId,
+        ),
+      ),
+    )
+    .map((assertion) => ({
+      checkId: attempt.result.checkId,
+      providerId: assertion.providerId,
+      localId: assertion.assertion.localId,
+      status: assertion.status,
+      ...(assertion.suiteName ? { suiteName: assertion.suiteName } : {}),
+      testName: assertion.testName,
+      ...(assertion.sourceFile ? { sourceFile: assertion.sourceFile } : {}),
+      ...(assertion.durationMs !== undefined ? { durationMs: assertion.durationMs } : {}),
     }));
-  });
-  return reused ? 'reused' : 'fulfilled';
+  return assertions.length === 0
+    ? undefined
+    : { reportDigests: [...extraction.reportDigests], assertions };
 }
 
-// ─── Invocation Helpers ──────────────────────────────────────────────────────
-
-export function buildAttemptFailedLogger(
-  deps: OrchestratorDeps,
-  toolName: string,
-  sessionId: string,
-): (info: {
-  attempt: number;
-  step: string;
-  error?: unknown;
-  details?: Record<string, unknown>;
-}) => void {
-  return (info) => {
-    deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
-      tool: toolName,
-      sessionId,
-      step: info.step,
-      attempt: info.attempt,
-      error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
-      ...(info.details ?? {}),
+export function stateVerificationEvidence(
+  state: SessionState,
+): readonly ReviewVerificationEvidenceItem[] {
+  const currentDigest = state.implementation?.digest;
+  if (!currentDigest) return [];
+  const requirementKeys = declaredAssertionRequirementKeys(state);
+  return state.validationAttempts
+    .filter(
+      (
+        attempt,
+      ): attempt is Extract<
+        SessionState['validationAttempts'][number],
+        { scope: 'implementation' }
+      > => attempt.scope === 'implementation' && attempt.implementationDigest === currentDigest,
+    )
+    .map((attempt) => {
+      const claimAssertionEvidence = projectClaimAssertionEvidence(attempt, requirementKeys);
+      return {
+        attemptId: attempt.attemptId,
+        kind: attempt.result.kind,
+        command: attempt.result.command,
+        passed: attempt.result.passed,
+        exitCode: attempt.result.exitCode,
+        timedOut: attempt.result.timedOut,
+        executionMs: attempt.result.executionMs,
+        outputDigest: attempt.result.outputDigest,
+        detail: attempt.result.detail,
+        executedAt: attempt.result.executedAt,
+        executionObservedStateDigest: attempt.executionObservation.executionObservedStateDigest,
+        preCommitStateDigest: attempt.executionObservation.preCommitStateDigest,
+        stateChangedDuringExecution:
+          attempt.executionObservation.executionObservedStateDigest !==
+          attempt.executionObservation.preCommitStateDigest,
+        ...(claimAssertionEvidence ? { claimAssertionEvidence } : {}),
+      };
     });
-  };
-}
-
-// ─── Policy Helpers ──────────────────────────────────────────────────────────
-
-export function isStrictEnforcementEnabled(sessionState: {
-  policySnapshot?: { selfReview?: { strictEnforcement?: boolean } };
-}): boolean {
-  return sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
-}
-
-export function getReviewerPolicies(sessionState: {
-  policySnapshot: { reviewOutputPolicy?: string; reviewInvocationPolicy?: string };
-}): { reviewOutputPolicy: ReviewOutputPolicy; reviewInvocationPolicy: ReviewInvocationPolicy } {
-  const outputPolicy = sessionState.policySnapshot.reviewOutputPolicy;
-  const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
-  return {
-    reviewOutputPolicy:
-      outputPolicy === 'structured_required' || outputPolicy === 'text_compat_allowed'
-        ? outputPolicy
-        : 'structured_required',
-    reviewInvocationPolicy:
-      invocationPolicy === 'host_task_required' ||
-      invocationPolicy === 'host_task_preferred' ||
-      invocationPolicy === 'sdk_allowed'
-        ? invocationPolicy
-        : 'host_task_required',
-  };
-}
-
-export function isOutputAlreadyBlocked(output: { output: string }): boolean {
-  const result = parseToolResult(output.output);
-  return result?.error === true;
-}
-
-// ─── Context Helpers ─────────────────────────────────────────────────────────
-
-export function buildSessionContext(ctx: PipelineContext): ReviewSessionContext {
-  return {
-    sessDir: ctx.sessDir,
-    sessionId: ctx.sessionId,
-    phase: String(ctx.parsedOutput.phase ?? ctx.sessionState.phase),
-  };
-}
-
-export async function blockReviewOutcomeHelper(
-  deps: OrchestratorDeps,
-  ctx: PipelineContext,
-  code: string,
-  detail: Record<string, string>,
-): Promise<void> {
-  await deps.blockReviewOutcome(
-    buildSessionContext(ctx),
-    ctx.reviewCtx.obligationId,
-    code,
-    detail,
-    ctx.output,
-  );
-}
-
-export async function buildReviewDiscoveryContextForPipeline(
-  ctx: PipelineContext,
-): Promise<DiscoveryReviewContext> {
-  let fingerprint: string | null = null;
-  let worktree = sessionWorktree(ctx.sessionState);
-  try {
-    fingerprint = await ctx.deps.resolveFingerprint();
-  } catch (error) {
-    safeWarn(ctx, 'failed to resolve fingerprint for review discovery context', error);
-  }
-  try {
-    worktree = ctx.deps.adapter.getWorktree();
-  } catch (error) {
-    safeWarn(ctx, 'failed to resolve worktree for review discovery context', error);
-  }
-  // #401: PR/content review evaluates external diffs against the current repo, so
-  // drift between local Discovery and the reviewed branch is review-relevant evidence.
-  // Drift checking is bounded by DEFAULT_STATUS_DRIFT_TIMEOUT_MS and fails closed:
-  // a timeout or error produces an explicit drift failure status (timeout ->
-  // discovery_drift_timeout, error -> discovery_drift_unavailable) that renders
-  // NOT_VERIFIED — never a silent pass.
-  return buildReviewDiscoveryContext({
-    sessionState: ctx.sessionState,
-    fingerprint,
-    worktree,
-    includeDriftCheck: true,
-  });
-}
-
-function sessionWorktree(state: SessionState): string {
-  return (state as { binding?: { worktree?: string } }).binding?.worktree ?? '';
-}
-
-function safeWarn(ctx: PipelineContext, message: string, error: unknown): void {
-  try {
-    ctx.deps.log.warn('orchestrator', message, {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  } catch {
-    // Logging is diagnostic-only; Discovery context failures are surfaced in the prompt.
-  }
-}
-
-// ─── Prompt Building ─────────────────────────────────────────────────────────
-
-interface BuildToolPromptParams {
-  toolName: string;
-  texts: { planText: string; ticketText: string; adrText: string; adrTitle: string };
-  reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>;
-  parsedOutput: Record<string, unknown>;
-  sessionState: SessionState;
-  rules: {
-    planRules: ReturnType<typeof selectReviewerProfileRules>;
-    implRules: ReturnType<typeof selectReviewerProfileRules>;
-    archRules: ReturnType<typeof selectReviewerProfileRules>;
-  };
-  deps: OrchestratorDeps;
-  discoveryContext: DiscoveryReviewContext;
-}
-
-export function buildToolPrompt(params: BuildToolPromptParams): string | null {
-  const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps, discoveryContext } =
-    params;
-  const { planText, ticketText, adrText, adrTitle } = texts;
-  const { planRules, implRules, archRules } = rules;
-  if (toolName === TOOL_FLOWGUARD_PLAN) {
-    return buildPlanReviewPrompt({
-      planText,
-      ticketText,
-      iteration: reviewCtx.iteration,
-      planVersion: reviewCtx.planVersion,
-      obligationId: reviewCtx.obligationId,
-      criteriaVersion: reviewCtx.criteriaVersion,
-      mandateDigest: reviewCtx.mandateDigest,
-      discoveryContext,
-      ...planRules,
-    });
-  }
-  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
-    return buildImplReviewPrompt({
-      changedFiles: Array.isArray(parsedOutput.changedFiles)
-        ? (parsedOutput.changedFiles as string[])
-        : (sessionState.implementation?.changedFiles ?? []),
-      planText,
-      ticketText,
-      iteration: reviewCtx.iteration,
-      planVersion: reviewCtx.planVersion,
-      obligationId: reviewCtx.obligationId,
-      criteriaVersion: reviewCtx.criteriaVersion,
-      mandateDigest: reviewCtx.mandateDigest,
-      discoveryContext,
-      ...implRules,
-    });
-  }
-  if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
-    return buildArchitectureReviewPrompt({
-      adrText,
-      adrTitle,
-      ticketText,
-      iteration: reviewCtx.iteration,
-      planVersion: reviewCtx.planVersion,
-      obligationId: reviewCtx.obligationId,
-      criteriaVersion: reviewCtx.criteriaVersion,
-      mandateDigest: reviewCtx.mandateDigest,
-      discoveryContext,
-      ...archRules,
-    });
-  }
-  deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', { tool: toolName });
-  return null;
 }
 
 // ─── State + Audit Persistence Helper ────────────────────────────────────────
@@ -399,69 +181,34 @@ export interface AssuranceAuditDeps {
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ): Promise<void>;
-  appendReviewAuditEvent(
-    sessDir: string,
-    sessionId: string,
-    phase: string,
-    event: string,
-    detail: Record<string, unknown>,
-  ): Promise<void>;
-  logError(message: string, err: unknown): void;
 }
 
 /**
  * Record a review assurance state mutation together with its audit event.
  *
- * State is committed first (under the session-state write lock). If the
- * audit event fails to persist, the failure is surfaced based on
- * {@code auditFailureBehavior}:
- *
- * - {@code 'block'} — returns a blocked result with code
- *   {@code AUDIT_PERSISTENCE_FAILED}. The state was committed; the
- *   corresponding audit event is missing from the trail.
- * - {@code 'warn'} — logs the error and returns {@code auditOk: false}
- *   without blocking. State was committed; audit event is missing.
- *
- * This helper does NOT make policy decisions. The {@code auditFailureBehavior}
- * parameter must be derived from the active policy by the caller.
+ * The semantic event intent is committed in the same state transaction as the
+ * mutation. The durable audit reconciler appends it idempotently after a crash;
+ * callers never perform a second post-state audit write.
  */
 export async function recordAssuranceWithAudit(
   deps: AssuranceAuditDeps,
   opts: {
     sessDir: string;
-    sessionId: string;
-    phase: string;
     stateMutation: (state: SessionState, now: string) => SessionState;
     auditEventName: string;
     auditDetail: Record<string, unknown>;
-    auditFailureBehavior: 'block' | 'warn';
   },
 ): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string }> {
-  const {
-    sessDir,
-    sessionId,
-    phase,
-    stateMutation,
-    auditEventName,
-    auditDetail,
-    auditFailureBehavior,
-  } = opts;
-  await deps.updateReviewAssurance(sessDir, stateMutation);
-
-  try {
-    await deps.appendReviewAuditEvent(sessDir, sessionId, phase, auditEventName, auditDetail);
-    return { auditOk: true };
-  } catch (err) {
-    deps.logError('Proof persistence failure: audit write failed', err);
-    if (auditFailureBehavior === 'block') {
-      return {
-        auditOk: false,
-        block: true,
-        code: 'AUDIT_PERSISTENCE_FAILED',
-        reason: err instanceof Error ? err.message : String(err),
-      };
-    }
-    return { auditOk: false };
-  }
+  const { sessDir, stateMutation, auditEventName, auditDetail } = opts;
+  await deps.updateReviewAssurance(sessDir, stateMutation, (state, now) => [
+    {
+      phase: state.phase,
+      event: auditEventName,
+      occurredAt: now,
+      detail: auditDetail,
+    },
+  ]);
+  return { auditOk: true };
 }

@@ -1,8 +1,7 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
-export const REQUEST_CHANGES_COMMAND = `
----
-description: Request changes on the currently active review gate.
+export const REQUEST_CHANGES_COMMAND = `---
+description: FlowGuard — Request changes on the currently active review gate.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -26,10 +25,15 @@ Change request: $ARGUMENTS
 - Always use "changes_requested" as the verdict for this command.
 - Only run this command when the user explicitly invoked /request-changes. Do not invent change requests on the user's behalf.
 - If blocked: report the reason and stop (never work around a blocked decision).
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Changes-requested verdict recorded via flowguard_decision.
 - Phase transition and next action reported.
-- Response ends with \`Next action:\` line.
+- If \`presentation.markdown\` was present, it was printed verbatim and its
+  rendered conclusion (the trailing \`→\`/\`•\` command line or the
+  \`## Decision required\` block) is the next-action guidance — do NOT append a
+  separate \`Next action:\` line.
+- Only on the fallback projection (no \`presentation.markdown\`): response ends
+  with a \`Next action:\` line.
 `;

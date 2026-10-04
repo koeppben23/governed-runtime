@@ -310,21 +310,18 @@ describe('config/policy', () => {
         centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
-        configMaxSelfReviewIterations: 10,
-        configMaxImplReviewIterations: 20,
-        configRequireVerifiedActorsForApproval: true,
+        configReviewBudget: { plan: 10, architecture: 9, implementation: 10 },
         configIdentityProvider: {
           mode: 'jwks',
           issuer: 'https://idp.example.com',
           audience: ['flowguard'],
           claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/jwks.json',
+          cacheTtlSeconds: 300,
         },
         configIdentityProviderMode: 'required',
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(10);
-      expect(result.policy.maxImplReviewIterations).toBe(20);
-      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
+      expect(result.policy.reviewBudget).toEqual({ plan: 10, architecture: 9, implementation: 10 });
       expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
       expect(result.policy.identityProvider?.mode).toBe('jwks');
       expect(result.policy.identityProviderMode).toBe('required');
@@ -337,7 +334,6 @@ describe('config/policy', () => {
         centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
-        configRequireVerifiedActorsForApproval: true,
       });
       expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
@@ -350,7 +346,6 @@ describe('config/policy', () => {
         digestFn,
         readFileFn: async () => centralRegulated,
         configMinimumActorAssuranceForApproval: 'idp_verified',
-        configRequireVerifiedActorsForApproval: true,
       });
       expect(result.policy.minimumActorAssuranceForApproval).toBe('idp_verified');
     });
@@ -379,8 +374,9 @@ describe('config/policy', () => {
           mode: 'jwks',
           issuer: 'https://idp',
           audience: ['fg'],
-          claimMapping: { subjectClaim: 'sub' },
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/jwks.json',
+          cacheTtlSeconds: 300,
         },
       });
       expect(result.policy.identityProvider).toBeDefined();
@@ -561,50 +557,6 @@ describe('config/policy', () => {
   describe('MUTATION: resolvePolicyForHydrate legacy & conditional spreads', () => {
     const centralRegulated = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated' });
     const centralSolo = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo' });
-
-    it('legacy requireVerifiedActors=false does NOT produce claim_validated (local)', async () => {
-      const result = await resolvePolicyForHydrate({
-        defaultMode: 'solo',
-        ciContext: false,
-        digestFn,
-        configRequireVerifiedActorsForApproval: false,
-      });
-      expect(result.policy.minimumActorAssuranceForApproval).toBe('best_effort');
-    });
-
-    it('legacy requireVerifiedActors=true produces claim_validated (local)', async () => {
-      const result = await resolvePolicyForHydrate({
-        defaultMode: 'solo',
-        ciContext: false,
-        digestFn,
-        configRequireVerifiedActorsForApproval: true,
-      });
-      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
-    });
-
-    it('legacy requireVerifiedActors=false preserves regulated claim_validated default (central)', async () => {
-      const result = await resolvePolicyForHydrate({
-        defaultMode: 'solo',
-        ciContext: false,
-        centralPolicyPath: POLICY_PATH,
-        digestFn,
-        readFileFn: async () => centralRegulated,
-        configRequireVerifiedActorsForApproval: false,
-      });
-      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
-    });
-
-    it('legacy requireVerifiedActors=true produces claim_validated (central)', async () => {
-      const result = await resolvePolicyForHydrate({
-        defaultMode: 'solo',
-        ciContext: false,
-        centralPolicyPath: POLICY_PATH,
-        digestFn,
-        readFileFn: async () => centralRegulated,
-        configRequireVerifiedActorsForApproval: true,
-      });
-      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
-    });
 
     it('explicit equal to central does NOT set resolutionReason', async () => {
       const result = await resolvePolicyForHydrate({

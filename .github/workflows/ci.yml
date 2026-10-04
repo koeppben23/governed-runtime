@@ -15,6 +15,88 @@ jobs:
   unit:
     name: unit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run unit tests
+        run: npm run test:unit
+        env:
+          FORCE_COLOR: 0
+      - name: Run scripts tests
+        run: npm run test:scripts
+        env:
+          FORCE_COLOR: 0
+      - name: Run assertion conformance
+        run: npm run test:assertion-conformance
+        env:
+          FORCE_COLOR: 0
+
+  scripts-windows:
+    name: scripts-windows
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run scripts tests
+        run: npm run test:scripts
+        env:
+          FORCE_COLOR: 0
+
+  known-issues-note:
+    name: known-issues-note
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Hint when trust-boundary changes miss KNOWN_ISSUES.md
+        run: node scripts/check-known-issues-note.mjs "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+
+  unused-exports:
+    name: unused-exports
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Check new unused exports against the committed baseline
+        run: node scripts/check-unused-exports.mjs
+
+  test:
+    name: ci-gate
+    runs-on: ubuntu-latest
+    needs: [unit, scripts-windows, coverage, integration_perf, provider-conformance, regulated_e2e]
+    if: always()
+    timeout-minutes: 1
+    steps:
+      - name: Confirm test, coverage, PERF, regulated e2e, and provider conformance jobs passed
+        run: |
+          echo "unit: ${{ needs.unit.result }}"
+          echo "scripts-windows: ${{ needs.scripts-windows.result }}"
+          echo "coverage: ${{ needs.coverage.result }}"
+          echo "integration-perf: ${{ needs.integration_perf.result }}"
+          echo "provider-conformance: ${{ needs.provider-conformance.result }}"
+          echo "regulated-e2e: ${{ needs.regulated_e2e.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ]; then
+            echo "Blocked: unit, scripts-windows, coverage, integration-perf, provider-conformance, or regulated-e2e job failed"
+            exit 1
+          fi
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
@@ -22,16 +104,10 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Run unit tests with coverage
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run coverage
         run: npm run test:coverage:ci
         env:
           FORCE_COLOR: 0
@@ -42,7 +118,6 @@ jobs:
           name: coverage-report
           path: coverage/
           retention-days: 1
-
       - name: Comment coverage summary
         if: github.event_name == 'pull_request' && always()
         continue-on-error: true
@@ -85,62 +160,132 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
-  test:
-    name: test
+  provider-conformance:
+    name: provider-conformance
     runs-on: ubuntu-latest
-    needs: [unit, integration]
-    if: always()
-    timeout-minutes: 1
+    timeout-minutes: 20
     steps:
-      - name: Confirm split test jobs passed
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Setup Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # actions/setup-java v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # actions/setup-python v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # actions/setup-go v7.0.0
+        with:
+          go-version: '1.23'
+          # Golden fixture provenance: Go 1.26.5. CI tests against 1.23 for
+          # broad compatibility — go test -json output is stable across versions.
+      - name: Install fixture dependencies
         run: |
-          echo "unit: ${{ needs.unit.result }}"
-          echo "integration: ${{ needs.integration.result }}"
-          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.integration.result }}" != "success" ]; then
-            echo "Blocked: unit or integration test job failed"
-            exit 1
-          fi
+          cd test/conformance/assertions/projects/vitest && npm ci
+          cd ../jest && npm ci
+          cd ../pytest && pip install -r requirements.txt
+          cd ../go && go mod download
+      - name: Run provider runtime conformance
+        run: npm run test:provider-conformance
+        env:
+          FORCE_COLOR: 0
+          FLOWGUARD_RUNTIME_CONFORMANCE: '1'
 
-  integration:
-    name: integration
+  integration_perf:
+    name: integration-perf
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run integration PERF tests
+        run: |
+          echo "FLOWGUARD_PERF=$FLOWGUARD_PERF"
+          npm run test:integration:perf
+        env:
+          FORCE_COLOR: 0
+          FLOWGUARD_PERF: '1'
+
+  regulated_e2e:
+    name: regulated-e2e
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: typecheck
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Run integration tests
-        run: npm run test:integration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run regulated completion e2e gate
+        run: |
+          npx vitest run --project integration \
+            src/integration/regulated-e2e.test.ts \
+            src/integration/plugin-regulated-recovery.test.ts \
+            src/integration/audit-archive-tamper-matrix.test.ts
+        env:
+          FORCE_COLOR: 0
+
+  architecture-linux:
+    name: architecture-linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run architecture tests
+        run: npm run test:architecture
+        env:
+          FORCE_COLOR: 0
+
+      - name: Check legacy mutation ratchet against the PR base
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          node scripts/check-legacy-ratchet.mjs --base "origin/${{ github.base_ref }}"
+        env:
+          FORCE_COLOR: 0
+
+  architecture-windows:
+    name: architecture-windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Run architecture tests
+        run: npm run test:architecture
         env:
           FORCE_COLOR: 0
 
   architecture:
     name: architecture
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    needs:
+      - architecture-linux
+      - architecture-windows
+    if: always()
+    timeout-minutes: 1
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Run architecture tests
-        run: npm run test:architecture
-        env:
-          FORCE_COLOR: 0
+      - name: Confirm both architecture platforms passed
+        run: |
+          echo "architecture-linux: ${{ needs.architecture-linux.result }}"
+          echo "architecture-windows: ${{ needs.architecture-windows.result }}"
+          if [ "${{ needs.architecture-linux.result }}" != "success" ] || [ "${{ needs.architecture-windows.result }}" != "success" ]; then
+            echo "Blocked: architecture-linux or architecture-windows failed"
+            exit 1
+          fi
 
   typecheck:
     name: typecheck
@@ -148,37 +293,40 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Type check
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Type check production and test contexts
         run: npm run check
         env:
           FORCE_COLOR: 0
-
   sdk-baseline:
     name: sdk-baseline
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
       - name: SDK type drift check
         run: node scripts/sdk-type-snapshot.mjs
+      - name: Trigger SDK update on version mismatch
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          baseline_version=$(node -p "JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).version")
+          installed_version=$(node -p "JSON.parse(require('fs').readFileSync('node_modules/@opencode-ai/plugin/package.json','utf8')).version")
+          if [ "$baseline_version" != "$installed_version" ]; then
+            echo "SDK version mismatch: baseline=$baseline_version installed=$installed_version"
+            gh workflow run opencode-sdk-update.yml
+          else
+            echo "SDK type drift detected but versions match ($baseline_version); skipping auto-update."
+          fi
 
   lint:
     name: lint
@@ -186,15 +334,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
       - name: Lint
         run: npm run lint:strict
         env:
@@ -206,15 +348,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
       - name: Check unused dependencies
         run: npm run check:unused-dependencies
         env:
@@ -226,17 +362,25 @@ jobs:
     timeout-minutes: 3
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
       - name: Check formatting
         run: npm run check:format
+        env:
+          FORCE_COLOR: 0
+
+  doc-drift:
+    name: doc-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Check documentation inventory drift
+        run: npm run check:doc-drift
         env:
           FORCE_COLOR: 0
 
@@ -246,15 +390,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
       - name: Run fuzz tests (fast gate)
         run: npm run test:fuzz
         env:
@@ -267,17 +405,21 @@ jobs:
     timeout-minutes: 3
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
       - name: Check GitHub Actions pinning
         run: npm run check:actions-pinned
+
+  node-toolchain:
+    name: node-toolchain
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Check node toolchain consistency
+        run: node scripts/check-node-toolchain-consistency.mjs
 
   build:
     name: build
@@ -285,15 +427,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
       - name: Build
         run: npm run build
         env:
@@ -303,6 +439,38 @@ jobs:
         run: npm run check:esm
         env:
           FORCE_COLOR: 0
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  build-clean:
+    name: build-clean
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+
+      - name: Build
+        run: npm run build
+        env:
+          FORCE_COLOR: 0
+
+      - name: Verify clean working tree after build
+        run: |
+          status=$(git status --porcelain --untracked-files=all)
+          if ! git diff --exit-code || [ -n "$status" ]; then
+            echo "::error::npm run build produced uncommitted changes."
+            printf '%s\n' "$status"
+            exit 1
+          fi
 
   install-verify:
     name: install-verify (${{ matrix.os }})
@@ -315,22 +483,37 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+
+      - name: Download built dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
         with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
+          name: dist
+          path: dist/
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
 
-      - name: Build package
-        run: npm run build
-        env:
-          FORCE_COLOR: 0
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Run install-verify smoke tests
         run: npm run test:install-verify
@@ -344,27 +527,47 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+
+      - name: Download built dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
         with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
+          name: dist
+          path: dist/
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
 
-      - name: Build package
-        run: npm run build
-        env:
-          FORCE_COLOR: 0
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Install OpenCode CLI
         run: |
           OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
           npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          # npm may link global bins into a prefix that is not on PATH yet.
+          GLOBAL_BIN="$(npm prefix -g)/bin"
+          if [ -d "$GLOBAL_BIN" ]; then
+            echo "$GLOBAL_BIN" >> "$GITHUB_PATH"
+          fi
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -381,6 +584,9 @@ jobs:
         env:
           FORCE_COLOR: 0
           OPENCODE_DISABLE_AUTOUPDATE: '1'
+          # The pinned host is installed above; prove the frozen structured
+          # reviewer wire contract (child session + json_schema + info.structured).
+          FLOWGUARD_OPENCODE_HOST_E2E: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
 
   independent-review-e2e:
@@ -390,25 +596,47 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+
+      - name: Download built dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
         with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
+          name: dist
+          path: dist/
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
 
-      - name: Build package for runtime install
-        run: npm run build
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Install OpenCode CLI
         run: |
           OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
           npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          # npm may link global bins into a prefix that is not on PATH yet.
+          GLOBAL_BIN="$(npm prefix -g)/bin"
+          if [ -d "$GLOBAL_BIN" ]; then
+            echo "$GLOBAL_BIN" >> "$GITHUB_PATH"
+          fi
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -432,7 +660,7 @@ jobs:
     timeout-minutes: 3
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
       - name: Run actionlint
         uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # rhysd/actionlint v1.7.12
@@ -445,9 +673,10 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
         with:
           fetch-depth: 0
 
@@ -462,7 +691,7 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
       - name: Check for SECURITY.md
         run: |
@@ -489,7 +718,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
       - name: Dependency review
         if: github.event_name == 'pull_request'
@@ -501,6 +730,7 @@ jobs:
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: build
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -508,20 +738,37 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+
+      - name: Download built dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact v8.0.1
         with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
+          name: dist
+          path: dist/
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
 
-      - name: Build package
-        run: npm run build
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Pack real release tarball for testing
         id: tarball
@@ -551,7 +798,8 @@ jobs:
     needs:
       - unit
       - test
-      - integration
+      - coverage
+      - integration_perf
       - architecture
       - typecheck
       - sdk-baseline
@@ -561,6 +809,7 @@ jobs:
       - fuzz
       - actions-pinning
       - build
+      - build-clean
       - install-verify
       - smoke
       - independent-review-e2e

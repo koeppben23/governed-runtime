@@ -2,15 +2,18 @@
  * @module test-policy
  * @description Test policy constants and types for the FlowGuard test suite.
  *
- * Every test file MUST cover all five categories. This policy is enforced
- * by test naming conventions and review mandates in flowguard-mandates.md.
+ * Every test suite MUST cover the correctness categories applicable to its
+ * behavior. PERF coverage is required only for an explicit performance
+ * contract. Arbitrary single-invocation wall-clock smoke thresholds are not
+ * performance contracts. Test suites may use @test-policy headers to document
+ * applicable canonical categories; those headers are not globally enforced.
  *
  * Categories:
  * 1. HAPPY  — Normal, expected successful flows
  * 2. BAD    — Invalid, missing, or malformed input
  * 3. CORNER — Boundary conditions, limits, thresholds
  * 4. EDGE   — Unusual but valid scenarios, race conditions
- * 5. PERF   — Throughput, memory, timing constraints
+ * 5. PERF   — Explicit throughput, memory, or timing contracts
  *
  * Test naming convention:
  *   describe("module-name", () => {
@@ -18,14 +21,18 @@
  *     describe("BAD", () => { ... });
  *     describe("CORNER", () => { ... });
  *     describe("EDGE", () => { ... });
- *     describe("PERF", () => { ... });
+ *     describe("PERF", () => { ... }); // only for an explicit performance contract
  *   });
  *
+ * Explicit performance contracts SHOULD use PERF_BUDGETS with benchmarkSync or
+ * benchmarkAsync where applicable. Ad-hoc single-invocation wall-clock smoke
+ * thresholds without an explicit performance contract MUST NOT act as test gates.
+ *
  * Performance thresholds (enforced in PERF tests):
- * - State evaluation: < 1ms for single evaluate() call
- * - Guard evaluation: < 0.1ms per guard predicate
- * - Audit chain verification: < 100ms for 1000 events
- * - State serialization: < 5ms for full SessionState
+ * - State evaluation: `evaluateSingleMs` (1.5 ms × CI multiplier)
+ * - Guard evaluation: `guardPredicateMs` (3 ms × CI multiplier × `PERF_BUDGET_FACTOR`)
+ * - Audit chain verification: `auditChainVerify1000Ms` (100 ms × CI multiplier)
+ * - State serialization: `stateSerializeMs` (5 ms × CI multiplier × `PERF_BUDGET_FACTOR`)
  *
  * @version v1
  */
@@ -37,8 +44,8 @@ declare const performance: {
 // ─── Test Categories ──────────────────────────────────────────────────────────
 
 /**
- * The five mandatory test categories.
- * Every test suite must have a describe block for each.
+ * The recognized test categories. Suites cover applicable correctness
+ * categories; PERF applies only to explicit performance contracts.
  */
 export const TEST_CATEGORIES = ['HAPPY', 'BAD', 'CORNER', 'EDGE', 'PERF'] as const;
 
@@ -95,6 +102,17 @@ export const PERF_BUDGETS = {
    */
   stateIoRoundTripMs: 50 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
+  /**
+   * Governed full-prepare update of an existing session: read, implementation
+   * finalization, ProofGraph refresh, durable audit preparation, and the atomic
+   * state + artifact commit (filesystem I/O). Calibrated on a state-changing
+   * workload (alternating authority per iteration): local p99 41-58ms, median
+   * ~13ms, budget keeps >3x headroom against the worst observed spike.
+   * CI adjustment: 3x multiplier for noisy VMs with unpredictable I/O.
+   * Local: 200ms budget.
+   */
+  stateGovernedWriteMs: 200 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
   /** Completeness matrix evaluation. */
   completenessEvalMs: 2 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
 
@@ -117,9 +135,6 @@ export const PERF_BUDGETS = {
 
   /** Decision receipts redaction (100 entries, strict mode). */
   redactionStrict100Ms: 30 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
-
-  /** Architecture dependency scan for all source files. */
-  architectureAnalyzeAllMs: 800 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
   /** Query filter over 10k audit events. */
   filterEvents10000Ms: 50 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
@@ -166,12 +181,16 @@ export const PERF_BUDGETS = {
 /**
  * Whether PERF budgets are enforced this run.
  *
- * Default: enforced. The non-coverage `test`/`integration` jobs enforce budgets
- * (with CI multipliers, see PERF_BUDGETS). Coverage runs set `FLOWGUARD_PERF=0`
- * because v8 instrumentation inflates timings far beyond any reasonable budget
- * AND v8 skips writing the report when any test fails. When disabled, benchmark
- * helpers still execute the function once (so the code path is covered) but
- * report 0ms so the call-site budget assertion passes without measuring.
+/**
+ * Whether PERF budgets are enforced this run.
+ *
+ * Default: enforced. The non-coverage `unit` and `integration-perf` CI jobs
+ * enforce timing budgets with CI multipliers (see PERF_BUDGETS). Coverage runs
+ * set `FLOWGUARD_PERF=0` because v8 instrumentation inflates timings far beyond
+ * any reasonable budget AND v8 skips writing the report when any test fails.
+ *
+ * When disabled, suites may skip timing-only tests and benchmark helpers execute
+ * the covered operation once while returning zero-valued measurements.
  */
 export const PERF_ENABLED = process.env.FLOWGUARD_PERF !== '0';
 
@@ -246,6 +265,11 @@ export function benchmarkSync<T>(
  * Run an async function N times and return p95/p99 execution time.
  * First `warmup` iterations are discarded.
  *
+ * `reset`, when provided, runs before every invocation (warm-up and measured)
+ * and is excluded from the timing window. It exists for I/O benchmarks whose
+ * fixture must be restored between iterations so every sample starts from a
+ * comparable state (for example a bounded audit backlog).
+ *
  * When PERF enforcement is disabled (coverage runs), the function is executed
  * once (for coverage) and a zero result is returned so budget assertions pass.
  */
@@ -253,18 +277,22 @@ export async function benchmarkAsync<T>(
   fn: () => Promise<T>,
   iterations: number = 20,
   warmup: number = 3,
+  reset?: () => Promise<void>,
 ): Promise<{ p99Ms: number; p95Ms: number; medianMs: number; meanMs: number }> {
   if (!PERF_ENABLED) {
+    if (reset !== undefined) await reset();
     await fn();
     return { ...ZERO_BENCH };
   }
   const times: number[] = [];
 
   for (let i = 0; i < warmup; i++) {
+    if (reset !== undefined) await reset();
     await fn();
   }
 
   for (let i = 0; i < iterations; i++) {
+    if (reset !== undefined) await reset();
     const start = performance.now();
     await fn();
     times.push(performance.now() - start);

@@ -6,9 +6,13 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { digestText, mergeCentralEvidence, snapshotCentralEvidence } from './hydrate-policy.js';
+import {
+  digestText,
+  mergeCentralEvidence,
+  snapshotCentralEvidence,
+} from './hydrate/hydrate-policy.js';
 import type { PolicyMode } from '../../state/policy-mode.js';
-import type { ExistingHydrateState } from './hydrate.js';
+import type { ExistingHydrateState } from './hydrate/hydrate.js';
 
 vi.mock('../../config/policy.js', () => ({
   validateExistingPolicyAgainstCentral: vi.fn().mockResolvedValue({ valid: true }),
@@ -21,8 +25,8 @@ vi.mock('../../config/policy.js', () => ({
 function existing(overrides = {}): NonNullable<ExistingHydrateState> {
   return {
     policySnapshot: {
-      mode: 'team' as PolicyMode,
-      requestedMode: 'team' as PolicyMode,
+      mode: 'team',
+      requestedMode: 'team',
       source: 'default' as const,
       effectiveGateBehavior: 'human_gated' as const,
       hash: 'snapshot-hash',
@@ -61,6 +65,8 @@ describe('mergeCentralEvidence', () => {
       version: 'c-version',
       pathHint: '~/.flowguard/policy.json',
     });
+    expect(merged).not.toBeNull();
+    if (!merged) return;
     expect(merged.policySnapshot.centralMinimumMode).toBe('regulated');
     expect(merged.policySnapshot.policyDigest).toBe('c-digest');
     expect(merged.policySnapshot.policyVersion).toBe('c-version');
@@ -69,6 +75,8 @@ describe('mergeCentralEvidence', () => {
   it('returns existing unchanged when central evidence is undefined', () => {
     const s = existing();
     const merged = mergeCentralEvidence(s, undefined);
+    expect(merged).not.toBeNull();
+    if (!merged) return;
     expect(merged.policySnapshot.mode).toBe('team');
     expect(merged.policySnapshot.centralMinimumMode).toBeUndefined();
   });

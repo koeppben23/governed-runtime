@@ -1,6 +1,6 @@
-# Quick Start
+# Quick Start (OpenCode)
 
-Get FlowGuard up and running in 5 minutes.
+This Quick Start applies to OpenCode, the fully supported GA host.
 
 ## Prerequisites
 
@@ -37,6 +37,12 @@ Or reference an external Jira ticket:
 /task https://jira.example.com/browse/PROJ-123
 ```
 
+The agent adopts the ticket content it can read: title, description and — only for an explicitly
+named risk field such as `Risk` with a value of `TRIVIAL`, `STANDARD` or `HIGH-RISK` — that class as
+its own `Risk:` line. A bare URL or issue ID is never ticket content, unreadable content (or an
+unreadable explicit risk field) fails closed, and `Priority`/`Severity`/`Impact` are never
+interpreted as risk classes. Comments, attachments and provider state are not part of this contract.
+
 ### 2. Generate a Plan
 
 ```
@@ -71,11 +77,11 @@ The Plan Review Card footer lists the available decision commands with short exp
 
 Use `/request-changes` to revise the plan or `/reject` to stop the task.
 
-### 4. Validate (Check)
+### 4. Validate (Automatic)
 
-```
-/check
-```
+FlowGuard runs the baseline validation checks automatically when the plan is
+approved and the phase advances. No command is required; `/check` remains
+available as a compatibility surface if checks need to be re-run explicitly.
 
 ### 5. Implement
 
@@ -83,10 +89,12 @@ Use `/request-changes` to revise the plan or `/reject` to stop the task.
 /implement
 ```
 
-The implementation enters its own iterative independent-review loop (parity with
-`/plan`): the reviewer subagent is invoked against the recorded code changes; the
-agent revises and re-records on `changes_requested`; convergence advances to
-`EVIDENCE_REVIEW`.
+`/implement` is end-to-end: it records implementation evidence, auto-runs the
+post-implementation validation checks (`IMPL_VALIDATION`), and enters the iterative
+independent-review loop (parity with `/plan`): the reviewer subagent is invoked
+against the recorded code changes; the agent revises and re-records on
+`changes_requested`; convergence advances to `EVIDENCE_REVIEW` — ready for
+approval.
 
 ### 6. Final Review
 
@@ -100,11 +108,13 @@ agent revises and re-records on `changes_requested`; convergence advances to
 /export
 ```
 
-Creates a verifiable audit package with integrity verification.
+Materializes the required verifiable export and completes the workflow once
+export evidence is persisted. Canonical verification requires an authorized raw
+auditor package.
 
 All canonical commands (`/hydrate`, `/ticket`, `/review-decision`, `/validate`,
-`/architecture`, `/review`, `/archive`, `/abort`, `/continue`) remain fully
-supported for scripts, CI, and advanced workflows.
+`/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`) remain
+fully supported for scripts, CI, and advanced workflows.
 
 ## Architecture Flow (ADR Creation)
 
@@ -130,9 +140,9 @@ where a human approves:
 `/request-changes` returns to `ARCHITECTURE` for further revision; `/reject`
 returns the session to `READY`.)
 
-## Review Flow (Compliance Report)
+## Peer Review Flow
 
-Generate a compliance review report from READY:
+Generate a peer review report from READY:
 
 ```
 /review
@@ -161,8 +171,8 @@ Or review a specific GitHub pull request:
 | `/approve`            | Approve at the current review gate          |
 | `/request-changes`    | Request changes at the current review gate  |
 | `/reject`             | Reject at the current review gate           |
-| `/check`              | Run validation                              |
-| `/export`             | Archive the session                         |
+| `/check`              | Compatibility: re-run validation            |
+| `/export`             | Materialize the verifiable export           |
 | `/why`                | Diagnostic: explain the current next-action |
 | `/status`             | Read-only session view                      |
 
@@ -176,7 +186,7 @@ Or review a specific GitHub pull request:
 | `/architecture`                      | Create/revise ADR                    |
 | `/implement`                         | Execute approved plan                |
 | `/validate`                          | Run validation                       |
-| `/review <PR-URL or branch>`         | Start compliance review flow         |
+| `/review <PR-URL or branch>`         | Start peer review flow               |
 | `/continue`                          | Auto-advance                         |
 | `/review-decision approve`           | Approve                              |
 | `/review-decision changes_requested` | Request changes                      |

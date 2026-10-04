@@ -2,8 +2,38 @@ import { describe, it, expect } from 'vitest';
 import { evaluateCompleteness } from './completeness.js';
 import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { ReviewDecision } from '../state/evidence-review-report.js';
+import type { ValidationResult } from '../state/evidence.js';
+import type { SessionState, Phase } from '../state/schema.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+
+function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  return {
+    checkId,
+    passed,
+    detail,
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: passed ? 0 : 1,
+    executionMs: 1,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+    outcome: passed ? 'supported' : 'inconclusive',
+  };
+}
+
+function zeroCheckCompleteState(overrides: Partial<SessionState> = {}): SessionState {
+  return {
+    ...makeProgressedState('COMPLETE'),
+    activeChecks: [],
+    validation: [],
+    implValidation: [],
+    ...overrides,
+  };
+}
+
 describe('audit completeness', () => {
-  // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('evaluateCompleteness at TICKET phase — only ticket required', () => {
       const state = makeState('TICKET', { ticket: null });
@@ -12,12 +42,10 @@ describe('audit completeness', () => {
       expect(report.phase).toBe('TICKET');
       expect(report.policyMode).toBe('team');
 
-      // ticket slot is required and missing
       const ticketSlot = report.slots.find((s) => s.slot === 'ticket');
       expect(ticketSlot?.required).toBe(true);
       expect(ticketSlot?.status).toBe('missing');
 
-      // plan slot is not yet required
       const planSlot = report.slots.find((s) => s.slot === 'plan');
       expect(planSlot?.required).toBe(false);
       expect(planSlot?.status).toBe('not_yet_required');
@@ -28,7 +56,7 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       expect(report.phase).toBe('COMPLETE');
       expect(report.overallComplete).toBe(true);
-      expect(report.summary.complete).toBe(8); // All 8 slots
+      expect(report.summary.complete).toBe(9);
       expect(report.summary.missing).toBe(0);
       expect(report.summary.failed).toBe(0);
     });
@@ -37,7 +65,6 @@ describe('audit completeness', () => {
       const state = makeProgressedState('VALIDATION');
       const report = evaluateCompleteness(state);
       expect(report.phase).toBe('VALIDATION');
-      // ticket, plan, selfReview, planReviewDecision should be required and complete
       const requiredSlots = report.slots.filter((s) => s.required);
       expect(requiredSlots).toHaveLength(4);
       expect(requiredSlots.every((s) => s.status === 'complete')).toBe(true);
@@ -52,10 +79,8 @@ describe('audit completeness', () => {
     });
   });
 
-  // ─── BAD ────────────────────────────────────────────────────
   describe('BAD', () => {
     it('missing evidence at required phase → missing status', () => {
-      // At PLAN phase but no plan evidence
       const state = makeState('PLAN', { ticket: null, plan: null });
       const report = evaluateCompleteness(state);
       const ticketSlot = report.slots.find((s) => s.slot === 'ticket');
@@ -69,13 +94,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          {
-            checkId: 'test_quality',
-            passed: false,
-            detail: 'Missing tests',
-            executedAt: FIXED_TIME,
-          },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'Missing tests'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -84,15 +104,36 @@ describe('audit completeness', () => {
       expect(valSlot?.detail).toContain('failed: test_quality');
       expect(report.overallComplete).toBe(false);
     });
+
+    it('failed post-implementation evidence is isolated from complete validation evidence', () => {
+      const state = makeState('IMPL_REVIEW', {
+        ...makeProgressedState('IMPL_REVIEW'),
+        activeChecks: ['unit', 'lint'],
+        validation: [validationResult('unit', true, 'ok'), validationResult('lint', true, 'ok')],
+        implValidation: [
+          validationResult('unit', false, 'failed'),
+          validationResult('lint', true, 'ok'),
+        ],
+      });
+      const report = evaluateCompleteness(state);
+      const validationSlot = report.slots.find((slot) => slot.slot === 'validation');
+      const implValidationSlot = report.slots.find((slot) => slot.slot === 'implValidation');
+
+      expect(validationSlot).toMatchObject({ status: 'complete', detail: '2/2 passed' });
+      expect(implValidationSlot).toMatchObject({
+        status: 'failed',
+        detail: 'post-impl 1/2 passed, failed: unit',
+      });
+      expect(report.overallComplete).toBe(false);
+    });
   });
 
-  // ─── CORNER ─────────────────────────────────────────────────
   describe('CORNER', () => {
     it('four-eyes violated — same person initiated and reviewed', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -106,7 +147,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice', // Same as initiatedBy
           decisionIdentity: {
             actorId: 'alice',
             actorEmail: null,
@@ -126,7 +166,7 @@ describe('audit completeness', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -134,7 +174,12 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = evaluateCompleteness(state);
@@ -143,11 +188,22 @@ describe('audit completeness', () => {
       expect(report.fourEyes.detail).toContain('satisfied');
     });
 
-    it('four-eyes violated when structured identities match despite different legacy strings', () => {
+    it('rejects a decision that carries only the obsolete decidedBy string', () => {
+      expect(
+        ReviewDecision.safeParse({
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'legacy-reviewer',
+        }).success,
+      ).toBe(false);
+    });
+
+    it('four-eyes violated when structured identities match despite actor-id case differences', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'legacy-initiator',
@@ -161,7 +217,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'legacy-reviewer',
           decisionIdentity: {
             actorId: 'ALICE',
             actorEmail: null,
@@ -180,7 +235,7 @@ describe('audit completeness', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedByIdentity: {
@@ -193,7 +248,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
           decisionIdentity: {
             actorId: 'bob',
             actorEmail: null,
@@ -208,11 +262,11 @@ describe('audit completeness', () => {
       expect(report.fourEyes.detail).toContain('not comparable');
     });
 
-    it('four-eyes uses legacy actor strings when structured identities are absent', () => {
+    it('four-eyes falls back to the initiator string when no structured initiator identity exists', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -221,7 +275,12 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = evaluateCompleteness(state);
@@ -234,25 +293,22 @@ describe('audit completeness', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,
       });
       const report = evaluateCompleteness(state);
       expect(report.fourEyes.required).toBe(true);
-      // No decision yet → decidedBy is null → fourEyesSatisfied is false
       expect(report.fourEyes.satisfied).toBe(false);
       expect(report.fourEyes.detail).toContain('pending');
     });
 
     it('planReviewDecision slot uses topology invariant (phase >= VALIDATION)', () => {
-      // At PLAN_REVIEW: planReviewDecision should be required but missing
       const state = makeProgressedState('PLAN_REVIEW');
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'planReviewDecision');
-      expect(slot?.required).toBe(false); // ordinal 2 < 3 (VALIDATION)
-      // At VALIDATION: planReviewDecision should be complete (topology invariant)
+      expect(slot?.required).toBe(false);
       const state2 = makeProgressedState('VALIDATION');
       const report2 = evaluateCompleteness(state2);
       const slot2 = report2.slots.find((s) => s.slot === 'planReviewDecision');
@@ -278,7 +334,6 @@ describe('audit completeness', () => {
     });
   });
 
-  // ─── EDGE ───────────────────────────────────────────────────
   describe('EDGE', () => {
     it('slot detail generation for each evidence type', () => {
       const state = makeProgressedState('COMPLETE');
@@ -289,7 +344,7 @@ describe('audit completeness', () => {
       expect(ticketSlot?.detail).toContain('digest:');
 
       const planSlot = report.slots.find((s) => s.slot === 'plan');
-      expect(planSlot?.detail).toContain('v1'); // history.length + 1
+      expect(planSlot?.detail).toContain('v1');
 
       const selfReviewSlot = report.slots.find((s) => s.slot === 'selfReview');
       expect(selfReviewSlot?.detail).toContain('iteration');
@@ -303,7 +358,8 @@ describe('audit completeness', () => {
     });
 
     it("no policy snapshot → policyMode is 'unknown'", () => {
-      const state = makeState('TICKET', { policySnapshot: undefined as any });
+      const state = makeState('TICKET');
+      Reflect.deleteProperty(state, 'policySnapshot');
       const report = evaluateCompleteness(state);
       expect(report.policyMode).toBe('unknown');
     });
@@ -313,24 +369,32 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       const { complete, missing, notYetRequired, failed } = report.summary;
       expect(complete + missing + notYetRequired + failed).toBe(report.summary.total);
-      expect(report.summary.total).toBe(8);
+      expect(report.summary.total).toBe(9);
     });
 
     it('architecture flow evaluates arch-specific slots', () => {
       const state = makeState('ARCHITECTURE', { architecture: null });
       const report = evaluateCompleteness(state);
       expect(report.phase).toBe('ARCHITECTURE');
+      expect(report.summary.total).toBe(report.slots.length);
       const archSlot = report.slots.find((s) => s.slot === 'architecture');
       expect(archSlot?.required).toBe(true);
       expect(archSlot?.status).toBe('missing');
     });
 
     it('review flow has no evidence slots (standalone artifact)', () => {
-      const state = makeState('REVIEW');
+      const state = makeState('PEER_REVIEW');
       const report = evaluateCompleteness(state);
       expect(report.slots).toHaveLength(0);
-      // 0 slots → missing=0, failed=0, phase !== READY → overallComplete is vacuously true
-      expect(report.overallComplete).toBe(true);
+      // PEER_REVIEW is still in progress; zero slots must not vacuously imply completion.
+      expect(report.overallComplete).toBe(false);
+      expect(report.summary.total).toBe(0);
+      expect(
+        report.summary.complete +
+          report.summary.missing +
+          report.summary.notYetRequired +
+          report.summary.failed,
+      ).toBe(0);
     });
 
     it('architecture flow at ARCH_COMPLETE with accepted ADR — all complete', () => {
@@ -344,7 +408,7 @@ describe('audit completeness', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,
@@ -366,7 +430,6 @@ describe('audit completeness', () => {
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'evidenceReviewDecision');
-      // Required from COMPLETE (ordinal 7), PLAN is ordinal 1 → not yet required
       expect(slot?.required).toBe(false);
       expect(slot?.status).toBe('not_yet_required');
     });
@@ -387,17 +450,21 @@ describe('audit completeness', () => {
     });
 
     it('all phases of ticket flow have correct slot requirements', () => {
-      // Test each phase of the ticket flow and verify required slot counts
-      const phases: Array<{ phase: string; expectedRequired: number; expectedTotal: number }> = [
-        { phase: 'READY', expectedRequired: 0, expectedTotal: 8 },
-        { phase: 'TICKET', expectedRequired: 1, expectedTotal: 8 }, // ticket
-        { phase: 'PLAN', expectedRequired: 2, expectedTotal: 8 }, // ticket, plan
-        { phase: 'PLAN_REVIEW', expectedRequired: 3, expectedTotal: 8 }, // +selfReview
-        { phase: 'VALIDATION', expectedRequired: 4, expectedTotal: 8 }, // +planReviewDecision
-        { phase: 'IMPLEMENTATION', expectedRequired: 5, expectedTotal: 8 }, // +validation
-        { phase: 'IMPL_REVIEW', expectedRequired: 6, expectedTotal: 8 }, // +implementation
-        { phase: 'EVIDENCE_REVIEW', expectedRequired: 7, expectedTotal: 8 }, // +implReview
-        { phase: 'COMPLETE', expectedRequired: 8, expectedTotal: 8 }, // +evidenceReviewDecision
+      const phases: Array<{
+        phase: import('../state/schema.js').Phase;
+        expectedRequired: number;
+        expectedTotal: number;
+      }> = [
+        { phase: 'READY', expectedRequired: 0, expectedTotal: 9 },
+        { phase: 'TICKET', expectedRequired: 1, expectedTotal: 9 },
+        { phase: 'PLAN', expectedRequired: 2, expectedTotal: 9 },
+        { phase: 'PLAN_REVIEW', expectedRequired: 3, expectedTotal: 9 },
+        { phase: 'VALIDATION', expectedRequired: 4, expectedTotal: 9 },
+        { phase: 'IMPLEMENTATION', expectedRequired: 5, expectedTotal: 9 },
+        { phase: 'IMPL_VALIDATION', expectedRequired: 6, expectedTotal: 9 },
+        { phase: 'IMPL_REVIEW', expectedRequired: 7, expectedTotal: 9 },
+        { phase: 'EVIDENCE_REVIEW', expectedRequired: 8, expectedTotal: 9 },
+        { phase: 'COMPLETE', expectedRequired: 9, expectedTotal: 9 },
       ];
       for (const { phase, expectedRequired } of phases) {
         const state =
@@ -434,13 +501,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          {
-            checkId: 'test_quality',
-            passed: false,
-            detail: 'Missing tests',
-            executedAt: FIXED_TIME,
-          },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'Missing tests'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -448,7 +510,6 @@ describe('audit completeness', () => {
       expect(valSlot?.detail).toContain('failed: test_quality');
     });
 
-    // ─── MUTATION KILL: arch flow and error conditions ────────
     it('archReviewDecision slot is NOT present at ARCH_COMPLETE with error', () => {
       const state = makeState('ARCH_COMPLETE', {
         ...makeProgressedState('ARCH_COMPLETE'),
@@ -461,7 +522,6 @@ describe('audit completeness', () => {
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
-      // At ARCH_COMPLETE but with error → NOT present (topology invariant fails)
       expect(slot?.present).toBe(false);
       expect(slot?.status).toBe('missing');
     });
@@ -479,17 +539,16 @@ describe('audit completeness', () => {
         architecture: makeProgressedState('ARCH_COMPLETE').architecture,
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'changes_requested',
         },
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
-      // At ARCH_REVIEW, archReviewDecision is required (ordinal 2 >= 2) but NOT present
-      // because phase !== ARCH_COMPLETE
       expect(slot?.present).toBe(false);
     });
 
@@ -513,7 +572,6 @@ describe('audit completeness', () => {
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
-      // With error, the slot should not be present (or detail should not be "Approved")
       expect(slot?.detail).toBeUndefined();
     });
 
@@ -521,8 +579,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'sec_scan', passed: false, detail: 'vuln', executedAt: FIXED_TIME },
-          { checkId: 'test_quality', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('sec_scan', false, 'vuln'),
+          validationResult('test_quality', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -540,9 +598,7 @@ describe('audit completeness', () => {
     });
 
     it('arch flow slots at ARCHITECTURE phase: only architecture required', () => {
-      const state = makeState('ARCHITECTURE', {
-        architecture: null,
-      });
+      const state = makeState('ARCHITECTURE', { architecture: null });
       const report = evaluateCompleteness(state);
       const archSlot = report.slots.find((s) => s.slot === 'architecture');
       const selfReviewSlot = report.slots.find((s) => s.slot === 'selfReview');
@@ -579,13 +635,12 @@ describe('audit completeness', () => {
     });
 
     it('validation detail uses comma-space separator with 2+ failed checks', () => {
-      // Kill: failedIds.join(', ') → failedIds.join("")
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'chk_alpha', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'chk_beta', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'chk_gamma', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('chk_alpha', false, 'fail'),
+          validationResult('chk_beta', false, 'fail'),
+          validationResult('chk_gamma', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -594,21 +649,13 @@ describe('audit completeness', () => {
     });
 
     it('archReviewDecision detail is undefined at ARCHITECTURE phase', () => {
-      // Kill: state.phase === 'ARCH_COMPLETE' → true
-      // At ARCHITECTURE (not ARCH_COMPLETE), detail should NOT be the topology-invariant string
-      const state = makeState('ARCHITECTURE', {
-        architecture: null,
-      });
+      const state = makeState('ARCHITECTURE', { architecture: null });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
-      // At ARCHITECTURE, archReviewDecision is either not present or detail is undefined
-      if (slot) {
-        expect(slot.detail).toBeUndefined();
-      }
+      if (slot) expect(slot.detail).toBeUndefined();
     });
   });
 
-  // ─── MUTATION KILL: isSlotPresent, isSlotFailed, getSlotDetail, arch flow ────
   describe('MUTATION_KILL isSlotPresent / isSlotFailed / getSlotDetail', () => {
     it('plan slot: state.plan === null means NOT present', () => {
       const state = makeState('PLAN', { plan: null });
@@ -654,13 +701,20 @@ describe('audit completeness', () => {
       expect(slot?.status).toBe('missing');
     });
 
-    it('validation: empty activeChecks means NOT present even with validation results', () => {
+    it('validation: blocked zero-check policy remains NOT present even with validation results', () => {
+      const progressed = makeProgressedState('IMPLEMENTATION');
       const state = makeState('IMPLEMENTATION', {
-        ...makeProgressedState('IMPLEMENTATION'),
-        validation: [
-          { checkId: 'test_quality', passed: true, detail: 'ok', executedAt: FIXED_TIME },
-        ],
+        ...progressed,
+        validation: [validationResult('test_quality', true, 'ok')],
         activeChecks: [],
+        policySnapshot: {
+          ...progressed.policySnapshot,
+          validationEvidence: {
+            ...progressed.policySnapshot.validationEvidence,
+            enforcement: 'required',
+            allowNoCommands: false,
+          },
+        },
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'validation');
@@ -671,8 +725,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'test_quality', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'fail'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
         activeChecks: ['test_quality', 'rollback_safety'],
       });
@@ -684,9 +738,7 @@ describe('audit completeness', () => {
     it('validation: non-matching checkId → NOT present', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
-        validation: [
-          { checkId: 'other_check', passed: true, detail: 'ok', executedAt: FIXED_TIME },
-        ],
+        validation: [validationResult('other_check', true, 'ok')],
         activeChecks: ['test_quality'],
       });
       const report = evaluateCompleteness(state);
@@ -698,8 +750,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'test_quality', passed: true, detail: 'ok', executedAt: FIXED_TIME },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', true, 'ok'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
         activeChecks: ['test_quality', 'rollback_safety'],
       });
@@ -739,9 +791,7 @@ describe('audit completeness', () => {
     it('isSlotFailed: validation with some failed → failed status', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
-        validation: [
-          { checkId: 'test_quality', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-        ],
+        validation: [validationResult('test_quality', false, 'fail')],
         activeChecks: ['test_quality', 'rollback_safety'],
       });
       const report = evaluateCompleteness(state);
@@ -761,18 +811,20 @@ describe('audit completeness', () => {
     });
 
     it('getSlotDetail plan: digest.slice(0, 12) truncates', () => {
-      const longDigest = 'abcdef0123456789abcdef01234567890123456789';
+      const current = makePlanRevision({ body: 'plan', createdAt: FIXED_TIME });
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         plan: {
-          current: { body: 'plan', digest: longDigest, sections: [], createdAt: FIXED_TIME },
+          current,
           history: [],
+          reviewFindings: [],
+          reviewCompletion: 'pending',
         },
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'plan');
-      expect(slot?.detail).toContain('abcdef012345...');
-      expect(slot?.detail).not.toContain(longDigest);
+      expect(slot?.detail).toContain(`${current.digest.slice(0, 12)}...`);
+      expect(slot?.detail).not.toContain(current.digest);
     });
 
     it('getSlotDetail implementation: digest.slice(0, 12) truncates', () => {
@@ -780,9 +832,11 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['a.ts', 'b.ts'],
+          domainFiles: ['a.ts', 'b.ts'],
           digest: longDigest,
-          createdAt: FIXED_TIME,
+          executedAt: FIXED_TIME,
         },
       });
       const report = evaluateCompleteness(state);
@@ -792,9 +846,7 @@ describe('audit completeness', () => {
     });
 
     it('arch flow: at ARCHITECTURE only architecture slot required', () => {
-      const state = makeState('ARCHITECTURE', {
-        architecture: null,
-      });
+      const state = makeState('ARCHITECTURE', { architecture: null });
       const report = evaluateCompleteness(state);
       const archSlot = report.slots.find((s) => s.slot === 'architecture');
       const selfReviewSlot = report.slots.find((s) => s.slot === 'selfReview');
@@ -806,13 +858,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          {
-            checkId: 'test_quality',
-            passed: false,
-            detail: 'Missing tests',
-            executedAt: FIXED_TIME,
-          },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'Missing tests'),
+          validationResult('rollback_safety', true, 'OK'),
         ],
         activeChecks: ['test_quality', 'rollback_safety'],
       });
@@ -845,7 +892,140 @@ describe('audit completeness', () => {
     });
   });
 
-  // ─── PERF ───────────────────────────────────────────────────
+  describe('Zero-check completeness (allowNoCommands)', () => {
+    it('vacuous pass: explicit allowNoCommands completes both validation slots', () => {
+      const state = zeroCheckCompleteState();
+      const report = evaluateCompleteness({
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          validationEvidence: {
+            ...state.policySnapshot.validationEvidence,
+            enforcement: 'required',
+            allowNoCommands: true,
+          },
+        },
+      });
+      expect(report.overallComplete).toBe(true);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('complete');
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('complete');
+    });
+
+    it('vacuous pass: lenient policy with no detected stack completes both validation slots', () => {
+      const report = evaluateCompleteness(zeroCheckCompleteState());
+      expect(report.overallComplete).toBe(true);
+      expect(report.slots.find((s) => s.slot === 'validation')?.status).toBe('complete');
+      expect(report.slots.find((s) => s.slot === 'implValidation')?.status).toBe('complete');
+    });
+
+    it('missing: validation incomplete when activeChecks exist but no results', () => {
+      const state = makeProgressedState('IMPLEMENTATION');
+      const stateWithChecks = {
+        ...state,
+        activeChecks: ['test'],
+        validation: [],
+      };
+      const report = evaluateCompleteness(stateWithChecks);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('missing');
+    });
+
+    it('missing: implValidation incomplete when activeChecks exist but no results', () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const stateWithChecks = {
+        ...state,
+        activeChecks: ['test'],
+        validation: [validationResult('test', true, 'passed')],
+        implValidation: [],
+      };
+      const report = evaluateCompleteness(stateWithChecks);
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('missing');
+    });
+
+    it('missing: detected stack with no commands and no opt-out blocks both validation slots', () => {
+      const state = zeroCheckCompleteState({
+        discoverySummary: {
+          primaryLanguages: ['typescript'],
+          frameworks: [],
+          topologyKind: 'single-project',
+          moduleCount: 1,
+          hasApiSurface: false,
+          hasPersistenceSurface: false,
+          hasCiCd: false,
+          hasSecuritySurface: false,
+        },
+      });
+      const report = evaluateCompleteness(state);
+      expect(report.overallComplete).toBe(false);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('missing');
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('missing');
+    });
+  });
+
+  // ─── Milestone boundaries (topology projection) ─────────────
+  describe('milestone boundaries (topology projection)', () => {
+    const TICKET_MILESTONES: ReadonlyArray<readonly [string, Phase, Phase]> = [
+      ['ticket', 'READY', 'TICKET'],
+      ['plan', 'TICKET', 'PLAN'],
+      ['selfReview', 'PLAN', 'PLAN_REVIEW'],
+      ['planReviewDecision', 'PLAN_REVIEW', 'VALIDATION'],
+      ['validation', 'VALIDATION', 'IMPLEMENTATION'],
+      ['implementation', 'IMPLEMENTATION', 'IMPL_VALIDATION'],
+      ['implValidation', 'IMPL_VALIDATION', 'IMPL_REVIEW'],
+      ['implReview', 'IMPL_REVIEW', 'EVIDENCE_REVIEW'],
+      ['evidenceReviewDecision', 'EVIDENCE_REVIEW', 'EXPORT_READY'],
+    ];
+
+    const ARCH_MILESTONES: ReadonlyArray<readonly [string, Phase, Phase]> = [
+      ['architecture', 'READY', 'ARCHITECTURE'],
+      ['selfReview', 'ARCHITECTURE', 'ARCH_REVIEW'],
+      ['archReviewDecision', 'ARCH_REVIEW', 'ARCH_COMPLETE'],
+    ];
+
+    function slotRequiredAt(phase: Phase, slot: string): boolean {
+      const report = evaluateCompleteness(makeState(phase));
+      // A slot absent from the report (other flow) is not required.
+      return report.slots.find((entry) => entry.slot === slot)?.required ?? false;
+    }
+
+    it.each(TICKET_MILESTONES)(
+      'ticket slot %s becomes required exactly at %s (not at %s)',
+      (slot, before, from) => {
+        expect(slotRequiredAt(before, slot)).toBe(false);
+        expect(slotRequiredAt(from, slot)).toBe(true);
+      },
+    );
+
+    it.each(ARCH_MILESTONES)(
+      'architecture slot %s becomes required exactly at %s (not at %s)',
+      (slot, before, from) => {
+        expect(slotRequiredAt(before, slot)).toBe(false);
+        expect(slotRequiredAt(from, slot)).toBe(true);
+      },
+    );
+
+    it('routing/shared-terminal phases never make a ticket slot required', () => {
+      for (const phase of ['READY', 'REJECTED', 'ABORTED'] as Phase[]) {
+        for (const slot of ['ticket', 'plan', 'planReviewDecision', 'evidenceReviewDecision']) {
+          expect(slotRequiredAt(phase, slot)).toBe(false);
+        }
+      }
+    });
+
+    it('other-flow phases never make a ticket slot required', () => {
+      for (const phase of ['ARCHITECTURE', 'ARCH_REVIEW', 'PEER_REVIEW'] as Phase[]) {
+        for (const slot of ['plan', 'validation', 'evidenceReviewDecision']) {
+          expect(slotRequiredAt(phase, slot)).toBe(false);
+        }
+      }
+    });
+  });
+
   describe('PERF', () => {
     it('evaluateCompleteness < 2ms (p99 over 200 iterations)', () => {
       const state = makeProgressedState('COMPLETE');

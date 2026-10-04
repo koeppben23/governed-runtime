@@ -5,7 +5,6 @@ import * as crypto from 'node:crypto';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
-import { normalizePolicySnapshotWithMeta } from '../config/policy-snapshot-normalize.js';
 import { resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
 import { readState } from '../adapters/persistence.js';
 import { readConfig, writeRepoConfig } from '../adapters/persistence-config.js';
@@ -27,8 +26,8 @@ vi.mock('../adapters/git', async (importOriginal) => {
     changedFiles: vi.fn().mockResolvedValue(['src/foo.ts', 'src/bar.ts']),
     listRepoSignals: vi.fn().mockResolvedValue({
       files: ['tsconfig.json', 'package.json', 'src/index.ts'],
-      packageFiles: ['package.json'],
-      configFiles: ['tsconfig.json'],
+      packageFilePaths: ['package.json'],
+      configFilePaths: ['tsconfig.json'],
     }),
   };
 });
@@ -57,7 +56,6 @@ describe('policy snapshot regression', () => {
     const reviewerDecision = {
       verdict: 'approve' as const,
       rationale: 'approve',
-      decidedBy: 'reviewer-claim',
       decisionIdentity: {
         actorId: 'reviewer-claim',
         actorEmail: 'reviewer@example.com',
@@ -109,7 +107,6 @@ describe('policy snapshot regression', () => {
       {
         verdict: 'approve',
         rationale: 'approve',
-        decidedBy: 'reviewer',
         decisionIdentity: {
           actorId: 'reviewer',
           actorEmail: 'reviewer@example.com',
@@ -128,28 +125,6 @@ describe('policy snapshot regression', () => {
     // IdP-required enforcement is guaranteed upstream by policy-bound actor resolution.
     expect(result.kind).toBe('ok');
     expect(snapshotPolicy.identityProviderMode).toBe('required');
-  });
-
-  it('legacy snapshot normalization is explicit and safe', () => {
-    const legacy = {
-      mode: 'regulated',
-      hash: 'legacy-hash',
-      resolvedAt: '2026-01-01T00:00:00.000Z',
-      requestedMode: 'regulated',
-      effectiveGateBehavior: 'human_gated',
-      requireHumanGates: true,
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 3,
-      allowSelfApproval: false,
-      audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
-      actorClassification: { flowguard_decision: 'human' },
-    };
-
-    const normalized = normalizePolicySnapshotWithMeta(legacy);
-    expect(normalized.normalized).toBe(true);
-    expect(normalized.reason).toBe('incomplete_snapshot_normalized');
-    expect(normalized.snapshot.minimumActorAssuranceForApproval).toBe('claim_validated');
-    expect(normalized.snapshot.identityProviderMode).toBe('optional');
   });
 
   it('hydrate persists full effective policy fields in snapshot', async () => {

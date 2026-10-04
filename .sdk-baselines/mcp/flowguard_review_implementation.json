@@ -7,8 +7,8 @@
   "properties": {
     "reviewVerdict": {
       "type": "string",
-      "enum": ["accept", "changes_requested"],
-      "description": "REQUIRED. The independent reviewer's verdict on the implementation. 'accept' converges the loop and advances to the EVIDENCE_REVIEW user gate; 'changes_requested' requires revision."
+      "enum": ["accept", "changes_requested", "unable_to_review"],
+      "description": "REQUIRED. The independent reviewer's verdict on the implementation. 'accept' converges the loop and advances to the EVIDENCE_REVIEW user gate; 'changes_requested' requires revision; 'unable_to_review' fails closed and prepares a fresh review attempt."
     },
     "reviewFindings": {
       "$ref": "#/$defs/ReviewFindings",

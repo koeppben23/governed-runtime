@@ -6,3 +6,11 @@ coverage
 .vscode
 .idea
 *.log
+archexport.json
+implementexport.json
+reviewexport.json
+checksums.sha256
+architecture_export.json
+implement_export.json
+reduced_export.json
+review_export.json

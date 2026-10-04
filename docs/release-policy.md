@@ -37,8 +37,7 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 
 The following are considered breaking governance semantics changes (major version bump):
 
-- **Mandatory independent subagent review**: Self-review evidence is no longer accepted for governed plan/implementation loops. FlowGuard now requires mandatory independent subagent review by default, and weaker legacy snapshots are normalized to strict mode. (v1.2.0 → v2.0.0 candidate)
-- **Policy snapshot normalization**: Weaker `selfReview` config values (`subagentEnabled: false`, `fallbackToSelf: true`, `strictEnforcement: false`) are normalized to mandatory strict at load time.
+- **Mandatory independent subagent review**: Self-review evidence is no longer accepted for governed plan/implementation loops. FlowGuard requires independent reviewer evidence in every policy mode; removed review-policy fields and old snapshots are rejected.
 
 ### Version Lifecycle
 
@@ -55,39 +54,39 @@ The following are considered breaking governance semantics changes (major versio
 ### Protected Main Release Flow
 
 `main` is the canonical release authority and is protected by repository rules.
-Release changes must be merged through a pull request before a release tag is
-created. A `v*` tag must point at a commit already contained in `origin/main`.
+Contributor release steps, including the PR-first, tag-after-merge ordering,
+are owned by [CONTRIBUTING.md](../CONTRIBUTING.md#release-branches). A `v*` tag
+must point at a commit already contained in `origin/main`, and the tag itself
+must be annotated and signed; the tag-triggered workflow verifies the
+GitHub-verified signature and the exact `main` target before any write-capable
+step. That guide also owns the
+recovery procedure for a tag published before merge. Do not use `npm version`
+for FlowGuard releases, and do not overwrite or force-push a tag.
 
-1. Start from current `main`: `git switch main && git pull --ff-only origin main`
-2. Create a release branch: `git switch -c release/vX.Y.Z`
-3. Prepare files without committing or tagging: `npm run release:prepare -- X.Y.Z`
-4. Update release-pinned documentation tests if the changelog cut moves required entries out of `[Unreleased]`
-5. Run the full local gate: `npm run release:verify`
-6. Commit with hooks enabled: `git commit -m "chore(release): cut vX.Y.Z"`
-7. Open a pull request to `main` and wait for required checks
-8. Squash-merge the pull request
-9. Refresh local `main`: `git switch main && git pull --ff-only origin main`
-10. Prove the checkout is safe to tag: `npm run release:assert-main-tag -- vX.Y.Z`
-11. Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
-12. Verify the GitHub Release and attached artifacts
+Release tags are protected by separate creation-authority and immutability
+rulesets, and publication runs behind the protected `release` environment with
+a 15-minute wait timer. A version with a SemVer prerelease suffix is published
+as a GitHub prerelease. The relied-upon live configuration — rulesets, exact
+bypass actors, environment policy mode, and the repository Actions policy — is
+verified by `scripts/control-plane-drift.js` against the executable contract in
+`scripts/control-plane-contract.js`; see
+[BRANCH-PROTECTION.md](../.github/BRANCH-PROTECTION.md). The release preflight
+runs this verification in strict mode and requires the read-only
+`CONTROL_PLANE_READ_TOKEN` secret; without it the release fails closed.
 
-Do not use `npm version` for FlowGuard releases. It creates local commit/tag
-state before branch protection and required checks have accepted the release.
-
-If a release tag is pushed before the release commit is merged to `main`, stop
-and treat the release as inconsistent. Do not overwrite or force-push the tag.
-Either merge the exact tagged commit through the protected PR path or publish a
-new patch/prerelease tag from the corrected `main` commit.
+After a release, `main` and `develop` remain genealogically divergent by design;
+release metadata is synced back to `develop` through a protected PR instead of
+merging the branch histories.
 
 ### Artifact Creation
 
-1. Build: TypeScript compiled to JavaScript (`npm run build`)
-2. Package: `npm pack` creates the `flowguard-core-{version}.tgz` artifact
-3. Hash: `sha256sum` produces `checksums.sha256`
-4. SBOM: CycloneDX 1.6 SBOM (`sbom.cdx.json`) generated via `@cyclonedx/cyclonedx-npm`
-5. Provenance: SLSA-style build provenance attestation produced via `actions/attest-build-provenance`
-6. License: `LICENSE` published alongside the tarball
-7. Publish: Tarball + companion artifacts uploaded to GitHub Releases via `gh release create --verify-tag`
+1. Preflight: the tag-triggered workflow verifies the annotated, GitHub-signed tag and the live release controls before any write-capable job runs.
+2. Build once: TypeScript is compiled and `npm pack` creates one `flowguard-core-{version}.tgz` artifact.
+3. Bind: the verify job records that artifact's SHA-256 in `checksums.sha256` and uploads both as one workflow artifact.
+4. Verify: runtime and cross-platform smoke jobs download that exact artifact and verify its checksum before use.
+5. Gate: mutation testing must complete before publication can run.
+6. Publish: the protected `release` environment downloads and re-verifies the same artifact before its tarball provenance attestation and GitHub Release.
+7. Authority: write, OIDC, and attestation permissions exist only in the final publish job; all preceding jobs have read-only repository access.
 
 ### Artifact Contents
 
@@ -100,12 +99,13 @@ new patch/prerelease tag from the corrected `main` commit.
 
 ### Integrity Verification
 
-| Check                         | Mechanism                                                        |
-| ----------------------------- | ---------------------------------------------------------------- |
-| **Artifact integrity**        | SHA-256 checksum in `checksums.sha256`                           |
-| **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`)                             |
-| **Build provenance**          | SLSA-style attestation (verifiable with `gh attestation verify`) |
-| **Content integrity**         | SHA-256 content digest in `flowguard-mandates.md`                |
+| Check                         | Mechanism                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| **Artifact integrity**        | SHA-256 checksum in `checksums.sha256`                                           |
+| **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`) released beside the tarball                 |
+| **Build provenance**          | SLSA-style attestation for the tarball (verifiable with `gh attestation verify`) |
+| **Tag provenance**            | Annotated, GitHub-verified signature on the exact protected `main` commit        |
+| **Content integrity**         | SHA-256 content digest in `flowguard-mandates.md`                                |
 
 ---
 
@@ -186,9 +186,9 @@ your organization needs to retain:
 
 ```
 /artifact-store/
-├── flowguard-core-1.2.0-tp.2.tgz   # current
-├── flowguard-core-1.2.0-tp.1.tgz   # previous
-├── flowguard-core-1.1.x.tgz        # rollback candidate
+├── flowguard-core-<current>.tgz   # current
+├── flowguard-core-<previous>.tgz  # previous
+├── flowguard-core-<rollback>.tgz  # rollback candidate
 ├── checksums.sha256                # release-versioned (one per release)
 ├── sbom.cdx.json                   # release-versioned
 └── release-notes/
@@ -209,5 +209,5 @@ For release-related questions:
 
 ---
 
-FlowGuard Version: 1.2.0-tp.2
+FlowGuard Version: 2.0.0-tp.1
 _Last Updated: 2026-04-15_

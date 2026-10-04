@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeHydrate } from '../rails/hydrate.js';
 import { createTestContext } from '../testing.js';
 import { makeState, FIXED_SESSION_UUID, FIXED_FINGERPRINT } from '../fixtures.js';
+import { CURRENT_SESSION_STATE_SCHEMA_VERSION } from '../state/schema.js';
 import type { HydratePolicyResolution } from '../config/policy.js';
 import { TEAM_POLICY } from '../config/policy.js';
 
@@ -26,13 +27,93 @@ describe('hydrate rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('READY');
-        expect(result.state.binding.sessionId).toBe(FIXED_SESSION_UUID);
+        expect(result.state.binding.hostSessionId).toBe(FIXED_SESSION_UUID);
         expect(result.state.binding.worktree).toBe('/tmp/test');
-        expect(result.state.schemaVersion).toBe('v1');
+        expect(result.state.schemaVersion).toBe(CURRENT_SESSION_STATE_SCHEMA_VERSION);
+        // No runtime instance governs the session until the first host
+        // mutation dispatch acquires the fencing lease.
+        expect(result.state.runtimeLease).toBeNull();
         expect(result.transitions.length).toBe(0);
         // Discovery fields initialize as null in new sessions
         expect(result.state.discoveryDigest).toBeNull();
         expect(result.state.discoverySummary).toBeNull();
+        expect(result.state.implementationBaseline).toEqual({
+          dirtyFiles: null,
+          capturedAt: result.state.createdAt,
+          controlPlaneMarker: null,
+        });
+        expect(result.state.implementationRiskAssessment).toBeNull();
+        expect(result.state.proofGraph).toEqual({
+          version: 'proofgraph.v2',
+          claims: [],
+          evaluatedAt: result.state.createdAt,
+        });
+      }
+    });
+
+    it('preserves a control-plane marker when dirty-file capture is unavailable', () => {
+      const result = executeHydrate(
+        null,
+        {
+          ...HYDRATE_INPUT,
+          session: {
+            ...HYDRATE_INPUT.session,
+            baselineControlPlaneMarker: 'marker-1',
+          },
+        },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.implementationBaseline.dirtyFiles).toBeNull();
+        expect(result.state.implementationBaseline.controlPlaneMarker).toBe('marker-1');
+      }
+    });
+
+    it('persists every independent baseline capture combination', () => {
+      const cases = [
+        {
+          dirtyFiles: undefined,
+          marker: undefined,
+          expectedDirtyFiles: null,
+          expectedMarker: null,
+        },
+        { dirtyFiles: [], marker: undefined, expectedDirtyFiles: [], expectedMarker: null },
+        {
+          dirtyFiles: undefined,
+          marker: 'marker-1',
+          expectedDirtyFiles: null,
+          expectedMarker: 'marker-1',
+        },
+        { dirtyFiles: [], marker: 'marker-1', expectedDirtyFiles: [], expectedMarker: 'marker-1' },
+      ] as const;
+
+      for (const testCase of cases) {
+        const result = executeHydrate(
+          null,
+          {
+            ...HYDRATE_INPUT,
+            session: {
+              ...HYDRATE_INPUT.session,
+              ...(testCase.dirtyFiles !== undefined
+                ? { baselineDirtyFiles: testCase.dirtyFiles }
+                : {}),
+              ...(testCase.marker !== undefined
+                ? { baselineControlPlaneMarker: testCase.marker }
+                : {}),
+            },
+          },
+          ctx,
+        );
+        expect(result.kind).toBe('ok');
+        if (result.kind === 'ok') {
+          expect(result.state.implementationBaseline.dirtyFiles).toEqual(
+            testCase.expectedDirtyFiles,
+          );
+          expect(result.state.implementationBaseline.controlPlaneMarker).toBe(
+            testCase.expectedMarker,
+          );
+        }
       }
     });
 
@@ -42,6 +123,20 @@ describe('hydrate rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state).toBe(existing);
+      }
+    });
+
+    it('initializes the human review-cycle counters at cycle 1', () => {
+      const result = executeHydrate(null, HYDRATE_INPUT, ctx);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // Explicit counters for every governed review loop: no default and no
+        // read-time migration — hydrate writes them into the new state.
+        expect(result.state.reviewCycles).toEqual({
+          plan: 1,
+          architecture: 1,
+          implementation: 1,
+        });
       }
     });
 
@@ -56,7 +151,7 @@ describe('hydrate rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.binding.sessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
+        expect(result.state.binding.hostSessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
       }
     });
 
@@ -176,7 +271,7 @@ describe('hydrate rail', () => {
           ...HYDRATE_INPUT,
           profile: {
             ...HYDRATE_INPUT.profile,
-            repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+            repoSignals: { files: [], packageFilePaths: ['pom.xml'], configFilePaths: [] },
           },
         },
         ctx,
@@ -198,7 +293,7 @@ describe('hydrate rail', () => {
           profile: {
             ...HYDRATE_INPUT.profile,
             profileId: 'typescript',
-            repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+            repoSignals: { files: [], packageFilePaths: ['pom.xml'], configFilePaths: [] },
           },
         },
         ctx,
@@ -244,6 +339,7 @@ describe('hydrate rail', () => {
     it('freezes snapshot from policyResolution when provided', () => {
       const policyResolution: HydratePolicyResolution = {
         requestedMode: 'team-ci',
+        requestedSource: 'explicit',
         effectiveMode: 'team',
         effectiveGateBehavior: 'human_gated',
         degradedReason: 'ci_context_missing',
@@ -278,15 +374,6 @@ describe('hydrate rail', () => {
         expect(result.state.policySnapshot.source).toBe('default');
         expect(result.state.policySnapshot.centralMinimumMode).toBe('team');
       }
-    });
-  });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('hydrate is fast (smoke test)', () => {
-      const start = performance.now();
-      executeHydrate(null, HYDRATE_INPUT, ctx);
-      expect(performance.now() - start).toBeLessThan(50);
     });
   });
 });
