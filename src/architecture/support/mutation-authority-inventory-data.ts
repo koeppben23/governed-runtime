@@ -1776,7 +1776,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Worktree binding and payload-cwd validation',
     'base',
     ['src/adapters/adapters-binding.test.ts'],
-    'H8 payload-cwd trust boundary: git-resolved worktree-root equality and typed GitError preservation. Measured in the 2026-10-05 base full run at 21.05% (8 killed / 3 survived / 27 no-coverage; 30 TypeScript-checker errors, 21 ignored), below the admission gate: remains a candidate for test hardening; admission still requires a future full base-profile run meeting the per-target threshold.',
+    'H8 payload-cwd trust boundary: git-resolved worktree-root equality and typed GitError preservation. Measured in the post-canonicalization 2026-10-05 base full run at 15.79% (6 killed / 5 survived / 27 no-coverage; 30 TypeScript-checker errors, 21 ignored), below the admission gate: remains a candidate for test hardening; admission still requires a future full base-profile run meeting the per-target threshold.',
     { source: [SOURCE.trustBoundaries], critical: true },
   ),
   candidate(
@@ -1784,7 +1784,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Hook session resolution and payload-cwd binding enforcement',
     'base',
     ['src/hooks/shared/session-resolver.test.ts'],
-    'H8 payload-cwd trust boundary: validates the payload cwd against the state binding before the state is trusted for gating/audit. Measured in the 2026-10-05 base full run at 75.00% (6 killed / 2 survived; 36 TypeScript-checker errors, 11 ignored), below the admission gate: remains a candidate for test hardening; admission still requires a future full base-profile run meeting the per-target threshold.',
+    'H8 payload-cwd trust boundary: canonicalizes the payload cwd to the git worktree root before fingerprinting, then validates it against the state binding before the state is trusted for gating/audit. Measured in the post-canonicalization 2026-10-05 base full run at 77.78% (7 killed / 2 survived; 44 TypeScript-checker errors, 13 ignored), below the admission gate: remains a candidate for test hardening; admission still requires a future full base-profile run meeting the per-target threshold.',
     { source: [SOURCE.trustBoundaries], critical: true },
   ),
 ];

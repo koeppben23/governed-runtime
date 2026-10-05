@@ -543,8 +543,9 @@ post-implementation validation evidence authority
 The 2026-10-05 H8 payload-cwd trust-boundary work stages the worktree binding
 authority (`src/adapters/binding.ts`) and the hook session resolution authority
 (`src/hooks/shared/session-resolver.ts`) for a future full base-profile run. The
-same run measured both below the admission gate (21.05 % and 75.00 %), so they
-stay candidates tracked for test hardening; the base aggregate remained 84.22 %.
+post-canonicalization base full run measured both below the admission gate
+(15.79 % and 77.78 %), so they stay candidates tracked for test hardening; the
+base aggregate remained 84.21 %.
 
 ### Running Locally
 
