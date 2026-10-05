@@ -9,6 +9,7 @@ import { resolveSession } from './session-resolver.js';
 import type { SessionState } from '../../state/schema.js';
 
 const mockResolveRoot = vi.hoisted(() => vi.fn());
+const mockComputeFingerprint = vi.hoisted(() => vi.fn());
 
 const mockState: SessionState = {
   phase: 'planning',
@@ -110,9 +111,18 @@ describe('resolveSession', () => {
       }));
 
       vi.doMock('../../adapters/workspace/index.js', () => ({
-        computeFingerprint: vi.fn().mockResolvedValue({ fingerprint: 'fp-abc' }),
+        computeFingerprint: (...args: unknown[]) => mockComputeFingerprint(...args),
         sessionDir: vi.fn().mockReturnValue('/derived/session/dir'),
       }));
+
+      vi.doMock('../../adapters/git.js', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+        return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+      });
+      mockResolveRoot.mockReset();
+      mockResolveRoot.mockResolvedValue('/some/cwd');
+      mockComputeFingerprint.mockReset();
+      mockComputeFingerprint.mockResolvedValue({ fingerprint: 'fp-abc' });
 
       const { resolveSession: resolve } = await import('./session-resolver.js');
       const result = await resolve('/some/cwd', 'sess-1');
@@ -121,6 +131,7 @@ describe('resolveSession', () => {
       if (result.ok) {
         expect(result.sessionDir).toBe('/derived/session/dir');
       }
+      expect(mockComputeFingerprint).toHaveBeenCalledWith('/some/cwd');
     });
 
     it('returns FINGERPRINT_FAILED when computeFingerprint throws', async () => {
@@ -134,6 +145,11 @@ describe('resolveSession', () => {
       vi.doMock('../../adapters/persistence.js', () => ({
         readState: vi.fn(),
       }));
+
+      vi.doMock('../../adapters/git.js', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+        return { ...actual, resolveRoot: vi.fn().mockResolvedValue('/no-git') };
+      });
 
       const { resolveSession: resolve } = await import('./session-resolver.js');
       const result = await resolve('/no-git', 'sess-1');
@@ -159,6 +175,11 @@ describe('resolveSession', () => {
         readState: vi.fn(),
       }));
 
+      vi.doMock('../../adapters/git.js', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+        return { ...actual, resolveRoot: vi.fn().mockResolvedValue('/cwd') };
+      });
+
       const { resolveSession: resolve } = await import('./session-resolver.js');
       const result = await resolve('/cwd', 'sess-1');
 
@@ -176,12 +197,14 @@ describe('resolveSession', () => {
     } as SessionState;
 
     function mockDerivedSession(state: unknown): void {
+      mockComputeFingerprint.mockReset();
+      mockComputeFingerprint.mockResolvedValue({ fingerprint: 'fp-abc' });
       vi.doMock('node:fs', () => ({ existsSync: vi.fn(() => true) }));
       vi.doMock('../../adapters/persistence.js', () => ({
         readState: vi.fn().mockResolvedValue(state),
       }));
       vi.doMock('../../adapters/workspace/index.js', () => ({
-        computeFingerprint: vi.fn().mockResolvedValue({ fingerprint: 'fp-abc' }),
+        computeFingerprint: (...args: unknown[]) => mockComputeFingerprint(...args),
         sessionDir: vi.fn().mockReturnValue('/derived/session/dir'),
       }));
       vi.doMock('../../adapters/git.js', async (importOriginal) => {
@@ -196,19 +219,21 @@ describe('resolveSession', () => {
       return new MockedGitError(code, message);
     }
 
-    it('accepts a cwd equal to the bound worktree without git resolution', async () => {
+    it('canonicalizes the cwd to the git root before fingerprinting', async () => {
       setEnv(undefined);
       mockDerivedSession(boundState);
       mockResolveRoot.mockReset();
+      mockResolveRoot.mockResolvedValue('/bound/worktree');
 
       const { resolveSession: resolve } = await import('./session-resolver.js');
       const result = await resolve('/bound/worktree', 'sess-1');
 
       expect(result.ok).toBe(true);
-      expect(mockResolveRoot).not.toHaveBeenCalled();
+      expect(mockResolveRoot).toHaveBeenCalledWith('/bound/worktree');
+      expect(mockComputeFingerprint).toHaveBeenCalledWith('/bound/worktree');
     });
 
-    it('accepts a subdirectory that resolves to the bound worktree', async () => {
+    it('fingerprints the canonical root for a subdirectory cwd', async () => {
       setEnv(undefined);
       mockDerivedSession(boundState);
       mockResolveRoot.mockReset();
@@ -219,6 +244,7 @@ describe('resolveSession', () => {
 
       expect(result.ok).toBe(true);
       expect(mockResolveRoot).toHaveBeenCalledWith('/bound/worktree/src');
+      expect(mockComputeFingerprint).toHaveBeenCalledWith('/bound/worktree');
     });
 
     it('rejects a cwd that resolves to a different worktree', async () => {

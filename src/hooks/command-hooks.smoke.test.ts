@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -52,20 +52,24 @@ async function runHook(name: string, input: string): Promise<HookResult> {
 }
 
 describe('command hook binaries', () => {
+  let base: string;
   let root: string;
   let worktree: string;
   let originalConfigDir: string | undefined;
   let originalRequireTestConfigDir: string | undefined;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'flowguard-hook-smoke-'));
+    // `base` keeps the OS-tmpdir spelling required by the workspace test-dir
+    // guard; `root` is the physical path git resolves to on macOS.
+    base = await mkdtemp(join(tmpdir(), 'flowguard-hook-smoke-'));
+    root = await realpath(base);
     worktree = join(root, 'worktree');
     await mkdir(worktree);
     // H8: hook payload cwd is validated against a git-resolved worktree root.
     execFileSync('git', ['init', '--quiet', worktree]);
     originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
     originalRequireTestConfigDir = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-    process.env.OPENCODE_CONFIG_DIR = join(root, 'config');
+    process.env.OPENCODE_CONFIG_DIR = join(base, 'config');
     process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
   });
 
@@ -87,7 +91,7 @@ describe('command hook binaries', () => {
 
       expect(result.code).toBe(0);
       expect(result.stdout).toBe('');
-      await expect(readdir(join(root, 'config', 'workspaces'))).resolves.not.toHaveLength(0);
+      await expect(readdir(join(base, 'config', 'workspaces'))).resolves.not.toHaveLength(0);
     });
 
     it('runs post-tool-use and persists the tool-call audit event', async () => {
