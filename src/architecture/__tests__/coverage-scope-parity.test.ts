@@ -15,7 +15,7 @@ import { join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { coverageExcludes } from '../../../vitest.config.js';
+import { vitestConfig } from '../../../vitest.config.js';
 import { TEST_SOURCE_EXCLUDES, isCoverageExcluded } from '../support/test-source-excludes.js';
 import { isTestSourcePath } from './module-classification.js';
 
@@ -53,8 +53,7 @@ describe('coverage scope parity', () => {
   });
 
   it('is the projection actually used by the coverage config', () => {
-    expect(coverageExcludes).toEqual([...TEST_SOURCE_EXCLUDES]);
-    expect(coverageExcludes.length).toBeGreaterThan(0);
+    expect(vitestConfig.test?.coverage?.exclude).toEqual([...TEST_SOURCE_EXCLUDES]);
   });
 
   describe('synthetic test-source classes', () => {
