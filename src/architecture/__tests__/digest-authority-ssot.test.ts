@@ -45,7 +45,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { collectProductionSources, type ProductionSourceFile } from './production-source.js';
+import {
+  collectProductionSources,
+  type ProductionSourceFile,
+} from '../support/production-source.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 

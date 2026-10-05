@@ -77,7 +77,7 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts src/docume
 ## Module Boundary
 
 - Top-level module directions are owned exclusively by
-  `src/architecture/__tests__/module-dependency-policy.ts`
+  `src/architecture/support/module-dependency-policy.ts`
   (`MODULE_DEPENDENCY_POLICY`). Changes in this subtree must comply with that
   policy and pass `npm run test:architecture`.
 - Subtree-specific: `src/config/` must not derive runtime state — it defines

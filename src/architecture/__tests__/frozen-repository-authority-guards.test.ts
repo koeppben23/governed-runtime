@@ -15,7 +15,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { repoRelative } from './repo-path.js';
+import { repoRelative } from '../support/repo-path.js';
 
 const SRC = join(process.cwd(), 'src');
 

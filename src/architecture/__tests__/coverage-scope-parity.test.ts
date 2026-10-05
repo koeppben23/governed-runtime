@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest';
 
 import { vitestConfig } from '../../../vitest.config.js';
 import { TEST_SOURCE_EXCLUDES, isCoverageExcluded } from '../support/test-source-excludes.js';
-import { isTestSourcePath } from './module-classification.js';
+import { isTestSourcePath } from '../support/module-classification.js';
 
 const SRC = join(process.cwd(), 'src');
 

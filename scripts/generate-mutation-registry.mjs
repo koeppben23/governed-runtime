@@ -7,7 +7,7 @@
  * `scripts/mutation-profile-registry.json`.
  *
  * Authority: the immutable admission records in
- * `src/architecture/__tests__/mutation-admission-records.ts`. The generator
+ * `src/architecture/support/mutation-admission-records.ts`. The generator
  * derives every selector list from those records; the profile mapping comes
  * from the registry's own stable `configFile` fields, never from the generated
  * projection itself.
@@ -40,7 +40,7 @@ const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const DEFAULT_REGISTRY_PATH = resolve(REPO_ROOT, 'scripts/mutation-profile-registry.json');
 const RECORDS_MODULE_PATH = resolve(
   REPO_ROOT,
-  'src/architecture/__tests__/mutation-admission-records.ts',
+  'src/architecture/support/mutation-admission-records.ts',
 );
 
 const TOOLCHAIN_RECOVERY =

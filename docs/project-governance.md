@@ -42,7 +42,7 @@ Maintainability limits:
   contains none, and a new suppression fails `lint:strict`.
 - **Layer Isolation** — Top-level module imports MUST match
   `MODULE_DEPENDENCY_POLICY`
-  (`architecture/__tests__/module-dependency-policy.ts`) exactly; imports outside
+  (`architecture/support/module-dependency-policy.ts`) exactly; imports outside
   that positive policy are forbidden. The historical linear layering
   (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`) is the target
   direction for new code. The top-level module graph MUST be acyclic: zero

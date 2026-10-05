@@ -14,8 +14,8 @@ import { describe, expect, it } from 'vitest';
 import {
   INTEGRATION_PLACEMENT_ZONES,
   type IntegrationPlacementZone,
-} from './integration-placement-manifest.js';
-import { collectProductionSources } from './production-source.js';
+} from '../support/integration-placement-manifest.js';
+import { collectProductionSources } from '../support/production-source.js';
 import {
   analyzeReviewZonePolicy,
   DECLARED_REVIEW_ZONE_EDGES,
@@ -27,7 +27,7 @@ import {
   zoneEdgeKey,
   type ReviewZoneSource,
   type ReviewZoneViolation,
-} from './review-zone-policy.js';
+} from '../support/review-zone-policy.js';
 
 const ZONES: readonly IntegrationPlacementZone[] = [
   { id: 'root', dir: 'integration', description: 'fixture integration root' },

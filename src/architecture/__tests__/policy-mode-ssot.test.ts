@@ -28,7 +28,7 @@ import { describe, expect, it } from 'vitest';
 
 import { POLICY_MODES } from '../../state/policy-mode.js';
 import { MANIFEST_POLICY_MODES, MANIFEST_POLICY_MODE_UNKNOWN } from '../../archive/types.js';
-import { repoRelative } from './repo-path.js';
+import { repoRelative } from '../support/repo-path.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 

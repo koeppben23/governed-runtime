@@ -297,7 +297,7 @@ manifest. Admission records are historical and immutable; later runs never
 rewrite them.
 
 The machine-readable scope authority is
-`src/architecture/__tests__/mutation-authority-inventory-data.ts`. It classifies
+`src/architecture/support/mutation-authority-inventory-data.ts`. It classifies
 every authority under the declared roots as `required`, `admission-backlog`, or
 `not-mutation-suitable`; the latter is always bound to the profile whose
 regime produced the evidence and never excludes a target from other profiles.
@@ -376,7 +376,7 @@ Survivor analysis remains part of normal security-critical test maintenance.
 
 Every authority that is not yet in a mutate profile is listed here explicitly
 (the machine-readable authority is
-`src/architecture/__tests__/mutation-authority-inventory-data.ts`). A target leaves
+`src/architecture/support/mutation-authority-inventory-data.ts`). A target leaves
 this backlog only through a profile full run that proves the per-target and
 aggregate thresholds; a score below the threshold never converts a target into
 `not-mutation-suitable` by itself.

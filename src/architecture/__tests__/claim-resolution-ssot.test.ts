@@ -21,7 +21,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { repoRelative } from './repo-path.js';
+import { repoRelative } from '../support/repo-path.js';
 
 const SRC = resolve(join(import.meta.dirname, '..', '..'));
 

@@ -20,7 +20,7 @@ that list, not a second authority list.
 | Session/evidence schemas, persistence shape | `src/state/`                                    | `src/state/schema.ts`, `src/state/evidence*.ts`                      |
 | File I/O, Git, archive, host persistence    | `src/adapters/`                                 | layer-local modules (`persistence*.ts`, `workspace/`)                |
 | Commands/tools exposed to the host agent    | `src/integration/tools/`                        | `src/integration/tools/index.ts`, `src/integration/tool-names.ts`    |
-| Independent review pipeline                 | `src/integration/review/`                       | review zones + `src/architecture/__tests__/review-zone-policy.ts`    |
+| Independent review pipeline                 | `src/integration/review/`                       | review zones + `src/architecture/support/review-zone-policy.ts`      |
 | Audit event kinds and outbox                | `src/audit/`, `src/integration/audit-outbox.ts` | `src/audit/event-core.ts`, `src/audit/types.ts`                      |
 | Blocked reason codes/copy                   | `src/config/reasons*.ts`                        | `src/config/reasons.ts` (barrel) + category modules                  |
 | Installed mandates/commands                 | `src/templates/`                                | `src/templates/mandates.ts`, `src/integration/installed-commands.ts` |
@@ -56,7 +56,7 @@ the read boundary, with no read migration and no defaulting. See
 
 1. Place production files by the placement authority — every file under
    `src/integration/` needs an entry with exactly **one owner**
-   (`src/architecture/__tests__/integration-placement-manifest.ts`). `zone` and
+   (`src/architecture/support/integration-placement-manifest.ts`). `zone` and
    `targetZone` are derived from the path and owner; the physical directory must
    match the owner's target zone.
 2. New tools validate inputs against canonical schemas, route through the state
@@ -77,7 +77,7 @@ the read boundary, with no read migration and no defaulting. See
   barrel facade; production code imports the concrete subzone authority. The
   removed `review/index.ts` is guarded against reintroduction.
 - The allowed zone graph is frozen in
-  `src/architecture/__tests__/review-zone-policy.ts` (`observed == declared`).
+  `src/architecture/support/review-zone-policy.ts` (`observed == declared`).
   The complete zone graph is acyclic. Moving a file requires updating the
   declared edges and the zone budgets in the placement authority in the same
   change.
@@ -120,13 +120,13 @@ mutation scope only to mutation-suitable authorities.
 
 1. Keep files within the size budgets (`650` production / `2000` test LOC).
 2. A new top-level module needs a **module classification** entry in
-   `src/architecture/__tests__/module-classification.ts` and a direction in
+   `src/architecture/support/module-classification.ts` and a direction in
    `MODULE_DEPENDENCY_POLICY`
-   (`src/architecture/__tests__/module-dependency-policy.ts`).
+   (`src/architecture/support/module-dependency-policy.ts`).
 3. Run `npm run test:architecture`, `npm run check`, `npm run lint:strict`.
 4. `src/integration/**`: add exactly one `{ file, owner }` **placement entry**
    to `INTEGRATION_PLACEMENT`
-   (`src/architecture/__tests__/integration-placement-manifest.ts`). A new
+   (`src/architecture/support/integration-placement-manifest.ts`). A new
    directory needs a zone in `INTEGRATION_PLACEMENT_ZONES` and an owner in
    `INTEGRATION_OWNERS`; the physical directory must equal the owner's
    `targetZone`. Review zones carry a **growth target**
@@ -138,7 +138,7 @@ mutation scope only to mutation-suitable authorities.
    stay acyclic.
 6. Mutation-suitable authority: enter the scope as an `admission-candidate` in
    the **mutation inventory**
-   (`src/architecture/__tests__/mutation-authority-inventory-data.ts`) with its
+   (`src/architecture/support/mutation-authority-inventory-data.ts`) with its
    Stryker selector in `stryker*.conf.json` and its covering suite in
    `vitest.stryker*.config.ts`, or name it in the `admission-backlog`. A new
    inventory entry is not an admission.

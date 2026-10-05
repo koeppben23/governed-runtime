@@ -75,9 +75,12 @@ import {
   type AdmissionRecord,
   type DeferredAuthorityGlobEntry,
   type MutationProfile,
-} from './mutation-authority-inventory.js';
-import { admissionRecord, admissionRecordSelectors } from './mutation-admission-records.js';
-import { repoRelative } from './repo-path.js';
+} from '../support/mutation-authority-inventory.js';
+import {
+  admissionRecord,
+  admissionRecordSelectors,
+} from '../support/mutation-admission-records.js';
+import { repoRelative } from '../support/repo-path.js';
 
 const ROOT = resolve(__dirname, '..', '..', '..');
 

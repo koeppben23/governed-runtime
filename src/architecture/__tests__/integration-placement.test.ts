@@ -28,7 +28,7 @@ import {
   type IntegrationOwner,
   type IntegrationPlacementEntry,
   type IntegrationPlacementZone,
-} from './integration-placement-manifest.js';
+} from '../support/integration-placement-manifest.js';
 import {
   analyzeIntegrationPlacement,
   isRootCompositionFile,
@@ -36,9 +36,9 @@ import {
   isToolCommandContextFile,
   placementOwnerOf,
   type IntegrationPlacementViolation,
-} from './integration-placement-analyzer.js';
-import { isTestSourcePath } from './module-classification.js';
-import { collectProductionSources } from './production-source.js';
+} from '../support/integration-placement-analyzer.js';
+import { isTestSourcePath } from '../support/module-classification.js';
+import { collectProductionSources } from '../support/production-source.js';
 
 const SRC = join(process.cwd(), 'src');
 

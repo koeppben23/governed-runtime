@@ -23,8 +23,8 @@ import { join, resolve } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { isTestSourcePath } from './module-classification.js';
-import { normalizeRepoPath, repoRelative } from './repo-path.js';
+import { isTestSourcePath } from '../support/module-classification.js';
+import { normalizeRepoPath, repoRelative } from '../support/repo-path.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const SRC_ROOT = join(REPO_ROOT, 'src');
