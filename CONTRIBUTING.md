@@ -51,10 +51,10 @@ executable script authority. Coverage thresholds are 80% across branches,
 lines, functions, and statements; run the gate with `npm run test:coverage`.
 
 Test placement follows the same authority split: production-module suites
-co-locate with the unit under test, while classified test-support trees
+co-locate with the unit under test. Classified test-support trees
 (`src/architecture/`, `src/documentation/`, `src/security/`, `src/fixtures/`)
-keep suites under `__tests__/` and shared support modules under `support/`. The
-rules and their guards are documented in
+may use `__tests__/` for suites, and keep shared support modules outside it,
+typically under `support/`. The rules and their guards are documented in
 [docs/testing-strategy.md](docs/testing-strategy.md#test-placement-rules).
 
 ### Test Naming Conventions

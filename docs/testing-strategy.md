@@ -211,9 +211,10 @@ projections whose parity is checked by executable guards.
   `src/adapters/persistence-lock.test.ts`).
 - **`__tests__/` only in test-support trees** — only top-level trees classified
   `test-support` (currently `src/architecture/`, `src/documentation/`,
-  `src/security/`, `src/fixtures/`) may use a `__tests__/` directory, and it
-  contains suites only. Shared support modules live in the tree's `support/`
-  directory (for example `src/architecture/support/`).
+  `src/security/`, `src/fixtures/`) may use a `__tests__/` directory, and when
+  present it contains suites only. Suites in those trees may also co-locate
+  elsewhere in the tree; shared support modules live outside `__tests__/`,
+  typically under `support/` (for example `src/architecture/support/`).
 - **Shared test infrastructure uses recognized names** — `*-test-helpers.ts`,
   `*-test-fixtures.ts`, `test-helpers.ts`, `evidence-test-constants.ts`, or a
   `__fixtures__/` directory; those are the only classes recognized besides
