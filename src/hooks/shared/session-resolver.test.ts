@@ -8,11 +8,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resolveSession } from './session-resolver.js';
 import type { SessionState } from '../../state/schema.js';
 
+const mockResolveRoot = vi.hoisted(() => vi.fn());
+
 const mockState: SessionState = {
   phase: 'planning',
   reviewObligations: [],
   policyMode: 'solo',
   version: '1.0.0',
+  binding: {
+    hostSessionId: 'sess-1',
+    worktree: '/some/cwd',
+    fingerprint: 'f'.repeat(24),
+    resolvedAt: '2026-01-01T00:00:00.000Z',
+  },
 } as unknown as SessionState;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -158,6 +166,117 @@ describe('resolveSession', () => {
       if (!result.ok) {
         expect(result.code).toBe('SESSION_DIR_INVALID');
       }
+    });
+  });
+
+  describe('cwd binding validation (H8)', () => {
+    const boundState = {
+      ...mockState,
+      binding: { ...mockState.binding, worktree: '/bound/worktree' },
+    } as SessionState;
+
+    function mockDerivedSession(state: unknown): void {
+      vi.doMock('node:fs', () => ({ existsSync: vi.fn(() => true) }));
+      vi.doMock('../../adapters/persistence.js', () => ({
+        readState: vi.fn().mockResolvedValue(state),
+      }));
+      vi.doMock('../../adapters/workspace/index.js', () => ({
+        computeFingerprint: vi.fn().mockResolvedValue({ fingerprint: 'fp-abc' }),
+        sessionDir: vi.fn().mockReturnValue('/derived/session/dir'),
+      }));
+      vi.doMock('../../adapters/git.js', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+        return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+      });
+    }
+
+    /** Build the GitError from the same (mocked) module identity the resolver sees. */
+    async function gitError(code: 'NOT_GIT_REPO' | 'GIT_NOT_FOUND', message: string) {
+      const { GitError: MockedGitError } = await import('../../adapters/git.js');
+      return new MockedGitError(code, message);
+    }
+
+    it('accepts a cwd equal to the bound worktree without git resolution', async () => {
+      setEnv(undefined);
+      mockDerivedSession(boundState);
+      mockResolveRoot.mockReset();
+
+      const { resolveSession: resolve } = await import('./session-resolver.js');
+      const result = await resolve('/bound/worktree', 'sess-1');
+
+      expect(result.ok).toBe(true);
+      expect(mockResolveRoot).not.toHaveBeenCalled();
+    });
+
+    it('accepts a subdirectory that resolves to the bound worktree', async () => {
+      setEnv(undefined);
+      mockDerivedSession(boundState);
+      mockResolveRoot.mockReset();
+      mockResolveRoot.mockResolvedValue('/bound/worktree');
+
+      const { resolveSession: resolve } = await import('./session-resolver.js');
+      const result = await resolve('/bound/worktree/src', 'sess-1');
+
+      expect(result.ok).toBe(true);
+      expect(mockResolveRoot).toHaveBeenCalledWith('/bound/worktree/src');
+    });
+
+    it('rejects a cwd that resolves to a different worktree', async () => {
+      setEnv(undefined);
+      mockDerivedSession(boundState);
+      mockResolveRoot.mockReset();
+      mockResolveRoot.mockResolvedValue('/other/worktree');
+
+      const { resolveSession: resolve } = await import('./session-resolver.js');
+      const result = await resolve('/other/worktree', 'sess-1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('WORKTREE_MISMATCH');
+    });
+
+    it('preserves NOT_GIT_REPO from git resolution', async () => {
+      setEnv(undefined);
+      mockDerivedSession(boundState);
+      mockResolveRoot.mockReset();
+      mockResolveRoot.mockRejectedValue(await gitError('NOT_GIT_REPO', 'not a git repository'));
+
+      const { resolveSession: resolve } = await import('./session-resolver.js');
+      const result = await resolve('/not-a-repo', 'sess-1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('NOT_GIT_REPO');
+    });
+
+    it('preserves GIT_NOT_FOUND instead of collapsing it to NOT_GIT_REPO', async () => {
+      setEnv(undefined);
+      mockDerivedSession(boundState);
+      mockResolveRoot.mockReset();
+      mockResolveRoot.mockRejectedValue(await gitError('GIT_NOT_FOUND', 'git executable missing'));
+
+      const { resolveSession: resolve } = await import('./session-resolver.js');
+      const result = await resolve('/worktree', 'sess-1');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('GIT_NOT_FOUND');
+    });
+
+    it('skips cwd validation entirely under the explicit env override', async () => {
+      setEnv('/custom/session/dir');
+      vi.doMock('node:fs', () => ({ existsSync: vi.fn(() => true) }));
+      vi.doMock('../../adapters/persistence.js', () => ({
+        readState: vi.fn().mockResolvedValue(boundState),
+      }));
+      vi.doMock('../../adapters/workspace/index.js', () => ({
+        computeFingerprint: vi.fn(),
+        sessionDir: vi.fn(),
+      }));
+      mockResolveRoot.mockReset();
+
+      const { resolveSession: resolve } = await import('./session-resolver.js');
+      const result = await resolve('/somewhere/else', 'sess-1');
+
+      expect(result.ok).toBe(true);
+      expect(mockResolveRoot).not.toHaveBeenCalled();
     });
   });
 

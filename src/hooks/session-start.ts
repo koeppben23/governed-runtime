@@ -21,6 +21,7 @@ import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { ensureWorkspace } from '../adapters/workspace/index.js';
+import { resolveRoot } from '../adapters/git.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import type { AuditEventBody } from '../state/evidence-audit.js';
 
@@ -34,6 +35,42 @@ async function main(): Promise<void> {
     await sessionStartLogic();
   } finally {
     guard.restore();
+  }
+}
+
+/**
+ * Ensure the FlowGuard workspace exists for the git-resolved worktree root.
+ *
+ * The payload cwd is never used as a filesystem authority: bootstrap runs only
+ * on the root that `git rev-parse --show-toplevel` resolves from it. An active
+ * FLOWGUARD_SESSION_DIR override skips bootstrap entirely (the env var is the
+ * higher-priority session authority).
+ *
+ * @returns false when bootstrap was skipped or failed; the caller must stop.
+ */
+async function bootstrapWorkspace(cwd: string): Promise<boolean> {
+  const envOverride = process.env['FLOWGUARD_SESSION_DIR'];
+  if (envOverride !== undefined && envOverride.length > 0) return true;
+
+  let worktreeRoot: string;
+  try {
+    worktreeRoot = await resolveRoot(cwd);
+  } catch (err) {
+    writeLog(
+      `WARN: workspace bootstrap skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return false;
+  }
+
+  try {
+    await ensureWorkspace(worktreeRoot);
+    writeLog(`workspace ensured: ${worktreeRoot}`);
+    return true;
+  } catch (err) {
+    writeLog(
+      `WARN: workspace bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return false;
   }
 }
 
@@ -59,16 +96,7 @@ async function sessionStartLogic(): Promise<void> {
 
   const { session_id, cwd } = validated;
 
-  // Ensure workspace directories exist (idempotent).
-  try {
-    await ensureWorkspace(cwd);
-    writeLog(`workspace ensured: ${cwd}`);
-  } catch (err) {
-    writeLog(
-      `WARN: workspace bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return;
-  }
+  if (!(await bootstrapWorkspace(cwd))) return;
 
   // Resolve the governed session. Audit v3 events require the explicit
   // FlowGuard identity (flowguardSessionId); without resolved state the

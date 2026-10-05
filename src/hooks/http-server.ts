@@ -47,6 +47,7 @@ import {
 } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { ensureWorkspace } from '../adapters/workspace/index.js';
+import { resolveRoot } from '../adapters/git.js';
 import type { AuditEventBody } from '../state/evidence-audit.js';
 import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
@@ -306,11 +307,18 @@ export async function handleSessionStart(
   const { session_id, cwd } = validated;
   const platform = detectPlatform(payload);
 
-  try {
-    await ensureWorkspace(cwd);
-  } catch (err) {
-    log(`WARN: workspace-bootstrap-failed: ${err instanceof Error ? err.message : String(err)}`);
-    return { decision: 'allow', reason: 'workspace bootstrap failed (non-blocking)' };
+  // Workspace bootstrap runs only on the git-resolved worktree root; the raw
+  // payload cwd is never a filesystem authority. An active
+  // FLOWGUARD_SESSION_DIR override skips bootstrap entirely.
+  const envOverride = process.env['FLOWGUARD_SESSION_DIR'];
+  if (envOverride === undefined || envOverride.length === 0) {
+    try {
+      const worktreeRoot = await resolveRoot(cwd);
+      await ensureWorkspace(worktreeRoot);
+    } catch (err) {
+      log(`WARN: workspace-bootstrap-failed: ${err instanceof Error ? err.message : String(err)}`);
+      return { decision: 'allow', reason: 'workspace bootstrap failed (non-blocking)' };
+    }
   }
 
   // Resolve the governed session. Audit v3 events require the explicit

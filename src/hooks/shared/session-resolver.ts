@@ -5,14 +5,17 @@
  * Resolution chain:
  * 1. FLOWGUARD_SESSION_DIR env var (explicit override — testing and CI)
  * 2. Compute fingerprint from cwd → derive session dir from fingerprint + session_id
+ * 3. Validate the payload cwd against the state's authoritative worktree binding
  *
- * Fail-closed: if state cannot be resolved or read, returns an explicit error
- * that the calling hook can use to deny tool execution.
+ * Fail-closed: if state cannot be resolved or read, or the cwd does not belong
+ * to the bound worktree, returns an explicit error that the calling hook can
+ * use to deny tool execution.
  *
  * @version v1
  */
 
 import { existsSync } from 'node:fs';
+import { validateCwdAgainstBinding } from '../../adapters/binding.js';
 import { computeFingerprint } from '../../adapters/workspace/index.js';
 import { sessionDir } from '../../adapters/workspace/index.js';
 import { readState } from '../../adapters/persistence.js';
@@ -65,7 +68,16 @@ export async function resolveSession(cwd: string, sessionId: string): Promise<Se
     };
   }
 
-  return readSessionState(sessDir);
+  const resolution = await readSessionState(sessDir);
+  if (!resolution.ok) return resolution;
+
+  // The payload cwd located the session; it must also match the authoritative
+  // worktree binding before the caller trusts the state for gating/audit.
+  const cwdBinding = await validateCwdAgainstBinding(resolution.state, cwd);
+  if (!cwdBinding.ok) {
+    return { ok: false, code: cwdBinding.code, reason: cwdBinding.reason };
+  }
+  return resolution;
 }
 
 /**
