@@ -13,14 +13,14 @@ import {
 } from './stdin-reader.js';
 import { MAX_HOOK_PAYLOAD_BYTES } from './limits.js';
 
-function streamFromString(content: string): NodeJS.ReadableStream {
+function streamFromString(content: string): Readable {
   const readable = new Readable({ read() {} });
   readable.push(content);
   readable.push(null);
   return readable;
 }
 
-function emptyStream(): NodeJS.ReadableStream {
+function emptyStream(): Readable {
   const readable = new Readable({ read() {} });
   readable.push(null);
   return readable;
@@ -33,12 +33,29 @@ function streamFromChunks(chunks: readonly string[]): Readable {
   return readable;
 }
 
+function objectModeStreamFromChunks(chunks: readonly string[]): Readable {
+  const readable = new Readable({ objectMode: true, read() {} });
+  for (const chunk of chunks) readable.push(chunk);
+  readable.push(null);
+  return readable;
+}
+
 function jsonObjectWithByteLength(byteLength: number): string {
   const prefix = '{"data":"';
   const suffix = '"}';
   const overhead = Buffer.byteLength(prefix) + Buffer.byteLength(suffix);
   if (byteLength < overhead) throw new RangeError('byteLength too small for JSON object');
   return `${prefix}${'x'.repeat(byteLength - overhead)}${suffix}`;
+}
+
+function jsonObjectWithMultibyteByteLength(byteLength: number): string {
+  const prefix = '{"data":"';
+  const suffix = '"}';
+  const remaining = byteLength - Buffer.byteLength(prefix) - Buffer.byteLength(suffix);
+  if (remaining < 0) throw new RangeError('byteLength too small for JSON object');
+  const accentedCount = Math.floor(remaining / Buffer.byteLength('é'));
+  const asciiCount = remaining - accentedCount * Buffer.byteLength('é');
+  return `${prefix}${'é'.repeat(accentedCount)}${'a'.repeat(asciiCount)}${suffix}`;
 }
 
 // ─── readStdin ────────────────────────────────────────────────────────────────
@@ -78,11 +95,28 @@ describe('readStdin', () => {
   });
 
   it('enforces the byte cap across multiple chunks', async () => {
-    const stream = streamFromChunks([
-      'x'.repeat(MAX_HOOK_PAYLOAD_BYTES - 1),
-      'x',
-      'x',
-    ]);
+    const stream = streamFromChunks(['x'.repeat(MAX_HOOK_PAYLOAD_BYTES - 1), 'x', 'x']);
+
+    await expect(readStdin(stream)).rejects.toMatchObject({ code: 'STDIN_TOO_LARGE' });
+  });
+
+  it('accepts a multibyte payload exactly at the shared byte cap', async () => {
+    const payload = jsonObjectWithMultibyteByteLength(MAX_HOOK_PAYLOAD_BYTES);
+    expect(Buffer.byteLength(payload)).toBe(MAX_HOOK_PAYLOAD_BYTES);
+    expect(payload.length).toBeLessThan(MAX_HOOK_PAYLOAD_BYTES);
+
+    const result = await readStdin(objectModeStreamFromChunks([payload]));
+
+    expect(typeof result['data']).toBe('string');
+  });
+
+  it('counts UTF-8 bytes, not code units, on multibyte string chunks', async () => {
+    const payload = jsonObjectWithMultibyteByteLength(MAX_HOOK_PAYLOAD_BYTES + 1);
+    expect(Buffer.byteLength(payload)).toBe(MAX_HOOK_PAYLOAD_BYTES + 1);
+    expect(payload.length).toBeLessThan(MAX_HOOK_PAYLOAD_BYTES);
+
+    const half = Math.floor(payload.length / 2);
+    const stream = objectModeStreamFromChunks([payload.slice(0, half), payload.slice(half)]);
 
     await expect(readStdin(stream)).rejects.toMatchObject({ code: 'STDIN_TOO_LARGE' });
   });

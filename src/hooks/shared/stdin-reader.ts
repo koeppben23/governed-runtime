@@ -14,6 +14,8 @@
  * @version v1
  */
 
+import { Readable } from 'node:stream';
+
 import { MAX_HOOK_PAYLOAD_BYTES } from './limits.js';
 
 /**
@@ -37,7 +39,7 @@ export class StdinReadError extends Error {
  * @throws StdinReadError if stdin is empty, not valid JSON, or not an object.
  */
 export async function readStdin(
-  stream: NodeJS.ReadableStream = process.stdin,
+  stream: Readable = process.stdin,
 ): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
@@ -47,10 +49,7 @@ export async function readStdin(
     totalBytes += buffer.byteLength;
     if (totalBytes > MAX_HOOK_PAYLOAD_BYTES) {
       stream.destroy();
-      throw new StdinReadError(
-        'STDIN_TOO_LARGE',
-        `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`,
-      );
+      throw new StdinReadError('STDIN_TOO_LARGE', `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);
     }
     chunks.push(buffer);
   }

@@ -2,6 +2,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { StdinReadError } from './shared/stdin-reader.js';
+import { MAX_HOOK_PAYLOAD_BYTES } from './shared/limits.js';
+
 const mockReadStdin = vi.hoisted(() => vi.fn());
 const mockResolveSession = vi.hoisted(() => vi.fn());
 
@@ -75,7 +78,7 @@ describe('pre-tool-use review obligation enforcement', () => {
     });
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     mockReadStdin.mockRejectedValue(
-      new Error('stdin exceeds 1048576 bytes'),
+      new StdinReadError('STDIN_TOO_LARGE', `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`),
     );
 
     await import('./pre-tool-use.js');
@@ -87,7 +90,7 @@ describe('pre-tool-use review obligation enforcement', () => {
     expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
     expect(output.hookSpecificOutput.permissionDecisionReason).toContain('HOOK_STDIN_INVALID');
     expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
-      'stdin exceeds 1048576 bytes',
+      `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`,
     );
     expect(mockResolveSession).not.toHaveBeenCalled();
   });

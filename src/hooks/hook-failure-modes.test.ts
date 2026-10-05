@@ -36,14 +36,14 @@ import type { SessionState } from '../state/schema.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function createReadableFromString(content: string): NodeJS.ReadableStream {
+function createReadableFromString(content: string): Readable {
   const stream = new Readable();
   stream.push(content);
   stream.push(null);
   return stream;
 }
 
-function createEmptyReadable(): NodeJS.ReadableStream {
+function createEmptyReadable(): Readable {
   const stream = new Readable();
   stream.push(null);
   return stream;
@@ -135,9 +135,7 @@ describe('Failure Mode: Malformed stdin → fail-closed deny', () => {
   });
 
   it('BAD: oversized stdin produces deny before payload parsing', async () => {
-    const result = await simulatePreToolUseWithFailures(
-      'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1),
-    );
+    const result = await simulatePreToolUseWithFailures('x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1));
     expect(result.decision).toBe('deny');
     expect(result.code).toBe('HOOK_STDIN_INVALID');
     expect(result.reason).toContain(`stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);

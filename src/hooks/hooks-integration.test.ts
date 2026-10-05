@@ -22,7 +22,7 @@ import { benchmarkAsync } from '../test-policy.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function createReadableFromString(content: string): NodeJS.ReadableStream {
+function createReadableFromString(content: string): Readable {
   const stream = new Readable();
   stream.push(content);
   stream.push(null);
