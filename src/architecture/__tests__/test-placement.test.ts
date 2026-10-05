@@ -141,5 +141,6 @@ describe('test placement', () => {
     expect(configByName.get('unit')?.exclude).toContain('src/**/*.smoke.test.ts');
     expect(configByName.get('unit')?.exclude).toContain('src/**/*.fuzz.test.ts');
     expect(configByName.get('integration')?.exclude).toContain('src/**/*.smoke.test.ts');
+    expect(configByName.get('integration')?.exclude).toContain('src/**/*.fuzz.test.ts');
   });
 });

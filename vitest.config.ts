@@ -58,7 +58,7 @@ export const vitestConfig = defineConfig({
           name: 'integration',
           setupFiles: ['./vitest.setup.ts'],
           include: ['src/integration/**/*.test.ts'],
-          exclude: ['src/**/*.smoke.test.ts'],
+          exclude: ['src/**/*.smoke.test.ts', 'src/**/*.fuzz.test.ts'],
           globals: false,
           restoreMocks: true,
           testTimeout: 60_000,
