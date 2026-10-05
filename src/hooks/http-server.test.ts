@@ -39,6 +39,14 @@ vi.mock('../adapters/workspace/index.js', () => ({
   computeFingerprint: (...args: unknown[]) => mockComputeFingerprint(...args),
 }));
 
+// Mock git root resolution (H8: payload cwd is never a filesystem authority).
+const mockResolveRoot = vi.fn();
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+});
+
 // Mock audit persistence.
 const mockAppendAuditEvent = vi.fn();
 
@@ -106,6 +114,10 @@ beforeEach(async () => {
     sessionDir: (...args: unknown[]) => mockSessionDir(...args),
     computeFingerprint: (...args: unknown[]) => mockComputeFingerprint(...args),
   }));
+  vi.doMock('../adapters/git.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../adapters/git.js')>();
+    return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+  });
   vi.doMock('../adapters/persistence-audit.js', () => ({
     appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
   }));
@@ -133,6 +145,9 @@ beforeEach(async () => {
   handlePreToolUse = mod.handlePreToolUse;
   handleHttpRequest = mod.handleHttpRequest;
   readHttpHookServerConfig = mod.readHttpHookServerConfig;
+
+  mockResolveRoot.mockReset();
+  mockResolveRoot.mockResolvedValue('/tmp/project');
 });
 
 afterEach(() => {
@@ -143,6 +158,7 @@ afterEach(() => {
   delete process.env['FLOWGUARD_HOOK_HOST'];
   delete process.env['FLOWGUARD_HOOK_PORT'];
   delete process.env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  delete process.env['FLOWGUARD_SESSION_DIR'];
   process.exitCode = undefined;
   for (const listener of process.listeners('SIGINT') as NodeJS.SignalsListener[]) {
     if (!signalListenerBaseline.sigint.includes(listener)) process.off('SIGINT', listener);
@@ -236,6 +252,52 @@ describe('handleSessionStart', () => {
           enforcementLevel: 'hook_gated',
         }),
       );
+    });
+  });
+
+  describe('H8 cwd binding', () => {
+    it('bootstraps the git-resolved worktree root, not the raw payload cwd', async () => {
+      mockResolveRoot.mockResolvedValue('/canonical/project');
+      mockEnsureWorkspace.mockResolvedValue(undefined);
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/workspace/sessions/fp/sess_test_123',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000004', phase: 'READY' },
+      });
+      mockAppendAuditEvent.mockResolvedValue(undefined);
+
+      await handleSessionStart(validPayload);
+
+      expect(mockResolveRoot).toHaveBeenCalledWith('/tmp/project');
+      expect(mockEnsureWorkspace).toHaveBeenCalledWith('/canonical/project');
+    });
+
+    it('rejects bootstrap when the cwd is not a git worktree', async () => {
+      mockResolveRoot.mockRejectedValue(new Error('not a git repository'));
+
+      const result = await handleSessionStart(validPayload);
+
+      expect(result).toEqual({
+        decision: 'allow',
+        reason: 'workspace bootstrap failed (non-blocking)',
+      });
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('skips bootstrap under the explicit session-dir override', async () => {
+      process.env['FLOWGUARD_SESSION_DIR'] = '/override/dir';
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/override/dir',
+        state: { flowguardSessionId: '00000000-0000-4000-8000-000000000005', phase: 'READY' },
+      });
+      mockAppendAuditEvent.mockResolvedValue(undefined);
+
+      await handleSessionStart(validPayload);
+
+      expect(mockResolveRoot).not.toHaveBeenCalled();
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
     });
   });
 

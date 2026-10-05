@@ -6,6 +6,7 @@ const mockSessionDir = vi.hoisted(() => vi.fn());
 const mockAppendAuditEvent = vi.hoisted(() => vi.fn());
 const mockResolveSession = vi.hoisted(() => vi.fn());
 const mockWriteLog = vi.hoisted(() => vi.fn());
+const mockResolveRoot = vi.hoisted(() => vi.fn());
 
 vi.mock('./shared/stdin-reader.js', () => ({
   readStdin: (...args: unknown[]) => mockReadStdin(...args),
@@ -27,6 +28,11 @@ vi.mock('../adapters/workspace/index.js', () => ({
   ensureWorkspace: (...args: unknown[]) => mockEnsureWorkspace(...args),
   sessionDir: (...args: unknown[]) => mockSessionDir(...args),
 }));
+
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...actual, resolveRoot: (...args: unknown[]) => mockResolveRoot(...args) };
+});
 
 vi.mock('../adapters/persistence-audit.js', () => ({
   appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
@@ -71,11 +77,14 @@ describe('informational command hooks', () => {
       sessionDir: '/workspace/.flowguard/sessions/session-1',
       state: { phase: 'IMPLEMENTATION', reviewAssurance: { obligations: [] } },
     });
+    mockResolveRoot.mockReset();
+    mockResolveRoot.mockResolvedValue('/workspace');
     process.exitCode = undefined;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env['FLOWGUARD_SESSION_DIR'];
     process.exitCode = undefined;
   });
 
@@ -117,6 +126,34 @@ describe('informational command hooks', () => {
           detail: expect.objectContaining({ action: 'session_stop' }),
         }),
       );
+    });
+
+    it('bootstraps the git-resolved worktree root, not the raw payload cwd', async () => {
+      mockReadStdin.mockResolvedValue({ session_id: 'session-1', cwd: '/workspace/subdir' });
+      mockResolveRoot.mockResolvedValue('/workspace');
+
+      await importHook('./session-start.js', () => mockAppendAuditEvent.mock.calls.length > 0);
+
+      expect(mockResolveRoot).toHaveBeenCalledWith('/workspace/subdir');
+      expect(mockEnsureWorkspace).toHaveBeenCalledWith('/workspace');
+    });
+
+    it('skips bootstrap and audit when the cwd is not a git worktree', async () => {
+      mockResolveRoot.mockRejectedValue(new Error('not a git repository'));
+
+      await importHook('./session-start.js', () => mockWriteLog.mock.calls.length > 0);
+
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
+      expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+    });
+
+    it('skips bootstrap entirely under the explicit session-dir override', async () => {
+      process.env['FLOWGUARD_SESSION_DIR'] = '/override/dir';
+
+      await importHook('./session-start.js', () => mockAppendAuditEvent.mock.calls.length > 0);
+
+      expect(mockResolveRoot).not.toHaveBeenCalled();
+      expect(mockEnsureWorkspace).not.toHaveBeenCalled();
     });
   });
 

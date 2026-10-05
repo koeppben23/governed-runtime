@@ -95,6 +95,33 @@ describe('pre-tool-use review obligation enforcement', () => {
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
+  it('denies with WORKTREE_MISMATCH when the payload cwd is not the bound worktree', async () => {
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
+      stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      if (done) done(null);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mockReadStdin.mockResolvedValue(payload);
+    mockResolveSession.mockResolvedValue({
+      ok: false,
+      code: 'WORKTREE_MISMATCH',
+      reason: 'Session was created for worktree "/bound" but current worktree is "/other".',
+    });
+
+    await import('./pre-tool-use.js');
+    await vi.waitFor(() => expect(stdout.trim()).not.toBe(''));
+
+    const output = JSON.parse(stdout) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('WORKTREE_MISMATCH');
+    expect(mockResolveSession).toHaveBeenCalledWith('/tmp/project', 'sess_test');
+  });
+
   it('denies a mutating tool when a review obligation is unresolved', async () => {
     mockResolveSession.mockResolvedValue({
       ok: true,

@@ -1769,4 +1769,22 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'base',
     { source: [SOURCE.scope] },
   ),
+
+  // ── Base profile: H8 payload-cwd trust boundary (candidates) ──────────────
+  candidate(
+    'src/adapters/binding.ts',
+    'Worktree binding and payload-cwd validation',
+    'base',
+    ['src/adapters/adapters-binding.test.ts'],
+    'H8 payload-cwd trust boundary: git-resolved worktree-root equality and typed GitError preservation. Measured in the post-canonicalization 2026-10-05 base full run at 15.79% (6 killed / 5 survived / 27 no-coverage; 30 TypeScript-checker errors, 21 ignored), below the admission gate: remains a candidate for test hardening; admission still requires a future full base-profile run meeting the per-target threshold.',
+    { source: [SOURCE.trustBoundaries], critical: true },
+  ),
+  candidate(
+    'src/hooks/shared/session-resolver.ts',
+    'Hook session resolution and payload-cwd binding enforcement',
+    'base',
+    ['src/hooks/shared/session-resolver.test.ts'],
+    'H8 payload-cwd trust boundary: canonicalizes the payload cwd to the git worktree root before fingerprinting, then validates it against the state binding before the state is trusted for gating/audit. Measured in the post-canonicalization 2026-10-05 base full run at 77.78% (7 killed / 2 survived; 44 TypeScript-checker errors, 13 ignored), below the admission gate: remains a candidate for test hardening; admission still requires a future full base-profile run meeting the per-target threshold.',
+    { source: [SOURCE.trustBoundaries], critical: true },
+  ),
 ];

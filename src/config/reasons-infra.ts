@@ -427,6 +427,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'WORKTREE_RESOLUTION_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Cannot resolve git worktree root: {message}',
+    recoverySteps: [
+      'Verify that cwd in the hook payload points inside a git repository',
+      'Check that git is installed and accessible',
+      'Re-run the hook from the session worktree root',
+    ],
+  },
+
+  {
     code: 'SESSION_DIR_INVALID',
     category: 'adapter',
     messageTemplate: 'Cannot derive session directory: {message}',

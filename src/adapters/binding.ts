@@ -28,7 +28,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { resolveRoot, isGitRepo } from './git.js';
+import { GitError, resolveRoot, isGitRepo, type GitErrorCode } from './git.js';
 import * as path from 'node:path';
 
 // -- Error --------------------------------------------------------------------
@@ -186,6 +186,58 @@ export function validateBinding(state: SessionState, binding: ResolvedBinding): 
   }
 
   return true;
+}
+
+/**
+ * Outcome of validating a payload working directory against an existing binding.
+ */
+export type CwdBindingValidation =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly code: BindingErrorCode | GitErrorCode;
+      readonly reason: string;
+    };
+
+/**
+ * Validate that a payload working directory belongs to the session's bound worktree.
+ *
+ * The comparison is git-resolved worktree-root equality: a normalized equal path
+ * is accepted directly; any other directory must resolve via `git rev-parse
+ * --show-toplevel` to the same worktree root. Git resolution failures keep their
+ * typed code (`NOT_GIT_REPO`, `GIT_NOT_FOUND`, `GIT_TIMEOUT`,
+ * `GIT_COMMAND_FAILED`) instead of collapsing into a generic mismatch.
+ *
+ * The resolved session ID is deliberately not compared: binding.ts documents
+ * that a new host session may continue the same worktree.
+ *
+ * @param state - The session state whose binding is authoritative.
+ * @param cwd - Payload working directory (untrusted hook input).
+ * @returns Validation outcome; every failure mode is fail-closed at the caller.
+ */
+export async function validateCwdAgainstBinding(
+  state: SessionState,
+  cwd: string,
+): Promise<CwdBindingValidation> {
+  if (normalizePath(cwd) === normalizePath(state.binding.worktree)) {
+    return { ok: true };
+  }
+
+  let worktreeRoot: string;
+  try {
+    worktreeRoot = await resolveRoot(cwd);
+  } catch (err) {
+    if (err instanceof GitError) return { ok: false, code: err.code, reason: err.message };
+    throw err;
+  }
+
+  try {
+    validateBinding(state, { worktreeRoot, sessionId: state.binding.hostSessionId });
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof BindingError) return { ok: false, code: err.code, reason: err.message };
+    throw err;
+  }
 }
 
 /**
