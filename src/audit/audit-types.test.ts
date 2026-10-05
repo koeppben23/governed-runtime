@@ -607,14 +607,35 @@ describe('audit types', () => {
       expect(hashWithout).not.toBe(hashWith);
     });
 
-    it('actorInfo absent on transition and error events', () => {
-      const transition = createTransitionEvent(
+    it('actorInfo is optional on transition events and absent on error events', () => {
+      const actor: ActorInfo = {
+        id: 'jane',
+        email: 'jane@dev.io',
+        source: 'git',
+        assurance: 'best_effort',
+      };
+      const withoutIdentity = createTransitionEvent(
         SESSION_ID,
         'PLAN',
         { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
         TS1,
         GENESIS_HASH,
       );
+      const withIdentity = createTransitionEvent({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId: undefined,
+        phase: 'PLAN',
+        detail: {
+          from: 'TICKET',
+          to: 'PLAN',
+          event: 'PLAN_READY',
+          autoAdvanced: false,
+          chainIndex: -1,
+        },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+        actorInfo: actor,
+      });
       const error = createErrorEvent({
         flowguardSessionId: SESSION_ID,
         hostSessionId: undefined,
@@ -622,7 +643,8 @@ describe('audit types', () => {
         occurredAt: TS1,
         prevHash: GENESIS_HASH,
       });
-      expect('actorInfo' in transition).toBe(false);
+      expect('actorInfo' in withoutIdentity).toBe(false);
+      expect(withIdentity.actorInfo).toEqual(actor);
       expect('actorInfo' in error).toBe(false);
     });
   });

@@ -313,6 +313,11 @@ const PendingTransitionAuditOperation = PendingAuditOperationBase.extend({
   transition: Transition.extend({
     chainIndex: z.number().int().nonnegative(),
     autoAdvanced: z.boolean(),
+    /**
+     * Resolved session-principal identity (optional, never null). Absence is
+     * the frozen semantic for machine-only transitions and pre-G15 states.
+     */
+    actorInfo: ActorInfoSchema.optional(),
   }),
 });
 
