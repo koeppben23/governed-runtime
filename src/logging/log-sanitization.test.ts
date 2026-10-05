@@ -1,5 +1,5 @@
 /**
- * @module logging/__tests__/log-sanitization
+ * @module logging/log-sanitization
  * @description Verifies that new boundary-logging logpoints do not leak
  *              secrets, paths, command output, or raw error strings.
  *
@@ -10,8 +10,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from '../adapter-logger.js';
-import { runWithLogContext } from '../log-context.js';
+import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from './adapter-logger.js';
+import { runWithLogContext } from './log-context.js';
 
 function captureLogger(): {
   log: AdapterLogger;
@@ -54,7 +54,7 @@ describe('log-sanitization', () => {
     it('logs only code, no vars content', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/blocked-result.js');
+      const { formatBlocked } = await import('../integration/blocked-result.js');
 
       formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
 
@@ -66,7 +66,7 @@ describe('log-sanitization', () => {
     it('keeps traceId and durationMs as safe structured fields', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/blocked-result.js');
+      const { formatBlocked } = await import('../integration/blocked-result.js');
 
       runWithLogContext({ traceId: '11111111-1111-4111-8111-111111111111' }, () => {
         formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
@@ -85,7 +85,7 @@ describe('log-sanitization', () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
       const { formatRailResult } =
-        await import('../../integration/tools/helpers-rail-presentation.js');
+        await import('../integration/tools/helpers-rail-presentation.js');
 
       formatRailResult({
         kind: 'blocked',
@@ -102,7 +102,7 @@ describe('log-sanitization', () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
       const { formatRailResult } =
-        await import('../../integration/tools/helpers-rail-presentation.js');
+        await import('../integration/tools/helpers-rail-presentation.js');
 
       formatRailResult({
         kind: 'blocked',

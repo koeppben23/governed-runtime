@@ -298,7 +298,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   required(
     'src/adapters/persistence-lock.ts',
     'Inter-process write lock for persisted state',
-    ['src/adapters/__tests__/persistence-lock.test.ts'],
+    ['src/adapters/persistence-lock.test.ts'],
     {
       admission: admissionRecord('src/adapters/persistence-lock.ts'),
     },

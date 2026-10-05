@@ -14,12 +14,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import { PersistenceError } from '../persistence.js';
+import { PersistenceError } from './persistence.js';
 import {
   acquireSessionWriteLock,
   sessionLockPath,
   withSessionWriteLock,
-} from '../persistence-lock.js';
+} from './persistence-lock.js';
 
 type MockedFs = typeof import('node:fs/promises');
 
