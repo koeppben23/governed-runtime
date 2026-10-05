@@ -170,6 +170,7 @@ function buildOperationAuditBody(
       autoAdvanced: t.autoAdvanced,
       chainIndex: t.chainIndex,
     },
+    ...(t.actorInfo !== undefined ? { actorInfo: t.actorInfo } : {}),
     occurredAt: t.at,
     prevHash,
   });

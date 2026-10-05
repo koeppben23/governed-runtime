@@ -349,6 +349,7 @@ function addTransitionOperations(
   transitions: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
 ): SessionState {
   const mutationDigest = hashText(canonicalJsonStringify(transitions));
+  const actorInfo = next.actorInfo;
   const operations: PendingAuditOperation[] = transitions.map((transition, chainIndex) => {
     const operationId = crypto.randomUUID();
     const normalizedTransition: Extract<
@@ -361,6 +362,7 @@ function addTransitionOperations(
       at: transition.at,
       chainIndex,
       autoAdvanced: chainIndex > 0,
+      ...(actorInfo !== undefined ? { actorInfo } : {}),
     };
     const body = buildTransitionBody({
       flowguardSessionId: next.flowguardSessionId,
@@ -377,6 +379,7 @@ function addTransitionOperations(
         autoAdvanced: normalizedTransition.autoAdvanced,
         chainIndex: normalizedTransition.chainIndex,
       },
+      ...(actorInfo !== undefined ? { actorInfo } : {}),
       occurredAt: transition.at,
       prevHash: 'genesis',
     });

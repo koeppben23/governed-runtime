@@ -24,6 +24,7 @@ import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { prepareAuditOperations } from './audit-outbox.js';
 import { buildDecisionAuditIntent } from './services/decision-audit-intent.js';
+import type { ActorInfo } from '../state/evidence.js';
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FIXED_DECISION_AT = '2026-05-15T12:00:00.000Z';
@@ -121,6 +122,60 @@ describe('reconcilePendingAuditOperations', () => {
           reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
         ).resolves.toBeUndefined();
         expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('drains a committed transition operation with the persisted actor identity', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-reconcile-'));
+      try {
+        const actor: ActorInfo = {
+          id: 'jane',
+          email: 'jane@dev.io',
+          source: 'git',
+          assurance: 'best_effort',
+        };
+        await writeState(sessDir, makeState('TICKET', { id: SESSION_ID }));
+        const next = makeState('PLAN', {
+          id: SESSION_ID,
+          actorInfo: actor,
+          transition: {
+            from: 'TICKET' as const,
+            to: 'PLAN' as const,
+            event: 'PLAN_READY' as const,
+            at: FIXED_DECISION_AT,
+          },
+        });
+        await writeStateWithArtifactsAndAuditOperations(sessDir, next, [
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+        ]);
+
+        const pending = await readState(sessDir);
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+              actorClassification: {},
+              mode: 'solo',
+              requireHumanGates: false,
+            },
+            state: pending,
+          }),
+        });
+
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
+
+        expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
+        const emitted = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock
+          .calls[0]![0] as Record<string, unknown>;
+        expect(emitted.event).toBe('transition:PLAN_READY');
+        expect(emitted.actor).toBe('machine');
+        expect(emitted.actorInfo).toEqual(actor);
+        expect((await readState(sessDir))!.pendingAuditOperations[0]!.status).toBe('reconciled');
       } finally {
         await fs.rm(sessDir, { recursive: true, force: true });
       }
