@@ -400,7 +400,10 @@ Representative typed fail-closed IdP errors:
 - **Hash-safe.** When absent, `actorInfo` is omitted from the event object — `JSON.stringify`
   excludes `undefined` keys. Chain hashes for pre-existing events remain identical.
 - **Selective attribution.** `actorInfo` appears on human-influenced events (lifecycle,
-  tool_call, decision). Machine-only events (transition, error) never carry `actorInfo`.
+  tool_call, decision) and on transition events when a session principal is resolved.
+  Error events never carry `actorInfo`. Classification and identity context are
+  orthogonal: a transition remains a machine-applied transition (`actor: 'machine'`)
+  even when it names the resolved principal.
 
 ---
 

@@ -56,12 +56,18 @@ function toDetailRecord(detail: TypedDetail): Record<string, unknown> {
 // ─── Factory Functions ────────────────────────────────────────────────────────
 
 /** Shared body-input shape; the detail payload is specific to each body builder. */
-interface AuditBodyInput<D> extends Omit<TransitionEventInput, 'timestampEvidence' | 'detail'> {
+interface AuditBodyInput<D> extends Omit<
+  TransitionEventInput,
+  'timestampEvidence' | 'detail' | 'actorInfo'
+> {
   readonly detail: D;
 }
 
 /** Input object for buildTransitionBody. */
-export type TransitionBodyInput = AuditBodyInput<Omit<TransitionDetail, 'kind'>>;
+export type TransitionBodyInput = AuditBodyInput<Omit<TransitionDetail, 'kind'>> & {
+  /** Resolved session-principal identity; absence stays machine-only. */
+  readonly actorInfo?: ActorInfo | undefined;
+};
 
 /**
  * Build a transition event body (no chainHash, no canonical digest, no evidence).

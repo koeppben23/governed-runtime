@@ -21,7 +21,12 @@ import {
   prepareStateWithAuditOperations,
 } from '../audit-outbox.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
-import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
+import {
+  buildStateWriteBody,
+  buildTransitionBody,
+  CURRENT_AUDIT_FORMAT_VERSION,
+  type EventBody,
+} from '../../audit/types.js';
 import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
@@ -204,6 +209,34 @@ describe('prepareStateWithAuditOperations', () => {
 
     expect('actorInfo' in body).toBe(false);
     expect(computeCanonicalEventDigest(body)).toBe(op.auditEventDigest);
+
+    // Stronger v10 regression: a manually built pre-G15 transition body (no
+    // actorInfo) hashes to the same canonical event digest as the committed
+    // operation.
+    const preG15Body: EventBody = {
+      id: op.operationId,
+      flowguardSessionId: prepared.flowguardSessionId,
+      hostSessionId: prepared.binding.hostSessionId,
+      phase: op.transition.to,
+      event: `transition:${op.transition.event}`,
+      occurredAt: op.transition.at,
+      actor: 'machine',
+      auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+      detail: {
+        operationId: op.operationId,
+        preStateDigest: op.preStateDigest,
+        mutationDigest: op.mutationDigest,
+        postStateDigest: op.postStateDigest,
+        from: op.transition.from,
+        to: op.transition.to,
+        event: op.transition.event,
+        autoAdvanced: op.transition.autoAdvanced,
+        chainIndex: op.transition.chainIndex,
+        kind: 'transition',
+      },
+      prevHash: 'genesis',
+    };
+    expect(computeCanonicalEventDigest(preG15Body)).toBe(op.auditEventDigest);
   });
 
   it('CORNER: records a same-phase authority write when the transition is unchanged', async () => {

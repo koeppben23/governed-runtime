@@ -66,12 +66,15 @@ export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v3'
  * - `chainHash`: SHA-256(prevHash + JSON(this event without chainHash))
  * - To verify: recompute chainHash from prevHash + event data, compare
  *
- * Actor identity (P27):
+ * Actor identity (P27, G15):
  * - `actor`: Classification label — "human", "machine", or "system"
  * - `actorInfo`: Optional structured identity (id, email, source). Present on
- *   human-influenced events (lifecycle, tool_call, decision). Absent on
- *   machine-only events (transition, error). When absent, JSON.stringify
- *   omits the field — chain hash stays identical for pre-P27 events.
+ *   human-influenced events (lifecycle, tool_call, decision) and on transition
+ *   events when a session principal is resolved. Classification and identity
+ *   context are orthogonal: a transition is still applied by the machine
+ *   (`actor: "machine"`) even when it names the resolved principal. Error
+ *   events never carry `actorInfo`. When absent, JSON.stringify omits the
+ *   field — chain hash stays identical for pre-P27/pre-G15 events.
  */
 export interface ChainedAuditEvent {
   readonly id: string;
