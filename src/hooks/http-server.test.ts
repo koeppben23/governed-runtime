@@ -16,6 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Readable } from 'node:stream';
+import { MAX_HOOK_PAYLOAD_BYTES } from './shared/limits.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -804,7 +805,7 @@ describe('handleHttpRequest', () => {
       session_id: 'sess_test_123',
       cwd: '/tmp/project',
     });
-    const req = makeRequest({ body, contentLength: '1048576' });
+    const req = makeRequest({ body, contentLength: String(MAX_HOOK_PAYLOAD_BYTES) });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -814,7 +815,10 @@ describe('handleHttpRequest', () => {
   });
 
   it('BAD: rejects Content-Length over the hook body limit with 413', async () => {
-    const req = makeRequest({ body: '{}', contentLength: '1048577' });
+    const req = makeRequest({
+      body: '{}',
+      contentLength: String(MAX_HOOK_PAYLOAD_BYTES + 1),
+    });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -825,7 +829,7 @@ describe('handleHttpRequest', () => {
   });
 
   it('BAD: rejects streamed bodies over the hook body limit with 413', async () => {
-    const req = makeRequest({ body: 'x'.repeat(1_048_577) });
+    const req = makeRequest({ body: 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1) });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);

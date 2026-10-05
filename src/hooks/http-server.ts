@@ -34,6 +34,7 @@ import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { formatDenyOutput } from './shared/stdout-writer.js';
 import { validateToolHookPayload, validateSessionPayload } from './shared/stdin-reader.js';
+import { MAX_HOOK_PAYLOAD_BYTES } from './shared/limits.js';
 import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
@@ -53,7 +54,6 @@ import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
 const DEFAULT_PORT = 18462;
 const DEFAULT_HOST = '127.0.0.1';
-export const MAX_HOOK_BODY_BYTES = 1_048_576;
 const MINIMUM_HOOK_TOKEN_LENGTH = 32;
 
 export type HttpHookServerConfig =
@@ -129,7 +129,7 @@ let serverConfig: HttpHookServerConfig | undefined;
 
 class BodyTooLargeError extends Error {
   constructor() {
-    super(`request body exceeds ${MAX_HOOK_BODY_BYTES} bytes`);
+    super(`request body exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);
     this.name = 'BodyTooLargeError';
   }
 }
@@ -138,7 +138,7 @@ function contentLengthExceedsLimit(req: IncomingMessage): boolean {
   const raw = req.headers['content-length'];
   if (typeof raw !== 'string') return false;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > MAX_HOOK_BODY_BYTES;
+  return Number.isFinite(parsed) && parsed > MAX_HOOK_PAYLOAD_BYTES;
 }
 
 export async function readBody(req: IncomingMessage): Promise<string> {
@@ -148,7 +148,7 @@ export async function readBody(req: IncomingMessage): Promise<string> {
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
     total += buffer.byteLength;
-    if (total > MAX_HOOK_BODY_BYTES) throw new BodyTooLargeError();
+    if (total > MAX_HOOK_PAYLOAD_BYTES) throw new BodyTooLargeError();
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString('utf-8');
