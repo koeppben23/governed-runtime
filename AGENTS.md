@@ -136,6 +136,7 @@ Before implementing a change, identify the canonical authority. Change the autho
 
 - State transitions: `src/machine/`
 - Module direction policy: `src/architecture/support/module-dependency-policy.ts`
+- Test placement/classification: `src/architecture/support/module-classification.ts`
 - Canonical serialization: `src/shared/canonical-json.ts`
 - Hash/digest primitives: `src/shared/hashing.ts`
 - Archive content digest formula: `src/archive/content-digest.ts`

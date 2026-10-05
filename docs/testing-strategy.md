@@ -199,6 +199,36 @@ workflow runs. It is intentionally not a pull-request required check; see
 | `src/architecture/`  | Dependency boundary rules, import analysis                    |
 | `src/documentation/` | Documentation contract checks                                 |
 
+## Test Placement Rules
+
+Test placement is enforced, not advisory. The semantic authority is
+`isTestSourcePath()` in `src/architecture/support/module-classification.ts`;
+the ESLint metric scope, the coverage scope, and `tsconfig.json` are declarative
+projections whose parity is checked by executable guards.
+
+- **Production-module suites co-locate** — a `*.test.ts` suite lives next to the
+  unit it tests (for example `src/adapters/persistence-lock.ts` +
+  `src/adapters/persistence-lock.test.ts`).
+- **`__tests__/` only in test-support trees** — only top-level trees classified
+  `test-support` (currently `src/architecture/`, `src/documentation/`,
+  `src/security/`, `src/fixtures/`) may use a `__tests__/` directory, and when
+  present it contains suites only. Suites in those trees may also co-locate
+  elsewhere in the tree; shared support modules live outside `__tests__/`,
+  typically under `support/` (for example `src/architecture/support/`).
+- **Shared test infrastructure uses recognized names** — `*-test-helpers.ts`,
+  `*-test-fixtures.ts`, `test-helpers.ts`, `evidence-test-constants.ts`, or a
+  `__fixtures__/` directory; those are the only classes recognized besides
+  `.test.ts` and `.spec.ts`.
+- **Test-kind suffixes select the Vitest project** — `*.smoke.test.ts` is
+  collected by the `smoke` project only, `*.fuzz.test.ts` by the `fuzz` project
+  only. No hand-maintained per-file project lists.
+- **Never in the production graph** — test code, helpers, and fixtures must not
+  enter the `tsconfig.json` production program, `dist/`, or the npm tarball;
+  `production-build-boundary.test.ts` fails on any transitive inclusion.
+
+Enforced by `test-placement.test.ts`, `coverage-scope-parity.test.ts`,
+`type-aware-lint-scope.test.ts`, and `production-build-boundary.test.ts`.
+
 ## Running Tests Locally
 
 ```bash
