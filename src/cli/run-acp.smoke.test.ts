@@ -1,5 +1,5 @@
 /**
- * @module cli/run-acp-smoke.test
+ * @module cli/run-acp.smoke.test
  * @description ACP smoke tests.
  *
  * OPTIONAL: RUN_OPENCODE_ACP_TESTS=1

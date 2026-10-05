@@ -1,5 +1,5 @@
 /**
- * @module cli/demo-evidence-verify.test
+ * @module cli/demo-evidence-verify.smoke.test
  * @description Smoke contract for the standalone demo evidence-package
  * verifier. Build-dependent: the verifier imports the canonical archive
  * primitives from the built `@flowguard/core`, so this test runs in the smoke

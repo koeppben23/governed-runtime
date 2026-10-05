@@ -172,7 +172,7 @@ describe('java demo workflow contract', () => {
     const evidenceDoc = readFileSync(join(DEMO_DIR, 'EVIDENCE_PACKAGE.md'), 'utf8');
     const verifier = readFileSync(join(DEMO_DIR, 'verify-evidence-package.mjs'), 'utf8');
     const smokeTest = readFileSync(
-      join(process.cwd(), 'src', 'cli', 'demo-evidence-verify.test.ts'),
+      join(process.cwd(), 'src', 'cli', 'demo-evidence-verify.smoke.test.ts'),
       'utf8',
     );
 

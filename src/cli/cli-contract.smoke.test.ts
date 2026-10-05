@@ -1,5 +1,5 @@
 /**
- * @module cli/cli-contract-smoke.test
+ * @module cli/cli-contract.smoke.test
  * @description CLI Smoke Classification Suite (T5).
  *
  * This is intentionally process-level smoke coverage, not a second copy of the

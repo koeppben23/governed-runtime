@@ -1,5 +1,5 @@
 /**
- * @module cli/opencode-reviewer-structured-live.test
+ * @module cli/opencode-reviewer-structured-live.smoke.test
  * @description Real-host E2E for the frozen OpenCode structured-reviewer wire
  * contract (Blocker 5).
  *

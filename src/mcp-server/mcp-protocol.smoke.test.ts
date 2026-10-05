@@ -1,5 +1,5 @@
 /**
- * @module mcp-server/mcp-protocol.test
+ * @module mcp-server/mcp-protocol.smoke.test
  * @description MCP protocol compliance and negative-path tests.
  *
  * Spawns the FlowGuard MCP server as a child process and communicates

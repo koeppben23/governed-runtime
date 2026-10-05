@@ -1,5 +1,5 @@
 /**
- * @module cli/opencode-reviewer-capability
+ * @module cli/opencode-reviewer-capability.smoke.test
  * @description OpenCode host-parser smoke contract for reviewer capability isolation.
  */
 

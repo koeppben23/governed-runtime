@@ -570,7 +570,7 @@ describe('team opt-in completion (real git)', () => {
     // required): the integration suite must stay runnable before `npm run
     // build`. The standalone CLI verifier on the concrete package runs
     // post-build in the smoke project
-    // (src/cli/demo-evidence-verify.test.ts).
+    // (src/cli/demo-evidence-verify.smoke.test.ts).
     const verification = await verifyArchive(se.fingerprint, se.sId);
     expect(verification.passed).toBe(true);
   });

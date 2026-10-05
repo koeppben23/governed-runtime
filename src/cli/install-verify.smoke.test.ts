@@ -1,5 +1,5 @@
 /**
- * @module cli/install-verify.test
+ * @module cli/install-verify.smoke.test
  * @description Smoke tests for release tarball verification.
  *
  * Run with: npm run test:install-verify
