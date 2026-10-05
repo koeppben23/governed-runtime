@@ -11,6 +11,7 @@ import {
   validateToolHookPayload,
   validateSessionPayload,
 } from './stdin-reader.js';
+import { MAX_HOOK_PAYLOAD_BYTES } from './limits.js';
 
 function streamFromString(content: string): NodeJS.ReadableStream {
   const readable = new Readable({ read() {} });
@@ -23,6 +24,21 @@ function emptyStream(): NodeJS.ReadableStream {
   const readable = new Readable({ read() {} });
   readable.push(null);
   return readable;
+}
+
+function streamFromChunks(chunks: readonly string[]): Readable {
+  const readable = new Readable({ read() {} });
+  for (const chunk of chunks) readable.push(chunk);
+  readable.push(null);
+  return readable;
+}
+
+function jsonObjectWithByteLength(byteLength: number): string {
+  const prefix = '{"data":"';
+  const suffix = '"}';
+  const overhead = Buffer.byteLength(prefix) + Buffer.byteLength(suffix);
+  if (byteLength < overhead) throw new RangeError('byteLength too small for JSON object');
+  return `${prefix}${'x'.repeat(byteLength - overhead)}${suffix}`;
 }
 
 // ─── readStdin ────────────────────────────────────────────────────────────────
@@ -39,13 +55,43 @@ describe('readStdin', () => {
   });
 
   it('handles multi-chunk delivery', async () => {
-    const stream = new Readable({ read() {} });
-    stream.push('{"first');
-    stream.push('":"val');
-    stream.push('ue"}');
-    stream.push(null);
+    const stream = streamFromChunks(['{"first', '":"val', 'ue"}']);
     const result = await readStdin(stream);
     expect(result).toEqual({ first: 'value' });
+  });
+
+  it('accepts a payload exactly at the shared byte cap', async () => {
+    const payload = jsonObjectWithByteLength(MAX_HOOK_PAYLOAD_BYTES);
+    expect(Buffer.byteLength(payload)).toBe(MAX_HOOK_PAYLOAD_BYTES);
+
+    const result = await readStdin(streamFromString(payload));
+
+    expect(typeof result['data']).toBe('string');
+  });
+
+  it('throws STDIN_TOO_LARGE at cap + 1 before JSON parsing', async () => {
+    const payload = jsonObjectWithByteLength(MAX_HOOK_PAYLOAD_BYTES + 1);
+
+    await expect(readStdin(streamFromString(payload))).rejects.toMatchObject({
+      code: 'STDIN_TOO_LARGE',
+    });
+  });
+
+  it('enforces the byte cap across multiple chunks', async () => {
+    const stream = streamFromChunks([
+      'x'.repeat(MAX_HOOK_PAYLOAD_BYTES - 1),
+      'x',
+      'x',
+    ]);
+
+    await expect(readStdin(stream)).rejects.toMatchObject({ code: 'STDIN_TOO_LARGE' });
+  });
+
+  it('destroys the stream when the byte cap is exceeded', async () => {
+    const stream = streamFromChunks(['x'.repeat(MAX_HOOK_PAYLOAD_BYTES), 'x']);
+
+    await expect(readStdin(stream)).rejects.toMatchObject({ code: 'STDIN_TOO_LARGE' });
+    expect(stream.destroyed).toBe(true);
   });
 
   it('throws STDIN_EMPTY when stream is empty', async () => {

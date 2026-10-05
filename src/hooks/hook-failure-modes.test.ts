@@ -22,6 +22,7 @@
 import { describe, it, expect } from 'vitest';
 import { Readable } from 'node:stream';
 import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
+import { MAX_HOOK_PAYLOAD_BYTES } from './shared/limits.js';
 import { formatDenyOutput } from './shared/stdout-writer.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import {
@@ -131,6 +132,15 @@ describe('Failure Mode: Malformed stdin → fail-closed deny', () => {
     const result = await simulatePreToolUseWithFailures('{not valid json!!!');
     expect(result.decision).toBe('deny');
     expect(result.code).toBe('HOOK_STDIN_INVALID');
+  });
+
+  it('BAD: oversized stdin produces deny before payload parsing', async () => {
+    const result = await simulatePreToolUseWithFailures(
+      'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1),
+    );
+    expect(result.decision).toBe('deny');
+    expect(result.code).toBe('HOOK_STDIN_INVALID');
+    expect(result.reason).toContain(`stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);
   });
 
   it('BAD: JSON array (not object) produces deny', async () => {

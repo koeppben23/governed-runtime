@@ -9,9 +9,12 @@
  * - Empty stdin → throws (hook should deny or exit non-zero)
  * - Invalid JSON → throws (malformed input)
  * - Non-object JSON → throws (unexpected shape)
+ * - Payload over the shared byte cap → destroys the stream and throws before JSON parsing
  *
  * @version v1
  */
+
+import { MAX_HOOK_PAYLOAD_BYTES } from './limits.js';
 
 /**
  * Error thrown when stdin cannot be read or parsed.
@@ -37,9 +40,19 @@ export async function readStdin(
   stream: NodeJS.ReadableStream = process.stdin,
 ): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
 
   for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    if (totalBytes > MAX_HOOK_PAYLOAD_BYTES) {
+      stream.destroy();
+      throw new StdinReadError(
+        'STDIN_TOO_LARGE',
+        `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`,
+      );
+    }
+    chunks.push(buffer);
   }
 
   const raw = Buffer.concat(chunks).toString('utf-8').trim();

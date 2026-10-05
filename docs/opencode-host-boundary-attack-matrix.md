@@ -33,6 +33,8 @@ In scope:
   `src/adapters/host-adapter.ts`.
 - OpenCode SDK contract surfaces consumed by the plugin: `Hooks`, hook payloads,
   the `Event` union, `PluginInput`, agent registry responses.
+- Cross-host hook transport guards in `src/hooks/` when they enforce the same
+  host-boundary payload and session-authority constraints.
 - `.sdk-baselines/opencode/` and the scripts that maintain it.
 - Reviewer child sessions spawned through the host client.
 
@@ -66,7 +68,8 @@ Each row states:
 - **Coverage** — repo-local evidence (`path:line`), or the explicit absence of
   it.
 - **Status** — `Covered`, `Partial`, `Gap`, or `Residual`.
-- **Finding** — `F-xx` reference into the findings section, or `—`.
+- **Finding** — `F-xx` reference into the findings section, a repository-wide
+  finding ID such as `H7`/`H8`, or `—`.
 
 Referenced repository artifacts are CI-checked for existence by
 `src/documentation/__tests__/opencode-host-boundary-attack-matrix.test.ts`.
@@ -90,6 +93,7 @@ point at the wrong line inside a valid range as files evolve.
 | HS-07 | Duplicate `callID` across before/after (retry, replay, identity confusion).             | Deterministic resolution or fail-closed deny; trace map cannot be poisoned.             | `src/integration/plugin-shared.test.ts` (duplicate callIDs never touch the fallback registry).                                                 | Covered | F-11    |
 | HS-08 | Process crashes between before and after.                                               | Same as HS-03: unknown episode on disk; next mutation fails closed.                     | `src/integration/mutation-episode-e2e.test.ts:293`, `src/integration/plugin-bootstrap.test.ts:482`.                                            | Covered | —       |
 | HS-09 | After hook arrives for a call the plugin never observed in before.                      | Ignore without corrupting trace state; no evidence fabrication.                         | Foreign after-hook test: `src/integration/plugin-afterhooks-more.test.ts`, `src/integration/plugin-shared.test.ts`.                            | Covered | F-11    |
+| HS-10 | Command-hook stdin or HTTP hook body exceeds the shared payload byte cap.                | Reject before JSON parsing; command stdin stops buffering and is destroyed, while HTTP returns 413 at the same 1 MiB boundary. | Boundary/unit coverage: `src/hooks/shared/stdin-reader.test.ts`, `src/hooks/hook-failure-modes.test.ts`, `src/hooks/http-server.test.ts`. | Covered | H7      |
 
 ---
 
