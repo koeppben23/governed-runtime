@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -61,6 +61,8 @@ describe('command hook binaries', () => {
     root = await mkdtemp(join(tmpdir(), 'flowguard-hook-smoke-'));
     worktree = join(root, 'worktree');
     await mkdir(worktree);
+    // H8: hook payload cwd is validated against a git-resolved worktree root.
+    execFileSync('git', ['init', '--quiet', worktree]);
     originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
     originalRequireTestConfigDir = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
     process.env.OPENCODE_CONFIG_DIR = join(root, 'config');
@@ -92,7 +94,15 @@ describe('command hook binaries', () => {
       const initialized = await initWorkspace(worktree, SESSION_ID);
       await writeState(
         initialized.sessionDir,
-        makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+        makeState('IMPLEMENTATION', {
+          binding: {
+            hostSessionId: SESSION_ID,
+            worktree,
+            fingerprint: initialized.fingerprint,
+            resolvedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        }),
       );
 
       const result = await runHook(
