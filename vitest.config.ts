@@ -6,6 +6,15 @@ import { TEST_SOURCE_EXCLUDES } from './src/architecture/support/test-source-exc
 const coverageExcludes = [...TEST_SOURCE_EXCLUDES];
 
 /**
+ * Deep fuzz runs (`FAST_CHECK_NUM_RUNS=10000` in the nightly workflow) execute
+ * the same property tens of thousands of times, and every iteration re-imports
+ * the hook module graph. Budget ~60 ms per configured run with a 120 s floor so
+ * the nightly deep run cannot fail on the default test timeout.
+ */
+const fuzzRuns = Number(process.env['FAST_CHECK_NUM_RUNS']) || 0;
+const fuzzTestTimeoutMs = Math.max(120_000, fuzzRuns * 60);
+
+/**
  * Root vitest config with native project separation for unit, integration, and smoke tests.
  *
  * - `unit`: Fast, no-build-required tests covering config, audit, rails, machine, etc.
@@ -99,7 +108,7 @@ export const vitestConfig = defineConfig({
           include: ['src/**/*.fuzz.test.ts'],
           globals: false,
           restoreMocks: true,
-          testTimeout: 120_000,
+          testTimeout: fuzzTestTimeoutMs,
         },
       },
       {
