@@ -66,7 +66,7 @@ jobs:
           FORCE_COLOR: 0
 
       - name: Run tests
-        run: npm test -- --exclude 'src/cli/install-verify.test.ts' --exclude 'src/cli/cli-contract-smoke.test.ts'
+        run: npm test
         env:
           FORCE_COLOR: 0
 

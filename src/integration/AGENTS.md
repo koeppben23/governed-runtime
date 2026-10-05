@@ -111,7 +111,7 @@ Never use bare `throw new Error(...)` at these boundaries.
   `review/dispatch/durable-dispatch.test.ts`,
   `tools/review-tool/structured-evidence-consumption.test.ts`,
   `policy-matrix.test.ts`.
-- Real host wire contract: `src/cli/opencode-reviewer-structured-live.test.ts`
+- Real host wire contract: `src/cli/opencode-reviewer-structured-live.smoke.test.ts`
   (smoke project; runs in the CI smoke job with the pinned host, locally with
   `OPENCODE_LIVE=1`).
 - Use `--project integration` for all runtime-facing behavior that crosses

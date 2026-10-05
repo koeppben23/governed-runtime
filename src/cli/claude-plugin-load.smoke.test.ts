@@ -1,5 +1,5 @@
 /**
- * @module cli/claude-plugin-load.test
+ * @module cli/claude-plugin-load.smoke.test
  * @description Auth-free Claude Code plugin load-integrity smoke test.
  *
  * Run with: npm run test:claude-plugin-load

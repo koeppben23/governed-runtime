@@ -1,5 +1,5 @@
 /**
- * @module cli/doctor-cli-smoke.test
+ * @module cli/doctor-cli.smoke.test
  * @description Build-dependent smoke tests for the `doctor` CLI exit code (#423).
  *
  * doctor() validates the shipped `dist/` executable surface of the *running*

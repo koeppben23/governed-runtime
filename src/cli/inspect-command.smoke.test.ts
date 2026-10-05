@@ -1,5 +1,5 @@
 /**
- * @module cli/inspect-command.test
+ * @module cli/inspect-command.smoke.test
  * @description Tests for flowguard inspect command.
  * @test-policy HAPPY, BAD, CORNER
  */

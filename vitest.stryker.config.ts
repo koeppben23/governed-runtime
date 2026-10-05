@@ -125,8 +125,7 @@ export default defineConfig({
       'src/adapters/gh-cli-branch-base.test.ts',
       // This invokes compiled dist hooks, not the mutated source modules. A
       // fresh production build is outside the Stryker workspace lifecycle.
-      'src/hooks/command-hooks-smoke.test.ts',
-      'src/__fixtures__.ts',
+      'src/hooks/command-hooks.smoke.test.ts',
       'src/integration/test-helpers.ts',
       'src/audit/audit-test-helpers.ts',
       'src/test-policy.ts',
@@ -162,7 +161,7 @@ export default defineConfig({
       'src/logging/coverage-proof.test.ts',
       'src/logging/otlp-sink.test.ts',
       'src/logging/redact.test.ts',
-      'src/mcp-server/mcp-protocol.test.ts',
+      'src/mcp-server/mcp-protocol.smoke.test.ts',
       'src/verification/assertion-extractor-schema.test.ts',
       'src/verification/assertion-report-collector.test.ts',
       'src/verification/executor.test.ts',
