@@ -1,8 +1,9 @@
 /**
- * @module audit/__tests__/tamper-evidence-harness
+ * @module audit/tamper-evidence-test-helpers
  * @description Shared, deterministic harness for the audit tamper-evidence
- * property tests (#435). It is intentionally **fast-check-free** and lives under
- * `__tests__/` (excluded from the build/dist via tsconfig + eslint test scope)
+ * property tests (#435). It is intentionally **fast-check-free** and uses the
+ * conventional `-test-helpers.ts` test-support suffix (excluded from the
+ * build/dist via tsconfig + eslint test scope)
  * so it is test-only code, never shipped, yet importable by BOTH the unit
  * property test (`tamper-evidence.property.test.ts`, gates `npm test`) and the
  * deep fuzz test (`tamper-evidence.fuzz.test.ts`, nightly). fast-check wiring
@@ -33,11 +34,11 @@ import {
   computeChainHash,
   type ChainedAuditEvent,
   type EventBody,
-} from '../types.js';
-import { canonicalJsonStringify, computeCanonicalEventDigest } from '../canonical-digest.js';
-import { stampChainSequence } from '../audit-test-helpers.js';
-import { verifyChain } from '../integrity.js';
-import type { TimestampEvidence } from '../../state/evidence.js';
+} from './types.js';
+import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
+import { stampChainSequence } from './audit-test-helpers.js';
+import { verifyChain } from './integrity.js';
+import type { TimestampEvidence } from '../state/evidence.js';
 
 /**
  * Test-side characterization of the production authority's excluded set

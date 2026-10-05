@@ -1,5 +1,5 @@
 /**
- * @module adapters/__tests__/lock-retry.test
+ * @module adapters/lock-retry.test
  * @description Tests for withSessionWriteLockRetry — exponential backoff retry
  *              wrapper around acquireSessionWriteLock (#504).
  *
@@ -8,18 +8,18 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { PersistenceError } from '../persistence.js';
-import { withSessionWriteLockRetry } from '../lock-retry.js';
-import type { SessionWriteLock } from '../persistence-lock.js';
+import { PersistenceError } from './persistence.js';
+import { withSessionWriteLockRetry } from './lock-retry.js';
+import type { SessionWriteLock } from './persistence-lock.js';
 
 // ─── Mock acquireSessionWriteLock ─────────────────────────────────────────────
 
-vi.mock('../persistence-lock.js', () => ({
+vi.mock('./persistence-lock.js', () => ({
   acquireSessionWriteLock: vi.fn(),
   sessionLockPath: vi.fn(),
 }));
 
-import { acquireSessionWriteLock } from '../persistence-lock.js';
+import { acquireSessionWriteLock } from './persistence-lock.js';
 
 const mockAcquire = vi.mocked(acquireSessionWriteLock);
 

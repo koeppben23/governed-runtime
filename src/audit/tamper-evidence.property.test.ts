@@ -41,7 +41,7 @@ import {
   deepReorderKeys,
   type RichEventParams,
   type ChainedAuditEventForTest,
-} from './__tests__/tamper-evidence-harness.js';
+} from './tamper-evidence-test-helpers.js';
 
 const FC_OPTIONS = {
   numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,

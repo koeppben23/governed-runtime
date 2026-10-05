@@ -1,5 +1,5 @@
 /**
- * @module logging/__tests__/mcp-logger-factory
+ * @module logging/mcp-logger-factory
  * @description Contract tests for the MCP logger factory.
  *
  * The MCP server uses a standalone logger (no plugin ALS scope).
@@ -10,8 +10,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createLogger, createNoopLogger } from '../logger.js';
-import { createConsoleSink } from '../console-sink.js';
+import { createLogger, createNoopLogger } from './logger.js';
+import { createConsoleSink } from './console-sink.js';
 
 describe('mcp-logger-factory', () => {
   describe('HAPPY — factory produces FlowGuardLogger-compatible instance', () => {
@@ -49,7 +49,7 @@ describe('mcp-logger-factory', () => {
   describe('CORNER — mcpLogger module is importable', () => {
     it('mcpLogger exports a FlowGuardLogger instance', async () => {
       // Dynamic import to avoid side effects in the test context.
-      const { mcpLogger } = await import('../../mcp-server/mcp-logger.js');
+      const { mcpLogger } = await import('../mcp-server/mcp-logger.js');
       expect(typeof mcpLogger.info).toBe('function');
       expect(typeof mcpLogger.warn).toBe('function');
       expect(typeof mcpLogger.error).toBe('function');

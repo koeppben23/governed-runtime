@@ -1,5 +1,5 @@
 /**
- * @module logging/__tests__/boundary-logging
+ * @module logging/boundary-logging
  * @description Contract tests for boundary logging at choke points.
  *
  * Verifies that formatted tool results emit diagnostic log events
@@ -13,10 +13,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from '../adapter-logger.js';
-import { runWithLogContext } from '../log-context.js';
+import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from './adapter-logger.js';
+import { runWithLogContext } from './log-context.js';
 
-vi.mock('../../adapters/persistence.js', () => ({
+vi.mock('../adapters/persistence.js', () => ({
   readState: vi.fn(),
   writeState: vi.fn().mockResolvedValue(undefined),
   writeStateAlreadyLocked: vi.fn().mockResolvedValue(undefined),
@@ -29,7 +29,7 @@ vi.mock('../../adapters/persistence.js', () => ({
   },
 }));
 
-vi.mock('../../adapters/persistence-lock.js', () => ({
+vi.mock('../adapters/persistence-lock.js', () => ({
   acquireSessionWriteLock: vi
     .fn()
     .mockResolvedValue({ release: vi.fn().mockResolvedValue(undefined), waited: false }),
@@ -82,7 +82,7 @@ describe('boundary-logging', () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
       const { formatRailResult } =
-        await import('../../integration/tools/helpers-rail-presentation.js');
+        await import('../integration/tools/helpers-rail-presentation.js');
 
       const result = formatRailResult({
         kind: 'blocked',
@@ -105,7 +105,7 @@ describe('boundary-logging', () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
       const { formatRailResult } =
-        await import('../../integration/tools/helpers-rail-presentation.js');
+        await import('../integration/tools/helpers-rail-presentation.js');
 
       formatRailResult({
         kind: 'blocked',
@@ -125,7 +125,7 @@ describe('boundary-logging', () => {
     it('logs warn with code', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/blocked-result.js');
+      const { formatBlocked } = await import('../integration/blocked-result.js');
 
       const result = formatBlocked('TICKET_REQUIRED');
 
@@ -140,7 +140,7 @@ describe('boundary-logging', () => {
     it('adds trace fields when a trace scope is active', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/blocked-result.js');
+      const { formatBlocked } = await import('../integration/blocked-result.js');
 
       runWithLogContext({ traceId: 'trace-boundary' }, () => {
         formatBlocked('TICKET_REQUIRED');
@@ -156,7 +156,7 @@ describe('boundary-logging', () => {
   describe('CORNER — noop logger does not alter control flow', () => {
     it('blocked result unchanged when no adapter logger is set', async () => {
       const { formatRailResult } =
-        await import('../../integration/tools/helpers-rail-presentation.js');
+        await import('../integration/tools/helpers-rail-presentation.js');
 
       const result = formatRailResult({
         kind: 'blocked',
@@ -170,7 +170,7 @@ describe('boundary-logging', () => {
     });
 
     it('formatBlocked result unchanged when no adapter logger is set', async () => {
-      const { formatBlocked } = await import('../../integration/blocked-result.js');
+      const { formatBlocked } = await import('../integration/blocked-result.js');
 
       const result = formatBlocked('TICKET_REQUIRED');
       const parsed = JSON.parse(result);

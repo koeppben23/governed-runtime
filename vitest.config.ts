@@ -30,6 +30,9 @@ export default defineConfig({
         // Test infrastructure (helpers/fixtures), not product code.
         'src/integration/test-helpers.ts',
         'src/integration/*-test-helpers.ts',
+        // Temporarily pinned until package B projects the full test-source
+        // classification (isTestSourcePath) into the coverage scope.
+        'src/audit/tamper-evidence-test-helpers.ts',
       ],
       thresholds: {
         branches: 80,
