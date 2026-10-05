@@ -38,7 +38,10 @@ import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { FLOW_PHASES, TRANSITIONS } from '../../machine/topology.js';
-import { collectProductionSources, type ProductionSourceFile } from './production-source.js';
+import {
+  collectProductionSources,
+  type ProductionSourceFile,
+} from '../support/production-source.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 

@@ -27,7 +27,7 @@ integration/  -> rails/  -> machine/  -> state/
 
 The diagram shows the intended direction for new code, not the enforced set:
 top-level module directions are owned exclusively by `MODULE_DEPENDENCY_POLICY`
-(`src/architecture/__tests__/module-dependency-policy.ts`), and the observed
+(`src/architecture/support/module-dependency-policy.ts`), and the observed
 module graph must match that policy exactly — including zero module cycles (see
 [Architecture Rules](#architecture-rules)).
 
@@ -423,7 +423,7 @@ See [Conventional Commits](#conventional-commits) section above.
 Import rules must stay aligned with `npm run test:architecture`.
 
 The positive authority for top-level module direction is
-`src/architecture/__tests__/module-dependency-policy.ts` (`MODULE_DEPENDENCY_POLICY`):
+`src/architecture/support/module-dependency-policy.ts` (`MODULE_DEPENDENCY_POLICY`):
 the exact set of governed modules each governed module may import. The observed
 import graph and the policy must match in both directions, so both an unapproved
 direction and a stale policy edge fail. Add a new direction to the policy file in

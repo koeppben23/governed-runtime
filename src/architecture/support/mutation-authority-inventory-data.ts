@@ -160,17 +160,6 @@ function deferredGlob(
 const DEFERRED_REASON =
   'Deferred surface behind the admission gate; admission requires a profile full run with per-target evidence.';
 
-const DEEP_REASON =
-  'Deferred to the deep authority expansion bundle; admission requires a profile full run with per-target evidence.';
-
-/**
- * Relocated targets whose historical admission is path-bound. The move
- * changed the target identity, so the old evidence is NOT rebound and no
- * legacy provenance is synthesized; re-admission requires a fresh full run.
- */
-const RELOCATED_ADMISSION_REASON =
-  'Previously admitted under the historical path. The bounded-context move changes target identity; historical admission evidence is not rebound to the new path. Re-admission requires a full base-profile run on the new target identity.';
-
 /**
  * Authorities that must never leave the mutation scope. Every root is backed
  * by an explicit source; adding a root is a deliberate inventory change.

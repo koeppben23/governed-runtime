@@ -30,6 +30,7 @@ duplicate them.
 | `src/audit/`                  | audit event and integrity semantics     |
 | `src/presentation/`           | derived human presentation              |
 | `src/architecture/__tests__/` | executable architecture rules           |
+| `src/architecture/support/`   | architecture test-support authorities   |
 | `docs/`                       | product and developer documentation     |
 | `scripts/`                    | build, verification, release tooling    |
 

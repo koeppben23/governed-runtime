@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import {
   MUTATION_AUTHORITY_INVENTORY,
   type RequiredAuthorityEntry,
-} from '../../architecture/__tests__/mutation-authority-inventory.js';
+} from '../../architecture/support/mutation-authority-inventory.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');

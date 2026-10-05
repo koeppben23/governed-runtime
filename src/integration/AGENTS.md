@@ -12,12 +12,12 @@ API. It must never become a provider of new authorities for lower layers.
 ## Module Boundary
 
 - Directions are enforced, not redefined here: the positive authority is
-  `src/architecture/__tests__/module-dependency-policy.ts`
+  `src/architecture/support/module-dependency-policy.ts`
   (`MODULE_DEPENDENCY_POLICY`), and changes in this subtree must satisfy
   `npm run test:architecture`.
 - Production placement is enforced by the manifest
-  `src/architecture/__tests__/integration-placement-manifest.ts` and analyzer
-  `src/architecture/__tests__/integration-placement-analyzer.ts`: every
+  `src/architecture/support/integration-placement-manifest.ts` and analyzer
+  `src/architecture/support/integration-placement-analyzer.ts`: every
   production file has exactly one owner/zone entry and zero placement debt. A
   new file requires an explicit placement entry in the same change.
 
@@ -76,7 +76,7 @@ API. It must never become a provider of new authorities for lower layers.
   ADR-005; `dependency-rules.test.ts` guards against reintroduction), and
   subzones have no barrels. The placement authority freezes
   each file's zone and growth budget, and
-  `architecture/__tests__/review-zone-policy.ts` freezes the allowed zone graph
+  `architecture/support/review-zone-policy.ts` freezes the allowed zone graph
   (`observed == declared`).
 - Evidence binding, obligation tracking, and findings validation are managed
   by the enforcement subsystem in `src/integration/review/enforcement/`.

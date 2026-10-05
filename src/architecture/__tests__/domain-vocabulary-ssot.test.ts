@@ -31,7 +31,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LoopVerdict } from '../../state/evidence-primitives.js';
 import { TaskClass } from '../../state/task-class.js';
-import { collectProductionSources } from './production-source.js';
+import { collectProductionSources } from '../support/production-source.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 

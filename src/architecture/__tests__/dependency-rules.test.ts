@@ -38,24 +38,24 @@ import {
   isTestSourcePath,
   MODULE_CLASSIFICATION,
   MODULE_CLASSIFICATION_BY_NAME,
-} from './module-classification.js';
-import { INTEGRATION_OWNERS } from './integration-placement-manifest.js';
+} from '../support/module-classification.js';
+import { INTEGRATION_OWNERS } from '../support/integration-placement-manifest.js';
 import {
   isRootCompositionFile,
   isRootHostRuntimeFile,
   isToolCommandContextFile,
   placementOwnerOf,
-} from './integration-placement-analyzer.js';
-import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
-import { collectImportSpecifiers } from './import-specifiers.js';
+} from '../support/integration-placement-analyzer.js';
+import { MODULE_DEPENDENCY_POLICY } from '../support/module-dependency-policy.js';
+import { collectImportSpecifiers } from '../support/import-specifiers.js';
 import {
   cycleParticipatingEdges,
   cyclicStronglyConnectedComponents,
   edgeKey,
   moduleEdgeSet,
   type ModuleEdge,
-} from './module-graph.js';
-import { normalizeRepoPath, repoRelative } from './repo-path.js';
+} from '../support/module-graph.js';
+import { normalizeRepoPath, repoRelative } from '../support/repo-path.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');

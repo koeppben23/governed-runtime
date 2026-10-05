@@ -60,7 +60,7 @@ phase transitions, guard evaluation, and command routing.
 ## Module Boundary
 
 - Top-level module directions are owned exclusively by
-  `src/architecture/__tests__/module-dependency-policy.ts`
+  `src/architecture/support/module-dependency-policy.ts`
   (`MODULE_DEPENDENCY_POLICY`); changes in this subtree must comply with that
   positive policy and pass `npm run test:architecture`.
 

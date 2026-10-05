@@ -24,8 +24,8 @@ import { ESLint } from 'eslint';
 import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { normalizeRepoPath, repoRelative } from './repo-path.js';
-import { isTestSourcePath } from './module-classification.js';
+import { normalizeRepoPath, repoRelative } from '../support/repo-path.js';
+import { isTestSourcePath } from '../support/module-classification.js';
 
 const ROOT = resolve(join(import.meta.dirname, '..', '..', '..'));
 const SRC = join(ROOT, 'src');
