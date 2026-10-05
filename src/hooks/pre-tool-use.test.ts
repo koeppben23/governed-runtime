@@ -65,6 +65,33 @@ describe('pre-tool-use review obligation enforcement', () => {
     process.exitCode = undefined;
   });
 
+  it('denies an oversized stdin read failure as HOOK_STDIN_INVALID', async () => {
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
+      stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      if (done) done(null);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mockReadStdin.mockRejectedValue(
+      new Error('stdin exceeds 1048576 bytes'),
+    );
+
+    await import('./pre-tool-use.js');
+    await vi.waitFor(() => expect(stdout.trim()).not.toBe(''));
+
+    const output = JSON.parse(stdout) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('HOOK_STDIN_INVALID');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
+      'stdin exceeds 1048576 bytes',
+    );
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
   it('denies a mutating tool when a review obligation is unresolved', async () => {
     mockResolveSession.mockResolvedValue({
       ok: true,
