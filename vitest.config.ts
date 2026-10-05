@@ -1,5 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
+import { TEST_SOURCE_EXCLUDES } from './src/architecture/support/test-source-excludes.js';
+
+/** Coverage exclusion scope: declarative projection of the canonical test-source classification. */
+export const coverageExcludes = [...TEST_SOURCE_EXCLUDES];
+
 /**
  * Root vitest config with native project separation for unit, integration, and smoke tests.
  *
@@ -22,18 +27,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: [
-        'src/**/*.test.ts',
-        'src/**/__tests__/**',
-        'src/**/__fixtures__*',
-        'src/test-policy.ts',
-        // Test infrastructure (helpers/fixtures), not product code.
-        'src/integration/test-helpers.ts',
-        'src/integration/*-test-helpers.ts',
-        // Temporarily pinned until package B projects the full test-source
-        // classification (isTestSourcePath) into the coverage scope.
-        'src/audit/tamper-evidence-test-helpers.ts',
-      ],
+      exclude: coverageExcludes,
       thresholds: {
         branches: 80,
         lines: 80,
