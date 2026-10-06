@@ -320,6 +320,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     },
   ),
   required(
+    'src/adapters/session-authority.ts',
+    'Single canonical session-location authority',
+    ['src/adapters/session-authority.test.ts'],
+    {
+      admission: admissionRecord('src/adapters/session-authority.ts'),
+    },
+  ),
+  required(
     'src/adapters/ip-validation.ts',
     'SSRF and private-IP guard for outbound URLs',
     ['src/adapters/ip-validation.test.ts'],

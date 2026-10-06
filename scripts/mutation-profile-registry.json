@@ -15,6 +15,7 @@
         "src/adapters/persistence-core.ts",
         "src/adapters/persistence-lock.ts",
         "src/adapters/persistence.ts",
+        "src/adapters/session-authority.ts",
         "src/adapters/workspace/archive-publish.ts",
         "src/adapters/workspace/archive-timestamp-verification.ts",
         "src/adapters/workspace/archive-verify-artifact-binding.ts",
@@ -103,9 +104,7 @@
       "vitestConfigFile": "vitest.stryker-event-core.config.ts",
       "reportPath": "reports/mutation/event-core/mutation.json",
       "manifestPath": "reports/mutation/event-core/admission-manifest.json",
-      "admittedSelectors": [
-        "src/audit/event-core.ts"
-      ]
+      "admittedSelectors": ["src/audit/event-core.ts"]
     },
     "human-projection": {
       "configFile": "stryker.human-projection.conf.json",
@@ -147,18 +146,14 @@
       "vitestConfigFile": "vitest.stryker-schemas.config.ts",
       "reportPath": "reports/mutation/schemas/mutation.json",
       "manifestPath": "reports/mutation/schemas/admission-manifest.json",
-      "admittedSelectors": [
-        "src/config/flowguard-config.ts"
-      ]
+      "admittedSelectors": ["src/config/flowguard-config.ts"]
     },
     "topology": {
       "configFile": "stryker.topology.conf.json",
       "vitestConfigFile": "vitest.stryker-topology.config.ts",
       "reportPath": "reports/mutation/topology/mutation.json",
       "manifestPath": "reports/mutation/topology/admission-manifest.json",
-      "admittedSelectors": [
-        "src/machine/topology.ts"
-      ]
+      "admittedSelectors": ["src/machine/topology.ts"]
     }
   }
 }

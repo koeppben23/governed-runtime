@@ -162,7 +162,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 112 security-critical
+The `mutation` job runs StrykerJS mutation testing against 113 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -349,7 +349,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-112 files are mutated in the base profile, covering the fail-closed governance
+113 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -373,7 +373,7 @@ above is the classification authority):
 | Logging (`error-serialize`)                                                                                                                                                                       | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                               | 6       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                                         | **112** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                                         | **113** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -542,10 +542,11 @@ post-implementation validation evidence authority
 (`src/machine/impl-validation-evidence.ts`) for a future full base-profile run.
 The 2026-10-05 H8 payload-cwd trust-boundary work stages the worktree binding
 authority (`src/adapters/binding.ts`) and the hook session resolution authority
-(`src/hooks/shared/session-resolver.ts`) for a future full base-profile run. The
-post-canonicalization base full run measured both below the admission gate
-(15.79 % and 77.78 %), so they stay candidates tracked for test hardening; the
-base aggregate remained 84.21 %.
+(`src/hooks/shared/session-resolver.ts`); the 2026-10-06 I4 single-authority work
+stages `src/adapters/session-authority.ts`. The 2026-10-06 base full run admitted
+the session authority at 100 % (20 killed, 0 survived) and measured the two H8
+candidates below the admission gate (32.56 % and 75.00 %), so they stay
+candidates tracked for test hardening; the base aggregate is 84.70 %.
 
 ### Running Locally
 
