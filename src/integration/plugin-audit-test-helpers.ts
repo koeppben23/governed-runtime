@@ -6,6 +6,8 @@
 
 import { vi } from 'vitest';
 import { makeState } from '../fixtures.js';
+import type { SessionState } from '../state/schema.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import type { AuditDeps } from './plugin-audit.js';
 
 export const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -17,10 +19,47 @@ export function resetChainSeq(): void {
   chainSeq = 0;
 }
 
-export function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
+/** Canonical resolved authority for the shared session fixture. */
+export function resolvedAuthority(
+  state: SessionState,
+  sessDir = '/tmp/sess-dir',
+): Extract<SessionAuthorityResolution, { status: 'resolved' }> {
   return {
-    resolveFingerprint: vi.fn().mockResolvedValue('fp-abc'),
-    getSessionDir: vi.fn().mockReturnValue('/tmp/sess-dir'),
+    status: 'resolved',
+    sessDir,
+    worktreeRoot: '/tmp/worktree',
+    fingerprint: state.binding.fingerprint,
+    state,
+  };
+}
+
+/** Positively absent authority (canonical location known, no state). */
+export function absentAuthority(
+  sessDir = '/tmp/sess-dir',
+): Extract<SessionAuthorityResolution, { status: 'absent' }> {
+  return {
+    status: 'absent',
+    sessDir,
+    worktreeRoot: '/tmp/worktree',
+    fingerprint: 'fp-abc',
+  };
+}
+
+/** Unavailable authority (location or binding not provable). */
+export function unavailableAuthority(
+  code:
+    | 'NO_WORKTREE'
+    | 'NOT_GIT_REPO'
+    | 'WORKTREE_MISMATCH'
+    | 'SESSION_BINDING_MISMATCH' = 'NO_WORKTREE',
+): Extract<SessionAuthorityResolution, { status: 'unavailable' }> {
+  return { status: 'unavailable', code, reason: 'test authority unavailable' };
+}
+
+export function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
+  const state = makeState('PLAN');
+  return {
+    resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state)),
     resolveSessionPolicy: vi.fn().mockResolvedValue({
       policy: {
         audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
@@ -28,7 +67,7 @@ export function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
         mode: 'solo',
         requireHumanGates: false,
       },
-      state: makeState('PLAN'),
+      state,
     }),
     initChain: vi.fn().mockResolvedValue('prev-hash-001'),
     invalidateChainState: vi.fn(),
@@ -40,7 +79,6 @@ export function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
     nextDecisionSequence: vi.fn().mockResolvedValue(1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp-abc',
     mode: 'solo',
     ...overrides,
   };

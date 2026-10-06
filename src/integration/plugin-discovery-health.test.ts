@@ -76,6 +76,7 @@ import {
 } from './plugin-discovery-health.js';
 import type { SessionState } from '../state/schema.js';
 import { makeState } from '../fixtures.js';
+import { resolvedAuthority, unavailableAuthority } from './plugin-audit-test-helpers.js';
 
 function requiredState(overrides: Partial<SessionState> = {}): SessionState {
   const base = makeState('IMPLEMENTATION');
@@ -92,7 +93,9 @@ function mockDeps(
   overrides: Partial<DiscoveryHealthEnforcementDeps> = {},
 ): DiscoveryHealthEnforcementDeps {
   return {
-    getSessionDir: vi.fn().mockReturnValue('/tmp/sess'),
+    resolveSessionAuthority: vi
+      .fn()
+      .mockResolvedValue(resolvedAuthority(makeState('IMPLEMENTATION'), '/tmp/sess')),
     getWorkspaceDir: vi.fn().mockReturnValue('/tmp/ws'),
     ...overrides,
   };
@@ -207,8 +210,10 @@ describe('enforceDiscoveryHealthBefore', () => {
 describe('enforceDiscoveryHealthAfterBash', () => {
   const sessionId = 's1';
 
-  it('fails closed when sessDir is null', async () => {
-    const deps = mockDeps({ getSessionDir: () => null });
+  it('fails closed when the session authority is unavailable', async () => {
+    const deps = mockDeps({
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
+    });
     const output: { output?: unknown } = {};
     await enforceDiscoveryHealthAfterBash(deps, sessionId, output);
     expect(mockReadState).not.toHaveBeenCalled();
@@ -216,6 +221,7 @@ describe('enforceDiscoveryHealthAfterBash', () => {
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       expect.objectContaining({
         reason: expect.stringContaining('no resolvable FlowGuard session'),
+        causeCode: 'NO_WORKTREE',
       }),
     );
     expect(output.output).toBeDefined();

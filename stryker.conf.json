@@ -16,6 +16,7 @@
     "src/adapters/implementation-base-authority.ts",
     "src/adapters/implementation-entry-guard.ts",
     "src/adapters/ip-validation.ts",
+    "src/adapters/session-authority.ts",
     "src/adapters/persistence-audit.ts",
     "src/adapters/persistence-config.ts",
     "src/adapters/persistence-core.ts",

@@ -177,7 +177,14 @@ async function seedSession(state: SessionState): Promise<{ fingerprint: string; 
 function recoveryRuntime(sessDir: string, fingerprint: string, state: SessionState) {
   return {
     ws: {
-      getSessionDir: (candidate: string) => (candidate === SESSION_ID ? sessDir : null),
+      resolveSessionAuthority: async (candidate: string) =>
+        candidate === SESSION_ID
+          ? { status: 'resolved' as const, sessDir, worktreeRoot: ws.tmpDir, fingerprint, state }
+          : {
+              status: 'unavailable' as const,
+              code: 'SESSION_BINDING_MISMATCH' as const,
+              reason: 'test authority is scoped to the seeded session',
+            },
     },
     log: { warn: vi.fn() },
     auditDeps: createSessionCompletionAuditDeps({

@@ -23,19 +23,30 @@ import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
 import { createSessionState } from './review/enforcement/enforcement.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
-import { writeState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { createTestWorkspace } from './test-helpers.js';
-import { formatAutoAdvanceOverflow } from './tools/helpers.js';
+import { formatAutoAdvanceOverflow } from '../rails/auto-advance-overflow.js';
+import {
+  absentAuthority,
+  resolvedAuthority,
+  unavailableAuthority,
+} from './plugin-audit-test-helpers.js';
 
 const SESSION_ID = crypto.randomUUID();
+
+/** Mock authority mirroring the canonical file-backed resolution for a real sessDir. */
+async function authorityAt(sessDir: string) {
+  const state = await readState(sessDir);
+  return state === null ? absentAuthority(sessDir) : resolvedAuthority(state, sessDir);
+}
 
 function makeRuntime(
   overrides: Omit<Partial<FlowGuardPluginRuntime>, 'ws'> & { ws?: Partial<PluginWorkspace> } = {},
 ): FlowGuardPluginRuntime {
   const base = {
     ws: {
-      getSessionDir: vi.fn().mockReturnValue(null),
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
       getEnforcementState: vi.fn(() => createSessionState()),
       invalidateChainState: vi.fn(),
       runSerializedForSession: vi.fn(async (_sid: string, fn: () => Promise<void>) => fn()),
@@ -44,8 +55,14 @@ function makeRuntime(
     },
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     adapterLog: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn() },
-    discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn() },
+    riskDeps: {
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
+      getWorktreeRoot: vi.fn(),
+    },
+    discoveryHealthDeps: {
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
+      getWorkspaceDir: vi.fn(),
+    },
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(),
     toolTraceIds: new Map<string, string>(),
@@ -61,8 +78,7 @@ function makeRuntime(
 
 function makeAuditDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
   return {
-    resolveFingerprint: vi.fn(async () => 'fp-abc'),
-    getSessionDir: vi.fn(() => null),
+    resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
     resolveSessionPolicy: vi.fn(async () => {
       throw new Error('no audit policy');
     }),
@@ -72,7 +88,6 @@ function makeAuditDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
     nextDecisionSequence: vi.fn(async () => 1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp-abc',
     mode: 'solo',
     ...overrides,
   };
@@ -152,7 +167,9 @@ describe('toolAfter — audit block output mutation', () => {
   it('mutates the output on an audit block for flowguard tools', async () => {
     const runtime = makeRuntime({
       auditDeps: makeAuditDeps({
-        getSessionDir: vi.fn(() => '/tmp/fake-sess'),
+        resolveSessionAuthority: vi
+          .fn()
+          .mockResolvedValue(resolvedAuthority(makeState('PLAN'), '/tmp/fake-sess')),
         resolveSessionPolicy: vi.fn(async () => {
           throw new Error('disk full');
         }),
@@ -249,7 +266,9 @@ describe('handlePluginEvent', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       await handlePluginEvent(runtime, {
         type: 'session.error',
         properties: { sessionID: SESSION_ID, errorMessage: 'host stalled' },
@@ -290,7 +309,9 @@ describe('handleCompaction', () => {
       const sessDir = path.join(ws.tmpDir, 'sess-compact');
       await fs.mkdir(sessDir, { recursive: true });
       await writeState(sessDir, makeState('PLAN'));
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       const output = { context: [] as string[] };
       await handleCompaction(runtime, { sessionID: SESSION_ID }, output);
       expect(output.context.length).toBeGreaterThan(0);
@@ -313,7 +334,9 @@ describe('afterhook — /check rework-continuation latch', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
       await writeState(sessDir, activeReworkState());
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
       expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);
@@ -327,7 +350,9 @@ describe('afterhook — /check rework-continuation latch', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
       await writeState(sessDir, activeReworkState());
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
       expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
     } finally {
@@ -340,7 +365,9 @@ describe('afterhook — /check rework-continuation latch', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
       await writeState(sessDir, activeReworkState());
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await updateCheckReworkContinuation(runtime, 'flowguard_review_implementation', SESSION_ID);
       expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(true);

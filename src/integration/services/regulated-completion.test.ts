@@ -15,6 +15,7 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../../fixtures.js';
 import type { AuditDeps } from '../plugin-audit.js';
+import { resolvedAuthority, unavailableAuthority } from '../plugin-audit-test-helpers.js';
 
 vi.mock('../../adapters/persistence.js', () => ({
   readState: vi.fn(),
@@ -236,8 +237,11 @@ function sessionCompletedEvent(): Record<string, unknown> {
 
 function completionDeps(): AuditDeps {
   return {
-    resolveFingerprint: async () => 'fp',
-    getSessionDir: (candidate: string) => (candidate === 'sid' ? '/sess' : null),
+    resolveSessionAuthority: vi.fn(async (candidate: string) =>
+      candidate === 'sid'
+        ? resolvedAuthority(reviewState('COMPLETE'), '/sess')
+        : unavailableAuthority('SESSION_BINDING_MISMATCH'),
+    ),
     resolveSessionPolicy: vi.fn(),
     initChain: vi.fn(async () => 'genesis'),
     invalidateChainState: vi.fn(),
@@ -247,7 +251,6 @@ function completionDeps(): AuditDeps {
     nextDecisionSequence: vi.fn(async () => 1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp',
     mode: 'regulated',
   };
 }

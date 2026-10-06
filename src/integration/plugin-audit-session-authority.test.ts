@@ -1,18 +1,13 @@
 /**
  * @module integration/plugin-audit-session-authority
- * @description Authority symmetry between the audit reconciler and the
- *              generic post-tool audit path.
+ * @description The audit path fails closed whenever the single canonical
+ *              session authority cannot positively establish the session.
  *
- * `resolveAuditContext` resolves the session directory through the CACHED
- * fingerprint. When the fingerprint could not be computed — a transient
- * failure, or a cold process that has not resolved one yet — `getSessionDir`
- * returns null, which is indistinguishable from "this session does not exist".
- *
- * `reconcilePendingAuditOperations` already treats that correctly: it proves
- * absence positively through the canonical resolution authority and fails
- * closed with `AUDIT_SESSION_AUTHORITY_UNAVAILABLE` otherwise. `runAudit`
- * returned `undefined` and skipped the audit silently, so a governed tool call
- * could produce no audit record at all while reporting success.
+ * A cold or failed resolution is `unavailable`, NOT proof that the session is
+ * absent. Only a positive `absent` outcome may skip the audit silently;
+ * `unavailable` blocks with `AUDIT_SESSION_AUTHORITY_UNAVAILABLE` (carrying the
+ * typed root cause) so a governed tool call can never produce no audit record
+ * while reporting success.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -22,15 +17,14 @@ import * as path from 'node:path';
 import { writeState } from '../adapters/persistence.js';
 import { makeState } from '../fixtures.js';
 import { runAudit, type AuditDeps } from './plugin-audit.js';
+import { absentAuthority, unavailableAuthority } from './plugin-audit-test-helpers.js';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 
 function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
   return {
-    // A cold or failed fingerprint resolution: the mapping is unavailable,
-    // NOT proof that the session is absent.
-    resolveFingerprint: vi.fn().mockResolvedValue(null),
-    getSessionDir: vi.fn().mockReturnValue(null),
+    // The authority cannot prove the session location: unavailable, NOT absent.
+    resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
     resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
     initChain: vi.fn().mockResolvedValue('prev-hash-001'),
     invalidateChainState: vi.fn(),
@@ -53,11 +47,11 @@ async function withSessionDir<T>(fn: (sessDir: string) => Promise<T>): Promise<T
 }
 
 describe('runAudit session authority', () => {
-  it('fails closed when the mapping is missing but canonical state exists', async () => {
+  it('fails closed when the session location cannot be proven even though state exists on disk', async () => {
     await withSessionDir(async (sessDir) => {
       await writeState(sessDir, makeState('PLAN', { id: SESSION_ID }));
       const deps = makeDeps({
-        resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'resolved', sessDir }),
+        resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
       });
 
       const result = await runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID);
@@ -66,6 +60,7 @@ describe('runAudit session authority', () => {
         auditOk: false,
         block: true,
         code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+        causeCode: 'NO_WORKTREE',
       });
     });
   });
@@ -73,7 +68,7 @@ describe('runAudit session authority', () => {
   it('fails closed when the canonical resolution authority is itself unavailable', async () => {
     // Unavailable must never be treated as absent.
     const deps = makeDeps({
-      resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'unavailable' }),
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NOT_GIT_REPO')),
     });
 
     const result = await runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID);
@@ -82,6 +77,7 @@ describe('runAudit session authority', () => {
       auditOk: false,
       block: true,
       code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+      causeCode: 'NOT_GIT_REPO',
     });
   });
 
@@ -90,31 +86,28 @@ describe('runAudit session authority', () => {
     // the only case the silent return was ever correct for.
     await withSessionDir(async (sessDir) => {
       const deps = makeDeps({
-        resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'resolved', sessDir }),
+        resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority(sessDir)),
       });
 
       await expect(runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID)).resolves.toBeUndefined();
+      expect(deps.resolveSessionPolicy).not.toHaveBeenCalled();
+      expect(deps.appendAndTrack).not.toHaveBeenCalled();
     });
   });
 
   it('stays silent for a resolved but unhydrated session', async () => {
-    // Mapping resolves, no state yet: absence is positively established.
+    // A known canonical location with no state yet is positively absent:
+    // never resolved-with-null-state, and never an audit record.
     await withSessionDir(async (sessDir) => {
+      await fs.mkdir(path.join(sessDir, 'without-state'), { recursive: true });
       const deps = makeDeps({
-        resolveFingerprint: vi.fn().mockResolvedValue('fp-abc'),
-        getSessionDir: vi.fn().mockReturnValue(sessDir),
-        resolveSessionPolicy: vi.fn().mockResolvedValue({
-          policy: {
-            audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
-            actorClassification: {},
-            mode: 'regulated',
-            requireHumanGates: false,
-          },
-          state: null,
-        }),
+        resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority(sessDir)),
+        resolveSessionPolicy: vi.fn().mockRejectedValue(new Error('unreachable')),
       });
 
       await expect(runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID)).resolves.toBeUndefined();
+      expect(deps.resolveSessionAuthority).toHaveBeenCalledWith(SESSION_ID);
+      expect(deps.resolveSessionPolicy).not.toHaveBeenCalled();
     });
   });
 });

@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -20,21 +21,47 @@ import { readState, writeState } from '../adapters/persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import { BINDING, makeState, REVIEW_APPROVE } from '../fixtures.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.js';
+import { resolveBootstrapStateExistence } from './plugin-audit-reconcile.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { prepareAuditOperations } from './audit-outbox.js';
 import { buildDecisionAuditIntent } from './services/decision-audit-intent.js';
+import {
+  absentAuthority,
+  resolvedAuthority,
+  unavailableAuthority,
+} from './plugin-audit-test-helpers.js';
+import { finalizeWithTimestampEvidence, type ChainedAuditEvent } from '../audit/types.js';
 import type { ActorInfo } from '../state/evidence.js';
+import type { SessionState } from '../state/schema.js';
+
+// The chain-hash fail-closed branch is a runtime guard against a body builder
+// that violates its ChainedAuditEvent contract; it is unreachable through the
+// real finalizer (which always stamps a chain hash), so the guard is exercised
+// with a spied finalizer that drops the field.
+vi.mock(import('../audit/types.js'), async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    finalizeWithTimestampEvidence: vi.fn(actual.finalizeWithTimestampEvidence),
+  };
+});
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FIXED_DECISION_AT = '2026-05-15T12:00:00.000Z';
 
 let chainSeq = 0;
 
+/** Mock authority mirroring the canonical file-backed resolution for a real sessDir. */
+async function authorityFromDisk(sessDir: string) {
+  const state = await readState(sessDir);
+  if (state === null) throw new Error(`No state at ${sessDir}`);
+  return resolvedAuthority(state, sessDir);
+}
+
 function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
   return {
-    resolveFingerprint: vi.fn().mockResolvedValue('fp-abc'),
-    getSessionDir: vi.fn().mockReturnValue('/tmp/sess-dir'),
+    resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
     resolveSessionPolicy: vi.fn(),
     initChain: vi.fn().mockResolvedValue('prev-hash-001'),
     invalidateChainState: vi.fn(),
@@ -45,7 +72,6 @@ function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
     nextDecisionSequence: vi.fn().mockResolvedValue(1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp-abc',
     mode: 'solo',
     ...overrides,
   };
@@ -62,6 +88,29 @@ function noTransitionAudit(phase: 'TICKET' | 'PLAN') {
     },
   });
 }
+
+/** Audit deps whose authority resolves the session written at `sessDir`. */
+function depsForDisk(sessDir: string, state: SessionState | null): AuditDeps {
+  return makeDeps({
+    resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
+    resolveSessionPolicy: vi.fn().mockResolvedValue({
+      policy: {
+        audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+        actorClassification: {},
+        mode: 'solo',
+        requireHumanGates: false,
+      },
+      state,
+    }),
+  });
+}
+
+const AUDIT_ACTOR: ActorInfo = {
+  id: 'jane',
+  email: 'jane@dev.io',
+  source: 'git',
+  assurance: 'best_effort',
+};
 
 describe('reconcilePendingAuditOperations', () => {
   describe('CORNER', () => {
@@ -92,7 +141,7 @@ describe('reconcilePendingAuditOperations', () => {
         expect(pending!.pendingAuditOperations[0]!.kind).toBe('state_write');
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: true },
@@ -153,7 +202,7 @@ describe('reconcilePendingAuditOperations', () => {
 
         const pending = await readState(sessDir);
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -200,7 +249,7 @@ describe('reconcilePendingAuditOperations', () => {
         await writeState(sessDir, state);
 
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: true },
@@ -241,7 +290,7 @@ describe('reconcilePendingAuditOperations', () => {
         await writeState(sessDir, committed);
         const appended: string[] = [];
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -322,7 +371,7 @@ describe('reconcilePendingAuditOperations', () => {
         ]);
         await writeState(sessDir, committed);
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -394,7 +443,7 @@ describe('reconcilePendingAuditOperations', () => {
           },
         );
         const deps = makeDeps({
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => authorityFromDisk(sessDir)),
           resolveSessionPolicy: vi.fn().mockResolvedValue({
             policy: {
               audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: true },
@@ -421,5 +470,454 @@ describe('reconcilePendingAuditOperations', () => {
         await fs.rm(sessDir, { recursive: true, force: true });
       }
     });
+  });
+
+  describe('durable actor identity binding', () => {
+    it('drains a semantic operation carrying the persisted actorInfo and logs the operation count', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-semantic-actor-info-'));
+      try {
+        const state = makeState('PLAN', { id: SESSION_ID });
+        const committed = prepareAuditOperations(state, state, undefined, [
+          {
+            phase: 'PLAN',
+            event: 'review:claim_verified',
+            occurredAt: FIXED_DECISION_AT,
+            actor: 'human',
+            actorInfo: AUDIT_ACTOR,
+            detail: { claimId: 'claim-1' },
+          },
+        ]);
+        await writeState(sessDir, committed);
+
+        const deps = depsForDisk(sessDir, committed);
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
+
+        expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
+        const emitted = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock
+          .calls[0]![0] as Record<string, unknown>;
+        expect(emitted.actor).toBe('human');
+        expect(emitted.actorInfo).toEqual(AUDIT_ACTOR);
+        expect(deps.log.debug).toHaveBeenCalledWith(
+          'audit',
+          'reconciling durable audit operations',
+          { count: 1 },
+        );
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('omits actorInfo from a drained transition operation that carries none', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-transition-no-actor-'));
+      try {
+        await writeState(sessDir, makeState('TICKET', { id: SESSION_ID }));
+        const next = {
+          ...makeState('PLAN', { id: SESSION_ID }),
+          transition: {
+            from: 'TICKET' as const,
+            to: 'PLAN' as const,
+            event: 'PLAN_READY' as const,
+            at: FIXED_DECISION_AT,
+          },
+        };
+        const committed = await writeStateWithArtifactsAndAuditOperations(sessDir, next, [
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+        ]);
+
+        const deps = depsForDisk(sessDir, committed);
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
+
+        const emitted = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock
+          .calls[0]![0] as Record<string, unknown>;
+        expect(emitted.actor).toBe('machine');
+        expect('actorInfo' in emitted).toBe(false);
+        expect(emitted.actorInfo).toBeUndefined();
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('transition-gap evidence matching', () => {
+    const transition = {
+      from: 'TICKET' as const,
+      to: 'PLAN' as const,
+      event: 'PLAN_READY' as const,
+      at: FIXED_DECISION_AT,
+    };
+
+    async function setupGapDir() {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-gap-'));
+      const state = makeState('PLAN', { id: SESSION_ID, transition });
+      await writeState(sessDir, state);
+      return { sessDir, state };
+    }
+
+    function auditBody(input: {
+      detail: Record<string, unknown>;
+      event?: string;
+      occurredAt?: string;
+    }) {
+      return {
+        id: crypto.randomUUID(),
+        flowguardSessionId: SESSION_ID,
+        phase: 'PLAN',
+        event: input.event ?? 'transition:PLAN_READY',
+        occurredAt: input.occurredAt ?? FIXED_DECISION_AT,
+        actor: 'machine',
+        detail: input.detail,
+      };
+    }
+
+    async function expectGap(sessDir: string, state: SessionState) {
+      await expect(
+        reconcilePendingAuditOperations(depsForDisk(sessDir, state), SESSION_ID, 'flowguard_plan'),
+      ).resolves.toMatchObject({
+        auditOk: false,
+        block: true,
+        code: 'AUDIT_TRANSITION_EVIDENCE_GAP',
+      });
+    }
+
+    it('accepts transition evidence whose kind/from/to/event/occurredAt all match', async () => {
+      const { sessDir, state } = await setupGapDir();
+      try {
+        await appendAuditEvent(
+          sessDir,
+          auditBody({
+            detail: {
+              kind: 'transition',
+              from: transition.from,
+              to: transition.to,
+              event: transition.event,
+            },
+          }),
+        );
+        await expect(
+          reconcilePendingAuditOperations(
+            depsForDisk(sessDir, state),
+            SESSION_ID,
+            'flowguard_plan',
+          ),
+        ).resolves.toBeUndefined();
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports a gap for a non-transition record matching every other field', async () => {
+      const { sessDir, state } = await setupGapDir();
+      try {
+        await appendAuditEvent(
+          sessDir,
+          auditBody({
+            event: 'state_write',
+            detail: {
+              kind: 'state_write',
+              from: transition.from,
+              to: transition.to,
+              event: transition.event,
+            },
+          }),
+        );
+        await expectGap(sessDir, state);
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports a gap for transition evidence with a mismatching from phase', async () => {
+      const { sessDir, state } = await setupGapDir();
+      try {
+        await appendAuditEvent(
+          sessDir,
+          auditBody({
+            detail: {
+              kind: 'transition',
+              from: 'PLAN',
+              to: transition.to,
+              event: transition.event,
+            },
+          }),
+        );
+        await expectGap(sessDir, state);
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports a gap for transition evidence with a mismatching event', async () => {
+      const { sessDir, state } = await setupGapDir();
+      try {
+        await appendAuditEvent(
+          sessDir,
+          auditBody({
+            event: 'transition:PLAN_REJECTED',
+            detail: {
+              kind: 'transition',
+              from: transition.from,
+              to: transition.to,
+              event: 'PLAN_REJECTED',
+            },
+          }),
+        );
+        await expectGap(sessDir, state);
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports a gap for transition evidence recorded at a different time', async () => {
+      const { sessDir, state } = await setupGapDir();
+      try {
+        await appendAuditEvent(
+          sessDir,
+          auditBody({
+            occurredAt: '2026-05-15T13:00:00.000Z',
+            detail: {
+              kind: 'transition',
+              from: transition.from,
+              to: transition.to,
+              event: transition.event,
+            },
+          }),
+        );
+        await expectGap(sessDir, state);
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('replayed audit event matching', () => {
+    const transition = {
+      from: 'TICKET' as const,
+      to: 'PLAN' as const,
+      event: 'PLAN_READY' as const,
+      at: FIXED_DECISION_AT,
+    };
+
+    async function setupStateWriteDir() {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-replay-'));
+      await writeState(sessDir, noTransitionAudit('TICKET'));
+      const next = { ...noTransitionAudit('PLAN'), transition };
+      const committed = await writeStateWithArtifactsAndAuditOperations(sessDir, next, [
+        transition,
+      ]);
+      const operation = committed.pendingAuditOperations[0]!;
+      return { sessDir, committed, operation };
+    }
+
+    it('does not treat an event with a matching id but a different operation binding as already appended', async () => {
+      const { sessDir, committed, operation } = await setupStateWriteDir();
+      try {
+        await appendAuditEvent(sessDir, {
+          id: operation.operationId,
+          flowguardSessionId: SESSION_ID,
+          phase: 'PLAN',
+          event: 'state_write',
+          occurredAt: FIXED_DECISION_AT,
+          actor: 'machine',
+          detail: { kind: 'state_write', operationId: crypto.randomUUID() },
+        });
+
+        const deps = depsForDisk(sessDir, committed);
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
+        expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
+        const emitted = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock
+          .calls[0]![0] as Record<string, unknown>;
+        expect(emitted.id).toBe(operation.operationId);
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not treat an event binding the operation id but carrying a different id as already appended', async () => {
+      const { sessDir, committed, operation } = await setupStateWriteDir();
+      try {
+        await appendAuditEvent(sessDir, {
+          id: crypto.randomUUID(),
+          flowguardSessionId: SESSION_ID,
+          phase: 'PLAN',
+          event: 'state_write',
+          occurredAt: FIXED_DECISION_AT,
+          actor: 'machine',
+          detail: { kind: 'state_write', operationId: operation.operationId },
+        });
+
+        const deps = depsForDisk(sessDir, committed);
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
+        expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
+        const emitted = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock
+          .calls[0]![0] as Record<string, unknown>;
+        expect(emitted.id).toBe(operation.operationId);
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('outbox acknowledgement ordering', () => {
+    const transition = {
+      from: 'TICKET' as const,
+      to: 'PLAN' as const,
+      event: 'PLAN_READY' as const,
+      at: FIXED_DECISION_AT,
+    };
+
+    it('acknowledges the matching operation when a reconciled decoy precedes it in the outbox', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-ack-order-'));
+      try {
+        await writeState(sessDir, noTransitionAudit('TICKET'));
+        const next = { ...noTransitionAudit('PLAN'), transition };
+        const committed = await writeStateWithArtifactsAndAuditOperations(sessDir, next, [
+          transition,
+        ]);
+        const target = committed.pendingAuditOperations[0]!;
+        const decoy = {
+          ...target,
+          operationId: crypto.randomUUID(),
+          status: 'reconciled' as const,
+        };
+        await writeState(sessDir, {
+          ...committed,
+          pendingAuditOperations: [decoy, target],
+        });
+
+        const deps = depsForDisk(sessDir, await readState(sessDir));
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toBeUndefined();
+        expect(deps.appendAndTrack).toHaveBeenCalledTimes(1);
+
+        const after = await readState(sessDir);
+        expect(
+          after!.pendingAuditOperations.find((item) => item.operationId === target.operationId)!
+            .status,
+        ).toBe('reconciled');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not advance later operations when an earlier operation fails digest verification', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-ack-fail-'));
+      try {
+        await writeState(sessDir, makeState('TICKET', { id: SESSION_ID }));
+        const next = { ...makeState('PLAN', { id: SESSION_ID }), transition };
+        const committed = await writeStateWithArtifactsAndAuditOperations(
+          sessDir,
+          next,
+          [transition],
+          [
+            {
+              phase: 'PLAN',
+              event: 'review:claim_verified',
+              occurredAt: FIXED_DECISION_AT,
+              detail: {},
+            },
+          ],
+        );
+        expect(committed.pendingAuditOperations).toHaveLength(2);
+        const first = committed.pendingAuditOperations[0]!;
+        const second = committed.pendingAuditOperations[1]!;
+        await writeState(sessDir, {
+          ...committed,
+          pendingAuditOperations: [first, { ...second, auditEventDigest: '0'.repeat(64) }],
+        });
+
+        const deps = depsForDisk(sessDir, await readState(sessDir));
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toMatchObject({
+          auditOk: false,
+          block: true,
+          code: 'AUDIT_PERSISTENCE_FAILED',
+        });
+        expect(deps.logError).toHaveBeenCalledWith(
+          'Failed to reconcile durable audit operations',
+          expect.objectContaining({ code: 'SCHEMA_VALIDATION_FAILED' }),
+        );
+
+        const after = await readState(sessDir);
+        expect(
+          after!.pendingAuditOperations.find((item) => item.operationId === second.operationId)!
+            .status,
+        ).toBe('state_committed');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('chain-hash fail-closed guard', () => {
+    it('blocks when the finalized audit event has no chain hash', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-no-chainhash-'));
+      try {
+        await writeState(sessDir, noTransitionAudit('TICKET'));
+        const next = {
+          ...noTransitionAudit('PLAN'),
+          transition: {
+            from: 'TICKET' as const,
+            to: 'PLAN' as const,
+            event: 'PLAN_READY' as const,
+            at: FIXED_DECISION_AT,
+          },
+        };
+        const committed = await writeStateWithArtifactsAndAuditOperations(sessDir, next, [
+          { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: FIXED_DECISION_AT },
+        ]);
+
+        const deps = depsForDisk(sessDir, committed);
+        vi.mocked(finalizeWithTimestampEvidence).mockReturnValueOnce(
+          {} as unknown as ChainedAuditEvent,
+        );
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan'),
+        ).resolves.toMatchObject({
+          auditOk: false,
+          block: true,
+          code: 'AUDIT_PERSISTENCE_FAILED',
+        });
+        expect(deps.appendAndTrack).not.toHaveBeenCalled();
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+describe('resolveBootstrapStateExistence', () => {
+  it('reports exists when the canonical authority resolves the session', async () => {
+    const deps = makeDeps({
+      resolveSessionAuthority: vi
+        .fn()
+        .mockResolvedValue(resolvedAuthority(makeState('PLAN', { id: SESSION_ID }))),
+    });
+    await expect(resolveBootstrapStateExistence(deps, SESSION_ID)).resolves.toBe('exists');
+  });
+
+  it('reports absent only for a positively absent authority', async () => {
+    const deps = makeDeps({
+      resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority()),
+    });
+    await expect(resolveBootstrapStateExistence(deps, SESSION_ID)).resolves.toBe('absent');
+  });
+
+  it('reports unavailable when the authority cannot prove existence', async () => {
+    const deps = makeDeps({
+      resolveSessionAuthority: vi
+        .fn()
+        .mockResolvedValue(unavailableAuthority('SESSION_BINDING_MISMATCH')),
+    });
+    await expect(resolveBootstrapStateExistence(deps, SESSION_ID)).resolves.toBe('unavailable');
   });
 });

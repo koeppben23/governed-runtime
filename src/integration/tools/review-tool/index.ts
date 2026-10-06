@@ -12,7 +12,8 @@ import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { withMutableSessionTransaction, formatAutoAdvanceOverflow } from '../helpers.js';
+import { withMutableSessionTransaction } from '../helpers.js';
+import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
 import {
   executeReview,
   type PreparedReviewContent,

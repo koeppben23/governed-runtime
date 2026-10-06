@@ -55,14 +55,19 @@ vi.mock('../blocked-result.js', async (importOriginal) => {
 
 vi.mock('./helpers.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./helpers.js')>();
+  const makePaths = () => ({
+    worktree,
+    fingerprint: 'ab'.repeat(12),
+    sessDir: path.join(LEDGER_HOME, 'sessions', 'unused'),
+    wsDir: path.join(LEDGER_HOME, 'ws'),
+  });
   return {
     ...original,
-    resolveWorkspacePaths: vi.fn(async () => ({
-      worktree,
-      fingerprint: 'ab'.repeat(12),
-      sessDir: path.join(LEDGER_HOME, 'sessions', 'unused'),
-      wsDir: path.join(LEDGER_HOME, 'ws'),
-    })),
+    // The tool resolves its workspace through the canonical authority now
+    // (requireWorkspacePaths); the ledger fixture lives under the synthetic
+    // fingerprint, so the stub keeps the deterministic mapping.
+    requireWorkspacePaths: vi.fn(async () => makePaths()),
+    resolveWorkspacePaths: vi.fn(async () => makePaths()),
     getWorktree: vi.fn(() => worktree),
   };
 });

@@ -49,7 +49,13 @@ vi.mock('../proofgraph/refresh.js', async (importOriginal) => {
 
 vi.mock('../../adapters/git.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../adapters/git.js')>();
-  return { ...actual, headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)) };
+  return {
+    ...actual,
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+    // The suite exercises the workspace helpers against bare temp dirs; the
+    // canonical authority's git-root probe is not what these tests verify.
+    resolveRoot: vi.fn(async (dir: string) => dir),
+  };
 });
 
 vi.mock('../../adapters/frozen-repository.js', async (importOriginal) => {
@@ -64,7 +70,7 @@ vi.mock('../../adapters/frozen-repository.js', async (importOriginal) => {
 });
 
 import {
-  resolveWorkspacePaths,
+  requireWorkspacePaths,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
   writeStateWithArtifactsAndAuditOperations,
@@ -79,7 +85,7 @@ import { readState, statePath, atomicWrite, writeState } from '../../adapters/pe
 import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
 import { computeStateDigest } from '../audit-outbox.js';
 import { reconcilePendingAuditOperations } from '../plugin-audit.js';
-import { makeDeps } from '../plugin-audit-test-helpers.js';
+import { makeDeps, resolvedAuthority } from '../plugin-audit-test-helpers.js';
 import { verifyEvidenceArtifacts } from '../../adapters/workspace/evidence-artifacts.js';
 import { acquireSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
@@ -187,21 +193,32 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
     it('does not lose updates from parallel read-modify-write transactions', async () => {
       const sessionID = crypto.randomUUID();
       const context = { sessionID, worktree: tmpDir, directory: tmpDir };
-      const { sessDir } = await resolveWorkspacePaths(context);
-      await writeStateWithArtifacts(sessDir, { ...makeState('VALIDATION'), activeChecks: [] });
+      const { sessDir, fingerprint, worktree } = await requireWorkspacePaths(context);
+      const base = makeState('VALIDATION');
+      // The canonical authority validates the persisted binding against the
+      // resolved worktree, so the fixture must be bound to the test workspace.
+      await writeStateWithArtifacts(sessDir, {
+        ...base,
+        activeChecks: [],
+        binding: { ...base.binding, worktree, fingerprint },
+      });
 
       await Promise.all([
         withMutableSessionTransaction(context, async (session) => {
           await new Promise((resolve) => setTimeout(resolve, 30));
+          // The callback runs under the session write lock; re-reading here is
+          // the canonical read-modify-write pattern that cannot lose updates.
+          const current = await readState(session.sessDir);
           await writeStateWithArtifacts(session.sessDir, {
-            ...session.state,
-            activeChecks: [...session.state.activeChecks, 'first'],
+            ...current!,
+            activeChecks: [...current!.activeChecks, 'first'],
           });
         }),
         withMutableSessionTransaction(context, async (session) => {
+          const current = await readState(session.sessDir);
           await writeStateWithArtifacts(session.sessDir, {
-            ...session.state,
-            activeChecks: [...session.state.activeChecks, 'second'],
+            ...current!,
+            activeChecks: [...current!.activeChecks, 'second'],
           });
         }),
       ]);
@@ -755,7 +772,7 @@ describe('shared state write — durable preparation and recovery', () => {
     expect(added).toHaveLength(1);
     expect(added[0]?.postStateDigest).toBe(computeStateDigest(recovered!));
     const deps = makeDeps({
-      getSessionDir: vi.fn().mockReturnValue(sessDir),
+      resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(recovered!, sessDir)),
       resolveSessionPolicy: vi.fn().mockResolvedValue({
         policy: {
           audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },

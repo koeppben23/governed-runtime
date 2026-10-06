@@ -156,7 +156,7 @@ describe('Session Resolver', () => {
     }
   });
 
-  it('binds workspace paths to the initial fingerprint when the Git remote changes', async () => {
+  it('keeps the initial transport fingerprint but fails workspace resolution closed when the Git remote changes', async () => {
     const repo = await repository('flowguard-mcp-fingerprint');
     try {
       await execFileAsync('git', ['remote', 'add', 'origin', 'https://example.com/org/first.git'], {
@@ -174,11 +174,13 @@ describe('Session Resolver', () => {
       const second = await binder.resolve([root(repo)]);
 
       expect(second.workspaceFingerprint).toBe(first.workspaceFingerprint);
-      await expect(
-        resolveWorkspacePaths({ ...second, sessionID: second.sessionId }),
-      ).resolves.toMatchObject({
-        fingerprint: first.workspaceFingerprint,
+      const drifted = await resolveWorkspacePaths({ ...second, sessionID: second.sessionId });
+      expect(drifted.authority).toMatchObject({
+        status: 'unavailable',
+        code: 'SESSION_BINDING_MISMATCH',
       });
+      expect(drifted.worktree).toBeNull();
+      expect(drifted.state).toBeNull();
     } finally {
       await rm(repo, { recursive: true, force: true });
     }

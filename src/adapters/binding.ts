@@ -38,7 +38,11 @@ import * as path from 'node:path';
  * Compile-time validated — no arbitrary strings allowed.
  */
 export type BindingErrorCode =
-  'MISSING_SESSION_ID' | 'NO_WORKTREE' | 'NOT_GIT_REPO' | 'WORKTREE_MISMATCH';
+  | 'MISSING_SESSION_ID'
+  | 'NO_WORKTREE'
+  | 'NOT_GIT_REPO'
+  | 'WORKTREE_MISMATCH'
+  | 'SESSION_BINDING_MISMATCH';
 
 /**
  * Binding errors (workspace ↔ git worktree resolution).
@@ -47,6 +51,8 @@ export type BindingErrorCode =
  * - NO_WORKTREE: neither worktree nor directory available in context
  * - NOT_GIT_REPO: directory is not inside a git repository
  * - WORKTREE_MISMATCH: state was created for a different worktree
+ * - SESSION_BINDING_MISMATCH: persisted fingerprint differs from the canonical
+ *   fingerprint of the resolved worktree root
  */
 export class BindingError extends Error {
   readonly code: BindingErrorCode;
@@ -172,8 +178,8 @@ export async function resolveBinding(ctx: ToolContext): Promise<ResolvedBinding>
  * @throws BindingError if worktree mismatch.
  */
 export function validateBinding(state: SessionState, binding: ResolvedBinding): true {
-  const stateWorktree = normalizePath(state.binding.worktree);
-  const currentWorktree = normalizePath(binding.worktreeRoot);
+  const stateWorktree = normalizeBindingPath(state.binding.worktree);
+  const currentWorktree = normalizeBindingPath(binding.worktreeRoot);
 
   if (stateWorktree !== currentWorktree) {
     throw new BindingError(
@@ -219,7 +225,7 @@ export async function validateCwdAgainstBinding(
   state: SessionState,
   cwd: string,
 ): Promise<CwdBindingValidation> {
-  if (normalizePath(cwd) === normalizePath(state.binding.worktree)) {
+  if (normalizeBindingPath(cwd) === normalizeBindingPath(state.binding.worktree)) {
     return { ok: true };
   }
 
@@ -238,6 +244,30 @@ export async function validateCwdAgainstBinding(
     if (err instanceof BindingError) return { ok: false, code: err.code, reason: err.message };
     throw err;
   }
+}
+
+/**
+ * Validate that the persisted workspace fingerprint matches the fingerprint
+ * computed from the canonical worktree root.
+ *
+ * Same-root fingerprint drift indicates a corrupted or foreign state file that
+ * happens to live under the canonical session directory; it must never be
+ * trusted for state or audit writes.
+ *
+ * @returns true if compatible.
+ * @throws BindingError if the persisted fingerprint differs.
+ */
+export function validateFingerprintBinding(state: SessionState, fingerprint: string): true {
+  if (state.binding.fingerprint !== fingerprint) {
+    throw new BindingError(
+      'SESSION_BINDING_MISMATCH',
+      `Session binding fingerprint "${state.binding.fingerprint}" does not match ` +
+        `the canonical workspace fingerprint "${fingerprint}". ` +
+        `The persisted state does not belong to this workspace.`,
+    );
+  }
+
+  return true;
 }
 
 /**
@@ -263,12 +293,12 @@ export function fromOpenCodeContext(openCodeCtx: {
 // -- Internals ----------------------------------------------------------------
 
 /**
- * Normalize a path for comparison.
+ * Normalize a path for binding comparison.
  * - Replace backslashes with forward slashes
  * - Remove trailing separators
  * - Lowercase on Windows (NTFS is case-insensitive)
  */
-function normalizePath(p: string): string {
+export function normalizeBindingPath(p: string): string {
   let normalized = path.resolve(p).replace(/\\/g, '/').replace(/\/+$/, '');
 
   // Windows: case-insensitive comparison

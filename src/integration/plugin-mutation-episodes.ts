@@ -36,14 +36,15 @@ export async function recordMutationCompletion(input: {
     );
     return;
   }
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) {
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') {
     blockUnavailableCompletion(
       hookOutput,
       'The completed mutating host tool has no resolvable FlowGuard session directory; its authorized mutation episode cannot be closed.',
     );
     return;
   }
+  const sessDir = resolution.sessDir;
   await withSessionWriteLock(sessDir, async () => {
     const state = await readState(sessDir);
     if (!state) {

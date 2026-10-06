@@ -55,11 +55,8 @@ import {
   logStructuredResolutionDiagnostics,
   type ReviewValidationFailure,
 } from '../../review/validation/review-validation-failure.js';
-import {
-  formatAutoAdvanceOverflow,
-  enrichWithWorkflowDirective,
-  writeStateWithArtifacts,
-} from '../helpers.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
+import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
 import { toPresentationFindingRelation } from '../helpers-rail-presentation.js';
 import {
   addLatestImplementationReview,

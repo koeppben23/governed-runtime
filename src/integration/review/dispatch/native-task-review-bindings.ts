@@ -110,12 +110,11 @@ export async function persistReviewerObservations(
 ): Promise<void> {
   await replayAndPersistObservations(
     {
-      getSessionDir: runtime.orchestratorDeps.getSessionDir,
+      resolveSessionAuthority: (sid) => runtime.orchestratorDeps.resolveSessionAuthority(sid),
       updateReviewAssurance: runtime.orchestratorDeps.updateReviewAssurance,
       log: runtime.log,
       logError: runtime.logError,
     },
-    readState,
     { sessionId, attemptId, childSessionId, now: new Date().toISOString() },
   );
 }

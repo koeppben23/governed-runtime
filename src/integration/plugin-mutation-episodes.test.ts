@@ -5,15 +5,24 @@
  *              fenced recovery, and the best-effort outcome classification.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+// The suite exercises bare temp dirs; the canonical authority's git-root probe
+// is not what these tests verify.
+vi.mock('../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/git.js')>();
+  return { ...actual, resolveRoot: vi.fn(async (dir: string) => dir) };
+});
+
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
 import { readState } from '../adapters/persistence.js';
 import { makeProgressedState } from '../fixtures.js';
-import { resolveWorkspacePaths, writeStateWithArtifacts } from './tools/helpers.js';
+import { unavailableAuthority, resolvedAuthority } from './plugin-audit-test-helpers.js';
+import { requireWorkspacePaths, writeStateWithArtifacts } from './tools/helpers.js';
 
 let tmpDir: string;
 
@@ -39,10 +48,13 @@ async function seedSession(
 ): Promise<{ sessionId: string; sessDir: string; runtime: never }> {
   const sessionId = crypto.randomUUID();
   const context = { sessionID: sessionId, worktree: tmpDir, directory: tmpDir };
-  const { sessDir } = await resolveWorkspacePaths(context);
+  const { sessDir, fingerprint, worktree } = await requireWorkspacePaths(context);
   const base = makeProgressedState('IMPLEMENTATION');
+  // The canonical authority validates the persisted binding against the
+  // resolved worktree, so the fixture must be bound to the test workspace.
   await writeStateWithArtifacts(sessDir, {
     ...base,
+    binding: { ...base.binding, worktree, fingerprint },
     mutationEpisodes: (options.episodes ?? []).map((episode) => ({
       episodeId: crypto.randomUUID(),
       hostCallId: episode.hostCallId,
@@ -66,7 +78,13 @@ async function seedSession(
       resolvingLeaseGeneration: 2,
     })),
   });
-  const runtime = { ws: { getSessionDir: () => sessDir } } as never;
+  const seededState = await readState(sessDir);
+  if (seededState === null) throw new Error(`No seeded state at ${sessDir}`);
+  const runtime = {
+    ws: {
+      resolveSessionAuthority: async () => resolvedAuthority(seededState, sessDir),
+    },
+  } as never;
   return { sessionId, sessDir, runtime };
 }
 
@@ -124,9 +142,11 @@ describe('recordMutationCompletion fail-closed guards', () => {
     expect(output.output).toContain('no host callID');
   });
 
-  it('blocks when the session directory cannot be resolved', async () => {
+  it('blocks when the session authority cannot be resolved', async () => {
     const { sessionId } = await seedSession();
-    const runtime = { ws: { getSessionDir: () => null } } as never;
+    const runtime = {
+      ws: { resolveSessionAuthority: async () => unavailableAuthority('NO_WORKTREE') },
+    } as never;
 
     const output = await runCompletion(runtime, sessionId, 'bash', 'call-1');
 
@@ -136,7 +156,7 @@ describe('recordMutationCompletion fail-closed guards', () => {
 
   it('blocks when session state disappeared', async () => {
     const { sessionId, runtime } = await seedSession();
-    const { sessDir } = await resolveWorkspacePaths({
+    const { sessDir } = await requireWorkspacePaths({
       sessionID: sessionId,
       worktree: tmpDir,
       directory: tmpDir,

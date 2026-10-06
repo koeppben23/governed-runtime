@@ -15,7 +15,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createBootableHostClient, createTestWorkspace, withTestEnv } from './test-helpers.js';
+import {
+  createBootableHostClient,
+  createTestWorkspace,
+  canonicalBinding,
+  withTestEnv,
+  type TestWorkspace,
+} from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
@@ -32,11 +38,14 @@ import { fileURLToPath } from 'node:url';
 // the git prerequisite gate for mutating host tools must treat it as a
 // repository. Risk-gate tests below init a REAL repo via initGitRepo; the
 // spread keeps their real changedFiles/remoteOriginUrl behavior intact.
+// `changedFiles` is a spy so the changed-files-evidence failure tests can make
+// the evidence read fail while the worktree stays a resolvable repository.
 vi.mock('../adapters/git.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
     isGitRepoStrict: vi.fn().mockResolvedValue(true),
+    changedFiles: vi.fn(original.changedFiles),
   };
 });
 
@@ -58,6 +67,23 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
   } as Parameters<typeof FlowGuardAuditPlugin>[0];
 }
 
+/**
+ * Fixture state rebound to the canonical test worktree so the single session
+ * authority resolves the seeded session (the fixture default binding points at
+ * a synthetic /tmp/test-repo and would fail WORKTREE_MISMATCH).
+ */
+async function boundState(
+  ws: TestWorkspace,
+  sessionID: string,
+  phase: Parameters<typeof makeState>[0],
+  overrides: Parameters<typeof makeState>[1] = {},
+) {
+  return makeState(phase, {
+    ...overrides,
+    binding: await canonicalBinding(ws.tmpDir, sessionID),
+  });
+}
+
 async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const now = new Date().toISOString();
   const fp = await computeFingerprint(worktree);
@@ -69,6 +95,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   await writeState(
     sessDir,
     makeState('PLAN', {
+      binding: await canonicalBinding(worktree, sessionID),
       ticket: {
         text: 'Fix auth issue',
         digest: 'ticket-digest',
@@ -280,7 +307,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('PLAN'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'PLAN'));
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -303,7 +330,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('TICKET'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'TICKET'));
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -328,7 +355,9 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(sessDir, { recursive: true });
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          }),
         );
 
         const hooks = await FlowGuardAuditPlugin(
@@ -352,7 +381,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('VALIDATION'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'VALIDATION'));
         const transition = {
           from: 'VALIDATION',
           to: 'IMPLEMENTATION',
@@ -361,7 +390,7 @@ describe('plugin bootstrap fail-closed', () => {
         } as const;
         await writeStateWithArtifactsAndAuditOperations(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             transition,
           }),
@@ -396,7 +425,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('VALIDATION'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'VALIDATION'));
         const transition = {
           from: 'VALIDATION',
           to: 'IMPLEMENTATION',
@@ -405,7 +434,7 @@ describe('plugin bootstrap fail-closed', () => {
         } as const;
         await writeStateWithArtifactsAndAuditOperations(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             transition,
           }),
@@ -441,7 +470,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('VALIDATION'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'VALIDATION'));
         const transition = {
           from: 'VALIDATION',
           to: 'IMPLEMENTATION',
@@ -450,7 +479,7 @@ describe('plugin bootstrap fail-closed', () => {
         } as const;
         await writeStateWithArtifactsAndAuditOperations(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             transition,
           }),
@@ -488,7 +517,9 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(sessDir, { recursive: true });
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          }),
         );
 
         const hooks = await FlowGuardAuditPlugin(
@@ -535,7 +566,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('PLAN'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'PLAN'));
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -581,7 +612,9 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(sessDir, { recursive: true });
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
+            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          }),
         );
 
         const hooks = await FlowGuardAuditPlugin(
@@ -610,7 +643,9 @@ describe('plugin bootstrap fail-closed', () => {
 
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { command: 'echo hello' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
+        // A non-git directory has no authoritative session mapping: the single
+        // canonical authority fails closed with its typed NOT_GIT_REPO code.
+        await expect(beforeHook(input, output)).rejects.toThrow('NOT_GIT_REPO');
       } finally {
         await fs.rm(tmp, { recursive: true, force: true });
       }
@@ -634,7 +669,7 @@ describe('plugin bootstrap fail-closed', () => {
 
         const input = { tool: 'bash', sessionID, callID: 'c1' };
         const output = { args: { command: 'rm -rf /' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+        await expect(beforeHook(input, output)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await ws.cleanup();
       }
@@ -662,13 +697,13 @@ describe('plugin bootstrap fail-closed', () => {
 
         const input = { tool: 'bash', sessionID, callID: 'c1' };
         const output = { args: { command: 'rm -rf /' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+        await expect(beforeHook(input, output)).rejects.toThrow('PARSE_FAILED');
       } finally {
         await ws.cleanup();
       }
     });
 
-    it('SMOKE — PLUGIN_ENFORCEMENT_UNAVAILABLE has correct code and structured message', async () => {
+    it('SMOKE — SESSION_DIR_NOT_FOUND has correct code and structured message', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -695,10 +730,10 @@ describe('plugin bootstrap fail-closed', () => {
           const msg = (err as Error).message;
           expect(msg).toContain('[FlowGuard]');
           const json = JSON.parse(msg.slice(msg.indexOf('{')));
-          expect(json.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+          expect(json.code).toBe('SESSION_DIR_NOT_FOUND');
           expect(json.message).toContain('Cannot verify host tool phase gate');
-          expect(json.message).toContain('session directory exists');
-          expect(json.diagnostics.diagnosticCode).toBe('RUNTIME_ENFORCEMENT_CONTEXT_UNAVAILABLE');
+          expect(json.message).toContain('no authoritative FlowGuard session state');
+          expect(json.diagnostics.diagnosticCode).toBe('SESSION_DIRECTORY_MISSING');
           expect(json.diagnostics.missingEvidence).toContain('readable_session_state');
           expect(json.diagnosticCard).toBeUndefined();
         }
@@ -715,7 +750,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('ARCHITECTURE'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'ARCHITECTURE'));
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -738,7 +773,7 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        await writeState(sessDir, makeState('PLAN'));
+        await writeState(sessDir, await boundState(ws, sessionID, 'PLAN'));
 
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -835,7 +870,7 @@ describe('plugin bootstrap fail-closed', () => {
         const ticketText = 'Risk: HIGH';
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             ticket: {
               text: ticketText,
@@ -884,7 +919,7 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(sessDir, { recursive: true });
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             policySnapshot: {
               ...makeState('IMPLEMENTATION', {
@@ -922,7 +957,7 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(sessDir, { recursive: true });
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
@@ -939,7 +974,12 @@ describe('plugin bootstrap fail-closed', () => {
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
         );
-        await fs.rm(path.join(ws.tmpDir, '.git'), { recursive: true, force: true });
+        // The worktree stays a resolvable repository; only the changed-files
+        // evidence read fails, which must block under enforced classification.
+        const gitAdapter = await import('../adapters/git.js');
+        vi.mocked(gitAdapter.changedFiles).mockRejectedValueOnce(
+          new Error('changed files evidence unavailable'),
+        );
 
         const beforeHook = hooks['tool.execute.before']!;
         await expect(
@@ -979,7 +1019,7 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(sessDir, { recursive: true });
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             claimedTaskClass: 'HIGH-RISK',
             policySnapshot: {
@@ -996,7 +1036,13 @@ describe('plugin bootstrap fail-closed', () => {
         const hooks = await FlowGuardAuditPlugin(
           createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
         );
-        await fs.rm(path.join(ws.tmpDir, '.git'), { recursive: true, force: true });
+        // The worktree stays a resolvable repository; only the changed-files
+        // evidence read fails, which must produce a strict blocked after-hook
+        // output under enforced classification.
+        const gitAdapter = await import('../adapters/git.js');
+        vi.mocked(gitAdapter.changedFiles).mockRejectedValueOnce(
+          new Error('changed files evidence unavailable'),
+        );
 
         const afterHook = hooks['tool.execute.after']!;
         const output = { title: 'bash', output: 'bash ok', metadata: {} };
@@ -1024,7 +1070,7 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(sessDir, { recursive: true });
         await writeState(
           sessDir,
-          makeState('IMPLEMENTATION', {
+          await boundState(ws, sessionID, 'IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
             error: {
               code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',

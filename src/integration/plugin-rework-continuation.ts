@@ -24,7 +24,6 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { readState } from '../adapters/persistence.js';
 import { isMutatingHostTool } from './phase-tool-gate.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import {
@@ -55,14 +54,9 @@ export async function updateCheckReworkContinuation(
 ): Promise<void> {
   if (runtime.activeCommandScopes.get(sessionId) !== 'check') return;
   if (!isReviewableFlowGuardTool(toolName)) return;
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) return;
-  let state: SessionState | null;
-  try {
-    state = await readState(sessDir);
-  } catch {
-    return;
-  }
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') return;
+  const state: SessionState = resolution.state;
   if (hasActiveRework(state) && state?.phase === 'IMPLEMENTATION') {
     runtime.checkReworkContinuations.add(sessionId);
     return;
@@ -90,14 +84,9 @@ export async function isAllowedReworkContinuation(
     isMutatingHostTool(toolName) ||
     CHECK_REWORK_READ_TOOLS.has(toolName);
   if (!repairTool) return false;
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) return false;
-  let state: SessionState | null;
-  try {
-    state = await readState(sessDir);
-  } catch {
-    return false;
-  }
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') return false;
+  const state: SessionState = resolution.state;
   if (state?.phase !== 'IMPLEMENTATION') return false;
   // The scope-local latch survives the loop independent of the persisted marker
   // (retained across re-records but closed at IMPL_REVIEW entry), so a failing

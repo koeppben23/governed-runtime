@@ -18,11 +18,10 @@ import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
-  resolveWorkspacePaths,
+  requireWorkspacePaths,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
-import { readState } from '../../../adapters/persistence.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { archiveSession } from '../../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
@@ -109,8 +108,9 @@ export const archive: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
-      const state = await readState(sessDir);
+      const paths = await requireWorkspacePaths(context);
+      const { fingerprint, sessDir } = paths;
+      const state = paths.state;
 
       if (!state) return formatBlocked('NO_SESSION');
       const preflight = evaluateArchivePreflight(state);

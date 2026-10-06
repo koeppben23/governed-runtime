@@ -8,6 +8,7 @@
  * @version v3 — removed the deleted SDK pipeline context types
  */
 
+import type { SessionAuthorityResolution } from '../../adapters/session-authority.js';
 import type { OrchestratorClient, SessionEnforcementState } from './types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
@@ -30,8 +31,7 @@ export interface ReviewSessionContext {
  * Dependency interface for closure-captured values in plugin.ts.
  */
 export interface OrchestratorDeps {
-  resolveFingerprint(): Promise<string | null>;
-  getSessionDir(sessionId: string): string | null;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,

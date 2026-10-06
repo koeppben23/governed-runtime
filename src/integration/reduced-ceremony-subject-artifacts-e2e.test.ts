@@ -16,7 +16,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -45,6 +45,7 @@ import { executeCheck } from '../verification/executor.js';
 import { makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { canonicalBinding } from './test-helpers.js';
 import type { ToolContext } from './tools/helpers.js';
 import { decision, export as exportTool } from './tools/index.js';
 import { reconcilePendingAuditOperations } from './plugin-audit.js';
@@ -114,11 +115,14 @@ interface BootOptions {
 
 async function boot(options: BootOptions = {}): Promise<SE> {
   const r = mkdtempSync(join(tmpdir(), 'fg-reduced-artifacts-'));
-  const w = join(r, 'worktree');
   const c = join(r, 'config');
   const id = randomUUID();
-  mkdirSync(w, { recursive: true });
+  mkdirSync(join(r, 'worktree'), { recursive: true });
   mkdirSync(c, { recursive: true });
+  // Canonicalize only the worktree: the session authority resolves it through
+  // git (physical path on macOS), while the config dir keeps the OS-tmpdir
+  // spelling for the test-directory guard.
+  const w = realpathSync(join(r, 'worktree'));
   execFileSync('git', ['init', '-q'], { cwd: w });
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: w });
   execFileSync('git', ['config', 'user.name', 'T'], { cwd: w });
@@ -233,7 +237,7 @@ async function subjectState(
           initiatedBy: identityBase.initiatedBy,
           initiatedByIdentity: identityBase.initiatedByIdentity,
         }
-      : { binding: { ...base.binding, worktree: se.worktree } }),
+      : { binding: await canonicalBinding(se.worktree, se.tc.sessionID) }),
     implementationBaseAuthority: undefined,
     ...(claimedTaskClass !== null ? { claimedTaskClass } : {}),
     implementation: {
@@ -352,7 +356,7 @@ describe('baseline VALIDATION reports (real git)', () => {
     const base = makeProgressedState('VALIDATION');
     await writeStateWithArtifacts(se.sDir, {
       ...base,
-      binding: { ...base.binding, worktree: se.worktree },
+      binding: await canonicalBinding(se.worktree, se.tc.sessionID),
       implementationBaseAuthority: undefined,
       activeChecks: ['test'],
       verificationCandidates: [RUN_SPECIFIC_CANDIDATE],

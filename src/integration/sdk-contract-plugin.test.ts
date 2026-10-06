@@ -203,7 +203,7 @@ describe('SDK Contract: Smoke — hook invocation with SDK payloads', () => {
     const input = { tool: 'unknown_tool', sessionID: 'sess-smoke', callID: 'call-smoke' };
     const output = { args: {} };
 
-    await expect(beforeHook!(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    await expect(beforeHook!(input, output)).rejects.toThrow('NO_WORKTREE');
   });
 
   it('SMOKE: before-hook fail-closes an empty SDK tool identity', async () => {
@@ -214,7 +214,7 @@ describe('SDK Contract: Smoke — hook invocation with SDK payloads', () => {
     const input = { tool: '', sessionID: 'sess-smoke', callID: 'call-smoke' };
     const output = { args: {} };
 
-    await expect(beforeHook!(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    await expect(beforeHook!(input, output)).rejects.toThrow('NO_WORKTREE');
   });
 
   it('SMOKE: after-hook accepts SDK-shaped output without crashing', async () => {

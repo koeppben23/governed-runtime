@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -27,6 +27,7 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { canonicalBinding } from './test-helpers.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 
 const E2E_TYPECHECK_DEFINITION = {
@@ -202,11 +203,14 @@ interface SE {
 
 async function boot(label: string): Promise<SE> {
   const r = mkdtempSync(path.join(tmpdir(), `fg-e2e-opencode-${label}-`));
-  const w = path.join(r, 'worktree'),
-    c = path.join(r, 'config'),
+  const c = path.join(r, 'config'),
     id = randomUUID();
-  mkdirSync(w, { recursive: true });
+  mkdirSync(path.join(r, 'worktree'), { recursive: true });
   mkdirSync(c, { recursive: true });
+  // Canonicalize only the worktree: the session authority resolves it through
+  // git (physical path on macOS), while the config dir keeps the OS-tmpdir
+  // spelling for the test-directory guard.
+  const w = realpathSync(path.join(r, 'worktree'));
   execSync('git init && git config user.email t@t && git config user.name T', {
     cwd: w,
     stdio: 'pipe',
@@ -242,6 +246,21 @@ async function boot(label: string): Promise<SE> {
     sDir: sd,
     tc,
   };
+}
+
+/**
+ * Fixture state rebound to the booted canonical worktree so the single session
+ * authority resolves the seeded session.
+ */
+async function canonicalState(
+  se: SE,
+  phase: Parameters<typeof makeState>[0],
+  overrides: Parameters<typeof makeState>[1] = {},
+) {
+  return makeState(phase, {
+    ...overrides,
+    binding: await canonicalBinding(se.worktree, se.tc.sessionID),
+  });
 }
 
 async function inject(
@@ -370,7 +389,7 @@ describe('FlowGuard tool-level E2E', () => {
 
     it('architecture: Mode A → evidence → Mode B', async () => {
       s = await boot('arch');
-      await writeStateWithArtifacts(s.sDir, makeState('READY'));
+      await writeStateWithArtifacts(s.sDir, await canonicalState(s, 'READY'));
       const a = await architecture.execute(
         {
           title: 'E2E ADR',
@@ -395,7 +414,7 @@ describe('FlowGuard tool-level E2E', () => {
 
     it('plan: Mode A → evidence → Mode B', async () => {
       s = await boot('plan');
-      await writeStateWithArtifacts(s.sDir, makeState('TICKET', { ticket: TICKET }));
+      await writeStateWithArtifacts(s.sDir, await canonicalState(s, 'TICKET', { ticket: TICKET }));
       const a = await plan.execute({ planText: '## Plan\n1. Fix auth' }, s.tc);
       expect(typeof a).toBe('string');
       expect(a).not.toContain('INTERNAL_ERROR');
@@ -417,7 +436,7 @@ describe('FlowGuard tool-level E2E', () => {
       s = await boot('impl');
       await writeStateWithArtifacts(
         s.sDir,
-        makeState('IMPLEMENTATION', {
+        await canonicalState(s, 'IMPLEMENTATION', {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
           ticket: TICKET,
           plan: {
@@ -454,7 +473,7 @@ describe('FlowGuard tool-level E2E', () => {
       s = await boot('main');
 
       // Step 1: plan Mode A
-      await writeStateWithArtifacts(s.sDir, makeState('TICKET', { ticket: TICKET }));
+      await writeStateWithArtifacts(s.sDir, await canonicalState(s, 'TICKET', { ticket: TICKET }));
       const r1 = await plan.execute({ planText: '## Plan\n1. Fix auth' }, s.tc);
       expect(typeof r1).toBe('string');
       expect(r1).not.toContain('INTERNAL_ERROR');
@@ -473,7 +492,7 @@ describe('FlowGuard tool-level E2E', () => {
       const currentPlan = st!.plan!;
       await writeStateWithArtifacts(
         s.sDir,
-        makeState('VALIDATION', {
+        await canonicalState(s, 'VALIDATION', {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
           ticket: TICKET,
           plan: currentPlan,
@@ -494,7 +513,7 @@ describe('FlowGuard tool-level E2E', () => {
       // Bootstrap IMPLEMENTATION with evidence from run_check
       await writeStateWithArtifacts(
         s.sDir,
-        makeState('IMPLEMENTATION', {
+        await canonicalState(s, 'IMPLEMENTATION', {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
           ticket: TICKET,
           plan: currentPlan,
@@ -531,7 +550,7 @@ describe('FlowGuard tool-level E2E', () => {
       st = await readState(s.sDir);
       await writeStateWithArtifacts(
         s.sDir,
-        makeState('COMPLETE', {
+        await canonicalState(s, 'COMPLETE', {
           ticket: TICKET,
           plan: currentPlan,
           implementation: st!.implementation,
@@ -554,7 +573,7 @@ describe('FlowGuard tool-level E2E', () => {
 
     it('review: content → obligation → evidence → complete', async () => {
       s = await boot('review');
-      await writeStateWithArtifacts(s.sDir, makeState('READY'));
+      await writeStateWithArtifacts(s.sDir, await canonicalState(s, 'READY'));
 
       // Step 1: content-aware call creates review obligation
       const r1 = await review.execute(

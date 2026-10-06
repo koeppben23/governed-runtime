@@ -87,10 +87,13 @@ import type {
 } from './phase-tool-gate.js';
 import { makeState } from '../fixtures.js';
 import { hashText } from '../shared/hashing.js';
+import { resolvedAuthority, unavailableAuthority } from './plugin-audit-test-helpers.js';
 
 function mockDeps(overrides: Partial<RiskEnforcementDeps> = {}): RiskEnforcementDeps {
   return {
-    getSessionDir: vi.fn().mockReturnValue('/tmp/sess'),
+    resolveSessionAuthority: vi
+      .fn()
+      .mockResolvedValue(resolvedAuthority(makeState('IMPLEMENTATION'), '/tmp/sess')),
     getWorktreeRoot: vi.fn().mockReturnValue('/tmp/repo'),
     ...overrides,
   };
@@ -859,8 +862,10 @@ describe('enforceRiskClassificationAfterBash', () => {
   const sessionId = 's1';
 
   describe('CORNER', () => {
-    it('fails closed when sessDir is null', async () => {
-      const deps = mockDeps({ getSessionDir: () => null });
+    it('fails closed when the session authority is unavailable', async () => {
+      const deps = mockDeps({
+        resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
+      });
       const output: { output?: unknown } = {};
 
       await enforceRiskClassificationAfterBash(deps, sessionId, output);
@@ -870,6 +875,7 @@ describe('enforceRiskClassificationAfterBash', () => {
         'PLUGIN_ENFORCEMENT_UNAVAILABLE',
         expect.objectContaining({
           reason: expect.stringContaining('no resolvable FlowGuard session'),
+          causeCode: 'NO_WORKTREE',
         }),
       );
       expect(output.output).toBeDefined();

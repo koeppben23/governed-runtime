@@ -50,11 +50,8 @@
  */
 
 import { formatBlocked } from '../../blocked-result.js';
-import {
-  formatAutoAdvanceOverflow,
-  enrichWithWorkflowDirective,
-  writeStateWithArtifacts,
-} from '../helpers.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
+import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 // State & Machine

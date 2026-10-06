@@ -112,12 +112,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   );
 
   const riskDeps: RiskEnforcementDeps = {
-    getSessionDir: ws.getSessionDir,
+    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
     getWorktreeRoot: () => auditWorktree,
   };
 
   const discoveryHealthDeps: DiscoveryHealthEnforcementDeps = {
-    getSessionDir: ws.getSessionDir,
+    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
     getWorkspaceDir: () => ws.cachedWsDir,
   };
 
@@ -197,8 +197,7 @@ function createOrchestratorDeps(
   client: OrchestratorClient,
 ): OrchestratorDeps {
   return {
-    resolveFingerprint: ws.resolveFingerprint,
-    getSessionDir: ws.getSessionDir,
+    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
     updateReviewAssurance: ws.updateReviewAssurance,
     blockReviewOutcome: ws.blockReviewOutcome,
     getEnforcementState: ws.getEnforcementState,
@@ -215,9 +214,7 @@ function createAuditDeps(
   resolveSessionPolicy: AuditDeps['resolveSessionPolicy'],
 ): AuditDeps {
   return {
-    resolveFingerprint: ws.resolveFingerprint,
-    getSessionDir: ws.getSessionDir,
-    resolveCanonicalSessionDir: ws.resolveCanonicalSessionDir,
+    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
     resolveSessionPolicy,
     initChain: ws.initChain,
     invalidateChainState: ws.invalidateChainState,
@@ -225,7 +222,6 @@ function createAuditDeps(
     nextDecisionSequence: ws.nextDecisionSequence,
     log,
     logError,
-    cachedFingerprint: ws.cachedFingerprint,
     mode: defaultMode ?? 'team',
     tsaProvider: new HttpTimestampAuthorityProvider(),
     timestampVerifier: new PkijsTimestampVerifier(),

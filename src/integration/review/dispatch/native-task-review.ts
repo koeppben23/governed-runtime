@@ -11,6 +11,7 @@
  * native-task-review-bindings.ts.
  */
 
+import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import { readState } from '../../../adapters/persistence.js';
 import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 
@@ -65,7 +66,7 @@ const TASK_DESCRIPTION = 'FlowGuard independent review';
 export interface NativeReviewTransportRuntime {
   readonly ws: {
     getEnforcementState(sessionId: string): SessionEnforcementState;
-    getSessionDir(sessionId: string): string | null;
+    resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   };
   readonly orchestratorDeps: OrchestratorDeps;
   readonly log: {
@@ -128,15 +129,14 @@ async function requireState(
   runtime: NativeReviewTransportRuntime,
   sessionId: string,
 ): Promise<{ readonly sessDir: string; readonly state: PersistedState }> {
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  const state = sessDir ? await readState(sessDir) : null;
-  if (!sessDir || !state) {
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') {
     throw buildEnforcementError(
       'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
       'Visible independent review requires readable persisted FlowGuard state.',
     );
   }
-  return { sessDir, state };
+  return { sessDir: resolution.sessDir, state: resolution.state };
 }
 
 function requireCurrentAttempt(
@@ -434,14 +434,14 @@ type NativeTaskContextResolution =
  * violation — never a reason to skip enforcement. The only non-governed
  * invocation is rejected by `isNativeReviewerTaskAfter` before this point.
  */
-function resolveNativeTaskContext(
+async function resolveNativeTaskContext(
   runtime: NativeReviewTransportRuntime,
   hookInput: ToolHookAfterInput,
-): NativeTaskContextResolution {
+): Promise<NativeTaskContextResolution> {
   const sessionId = hookInput.sessionID;
   const callId = hookInput.callID;
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) {
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') {
     return {
       kind: 'context_unavailable',
       reason:
@@ -449,6 +449,7 @@ function resolveNativeTaskContext(
         'the governed reviewer invocation cannot be observed or bound.',
     };
   }
+  const sessDir = resolution.sessDir;
   if (!callId) {
     return {
       kind: 'context_unavailable',
@@ -469,7 +470,7 @@ export async function nativeReviewTaskAfter(
   const hookInput = input as ToolHookAfterInput;
   const hookOutput = output as ToolHookAfterOutput;
   if (!isNativeReviewerTaskAfter(hookInput)) return;
-  const taskContext = resolveNativeTaskContext(runtime, hookInput);
+  const taskContext = await resolveNativeTaskContext(runtime, hookInput);
   if (taskContext.kind === 'context_unavailable') {
     hookOutput.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
       reason: taskContext.reason,

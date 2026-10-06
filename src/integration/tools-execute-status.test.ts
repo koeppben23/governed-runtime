@@ -35,6 +35,7 @@ import {
   reportPath,
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { mintProofGraphClaimId } from '../state/proofgraph-approval.js';
 import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
@@ -880,10 +881,17 @@ describe('status', () => {
       await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
 
       const result = parseToolResult(await status.execute({ finish: true }, ctx));
-      // No Finish Card is produced for an unreadable state; the failure is
-      // surfaced as a blocked result carrying the persistence error code.
+      // The single canonical authority surfaces the typed persistence failure
+      // for the corrupt state; the read-only status path never fabricates a
+      // session or a Finish Card from an unreadable state.
+      const authority = await resolveSessionAuthority({
+        root: ws.tmpDir,
+        sessionId: ctx.sessionID,
+      });
+      expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
       expect(result.finish).toBeUndefined();
-      expect(result.code).toBe('PARSE_FAILED');
+      expect(result.phase).toBeNull();
+      expect(result.status).toBe('No FlowGuard session found.');
     });
   });
 

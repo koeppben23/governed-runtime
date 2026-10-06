@@ -20,7 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -31,6 +31,7 @@ import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeDiscovery } from '../adapters/persistence-discovery.js';
 import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
+import { canonicalBinding } from './test-helpers.js';
 import { runRequiredDiscovery } from './tools/hydrate/hydrate-discovery.js';
 import { plan } from './tools/plan/plan.js';
 import { review } from './tools/review-tool/index.js';
@@ -264,11 +265,14 @@ interface Env {
 
 async function boot(label: string): Promise<Env> {
   const rootDir = mkdtempSync(path.join(tmpdir(), `fg-pg-${label}-`));
-  const worktree = path.join(rootDir, 'worktree');
   const configDir = path.join(rootDir, 'config');
   const id = randomUUID();
-  mkdirSync(worktree, { recursive: true });
+  mkdirSync(path.join(rootDir, 'worktree'), { recursive: true });
   mkdirSync(configDir, { recursive: true });
+  // Canonicalize only the worktree: the session authority resolves it through
+  // git (physical path on macOS), while the config dir keeps the OS-tmpdir
+  // spelling for the test-directory guard.
+  const worktree = realpathSync(path.join(rootDir, 'worktree'));
   execSync('git init && git config user.email t@t && git config user.name T', {
     cwd: worktree,
     stdio: 'pipe',
@@ -306,6 +310,21 @@ async function boot(label: string): Promise<Env> {
 function restoreEnv(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
+}
+
+/**
+ * Fixture state rebound to the booted canonical worktree so the single session
+ * authority resolves the seeded session.
+ */
+async function canonicalState(
+  env: Env,
+  phase: Parameters<typeof makeState>[0],
+  overrides: Parameters<typeof makeState>[1] = {},
+) {
+  return makeState(phase, {
+    ...overrides,
+    binding: await canonicalBinding(env.worktree, env.tc.sessionID),
+  });
 }
 
 /** Implementation-scoped attempt bound to the current revision. */
@@ -453,7 +472,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-claims');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -475,7 +494,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-prompt');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -500,7 +519,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-reject');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -531,7 +550,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-same-check');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -570,7 +589,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-inactive-check');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ['build'],
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -594,7 +613,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-warn');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -621,7 +640,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-cert');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', {
+      await canonicalState(env, 'TICKET', {
         ticket: TICKET,
         activeChecks: ACTIVE_CHECKS,
         verificationCandidates: STRUCTURED_CANDIDATES,
@@ -776,7 +795,7 @@ describe('peer review hypotheses (runtime)', () => {
 
   it('produces exactly the profile objective count, never a duplicated set', async () => {
     env = await boot('standalone');
-    await writeStateWithArtifacts(env.sDir, makeState('READY'));
+    await writeStateWithArtifacts(env.sDir, await canonicalState(env, 'READY'));
 
     const first = await review.execute(
       { inputOrigin: 'manual_text', text: 'PR under review', targetPaths: ['README.md'] },
@@ -842,7 +861,7 @@ describe('peer review hypotheses (runtime)', () => {
 
   it('reports hypotheses separately from an undeclared contract', async () => {
     env = await boot('standalone-coverage');
-    await writeStateWithArtifacts(env.sDir, makeState('READY'));
+    await writeStateWithArtifacts(env.sDir, await canonicalState(env, 'READY'));
     await review.execute(
       { inputOrigin: 'manual_text', text: 'PR under review', targetPaths: ['README.md'] },
       env.tc,

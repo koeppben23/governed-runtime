@@ -19,6 +19,7 @@ import * as path from 'node:path';
 import { readState } from '../adapters/persistence.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import type {
+  BindingInfo,
   ReviewAttempt,
   ReviewFindings,
   ReviewObligation,
@@ -166,16 +167,21 @@ export interface TestWorkspace {
 export async function createTestWorkspace(): Promise<TestWorkspace> {
   const originalEnv = process.env.OPENCODE_CONFIG_DIR;
   const originalGuard = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-integ-'));
-  process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  const created = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-integ-'));
+  // Canonicalize the temp path: git resolves symlinks, so the session
+  // authority must compare physical paths (macOS /var vs /private/var).
+  const tmpDir = await fs.realpath(created);
+  // The test-directory guard compares against the OS tmpdir spelling, so the
+  // env var keeps `created`; both spellings are the same physical directory.
+  process.env.OPENCODE_CONFIG_DIR = created;
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
   assertTestConfigDir();
 
-  // Make tmpDir look like a real worktree so the plugin's `isUsableWorktree`
-  // check (fail-closed: rejects non-repo paths to avoid creating rogue
-  // workspace folders) accepts it. Tests that pass `worktree: ws.tmpDir` to
-  // the plugin rely on this marker.
-  await fs.mkdir(path.join(tmpDir, '.git'), { recursive: true });
+  // A real git repository is required: the canonical session authority
+  // resolves the worktree root through `git rev-parse --show-toplevel`.
+  // A bare `.git` marker is not a repository and fails closed now.
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('git', ['init', '--quiet', tmpDir], { windowsHide: true });
 
   return {
     tmpDir,
@@ -200,6 +206,36 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
         // Best effort
       }
     },
+  };
+}
+
+/**
+ * Build a canonical session binding for a test worktree.
+ *
+ * Realpaths the root, computes the canonical workspace fingerprint and returns
+ * a `BindingInfo` that `resolveSessionAuthority` validates. Tests that seed
+ * session state must use this (or an equivalent canonical binding) so the
+ * single authority resolves their session directory instead of failing with
+ * WORKTREE_MISMATCH / SESSION_BINDING_MISMATCH.
+ *
+ * @param root - Worktree root; must already exist on disk.
+ * @param hostSessionId - Host session recorded in the binding.
+ */
+export async function canonicalBinding(
+  root: string,
+  hostSessionId: string = crypto.randomUUID(),
+): Promise<BindingInfo> {
+  const canonicalRoot = await fs.realpath(root);
+  // Dynamic import keeps the workspace/git module graph out of this helper's
+  // static imports: test files mock the git adapter, and a static edge here
+  // would be evaluated before the vi.mock factory installs the mock.
+  const { computeFingerprint } = await import('../adapters/workspace/index.js');
+  const { fingerprint } = await computeFingerprint(canonicalRoot);
+  return {
+    hostSessionId,
+    worktree: canonicalRoot,
+    fingerprint,
+    resolvedAt: new Date().toISOString(),
   };
 }
 

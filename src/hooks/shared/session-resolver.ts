@@ -4,28 +4,19 @@
  *
  * Resolution chain:
  * 1. FLOWGUARD_SESSION_DIR env var (explicit override — testing and CI)
- * 2. Resolve the git worktree root from cwd; typed GitError codes are preserved
- * 3. Compute the fingerprint from the canonical root → derive the session dir
- * 4. Validate the canonical root against the state's authoritative worktree binding
- *
- * Canonicalizing before fingerprinting is required: `computeFingerprint()` is
- * defined over a worktree root, and the local-path fallback for repositories
- * without an `origin` would derive a different fingerprint for a subdirectory
- * or symlinked path than for the session's bound root.
+ * 2. `resolveSessionAuthority` — canonical git root from cwd, fingerprint,
+ *    session directory, state read, and worktree/fingerprint binding validation
  *
  * Fail-closed: if the root cannot be resolved, state cannot be read, or the
  * root does not belong to the bound worktree, returns an explicit error that
  * the calling hook can use to deny tool execution.
  *
- * @version v1
+ * @version v2
  */
 
 import { existsSync } from 'node:fs';
-import { validateCwdAgainstBinding } from '../../adapters/binding.js';
-import { GitError, resolveRoot } from '../../adapters/git.js';
-import { computeFingerprint } from '../../adapters/workspace/index.js';
-import { sessionDir } from '../../adapters/workspace/index.js';
 import { readState } from '../../adapters/persistence.js';
+import { resolveSessionAuthority } from '../../adapters/session-authority.js';
 import type { SessionState } from '../../state/schema.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -51,57 +42,31 @@ export async function resolveSession(cwd: string, sessionId: string): Promise<Se
     return readSessionState(envDir);
   }
 
-  // Priority 2: Canonicalize the payload cwd to the git worktree root first,
-  // then derive the fingerprint from that root. A subdirectory or symlinked
-  // path must not select a different workspace than the session's binding.
-  let worktreeRoot: string;
+  // Priority 2: the canonical session authority resolves the git root,
+  // fingerprints it, derives the session directory, and validates the
+  // persisted worktree/fingerprint binding before the hook trusts the state.
+  let resolution: Awaited<ReturnType<typeof resolveSessionAuthority>>;
   try {
-    worktreeRoot = await resolveRoot(cwd);
-  } catch (err) {
-    if (err instanceof GitError) {
-      return { ok: false, code: err.code, reason: err.message };
-    }
-    return {
-      ok: false,
-      code: 'WORKTREE_RESOLUTION_FAILED',
-      reason: `Cannot resolve git worktree root from cwd "${cwd}": ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-
-  let fingerprint: string;
-  try {
-    const fpResult = await computeFingerprint(worktreeRoot);
-    fingerprint = fpResult.fingerprint;
+    resolution = await resolveSessionAuthority({ root: cwd, sessionId });
   } catch (err) {
     return {
       ok: false,
-      code: 'FINGERPRINT_FAILED',
-      reason: `Cannot compute workspace fingerprint from worktree "${worktreeRoot}": ${err instanceof Error ? err.message : String(err)}`,
+      code: 'SESSION_AUTHORITY_UNAVAILABLE',
+      reason: `Cannot resolve the session authority from cwd "${cwd}": ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
-  let sessDir: string;
-  try {
-    sessDir = sessionDir(fingerprint, sessionId);
-  } catch (err) {
-    return {
-      ok: false,
-      code: 'SESSION_DIR_INVALID',
-      reason: `Cannot derive session directory (fingerprint="${fingerprint}", sessionId="${sessionId}"): ${err instanceof Error ? err.message : String(err)}`,
-    };
+  if (resolution.status === 'resolved') {
+    return { ok: true, state: resolution.state, sessionDir: resolution.sessDir };
   }
-
-  const resolution = await readSessionState(sessDir);
-  if (!resolution.ok) return resolution;
-
-  // The canonical root located the session; it must also match the
-  // authoritative worktree binding before the caller trusts the state for
-  // gating/audit.
-  const cwdBinding = await validateCwdAgainstBinding(resolution.state, worktreeRoot);
-  if (!cwdBinding.ok) {
-    return { ok: false, code: cwdBinding.code, reason: cwdBinding.reason };
+  if (resolution.status === 'unavailable') {
+    return { ok: false, code: resolution.code, reason: resolution.reason };
   }
-  return resolution;
+  return {
+    ok: false,
+    code: existsSync(resolution.sessDir) ? 'STATE_MISSING' : 'SESSION_DIR_NOT_FOUND',
+    reason: `No session state exists at "${resolution.sessDir}". Run /hydrate to initialize.`,
+  };
 }
 
 /**

@@ -19,7 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -28,6 +28,7 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { canonicalBinding } from './test-helpers.js';
 
 import { plan } from './tools/plan/plan.js';
 import { architecture } from './tools/architecture/architecture.js';
@@ -161,11 +162,14 @@ interface E2ESession {
 
 async function bootstrap(label: string): Promise<E2ESession> {
   const rootDir = mkdtempSync(path.join(tmpdir(), `fg-e2e-opencode-${label}-`));
-  const worktree = path.join(rootDir, 'worktree'),
-    configDir = path.join(rootDir, 'config'),
+  const configDir = path.join(rootDir, 'config'),
     sessionId = randomUUID();
-  mkdirSync(worktree, { recursive: true });
+  mkdirSync(path.join(rootDir, 'worktree'), { recursive: true });
   mkdirSync(configDir, { recursive: true });
+  // Canonicalize only the worktree: the session authority resolves it through
+  // git (physical path on macOS), while the config dir keeps the OS-tmpdir
+  // spelling for the test-directory guard.
+  const worktree = realpathSync(path.join(rootDir, 'worktree'));
   execSync('git init && git config user.email t@t && git config user.name T', {
     cwd: worktree,
     stdio: 'pipe',
@@ -258,7 +262,11 @@ describe('plan / architecture Mode-B review contract', () => {
       );
 
       const state: SessionState = {
-        ...makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD }),
+        ...makeState('PLAN', {
+          ticket: TICKET,
+          plan: PLAN_RECORD,
+          binding: await canonicalBinding(session.worktree, session.toolContext.sessionID),
+        }),
         selfReview: SELF_REVIEW_CONVERGED,
         reviewAssurance: assurance,
       };
@@ -322,6 +330,7 @@ describe('plan / architecture Mode-B review contract', () => {
       const state: SessionState = {
         ...makeState('ARCHITECTURE', {
           architecture: { ...ARCHITECTURE_DECISION, status: 'proposed' },
+          binding: await canonicalBinding(session.worktree, session.toolContext.sessionID),
         }),
         selfReview: SELF_REVIEW_CONVERGED,
         reviewAssurance: assurance,

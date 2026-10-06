@@ -27,7 +27,19 @@ import {
 } from '../adapters/workspace/index.js';
 import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
+import {
+  absentAuthority,
+  resolvedAuthority,
+  unavailableAuthority,
+} from './plugin-audit-test-helpers.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
+
+/** Mock authority that mirrors the canonical file-backed resolution for a real sessDir. */
+async function sessionAuthorityAt(sessDir: string): Promise<SessionAuthorityResolution> {
+  const state = await readState(sessDir);
+  return state === null ? absentAuthority(sessDir) : resolvedAuthority(state, sessDir);
+}
 
 // The test workspace carries a fake `.git` marker rather than a real
 // repository; the git prerequisite gate for mutating host tools treats it as a
@@ -46,14 +58,14 @@ function makeRuntime(
 ): FlowGuardPluginRuntime {
   const base = {
     ws: {
-      getSessionDir: vi.fn().mockReturnValue(null),
+      resolveSessionAuthority: vi.fn().mockResolvedValue(unavailableAuthority('NO_WORKTREE')),
       getEnforcementState: vi.fn(() => createSessionState()),
       ...(overrides.ws ?? {}),
     },
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     adapterLog: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn() },
-    discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn() },
+    riskDeps: { resolveSessionAuthority: vi.fn(), getWorktreeRoot: vi.fn() },
+    discoveryHealthDeps: { resolveSessionAuthority: vi.fn(), getWorkspaceDir: vi.fn() },
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(null, null),
     toolTraceIds: new Map<string, string>(),
@@ -69,8 +81,11 @@ function makeRuntime(
 
 function makeAuditDeps(sessDir: string | null, state: SessionState | null): AuditDeps {
   return {
-    resolveFingerprint: vi.fn(async () => 'fp-abc'),
-    getSessionDir: vi.fn(() => sessDir),
+    resolveSessionAuthority: vi.fn(async () =>
+      sessDir === null || state === null
+        ? unavailableAuthority('NO_WORKTREE')
+        : resolvedAuthority(state, sessDir),
+    ),
     resolveSessionPolicy: vi.fn(async () => ({
       policy: {
         audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
@@ -88,7 +103,6 @@ function makeAuditDeps(sessDir: string | null, state: SessionState | null): Audi
     nextDecisionSequence: vi.fn(async () => 1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp-abc',
     mode: 'solo',
   };
 }
@@ -180,16 +194,16 @@ describe('commandBefore', () => {
 });
 
 describe('toolBefore — host tool fail-closed resolution', () => {
-  it('blocks an empty tool identity without a session mapping', async () => {
+  it('blocks an empty tool identity without a session mapping using the typed authority code', async () => {
     const runtime = makeRuntime();
     await expect(
       toolBefore(runtime, { tool: '', sessionID: SESSION_ID }, { args: {} }),
-    ).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    ).rejects.toThrow('NO_WORKTREE');
   });
 
-  it('blocks a null tool input without crashing', async () => {
+  it('blocks a null tool input without crashing using the typed authority code', async () => {
     const runtime = makeRuntime();
-    await expect(toolBefore(runtime, null, null)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    await expect(toolBefore(runtime, null, null)).rejects.toThrow('NO_WORKTREE');
   });
 
   it('allows read-only host tools without reconciliation', async () => {
@@ -212,18 +226,26 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     expect(runtime.toolTraceIds.has(`${SESSION_ID}:read`)).toBe(true);
   });
 
-  it('blocks a mutating host tool when the session mapping is unavailable', async () => {
+  it('blocks a mutating host tool with the typed authority code when the session mapping is unavailable', async () => {
     const runtime = makeRuntime();
-    await expect(
-      toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} }),
-    ).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    let caught: unknown;
+    try {
+      await toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} });
+    } catch (err) {
+      caught = err;
+    }
+    const payload = enforcementPayload(caught);
+    expect(payload.code).toBe('NO_WORKTREE');
+    expect(payload.detail.sessionMapping).toBe('unresolved');
   });
 
   it('blocks with SESSION_DIR_NOT_FOUND when the directory is missing', async () => {
     const ws = await createTestWorkspace();
     try {
       const sessDir = path.join(ws.tmpDir, 'does-not-exist');
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority(sessDir)) },
+      });
       await expect(
         toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} }),
       ).rejects.toThrow('SESSION_DIR_NOT_FOUND');
@@ -237,10 +259,12 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-empty');
       await fs.mkdir(sessDir, { recursive: true });
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn().mockResolvedValue(absentAuthority(sessDir)) },
+      });
       await expect(
         toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} }),
-      ).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+      ).rejects.toThrow('SESSION_DIR_NOT_FOUND');
     } finally {
       await ws.cleanup();
     }
@@ -252,10 +276,18 @@ describe('toolBefore — host tool fail-closed resolution', () => {
       const sessDir = path.join(ws.tmpDir, 'sess-corrupt');
       await fs.mkdir(sessDir, { recursive: true });
       await fs.writeFile(path.join(sessDir, 'session-state.json'), '{ corrupt json', 'utf8');
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: {
+          resolveSessionAuthority: vi.fn().mockResolvedValue({
+            status: 'unavailable',
+            code: 'PARSE_FAILED',
+            reason: 'state file is not valid JSON',
+          }),
+        },
+      });
       await expect(
         toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} }),
-      ).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+      ).rejects.toThrow('PARSE_FAILED');
     } finally {
       await ws.cleanup();
     }
@@ -277,7 +309,9 @@ describe('toolBefore — host tool fail-closed resolution', () => {
           },
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       await expect(
         toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} }),
       ).rejects.toThrow('SESSION_ERROR');
@@ -291,7 +325,9 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-plan');
       await seedSession(sessDir, makeState('PLAN'));
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       let caught: unknown;
       try {
         await toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} });
@@ -318,7 +354,9 @@ describe('toolBefore — host tool fail-closed resolution', () => {
         sessDir,
         makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       let caught: unknown;
       try {
         await toolBefore(
@@ -349,10 +387,16 @@ describe('toolBefore — host tool fail-closed resolution', () => {
       });
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
-        riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn(() => ws.tmpDir) },
-        discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn(() => ws.tmpDir) },
+        riskDeps: {
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
+          getWorktreeRoot: vi.fn(() => ws.tmpDir),
+        },
+        discoveryHealthDeps: {
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
+          getWorkspaceDir: vi.fn(() => ws.tmpDir),
+        },
       });
       await expect(
         toolBefore(
@@ -361,7 +405,7 @@ describe('toolBefore — host tool fail-closed resolution', () => {
           { args: { command: 'echo' } },
         ),
       ).resolves.toBeUndefined();
-      expect(runtime.auditDeps.getSessionDir).toHaveBeenCalled();
+      expect(runtime.auditDeps.resolveSessionAuthority).toHaveBeenCalled();
     } finally {
       await ws.cleanup();
     }
@@ -400,7 +444,7 @@ describe('toolBefore — command scope', () => {
       const state = makeState('IMPL_REVIEW');
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
       });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
@@ -421,7 +465,9 @@ describe('toolBefore — command scope', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-plan');
       await seedSession(sessDir, makeState('PLAN'));
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await expect(
         toolBefore(
@@ -445,7 +491,9 @@ describe('toolBefore — command scope', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await expect(
         toolBefore(runtime, { tool: 'flowguard_implement', sessionID: SESSION_ID }, { args: {} }),
@@ -464,7 +512,9 @@ describe('toolBefore — command scope', () => {
         implementationRework: { rejectedDigest: 'digest-x', exhausted: true },
       });
       await seedSession(sessDir, exhaustedState);
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await expect(
         toolBefore(runtime, { tool: 'flowguard_implement', sessionID: SESSION_ID }, { args: {} }),
@@ -484,7 +534,7 @@ describe('toolBefore — command scope', () => {
       });
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
       });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
@@ -506,7 +556,9 @@ describe('toolBefore — command scope', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await expect(
         toolBefore(
@@ -530,10 +582,16 @@ describe('toolBefore — command scope', () => {
       });
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
-        riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn(() => ws.tmpDir) },
-        discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn(() => ws.tmpDir) },
+        riskDeps: {
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
+          getWorktreeRoot: vi.fn(() => ws.tmpDir),
+        },
+        discoveryHealthDeps: {
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
+          getWorkspaceDir: vi.fn(() => ws.tmpDir),
+        },
       });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await expect(
@@ -557,7 +615,9 @@ describe('toolBefore — command scope', () => {
         implementationRework: { rejectedDigest: 'digest-x', exhausted: false },
       });
       await seedSession(sessDir, state);
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       for (const tool of ['read', 'glob', 'grep']) {
         await expect(
@@ -579,7 +639,9 @@ describe('toolBefore — command scope', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       for (const tool of ['read', 'glob', 'grep']) {
         await expect(
@@ -622,10 +684,16 @@ describe('toolBefore — command scope', () => {
       });
       await seedSession(sessDir, postRerecordState);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, postRerecordState),
-        riskDeps: { getSessionDir: vi.fn(), getWorktreeRoot: vi.fn(() => ws.tmpDir) },
-        discoveryHealthDeps: { getSessionDir: vi.fn(), getWorkspaceDir: vi.fn(() => ws.tmpDir) },
+        riskDeps: {
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
+          getWorktreeRoot: vi.fn(() => ws.tmpDir),
+        },
+        discoveryHealthDeps: {
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
+          getWorkspaceDir: vi.fn(() => ws.tmpDir),
+        },
       });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       // The afterhook latched the continuation when it observed the active
@@ -661,7 +729,9 @@ describe('toolBefore — command scope', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       for (const tool of ['read', 'bash', 'flowguard_implement']) {
         await expect(
@@ -688,7 +758,9 @@ describe('toolBefore — command scope', () => {
           implementationRework: { rejectedDigest: 'digest-x', exhausted: true },
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       runtime.checkReworkContinuations.add(SESSION_ID);
       for (const tool of ['read', 'bash', 'flowguard_implement']) {
@@ -712,7 +784,7 @@ describe('toolBefore — command scope', () => {
       const state = makeState('IMPL_REVIEW');
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
       });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
@@ -738,7 +810,9 @@ describe('toolBefore — command scope', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         }),
       );
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       runtime.activeCommandScopes.set(SESSION_ID, 'check');
       await expect(
         toolBefore(
@@ -768,7 +842,7 @@ describe('toolBefore — workflow reconciliation gate', () => {
       const state = makeState('PLAN');
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
       });
       await expect(
@@ -800,7 +874,7 @@ describe('toolBefore — workflow reconciliation gate', () => {
       const state = makeState('COMPLETE');
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
       });
       await expect(
@@ -925,11 +999,11 @@ describe('toolBefore — observation capability parent binding', () => {
       );
       await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
-        auditDeps: {
-          ...makeAuditDeps(sessDir, persisted),
+        ws: {
           cachedFingerprint: fingerprint,
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
         },
+        auditDeps: makeAuditDeps(sessDir, persisted),
       });
       const childId = crypto.randomUUID();
       await expect(
@@ -950,12 +1024,14 @@ describe('toolBefore — observation capability parent binding', () => {
       const { parentId, sessDir, fingerprint, state } = await seedParentWithCapability(ws);
       const runtime = makeRuntime({
         ws: {
-          getSessionDir: vi.fn((sid: string) => (sid === parentId ? sessDir : null)),
-        },
-        auditDeps: {
-          ...makeAuditDeps(sessDir, state),
           cachedFingerprint: fingerprint,
+          resolveSessionAuthority: vi.fn(async (sid: string) =>
+            sid === parentId
+              ? resolvedAuthority(state, sessDir)
+              : unavailableAuthority('NO_WORKTREE'),
+          ),
         },
+        auditDeps: makeAuditDeps(sessDir, state),
       });
       await expect(
         toolBefore(
@@ -964,7 +1040,7 @@ describe('toolBefore — observation capability parent binding', () => {
           { args: { capability: CAPABILITY, revision: 'head', path: 'src/foo.ts' } },
         ),
       ).resolves.toBeUndefined();
-      expect(runtime.auditDeps.getSessionDir).toHaveBeenCalledWith(parentId);
+      expect(runtime.auditDeps.resolveSessionAuthority).toHaveBeenCalledWith(parentId);
     } finally {
       await ws.cleanup();
     }
@@ -986,7 +1062,8 @@ describe('toolBefore — observation capability parent binding', () => {
     try {
       const fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
       const runtime = makeRuntime({
-        auditDeps: { ...makeAuditDeps(null, null), cachedFingerprint: fingerprint },
+        ws: { cachedFingerprint: fingerprint },
+        auditDeps: makeAuditDeps(null, null),
       });
       await expect(
         toolBefore(
@@ -1002,7 +1079,7 @@ describe('toolBefore — observation capability parent binding', () => {
 
   it('BAD — fails closed when no fingerprint authority exists', async () => {
     const runtime = makeRuntime({
-      auditDeps: { ...makeAuditDeps(null, null), cachedFingerprint: null },
+      auditDeps: makeAuditDeps(null, null),
     });
     await expect(
       toolBefore(
@@ -1046,7 +1123,7 @@ describe('toolBefore — verdict null-arg stripping', () => {
       });
       const runtime = makeRuntime({
         ws: {
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)),
           getEnforcementState: vi.fn(() => enforcement),
         },
       });
@@ -1077,7 +1154,9 @@ describe('toolBefore — verdict null-arg stripping', () => {
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-plan');
       await seedSession(sessDir, makeState('PLAN_REVIEW'));
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       let caught: unknown;
       try {
         await toolBefore(
@@ -1104,7 +1183,7 @@ describe('toolBefore — review implementation tool', () => {
       const state = makeState('IMPL_REVIEW');
       await seedSession(sessDir, state);
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, state),
       });
       await expect(
@@ -1139,7 +1218,7 @@ describe('toolBefore — review implementation tool', () => {
       );
       await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ malformed json\n', 'utf8');
       const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
         auditDeps: makeAuditDeps(sessDir, persisted),
       });
       await expect(
@@ -1175,10 +1254,15 @@ describe('state reads stay consistent', () => {
       const sessDir = path.join(ws.tmpDir, 'sess-check');
       const state = makeState('PLAN');
       await seedSession(sessDir, state);
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
+      const runtime = makeRuntime({
+        ws: { resolveSessionAuthority: vi.fn(() => sessionAuthorityAt(sessDir)) },
+      });
       const loaded = await readState(sessDir);
       expect(loaded?.phase).toBe('PLAN');
-      expect(runtime.ws.getSessionDir(SESSION_ID)).toBe(sessDir);
+      expect(await runtime.ws.resolveSessionAuthority(SESSION_ID)).toMatchObject({
+        status: 'resolved',
+        sessDir,
+      });
     } finally {
       await ws.cleanup();
     }

@@ -13,7 +13,12 @@ import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../../s
 import { readState, writeState } from '../../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../../adapters/workspace/index.js';
 import { hashCanonicalReviewContent } from '../../../shared/review-subject.js';
-import { createTestWorkspace, createToolContext, parseToolResult } from '../../test-helpers.js';
+import {
+  createTestWorkspace,
+  createToolContext,
+  canonicalBinding,
+  parseToolResult,
+} from '../../test-helpers.js';
 import { resolve_implementation_challenge } from '../../tools/challenge/challenge-resolution.js';
 import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
 
@@ -318,6 +323,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   await writeState(
     sessDir,
     makeState('IMPL_REVIEW', {
+      binding: await canonicalBinding(ws.tmpDir, sessionID),
       implementation: {
         implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/example.ts'],

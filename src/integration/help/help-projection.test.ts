@@ -8,6 +8,7 @@ import { resolveCurrentReviewReport } from '../review/evidence/report-coherence.
 import type { ReviewReport } from '../../state/evidence.js';
 import { help } from '../tools/simple/help-tool.js';
 import {
+  canonicalBinding,
   createToolContext,
   createTestWorkspace,
   withTestEnv,
@@ -508,6 +509,7 @@ describe('resume end-to-end via help.execute', () => {
     const fingerprint = await computeFingerprint(ws.tmpDir);
     await writeState(sessionDir(fingerprint.fingerprint, ctx.sessionID), {
       ...makeProgressedState('PLAN_REVIEW'),
+      binding: await canonicalBinding(ws.tmpDir, ctx.sessionID),
       policySnapshot: createPolicySnapshot(
         getPolicyPreset('team'),
         '2026-01-01T00:00:00.000Z',

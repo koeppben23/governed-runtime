@@ -12,12 +12,13 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
+import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { replayObservationCaptures, type ObservationReplayResult } from './observation-replay.js';
 
 export interface ReplayPersistDeps {
-  getSessionDir(sessionId: string): string | null;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
@@ -30,12 +31,8 @@ export interface ReplayPersistDeps {
   logError(message: string, err: unknown): void;
 }
 
-/** Read-only state access for the replay (dependency-injected for tests). */
-export type ReplayStateReader = (sessDir: string) => Promise<SessionState | null>;
-
 export async function replayAndPersistObservations(
   deps: ReplayPersistDeps,
-  readPersistedState: ReplayStateReader,
   input: {
     readonly sessionId: string;
     readonly attemptId: string;
@@ -43,10 +40,9 @@ export async function replayAndPersistObservations(
     readonly now: string;
   },
 ): Promise<void> {
-  const sessDir = deps.getSessionDir(input.sessionId);
-  if (!sessDir) return;
-  const state = await readPersistedState(sessDir);
-  if (!state) return;
+  const resolution = await deps.resolveSessionAuthority(input.sessionId);
+  if (resolution.status !== 'resolved') return;
+  const { sessDir, state } = resolution;
 
   let replay: ObservationReplayResult;
   try {
