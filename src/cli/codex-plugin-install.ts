@@ -27,7 +27,11 @@ interface CodexMarketplace {
   [key: string]: unknown;
 }
 
-export type CodexInstallStatus = 'INSTALLED_AND_REGISTERED' | 'INSTALLED_NOT_ACTIVATED';
+export type CodexInstallStatus =
+  | 'INSTALLED_AND_REGISTERED'
+  | 'INSTALLED_NOT_ACTIVATED'
+  | 'MARKETPLACE_UNREADABLE'
+  | 'MARKETPLACE_MALFORMED';
 
 export function resolveCodexPluginRoot(scope: InstallScope): string {
   if (scope === 'global') return join(homedir(), '.codex', 'plugins', CODEX_PLUGIN_NAME);
@@ -187,25 +191,24 @@ async function doRegister(
   }
 
   if (originalContent !== null) {
-    try {
-      marketplace =
-        originalContent.trim().length > 0
-          ? (JSON.parse(originalContent) as CodexMarketplace)
-          : { plugins: [] };
-      action = 'merged';
-    } catch {
-      // Corrupted JSON — save raw backup and abort
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      await writeFile(
-        `${marketplacePath}.flowguard-corrupted-backup-${timestamp}-${randomUUID()}`,
-        originalContent,
-        { flag: 'wx' },
-      );
-      throw new CliInstallError(
-        'CODEX_MARKETPLACE_CORRUPTED',
-        'Marketplace JSON is corrupted. A raw backup was saved. Inspect the backup before retrying.',
-      );
+    if (originalContent.trim().length > 0) {
+      const parsed = parseCodexMarketplace(originalContent);
+      if (parsed === null) {
+        // Corrupted JSON or unrecognizable marketplace shape — save raw backup and abort
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        await writeFile(
+          `${marketplacePath}.flowguard-corrupted-backup-${timestamp}-${randomUUID()}`,
+          originalContent,
+          { flag: 'wx' },
+        );
+        throw new CliInstallError(
+          'CODEX_MARKETPLACE_CORRUPTED',
+          'Marketplace JSON is corrupted or has an unrecognizable shape. A raw backup was saved. Inspect the backup before retrying.',
+        );
+      }
+      marketplace = parsed;
     }
+    action = 'merged';
   }
 
   if (isAlreadyRegistered(marketplace, scope)) {
@@ -213,7 +216,9 @@ async function doRegister(
   }
 
   const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-  const filtered = plugins.filter((plugin) => plugin.name !== CODEX_PLUGIN_NAME);
+  const filtered = plugins.filter(
+    (plugin) => typeof plugin !== 'object' || plugin === null || plugin.name !== CODEX_PLUGIN_NAME,
+  );
   if (!marketplace.name) marketplace.name = CODEX_PLUGIN_NAME;
   marketplace.plugins = [...filtered, entry];
 
@@ -257,22 +262,56 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
 
 function isAlreadyRegistered(marketplace: CodexMarketplace, scope: InstallScope): boolean {
   const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-  const idx = plugins.findIndex((plugin) => plugin.name === CODEX_PLUGIN_NAME);
+  const idx = plugins.findIndex(
+    (plugin) => typeof plugin === 'object' && plugin !== null && plugin.name === CODEX_PLUGIN_NAME,
+  );
   return idx >= 0 && plugins[idx]?.source?.path === codexMarketplaceSourcePath(scope);
 }
 
-function isRegisteredFlowGuardEntry(
-  entry: CodexMarketplaceEntry | undefined,
-  scope: InstallScope,
-): boolean {
-  if (!entry) return false;
+/**
+ * Shape-validate a marketplace document without depending on accidental
+ * property-access throws: the top level must be a plain object and `plugins`,
+ * when present, must be an array. Returns null for malformed documents so
+ * callers can classify them explicitly.
+ */
+function parseCodexMarketplace(raw: string): CodexMarketplace | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const marketplace = parsed as Record<string, unknown>;
+  if ('plugins' in marketplace && !Array.isArray(marketplace['plugins'])) return null;
+  return parsed as CodexMarketplace;
+}
+
+function isFlowGuardEntryShape(entry: unknown): boolean {
+  if (typeof entry !== 'object' || entry === null) return false;
+  const candidate = entry as { source?: unknown; policy?: unknown };
+  return (
+    typeof candidate.source === 'object' &&
+    candidate.source !== null &&
+    typeof candidate.policy === 'object' &&
+    candidate.policy !== null
+  );
+}
+
+function isRegisteredFlowGuardEntry(entry: unknown, scope: InstallScope): boolean {
+  if (typeof entry !== 'object' || entry === null) return false;
+  const candidate = entry as {
+    source?: { source?: unknown; path?: unknown };
+    policy?: { installation?: unknown; authentication?: unknown };
+    category?: unknown;
+  };
 
   return (
-    entry.source.source === 'local' &&
-    entry.source.path === codexMarketplaceSourcePath(scope) &&
-    entry.policy.installation === 'AVAILABLE' &&
-    entry.policy.authentication === 'ON_INSTALL' &&
-    entry.category === 'Productivity'
+    candidate.source?.source === 'local' &&
+    candidate.source.path === codexMarketplaceSourcePath(scope) &&
+    candidate.policy?.installation === 'AVAILABLE' &&
+    candidate.policy.authentication === 'ON_INSTALL' &&
+    candidate.category === 'Productivity'
   );
 }
 
@@ -286,15 +325,24 @@ export function codexInstallStatus(scope: InstallScope): CodexInstallStatus {
     return 'INSTALLED_NOT_ACTIVATED';
   }
 
+  let raw: string;
   try {
-    const marketplace = JSON.parse(readFileSync(marketplacePath, 'utf-8')) as CodexMarketplace;
-    const flowguardEntry = Array.isArray(marketplace.plugins)
-      ? marketplace.plugins.find((plugin) => plugin.name === CODEX_PLUGIN_NAME)
-      : undefined;
-    if (!isRegisteredFlowGuardEntry(flowguardEntry, scope)) {
-      return 'INSTALLED_NOT_ACTIVATED';
-    }
+    raw = readFileSync(marketplacePath, 'utf-8');
   } catch {
+    return 'MARKETPLACE_UNREADABLE';
+  }
+
+  const marketplace = parseCodexMarketplace(raw);
+  if (marketplace === null) return 'MARKETPLACE_MALFORMED';
+
+  const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
+  const flowguardEntry = plugins.find(
+    (plugin) => typeof plugin === 'object' && plugin !== null && plugin.name === CODEX_PLUGIN_NAME,
+  );
+  if (flowguardEntry !== undefined && !isFlowGuardEntryShape(flowguardEntry)) {
+    return 'MARKETPLACE_MALFORMED';
+  }
+  if (!isRegisteredFlowGuardEntry(flowguardEntry, scope)) {
     return 'INSTALLED_NOT_ACTIVATED';
   }
 

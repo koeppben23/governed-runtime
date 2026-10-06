@@ -12,8 +12,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { parse as jsoncParse, type ParseError } from 'jsonc-parser';
 import { ensureDir } from '../adapters/persistence.js';
+import { FlowGuardConfigSchema } from '../config/flowguard-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { CliInstallError } from './errors.js';
 import { hasNonFlowGuardInstructions, type FileOp, type InstallScope } from './install-types.js';
 import {
   OPENCODE_JSON_TEMPLATE,
@@ -33,6 +35,44 @@ export function parseJsonc<T = Record<string, unknown>>(content: string): T {
 
 function isEnoent(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
+}
+
+/**
+ * Parse and schema-validate an existing flowguard.json at an exact path.
+ *
+ * Unlike `readConfig()`, this never falls back to repo/global discovery and
+ * never normalizes: it validates the file the caller is about to merge, so a
+ * malformed JSON document or a valid JSON document with the wrong FlowGuard
+ * shape fails closed with a typed code instead of a raw SyntaxError/TypeError.
+ *
+ * Returns the raw JSON object (unknown keys preserved) so callers can update
+ * and re-persist it without dropping data the schema tolerates.
+ */
+export function parseExistingFlowGuardConfig(
+  raw: string,
+  sourcePath: string,
+): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new CliInstallError(
+      'NON_OPENCODE_CONFIG_INVALID',
+      `Existing FlowGuard config at ${sourcePath} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const validated = FlowGuardConfigSchema.safeParse(parsed);
+  if (!validated.success) {
+    const issue = validated.error.issues[0];
+    const detail = issue
+      ? `${issue.path.join('.') || '<root>'}: ${issue.message}`
+      : 'unknown shape';
+    throw new CliInstallError(
+      'NON_OPENCODE_CONFIG_INVALID',
+      `Existing FlowGuard config at ${sourcePath} is not a valid FlowGuard configuration (${detail}).`,
+    );
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function safeRead(filePath: string): Promise<string | null> {

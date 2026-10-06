@@ -16,15 +16,18 @@ import { CliInstallError } from './errors.js';
 import type { CliArgs, CliResult, FileOp } from './install-types.js';
 import type { RollbackEntry as InstallRollbackEntry } from './install-helpers-rollback.js';
 import { rollbackArtifacts, snapshotForRollback } from './install-helpers-rollback.js';
-import { toCliError } from './install-helpers.js';
+import { InstallError, toCliError } from './install-helpers.js';
 import {
   assertManagedMandatesOwnership,
   assertNoAmbiguousLegacyInstruction,
   deriveInstallOwnershipManifest,
   ownershipManifestPath,
+  readInstallOwnershipManifest,
   type InstallOwnershipManifest,
   writeInstallOwnershipManifest,
 } from './install-ownership.js';
+import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
+import { resolveCodexPluginRoot } from './codex-plugin-install.js';
 import type { InstallContext, SnapshotResult } from './install-steps.js';
 import {
   buildRollbackSnapshot,
@@ -216,6 +219,39 @@ function alreadyInstalledResult(ctx: InstallContext): CliResult {
   };
 }
 
+/**
+ * Fail closed before any mutation when a non-OpenCode target already carries a
+ * FlowGuard plugin manifest but no flowguard.json — i.e. a partial or unproven
+ * install. A valid ownership manifest for the same host/scope proves this is an
+ * incomplete FlowGuard install; otherwise the material is unproven and may be
+ * customer-owned. `--force` is the explicit repair path.
+ */
+async function assertNoPartialNonOpencodeInstall(ctx: InstallContext): Promise<void> {
+  if (ctx.installPlatform === 'opencode' || ctx.args.force) return;
+
+  const marker =
+    ctx.installPlatform === 'claude-code'
+      ? join(resolveClaudeCodePluginRoot(ctx.target), '.claude-plugin', 'plugin.json')
+      : join(resolveCodexPluginRoot(ctx.args.installScope), '.codex-plugin', 'plugin.json');
+  if (!existsSync(marker)) return;
+
+  const ownership = await readInstallOwnershipManifest(ctx.target);
+  if (
+    ownership !== null &&
+    ownership.platform === ctx.installPlatform &&
+    ownership.scope === ctx.args.installScope
+  ) {
+    throw new InstallError(
+      'PARTIAL_INSTALL_CONFLICT',
+      `An incomplete FlowGuard install was detected at ${ctx.target}: ${marker} exists but the FlowGuard config is missing. Re-run with --force to repair it, or run uninstall first.`,
+    );
+  }
+  throw new InstallError(
+    'MANAGED_ARTIFACT_CONFLICT',
+    `${marker} exists but is not a proven FlowGuard-managed artifact; refusing to merge into customer-owned material. Move or rename it, then retry.`,
+  );
+}
+
 export async function install(args: CliArgs): Promise<CliResult> {
   let lock: { release(): void } | null = null;
   try {
@@ -339,6 +375,7 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
     const cfgPath = join(configTargetDir, 'flowguard.json');
     if (existsSync(cfgPath) && !args.force) return alreadyInstalledResult(ctx);
+    await assertNoPartialNonOpencodeInstall(ctx);
 
     await runInstallPreflight(ctx, configTargetDir);
     const tarball = await validateTarball(ctx);

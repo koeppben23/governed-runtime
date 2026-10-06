@@ -14,7 +14,7 @@ import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
-import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
+import { DEFAULT_CONFIG, FlowGuardConfigSchema } from '../config/flowguard-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   claudeCodePluginSnapshotPaths,
@@ -49,7 +49,11 @@ import {
   type InstallErrorCode,
   type InstallPlatform,
 } from './install-types.js';
-import { mergeOpencodeJson, mergePackageJson } from './install-json.js';
+import {
+  mergeOpencodeJson,
+  mergePackageJson,
+  parseExistingFlowGuardConfig,
+} from './install-json.js';
 import type { RollbackEntry } from './install-helpers-rollback.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
 import { assertManagedMandatesOwnership } from './install-ownership.js';
@@ -479,27 +483,49 @@ async function writeNonOpencodeConfig(
       encoding: 'utf-8',
       flag: 'wx',
     });
-    ctx.ops.push({ path: snapshot.cfgPath, action: 'written' });
-    snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
   } catch (err) {
-    if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST') || !ctx.args.force) {
-      if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
-        // File exists, not forced — skip silently
-      } else {
-        throw err;
-      }
-    } else {
-      const existing = JSON.parse(await readFile(snapshot.cfgPath, 'utf-8'));
-      existing.policy.defaultMode = ctx.args.policyMode;
-      await writeFile(snapshot.cfgPath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
-      ctx.ops.push({
-        path: snapshot.cfgPath,
-        action: 'merged',
-        reason: 'policy mode updated via --force',
-      });
-      snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
+    if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+    // The pre-install guard normally rejects an existing config before any
+    // write; reaching EEXIST here means the file appeared concurrently (TOCTOU)
+    // or the path is a dangling symlink. Never skip silently.
+    if (!ctx.args.force) {
+      throw new CliInstallError(
+        'NON_OPENCODE_CONFIG_EXISTS',
+        `FlowGuard config already exists at ${snapshot.cfgPath}; rerun with --force to update it or uninstall first.`,
+      );
     }
+    const existing = parseExistingFlowGuardConfig(
+      await readFile(snapshot.cfgPath, 'utf-8'),
+      snapshot.cfgPath,
+    );
+    const priorPolicy = existing['policy'];
+    const policy =
+      typeof priorPolicy === 'object' && priorPolicy !== null
+        ? { ...(priorPolicy as Record<string, unknown>), defaultMode: ctx.args.policyMode }
+        : { defaultMode: ctx.args.policyMode };
+    const updated = { ...existing, policy };
+    const validated = FlowGuardConfigSchema.safeParse(updated);
+    if (!validated.success) {
+      const issue = validated.error.issues[0];
+      const detail = issue
+        ? `${issue.path.join('.') || '<root>'}: ${issue.message}`
+        : 'unknown shape';
+      throw new CliInstallError(
+        'NON_OPENCODE_CONFIG_INVALID',
+        `Updated FlowGuard config for ${snapshot.cfgPath} would be invalid (${detail}).`,
+      );
+    }
+    await writeFile(snapshot.cfgPath, JSON.stringify(updated, null, 2) + '\n', 'utf-8');
+    ctx.ops.push({
+      path: snapshot.cfgPath,
+      action: 'merged',
+      reason: 'policy mode updated via --force',
+    });
+    snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
+    return;
   }
+  ctx.ops.push({ path: snapshot.cfgPath, action: 'written' });
+  snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
 }
 
 async function writeNewOpencodeConfig(
@@ -593,10 +619,18 @@ export function emitPostInstallWarnings(ctx: InstallContext): void {
       message: `Load FlowGuard in Claude Code with: claude --plugin-dir ${join(target, 'flowguard-plugin')}`,
     });
   } else if (installPlatform === 'codex') {
-    ctx.notices.push({
-      kind: 'status',
-      message: `Codex marketplace registration: ${codexInstallStatus(args.installScope)} at ${resolveCodexMarketplacePath(args.installScope)}`,
-    });
+    const codexStatus = codexInstallStatus(args.installScope);
+    const marketplacePath = resolveCodexMarketplacePath(args.installScope);
+    if (codexStatus === 'MARKETPLACE_UNREADABLE' || codexStatus === 'MARKETPLACE_MALFORMED') {
+      ctx.warnings.push(
+        `Codex marketplace registration could not be verified: ${codexStatus} at ${marketplacePath}. Inspect the file before relying on activation.`,
+      );
+    } else {
+      ctx.notices.push({
+        kind: 'status',
+        message: `Codex marketplace registration: ${codexStatus} at ${marketplacePath}`,
+      });
+    }
     ctx.warnings.push('Codex native plugin load: NOT_VERIFIED_NATIVE_LOAD');
     ctx.warnings.push(
       'Codex plugin hooks require [features].plugin_hooks = true and /hooks trust review before enforcement is verified.',
