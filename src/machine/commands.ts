@@ -10,10 +10,12 @@
  * - READY is the entry phase where users select a flow (/ticket, /architecture, /review).
  * - The policy map is the single authority for terminal handling: flow commands
  *   are explicit non-terminal sets, `/continue` is `'non-terminal'`, and the
- *   recovery escapes `/hydrate` and `/abort` are `'all-phases'` (both are
- *   idempotent no-ops on terminal phases — see rails/hydrate.ts and
- *   rails/abort.ts #421 — so denying them would break the documented recovery
- *   path without protecting any transition).
+ *   recovery escapes are `'all-phases'`:
+ *   - `/abort` is a strict idempotent no-op on terminal phases
+ *     (rails/abort.ts, #421).
+ *   - `/hydrate` is the bootstrap/reload/recovery entrypoint; it performs no
+ *     terminal transition, and its explicit `claimedTaskClass` recovery remains
+ *     subject to the separately tracked G22 surface.
  *
  * @version v4
  */

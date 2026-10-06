@@ -18,7 +18,9 @@
  * - state.phase === "ABORTED"
  * - state.error !== null (code: "ABORTED")
  * - state.transition.event === "ABORT"
- * - The session is terminal — no further commands except /review
+ * - The session is terminal: flow commands and /continue are blocked by the
+ *   command policy, while /hydrate (start a new session) and /abort (this
+ *   idempotent no-op) remain available. /review is not admissible at terminal.
  *
  * Distinguishing aborted from completed:
  * - Normal completion: state.error === null at COMPLETE

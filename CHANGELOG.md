@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Terminal command admissibility (#G6).** Command policy and terminal
-  handling no longer diverge for `/hydrate` and `/abort`: both are recovery
-  escapes available in every phase (idempotent no-ops once terminal), while
-  flow commands and `/continue` stay blocked in terminal phases. `/status`
-  now reports `['/hydrate', '/abort']` for terminal sessions.
+  handling no longer diverge for `/hydrate` and `/abort`: `/abort` is an
+  idempotent no-op on terminal phases, and `/hydrate` stays available as the
+  bootstrap/reload/recovery entrypoint (no terminal transition; its explicit
+  `claimedTaskClass` recovery remains G22). Flow commands and `/continue` stay
+  blocked in terminal phases, and help/status project the same command policy;
+  `/status` reports `['/hydrate', '/abort']` for terminal sessions.
 
 - **Fail-closed hook protocol delivery (#H6).** Hook DENY responses now share
   one stdout transport primitive for sync-throw, write-callback, and stream
