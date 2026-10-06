@@ -205,10 +205,35 @@ describe('install-helpers', () => {
   });
 
   describe('rollbackArtifacts', () => {
-    it('removes a newly created directory tree using explicit recursion', async () => {
+    it('removes a fully journaled newly created directory tree', async () => {
       const rollbackRoot = path.join(tmpDir, 'created');
-      await fs.mkdir(path.join(rollbackRoot, 'nested'), { recursive: true });
-      await fs.writeFile(path.join(rollbackRoot, 'nested', 'artifact.txt'), 'artifact', 'utf-8');
+      const nested = path.join(rollbackRoot, 'nested');
+      const artifact = path.join(nested, 'artifact.txt');
+      await fs.mkdir(nested, { recursive: true });
+      await fs.writeFile(artifact, 'artifact', 'utf-8');
+      const ops: Array<{ path: string; action: 'removed'; reason: string }> = [];
+      const errors: string[] = [];
+
+      await rollbackArtifacts(
+        [
+          { path: rollbackRoot, existed: false, expectedKind: 'directory', sequence: 1 },
+          { path: nested, existed: false, expectedKind: 'directory', sequence: 2 },
+          { path: artifact, existed: false, expectedKind: 'file', sequence: 3 },
+        ],
+        ops,
+        errors,
+      );
+
+      await expect(fs.lstat(rollbackRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(errors).toEqual([]);
+      expect(ops).toHaveLength(3);
+    });
+
+    it('preserves an unjournaled foreign file inside a newly created directory', async () => {
+      const rollbackRoot = path.join(tmpDir, 'created');
+      const foreignFile = path.join(rollbackRoot, 'foreign.txt');
+      await fs.mkdir(rollbackRoot);
+      await fs.writeFile(foreignFile, 'external content', 'utf-8');
       const ops: Array<{ path: string; action: 'removed'; reason: string }> = [];
       const errors: string[] = [];
 
@@ -218,9 +243,9 @@ describe('install-helpers', () => {
         errors,
       );
 
-      await expect(fs.lstat(rollbackRoot)).rejects.toMatchObject({ code: 'ENOENT' });
-      expect(errors).toEqual([]);
-      expect(ops).toHaveLength(1);
+      expect(errors.join('\n')).toContain('did not journal as its own');
+      await expect(fs.readFile(foreignFile, 'utf-8')).resolves.toBe('external content');
+      expect(ops).toEqual([]);
     });
 
     it('rejects a symlink swapped into a newly created rollback target', async () => {
@@ -240,7 +265,7 @@ describe('install-helpers', () => {
       await expect(fs.readFile(externalFile, 'utf-8')).resolves.toBe('must remain intact');
     });
 
-    it('rejects a symlink inside a newly created rollback directory', async () => {
+    it('preserves a symlink inside a newly created rollback directory', async () => {
       const rollbackRoot = path.join(tmpDir, 'created');
       const externalFile = path.join(tmpDir, 'external.txt');
       await fs.mkdir(rollbackRoot);
@@ -254,8 +279,10 @@ describe('install-helpers', () => {
         errors,
       );
 
-      expect(errors.join('\n')).toContain('contains a symlink');
+      // Non-empty after removing journaled content: preserved, never traversed.
+      expect(errors.join('\n')).toContain('did not journal as its own');
       await expect(fs.readFile(externalFile, 'utf-8')).resolves.toBe('must remain intact');
+      await expect(fs.lstat(path.join(rollbackRoot, 'link.txt'))).resolves.toMatchObject({});
     });
   });
 

@@ -24,7 +24,8 @@ import {
 import { computeMandatesDigest } from './install.js';
 import { measureAsync } from '../test-policy.js';
 import { withTestEnv } from '../integration/test-helpers.js';
-import { resolveCodexMarketplaceRoot } from './codex-plugin-install.js';
+import { resolveCodexMarketplaceRoot, codexInstallStatus } from './codex-plugin-install.js';
+import { writeInstallOwnershipManifest } from './install-ownership.js';
 import {
   VERSION,
   tmpDir,
@@ -37,6 +38,8 @@ import {
 const fsMockState = vi.hoisted(() => ({
   failMarketplaceLockCleanup: false,
   failMarketplaceRename: false,
+  preCreateNonOpencodeConfig: false,
+  preCreatePluginArtifact: false,
 }));
 
 // ─── Mock: child_process ──────────────────────────────────────────────────────
@@ -100,7 +103,32 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return {
     ...actual,
     readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
-    writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
+    writeFile: vi.fn(async (...args: Parameters<typeof actual.writeFile>) => {
+      const options = args[2];
+      if (
+        fsMockState.preCreateNonOpencodeConfig &&
+        args[0].toString().endsWith('flowguard.json') &&
+        typeof options === 'object' &&
+        options?.flag === 'wx'
+      ) {
+        // Simulate a concurrent writer creating the config between preflight
+        // and the exclusive write, so the late-EEXIST branch is exercised.
+        fsMockState.preCreateNonOpencodeConfig = false;
+        await actual.writeFile(...args);
+      }
+      if (
+        fsMockState.preCreatePluginArtifact &&
+        args[0].toString().endsWith('/hooks/hooks.json') &&
+        typeof options === 'object' &&
+        options?.flag === 'wx'
+      ) {
+        // Simulate a concurrent writer creating a plugin artifact after the
+        // preflight; the content is not FlowGuard's own generated content.
+        fsMockState.preCreatePluginArtifact = false;
+        await actual.writeFile(args[0], '{"hooks":{"foreign":true}}');
+      }
+      return actual.writeFile(...args);
+    }),
     rename: vi.fn((...args: Parameters<typeof actual.rename>) => {
       if (fsMockState.failMarketplaceRename && args[1].toString().endsWith('marketplace.json')) {
         throw new Error('Simulated marketplace rename failure');
@@ -1648,6 +1676,313 @@ describe('cli/install', () => {
         await install(repoArgs({ coreTarball: tarball }));
       });
       expect(elapsedMs).toBeLessThan(500);
+    });
+  });
+
+  // ─── C1: non-OpenCode config and partial-install outcomes ──
+  describe('C1 — non-OpenCode config skip/error paths', () => {
+    function ownershipManifest(platform: 'claude-code' | 'codex') {
+      return {
+        schemaVersion: 1 as const,
+        platform,
+        scope: 'repo' as const,
+        packageJson: {
+          created: true,
+          zodAdded: true,
+          previousCoreDependency: null,
+          installedCoreDependency: 'file:./vendor/flowguard-core.tgz',
+        },
+      };
+    }
+
+    it('fails closed when the --force merge hits malformed JSON', async () => {
+      const tarball = await createMockTarball();
+      await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, '.claude', 'flowguard.json'), '{broken', 'utf-8');
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
+      );
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errorDetails?.some((e) => e.code === 'NON_OPENCODE_CONFIG_INVALID')).toBe(true);
+    });
+
+    it('fails closed when the --force merge hits a wrong FlowGuard shape', async () => {
+      const tarball = await createMockTarball();
+      await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, '.claude', 'flowguard.json'),
+        JSON.stringify({ policy: 'team' }),
+        'utf-8',
+      );
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'NON_OPENCODE_CONFIG_INVALID')).toBe(true);
+    });
+
+    it('merges a minimal schema-valid config without a TypeError', async () => {
+      const tarball = await createMockTarball();
+      await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, '.claude', 'flowguard.json'),
+        JSON.stringify({ schemaVersion: 'v1' }),
+        'utf-8',
+      );
+
+      const result = await install(
+        repoArgs({
+          coreTarball: tarball,
+          installPlatform: 'claude-code',
+          force: true,
+          policyMode: 'team',
+        }),
+      );
+
+      expect(result.errors).toEqual([]);
+      const merged = await fs.readFile(path.join(tmpDir, '.claude', 'flowguard.json'), 'utf-8');
+      expect(JSON.parse(merged).policy.defaultMode).toBe('team');
+    });
+
+    it('fails closed on a late EEXIST instead of skipping silently', async () => {
+      const tarball = await createMockTarball();
+      fsMockState.preCreateNonOpencodeConfig = true;
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'NON_OPENCODE_CONFIG_EXISTS')).toBe(true);
+      expect(existsSync(path.join(tmpDir, '.claude', 'flowguard-plugin', 'INSTALL.md'))).toBe(
+        false,
+      );
+    });
+
+    it('blocks an unproven pre-existing plugin tree before any write', async () => {
+      const tarball = await createMockTarball();
+      const marker = path.join(
+        tmpDir,
+        '.claude',
+        'flowguard-plugin',
+        '.claude-plugin',
+        'plugin.json',
+      );
+      await fs.mkdir(path.dirname(marker), { recursive: true });
+      await fs.writeFile(marker, '{"name":"foreign"}', 'utf-8');
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'MANAGED_ARTIFACT_CONFLICT')).toBe(true);
+      expect(existsSync(path.join(tmpDir, '.claude', 'flowguard-plugin', 'INSTALL.md'))).toBe(
+        false,
+      );
+      expect(existsSync(path.join(tmpDir, '.claude', 'flowguard.json'))).toBe(false);
+    });
+
+    it('blocks a Claude tree whose only artifact is a stale hooks/hooks.json', async () => {
+      const tarball = await createMockTarball();
+      const hooksPath = path.join(tmpDir, '.claude', 'flowguard-plugin', 'hooks', 'hooks.json');
+      await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+      await fs.writeFile(hooksPath, '{"hooks":{}}', 'utf-8');
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'MANAGED_ARTIFACT_CONFLICT')).toBe(true);
+      expect(
+        existsSync(
+          path.join(tmpDir, '.claude', 'flowguard-plugin', '.claude-plugin', 'plugin.json'),
+        ),
+      ).toBe(false);
+    });
+
+    it('blocks a Codex tree whose only artifact is a stale .mcp.json', async () => {
+      const tarball = await createMockTarball();
+      const mcpPath = path.join(tmpDir, 'plugins', 'flowguard', '.mcp.json');
+      await fs.mkdir(path.dirname(mcpPath), { recursive: true });
+      await fs.writeFile(mcpPath, '{"mcpServers":{}}', 'utf-8');
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errorDetails?.some((e) => e.code === 'MANAGED_ARTIFACT_CONFLICT')).toBe(true);
+      expect(
+        existsSync(path.join(tmpDir, 'plugins', 'flowguard', '.codex-plugin', 'plugin.json')),
+      ).toBe(false);
+    });
+
+    it('classifies a stale Codex .mcp.json as PARTIAL_INSTALL_CONFLICT when ownership is proven', async () => {
+      const tarball = await createMockTarball();
+      const target = path.join(tmpDir, 'plugins', 'flowguard');
+      const mcpPath = path.join(target, '.mcp.json');
+      await fs.mkdir(target, { recursive: true });
+      await fs.writeFile(mcpPath, '{"mcpServers":{}}', 'utf-8');
+      await writeInstallOwnershipManifest(target, ownershipManifest('codex'));
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errorDetails?.some((e) => e.code === 'PARTIAL_INSTALL_CONFLICT')).toBe(true);
+    });
+
+    it('blocks a proven partial FlowGuard install with PARTIAL_INSTALL_CONFLICT', async () => {
+      const tarball = await createMockTarball();
+      const target = path.join(tmpDir, '.claude');
+      const marker = path.join(target, 'flowguard-plugin', '.claude-plugin', 'plugin.json');
+      await fs.mkdir(path.dirname(marker), { recursive: true });
+      await fs.writeFile(marker, '{"name":"flowguard"}', 'utf-8');
+      await writeInstallOwnershipManifest(target, ownershipManifest('claude-code'));
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'PARTIAL_INSTALL_CONFLICT')).toBe(true);
+    });
+
+    it('blocks a proven partial Codex install with PARTIAL_INSTALL_CONFLICT', async () => {
+      const tarball = await createMockTarball();
+      const target = path.join(tmpDir, 'plugins', 'flowguard');
+      const marker = path.join(target, '.codex-plugin', 'plugin.json');
+      await fs.mkdir(path.dirname(marker), { recursive: true });
+      await fs.writeFile(marker, '{"name":"flowguard"}', 'utf-8');
+      await writeInstallOwnershipManifest(target, ownershipManifest('codex'));
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errorDetails?.some((e) => e.code === 'PARTIAL_INSTALL_CONFLICT')).toBe(true);
+    });
+
+    it('fails closed when a plugin artifact appears after the preflight and preserves it', async () => {
+      const tarball = await createMockTarball();
+      fsMockState.preCreatePluginArtifact = true;
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'NON_OPENCODE_ARTIFACT_EXISTS')).toBe(
+        true,
+      );
+      // Rollback removed the artifacts written earlier in the same run.
+      expect(
+        existsSync(
+          path.join(tmpDir, '.claude', 'flowguard-plugin', '.claude-plugin', 'plugin.json'),
+        ),
+      ).toBe(false);
+      expect(existsSync(path.join(tmpDir, '.claude', 'flowguard.json'))).toBe(false);
+      // The concurrently created foreign file is preserved, and rollback
+      // reports the non-empty directory instead of deleting foreign content.
+      const racedHooks = path.join(tmpDir, '.claude', 'flowguard-plugin', 'hooks', 'hooks.json');
+      expect(await fs.readFile(racedHooks, 'utf-8')).toBe('{"hooks":{"foreign":true}}');
+      expect(result.errorDetails?.some((e) => e.code === 'ROLLBACK_DIRECTORY_NOT_EMPTY')).toBe(
+        true,
+      );
+    });
+
+    it('rewrites a Codex entry with a matching path but wrong policy', async () => {
+      const tarball = await createMockTarball();
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      await fs.writeFile(
+        marketplacePath,
+        JSON.stringify({
+          plugins: [
+            {
+              name: 'flowguard',
+              source: { source: 'local', path: './plugins/flowguard' },
+              policy: { installation: 'DISABLED', authentication: 'OFF' },
+              category: 'SomethingElse',
+            },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errors).toEqual([]);
+      const marketplace = JSON.parse(await fs.readFile(marketplacePath, 'utf-8'));
+      const flowguardEntries = marketplace.plugins.filter(
+        (plugin: { name?: string }) => plugin.name === 'flowguard',
+      );
+      expect(flowguardEntries).toHaveLength(1);
+      expect(flowguardEntries[0].policy).toEqual({
+        installation: 'AVAILABLE',
+        authentication: 'ON_INSTALL',
+      });
+      expect(flowguardEntries[0].category).toBe('Productivity');
+      expect(codexInstallStatus('repo')).toBe('INSTALLED_AND_REGISTERED');
+    });
+
+    it('repairs a structurally malformed Codex FlowGuard entry at the matching path', async () => {
+      const tarball = await createMockTarball();
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      await fs.writeFile(
+        marketplacePath,
+        JSON.stringify({
+          plugins: [
+            { name: 'flowguard', source: { source: 'local', path: './plugins/flowguard' } },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errors).toEqual([]);
+      expect(codexInstallStatus('repo')).toBe('INSTALLED_AND_REGISTERED');
+    });
+
+    it('canonicalizes duplicate Codex FlowGuard entries to exactly one', async () => {
+      const tarball = await createMockTarball();
+      const canonical = {
+        name: 'flowguard',
+        source: { source: 'local', path: './plugins/flowguard' },
+        policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+        category: 'Productivity',
+      };
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      await fs.writeFile(
+        marketplacePath,
+        JSON.stringify({ plugins: [canonical, { ...canonical }] }),
+        'utf-8',
+      );
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errors).toEqual([]);
+      const marketplace = JSON.parse(await fs.readFile(marketplacePath, 'utf-8'));
+      expect(
+        marketplace.plugins.filter((plugin: { name?: string }) => plugin.name === 'flowguard'),
+      ).toHaveLength(1);
+      expect(codexInstallStatus('repo')).toBe('INSTALLED_AND_REGISTERED');
+    });
+
+    it('repairs a conflicting plugin tree with --force', async () => {
+      const tarball = await createMockTarball();
+      const marker = path.join(
+        tmpDir,
+        '.claude',
+        'flowguard-plugin',
+        '.claude-plugin',
+        'plugin.json',
+      );
+      await fs.mkdir(path.dirname(marker), { recursive: true });
+      await fs.writeFile(marker, '{"name":"foreign"}', 'utf-8');
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, '.claude', 'flowguard.json'))).toBe(true);
     });
   });
 });

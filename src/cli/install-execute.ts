@@ -14,6 +14,7 @@ import type { FlowGuardLogger } from '../logging/logger.js';
 import { doctor } from './doctor-command.js';
 import { install } from './install-command.js';
 import { detectInstalledArtifacts, formatTargetPath, resolveTarget } from './install-helpers.js';
+import { classifyInstallOutcome } from './install-outcome.js';
 import { formatDoctor, formatResult } from './install-output.js';
 import { uninstall } from './uninstall-command.js';
 import { resolvePackageRoot, SHIPPED_EXECUTABLE_CHECK } from './install-types.js';
@@ -66,11 +67,16 @@ async function executeInstallAction(args: CliArgs, cliLog: FlowGuardLogger): Pro
   console.log(`  Policy mode: ${args.policyMode}`);
   console.log('');
   console.log(formatResult(result));
-  if (result.errors.length > 0) {
-    cliLog.warn('cli', 'install had errors', { errorCount: result.errors.length });
+  const outcome = classifyInstallOutcome(result);
+  console.log(`  Outcome: ${outcome}`);
+  if (outcome === 'failed') {
+    cliLog.warn('cli', 'install had errors', {
+      errorCount: result.errors.length,
+      outcome,
+    });
     return 1;
   }
-  cliLog.info('cli', 'install completed', { filesWritten: result.ops.length });
+  cliLog.info('cli', 'install completed', { outcome, filesWritten: result.ops.length });
   return 0;
 }
 

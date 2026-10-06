@@ -172,14 +172,23 @@ export function buildPlatformTrustReport(
   }
 
   if (host === 'codex') {
+    const codexStatus = codexInstallStatus(scope);
     checks.push({
       file: resolveCodexMarketplacePath(scope),
-      status: codexInstallStatus(scope) === 'INSTALLED_AND_REGISTERED' ? 'warn' : 'missing',
-      detail: `Codex marketplace registration: ${codexInstallStatus(scope)}; native load NOT_VERIFIED_NATIVE_LOAD`,
+      status: codexMarketplaceDoctorStatus(codexStatus),
+      detail: `Codex marketplace registration: ${codexStatus}; native load NOT_VERIFIED_NATIVE_LOAD`,
     });
   }
 
   return checks;
+}
+
+function codexMarketplaceDoctorStatus(
+  status: ReturnType<typeof codexInstallStatus>,
+): DoctorCheck['status'] {
+  if (status === 'INSTALLED_AND_REGISTERED') return 'warn';
+  if (status === 'MARKETPLACE_UNREADABLE' || status === 'MARKETPLACE_MALFORMED') return 'error';
+  return 'missing';
 }
 
 function hostActivationStatus(
@@ -193,5 +202,5 @@ function hostActivationStatus(
       ? 'warn'
       : 'missing';
   }
-  return codexInstallStatus(scope) === 'INSTALLED_AND_REGISTERED' ? 'warn' : 'missing';
+  return codexMarketplaceDoctorStatus(codexInstallStatus(scope));
 }

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Non-OpenCode installer fail-closed config handling (#956).** Claude Code
+  and Codex installs no longer skip an existing `flowguard.json` silently: a
+  late conflicting write fails closed with `NON_OPENCODE_CONFIG_EXISTS`, and a
+  malformed or wrong-shape existing config fails with
+  `NON_OPENCODE_CONFIG_INVALID` instead of a raw `SyntaxError`/`TypeError`. A
+  pre-existing FlowGuard plugin tree without a complete install now blocks
+  before any write (`PARTIAL_INSTALL_CONFLICT` when FlowGuard ownership is
+  proven, `MANAGED_ARTIFACT_CONFLICT` for unproven/customer-owned material).
+  Codex marketplace diagnostics distinguish
+  `INSTALLED_AND_REGISTERED`, `INSTALLED_NOT_ACTIVATED`,
+  `MARKETPLACE_UNREADABLE`, and `MARKETPLACE_MALFORMED`; installer error codes
+  are preserved end-to-end in recovery output; and `flowguard install` prints
+  the derived outcome (`applied`, `skipped`, or `failed`).
+
 ### Changed
 
 - **Single canonical session authority (#957).** Plugin hooks, tool execution,
