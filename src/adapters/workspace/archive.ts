@@ -38,9 +38,24 @@ import {
 import { inspectArchiveTar } from './archive-tar.js';
 import { publishArchiveArtifacts, removeArchiveArtifacts } from './archive-publish.js';
 
-export interface ArchiveSessionOptions {
+/** Redaction shape shared by every archive entrypoint. */
+export interface ArchivePayloadOptions {
   readonly redactionMode: RedactionMode;
   readonly includeRaw: boolean;
+}
+
+/**
+ * User-configurable archive options.
+ *
+ * `worktree` is required: the archive config chain (repo `.opencode/flowguard.json`
+ * → global config) is authoritative for `allowRawExport`, `allowedModes`, and the
+ * redacted-archive `maxAuditEvents` limit. A caller without a canonical worktree
+ * would silently fall back to global-only config — the exact divergence this
+ * contract forbids.
+ */
+export interface ArchiveSessionOptions extends ArchivePayloadOptions {
+  /** Canonical worktree root (authority-validated). */
+  readonly worktree: string;
 }
 
 export function archiveFileName(sessionId: string, regulatedEvidence = false): string {
@@ -52,10 +67,16 @@ export async function archiveSession(
   sessionId: string,
   opts: ArchiveSessionOptions,
 ): Promise<string> {
-  return archiveWithAuthorization(fingerprint, sessionId, opts, {
-    authorizedRaw: false,
-    regulatedEvidence: false,
-  });
+  return archiveWithAuthorization(
+    fingerprint,
+    sessionId,
+    opts,
+    {
+      authorizedRaw: false,
+      regulatedEvidence: false,
+    },
+    opts.worktree,
+  );
 }
 
 /**
@@ -107,22 +128,23 @@ interface ArchiveAuthorization {
 async function archiveWithAuthorization(
   fingerprint: string,
   sessionId: string,
-  opts: ArchiveSessionOptions,
+  opts: ArchivePayloadOptions,
   authorization: ArchiveAuthorization,
+  worktree?: string,
 ): Promise<string> {
   return withSpan(
     'archive.create',
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return archiveSessionImpl(fingerprint, sessionId, opts, authorization);
+      return archiveSessionImpl(fingerprint, sessionId, opts, authorization, worktree);
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
 }
 
 function validateArchiveOptions(
-  opts: ArchiveSessionOptions,
+  opts: ArchivePayloadOptions,
   config: Awaited<ReturnType<typeof readConfig>>,
   rawEvidenceAuthorized: boolean,
 ): void {
@@ -184,8 +206,9 @@ function assertCompletionAuditEvent(
 async function archiveSessionImpl(
   fingerprint: string,
   sessionId: string,
-  opts: ArchiveSessionOptions,
+  opts: ArchivePayloadOptions,
   authorization: ArchiveAuthorization,
+  worktree?: string,
 ): Promise<string> {
   const { authorizedRaw, regulatedEvidence } = authorization;
   validateFingerprint(fingerprint);
@@ -206,7 +229,9 @@ async function archiveSessionImpl(
   const state = await readState(sessDir);
   if (state) await verifyEvidenceArtifacts(sessDir, state);
   if (regulatedEvidence) assertRegulatedEvidenceState(state);
-  const archiveConfig = authorizedRaw ? undefined : await readConfig();
+  // Repo config wins over global; a malformed repo config is fail-closed
+  // (PersistenceError), never a silent fallback to the global config.
+  const archiveConfig = authorizedRaw ? undefined : await readConfig(worktree);
   if (archiveConfig) validateArchiveOptions(opts, archiveConfig, false);
 
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);

@@ -33,6 +33,7 @@ async function archiveFixture() {
   const initialized = await initWorkspace(path.resolve('.'), sessionId);
   await writeState(initialized.sessionDir, makeState('COMPLETE'));
   await archiveSession(initialized.fingerprint, sessionId, {
+    worktree: path.resolve('.'),
     redactionMode: 'none',
     includeRaw: true,
   });

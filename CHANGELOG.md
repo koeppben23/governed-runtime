@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Archive config follows the repo → global chain.** `/archive` and the solo
+  auto-archive now resolve `flowguard.json` from the canonical worktree first
+  (repo config wins over global), and `archiveSession()` requires a worktree so
+  a future caller cannot silently fall back to global-only config. A malformed
+  repo config fails closed instead of being replaced by a permissive global
+  config, and the archive response guidance uses the same resolution as the
+  gate. Regulated and completion evidence packages stay workflow-authorized and
+  intentionally independent of user config.
+
 - **Terminal command admissibility (#G6).** Command policy and terminal
   handling no longer diverge for `/hydrate` and `/abort`: `/abort` is an
   idempotent no-op on terminal phases, and `/hydrate` stays available as the
