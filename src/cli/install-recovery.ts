@@ -34,6 +34,8 @@ const RECOVERY_MAP: Partial<Record<CliErrorCode, string | ((detail: CliError) =>
   MANAGED_ARTIFACT_CONFLICT: 'Move or rename the customer-owned conflicting file, then retry.',
   PARTIAL_INSTALL_CONFLICT:
     'Re-run with --force to repair the incomplete FlowGuard install, or run uninstall first.',
+  NON_OPENCODE_ARTIFACT_EXISTS:
+    'A plugin artifact appeared after the install preflight. Remove or rename the reported path, then retry (or run uninstall first).',
   NON_OPENCODE_CONFIG_EXISTS:
     'Re-run with --force to update the existing FlowGuard config, or run uninstall first.',
   NON_OPENCODE_CONFIG_INVALID:

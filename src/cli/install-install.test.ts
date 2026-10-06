@@ -39,6 +39,7 @@ const fsMockState = vi.hoisted(() => ({
   failMarketplaceLockCleanup: false,
   failMarketplaceRename: false,
   preCreateNonOpencodeConfig: false,
+  preCreatePluginArtifact: false,
 }));
 
 // ─── Mock: child_process ──────────────────────────────────────────────────────
@@ -113,6 +114,17 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         // Simulate a concurrent writer creating the config between preflight
         // and the exclusive write, so the late-EEXIST branch is exercised.
         fsMockState.preCreateNonOpencodeConfig = false;
+        await actual.writeFile(...args);
+      }
+      if (
+        fsMockState.preCreatePluginArtifact &&
+        args[0].toString().endsWith('/hooks/hooks.json') &&
+        typeof options === 'object' &&
+        options?.flag === 'wx'
+      ) {
+        // Simulate a concurrent writer creating a plugin artifact after the
+        // preflight, so the strict non-force artifact write fails closed.
+        fsMockState.preCreatePluginArtifact = false;
         await actual.writeFile(...args);
       }
       return actual.writeFile(...args);
@@ -1843,6 +1855,26 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
 
       expect(result.errorDetails?.some((e) => e.code === 'PARTIAL_INSTALL_CONFLICT')).toBe(true);
+    });
+
+    it('fails closed when a plugin artifact appears after the preflight', async () => {
+      const tarball = await createMockTarball();
+      fsMockState.preCreatePluginArtifact = true;
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'NON_OPENCODE_ARTIFACT_EXISTS')).toBe(
+        true,
+      );
+      // Rollback removed the artifacts written earlier in the same run.
+      expect(
+        existsSync(
+          path.join(tmpDir, '.claude', 'flowguard-plugin', '.claude-plugin', 'plugin.json'),
+        ),
+      ).toBe(false);
+      expect(existsSync(path.join(tmpDir, '.claude', 'flowguard.json'))).toBe(false);
     });
 
     it('repairs a conflicting plugin tree with --force', async () => {
