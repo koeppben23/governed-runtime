@@ -228,9 +228,9 @@ function scheduleSoloArchive(
   freshState: SessionState | null,
   toolLayerHandled: boolean,
 ): void {
-  const fingerprint = (freshState ?? state)?.binding.fingerprint;
-  // Stryker disable next-line LogicalOperator — equivalent: `freshState` is non-null whenever `fingerprint` is non-null, so `freshState && state` cannot occur on a reachable path.
-  if (!fingerprint || (freshState ?? state)?.policySnapshot.mode !== 'solo') return;
+  // fingerprint and worktree must come from the same bound state instance.
+  const archiveState = freshState ?? state;
+  if (!archiveState || archiveState.policySnapshot.mode !== 'solo') return;
   if (toolLayerHandled) {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     deps.log.debug('audit', 'archive handled by tool layer', {
@@ -239,12 +239,14 @@ function scheduleSoloArchive(
     return;
   }
   // Stryker disable next-line BooleanLiteral — archive output fidelity is not asserted by tests; redaction mode is the behavioral contract.
-  archiveSession(fingerprint, sessionId, { redactionMode: 'basic', includeRaw: false }).catch(
-    (err) => {
-      // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
-      deps.log.warn('audit', 'auto-archive failed', { error: serializeError(err) });
-    },
-  );
+  archiveSession(archiveState.binding.fingerprint, sessionId, {
+    worktree: archiveState.binding.worktree,
+    redactionMode: 'basic',
+    includeRaw: false,
+  }).catch((err) => {
+    // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
+    deps.log.warn('audit', 'auto-archive failed', { error: serializeError(err) });
+  });
 }
 
 async function emitToolCallAudit(input: {

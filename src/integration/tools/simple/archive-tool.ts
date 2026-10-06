@@ -128,6 +128,7 @@ export const archive: ToolDefinition = {
       const includeRaw = (args.includeRaw ?? false) as boolean;
 
       const archivePath = await archiveSession(fingerprint, context.sessionID, {
+        worktree: paths.worktree,
         redactionMode,
         includeRaw,
       });
@@ -157,7 +158,9 @@ export const archive: ToolDefinition = {
         ...getLogTraceFields(),
       });
 
-      const config = await readConfig();
+      // Guidance must use the same repo → global config resolution as the
+      // archive gate; otherwise the response can contradict the applied policy.
+      const config = await readConfig(paths.worktree);
       const guidance = buildArchiveGuidance(
         redactionMode,
         includeRaw,

@@ -364,7 +364,11 @@ describe('persistence', () => {
 
         vi.mocked(fs.rename).mockRejectedValue(new Error('EXDEV — simulated failure'));
         await expect(
-          archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+          archiveSession(fingerprint, sessionId, {
+            worktree,
+            redactionMode: 'none',
+            includeRaw: true,
+          }),
         ).rejects.toMatchObject({
           code: 'ARCHIVE_FAILED',
         });

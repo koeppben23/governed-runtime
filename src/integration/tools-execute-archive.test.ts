@@ -417,11 +417,13 @@ describe('archive', () => {
 
         // First explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID, {
+          worktree: ws.tmpDir,
           redactionMode: 'none',
           includeRaw: true,
         });
         // Repeated explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID, {
+          worktree: ws.tmpDir,
           redactionMode: 'none',
           includeRaw: true,
         });
@@ -452,6 +454,7 @@ describe('archive', () => {
 
       // Prior explicit archive.
       await archiveSession(fp.fingerprint, ctx.sessionID, {
+        worktree: ws.tmpDir,
         redactionMode: 'none',
         includeRaw: true,
       });
@@ -591,6 +594,182 @@ describe('archive', () => {
         expect(result.code).toBe('ARCHIVE_FAILED');
       }
     });
+  });
+});
+
+// =============================================================================
+// Repo-scoped archive config precedence (repo → global)
+// =============================================================================
+
+describe('archive config precedence (repo → global)', () => {
+  const globalConfigPath = (): string =>
+    path.join(process.env.OPENCODE_CONFIG_DIR ?? '', 'flowguard.json');
+  const repoConfigPath = (): string => path.join(ws.tmpDir, '.opencode', 'flowguard.json');
+
+  const permissiveConfig = {
+    schemaVersion: 'v1',
+    archive: {
+      redaction: {
+        allowedModes: ['none', 'basic', 'pseudonymous'],
+        allowRawExport: true,
+      },
+    },
+  };
+
+  async function writeRepoConfig(config: unknown): Promise<void> {
+    await fs.mkdir(path.dirname(repoConfigPath()), { recursive: true });
+    await fs.writeFile(repoConfigPath(), JSON.stringify(config), 'utf8');
+  }
+
+  async function writeGlobalConfig(config: unknown): Promise<void> {
+    await fs.writeFile(globalConfigPath(), JSON.stringify(config), 'utf8');
+  }
+
+  async function completeSession(): Promise<string> {
+    await hydrateSession();
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+    await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+    return sessDir;
+  }
+
+  it.skipIf(!tarOk)(
+    'repo allowRawExport=true without global config enables raw archive',
+    async () => {
+      await fs.rm(globalConfigPath(), { force: true });
+      await writeRepoConfig(permissiveConfig);
+      await completeSession();
+
+      const result = parseToolResult(
+        await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result).toMatchObject({
+        packagePurpose: 'auditor',
+        integrityCapability: 'verifiable',
+        verificationStatus: 'passed',
+      });
+      await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
+    },
+  );
+
+  it.skipIf(!tarOk)('repo allowRawExport=false overrides a permissive global config', async () => {
+    await writeGlobalConfig(permissiveConfig);
+    await writeRepoConfig({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: {
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: false,
+        },
+      },
+    });
+    await completeSession();
+
+    const result = parseToolResult(
+      await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+    );
+
+    expect(JSON.stringify(result)).toContain('Raw export is not enabled');
+    expect(result.archivePath).toBeUndefined();
+  });
+
+  it.skipIf(!tarOk)('repo allowedModes overrides a permissive global config', async () => {
+    await writeGlobalConfig(permissiveConfig);
+    await writeRepoConfig({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: {
+          allowedModes: ['basic'],
+          allowRawExport: true,
+        },
+      },
+    });
+    await completeSession();
+
+    const result = parseToolResult(
+      await archive.execute({ redactionMode: 'pseudonymous', includeRaw: false }, ctx),
+    );
+
+    expect(JSON.stringify(result)).toContain(
+      "Redaction mode 'pseudonymous' is not allowed (config allows: basic)",
+    );
+  });
+
+  it.skipIf(!tarOk)(
+    'malformed repo config fails closed instead of falling back to permissive global',
+    async () => {
+      await writeGlobalConfig(permissiveConfig);
+      await completeSession();
+      await fs.mkdir(path.dirname(repoConfigPath()), { recursive: true });
+      await fs.writeFile(repoConfigPath(), '{not valid json', 'utf8');
+
+      const result = parseToolResult(
+        await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+      );
+
+      expect(JSON.stringify(result)).toContain('not valid JSON');
+      expect(result.archivePath).toBeUndefined();
+    },
+  );
+
+  it.skipIf(!tarOk)(
+    'repo maxAuditEvents overrides a permissive global config for redacted archives',
+    async () => {
+      await writeGlobalConfig(permissiveConfig);
+      await writeRepoConfig({
+        schemaVersion: 'v1',
+        archive: {
+          redaction: {
+            allowedModes: ['none', 'basic', 'pseudonymous'],
+            allowRawExport: false,
+            maxAuditEvents: 1,
+          },
+        },
+      });
+      const sessDir = await completeSession();
+      const state = await readState(sessDir);
+      for (let index = 0; index < 2; index += 1) {
+        await appendAuditEvent(sessDir, {
+          id: crypto.randomUUID(),
+          flowguardSessionId: state!.flowguardSessionId,
+          hostSessionId: ctx.sessionID,
+          phase: 'COMPLETE',
+          event: `test:repo_limit_${index}`,
+          occurredAt: new Date().toISOString(),
+          actor: 'system',
+          detail: {},
+        });
+      }
+
+      const result = parseToolResult(await archive.execute({}, ctx));
+
+      expect(JSON.stringify(result)).toContain('exceeds maxAuditEvents');
+      expect(result.archivePath).toBeUndefined();
+    },
+  );
+
+  it.skipIf(!tarOk)('archive guidance uses the same repo → global resolution', async () => {
+    await writeGlobalConfig({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: {
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: false,
+        },
+      },
+    });
+    await writeRepoConfig(permissiveConfig);
+    await completeSession();
+
+    const result = parseToolResult(await archive.execute({}, ctx));
+
+    expect(result.error).toBeUndefined();
+    expect(String(result.guidance)).toContain('For a raw-evidence package for auditors');
   });
 });
 
