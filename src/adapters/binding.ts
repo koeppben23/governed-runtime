@@ -298,7 +298,7 @@ export function fromOpenCodeContext(openCodeCtx: {
  * - Remove trailing separators
  * - Lowercase on Windows (NTFS is case-insensitive)
  */
-export function normalizeBindingPath(p: string): string {
+function normalizeBindingPath(p: string): string {
   let normalized = path.resolve(p).replace(/\\/g, '/').replace(/\/+$/, '');
 
   // Windows: case-insensitive comparison
