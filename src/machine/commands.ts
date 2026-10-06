@@ -8,9 +8,14 @@
  * - Command → Rail → State mutation → evaluate() → Event → Transition.
  * - /continue is the routing command (deterministic, guard-determined event).
  * - READY is the entry phase where users select a flow (/ticket, /architecture, /review).
- * - Terminal phases (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE) block all commands.
+ * - The policy map is the single authority for terminal handling: flow commands
+ *   are explicit non-terminal sets, `/continue` is `'non-terminal'`, and the
+ *   recovery escapes `/hydrate` and `/abort` are `'all-phases'` (both are
+ *   idempotent no-ops on terminal phases — see rails/hydrate.ts and
+ *   rails/abort.ts #421 — so denying them would break the documented recovery
+ *   path without protecting any transition).
  *
- * @version v3
+ * @version v4
  */
 
 import type { Phase } from '../state/schema.js';
@@ -38,15 +43,21 @@ export type Command = (typeof Command)[keyof typeof Command];
 
 // ─── Admissibility ────────────────────────────────────────────────────────────
 
-/** Allowed-in specification: explicit set of phases, or "*" for all phases. */
-type AllowedIn = ReadonlySet<Phase> | '*';
+/**
+ * Allowed-in specification:
+ * - explicit set of phases,
+ * - `'all-phases'` for recovery escapes that are valid everywhere (idempotent
+ *   no-ops on terminal phases),
+ * - `'non-terminal'` for routing commands that require a live session.
+ */
+type AllowedIn = ReadonlySet<Phase> | 'all-phases' | 'non-terminal';
 
-/** Command admissibility map. */
+/** Command admissibility map — the single authority for terminal handling. */
 const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, AllowedIn>([
-  [Command.HYDRATE, '*'],
+  [Command.HYDRATE, 'all-phases'],
   [Command.TICKET, new Set<Phase>(['READY', 'TICKET'])],
   [Command.PLAN, new Set<Phase>(['TICKET', 'PLAN'])],
-  [Command.CONTINUE, '*'],
+  [Command.CONTINUE, 'non-terminal'],
   [Command.IMPLEMENT, new Set<Phase>(['IMPLEMENTATION'])],
   [Command.RESOLVE_IMPLEMENTATION_CHALLENGE, new Set<Phase>(['IMPL_REVIEW'])],
   [Command.REVIEW_DECISION, new Set<Phase>(['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'])],
@@ -55,7 +66,7 @@ const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, Allowed
   [Command.REVIEW, new Set<Phase>(['READY'])],
   [Command.ARCHITECTURE, new Set<Phase>(['READY', 'ARCHITECTURE'])],
   [Command.EXPORT, new Set<Phase>(['EXPORT_READY'])],
-  [Command.ABORT, '*'],
+  [Command.ABORT, 'all-phases'],
 ]);
 
 // ─── Admissibility Check ──────────────────────────────────────────────────────
@@ -64,21 +75,15 @@ const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, Allowed
  * Check if a command is allowed in the given phase.
  *
  * Rules:
- * 1. Terminal phases block ALL FlowGuard commands.
- * 2. Otherwise, check the COMMAND_POLICY map.
- * 3. Unknown commands → false (fail-closed).
+ * 1. The policy map is authoritative; terminal handling is expressed there
+ *    (`'non-terminal'` and explicit sets exclude terminal phases, while
+ *    `'all-phases'` recovery escapes remain available).
+ * 2. Unknown commands → false (fail-closed).
  */
 export function isCommandAllowed(phase: Phase, command: Command): boolean {
-  // Terminal phases block all current FlowGuard commands.
-  // If a future read-only command is introduced (e.g., /status as a
-  // first-class Command), model it explicitly instead of reintroducing
-  // a catch-all placeholder set.
-  if (TERMINAL.has(phase)) {
-    return false;
-  }
-
   const allowedIn = COMMAND_POLICY.get(command);
   if (allowedIn === undefined) return false;
-  if (allowedIn === '*') return true;
+  if (allowedIn === 'all-phases') return true;
+  if (allowedIn === 'non-terminal') return !TERMINAL.has(phase);
   return allowedIn.has(phase);
 }

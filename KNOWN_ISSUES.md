@@ -197,7 +197,7 @@ disproven, update the status and link the evidence."
 | AC11 | MEDIUM      | Fixed           | Timestamp comparisons parse UTC instants (audit monotonicity + ProofGraph counterexample freshness); unparseable values are never sortable.                                                                                                                                                                                         |
 | G4   | MEDIUM      | Fixed           | `team-ci` degradation uses canonical Team semantics while preserving `requestedMode=team-ci` and `degradedReason=ci_context_missing`.                                                                                                                                                                                               |
 | LOG1 | MEDIUM      | Fixed           | File-sink delivery/setup/rotation failures now reject through `LogSink`; logger health counts them without making operational logging governance-blocking.                                                                                                                                                                          |
-| G6   | MEDIUM      | Open            | Command policy and terminal handling diverge for HYDRATE/ABORT. `TESTED_BUG_BEHAVIOR`.                                                                                                                                                                                                                                              |
+| G6   | MEDIUM      | Fixed           | `COMMAND_POLICY` is the single terminal-handling authority: `/hydrate` and `/abort` are `all-phases` recovery escapes (both idempotent no-ops on terminal phases, #421), `/continue` is explicitly `non-terminal`, and flow commands keep explicit sets. Status now reports `['/hydrate', '/abort']` for terminal sessions. |
 | G12  | MEDIUM      | Open            | ADR rejection is not represented in architecture state.                                                                                                                                                                                                                                                                             |
 | G13  | MEDIUM      | Open            | ADR section validation should use line-anchored matching.                                                                                                                                                                                                                                                                           |
 | G15  | MEDIUM      | Fixed           | #1012: transition **audit records** carry the resolved actor identity; `state.transition` remains machine-transition metadata by design.                                                                                                                                                                                            |
@@ -300,7 +300,7 @@ behavior:
 | G4  | Fixed  | `src/config/policy-presets.test.ts`    |
 | AC6 | Fixed  | `src/audit/audit-completeness.test.ts` |
 | AC7 | Fixed  | `src/audit/audit-completeness.test.ts` |
-| G6  | Open   | `src/machine/commands.test.ts`         |
+| G6  | Fixed  | `src/machine/commands.test.ts`         |
 | H6  | Fixed  | `src/hooks/pre-tool-use-fatal.test.ts` |
 | T1  | Open   | `src/templates/mandate-drift.test.ts`  |
 

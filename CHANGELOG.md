@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Terminal command admissibility (#G6).** Command policy and terminal
+  handling no longer diverge for `/hydrate` and `/abort`: both are recovery
+  escapes available in every phase (idempotent no-ops once terminal), while
+  flow commands and `/continue` stay blocked in terminal phases. `/status`
+  now reports `['/hydrate', '/abort']` for terminal sessions.
+
 - **Fail-closed hook protocol delivery (#H6).** Hook DENY responses now share
   one stdout transport primitive for sync-throw, write-callback, and stream
   errors, and the stdout guard uses it with the writer captured at install
