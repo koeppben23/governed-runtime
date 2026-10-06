@@ -160,6 +160,28 @@ describe('hydrate rail unit tests', () => {
         lastDecisionId: 'RISK-1',
       });
     });
+
+    it('explicit reclassification never lowers an existing claim', () => {
+      const existing = makeState('TICKET', { claimedTaskClass: 'STANDARD' });
+      const result = executeHydrate(
+        existing,
+        minimalInput({ session: { claimedTaskClass: 'TRIVIAL' } }),
+        baseCtx,
+      );
+      const state = expectOk(result);
+      expect(state.claimedTaskClass).toBe('STANDARD');
+    });
+
+    it('an existing session without a claim accepts an explicit escalation', () => {
+      const existing = makeState('TICKET');
+      const result = executeHydrate(
+        existing,
+        minimalInput({ session: { claimedTaskClass: 'HIGH-RISK' } }),
+        baseCtx,
+      );
+      const state = expectOk(result);
+      expect(state.claimedTaskClass).toBe('HIGH-RISK');
+    });
   });
 
   // ─── applyHydrateOverrides ────────────────────────────────────────────

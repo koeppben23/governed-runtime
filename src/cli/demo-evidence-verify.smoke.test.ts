@@ -856,6 +856,7 @@ describe('demo evidence package verifier', () => {
       );
       await writeSharingConfig();
       const packagePath = await archiveSession(fingerprint, SESSION_A, {
+        worktree: WORKTREE,
         redactionMode: 'basic',
         includeRaw: false,
       });
