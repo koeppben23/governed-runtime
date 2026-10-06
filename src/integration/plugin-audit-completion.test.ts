@@ -12,6 +12,7 @@ import {
 } from '../audit/types.js';
 import type { PendingAuditOperation, SessionState } from '../state/schema.js';
 import { runAudit, type AuditDeps } from './plugin-audit.js';
+import { resolvedAuthority } from './plugin-audit-test-helpers.js';
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const COMPLETED_AT = '2026-05-15T12:00:00.000Z';
@@ -86,8 +87,7 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
   return {
     sessDir,
     deps: {
-      resolveFingerprint: vi.fn().mockResolvedValue('fp-abc'),
-      getSessionDir: vi.fn().mockReturnValue(sessDir),
+      resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state, sessDir)),
       resolveSessionPolicy: vi.fn().mockResolvedValue({
         policy: {
           audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
@@ -103,7 +103,6 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
       nextDecisionSequence: vi.fn().mockResolvedValue(1),
       log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
       logError: vi.fn(),
-      cachedFingerprint: 'fp-abc',
       mode: 'team',
     },
   };

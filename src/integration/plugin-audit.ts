@@ -36,7 +36,6 @@ import {
   emitAuditBodyWithEvidence,
   emitTransitionAudits,
   finalizeStrictTimestampFailure,
-  resolveBootstrapStateExistence,
   type AuditDeps,
   type AuditRunOutcome,
   type StrictTimestampTracker,
@@ -75,23 +74,20 @@ export async function auditEnforcementDenied(input: {
   traceId: string;
 }): Promise<void> {
   try {
-    const resolved = await resolveAuditContext(input.deps, input.tool, {}, input.sessionId);
-    if (!resolved) {
+    const resolution = await resolveAuditContext(input.deps, input.tool, {}, input.sessionId);
+    if (resolution.kind === 'unavailable') {
       // This path has no channel to block — the tool call is already denied —
       // so the audit record cannot be made mandatory here. It must still not
-      // vanish without trace: a missing mapping for a session that exists (or
-      // whose existence cannot be established) is an audit gap, not a
-      // non-event. Only positively proven absence is silent.
-      const existence = await resolveBootstrapStateExistence(input.deps, input.sessionId);
-      if (existence !== 'absent') {
-        input.deps.logError(
-          'Enforcement denial could not be audited: no authoritative audit session mapping',
-          { sessionId: input.sessionId, tool: input.tool, existence },
-        );
-      }
+      // vanish without trace: an unavailable session authority is an audit
+      // gap, not a non-event. Only a positively proven absent session is silent.
+      input.deps.logError(
+        'Enforcement denial could not be audited: session authority unavailable',
+        { sessionId: input.sessionId, tool: input.tool, causeCode: resolution.code },
+      );
       return;
     }
-    const { ctx, policy, state } = resolved;
+    if (resolution.kind === 'absent') return;
+    const { ctx, policy, state } = resolution;
     const identity = auditIdentity(state);
     if (!identity) return;
     const tracker = createStrictTimestampTracker(ctx.timestampAssurance);
@@ -138,7 +134,7 @@ async function maybeCompleteAndArchive(
   let prevHash = ctx.prevHash;
   if (state?.transition?.to !== 'COMPLETE' || LIFECYCLE_TOOLS[toolName]) return prevHash;
 
-  const freshState = deps.cachedFingerprint ? await readState(ctx.sessDir) : null;
+  const freshState = await readState(ctx.sessDir);
   const toolLayerHandled = !!freshState?.regulatedArchiveStatus;
 
   if (!toolLayerHandled) {
@@ -232,7 +228,7 @@ function scheduleSoloArchive(
   freshState: SessionState | null,
   toolLayerHandled: boolean,
 ): void {
-  const fingerprint = deps.cachedFingerprint;
+  const fingerprint = (freshState ?? state)?.binding.fingerprint;
   // Stryker disable next-line LogicalOperator — equivalent: `freshState` is non-null whenever `fingerprint` is non-null, so `freshState && state` cannot occur on a reachable path.
   if (!fingerprint || (freshState ?? state)?.policySnapshot.mode !== 'solo') return;
   if (toolLayerHandled) {
@@ -386,30 +382,24 @@ export async function runAudit(
   let policyResolved = false;
   let effectiveMode: string = deps.mode;
   try {
-    const resolved = await resolveAuditContext(deps, toolName, output, sessionId);
-    if (!resolved) {
-      // Authority symmetry with reconcilePendingAuditOperations: a missing
-      // session mapping is NOT proof that the session is absent. The mapping
-      // resolves through the cached fingerprint, so a cold process or a
-      // transient fingerprint failure yields null for a fully governed
-      // session. Returning silently there skips the audit for a governed tool
-      // call while reporting success. Only positively proven absence — a tool
-      // call outside any session, or a resolved but unhydrated one — may pass.
-      const existence = await resolveBootstrapStateExistence(deps, sessionId);
-      if (existence === 'absent') return undefined;
+    const resolution = await resolveAuditContext(deps, toolName, output, sessionId);
+    if (resolution.kind === 'absent') {
+      // A tool call outside any governed session may pass without an audit
+      // record; absence was positively established by the session authority.
+      return undefined;
+    }
+    if (resolution.kind === 'unavailable') {
       return {
         auditOk: false,
         block: true,
         code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
-        reason:
-          'FlowGuard cannot audit this tool call because no authoritative ' +
-          'audit session mapping exists. Re-run /hydrate or restore the ' +
-          'session workspace before continuing.',
+        causeCode: resolution.code,
+        reason: resolution.reason,
       };
     }
-    policyResolved = resolved.policyResolved;
-    effectiveMode = resolved.effectiveMode;
-    const { ctx, policy, state } = resolved;
+    policyResolved = resolution.policyResolved;
+    effectiveMode = resolution.effectiveMode;
+    const { ctx, policy, state } = resolution;
     const timestampTracker = createStrictTimestampTracker(ctx.timestampAssurance);
 
     // ── 1. Emit tool_call event ──────────────────────────────────────────

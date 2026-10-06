@@ -27,7 +27,12 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createBootableHostClient, createTestWorkspace, withTestEnv } from './test-helpers.js';
+import {
+  createBootableHostClient,
+  canonicalBinding,
+  createTestWorkspace,
+  withTestEnv,
+} from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
@@ -91,6 +96,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   await writeState(
     sessDir,
     makeState('PLAN', {
+      binding: await canonicalBinding(worktree, sessionID),
       ticket: {
         text: 'Fix auth issue',
         digest: 'ticket-digest',
@@ -186,6 +192,7 @@ async function seedStrictImplementationSession(worktree: string, sessionID: stri
   const base = makeProgressedState('IMPL_REVIEW');
   const state = {
     ...base,
+    binding: await canonicalBinding(worktree, sessionID),
     plan: {
       current: planCurrent,
       history: [],
@@ -1825,7 +1832,7 @@ describe('integration/plugin', () => {
 
         await expect(
           beforeHook({ tool: '', sessionID: '', callID: '' }, { args: {} }),
-        ).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+        ).rejects.toThrow('INVALID_SESSION_ID');
       } finally {
         await ws.cleanup();
       }

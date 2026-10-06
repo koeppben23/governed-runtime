@@ -42,6 +42,7 @@ import {
   writeStateWithAuditOperations,
 } from './audit-outbox.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.js';
+import { resolvedAuthority } from './plugin-audit-test-helpers.js';
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
 import {
   writeStateWithArtifacts,
@@ -127,8 +128,7 @@ function pendingIds(state: SessionState): string[] {
 
 function reconcileDeps(sessDir: string, state: SessionState): AuditDeps {
   return {
-    resolveFingerprint: vi.fn().mockResolvedValue('fp-governed-write'),
-    getSessionDir: vi.fn().mockReturnValue(sessDir),
+    resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state, sessDir)),
     resolveSessionPolicy: vi.fn().mockResolvedValue({
       policy: {
         audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
@@ -146,7 +146,6 @@ function reconcileDeps(sessDir: string, state: SessionState): AuditDeps {
     nextDecisionSequence: vi.fn().mockResolvedValue(1),
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     logError: vi.fn(),
-    cachedFingerprint: 'fp-governed-write',
     mode: 'regulated',
   };
 }

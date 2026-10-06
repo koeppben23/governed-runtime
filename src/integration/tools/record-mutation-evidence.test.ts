@@ -11,12 +11,20 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+// The suite exercises bare temp dirs; the canonical authority's git-root probe
+// is not what these tests verify.
+vi.mock('../../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+  return { ...actual, resolveRoot: vi.fn(async (dir: string) => dir) };
+});
+
 import { record_mutation_evidence } from './mutation/record-mutation-evidence.js';
 import { MutationAttempt } from '../../state/evidence-mutation.js';
-import { resolveWorkspacePaths, writeStateWithArtifacts } from './helpers.js';
+import { requireWorkspacePaths, writeStateWithArtifacts } from './helpers.js';
 import { readState } from '../../adapters/persistence.js';
 import { makeProgressedState, makeState } from '../../fixtures.js';
 import { parseToolResult } from '../test-helpers.js';
+import type { SessionState } from '../../state/schema.js';
 
 const DEFAULT_REPORT_PATH = 'reports/mutation/mutation.json';
 
@@ -63,8 +71,14 @@ async function seedSession(state: unknown): Promise<{
 }> {
   const sessionID = crypto.randomUUID();
   const context = { sessionID, worktree: tmpDir, directory: tmpDir };
-  const { sessDir } = await resolveWorkspacePaths(context);
-  await writeStateWithArtifacts(sessDir, state as never);
+  const { sessDir, fingerprint, worktree } = await requireWorkspacePaths(context);
+  const seeded = state as SessionState;
+  // The canonical authority validates the persisted binding against the
+  // resolved worktree, so the fixture must be bound to the test workspace.
+  await writeStateWithArtifacts(sessDir, {
+    ...seeded,
+    binding: { ...seeded.binding, worktree, fingerprint },
+  });
   return { context, sessDir };
 }
 

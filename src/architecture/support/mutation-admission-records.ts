@@ -77,6 +77,15 @@ const RECORDS: Readonly<Record<string, AdmissionRecord>> = {
     config: 'stryker.conf.json',
     reportDigest: '8c78efc0b3f916f8d4d46330cbd371e14c4d5eb9637ce839cabe0fd6bd04bf68',
   },
+  'src/adapters/session-authority.ts': {
+    verifiedAt: '2026-10-06',
+    commitSha: 'df804e29',
+    scoreAtAdmission: 100,
+    killed: 20,
+    survived: 0,
+    config: 'stryker.conf.json',
+    reportDigest: 'a859a6fe1b97e9db5d7eea5bc4f0b7f79da62a882c4578d745bedbcc0cb82b15',
+  },
   'src/adapters/workspace/archive-publish.ts': {
     verifiedAt: '2026-09-21',
     commitSha: 'df9f8b4dcdab11dd554e4d048ea8cb0784671f2b',

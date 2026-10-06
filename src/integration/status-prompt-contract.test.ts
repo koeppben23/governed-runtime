@@ -3,6 +3,7 @@ import * as crypto from 'node:crypto';
 import {
   createToolContext,
   createTestWorkspace,
+  canonicalBinding,
   parseToolResult,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
@@ -180,7 +181,10 @@ describe('status-prompt-contract', () => {
   async function statusFor(phase: Phase, callShape: CallShape): Promise<Record<string, unknown>> {
     const { computeFingerprint, sessionDir } = await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
-    await writeState(sessionDir(fp.fingerprint, ctx.sessionID), makeProgressedState(phase));
+    await writeState(sessionDir(fp.fingerprint, ctx.sessionID), {
+      ...makeProgressedState(phase),
+      binding: await canonicalBinding(ws.tmpDir, ctx.sessionID),
+    });
     const args = callShape === 'full' ? {} : ({ [callShape]: true } as Record<string, boolean>);
     return parseToolResult(await status.execute(args, ctx));
   }

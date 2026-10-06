@@ -12,8 +12,7 @@
  * signal-dense and deterministic.
  */
 
-import { existsSync } from 'node:fs';
-
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
 import { PersistenceError, readState } from '../adapters/persistence.js';
 import { strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
@@ -31,7 +30,7 @@ import { buildDiscoveryHealthGateTransitionDetail } from './discovery/discovery-
 import { mutateStateWithAuditOperations } from './audit-outbox.js';
 
 export interface DiscoveryHealthEnforcementDeps {
-  getSessionDir(sessionId: string): string | null;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   getWorkspaceDir(): string | null;
 }
 
@@ -171,17 +170,19 @@ export async function enforceDiscoveryHealthAfterBash(
   sessionId: string,
   output: { output?: unknown },
 ): Promise<void> {
-  const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir || !existsSync(sessDir)) {
+  const resolution = await deps.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') {
     // A bash call is governed by the Before-hook boundary, which requires a
     // resolvable FlowGuard session. Lost context after release is an invariant
     // violation, so it fails closed instead of silently skipping the gate.
     output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
       reason:
         'Post-bash discovery-health enforcement has no resolvable FlowGuard session context for a governed mutation.',
+      ...(resolution.status === 'unavailable' ? { causeCode: resolution.code } : {}),
     });
     return;
   }
+  const sessDir = resolution.sessDir;
 
   let state: SessionState | null;
   try {

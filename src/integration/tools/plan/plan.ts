@@ -45,10 +45,10 @@ import {
 } from '../../review/validation/review-validation-failure.js';
 import {
   withMutableSessionTransaction,
-  formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
+import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
 import type { SessionState } from '../../../state/schema.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';

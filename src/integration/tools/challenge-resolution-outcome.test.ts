@@ -4,7 +4,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makeState } from '../../fixtures.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
-import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
+import {
+  createTestWorkspace,
+  createToolContext,
+  canonicalBinding,
+  parseToolResult,
+} from '../test-helpers.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
 import { resolve_implementation_challenge } from './challenge/challenge-resolution.js';
 
@@ -105,6 +110,7 @@ async function seedState(options: SeedOptions = {}) {
   await writeState(
     sessDir,
     makeState('IMPL_REVIEW', {
+      binding: await canonicalBinding(ws.tmpDir, sessionID),
       implementation: {
         implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/example.ts'],

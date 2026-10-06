@@ -7,7 +7,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { blockedFromOverflow, AUTO_ADVANCE_OVERFLOW_CODE } from './auto-advance-overflow.js';
+import {
+  blockedFromOverflow,
+  formatAutoAdvanceOverflow,
+  AUTO_ADVANCE_OVERFLOW_CODE,
+} from './auto-advance-overflow.js';
 import type { AutoAdvanceOverflow } from './types.js';
 
 describe('rails/auto-advance-overflow', () => {
@@ -40,5 +44,17 @@ describe('rails/auto-advance-overflow', () => {
     const result = blockedFromOverflow(overflow);
     expect(result.reason).toContain('PLAN_REVIEW');
     expect(result.reason).toContain('10');
+  });
+});
+
+describe('formatAutoAdvanceOverflow', () => {
+  it('formats overflow with phase and limit', () => {
+    const result = JSON.parse(
+      formatAutoAdvanceOverflow({ phase: 'PLAN', limit: 10 } as AutoAdvanceOverflow),
+    ) as Record<string, unknown>;
+    expect(result.error).toBe(true);
+    const overflow = result.autoAdvanceOverflow as Record<string, unknown>;
+    expect(overflow.phase).toBe('PLAN');
+    expect(overflow.limit).toBe(10);
   });
 });

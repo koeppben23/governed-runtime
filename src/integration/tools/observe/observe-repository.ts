@@ -24,7 +24,7 @@
 import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { getWorktree, resolveWorkspacePaths } from '../helpers.js';
+import { getWorktree, requireWorkspacePaths } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { workspacesHome } from '../../../adapters/workspace/index.js';
 import {
@@ -182,7 +182,7 @@ export const observe_repository: ToolDefinition = {
       const { normalizedPath: normalized } = validation;
 
       const worktree = getWorktree(context);
-      const { fingerprint } = await resolveWorkspacePaths(context);
+      const { fingerprint } = await requireWorkspacePaths(context);
       const capturedSessionId = String(context.sessionID ?? '').trim();
 
       const resolved = await resolveObservationTarget({

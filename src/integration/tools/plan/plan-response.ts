@@ -26,11 +26,8 @@ import type {
   ConvergedPlanReviewInput,
 } from './plan-types.js';
 import { formatBlocked } from '../../blocked-result.js';
-import {
-  formatAutoAdvanceOverflow,
-  enrichWithWorkflowDirective,
-  writeStateWithArtifacts,
-} from '../helpers.js';
+import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 import {
   PHASE_LABELS,
   buildPlanReviewCard,

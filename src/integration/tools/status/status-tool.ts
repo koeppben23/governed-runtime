@@ -16,11 +16,7 @@ import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
-import {
-  resolveWorkspacePaths,
-  withReadOnlySession,
-  enrichWithWorkflowDirective,
-} from '../helpers.js';
+import { withReadOnlySession, enrichWithWorkflowDirective } from '../helpers.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approval.js';
@@ -351,13 +347,13 @@ export const status: ToolDefinition = {
   },
   async execute(_args, context) {
     try {
-      const { wsDir } = await resolveWorkspacePaths(context);
+      const session = await withReadOnlySession(context);
       const presentation: PresentationRenderOptions = {
-        glyphProfile: (await readConfig(wsDir)).presentation.opencode.glyphProfile,
+        glyphProfile: (await readConfig(session.wsDir ?? (context.worktree || context.directory)))
+          .presentation.opencode.glyphProfile,
       };
-      const { state, policy, sessDir } = await withReadOnlySession(context);
 
-      if (!state) {
+      if (!session.state) {
         const noSessionDoc = buildNoSessionDocument();
         return JSON.stringify({
           phase: null,
@@ -377,6 +373,7 @@ export const status: ToolDefinition = {
         });
       }
 
+      const { state, policy, sessDir, wsDir } = session;
       const ev = evaluate(state, policy);
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;

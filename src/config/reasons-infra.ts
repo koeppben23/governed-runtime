@@ -314,12 +314,44 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'NO_WORKTREE',
+    category: 'adapter',
+    messageTemplate: 'Neither a worktree nor a directory is available: {message}',
+    recoverySteps: [
+      'Open the FlowGuard workspace inside a git worktree',
+      'Ensure the host provides a worktree or directory for the session',
+    ],
+  },
+
+  {
     code: 'WORKTREE_MISMATCH',
     category: 'adapter',
     messageTemplate: 'Worktree mismatch: expected {expected}, got {actual}',
     recoverySteps: [
       'The session was created for a different worktree',
       'Start a new session with /hydrate in the correct directory',
+    ],
+  },
+
+  {
+    code: 'SESSION_BINDING_MISMATCH',
+    category: 'adapter',
+    messageTemplate: 'Session binding does not match the canonical workspace: {message}',
+    recoverySteps: [
+      'The persisted session state does not belong to this workspace',
+      'Run /hydrate in the correct worktree or restore the matching session state',
+      'Check FlowGuard workspace integrity with flowguard doctor',
+    ],
+  },
+
+  {
+    code: 'SESSION_AUTHORITY_UNAVAILABLE',
+    category: 'adapter',
+    messageTemplate: 'Session authority is unavailable: {message}',
+    recoverySteps: [
+      'Run /hydrate to bootstrap or restore the FlowGuard session mapping',
+      'Ensure the working directory is inside the bound git worktree',
+      'Re-run the command after the session authority is resolvable',
     ],
   },
 

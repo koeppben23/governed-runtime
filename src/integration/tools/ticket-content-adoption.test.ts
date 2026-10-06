@@ -9,7 +9,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -60,11 +60,14 @@ afterEach(() => {
 
 async function boot(): Promise<SE> {
   const r = mkdtempSync(join(tmpdir(), 'fg-ticket-adoption-'));
-  const w = join(r, 'worktree');
   const c = join(r, 'config');
   const id = randomUUID();
-  mkdirSync(w, { recursive: true });
+  mkdirSync(join(r, 'worktree'), { recursive: true });
   mkdirSync(c, { recursive: true });
+  // Canonicalize only the worktree: the session authority resolves it through
+  // git (physical path on macOS), while the config dir keeps the OS-tmpdir
+  // spelling for the test-directory guard.
+  const w = realpathSync(join(r, 'worktree'));
   execFileSync('git', ['init', '-q'], { cwd: w });
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: w });
   execFileSync('git', ['config', 'user.name', 'T'], { cwd: w });

@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
@@ -135,8 +134,8 @@ async function resolveEnforcement(
   context: 'subagent' | 'verdict',
 ): Promise<SessionState | null> {
   try {
-    const sessDir = runtime.ws.getSessionDir(sessionId);
-    return sessDir ? await readState(sessDir) : null;
+    const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+    return resolution.status === 'resolved' ? resolution.state : null;
   } catch {
     runtime.log.warn(
       'enforcement',
@@ -283,7 +282,7 @@ async function reconcileObservationParent(
 ): Promise<void> {
   const capability = typeof args.capability === 'string' ? args.capability : '';
   if (!capability) return;
-  const fingerprint = runtime.auditDeps.cachedFingerprint ?? runtime.ws.cachedFingerprint;
+  const fingerprint = runtime.ws.cachedFingerprint;
   if (!fingerprint) {
     throw buildEnforcementError(
       'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
@@ -318,8 +317,8 @@ async function readScopedState(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
 ): Promise<SessionState | null> {
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  return sessDir ? await readState(sessDir) : null;
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  return resolution.status === 'resolved' ? resolution.state : null;
 }
 
 async function isAllowedInImplReview(
@@ -363,15 +362,23 @@ async function resolveHostToolStateOrThrow(
   toolName: string,
   sessionId: string,
 ): Promise<{ sessDir: string; state: SessionState }> {
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) {
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status === 'unavailable') {
+    throw buildEnforcementError(resolution.code, resolution.reason, {
+      sessionId,
+      tool: toolName,
+      sessionMapping: 'unresolved',
+    });
+  }
+  if (resolution.status === 'absent') {
     throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Cannot verify host tool phase gate because no authoritative FlowGuard session mapping exists. Run /hydrate before mutating the workspace.',
-      { sessionId, tool: toolName, sessionMapping: 'unresolved' },
+      'SESSION_DIR_NOT_FOUND',
+      'Cannot verify host tool phase gate because no authoritative FlowGuard session state exists. Run /hydrate before mutating the workspace.',
+      { sessionId, tool: toolName, stateReadable: 'false' },
     );
   }
-  const state = await readRequiredHostToolState(sessDir, sessionId, toolName);
+
+  const { sessDir, state } = resolution;
   if (state.error) {
     // A persisted blocking error (e.g. strict TSA assurance failure) is a
     // durable fail-closed latch: the next governed host mutation must not
@@ -387,59 +394,6 @@ async function resolveHostToolStateOrThrow(
   }
   enforceHostToolPhase(runtime, toolName, sessionId, state);
   return { sessDir, state };
-}
-
-async function readRequiredHostToolState(
-  sessDir: string,
-  sessionId: string,
-  toolName: string,
-): Promise<SessionState> {
-  if (!existsSync(sessDir)) {
-    throw buildEnforcementError(
-      'SESSION_DIR_NOT_FOUND',
-      `FlowGuard session directory expected at "${sessDir}" but not found on disk. Run /hydrate to initialize the session.`,
-      { sessionId, tool: toolName, sessDir, stateReadable: 'false' },
-    );
-  }
-  try {
-    const state = await readState(sessDir);
-    if (state) return state;
-  } catch (err) {
-    throw unreadableStateError(sessDir, sessionId, toolName, err);
-  }
-  throw missingStateError(sessDir, sessionId, toolName);
-}
-
-function unreadableStateError(
-  sessDir: string,
-  sessionId: string,
-  toolName: string,
-  err: unknown,
-): Error {
-  return buildEnforcementError(
-    'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-    `Cannot verify host tool phase gate — session state exists at "${sessDir}" but is unreadable (${err instanceof Error ? err.message : String(err)}). Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-    {
-      sessionId,
-      tool: toolName,
-      stateFile: `${sessDir}/session-state.json`,
-      stateReadable: 'false',
-      error: err instanceof Error ? err.message : String(err),
-    },
-  );
-}
-
-function missingStateError(sessDir: string, sessionId: string, toolName: string): Error {
-  return buildEnforcementError(
-    'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-    `Cannot verify host tool phase gate — session directory exists at "${sessDir}" but contains no state file. Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-    {
-      sessionId,
-      tool: toolName,
-      stateFile: `${sessDir}/session-state.json`,
-      stateReadable: 'false',
-    },
-  );
 }
 
 function enforceHostToolPhase(

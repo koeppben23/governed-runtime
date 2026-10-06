@@ -33,6 +33,7 @@ import {
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, implement } from './tools/index.js';
 import { readState, statePath, writeState } from '../adapters/persistence.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import {
   decidePostCommandAutoValidation,
   resumePendingSystemWork,
@@ -619,30 +620,48 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck)).toHaveBeenCalledTimes(1);
     });
 
-    it('fails closed with a blocked resume outcome on an unreadable session state', async () => {
+    it('never resumes work when the canonical authority reports an unreadable session state', async () => {
       await reachTeamPlanReview();
       const sessDir = await getSessDir();
-      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
+      const corrupt = '{ this is not valid json';
+      await fs.writeFile(statePath(sessDir), corrupt, 'utf-8');
+      vi.mocked(executorMock.executeCheck).mockClear();
 
       const resumed = await resumePendingSystemWork(ctx);
 
-      expect(resumed).toMatchObject({ kind: 'blocked', code: 'SYSTEM_WORK_STATE_UNREADABLE' });
-      expect(JSON.parse(resumed.kind === 'blocked' ? resumed.response : '{}')).toMatchObject({
-        error: true,
-        code: 'SYSTEM_WORK_STATE_UNREADABLE',
+      // The single canonical authority owns unreadability: it reports the
+      // typed persistence failure and never silently resumes work. The
+      // corrupted state is left untouched and no check is executed.
+      const authority = await resolveSessionAuthority({
+        root: ws.tmpDir,
+        sessionId: ctx.sessionID,
       });
+      expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
+      expect(resumed).toEqual({ kind: 'none' });
+      expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
+      expect(await fs.readFile(statePath(sessDir), 'utf-8')).toBe(corrupt);
     });
 
-    it('fails closed with SYSTEM_WORK_STATE_UNREADABLE on an unreadable session state', async () => {
+    it('never runs checks when the canonical authority reports an unreadable session state', async () => {
       await reachTeamPlanReview();
       const sessDir = await getSessDir();
-      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
+      const corrupt = '{ this is not valid json';
+      await fs.writeFile(statePath(sessDir), corrupt, 'utf-8');
+      vi.mocked(executorMock.executeCheck).mockClear();
 
-      const result = JSON.parse((await runActiveChecksAutomatically(ctx))!);
+      const result = await runActiveChecksAutomatically(ctx);
 
-      // Never a silent "do not run": an unreadable system-work session is a
-      // typed fail-closed result.
-      expect(result).toMatchObject({ error: true, code: 'SYSTEM_WORK_STATE_UNREADABLE' });
+      // Never a silent "do not run" behind a fabricated session: the authority
+      // surfaces the typed persistence failure, the runner performs no check
+      // and the corrupted state is not rewritten.
+      const authority = await resolveSessionAuthority({
+        root: ws.tmpDir,
+        sessionId: ctx.sessionID,
+      });
+      expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
+      expect(result).toBeNull();
+      expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
+      expect(await fs.readFile(statePath(sessDir), 'utf-8')).toBe(corrupt);
     });
   });
 });

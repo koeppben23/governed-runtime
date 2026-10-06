@@ -28,12 +28,13 @@ import { z } from 'zod';
 import type { ToolDefinition, ToolResult, WorkspaceToolContext } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
 import {
   withReadOnlySession,
-  formatAutoAdvanceOverflow,
   getWorktree,
   writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
-  requireStateForMutation,
+  requireBoundStateForMutation,
+  requireWorkspacePaths,
   resolvePolicyFromState,
   createPolicyContext,
 } from '../helpers.js';
@@ -171,13 +172,14 @@ async function validateAndAttest(
   candidateId: string | undefined,
   context: WorkspaceToolContext,
 ): Promise<PhaseAResult> {
-  const { sessDir, state } = await withReadOnlySession(context);
-  if (!state) {
+  const session = await withReadOnlySession(context);
+  if (!session.state) {
     throw new IntegrationInvariantError(
       'NO_SESSION',
       'No FlowGuard session found — run /hydrate first.',
     );
   }
+  const { sessDir, state } = session;
 
   const guard = validateRunCheckRequest(kind, candidateId, state);
   if (typeof guard === 'string') return guard;
@@ -395,8 +397,14 @@ interface RevalidatedCheck {
 type CheckRevalidation = string | RevalidatedCheck;
 
 async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<CheckRevalidation> {
-  // Re-read fresh state under lock and revalidate
-  const freshState = await requireStateForMutation(input.sessDir);
+  // Re-read fresh state under lock through the canonical session authority and
+  // revalidate. The authority revalidates root, fingerprint, and binding.
+  const paths = await requireWorkspacePaths({
+    sessionID: input.sessionId,
+    worktree: input.worktree,
+    directory: input.worktree,
+  });
+  const freshState = await requireBoundStateForMutation(paths);
   const freshPolicy = resolvePolicyFromState(freshState);
   const railCtx = createPolicyContext(freshPolicy);
 

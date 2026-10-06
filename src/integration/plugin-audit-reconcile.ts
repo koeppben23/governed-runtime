@@ -29,21 +29,18 @@ import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { computeStateDigest, mutateStateWithAuditOperations } from './audit-outbox.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
-  resolveFingerprint(): Promise<string | null>;
-  getSessionDir(sessionId: string): string | null;
   /**
-   * Canonical worktree + sessionId → sessionDir resolution, independent of the
-   * cached fingerprint mapping. Discriminated outcome: `unavailable` must be
-   * distinguished from a positively resolved-but-absent session directory.
+   * The canonical session authority. Audit context is never derived from a
+   * cached fingerprint: the authority validates root, fingerprint, and the
+   * persisted binding, and returns the validated state.
    */
-  resolveCanonicalSessionDir?(
-    sessionId: string,
-  ): Promise<{ status: 'resolved'; sessDir: string } | { status: 'unavailable' }>;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   resolveSessionPolicy(sessDir: string): Promise<{
     policy: {
       audit: {
@@ -73,7 +70,6 @@ export interface AuditDeps {
     warn(service: string, message: string, extra?: Record<string, unknown>): void;
   };
   logError(message: string, err: unknown): void;
-  cachedFingerprint: string | null;
   mode: string;
   tsaProvider?: TimestampAuthorityProvider;
   timestampVerifier?: TimestampVerifier;
@@ -383,6 +379,8 @@ export interface AuditBlockOutcome {
   readonly auditOk: false;
   readonly block: true;
   readonly code: string;
+  /** Original typed authority code when the block wraps an unavailable resolution. */
+  readonly causeCode?: string;
   readonly reason: string;
 }
 
@@ -426,14 +424,13 @@ export async function reconcilePendingAuditOperations(
     // the call whose mutation is being reconciled. A synthetic identity here
     // would silently miss `policy.actorClassification[toolName]` and
     // misattribute the diagnostic tool label.
-    const resolved = await resolveAuditContext(deps, toolName, {}, sessionId);
-    if (!resolved) {
+    const resolution = await resolveAuditContext(deps, toolName, {}, sessionId);
+    if (resolution.kind === 'absent') {
       // Only a genuine bootstrap may tolerate a missing audit session
       // authority: the very first flowguard_hydrate creates the session and
       // its outbox — and only when the absence of a session is positively
-      // proven. An unavailable resolution authority fails closed.
-      const existence = await resolveBootstrapStateExistence(deps, sessionId);
-      if (toolName === TOOL_FLOWGUARD_HYDRATE && existence === 'absent') {
+      // proven by the canonical authority.
+      if (toolName === TOOL_FLOWGUARD_HYDRATE) {
         return undefined;
       }
       return {
@@ -446,9 +443,23 @@ export async function reconcilePendingAuditOperations(
           'restore the session state.',
       };
     }
-    const tracker = createStrictTimestampTracker(resolved.ctx.timestampAssurance);
-    await emitTransitionAudits({ deps, ctx: resolved.ctx, sessionId, timestampTracker: tracker });
-    return await finalizeStrictTimestampFailure(resolved.ctx, tracker.failure);
+    if (resolution.kind === 'unavailable') {
+      return {
+        auditOk: false,
+        block: true,
+        code: 'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
+        causeCode: resolution.code,
+        reason: resolution.reason,
+      };
+    }
+    const tracker = createStrictTimestampTracker(resolution.ctx.timestampAssurance);
+    await emitTransitionAudits({
+      deps,
+      ctx: resolution.ctx,
+      sessionId,
+      timestampTracker: tracker,
+    });
+    return await finalizeStrictTimestampFailure(resolution.ctx, tracker.failure);
   } catch (err) {
     deps.logError('Failed to reconcile durable audit operations', err);
     if (err instanceof AuditTransitionEvidenceGapError) {
@@ -471,24 +482,15 @@ export type BootstrapStateExistence = 'exists' | 'absent' | 'unavailable';
  * fail closed — unavailable is never treated as absent.
  */
 /**
- * Positively establish whether a governed session exists, independent of the
- * cached fingerprint mapping.
- *
- * `getSessionDir` resolves through a CACHED fingerprint, so a cold process or a
- * transient fingerprint failure yields null — which is indistinguishable from
- * a session that does not exist. Only this function may decide absence, and
- * it reports `unavailable` when it cannot: an unavailable resolution
- * authority must never be treated as proof of absence.
+ * Positively establish whether a governed session exists through the canonical
+ * session authority. `unavailable` is never treated as proof of absence.
  */
 export async function resolveBootstrapStateExistence(
   deps: AuditDeps,
   sessionId: string,
 ): Promise<BootstrapStateExistence> {
-  const mapped = deps.getSessionDir(sessionId);
-  if (mapped) {
-    return (await readState(mapped)) !== null ? 'exists' : 'absent';
-  }
-  const canonical = await deps.resolveCanonicalSessionDir?.(sessionId);
-  if (!canonical || canonical.status === 'unavailable') return 'unavailable';
-  return (await readState(canonical.sessDir)) !== null ? 'exists' : 'absent';
+  const resolution = await deps.resolveSessionAuthority(sessionId);
+  if (resolution.status === 'resolved') return 'exists';
+  if (resolution.status === 'absent') return 'absent';
+  return 'unavailable';
 }

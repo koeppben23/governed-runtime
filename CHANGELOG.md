@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Single canonical session authority (#957).** Plugin hooks, tool execution,
+  MCP projection, and hook session resolution now resolve sessions through
+  `resolveSessionAuthority`: the canonical git worktree is fingerprinted and
+  the persisted worktree/fingerprint binding is validated before any state is
+  trusted. Worktree drift now fails closed with `WORKTREE_MISMATCH`; fingerprint
+  drift on the same root fails closed with the new `SESSION_BINDING_MISMATCH`
+  reason code, and unexpected resolution failures surface as
+  `SESSION_AUTHORITY_UNAVAILABLE`. The explicit `FLOWGUARD_SESSION_DIR` hook
+  override is unchanged. Full base-profile mutation admission for
+  `src/adapters/session-authority.ts`: 100 % (20 killed, 0 survived).
 
 ## [2.0.0-tp.2] - 2026-10-04
 

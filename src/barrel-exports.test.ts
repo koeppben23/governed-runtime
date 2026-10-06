@@ -285,6 +285,7 @@ describe('src/index.ts barrel', () => {
 describe('integration tools use barrel imports', () => {
   const INTEGRATION_FILES = [
     'integration/tools/helpers.ts',
+    'integration/tools/workflow-policy-context.ts',
     'integration/tools/plan/plan.ts',
     'integration/tools/plan/plan-response.ts',
     'integration/tools/architecture/architecture.ts',
@@ -350,6 +351,7 @@ describe('integration tools use barrel imports', () => {
   describe('HAPPY — integration files use barrel imports', () => {
     const FILES_USING_PRESENTATION = INTEGRATION_FILES.filter(
       (f) =>
+        f !== 'integration/tools/helpers.ts' &&
         f !== 'integration/tools/plan/plan.ts' &&
         f !== 'integration/tools/architecture/architecture.ts' &&
         f !== 'integration/tools/architecture/architecture-submit.ts' &&
@@ -357,6 +359,7 @@ describe('integration tools use barrel imports', () => {
     );
     const FILES_USING_WORKSPACE = INTEGRATION_FILES.filter(
       (f) =>
+        f !== 'integration/tools/workflow-policy-context.ts' &&
         f !== 'integration/tools/plan/plan.ts' &&
         f !== 'integration/tools/architecture/architecture.ts' &&
         f !== 'integration/tools/architecture/architecture-submit.ts' &&

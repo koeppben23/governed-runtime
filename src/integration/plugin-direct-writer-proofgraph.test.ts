@@ -30,6 +30,7 @@ import { recordMutationCompletion } from './plugin-mutation-episodes.js';
 import { finalizeStrictTimestampFailure } from './plugin-audit-reconcile.js';
 import { persistRiskDecisionBlock } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
+import { resolvedAuthority } from './plugin-audit-test-helpers.js';
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
 import { freezeReviewMaterial } from './review/obligations/assurance.js';
 import { blockObligation } from './review/obligations/obligation-state.js';
@@ -156,7 +157,9 @@ describe('direct metadata write channel', () => {
     const seeded = await seedClaimState('IMPLEMENTATION', {
       mutationEpisodes: [episode(hostCallId, 'bash')],
     });
-    const runtime = { ws: { getSessionDir: () => sessDir } } as never;
+    const runtime = {
+      ws: { resolveSessionAuthority: async () => resolvedAuthority(seeded, sessDir) },
+    } as never;
 
     await recordMutationCompletion({
       runtime,
@@ -565,7 +568,20 @@ describe('direct metadata write channel', () => {
 
     try {
       await enforceDiscoveryHealthAfterBash(
-        { getSessionDir: () => sessDir, getWorkspaceDir: () => workspaceDir },
+        {
+          resolveSessionAuthority: async (sessionId: string) => {
+            const state = await readState(sessDir);
+            if (state === null || state.flowguardSessionId !== sessionId) {
+              return {
+                status: 'unavailable' as const,
+                code: 'SESSION_BINDING_MISMATCH' as const,
+                reason: 'test authority unavailable',
+              };
+            }
+            return resolvedAuthority(state, sessDir);
+          },
+          getWorkspaceDir: () => workspaceDir,
+        },
         seeded.flowguardSessionId,
         output,
       );

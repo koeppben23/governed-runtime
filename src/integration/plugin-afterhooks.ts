@@ -23,7 +23,6 @@ import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
 import { appendReviewAuditEventForState } from './review/evidence/audit-events.js';
-import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import {
   isReviewableFlowGuardTool,
@@ -194,8 +193,8 @@ async function verifyPersistedReviewAuthority(
       obligationId: signal.obligationId,
     };
   }
-  const sessDir = runtime.ws.getSessionDir(ctx.sessionId);
-  const state = sessDir ? await readState(sessDir) : null;
+  const resolution = await runtime.ws.resolveSessionAuthority(ctx.sessionId);
+  const state = resolution.status === 'resolved' ? resolution.state : null;
   const continuation = resolveReviewContinuation(state?.reviewAssurance, signal.obligationType);
   const matches =
     continuation.kind === 'awaiting_task' &&
@@ -335,18 +334,21 @@ export async function handlePluginEvent(
       resumePendingSystemWork: (sessionId: string) =>
         resumeSystemWorkForSession(runtime, sessionId),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
-        const sessDir = runtime.ws.getSessionDir(sessionId);
-        if (!sessDir) return;
-        const state = await readState(sessDir);
+        const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
         // Without durable session identity there is no canonical audit event
         // to append. The outer event handler remains fail-safe for the host.
-        if (!state) return;
-        // Stryker disable next-line ObjectLiteral
-        await appendReviewAuditEventForState(sessDir, sessionId, state, 'error:SESSION_ERROR', {
-          code: 'SESSION_ERROR',
-          message: errorMessage,
-          ...detail,
-        });
+        if (resolution.status !== 'resolved') return;
+        await appendReviewAuditEventForState(
+          resolution.sessDir,
+          sessionId,
+          resolution.state,
+          'error:SESSION_ERROR',
+          {
+            code: 'SESSION_ERROR',
+            message: errorMessage,
+            ...detail,
+          },
+        );
       },
     };
     await handleEvent(eventDeps, event as Parameters<typeof handleEvent>[1]);
@@ -363,7 +365,7 @@ export async function handleCompaction(
     // Stryker disable next-line ConditionalExpression
     if (!sessionId) return;
     const compactionDeps: CompactionDeps = {
-      getSessionDir: runtime.ws.getSessionDir,
+      resolveSessionAuthority: (sid) => runtime.ws.resolveSessionAuthority(sid),
       log: runtime.log,
     };
     const context = await buildCompactionContext(compactionDeps, sessionId);

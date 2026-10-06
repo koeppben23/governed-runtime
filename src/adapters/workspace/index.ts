@@ -23,6 +23,7 @@ export {
   type FingerprintResult,
   type WorkspaceInfo,
   type SessionPointer,
+  type WorkspaceErrorCode,
   WorkspaceError,
   validateFingerprint,
   validateSessionId,

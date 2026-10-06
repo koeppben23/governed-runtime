@@ -53,11 +53,25 @@ export function createSessionCompletionAuditDeps(input: {
   readonly fingerprint: string;
   readonly state: SessionState;
 }): AuditDeps {
-  const { sessDir, sessionID, fingerprint, state } = input;
+  const { sessDir, sessionID, state } = input;
   return {
-    resolveFingerprint: async () => fingerprint,
-    getSessionDir: (candidate) => (candidate === sessionID ? sessDir : null),
-    resolveCanonicalSessionDir: async () => ({ status: 'resolved', sessDir }),
+    resolveSessionAuthority: async (candidate: string) => {
+      if (candidate !== sessionID) {
+        return {
+          status: 'unavailable' as const,
+          code: 'SESSION_BINDING_MISMATCH' as const,
+          reason: `The completion audit authority is scoped to session "${sessionID}".`,
+        };
+      }
+      const persisted = (await readState(sessDir)) ?? state;
+      return {
+        status: 'resolved' as const,
+        sessDir,
+        worktreeRoot: persisted.binding.worktree,
+        fingerprint: persisted.binding.fingerprint,
+        state: persisted,
+      };
+    },
     resolveSessionPolicy: async () => ({
       policy: resolvePolicyFromSnapshot(state.policySnapshot),
       state: await readState(sessDir),
@@ -92,7 +106,6 @@ export function createSessionCompletionAuditDeps(input: {
     },
     logError: (message, err) =>
       getAdapterLogger().error('services', message, { error: serializeError(err) }),
-    cachedFingerprint: fingerprint,
     mode: state.policySnapshot.mode,
     tsaProvider: new HttpTimestampAuthorityProvider(),
     timestampVerifier: new PkijsTimestampVerifier(),

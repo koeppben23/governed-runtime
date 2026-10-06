@@ -85,9 +85,12 @@ describe('integration/plugin-workspace', () => {
         expect(fp).toBeNull();
       });
 
-      it('getSessionDir returns null when no fingerprint', () => {
+      it('resolveSessionAuthority reports NO_WORKTREE when no auditWorktree is configured', async () => {
         const ws = new PluginWorkspaceImpl(fakeDeps());
-        expect(ws.getSessionDir('any')).toBeNull();
+        await expect(ws.resolveSessionAuthority('any')).resolves.toMatchObject({
+          status: 'unavailable',
+          code: 'NO_WORKTREE',
+        });
       });
 
       it('getEnforcementState returns a fresh state for new session', () => {

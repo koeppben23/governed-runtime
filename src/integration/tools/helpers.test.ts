@@ -12,11 +12,11 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { formatBlocked } from '../blocked-result.js';
-import { formatAutoAdvanceOverflow, getWorktree } from './helpers.js';
+import { getWorktree } from './helpers.js';
 import { formatRailResult } from './helpers-rail-presentation.js';
 import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
-import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';
+import type { RailResult } from '../../rails/types.js';
 import { makeProgressedState } from '../../fixtures.js';
 
 function parseJSON(s: string): Record<string, unknown> {
@@ -99,18 +99,6 @@ describe('formatBlocked', () => {
 
     const unmigrated = parseJSON(formatBlocked('COMMAND_NOT_ALLOWED'));
     expect(unmigrated.headline).toBeUndefined();
-  });
-});
-
-describe('formatAutoAdvanceOverflow', () => {
-  it('formats overflow with phase and limit', () => {
-    const result = parseJSON(
-      formatAutoAdvanceOverflow({ phase: 'PLAN', limit: 10 } as AutoAdvanceOverflow),
-    );
-    expect(result.error).toBe(true);
-    const overflow = result.autoAdvanceOverflow as Record<string, unknown>;
-    expect(overflow.phase).toBe('PLAN');
-    expect(overflow.limit).toBe(10);
   });
 });
 

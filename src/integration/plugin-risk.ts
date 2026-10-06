@@ -5,8 +5,7 @@
  * @version v1
  */
 
-import { existsSync } from 'node:fs';
-
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
 import type { SessionState } from '../state/schema.js';
 import { PersistenceError, readState } from '../adapters/persistence.js';
 import { changedFiles } from '../adapters/git.js';
@@ -59,7 +58,7 @@ function riskScopeUnknown(toolName: string, args: Record<string, unknown>): bool
 }
 
 export interface RiskEnforcementDeps {
-  getSessionDir(sessionId: string): string | null;
+  resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   getWorktreeRoot(): string | undefined;
 }
 
@@ -330,17 +329,19 @@ export async function enforceRiskClassificationAfterBash(
   sessionId: string,
   output: { output?: unknown },
 ): Promise<void> {
-  const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir || !existsSync(sessDir)) {
+  const resolution = await deps.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') {
     // A bash call is governed by the Before-hook boundary, which requires a
     // resolvable FlowGuard session. Lost context after release is an invariant
     // violation, so it fails closed instead of silently skipping the gate.
     output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
       reason:
         'Post-bash risk classification has no resolvable FlowGuard session context for a governed mutation.',
+      ...(resolution.status === 'unavailable' ? { causeCode: resolution.code } : {}),
     });
     return;
   }
+  const sessDir = resolution.sessDir;
   const stateResult = await readRiskStateForBash(sessDir, output);
   if (stateResult.kind === 'unavailable') return;
   if (stateResult.kind === 'missing') {

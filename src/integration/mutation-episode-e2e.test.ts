@@ -24,10 +24,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import {
+  canonicalBinding,
   createBootableHostClient,
   createTestWorkspace,
   createToolContext,
   parseToolResult,
+  type TestWorkspace,
 } from './test-helpers.js';
 import {
   computeFingerprint,
@@ -74,6 +76,22 @@ async function killLeaseHolder(sessDir: string): Promise<void> {
   });
 }
 
+/**
+ * Progressed fixture state rebound to the canonical test worktree so the
+ * single session authority resolves it (the fixture default binding points at
+ * a synthetic /tmp/test-repo and would fail WORKTREE_MISMATCH).
+ */
+async function boundProgressedState(
+  ws: TestWorkspace,
+  sessionID: string,
+  phase: Parameters<typeof makeProgressedState>[0],
+) {
+  return {
+    ...makeProgressedState(phase),
+    binding: await canonicalBinding(ws.tmpDir, sessionID),
+  };
+}
+
 function createMockInput(overrides: Record<string, unknown> = {}) {
   return {
     project: {} as unknown,
@@ -97,7 +115,10 @@ async function recordMutationOutcome(
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
     await fs.mkdir(sessDir, { recursive: true });
-    await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+    await writeStateWithArtifacts(
+      sessDir,
+      await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
+    );
     const hooks = await FlowGuardAuditPlugin(
       createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
     );
@@ -121,7 +142,10 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+      await writeStateWithArtifacts(
+        sessDir,
+        await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
+      );
 
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -182,7 +206,10 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+      await writeStateWithArtifacts(
+        sessDir,
+        await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
+      );
 
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -290,7 +317,10 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+      await writeStateWithArtifacts(
+        sessDir,
+        await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
+      );
 
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -322,7 +352,10 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+      await writeStateWithArtifacts(
+        sessDir,
+        await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
+      );
 
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -372,7 +405,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // pristine worktree.
       const baselineMarker = await computeGitControlPlaneMarker(ws.tmpDir);
       await writeStateWithArtifacts(sessDir, {
-        ...makeProgressedState('IMPLEMENTATION'),
+        ...(await boundProgressedState(ws, sessionID, 'IMPLEMENTATION')),
         implementationBaseline: {
           dirtyFiles: [],
           capturedAt: '2026-01-01T00:00:00.000Z',
@@ -435,7 +468,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
-        const implementationState = makeProgressedState('IMPLEMENTATION');
+        const implementationState = await boundProgressedState(ws, sessionID, 'IMPLEMENTATION');
         await writeStateWithArtifacts(sessDir, { ...implementationState, phase });
 
         const hooks = await FlowGuardAuditPlugin(
@@ -467,7 +500,10 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      await writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
+      await writeStateWithArtifacts(
+        sessDir,
+        await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
+      );
 
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
@@ -584,7 +620,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      const reviewState = makeProgressedState('IMPL_REVIEW');
+      const reviewState = await boundProgressedState(ws, sessionID, 'IMPL_REVIEW');
       await writeStateWithArtifacts(sessDir, { ...reviewState, phase: 'IMPLEMENTATION' });
 
       const hooks = await FlowGuardAuditPlugin(
@@ -646,7 +682,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      const recoveredState = makeProgressedState('EVIDENCE_REVIEW');
+      const recoveredState = await boundProgressedState(ws, sessionID, 'EVIDENCE_REVIEW');
       await writeStateWithArtifacts(sessDir, {
         ...recoveredState,
         implementation: {
@@ -714,7 +750,7 @@ describe('reconcile mutation episode fail-closed branches', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
-      const base = makeProgressedState('IMPLEMENTATION');
+      const base = await boundProgressedState(ws, sessionID, 'IMPLEMENTATION');
       await writeStateWithArtifacts(sessDir, {
         ...base,
         mutationEpisodes: [

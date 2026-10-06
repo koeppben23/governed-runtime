@@ -24,6 +24,12 @@ const mockState: SessionState = {
   },
 } as unknown as SessionState;
 
+/** State whose persisted binding fingerprint matches the mocked canonical projection. */
+const derivedState = {
+  ...mockState,
+  binding: { ...mockState.binding, fingerprint: 'fp-abc' },
+} as SessionState;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function setEnv(value: string | undefined): void {
@@ -107,7 +113,7 @@ describe('resolveSession', () => {
       }));
 
       vi.doMock('../../adapters/persistence.js', () => ({
-        readState: vi.fn().mockResolvedValue(mockState),
+        readState: vi.fn().mockResolvedValue(derivedState),
       }));
 
       vi.doMock('../../adapters/workspace/index.js', () => ({
@@ -134,17 +140,25 @@ describe('resolveSession', () => {
       expect(mockComputeFingerprint).toHaveBeenCalledWith('/some/cwd');
     });
 
-    it('returns FINGERPRINT_FAILED when computeFingerprint throws', async () => {
+    it('returns GIT_NOT_FOUND when fingerprint computation fails with a typed git error', async () => {
       setEnv(undefined);
 
-      vi.doMock('../../adapters/workspace/index.js', () => ({
-        computeFingerprint: vi.fn().mockRejectedValue(new Error('git not found')),
-        sessionDir: vi.fn(),
-      }));
+      vi.doMock('../../adapters/workspace/index.js', async () => {
+        const { GitError } = await import('../../adapters/git.js');
+        return {
+          computeFingerprint: vi
+            .fn()
+            .mockRejectedValue(new GitError('GIT_NOT_FOUND', 'git not found')),
+          sessionDir: vi.fn(),
+        };
+      });
 
-      vi.doMock('../../adapters/persistence.js', () => ({
-        readState: vi.fn(),
-      }));
+      vi.doMock('../../adapters/persistence.js', async () => {
+        const actual = await vi.importActual<typeof import('../../adapters/persistence.js')>(
+          '../../adapters/persistence.js',
+        );
+        return { ...actual, readState: vi.fn() };
+      });
 
       vi.doMock('../../adapters/git.js', async (importOriginal) => {
         const actual = await importOriginal<typeof import('../../adapters/git.js')>();
@@ -156,24 +170,31 @@ describe('resolveSession', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('FINGERPRINT_FAILED');
+        expect(result.code).toBe('GIT_NOT_FOUND');
         expect(result.reason).toContain('/no-git');
       }
     });
 
-    it('returns SESSION_DIR_INVALID when sessionDir throws', async () => {
+    it('returns INVALID_SESSION_ID when sessionDir rejects the session id', async () => {
       setEnv(undefined);
 
-      vi.doMock('../../adapters/workspace/index.js', () => ({
-        computeFingerprint: vi.fn().mockResolvedValue({ fingerprint: 'fp-abc' }),
-        sessionDir: vi.fn().mockImplementation(() => {
-          throw new Error('invalid fingerprint');
-        }),
-      }));
+      vi.doMock('../../adapters/workspace/index.js', async () => {
+        const { WorkspaceError } = await import('../../adapters/workspace/types.js');
+        return {
+          WorkspaceError,
+          computeFingerprint: vi.fn().mockResolvedValue({ fingerprint: 'fp-abc' }),
+          sessionDir: vi.fn().mockImplementation(() => {
+            throw new WorkspaceError('INVALID_SESSION_ID', 'invalid fingerprint');
+          }),
+        };
+      });
 
-      vi.doMock('../../adapters/persistence.js', () => ({
-        readState: vi.fn(),
-      }));
+      vi.doMock('../../adapters/persistence.js', async () => {
+        const actual = await vi.importActual<typeof import('../../adapters/persistence.js')>(
+          '../../adapters/persistence.js',
+        );
+        return { ...actual, readState: vi.fn() };
+      });
 
       vi.doMock('../../adapters/git.js', async (importOriginal) => {
         const actual = await importOriginal<typeof import('../../adapters/git.js')>();
@@ -185,7 +206,7 @@ describe('resolveSession', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('SESSION_DIR_INVALID');
+        expect(result.code).toBe('INVALID_SESSION_ID');
       }
     });
   });
@@ -193,7 +214,7 @@ describe('resolveSession', () => {
   describe('cwd binding validation (H8)', () => {
     const boundState = {
       ...mockState,
-      binding: { ...mockState.binding, worktree: '/bound/worktree' },
+      binding: { ...mockState.binding, worktree: '/bound/worktree', fingerprint: 'fp-abc' },
     } as SessionState;
 
     function mockDerivedSession(state: unknown): void {

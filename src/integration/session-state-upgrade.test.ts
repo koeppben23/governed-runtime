@@ -6,14 +6,13 @@ import * as crypto from 'node:crypto';
 import {
   createToolContext,
   createTestWorkspace,
-  parseToolResult,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { readState, statePath } from '../adapters/persistence.js';
-import { status } from './tools/index.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { makeState } from '../fixtures.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -83,10 +82,15 @@ describe('session-state current epoch boundary', () => {
     ];
 
     for (const file of fixtures) {
-      await writeFixtureState(file);
-      const result = parseToolResult(await status.execute({}, ctx));
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('SESSION_STATE_INCOMPATIBLE');
+      const sessDir = await writeFixtureState(file);
+      // The canonical authority must reject the legacy snapshot at its own
+      // trust boundary instead of resolving a session from it.
+      await expect(
+        resolveSessionAuthority({ root: ws.tmpDir, sessionId: ctx.sessionID }),
+      ).resolves.toMatchObject({ status: 'unavailable', code: 'SESSION_STATE_INCOMPATIBLE' });
+      await expect(readState(sessDir)).rejects.toMatchObject({
+        code: 'SESSION_STATE_INCOMPATIBLE',
+      });
     }
   });
 
@@ -154,9 +158,12 @@ describe('session-state current epoch boundary', () => {
   });
 
   it('rejects legacy states with missing archive status and unversioned digests', async () => {
-    await writeFixtureState('v1-no-archive-status.json');
-    const result = parseToolResult(await status.execute({}, ctx));
-    expect(result.error).toBe(true);
-    expect(result.code).toBe('SESSION_STATE_INCOMPATIBLE');
+    const sessDir = await writeFixtureState('v1-no-archive-status.json');
+    await expect(
+      resolveSessionAuthority({ root: ws.tmpDir, sessionId: ctx.sessionID }),
+    ).resolves.toMatchObject({ status: 'unavailable', code: 'SESSION_STATE_INCOMPATIBLE' });
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
   });
 });
