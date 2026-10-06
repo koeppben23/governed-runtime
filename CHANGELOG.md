@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hydrate risk-class escalation is raise-only.** Re-hydrating an existing
+  session with a lower `claimedTaskClass` no longer lowers the persisted
+  escalation: the rail clamps to `maxTaskClass(existing, claim)`, matching the
+  documented raise-only contract. A blocked `riskGate` still stays fail-closed
+  and requires a fresh governed session.
+
 - **Terminal command admissibility (#G6).** Command policy and terminal
   handling no longer diverge for `/hydrate` and `/abort`: `/abort` is an
   idempotent no-op on terminal phases, and `/hydrate` stays available as the

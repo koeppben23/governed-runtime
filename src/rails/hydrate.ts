@@ -37,7 +37,7 @@ import {
   CURRENT_STATE_DIGEST_FORMAT,
   type SessionState,
 } from '../state/schema.js';
-import type { TaskClass } from '../state/task-class.js';
+import { maxTaskClass, type TaskClass } from '../state/task-class.js';
 import type { BindingInfo } from '../state/evidence.js';
 import type { ActorAssurance } from '../shared/actor-assurance.js';
 import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
@@ -205,8 +205,18 @@ function handleExistingState(
   s: HydrateSessionInput,
   ctx: RailContext,
 ): RailResult {
-  const nextState = s.claimedTaskClass
-    ? { ...existingState, claimedTaskClass: s.claimedTaskClass }
+  // Raise-only escalation: an explicit claimedTaskClass can never lower the
+  // persisted claim. This matches the documented contract and the effective
+  // task-class resolution, which treats every escalation source as a floor.
+  const claim = s.claimedTaskClass;
+  const nextState = claim
+    ? {
+        ...existingState,
+        claimedTaskClass:
+          existingState.claimedTaskClass === undefined
+            ? claim
+            : maxTaskClass(existingState.claimedTaskClass, claim),
+      }
     : existingState;
   const result = evaluate(nextState, ctx.policy);
   return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
