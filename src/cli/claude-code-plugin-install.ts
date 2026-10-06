@@ -26,6 +26,12 @@ export function claudeCodePluginSnapshotPaths(target: string): string[] {
   ];
 }
 
+/** Every plugin file the installer writes via writeIfAbsent for this target. */
+export function claudeCodePluginFilePaths(target: string): string[] {
+  const pluginRoot = resolveClaudeCodePluginRoot(target);
+  return CLAUDE_CODE_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath));
+}
+
 export async function installClaudeCodePlugin(
   target: string,
   version: string,

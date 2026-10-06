@@ -287,14 +287,29 @@ function parseCodexMarketplace(raw: string): CodexMarketplace | null {
   return parsed as CodexMarketplace;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Full structural validation of the FlowGuard marketplace entry: containers
+ * must be plain objects and every structural field must have its declared
+ * type. A structurally valid entry with wrong values stays a registration
+ * mismatch (NOT_ACTIVATED); a wrong type or missing structural field is a
+ * malformed marketplace.
+ */
 function isFlowGuardEntryShape(entry: unknown): boolean {
-  if (typeof entry !== 'object' || entry === null) return false;
-  const candidate = entry as { source?: unknown; policy?: unknown };
+  if (!isPlainObject(entry)) return false;
+  const source = entry['source'];
+  const policy = entry['policy'];
   return (
-    typeof candidate.source === 'object' &&
-    candidate.source !== null &&
-    typeof candidate.policy === 'object' &&
-    candidate.policy !== null
+    isPlainObject(source) &&
+    typeof source['source'] === 'string' &&
+    typeof source['path'] === 'string' &&
+    isPlainObject(policy) &&
+    typeof policy['installation'] === 'string' &&
+    typeof policy['authentication'] === 'string' &&
+    typeof entry['category'] === 'string'
   );
 }
 

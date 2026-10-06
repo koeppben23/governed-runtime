@@ -128,7 +128,6 @@
   "claudeCodePluginManifest@src/templates/index.ts",
   "codexHooksJson@src/templates/index.ts",
   "codexMcpJson@src/templates/index.ts",
-  "codexPluginFilePaths@src/cli/codex-plugin-install.ts",
   "codexPluginManifest@src/templates/index.ts",
   "computeDiscoveryHydration@src/integration/tools/hydrate/hydrate-discovery.ts",
   "configRoot@src/adapters/workspace/index.ts",

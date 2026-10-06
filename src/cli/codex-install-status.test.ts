@@ -109,6 +109,33 @@ describe('codexInstallStatus', () => {
     expect(codexInstallStatus('repo')).toBe('MARKETPLACE_MALFORMED');
   });
 
+  it('reports MARKETPLACE_MALFORMED for non-object containers in the FlowGuard entry', async () => {
+    await seedPluginTree();
+    await writeMarketplace(
+      JSON.stringify({ plugins: [{ name: 'flowguard', source: [], policy: {} }] }),
+    );
+
+    expect(codexInstallStatus('repo')).toBe('MARKETPLACE_MALFORMED');
+  });
+
+  it('reports MARKETPLACE_MALFORMED for wrong inner field types', async () => {
+    await seedPluginTree();
+    await writeMarketplace(
+      JSON.stringify({
+        plugins: [
+          {
+            name: 'flowguard',
+            source: { source: 42, path: [] },
+            policy: { installation: {}, authentication: null },
+            category: [],
+          },
+        ],
+      }),
+    );
+
+    expect(codexInstallStatus('repo')).toBe('MARKETPLACE_MALFORMED');
+  });
+
   it('reports MARKETPLACE_UNREADABLE when the marketplace cannot be read', async () => {
     await seedPluginTree();
     const marketplacePath = resolveCodexMarketplacePath('repo');

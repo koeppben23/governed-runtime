@@ -1772,6 +1772,51 @@ describe('cli/install', () => {
       expect(existsSync(path.join(tmpDir, '.claude', 'flowguard.json'))).toBe(false);
     });
 
+    it('blocks a Claude tree whose only artifact is a stale hooks/hooks.json', async () => {
+      const tarball = await createMockTarball();
+      const hooksPath = path.join(tmpDir, '.claude', 'flowguard-plugin', 'hooks', 'hooks.json');
+      await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+      await fs.writeFile(hooksPath, '{"hooks":{}}', 'utf-8');
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errorDetails?.some((e) => e.code === 'MANAGED_ARTIFACT_CONFLICT')).toBe(true);
+      expect(
+        existsSync(
+          path.join(tmpDir, '.claude', 'flowguard-plugin', '.claude-plugin', 'plugin.json'),
+        ),
+      ).toBe(false);
+    });
+
+    it('blocks a Codex tree whose only artifact is a stale .mcp.json', async () => {
+      const tarball = await createMockTarball();
+      const mcpPath = path.join(tmpDir, 'plugins', 'flowguard', '.mcp.json');
+      await fs.mkdir(path.dirname(mcpPath), { recursive: true });
+      await fs.writeFile(mcpPath, '{"mcpServers":{}}', 'utf-8');
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errorDetails?.some((e) => e.code === 'MANAGED_ARTIFACT_CONFLICT')).toBe(true);
+      expect(
+        existsSync(path.join(tmpDir, 'plugins', 'flowguard', '.codex-plugin', 'plugin.json')),
+      ).toBe(false);
+    });
+
+    it('classifies a stale Codex .mcp.json as PARTIAL_INSTALL_CONFLICT when ownership is proven', async () => {
+      const tarball = await createMockTarball();
+      const target = path.join(tmpDir, 'plugins', 'flowguard');
+      const mcpPath = path.join(target, '.mcp.json');
+      await fs.mkdir(target, { recursive: true });
+      await fs.writeFile(mcpPath, '{"mcpServers":{}}', 'utf-8');
+      await writeInstallOwnershipManifest(target, ownershipManifest('codex'));
+
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errorDetails?.some((e) => e.code === 'PARTIAL_INSTALL_CONFLICT')).toBe(true);
+    });
+
     it('blocks a proven partial FlowGuard install with PARTIAL_INSTALL_CONFLICT', async () => {
       const tarball = await createMockTarball();
       const target = path.join(tmpDir, '.claude');
