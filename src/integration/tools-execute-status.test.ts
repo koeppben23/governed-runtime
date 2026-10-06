@@ -303,9 +303,10 @@ describe('status', () => {
       expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
 
       // /status is read-only and therefore remains executable even though
-      // terminal phases correctly reject every FlowGuard machine command.
+      // terminal phases block flow commands and /continue; the recovery
+      // escapes /hydrate and /abort remain available as recovery entrypoints.
       const statusProjection = result.status as Record<string, unknown>;
-      expect(statusProjection.allowedCommands).toEqual([]);
+      expect(statusProjection.allowedCommands).toEqual(['/hydrate', '/abort']);
     });
 
     it('includes mandates projection and recovery footer without runtime authorization', async () => {

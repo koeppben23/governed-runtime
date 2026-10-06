@@ -56,7 +56,7 @@ describe('commands', () => {
       expect(isCommandAllowed('EVIDENCE_REVIEW', Command.EXPORT)).toBe(false);
     });
 
-    it('wildcard commands allowed in all non-terminal phases', () => {
+    it('recovery escapes are allowed in every phase while /continue stays non-terminal', () => {
       const phases: Phase[] = [
         'READY',
         'TICKET',
@@ -70,11 +70,33 @@ describe('commands', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'PEER_REVIEW',
+        'COMPLETE',
+        'ARCH_COMPLETE',
+        'PEER_REVIEW_COMPLETE',
+        'REJECTED',
+        'ABORTED',
       ];
       for (const phase of phases) {
         expect(isCommandAllowed(phase, Command.HYDRATE)).toBe(true);
-        expect(isCommandAllowed(phase, Command.CONTINUE)).toBe(true);
         expect(isCommandAllowed(phase, Command.ABORT)).toBe(true);
+      }
+
+      const nonTerminalPhases: Phase[] = [
+        'READY',
+        'TICKET',
+        'PLAN',
+        'PLAN_REVIEW',
+        'VALIDATION',
+        'IMPLEMENTATION',
+        'IMPL_REVIEW',
+        'EVIDENCE_REVIEW',
+        'EXPORT_READY',
+        'ARCHITECTURE',
+        'ARCH_REVIEW',
+        'PEER_REVIEW',
+      ];
+      for (const phase of nonTerminalPhases) {
+        expect(isCommandAllowed(phase, Command.CONTINUE)).toBe(true);
       }
     });
   });
@@ -196,7 +218,7 @@ describe('commands', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('terminal phases block all commands', () => {
+    it('terminal phases block flow commands and /continue but allow the recovery escapes', () => {
       const terminals: Phase[] = [
         'COMPLETE',
         'ARCH_COMPLETE',
@@ -204,10 +226,15 @@ describe('commands', () => {
         'REJECTED',
         'ABORTED',
       ];
+      const escapes: readonly Command[] = [Command.HYDRATE, Command.ABORT];
       for (const phase of terminals) {
         for (const cmd of Object.values(Command)) {
-          expect(isCommandAllowed(phase, cmd)).toBe(false);
+          expect(isCommandAllowed(phase, cmd), `${cmd} in ${phase}`).toBe(escapes.includes(cmd));
         }
+      }
+      // The routing command requires a live (non-terminal) session.
+      for (const phase of terminals) {
+        expect(isCommandAllowed(phase, Command.CONTINUE)).toBe(false);
       }
     });
   });
@@ -258,11 +285,11 @@ describe('commands', () => {
         'ARCH_REVIEW',
         'PEER_REVIEW',
       ];
-      const expectedAllowed: Record<Command, readonly Phase[] | '*'> = {
-        [Command.HYDRATE]: '*',
+      const expectedAllowed: Record<Command, readonly Phase[] | 'all-phases' | 'non-terminal'> = {
+        [Command.HYDRATE]: 'all-phases',
         [Command.TICKET]: ['READY', 'TICKET'],
         [Command.PLAN]: ['TICKET', 'PLAN'],
-        [Command.CONTINUE]: '*',
+        [Command.CONTINUE]: 'non-terminal',
         [Command.IMPLEMENT]: ['IMPLEMENTATION'],
         [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: ['IMPL_REVIEW'],
         [Command.REVIEW_DECISION]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
@@ -271,13 +298,14 @@ describe('commands', () => {
         [Command.REVIEW]: ['READY'],
         [Command.ARCHITECTURE]: ['READY', 'ARCHITECTURE'],
         [Command.EXPORT]: ['EXPORT_READY'],
-        [Command.ABORT]: '*',
+        [Command.ABORT]: 'all-phases',
       };
 
       for (const command of Object.values(Command)) {
         for (const phase of phases) {
           const allowed = expectedAllowed[command];
-          const expected = allowed === '*' || allowed.includes(phase);
+          const expected =
+            allowed === 'all-phases' || allowed === 'non-terminal' || allowed.includes(phase);
           expect(isCommandAllowed(phase, command), `${command} in ${phase}`).toBe(expected);
         }
       }

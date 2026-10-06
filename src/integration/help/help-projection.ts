@@ -219,7 +219,10 @@ function preflight(
   ) {
     return { status: 'available', guarantee: 'read_only_available' };
   }
-  if (definition.target.toolName === TOOL_FLOWGUARD_HYDRATE) {
+  // /hydrate (and its /start alias) is the bootstrap entrypoint when no session
+  // exists. With a session present it follows the same command policy as every
+  // other command; there is no second admissibility interpretation here.
+  if (definition.target.toolName === TOOL_FLOWGUARD_HYDRATE && !state) {
     return { status: 'available', guarantee: 'eligible_to_attempt' };
   }
   if (!state) {
@@ -242,8 +245,6 @@ function preflight(
     };
   }
   if (
-    definition.id !== 'workflow.continue' &&
-    definition.id !== 'workflow.abort' &&
     definition.target.workflowCommand &&
     !isCommandAllowed(state.phase, definition.target.workflowCommand)
   ) {

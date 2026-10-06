@@ -149,6 +149,31 @@ describe('buildHelpResult', () => {
     expect(result.directive).toBeNull();
   });
 
+  it('terminal help follows the command policy: recovery escapes available, flow commands blocked', () => {
+    for (const phase of ['COMPLETE', 'ABORTED'] as const) {
+      const state =
+        phase === 'ABORTED'
+          ? makeState('ABORTED', {
+              error: {
+                code: 'ABORTED',
+                message: 'Stopped',
+                recoveryHint: 'Inspect status',
+                occurredAt: '2026-01-01T00:00:00.000Z',
+              },
+            })
+          : makeProgressedState('COMPLETE');
+      const result = buildHelpResult(state, TEAM_POLICY, { view: 'commands', scope: 'all' });
+      const statusFor = (invocation: string) =>
+        result.commands.find((command) => command.invocation === invocation)?.preflight.status;
+
+      expect(statusFor('/start'), phase).toBe('available');
+      expect(statusFor('/hydrate'), phase).toBe('available');
+      expect(statusFor('/abort'), phase).toBe('available');
+      expect(statusFor('/continue'), phase).toBe('blocked');
+      expect(statusFor('/ticket'), phase).toBe('blocked');
+    }
+  });
+
   it('no-session help recommends /start, not /hydrate', () => {
     const result = buildHelpResult(null, null, { view: 'context' });
     expect(result.directive?.invocation).toBe('/start');
