@@ -202,7 +202,11 @@ beforeEach(async () => {
   });
   vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockImplementation(
     (fingerprint, sessionId) =>
-      wsMock.archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+      wsMock.archiveSession(fingerprint, sessionId, {
+        worktree: ws.tmpDir,
+        redactionMode: 'none',
+        includeRaw: true,
+      }),
   );
   vi.mocked(regulatedArchive.archiveCompletionExport).mockImplementation(
     (

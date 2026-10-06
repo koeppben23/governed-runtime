@@ -5,8 +5,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.js';
-import { archiveFileName, archiveRegulatedEvidence } from './workspace/archive.js';
+import {
+  archiveSession as realArchiveSession,
+  initWorkspace,
+  verifyArchive,
+} from './workspace/index.js';
+import {
+  archiveFileName,
+  archiveRegulatedEvidence,
+  type ArchivePayloadOptions,
+} from './workspace/archive.js';
 import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
 import { writeState, readState } from './persistence.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
@@ -22,6 +30,18 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
+
+/**
+ * All adapter archive tests bind the repository worktree explicitly; the
+ * repo → global config precedence itself is covered by the integration suite.
+ */
+function archiveSession(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchivePayloadOptions,
+): Promise<string> {
+  return realArchiveSession(fingerprint, sessionId, { ...opts, worktree: path.resolve('.') });
+}
 
 async function createArchive() {
   const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
