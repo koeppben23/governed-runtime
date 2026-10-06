@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hydrate risk-class escalation is raise-only.** Re-hydrating an existing
+  session with a lower `claimedTaskClass` no longer lowers the persisted
+  escalation: the rail clamps to `maxTaskClass(existing, claim)`, matching the
+  documented raise-only contract. A blocked `riskGate` still stays fail-closed
+  and requires a fresh governed session.
+
 - **Archive config follows the repo → global chain.** `/archive` and the solo
   auto-archive now resolve `flowguard.json` from the canonical worktree first
   (repo config wins over global), and `archiveSession()` requires a worktree so
@@ -22,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handling no longer diverge for `/hydrate` and `/abort`: `/abort` is an
   idempotent no-op on terminal phases, and `/hydrate` stays available as the
   bootstrap/reload/recovery entrypoint (no terminal transition; its explicit
-  `claimedTaskClass` recovery remains G22). Flow commands and `/continue` stay
+  `claimedTaskClass` escalation is raise-only and never clears a blocked risk
+  gate). Flow commands and `/continue` stay
   blocked in terminal phases, and help/status project the same command policy;
   `/status` reports `['/hydrate', '/abort']` for terminal sessions.
 

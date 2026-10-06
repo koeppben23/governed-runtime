@@ -659,6 +659,20 @@ describe('hydrate', () => {
       expect(stateAfter!.policySnapshot.mode).toBe(stateBefore!.policySnapshot.mode);
     });
 
+    it('re-hydrating with a lower claim never lowers the persisted escalation', async () => {
+      await hydrateSession({ claimedTaskClass: 'HIGH-RISK' });
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      expect((await readState(sessDir))!.claimedTaskClass).toBe('HIGH-RISK');
+
+      const result = await hydrateSession({ claimedTaskClass: 'TRIVIAL' });
+
+      expect(result.error).toBeUndefined();
+      expect((await readState(sessDir))!.claimedTaskClass).toBe('HIGH-RISK');
+    });
+
     it('idempotent hydrate preserves workspace metadata', async () => {
       await hydrateSession();
       await hydrateSession();
