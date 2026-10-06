@@ -223,7 +223,7 @@ disproven, update the status and link the evidence."
 | S2   | MEDIUM      | Open            | Policy snapshot parse transforms can rewrite historical state.                                                                                                                                                                                                                                                                                                                                                                                |
 | UP1  | MEDIUM-HIGH | Tracked         | Prerelease persisted-state compatibility was overstated: unversioned policy digests from `v1.2.0-tp.2` and earlier are intentionally incompatible with `policy-digest.v2`; upgrade recovery documentation is in this PR.                                                                                                                                                                                                                      |
 | MUT2 | MEDIUM      | Fixed           | #847 includes production `src/integration/plugin-helpers.ts` and its tests in the Stryker mutation scope and Vitest projection.                                                                                                                                                                                                                                                                                                               |
-| MUT3 | MEDIUM      | Tracked         | The release workflow makes mutation a required dependency of the tag-release publish job; status requires v-tag workflow execution evidence.                                                                                                                                                                                                                                                                                                  |
+| MUT3 | MEDIUM      | Fixed           | Mutation is a required dependency of the tag-release publish job (#844, `55da030d`) and the v-tag execution evidence exists: the `v2.0.0-tp.2` Release run [37218948536](https://github.com/koeppben23/governed-runtime/actions/runs/37218948536) completed successfully with the `mutation` job (`npm run mutation` + `--require-admitted` manifest verification) succeeded and the `release` job requiring it.                              |
 
 ## Low-Priority And Hardening Findings
 
@@ -282,13 +282,13 @@ disproven, update the status and link the evidence."
 
 ## Cross-Cutting Risks
 
-| Theme                                | Status | Summary                                                                                        |
-| ------------------------------------ | ------ | ---------------------------------------------------------------------------------------------- |
-| Command-hook vs HTTP-hook drift      | Open   | Transport paths must preserve equivalent enforcement semantics.                                |
-| Silent success after caught failures | Open   | Error handling should surface audit/install/workspace failures explicitly.                     |
-| Environment-variable trust boundary  | Open   | Runtime and installer environment inputs need validation/sandboxing review.                    |
-| Fail-open behavior                   | Open   | Hooks, MCP, plugin initialization, and audit persistence need fail-closed review.              |
-| Assurance gate drift                 | Open   | Release publication is source-gated on mutation, pending workflow execution evidence for MUT3. |
+| Theme                                | Status | Summary                                                                                                                                            |
+| ------------------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command-hook vs HTTP-hook drift      | Open   | Transport paths must preserve equivalent enforcement semantics.                                                                                    |
+| Silent success after caught failures | Open   | Error handling should surface audit/install/workspace failures explicitly.                                                                         |
+| Environment-variable trust boundary  | Open   | Runtime and installer environment inputs need validation/sandboxing review.                                                                        |
+| Fail-open behavior                   | Open   | Hooks, MCP, plugin initialization, and audit persistence need fail-closed review.                                                                  |
+| Assurance gate drift                 | Closed | Release publication is mutation-gated: the `v2.0.0-tp.2` Release run 37218948536 shows `mutation` succeeded as a required dependency of `release`. |
 
 ## Test-Pinned Bug Behaviors
 
@@ -532,8 +532,9 @@ guard against parallel session-directory derivation). C1 is fixed by #956:
 non-OpenCode config writes never skip silently, malformed or wrong-shape
 existing configs fail closed with typed codes, a partial or unproven plugin
 tree blocks before the first write, and the derived install outcome is
-operator-visible. MUT3 remains tracked until a v-tag workflow run supplies the
-execution evidence required by this inventory's status contract.
+operator-visible. MUT3 is fixed: the mutation-required release wiring (#844) is
+proven by the `v2.0.0-tp.2` Release run 37218948536, where the `mutation` job
+succeeded and gated the `release` job.
 
 ## 2026-09-12 — OpenCode Host-Assurance Follow-Ups (Post-#880)
 
