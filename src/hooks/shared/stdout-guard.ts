@@ -11,7 +11,7 @@
  * it corrupts this protocol. This guard captures all stdout writes until the hook
  * explicitly releases with writeResponse() or restore().
  *
- * Response delivery delegates to the single transport primitive
+ * Response delivery delegates to the shared runtime-hook transport primitive
  * {@link writeStdout} with the writer captured at install time, so the
  * authorized response always uses the same robust failure semantics as every
  * other hook protocol write and never lands in the guard buffer.

@@ -77,7 +77,7 @@ describe('pre-tool-use fatal fail-closed delivery', () => {
     process.exitCode = undefined;
   });
 
-  it('BAD: restores stdout guard before fatal DENY for unexpected mutating-tool errors', async () => {
+  it('BAD: delivers fatal DENY inside the guard lifetime for unexpected mutating-tool errors', async () => {
     const output = capture();
 
     mockReadStdin.mockResolvedValue(mutatingPayload());

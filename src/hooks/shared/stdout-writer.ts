@@ -72,7 +72,9 @@ export async function writeDeny(
 }
 
 /**
- * The single robust stdout delivery primitive for hook protocol responses.
+ * The single robust stdout delivery primitive for runtime hook protocol
+ * responses. (Generated host wrappers keep their own unreachable-runtime
+ * fallback; this primitive owns the in-process hook delivery semantics.)
  *
  * Delivery/error authority:
  * - a synchronous throw from the writer,
