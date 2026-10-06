@@ -1778,7 +1778,18 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.scope] },
   ),
 
-  // ── Base profile: H8 payload-cwd trust boundary (candidates) ──────────────
+  // ── Base profile: admission candidates (H8 payload-cwd, I4 audit context) ─
+  candidate(
+    'src/integration/plugin-audit-context.ts',
+    'Audit-context projection of the canonical session authority',
+    'base',
+    [
+      'src/integration/plugin-audit-lifecycle-reason.test.ts',
+      'src/integration/plugin-audit.test.ts',
+    ],
+    'I4 single-authority follow-up: the resolved | absent | unavailable interpretation every audit-context consumer sees. Measured in the 2026-10-06 I4 base full run at 44.44% (8 killed / 10 survived; 50 TypeScript-checker errors, 17 ignored), below the admission gate: remains a candidate for test hardening; admission still requires a future full base-profile run meeting the per-target threshold.',
+    { source: [SOURCE.integration], critical: true },
+  ),
   candidate(
     'src/adapters/binding.ts',
     'Worktree binding and payload-cwd validation',

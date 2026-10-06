@@ -162,7 +162,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 113 security-critical
+The `mutation` job runs StrykerJS mutation testing against 114 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -349,7 +349,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-113 files are mutated in the base profile, covering the fail-closed governance
+114 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -364,7 +364,7 @@ above is the classification authority):
 | MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                                           | 4       | see `reports/mutation/`         |
 | Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`, `shared/session-resolver`)                                                               | 6       | see `reports/mutation/`         |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                                       | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`, integration tools, discovery risk paths, decision-audit intent)                       | 20      | see `reports/mutation/`         |
+| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`, integration tools, discovery risk paths, decision-audit intent)                       | 21      | see `reports/mutation/`         |
 | Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, review validation x2, findings hash, reviewed digest) | 10      | see `reports/mutation/`         |
 | State (`evidence-mutation-episode`)                                                                                                                                                               | 1       | see `reports/mutation/`         |
 | Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                                              | 2       | see `reports/mutation/`         |
@@ -373,7 +373,7 @@ above is the classification authority):
 | Logging (`error-serialize`)                                                                                                                                                                       | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                               | 6       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                                         | **113** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                                         | **114** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -543,10 +543,15 @@ post-implementation validation evidence authority
 The 2026-10-05 H8 payload-cwd trust-boundary work stages the worktree binding
 authority (`src/adapters/binding.ts`) and the hook session resolution authority
 (`src/hooks/shared/session-resolver.ts`); the 2026-10-06 I4 single-authority work
-stages `src/adapters/session-authority.ts`. The 2026-10-06 base full run admitted
-the session authority at 100 % (20 killed, 0 survived) and measured the two H8
-candidates below the admission gate (32.56 % and 75.00 %), so they stay
-candidates tracked for test hardening; the base aggregate is 84.70 %.
+stages `src/adapters/session-authority.ts` and, per review, the audit-context
+projection `src/integration/plugin-audit-context.ts` (the `resolved | absent |
+unavailable` interpretation every audit-context consumer sees). The 2026-10-06
+base full run (114 targets) admitted the session authority at 100 % (20 killed,
+0 survived) and measured the three candidates below the admission gate —
+`binding.ts` 32.56 %, hook `session-resolver.ts` 75.00 %, and
+`plugin-audit-context.ts` 44.44 % (8 killed / 10 survived; 50 TypeScript-checker
+errors, 17 ignored) — so they stay candidates tracked for test hardening; the
+base aggregate is 84.58 %.
 
 ### Running Locally
 

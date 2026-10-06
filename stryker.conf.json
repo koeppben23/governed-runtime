@@ -67,6 +67,7 @@
     "src/identity/token-verifier.ts",
     "src/integration/installed-commands.ts",
     "src/integration/plugin-afterhooks.ts",
+    "src/integration/plugin-audit-context.ts",
     "src/integration/plugin-audit-lifecycle-reason.ts",
     "src/integration/services/decision-audit-intent.ts",
     "src/integration/plugin-audit-reconcile.ts",
