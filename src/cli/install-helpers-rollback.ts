@@ -11,12 +11,12 @@
 
 import { execSync } from 'node:child_process';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, readdir, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
+import { lstat, open, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { CliInstallError } from './errors.js';
-import type { FileOp } from './install-types.js';
+import type { CliError, FileOp } from './install-types.js';
 
 // ─── Rollback utilities ───────────────────────────────────────────────────────
 
@@ -128,11 +128,17 @@ async function snapshotFromHandle(
  * - existed before install (has originalContent) -> restore via temp+rename
  * - existed before install (no content, e.g. directory) -> leave untouched
  * - did not exist before install -> delete via unlink/rmdir
+ *
+ * Rollback only ever removes material FlowGuard journaled as its own. A
+ * directory the installer created is removed with `rmdir` (non-recursive): if
+ * it is not empty after the journaled files were removed, foreign or raced
+ * content appeared inside it and is preserved with a typed rollback conflict.
  */
 export async function rollbackArtifacts(
   entries: RollbackEntry[],
   ops: FileOp[],
   errors: string[],
+  errorDetails: CliError[] = [],
 ): Promise<void> {
   for (const entry of [...entries].sort((a, b) => b.sequence - a.sequence)) {
     try {
@@ -144,8 +150,10 @@ export async function rollbackArtifacts(
 
       await removeNewlyCreatedEntry(entry, ops);
     } catch (rollbackErr) {
-      errors.push(
-        `Rollback failed for ${entry.path}: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+      const message = `Rollback failed for ${entry.path}: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`;
+      errors.push(message);
+      errorDetails.push(
+        rollbackErr instanceof CliInstallError ? { code: rollbackErr.code, message } : { message },
       );
     }
   }
@@ -191,14 +199,24 @@ async function restoreFileFromSnapshot(
 }
 
 async function removeNewlyCreatedEntry(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
+  let stat: Stats;
   try {
-    await lstat(entry.path);
+    stat = await lstat(entry.path);
   } catch (err) {
     if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return;
     throw err;
   }
 
-  const stat = await lstat(entry.path);
+  assertRemovableType(entry, stat);
+  if (entry.expectedKind === 'directory') {
+    await removeEmptyDirectory(entry.path);
+  } else {
+    await unlink(entry.path);
+  }
+  ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
+}
+
+function assertRemovableType(entry: RollbackEntry, stat: Stats): void {
   if (stat.isSymbolicLink()) {
     throw new CliInstallError(
       'ROLLBACK_REMOVE_SYMLINK',
@@ -217,38 +235,25 @@ async function removeNewlyCreatedEntry(entry: RollbackEntry, ops: FileOp[]): Pro
       `Rollback target type changed: ${entry.path} (expected directory)`,
     );
   }
-  if (entry.expectedKind === 'directory') {
-    await removeDirectoryRecursively(entry.path);
-  } else {
-    await unlink(entry.path);
-  }
-  ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
 }
 
-/** Remove only regular files and directories; never traverse a symlink during rollback. */
-async function removeDirectoryRecursively(directoryPath: string): Promise<void> {
-  for (const name of await readdir(directoryPath)) {
-    const childPath = join(directoryPath, name);
-    const childStat = await lstat(childPath);
-    if (childStat.isSymbolicLink()) {
+/**
+ * Remove a directory the installer created, without recursion: only an empty
+ * directory may disappear. Non-empty means foreign or concurrently created
+ * content is inside; it is preserved and surfaced as a typed conflict.
+ */
+async function removeEmptyDirectory(directoryPath: string): Promise<void> {
+  try {
+    await rmdir(directoryPath);
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOTEMPTY') {
       throw new CliInstallError(
-        'ROLLBACK_TREE_SYMLINK',
-        `Rollback target contains a symlink: ${childPath}`,
+        'ROLLBACK_DIRECTORY_NOT_EMPTY',
+        `Rollback preserved ${directoryPath}: it still contains content that FlowGuard did not journal as its own (foreign or concurrently created). Inspect the directory and remove leftover FlowGuard artifacts manually.`,
       );
     }
-    if (childStat.isDirectory()) {
-      await removeDirectoryRecursively(childPath);
-      continue;
-    }
-    if (!childStat.isFile()) {
-      throw new CliInstallError(
-        'ROLLBACK_TARGET_TYPE_UNSUPPORTED',
-        `Unsupported rollback target type: ${childPath}`,
-      );
-    }
-    await unlink(childPath);
+    throw err;
   }
-  await rmdir(directoryPath);
 }
 
 function isEnoent(err: unknown): boolean {

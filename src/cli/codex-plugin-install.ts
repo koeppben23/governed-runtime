@@ -265,13 +265,19 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
     throw err;
   }
 }
-
+/**
+ * Idempotent skip requires exactly one fully canonical FlowGuard entry — the
+ * same predicate that later reports INSTALLED_AND_REGISTERED. Anything else
+ * (wrong policy, malformed shape, duplicates) goes through the rewrite path so
+ * the marketplace ends canonical instead of reporting a skipped install that
+ * is not actually active.
+ */
 function isAlreadyRegistered(marketplace: CodexMarketplace, scope: InstallScope): boolean {
   const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-  const idx = plugins.findIndex(
+  const flowguardEntries = plugins.filter(
     (plugin) => typeof plugin === 'object' && plugin !== null && plugin.name === CODEX_PLUGIN_NAME,
   );
-  return idx >= 0 && plugins[idx]?.source?.path === codexMarketplaceSourcePath(scope);
+  return flowguardEntries.length === 1 && isRegisteredFlowGuardEntry(flowguardEntries[0], scope);
 }
 
 /**

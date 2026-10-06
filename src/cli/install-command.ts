@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { CliInstallError } from './errors.js';
-import type { CliArgs, CliResult, FileOp } from './install-types.js';
+import type { CliArgs, CliError, CliResult, FileOp } from './install-types.js';
 import type { RollbackEntry as InstallRollbackEntry } from './install-helpers-rollback.js';
 import { rollbackArtifacts, snapshotForRollback } from './install-helpers-rollback.js';
 import { InstallError, toCliError } from './install-helpers.js';
@@ -177,10 +177,11 @@ async function rollbackSnap(
   snapshot: SnapshotResult | null,
   ops: FileOp[],
   errors: string[],
+  errorDetails: CliError[],
 ): Promise<void> {
   if (!snapshot) return;
   try {
-    await rollbackArtifacts(snapshot.mutationJournal.deduplicated(), ops, errors);
+    await rollbackArtifacts(snapshot.mutationJournal.deduplicated(), ops, errors, errorDetails);
   } catch (err) {
     errors.push(`Artifact rollback failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -410,7 +411,7 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     ctx.errors.push(formattedError);
     ctx.errorDetails.push(toCliError(error));
     await rollbackDeps(tx, ctx.errors);
-    await rollbackSnap(snapshot, ctx.ops, ctx.errors);
+    await rollbackSnap(snapshot, ctx.ops, ctx.errors, ctx.errorDetails);
     getAdapterLogger().error('cli', 'install command failed', { error: formattedError });
     return resultFromContext(ctx);
   }
