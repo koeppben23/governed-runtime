@@ -11,6 +11,11 @@
  * it corrupts this protocol. This guard captures all stdout writes until the hook
  * explicitly releases with writeResponse() or restore().
  *
+ * Response delivery delegates to the single transport primitive
+ * {@link writeStdout} with the writer captured at install time, so the
+ * authorized response always uses the same robust failure semantics as every
+ * other hook protocol write and never lands in the guard buffer.
+ *
  * Usage:
  *   const guard = installHookStdoutGuard();
  *   // ... hook logic ...
@@ -18,24 +23,16 @@
  *   // OR
  *   guard.restore(); // ALLOW path (empty stdout)
  *
- * @version v1
+ * @version v2
  */
+
+import { writeStdout } from './stdout-writer.js';
 
 export interface HookStdoutGuard {
   /** Write the hook's response to stdout and restore original write. */
   writeResponse(payload: string): Promise<void>;
   /** Restore original stdout without writing (ALLOW path). */
   restore(): void;
-}
-
-/** Error thrown when the hook stdout guard cannot deliver the response payload. */
-class StdoutGuardError extends Error {
-  readonly code: string = 'STDOUT_GUARD_WRITE_FAILED';
-
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = 'StdoutGuardError';
-  }
 }
 
 /**
@@ -87,30 +84,11 @@ export function installHookStdoutGuard(): HookStdoutGuard {
 
   return {
     async writeResponse(payload: string): Promise<void> {
-      return new Promise((resolve, reject) => {
-        let settled = false;
-        const finish = (err?: Error | null): void => {
-          if (settled) return;
-          settled = true;
-          restoreOriginal();
-          if (err) reject(err);
-          else resolve();
-        };
-
-        try {
-          // Write via originalWrite (captured at install time) to bypass the
-          // guard for the DENY payload. The callback is the sole delivery/error
-          // authority — even when write() returns false (backpressure), the
-          // callback fires on completion or failure. No resolution on 'drain'.
-          originalWrite(payload, (err?: Error | null) => finish(err));
-        } catch (err) {
-          if (!settled) {
-            settled = true;
-            restoreOriginal();
-          }
-          reject(err instanceof Error ? err : new StdoutGuardError(String(err), { cause: err }));
-        }
-      });
+      try {
+        await writeStdout(payload, originalWrite);
+      } finally {
+        restoreOriginal();
+      }
     },
 
     restore(): void {

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fail-closed hook protocol delivery (#H6).** Hook DENY responses now share
+  one stdout transport primitive for sync-throw, write-callback, and stream
+  errors, and the stdout guard uses it with the writer captured at install
+  time. `PreToolUse` handles unexpected fatal errors inside the guard
+  lifetime: a delivered DENY keeps exit 0, an undeliverable DENY exits 2 with
+  a best-effort stderr copy, fatal logging can never break the rescue path,
+  and a prior delivery failure is terminal instead of triggering a second
+  protocol write.
+
 - **Non-OpenCode installer fail-closed config handling (#956).** Claude Code
   and Codex installs no longer skip an existing `flowguard.json` silently: a
   late conflicting write fails closed with `NON_OPENCODE_CONFIG_EXISTS`, and a

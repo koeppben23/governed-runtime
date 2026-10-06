@@ -71,7 +71,28 @@ export async function writeDeny(
   }
 }
 
-function writeStdout(payload: string): Promise<void> {
+/**
+ * The single robust stdout delivery primitive for hook protocol responses.
+ *
+ * Delivery/error authority:
+ * - a synchronous throw from the writer,
+ * - a write callback error,
+ * - a `process.stdout` 'error' event.
+ *
+ * Backpressure (`write()` returning false) is not an error: the callback
+ * settles on completion. The temporary error listener is always removed on
+ * settlement.
+ *
+ * @param payload - The protocol payload to deliver.
+ * @param write - The writer to use. Defaults to the current
+ *   `process.stdout.write`; the stdout guard passes the original writer it
+ *   captured at install time, so an authorized response always bypasses the
+ *   guard buffer regardless of guard state.
+ */
+export function writeStdout(
+  payload: string,
+  write: typeof process.stdout.write = process.stdout.write.bind(process.stdout),
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false;
 
@@ -90,7 +111,7 @@ function writeStdout(payload: string): Promise<void> {
 
     try {
       process.stdout.once('error', onError);
-      process.stdout.write(payload, (err?: Error | null) => finish(err));
+      write(payload, (err?: Error | null) => finish(err));
     } catch (err) {
       finish(err instanceof Error ? err : new DenyOutputError(String(err), { cause: err }));
     }

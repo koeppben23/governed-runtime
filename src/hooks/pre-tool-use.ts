@@ -13,14 +13,20 @@
  * - Malformed stdin → DENY (explicit error, never silent pass)
  * - Any internal error → DENY (defensive)
  *
+ * Fatal path exit semantics: an unexpected error is denied through the same
+ * guarded delivery as every other decision. A delivered DENY keeps exit 0
+ * (the host honors the JSON decision); a DENY that cannot be delivered sets
+ * exit code 2 with a best-effort stderr copy. The outer catch is process-level
+ * last resort only (guard setup failure) and never attempts a second delivery.
+ *
  * Stdout guard: installed before any logic to prevent transitive dependency
- * output from corrupting the hook's JSON response to the host.
+ * output from corrupting the hook's JSON response.
  *
  * Decision logic delegates to the same `isHostToolAllowedInPhase()` function
  * used by the OpenCode plugin — no duplicate authority.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/244
- * @version v2
+ * @version v3
  */
 
 import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
@@ -92,6 +98,23 @@ async function readValidatedPreToolUseInput(
   }
 }
 
+/**
+ * Fatal DENY stays inside the guard lifetime and uses the same delivery
+ * primitive as every other decision. A delivery failure already set exit code
+ * 2 and produced a DenyOutputError; treating it as terminal prevents a second
+ * delivery. Logging must never prevent the DENY delivery.
+ */
+async function denyFatal(guard: HookStdoutGuard, err: unknown): Promise<void> {
+  if (err instanceof DenyOutputError) return;
+  const reason = err instanceof Error ? err.message : String(err);
+  try {
+    writeLog(`DENY (fatal): ${reason}`);
+  } catch {
+    /* best effort only */
+  }
+  await writePreToolUseDeny(guard, 'HOOK_FATAL_ERROR', reason);
+}
+
 async function main(): Promise<void> {
   // Install stdout guard FIRST — captures any spurious output from transitive deps.
   const guard = installHookStdoutGuard();
@@ -161,22 +184,14 @@ async function main(): Promise<void> {
     guard.restore();
     // Exit 0 with no stdout = ALLOW
   } catch (err) {
-    guard.restore();
-    throw err;
+    await denyFatal(guard, err);
   }
 }
 
-main().catch((err: unknown) => {
-  if (err instanceof DenyOutputError) return;
-  const reason = err instanceof Error ? err.message : String(err);
-  writeLog(`DENY (fatal): ${reason}`);
-
-  // Fatal path: guard may already be restored or never installed.
-  // Write directly as last resort.
-  const output = formatDenyOutput('PreToolUse', 'HOOK_FATAL_ERROR', reason);
-  try {
-    process.stdout.write(JSON.stringify(output) + '\n');
-  } catch {
-    /* nothing left */
-  }
+// Process-level last resort only (e.g. guard installation failed or the fatal
+// handler itself threw): set a fail-closed exit code. Never reconstruct or
+// re-attempt a protocol DENY here — that would create a second delivery
+// authority.
+await main().catch(() => {
+  process.exitCode = 2;
 });
