@@ -48,9 +48,8 @@ export type Command = (typeof Command)[keyof typeof Command];
 /**
  * Allowed-in specification:
  * - explicit set of phases,
- * - `'all-phases'` for recovery escapes that are valid everywhere (idempotent
- *   no-ops on terminal phases),
- * - `'non-terminal'` for routing commands that require a live session.
+ * - `'all-phases'` for commands admissible in every phase,
+ * - `'non-terminal'` for commands requiring a live non-terminal workflow.
  */
 type AllowedIn = ReadonlySet<Phase> | 'all-phases' | 'non-terminal';
 

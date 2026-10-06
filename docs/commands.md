@@ -170,7 +170,11 @@ records, and reason codes use canonical command names.
 
 ### /hydrate
 
-Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.
+Bootstrap or reload the FlowGuard session. Calling it again without arguments
+returns the existing session unchanged; an explicit `claimedTaskClass` argument
+may record a raise-only risk escalation (the separately tracked G22 surface).
+`/hydrate` performs no terminal transition and remains available in every phase
+as the bootstrap/reload/recovery entrypoint.
 
 **Creates:**
 

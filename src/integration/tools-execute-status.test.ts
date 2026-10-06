@@ -304,7 +304,7 @@ describe('status', () => {
 
       // /status is read-only and therefore remains executable even though
       // terminal phases block flow commands and /continue; the recovery
-      // escapes /hydrate and /abort stay available (both are no-ops).
+      // escapes /hydrate and /abort remain available as recovery entrypoints.
       const statusProjection = result.status as Record<string, unknown>;
       expect(statusProjection.allowedCommands).toEqual(['/hydrate', '/abort']);
     });
