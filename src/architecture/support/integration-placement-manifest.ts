@@ -587,6 +587,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/tools/validation/run-check-request.ts', owner: 'tools-validation' },
   { file: 'integration/tools/validation/run-check-result.ts', owner: 'tools-validation' },
   { file: 'integration/tools/validation/run-check-tool.ts', owner: 'tools-validation' },
+  { file: 'integration/tools/workflow-policy-context.ts', owner: 'tools-infrastructure' },
   { file: 'integration/types.ts', owner: 'root-authority' },
   { file: 'integration/user-decision-intent.ts', owner: 'root-authority' },
   { file: 'integration/verification-runtime-resolution.ts', owner: 'root-authority' },

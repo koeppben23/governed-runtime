@@ -206,19 +206,18 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       await Promise.all([
         withMutableSessionTransaction(context, async (session) => {
           await new Promise((resolve) => setTimeout(resolve, 30));
-          // The callback runs under the session write lock; re-reading here is
-          // the canonical read-modify-write pattern that cannot lose updates.
-          const current = await readState(session.sessDir);
+          // The wrapper re-resolves the authority under the lock, so
+          // `session.state` is the state persisted by the previous lock
+          // holder — no manual re-read, and no lost update.
           await writeStateWithArtifacts(session.sessDir, {
-            ...current!,
-            activeChecks: [...current!.activeChecks, 'first'],
+            ...session.state,
+            activeChecks: [...session.state.activeChecks, 'first'],
           });
         }),
         withMutableSessionTransaction(context, async (session) => {
-          const current = await readState(session.sessDir);
           await writeStateWithArtifacts(session.sessDir, {
-            ...current!,
-            activeChecks: [...current!.activeChecks, 'second'],
+            ...session.state,
+            activeChecks: [...session.state.activeChecks, 'second'],
           });
         }),
       ]);
