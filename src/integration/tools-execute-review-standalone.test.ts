@@ -19,6 +19,12 @@ import {
   withTestEnv,
 } from './test-helpers.js';
 vi.mock('node:https', () => ({ request: vi.fn() }));
+// Keep the tool→review-url path hermetic: the URL review test mocks the HTTPS
+// transport above, and this stub removes the real DNS lookup that would
+// otherwise run before it (a public, non-reserved IPv4 passes the SSRF guard).
+vi.mock('../adapters/dns-resolution.js', () => ({
+  lookupReviewHostname: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
+}));
 import {
   REVIEW_MANDATE_DIGEST,
   REVIEW_CRITERIA_VERSION,
