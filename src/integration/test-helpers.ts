@@ -707,7 +707,9 @@ function findPendingObligation(
       .reverse()
       .find(
         (item) =>
-          item.obligationType === type && item.status !== 'consumed' && item.consumedAt == null,
+          item.obligationType === type &&
+          (item.status === 'pending' || item.status === 'fulfilled') &&
+          item.consumedAt == null,
       );
   const pending = findPending('architecture') ?? findPending('implement') ?? findPending('plan');
   if (!pending) return null;

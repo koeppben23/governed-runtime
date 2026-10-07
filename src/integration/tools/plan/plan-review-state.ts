@@ -25,7 +25,7 @@ import {
   consumeReviewObligation,
   findLatestObligation,
 } from '../../review/obligations/assurance.js';
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import type { PlanArgs, PlanExecutionScope, PlanRevisionResult } from './plan-types.js';
 import {
   appendClaimSubmissionHistory,
@@ -34,14 +34,11 @@ import {
   submittedPlanClaimDeclarations,
 } from './plan-submission-state.js';
 
-function findUnconsumedPlanObligation(state: SessionState) {
+function findOpenPlanObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   const pendingObligation = [...assuranceBase.obligations]
     .reverse()
-    .find(
-      (item) =>
-        item.obligationType === 'plan' && item.status !== 'consumed' && item.consumedAt == null,
-    );
+    .find((item) => item.obligationType === 'plan' && isOpenReviewObligation(item));
   return { assuranceBase, pendingObligation };
 }
 
@@ -54,7 +51,7 @@ export function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
       'plan review finding resolution requires plan and self-review state',
     );
   }
-  const { assuranceBase, pendingObligation } = findUnconsumedPlanObligation(scope.state);
+  const { assuranceBase, pendingObligation } = findOpenPlanObligation(scope.state);
   const expectedIteration = pendingObligation?.iteration ?? selfReview.iteration;
   const expectedPlanVersion = pendingObligation?.planVersion ?? plan.history.length + 1;
   const resolved = resolveStructuredEffectiveFindings({

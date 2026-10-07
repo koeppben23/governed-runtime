@@ -27,6 +27,7 @@ import {
   REVIEW_ASSURANCE_SCHEMA_VERSION,
   type ReviewAssuranceState,
   type ReviewDispatchRecord,
+  type ReviewObligation,
 } from './evidence-review.js';
 
 /**
@@ -169,16 +170,30 @@ export function abandonReviewDispatch(
 }
 
 /**
- * True when the session carries a review obligation that is not consumed.
+ * True when a review obligation is open work: `pending` (awaiting dispatch) or
+ * `fulfilled` (evidence bound, awaiting verdict/consumption). Terminal states
+ * are never open work: `consumed` completed the obligation, and `blocked` is
+ * the runtime's deterministic closing of an unrepairable obligation whose
+ * documented recovery is a fresh obligation — it stays visible as a failed
+ * historical outcome but must never block open-work gates.
+ *
+ * SSOT: local reconstructions of this predicate are forbidden outside this
+ * authority; every open-work consumer imports this helper.
+ */
+export function isOpenReviewObligation(obligation: ReviewObligation): boolean {
+  return (
+    (obligation.status === 'pending' || obligation.status === 'fulfilled') &&
+    obligation.consumedAt == null
+  );
+}
+
+/**
+ * True when the session carries an open review obligation.
  * Canonical for every consumer that must fail closed on outstanding review
- * work (message phase gate, reduced-ceremony guard).
+ * work (mutating host-tool gates, reduced-ceremony guard and binding).
  */
 export function hasOutstandingReviewObligation(
   assurance: ReviewAssuranceState | null | undefined,
 ): boolean {
-  return (
-    assurance?.obligations.some(
-      (obligation) => obligation.status !== 'consumed' && obligation.consumedAt == null,
-    ) ?? false
-  );
+  return assurance?.obligations.some(isOpenReviewObligation) ?? false;
 }

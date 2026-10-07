@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   IMPL_EVIDENCE,
   makeState,
+  PLAN_REVIEW_ASSURANCE,
   POLICY_SNAPSHOT,
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
@@ -151,6 +152,35 @@ function decisionFor(
 describe('reducedCeremonyReady binding invariants', () => {
   it('HAPPY: accepts only the fully bound decision', () => {
     expect(reducedCeremonyReady(boundState())).toBe(true);
+  });
+
+  it('EDGE: a terminal blocked obligation does not invalidate the binding', () => {
+    const blocked = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'blocked' as const,
+      blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    const state = boundState({
+      reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [blocked] },
+    });
+    expect(reducedCeremonyReady(state)).toBe(true);
+  });
+
+  it('BAD: an open obligation invalidates the binding', () => {
+    const pending = {
+      ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+      status: 'pending' as const,
+      invocationId: null,
+      fulfilledAt: null,
+      consumedAt: null,
+    };
+    const state = boundState({
+      reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [pending] },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
   });
 
   it('BAD: a HIGH-RISK assessment rejects the decision', () => {

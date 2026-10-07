@@ -26,7 +26,7 @@ import { validateAdrSections } from '../../../state/evidence.js';
 import {
   consumeReviewObligation,
   findLatestObligation,
-  findLatestUnconsumedObligation,
+  findLatestOpenObligation,
 } from '../../review/obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 
@@ -64,7 +64,7 @@ function validateReviewEntryState(state: SessionState): string | null {
 }
 
 function getObligationExpectation(
-  pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>,
+  pendingObligation: ReturnType<typeof findLatestOpenObligation>,
   state: SessionState,
 ): { expectedIteration: number; expectedPlanVersion: number } {
   if (!pendingObligation) {
@@ -90,7 +90,7 @@ async function resolveArchitectureReview(
 ): Promise<ResolvedReview | string> {
   const { state } = session;
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
-  const pendingObligation = findLatestUnconsumedObligation(assuranceBase, 'architecture');
+  const pendingObligation = findLatestOpenObligation(assuranceBase, 'architecture');
   const { expectedIteration, expectedPlanVersion } = getObligationExpectation(
     pendingObligation,
     state,

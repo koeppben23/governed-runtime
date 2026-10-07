@@ -738,6 +738,39 @@ describe('phase-tool-gate', () => {
       expect(result.reason).toBe('REVIEW_OBLIGATION_REQUIRED');
     });
 
+    it('GOOD — a deterministically blocked obligation keeps reduced ceremony', () => {
+      const implementation = IMPL_EVIDENCE;
+      const base = makeState('IMPL_VALIDATION', {
+        claimedTaskClass: 'TRIVIAL',
+        verificationCandidates: VERIFICATION_CANDIDATES,
+        implementation,
+        activeChecks: ['test', 'lint'],
+        implValidation: [validationResult('test'), validationResult('lint')],
+        validationAttempts: [
+          implementationAttempt('test', implementation),
+          implementationAttempt('lint', implementation),
+        ],
+      });
+      const blockedObligation = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        status: 'blocked' as const,
+        blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
+        invocationId: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+        reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [blockedObligation] },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('reduced');
+      expect(result.reason).toBe('POST_IMPL_VERIFIED_TRIVIAL');
+    });
+
     it('BAD — default policy keeps full ceremony even for TRIVIAL evidence', () => {
       const state = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',

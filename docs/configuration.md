@@ -273,7 +273,7 @@ Reduced ceremony can apply only when all of these are true:
 - **Every** active check was re-run after `/implement`: each has a latest decisive PASS plus a passing implementation-scoped attempt bound to the current `implementationId`. No active checks means no reduction.
 - The governed file set and its worktree bytes re-attest to the frozen implementation digest at decision, approval and export time.
 - Implementation evidence, `state.reducedCeremony` (with implementation digest, frozen policy digest and exact check/attempt basis), and transition audit are recorded.
-- No outstanding review obligation exists.
+- No open review obligation exists (`pending` or `fulfilled`; a deterministically `blocked` obligation is terminal, stays visible in the audit trail, and does not block reduction).
 
 If any condition fails, FlowGuard keeps the full existing ceremony. Sensitive surfaces escalate to the computed minimum, often `HIGH-RISK`; they do not downgrade to `STANDARD` by default. Reduced ceremony never writes synthetic `implReview` approval evidence; completeness reports the review slot as `waived`.
 

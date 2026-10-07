@@ -94,7 +94,7 @@ export function artifactReviewSubjectScope(
   };
 }
 
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import {
   createReviewAttempt,
   appendReviewAttempt,
@@ -319,17 +319,14 @@ export function findReviewObligationById(
   return base.obligations.find((o) => o.obligationId === obligationId) ?? null;
 }
 
-export function findLatestUnconsumedObligation(
+export function findLatestOpenObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
 ): ReviewObligation | null {
   const base = ensureReviewAssurance(assurance);
   return (
     base.obligations
-      .filter(
-        (o) =>
-          o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
-      )
+      .filter((o) => o.obligationType === obligationType && isOpenReviewObligation(o))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .at(0) ?? null
   );
