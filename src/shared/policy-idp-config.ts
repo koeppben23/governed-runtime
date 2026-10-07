@@ -66,12 +66,14 @@ export const JwkKeySchema = z
 
 export type JwkKey = z.infer<typeof JwkKeySchema>;
 
-export const PemKeySchema = z.object({
-  kind: z.literal('pem'),
-  kid: z.string().min(1),
-  alg: z.enum(['RS256', 'ES256']),
-  pem: z.string().min(1),
-});
+export const PemKeySchema = z
+  .object({
+    kind: z.literal('pem'),
+    kid: z.string().min(1),
+    alg: z.enum(['RS256', 'ES256']),
+    pem: z.string().min(1),
+  })
+  .strict();
 
 export type PemKey = z.infer<typeof PemKeySchema>;
 
