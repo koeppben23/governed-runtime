@@ -198,6 +198,7 @@ describe('buildPlanReviewCard', () => {
     expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
     expect(card).toContain('Reviewed digest: `prior-digest`');
     expect(card).toContain('Current digest:  `current-digest`');
+    expect(card).toContain('Re-run `/request-changes`');
   });
 
   it('omits the mismatch warning when the reviewed digest matches the current digest', () => {

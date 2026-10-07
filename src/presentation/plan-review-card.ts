@@ -165,6 +165,8 @@ function buildPlanWarningNotices(input: PlanReviewCardInput): PresentationSectio
         `Current digest:  \`${input.currentPlanDigest}\``,
         'The current revision was submitted after the final independent review ' +
           'and has not itself been independently reviewed.',
+        'Re-run `/request-changes` to revise the current plan and start a fresh review of the ' +
+          'current revision; `/override-approve` binds only the reviewed digest.',
       ],
       details: [],
     });
