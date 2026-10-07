@@ -25,7 +25,7 @@ import {
   combineArchiveContract,
   type UpgradeCheckReport,
 } from '../adapters/workspace/upgrade-preflight.js';
-import { runUpgradeCheck } from './inspect-upgrade-check.js';
+import { runUpgradeCheck, reportWorkspaceUnresolved } from './inspect-upgrade-check.js';
 import { getInspectUsage, parseInspectArgs } from './inspect-command.js';
 
 const tarOk = await isTarAvailable();
@@ -37,7 +37,9 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-async function createWorkspaceRoot(): Promise<{ configDir: string; sessionsRoot: string }> {
+async function createWorkspaceRoot(
+  options: { readonly createSessions?: boolean } = {},
+): Promise<{ configDir: string; sessionsRoot: string }> {
   const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'upgrade-check-'));
   const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
   cleanups.push(async () => {
@@ -45,7 +47,9 @@ async function createWorkspaceRoot(): Promise<{ configDir: string; sessionsRoot:
     await fs.rm(configDir, { recursive: true, force: true });
   });
   const sessionsRoot = path.join(workspaceDir(FINGERPRINT), 'sessions');
-  await fs.mkdir(sessionsRoot, { recursive: true });
+  if (options.createSessions !== false) {
+    await fs.mkdir(sessionsRoot, { recursive: true });
+  }
   return { configDir, sessionsRoot };
 }
 
@@ -171,6 +175,32 @@ describe('inspect --upgrade-check workspace report', () => {
     expect(report.summary).toMatchObject({ sessions: 0, archives: 0, blockers: 0 });
   });
 
+  it('treats a workspace without a sessions directory as empty inventory', async () => {
+    const { sessionsRoot } = await createWorkspaceRoot({ createSessions: false });
+    await expect(fs.stat(sessionsRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const { exit, report } = await runCheck();
+    expect(exit).toBe(0);
+    expect(report.upgradeReady).toBe(true);
+    expect(report.summary).toMatchObject({ sessions: 0, archives: 0, blockers: 0 });
+    expect(report.sessions).toEqual([]);
+    expect(report.archives).toEqual([]);
+  });
+
+  it.runIf(process.platform !== 'win32')(
+    'blocks on an invalid session directory name instead of crashing',
+    async () => {
+      const { sessionsRoot } = await createWorkspaceRoot();
+      await fs.mkdir(path.join(sessionsRoot, 'legacy.'), { recursive: true });
+
+      const { exit, report } = await runCheck();
+      expect(exit).toBe(1);
+      expect(report.sessions).toHaveLength(1);
+      expect(report.sessions[0]).toMatchObject({ sessionId: 'legacy.', state: 'unreadable' });
+      expect(findingCodes(report)).toContain('SESSION_DIR_NAME_INVALID');
+    },
+  );
+
   it('blocks on an active session and passes for a terminal one', async () => {
     const { sessionsRoot } = await createWorkspaceRoot();
     await seedSession(sessionsRoot, 'active-1', { phase: 'PLAN' });
@@ -274,5 +304,79 @@ describe.skipIf(!tarOk)('inspect --upgrade-check archive classification', () => 
     expect(exit).toBe(0);
     expect(report.archives[0]).toMatchObject({ extractable: 'no', currentContract: 'unknown' });
     expect(findingCodes(report)).toContain('ARCHIVE_UNREADABLE');
+  });
+
+  it('marks an archive without a confirmed session root as not extractable', async () => {
+    const { sessionsRoot } = await createWorkspaceRoot();
+    await createArchive(sessionsRoot, 'foo.tar.gz', 'other');
+
+    const { exit, report } = await runCheck();
+    expect(exit).toBe(0);
+    expect(report.archives[0]).toMatchObject({
+      file: 'foo.tar.gz',
+      sessionId: null,
+      extractable: 'no',
+      currentContract: 'unknown',
+    });
+    expect(findingCodes(report)).toContain('ARCHIVE_UNREADABLE');
+  });
+
+  it('marks an archive with a blocked (non-regular) member as not extractable', async () => {
+    const { sessionsRoot } = await createWorkspaceRoot();
+    const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'upgrade-archive-'));
+    cleanups.push(() => fs.rm(staging, { recursive: true, force: true }));
+    await fs.mkdir(path.join(staging, 'foo', 'audit'), { recursive: true });
+    const archiveDir = path.join(sessionsRoot, 'archive');
+    await fs.mkdir(archiveDir, { recursive: true });
+    await execFileAsync('tar', [
+      '-czf',
+      path.join(archiveDir, 'foo.tar.gz'),
+      '-C',
+      staging,
+      'foo/audit',
+    ]);
+
+    const { exit, report } = await runCheck();
+    expect(exit).toBe(0);
+    expect(report.archives[0]).toMatchObject({ extractable: 'no' });
+    expect(findingCodes(report)).toContain('ARCHIVE_UNREADABLE');
+  });
+});
+
+describe('inspect --upgrade-check workspace resolution failure', () => {
+  async function capture(run: () => number): Promise<{ exit: number; output: string }> {
+    let output = '';
+    const original = console.log;
+    console.log = (value?: unknown) => {
+      output += `${String(value)}\n`;
+    };
+    try {
+      return { exit: run(), output };
+    } finally {
+      console.log = original;
+    }
+  }
+
+  it('emits a structured JSON finding when --json cannot resolve the workspace', async () => {
+    const { exit, output } = await capture(() => reportWorkspaceUnresolved(true, 'not a worktree'));
+    expect(exit).toBe(1);
+    const report = JSON.parse(output) as UpgradeCheckReport;
+    expect(report).toMatchObject({
+      workspaceFingerprint: null,
+      upgradeReady: false,
+      summary: { blockers: 1 },
+    });
+    expect(report.findings).toEqual([
+      { severity: 'blocker', code: 'WORKSPACE_UNRESOLVED', message: expect.any(String) },
+    ]);
+    expect(output.trim().startsWith('{')).toBe(true);
+  });
+
+  it('emits a plain blocker line without --json', async () => {
+    const { exit, output } = await capture(() =>
+      reportWorkspaceUnresolved(false, 'not a worktree'),
+    );
+    expect(exit).toBe(1);
+    expect(output).toContain('[blocker] WORKSPACE_UNRESOLVED');
   });
 });

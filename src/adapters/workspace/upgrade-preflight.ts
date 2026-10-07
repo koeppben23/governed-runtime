@@ -24,6 +24,7 @@ import { readAuditTrail } from '../persistence-audit.js';
 import { inspectArchiveTar, readArchiveTextMember } from './archive-tar.js';
 import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
 import { sessionDir, workspaceDir } from './init.js';
+import { validateSessionId } from './types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,8 @@ export interface UpgradeCheckReport {
   };
   readonly sessions: readonly SessionCheckEntry[];
   readonly archives: readonly ArchiveCheckEntry[];
+  /** Top-level findings for reports that fail before per-session discovery. */
+  readonly findings?: readonly UpgradeCheckFinding[];
 }
 
 export type UpgradePreflightResult =
@@ -304,8 +307,9 @@ async function checkSession(fingerprint: string, sessionId: string): Promise<Ses
 /**
  * Confirm the session root from the tar contents. The file name is only a
  * hint: `regulated-<sid>.tar.gz` is ambiguous when a session id itself starts
- * with `regulated-`, so both candidates are tested and exactly one accepted
- * root wins.
+ * with `regulated-`, so both candidates are tested. Extractability requires at
+ * least one safely confirmed root; no confirmed root is `no` (a warning, never
+ * a blocker), and more than one is an ambiguous mapping.
  */
 async function confirmArchiveSessionRoot(
   archivePath: string,
@@ -317,14 +321,14 @@ async function confirmArchiveSessionRoot(
     : [base];
 
   const okCandidates: string[] = [];
-  let unreachable = false;
   for (const candidate of candidates) {
     const inspection = await inspectArchiveTar(archivePath, candidate);
     if (inspection.kind === 'ok') okCandidates.push(candidate);
-    else if (inspection.reason.startsWith('cannot inspect archive members')) unreachable = true;
   }
-  const extractable: ArchiveExtractable = unreachable && okCandidates.length === 0 ? 'no' : 'yes';
-  return { sessionId: okCandidates.length === 1 ? (okCandidates[0] ?? null) : null, extractable };
+  return {
+    sessionId: okCandidates.length === 1 ? (okCandidates[0] ?? null) : null,
+    extractable: okCandidates.length >= 1 ? 'yes' : 'no',
+  };
 }
 
 async function classifyArchiveContractMembers(
@@ -340,6 +344,14 @@ async function classifyArchiveContractMembers(
   return combineArchiveContract(manifest, audit);
 }
 
+const ARCHIVE_CONTRACT_FINDING_CODES: Readonly<
+  Record<Exclude<ArchiveContractStatus, 'compatible'>, string>
+> = {
+  incompatible: 'ARCHIVE_CONTRACT_INCOMPATIBLE',
+  invalid: 'ARCHIVE_CONTRACT_INVALID',
+  unknown: 'ARCHIVE_CONTRACT_UNKNOWN',
+};
+
 async function checkArchive(archiveDir: string, file: string): Promise<ArchiveCheckEntry> {
   const archivePath = join(archiveDir, file);
   const { sessionId, extractable } = await confirmArchiveSessionRoot(archivePath, file);
@@ -349,7 +361,7 @@ async function checkArchive(archiveDir: string, file: string): Promise<ArchiveCh
     findings.push({
       severity: 'warning',
       code: 'ARCHIVE_UNREADABLE',
-      message: `Archive ${file} cannot be inspected as a tar.gz container.`,
+      message: `Archive ${file} has no safely confirmed session root (unreadable, unsafe, or non-regular members).`,
     });
     return { file, sessionId: null, extractable, currentContract: 'unknown', findings };
   }
@@ -366,7 +378,7 @@ async function checkArchive(archiveDir: string, file: string): Promise<ArchiveCh
   if (currentContract !== 'compatible') {
     findings.push({
       severity: 'warning',
-      code: `ARCHIVE_CONTRACT_${currentContract.toUpperCase()}`,
+      code: ARCHIVE_CONTRACT_FINDING_CODES[currentContract],
       message: `Archive ${file} is ${currentContract} under the current archive contract.`,
       recovery: [
         'Historical archives are expected to be incompatible after a contract change.',
@@ -379,23 +391,90 @@ async function checkArchive(archiveDir: string, file: string): Promise<ArchiveCh
 
 // ─── Report assembly ─────────────────────────────────────────────────────────
 
+function invalidSessionNameEntry(name: string): SessionCheckEntry {
+  return {
+    sessionId: name,
+    state: 'unreadable',
+    phase: null,
+    terminal: null,
+    audit: 'missing',
+    findings: [
+      {
+        severity: 'blocker',
+        code: 'SESSION_DIR_NAME_INVALID',
+        message: `Session directory "${name}" is not a valid FlowGuard session id and cannot be classified.`,
+        recovery: [
+          'Inspect the directory and rename or remove it if it is not a FlowGuard session.',
+        ],
+      },
+    ],
+  };
+}
+
+function unclassifiableSessionEntry(name: string, error: unknown): SessionCheckEntry {
+  return {
+    sessionId: name,
+    state: 'unreadable',
+    phase: null,
+    terminal: null,
+    audit: 'missing',
+    findings: [
+      {
+        severity: 'blocker',
+        code: 'INVENTORY_UNREADABLE',
+        message: `Session ${name} cannot be classified reliably: ${
+          error instanceof Error ? error.message : String(error)
+        }.`,
+        recovery: ['Check filesystem permissions and re-run the preflight.'],
+      },
+    ],
+  };
+}
+
+function isEnoent(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
+function isValidSessionName(name: string): boolean {
+  try {
+    validateSessionId(name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Run the workspace upgrade preflight and return its structured report. */
 export async function runUpgradePreflight(fingerprint: string): Promise<UpgradePreflightResult> {
   const sessionsRoot = join(workspaceDir(fingerprint), 'sessions');
   const archiveDir = join(sessionsRoot, 'archive');
 
-  let sessionIds: string[];
+  let sessionNames: string[];
   try {
-    sessionIds = readdirSync(sessionsRoot, { withFileTypes: true })
+    sessionNames = readdirSync(sessionsRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && entry.name !== 'archive')
       .map((entry) => entry.name)
       .sort();
   } catch (error) {
-    return { kind: 'inventory-unreadable', detail: `sessions directory: ${String(error)}` };
+    // No sessions directory is a valid empty inventory, not an upgrade blocker.
+    if (!isEnoent(error)) {
+      return { kind: 'inventory-unreadable', detail: `sessions directory: ${String(error)}` };
+    }
+    sessionNames = [];
   }
 
   const sessions: SessionCheckEntry[] = [];
-  for (const sessionId of sessionIds) sessions.push(await checkSession(fingerprint, sessionId));
+  for (const name of sessionNames) {
+    if (!isValidSessionName(name)) {
+      sessions.push(invalidSessionNameEntry(name));
+      continue;
+    }
+    try {
+      sessions.push(await checkSession(fingerprint, name));
+    } catch (error) {
+      sessions.push(unclassifiableSessionEntry(name, error));
+    }
+  }
 
   let archiveFiles: string[] = [];
   if (existsSync(archiveDir)) {
@@ -410,7 +489,13 @@ export async function runUpgradePreflight(fingerprint: string): Promise<UpgradeP
   }
 
   const archives: ArchiveCheckEntry[] = [];
-  for (const file of archiveFiles) archives.push(await checkArchive(archiveDir, file));
+  for (const file of archiveFiles) {
+    try {
+      archives.push(await checkArchive(archiveDir, file));
+    } catch (error) {
+      return { kind: 'inventory-unreadable', detail: `archive ${file}: ${String(error)}` };
+    }
+  }
 
   const findings = [...sessions.flatMap((s) => s.findings), ...archives.flatMap((a) => a.findings)];
   const blockers = findings.filter((finding) => finding.severity === 'blocker').length;

@@ -18,6 +18,35 @@ import {
 
 export type { UpgradeCheckReport } from '../adapters/workspace/upgrade-preflight.js';
 
+/**
+ * Emit the structured fail-closed report for a workspace that cannot be
+ * resolved at all. `--json` must stay machine-readable on this path too.
+ */
+export function reportWorkspaceUnresolved(json: boolean, message: string): number {
+  if (json) {
+    console.log(
+      JSON.stringify({
+        scope: 'workspace',
+        workspaceFingerprint: null,
+        upgradeReady: false,
+        summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
+        sessions: [],
+        archives: [],
+        findings: [
+          {
+            severity: 'blocker',
+            code: 'WORKSPACE_UNRESOLVED',
+            message: `Cannot resolve the workspace for the upgrade preflight: ${message}`,
+          },
+        ],
+      }),
+    );
+  } else {
+    console.log(`[blocker] WORKSPACE_UNRESOLVED: cannot resolve the workspace (${message}).`);
+  }
+  return 1;
+}
+
 /** Run the workspace upgrade preflight. Returns the process exit code. */
 export async function runUpgradeCheck(fingerprint: string, json: boolean): Promise<number> {
   const result = await runUpgradePreflight(fingerprint);

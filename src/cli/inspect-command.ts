@@ -22,7 +22,7 @@ import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 
 import { verifyChain } from '../audit/integrity.js';
 import { generateComplianceSummary, type ComplianceSummary } from '../audit/summary.js';
-import { runUpgradeCheck } from './inspect-upgrade-check.js';
+import { runUpgradeCheck, reportWorkspaceUnresolved } from './inspect-upgrade-check.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -343,12 +343,10 @@ export async function inspectMain(argv: string[]): Promise<number> {
     fingerprint = await resolveWorkspace();
   } catch (error) {
     if (upgradeCheck) {
-      console.error(
-        `[blocker] WORKSPACE_UNRESOLVED: cannot resolve the workspace for the upgrade preflight: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      return reportWorkspaceUnresolved(
+        json,
+        error instanceof Error ? error.message : String(error),
       );
-      return 1;
     }
     console.log('No FlowGuard sessions found.');
     return 0;
