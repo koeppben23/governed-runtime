@@ -189,6 +189,8 @@ function buildArchitectureWarningNotices(
         `Current digest:  \`${input.adrDigest}\``,
         'The current revision was submitted after the final independent review ' +
           'and has not itself been independently reviewed.',
+        'Re-run `/request-changes` to revise the current ADR and start a fresh review of the ' +
+          'current revision; `/override-approve` binds only the reviewed digest.',
       ],
       details: [],
     });

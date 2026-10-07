@@ -19,6 +19,7 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewObligation } from '../../state/evidence.js';
+import { isOpenReviewObligation } from '../../state/review-dispatch.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -32,9 +33,7 @@ export interface ObligationEscalation {
 }
 
 export function unresolvedBlockingObligations(state: SessionState): ReviewObligation[] {
-  return (state.reviewAssurance?.obligations ?? []).filter(
-    (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
-  );
+  return (state.reviewAssurance?.obligations ?? []).filter(isOpenReviewObligation);
 }
 
 /** Formats the canonical blocking-obligation result for every hook transport. */

@@ -448,6 +448,36 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     ],
   },
 
+  {
+    code: 'INVALID_POLICY_DIGEST',
+    category: 'config',
+    messageTemplate: 'Policy snapshot digest is invalid: {message}',
+    recoverySteps: [
+      'Re-resolve the policy snapshot with the currently installed version',
+      'Do not hand-edit the persisted policy snapshot or its digest',
+    ],
+  },
+
+  {
+    code: 'INVALID_POLICY_DIGEST_VERSION',
+    category: 'config',
+    messageTemplate: 'Policy snapshot digest version is not supported: {message}',
+    recoverySteps: [
+      'Use the FlowGuard version that wrote the policy snapshot',
+      'Re-run /hydrate with the currently installed version to mint a current snapshot',
+    ],
+  },
+
+  {
+    code: 'INVALID_POLICY_MODE',
+    category: 'config',
+    messageTemplate: 'Policy mode is invalid: {message}',
+    recoverySteps: [
+      'Set the policy mode to one of: solo, team, team-ci, regulated',
+      'Update the central policy file or flowguard.json and re-run /hydrate',
+    ],
+  },
+
   ...REVIEW_VALIDATION_REASONS,
   ...OBSERVATION_VALIDATION_REASONS,
   ...STRUCTURED_REVIEW_REASONS,

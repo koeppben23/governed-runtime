@@ -36,6 +36,7 @@ import { hashText } from '../shared/hashing.js';
 import { mintObservationCapabilityIfResolvable } from './review/obligations/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
+import { isOpenReviewObligation } from '../state/review-dispatch.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
 import { buildReviewChallengeContract } from './review/obligations/challenge-contract.js';
 
@@ -693,25 +694,16 @@ function bindHostTaskAttempt(
  * this helper to satisfy the same strict obligation contract. The tool resolves
  * the captured evidence itself; the caller keeps submitting ONLY the verdict.
  */
-function findPendingObligation(
-  allObligations: Array<{
-    obligationType: string;
-    status?: string;
-    consumedAt?: unknown;
-    iteration: number;
-    planVersion: number;
-  }>,
-): { obligationType: string; obligation: { iteration: number; planVersion: number } } | null {
-  const findPending = (type: string) =>
+function findOpenObligation(
+  allObligations: readonly ReviewObligation[],
+): { obligationType: ReviewObligationType; obligation: ReviewObligation } | null {
+  const findOpen = (type: ReviewObligationType) =>
     [...allObligations]
       .reverse()
-      .find(
-        (item) =>
-          item.obligationType === type && item.status !== 'consumed' && item.consumedAt == null,
-      );
-  const pending = findPending('architecture') ?? findPending('implement') ?? findPending('plan');
-  if (!pending) return null;
-  return { obligationType: pending.obligationType, obligation: pending };
+      .find((item) => item.obligationType === type && isOpenReviewObligation(item));
+  const open = findOpen('architecture') ?? findOpen('implement') ?? findOpen('plan');
+  if (!open) return null;
+  return { obligationType: open.obligationType, obligation: open };
 }
 
 function isValidVerdict(v: unknown): boolean {
@@ -728,15 +720,13 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
   if (!state) return args;
 
   const allObligations = state.reviewAssurance?.obligations ?? [];
-  const pending = findPendingObligation(allObligations);
-  if (!pending) return args;
+  const open = findOpenObligation(allObligations);
+  if (!open) return args;
 
   await fulfillStrictReviewObligation(sessDir, {
-    obligationType: pending.obligationType as Parameters<
-      typeof fulfillStrictReviewObligation
-    >[1]['obligationType'],
-    iteration: pending.obligation.iteration,
-    planVersion: pending.obligation.planVersion,
+    obligationType: open.obligationType,
+    iteration: open.obligation.iteration,
+    planVersion: open.obligation.planVersion,
     overallVerdict: verdict as 'accept' | 'changes_requested',
   });
 

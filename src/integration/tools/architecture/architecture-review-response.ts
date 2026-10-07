@@ -23,7 +23,7 @@ import {
   appendObligationWithAttempt,
   artifactReviewSubjectScope,
   createReviewObligation,
-  findLatestUnconsumedObligation,
+  findLatestOpenObligation,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
@@ -69,7 +69,7 @@ import { toPresentationFindingRelation } from '../helpers-rail-presentation.js';
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
 export type ResolvedReview = {
-  pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>;
+  pendingObligation: ReturnType<typeof findLatestOpenObligation>;
   expectedIteration: number;
   expectedPlanVersion: number;
   assuranceBase: ReturnType<typeof ensureReviewAssurance>;

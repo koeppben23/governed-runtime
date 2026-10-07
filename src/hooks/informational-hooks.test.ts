@@ -43,9 +43,10 @@ vi.mock('./shared/session-resolver.js', () => ({
 }));
 
 vi.mock('./shared/phase-gate.js', () => ({ isMutatingHostTool: () => false }));
-vi.mock('./shared/obligation-tracker.js', () => ({
-  assessObligationEscalation: () => ({ message: null }),
-}));
+vi.mock('./shared/obligation-tracker.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./shared/obligation-tracker.js')>();
+  return { ...actual, assessObligationEscalation: () => ({ message: null }) };
+});
 
 const SESSION_PAYLOAD = { session_id: 'session-1', cwd: '/workspace' };
 const TOOL_PAYLOAD = {
@@ -191,6 +192,33 @@ describe('informational command hooks', () => {
       expect(mockAppendAuditEvent).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ detail: expect.objectContaining({ pendingObligations: 1 }) }),
+      );
+    });
+    it('does not warn for deterministically blocked terminal obligations', async () => {
+      mockResolveSession.mockResolvedValue({
+        ok: true,
+        sessionDir: '/workspace/.flowguard/sessions/session-1',
+        state: {
+          phase: 'IMPLEMENTATION',
+          reviewAssurance: {
+            obligations: [
+              {
+                obligationId: 'blocked-1',
+                status: 'blocked',
+                consumedAt: null,
+              },
+            ],
+          },
+        },
+      });
+      await importHook('./stop.js', () => mockAppendAuditEvent.mock.calls.length > 0);
+
+      expect(mockWriteLog).not.toHaveBeenCalledWith(
+        expect.stringContaining('unresolved review obligation'),
+      );
+      expect(mockAppendAuditEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ detail: expect.objectContaining({ pendingObligations: 0 }) }),
       );
     });
   });

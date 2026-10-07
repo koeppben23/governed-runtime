@@ -121,6 +121,7 @@ describe('buildArchitectureReviewCard', () => {
       'The current revision was submitted after the final independent review ' +
         'and has not itself been independently reviewed.',
     );
+    expect(card).toContain('Re-run `/request-changes`');
   });
 
   it('omits the mismatch warning when the reviewed digest matches the current digest', () => {

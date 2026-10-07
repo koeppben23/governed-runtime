@@ -372,10 +372,7 @@ async function handleStop(payload: Record<string, unknown>): Promise<HttpHookRes
   }
 
   const { state, sessionDir: sessDir } = resolution;
-  const pendingObligations =
-    state.reviewAssurance?.obligations.filter(
-      (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
-    ) ?? [];
+  const pendingObligations = unresolvedBlockingObligations(state);
 
   if (pendingObligations.length > 0) {
     log(

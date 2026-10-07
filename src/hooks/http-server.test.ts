@@ -74,7 +74,7 @@ vi.mock('./shared/obligation-tracker.js', () => ({
     reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
   }) =>
     (state.reviewAssurance?.obligations ?? []).filter(
-      (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
+      (ob) => (ob.status === 'pending' || ob.status === 'fulfilled') && ob.consumedAt == null,
     ),
 }));
 
@@ -136,7 +136,7 @@ beforeEach(async () => {
       reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
     }) =>
       (state.reviewAssurance?.obligations ?? []).filter(
-        (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
+        (ob) => (ob.status === 'pending' || ob.status === 'fulfilled') && ob.consumedAt == null,
       ),
   }));
 
@@ -402,6 +402,29 @@ describe('handlePreToolUse', () => {
     expect(result.decision).toBe('deny');
     expect(result.code).toBe('REVIEW_OBLIGATION_UNRESOLVED');
     expect(result.reason).toContain('11111111-1111-4111-8111-111111111111');
+  });
+
+  it('HAPPY: allows mutating host tools when only terminal obligations remain', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: '22222222-2222-4222-8222-222222222222',
+              status: 'blocked',
+              consumedAt: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await handlePreToolUse(validPayload);
+
+    expect(result).toEqual({ decision: 'allow' });
   });
 
   it('HAPPY: allows non-mutating resolution tools without session resolution', async () => {

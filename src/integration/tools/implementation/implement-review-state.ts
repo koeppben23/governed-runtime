@@ -20,7 +20,7 @@ import {
   consumeReviewObligation,
   findLatestObligation,
 } from '../../review/obligations/assurance.js';
-import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import { normalizeHostFindings, type ImplementRuntime } from './implement-shared.js';
@@ -29,17 +29,12 @@ import {
   projectUnaddressedImplementationChallengeIds,
 } from '../../../state/implementation-review-findings.js';
 
-export function findPendingImplObligation(state: SessionState) {
+export function findOpenImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   return (
     [...assuranceBase.obligations]
       .reverse()
-      .find(
-        (item) =>
-          item.obligationType === 'implement' &&
-          item.status !== 'consumed' &&
-          item.consumedAt == null,
-      ) ?? null
+      .find((item) => item.obligationType === 'implement' && isOpenReviewObligation(item)) ?? null
   );
 }
 
@@ -99,7 +94,7 @@ export function resolveImplementationFindings(
   iteration: number,
   planVersion: number,
 ) {
-  const pendingObligation = findPendingImplObligation(input.state);
+  const pendingObligation = findOpenImplObligation(input.state);
   const challengeContract = buildReviewChallengeContract(input.state, pendingObligation);
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
@@ -143,7 +138,7 @@ export function appendImplReviewState(input: {
   planVersion: number;
   effectiveFindings: ReviewFindings;
   evidenceInvocationId: string;
-  obligationToConsume?: ReturnType<typeof findPendingImplObligation>;
+  obligationToConsume?: ReturnType<typeof findOpenImplObligation>;
 }) {
   const {
     runtime,

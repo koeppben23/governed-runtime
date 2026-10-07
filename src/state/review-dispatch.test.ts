@@ -11,9 +11,11 @@ import { describe, expect, it } from 'vitest';
 import {
   appendReviewDispatch,
   emptyReviewAssurance,
+  hasOutstandingReviewObligation,
+  isOpenReviewObligation,
   rebindReviewDispatchHostCall,
 } from './review-dispatch.js';
-import type { ReviewDispatchRecord } from './evidence-review.js';
+import type { ReviewDispatchRecord, ReviewObligation } from './evidence-review.js';
 
 const ATTEMPT_ID = '11111111-2222-4111-8111-111111111111';
 const OTHER_ATTEMPT_ID = '99999999-2222-4111-8111-111111111111';
@@ -111,5 +113,46 @@ describe('state/review-dispatch host-call rebinding', () => {
         'child-session-2',
       ]);
     });
+  });
+});
+
+describe('review obligation open-work semantics', () => {
+  function obligation(
+    status: ReviewObligation['status'],
+    consumedAt: string | null,
+  ): ReviewObligation {
+    return { status, consumedAt } as unknown as ReviewObligation;
+  }
+
+  it('HAPPY — pending and fulfilled obligations are open work', () => {
+    expect(isOpenReviewObligation(obligation('pending', null))).toBe(true);
+    expect(isOpenReviewObligation(obligation('fulfilled', null))).toBe(true);
+  });
+
+  it('BAD — consumed and deterministically blocked obligations are terminal', () => {
+    expect(isOpenReviewObligation(obligation('consumed', '2026-01-01T00:00:00.000Z'))).toBe(false);
+    expect(isOpenReviewObligation(obligation('blocked', null))).toBe(false);
+  });
+
+  it('EDGE — a consumedAt stamp alone closes an obligation', () => {
+    expect(isOpenReviewObligation(obligation('pending', '2026-01-01T00:00:00.000Z'))).toBe(false);
+  });
+
+  it('hasOutstandingReviewObligation counts only open work', () => {
+    expect(
+      hasOutstandingReviewObligation({
+        ...emptyReviewAssurance(),
+        obligations: [
+          obligation('blocked', null),
+          obligation('consumed', '2026-01-01T00:00:00.000Z'),
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      hasOutstandingReviewObligation({
+        ...emptyReviewAssurance(),
+        obligations: [obligation('blocked', null), obligation('fulfilled', null)],
+      }),
+    ).toBe(true);
   });
 });

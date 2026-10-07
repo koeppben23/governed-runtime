@@ -585,6 +585,47 @@ Remediation: separate the enforcement model (host contract property) from the
 assurance level (observed evidence) and render the assurance level explicitly
 where `enforcementLevel` is surfaced today.
 
+## 2026-10-07 — Live-Demo Findings (RC1, OB1)
+
+A complete five-flow live demo (architecture, development, peer review, and the
+reduced-ceremony A/B) against `develop@ca6ed04b` surfaced two product defects.
+Both are fixed in the same change that records them here; the named regression
+tests are the durable evidence.
+
+| ID  | Severity   | Status | Summary                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ---------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RC1 | LOW-MEDIUM | Fixed  | Typed governance boundary error codes were reachable at the tool boundary through `formatError()` but missing from the reason catalog, so operators saw `[UNREGISTERED_REASON: ARCHIVE_FAILED]` without recovery steps on the raw-export denial. Fixed by registering the 13 missing boundary codes and adding a boundary-union completeness guard.        |
+| OB1 | HIGH       | Fixed  | A deterministically blocked review obligation counted as open work: after a reviewer transport failure it permanently disabled reduced ceremony and every mutating host tool in the Claude/Codex hook transports, turning the documented recovery (fresh obligation) into a dead end. Fixed by the canonical open-obligation primitive plus an SSOT guard. |
+
+**RC1 — Governance boundary error codes bypassed the reason catalog (LOW-MEDIUM, Fixed).**
+`formatError()` routes any thrown error with a `.code` through the reason
+registry. Four `WorkspaceErrorCode`, four `PersistenceErrorCode`, two
+`ActorIdentityErrorCode` and three `PolicyConfigurationErrorCode` values were
+never registered; the raw-export denial rendered the registry's
+`[UNREGISTERED_REASON]` fallback instead of cataloged recovery steps. The
+completeness guard only scanned `code:` literals and `formatBlocked(...)` calls,
+not the typed boundary error unions. Fixed by registering the 13 codes
+(`reasons-infra-boundary.ts`, plus three config-category entries in
+`reasons-validation.ts`) and extending the guard with a boundary-union scan plus
+a negative fixture. Internal/transport/library error classes remain deliberately
+outside the governance taxonomy.
+
+**OB1 — A blocked review obligation permanently blocked open-work gates (HIGH, Fixed).**
+`resolveReviewContinuation` defines `blocked` as deterministically closed (no
+legal continuation; recovery is a fresh obligation for the same artifact
+revision), but the open-work predicates counted everything except `consumed` as
+unresolved. A reviewer transport failure (`HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`,
+`REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE`) therefore left a terminal blocked
+obligation that permanently disabled reduced ceremony
+(`REVIEW_OBLIGATION_REQUIRED`) and denied all mutating host tools in the
+Claude/Codex hook transports — the documented recovery could never run. Fixed by
+`isOpenReviewObligation` in `state/review-dispatch.ts` (open = `pending` |
+`fulfilled`; `consumed`/`blocked` are terminal but stay visible as historical
+outcomes), by replacing every local reconstruction, and by the
+`review-obligation-open-primitive-ssot` architecture guard. Regression tests pin
+both directions: `pending`/`fulfilled` keep denying mutating tools and keep full
+ceremony; blocked-only allows and keeps reduced ceremony.
+
 ## Maintenance Rules
 
 - Keep this file aligned with #487 and child issues.

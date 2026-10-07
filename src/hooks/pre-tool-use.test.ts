@@ -218,6 +218,41 @@ describe('pre-tool-use review obligation enforcement', () => {
 
     expect(stdout).toBe('');
   });
+  it('allows a mutating tool when only terminal obligations remain', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: 'blocked-1',
+              status: 'blocked',
+              consumedAt: null,
+            },
+            {
+              obligationId: 'done',
+              status: 'consumed',
+              consumedAt: '2026-07-15T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdout += String(chunk);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mockReadStdin.mockResolvedValue(payload);
+    await import('./pre-tool-use.js');
+    await vi.waitFor(() => expect(mockResolveSession).toHaveBeenCalled());
+
+    expect(stdout).toBe('');
+  });
 });
 
 describe('pre-tool-use hook diagnostics', () => {

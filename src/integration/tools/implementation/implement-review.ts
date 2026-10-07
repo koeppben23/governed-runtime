@@ -61,7 +61,7 @@ import { toPresentationFindingRelation } from '../helpers-rail-presentation.js';
 import {
   addLatestImplementationReview,
   appendImplReviewState,
-  findPendingImplObligation,
+  findOpenImplObligation,
   requireImplementationDigest,
   resolveImplementationFindings,
   validateEffectiveFindings,
@@ -299,7 +299,7 @@ async function handleUnableToReviewSubmission(input: {
   iteration: number;
   planVersion: number;
   submittedVerdict: LoopVerdict;
-  pendingObligation: ReturnType<typeof findPendingImplObligation>;
+  pendingObligation: ReturnType<typeof findOpenImplObligation>;
   resolved: ResolvedStructuredFindings;
 }): Promise<string> {
   const { runtime, iteration, planVersion, submittedVerdict, pendingObligation, resolved } = input;
@@ -384,7 +384,7 @@ function buildRearmedImplementationReviewResponse(
 async function handleIncoherentCaptureRetry(input: {
   runtime: ImplementRuntime;
   failure: ReviewValidationFailure;
-  pendingObligation: ReturnType<typeof findPendingImplObligation>;
+  pendingObligation: ReturnType<typeof findOpenImplObligation>;
 }): Promise<string | null> {
   const retry = await attemptIncoherentCaptureRetry({
     failure: input.failure,
