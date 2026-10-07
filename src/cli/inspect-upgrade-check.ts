@@ -24,23 +24,22 @@ export type { UpgradeCheckReport } from '../adapters/workspace/upgrade-preflight
  */
 export function reportWorkspaceUnresolved(json: boolean, message: string): number {
   if (json) {
-    console.log(
-      JSON.stringify({
-        scope: 'workspace',
-        workspaceFingerprint: null,
-        upgradeReady: false,
-        summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
-        sessions: [],
-        archives: [],
-        findings: [
-          {
-            severity: 'blocker',
-            code: 'WORKSPACE_UNRESOLVED',
-            message: `Cannot resolve the workspace for the upgrade preflight: ${message}`,
-          },
-        ],
-      }),
-    );
+    const payload: UpgradeCheckReport = {
+      scope: 'workspace',
+      workspaceFingerprint: null,
+      upgradeReady: false,
+      summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
+      sessions: [],
+      archives: [],
+      findings: [
+        {
+          severity: 'blocker',
+          code: 'WORKSPACE_UNRESOLVED',
+          message: `Cannot resolve the workspace for the upgrade preflight: ${message}`,
+        },
+      ],
+    };
+    console.log(JSON.stringify(payload));
   } else {
     console.log(`[blocker] WORKSPACE_UNRESOLVED: cannot resolve the workspace (${message}).`);
   }
@@ -52,23 +51,22 @@ export async function runUpgradeCheck(fingerprint: string, json: boolean): Promi
   const result = await runUpgradePreflight(fingerprint);
   if (result.kind === 'inventory-unreadable') {
     if (json) {
-      console.log(
-        JSON.stringify({
-          scope: 'workspace',
-          workspaceFingerprint: fingerprint,
-          upgradeReady: false,
-          summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
-          sessions: [],
-          archives: [],
-          findings: [
-            {
-              severity: 'blocker',
-              code: 'INVENTORY_UNREADABLE',
-              message: `Workspace session/archive inventory cannot be determined (${result.detail}).`,
-            },
-          ],
-        }),
-      );
+      const payload: UpgradeCheckReport = {
+        scope: 'workspace',
+        workspaceFingerprint: fingerprint,
+        upgradeReady: false,
+        summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
+        sessions: [],
+        archives: [],
+        findings: [
+          {
+            severity: 'blocker',
+            code: 'INVENTORY_UNREADABLE',
+            message: `Workspace session/archive inventory cannot be determined (${result.detail}).`,
+          },
+        ],
+      };
+      console.log(JSON.stringify(payload));
     } else {
       console.log(
         `[blocker] INVENTORY_UNREADABLE: cannot determine the workspace inventory (${result.detail}).`,

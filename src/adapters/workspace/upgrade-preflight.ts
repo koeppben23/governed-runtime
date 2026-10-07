@@ -61,7 +61,8 @@ export interface ArchiveCheckEntry {
 
 export interface UpgradeCheckReport {
   readonly scope: 'workspace';
-  readonly workspaceFingerprint: string;
+  /** `null` only on the fail-closed WORKSPACE_UNRESOLVED path. */
+  readonly workspaceFingerprint: string | null;
   readonly upgradeReady: boolean;
   readonly summary: {
     readonly sessions: number;
