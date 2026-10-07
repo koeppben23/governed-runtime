@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
-import { IdpConfigSchema } from '../shared/policy-idp-config.js';
+import { FrozenIdpConfigSchema } from '../shared/policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
 
 /**
@@ -211,7 +211,7 @@ export const PolicySnapshotSchema = z
      * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
      * Frozen at hydrate time. Optional: absence means no IdP is configured.
      */
-    identityProvider: IdpConfigSchema.optional(),
+    identityProvider: FrozenIdpConfigSchema.optional(),
     /**
      * P35a: IdP verification mode ('optional' or 'required').
      * Controls whether IdP verification failure blocks session creation.

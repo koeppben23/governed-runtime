@@ -7,7 +7,15 @@
  * no runtime identity resolution, token verification, JWKS fetching, or
  * actor/assurance logic.
  *
- * @version v1
+ * Two schema families exist deliberately:
+ * - `IdpConfigSchema` is the lenient **config input** contract: it accepts
+ *   shorthand (scalar `audience`) and materializes absent defaults
+ *   (`claimMapping`, jwks `cacheTtlSeconds`) at the authoring boundary.
+ * - `FrozenIdpConfigSchema` is the canonical **persisted snapshot** contract:
+ *   strict, no transforms and no defaults, so reading state can never rewrite
+ *   historical values.
+ *
+ * @version v2
  */
 
 import { z } from 'zod';
@@ -107,23 +115,81 @@ export const JwksIdpConfigSchema = IdpConfigBaseSchema.extend({
 
 export type JwksIdpConfig = z.infer<typeof JwksIdpConfigSchema>;
 
+/**
+ * JWKS mode requires exactly one location. Shared by the lenient input schema
+ * and the frozen snapshot schema so both boundaries stay aligned.
+ */
+function refineJwksLocation(
+  value: {
+    readonly mode: 'static' | 'jwks';
+    readonly jwksPath?: string | undefined;
+    readonly jwksUri?: string | undefined;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.mode !== 'jwks') return;
+  const hasPath = typeof value.jwksPath === 'string' && value.jwksPath.trim().length > 0;
+  const hasUri = typeof value.jwksUri === 'string' && value.jwksUri.trim().length > 0;
+  if (hasPath === hasUri) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "JWKS mode requires exactly one of 'jwksPath' or 'jwksUri'",
+    });
+  }
+}
+
 const IdpConfigDiscriminatedSchema = z
   .discriminatedUnion('mode', [StaticIdpConfigSchema, JwksIdpConfigSchema])
-  .superRefine((value, ctx) => {
-    if (value.mode !== 'jwks') return;
-    const hasPath = typeof value.jwksPath === 'string' && value.jwksPath.trim().length > 0;
-    const hasUri = typeof value.jwksUri === 'string' && value.jwksUri.trim().length > 0;
-    if (hasPath === hasUri) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "JWKS mode requires exactly one of 'jwksPath' or 'jwksUri'",
-      });
-    }
-  });
+  .superRefine(refineJwksLocation);
 
 export const IdpConfigSchema = IdpConfigDiscriminatedSchema;
 
 export type IdpConfig = z.infer<typeof IdpConfigSchema>;
+
+/**
+ * Canonical claim mapping for persisted snapshots: every field is required and
+ * no default is applied, so reading state never materializes values.
+ */
+const FrozenClaimMappingSchema = z
+  .object({
+    subjectClaim: z.string().min(1),
+    emailClaim: z.string().min(1),
+    nameClaim: z.string().min(1),
+  })
+  .strict();
+
+const FrozenIdpConfigBaseSchema = z.object({
+  issuer: z.string().min(1),
+  audience: z.array(z.string().min(1)).min(1),
+  claimMapping: FrozenClaimMappingSchema,
+});
+
+const FrozenStaticIdpConfigSchema = FrozenIdpConfigBaseSchema.extend({
+  mode: z.literal('static'),
+  signingKeys: z.array(SigningKeySchema).min(1),
+}).strict();
+
+const FrozenJwksIdpConfigSchema = FrozenIdpConfigBaseSchema.extend({
+  mode: z.literal('jwks'),
+  jwksPath: z.string().min(1).optional(),
+  jwksUri: z.string().url().optional(),
+  cacheTtlSeconds: z.number().int().min(1).max(3600),
+}).strict();
+
+/**
+ * Strict canonical IdP contract for persisted policy snapshots.
+ *
+ * No `.default()`/`.transform()` anywhere: scalar `audience`, missing
+ * `claimMapping`, and missing jwks `cacheTtlSeconds` are rejected instead of
+ * being normalized on read (the hard-cut persisted-shape contract). New
+ * snapshots are already canonical because the config input is parsed through
+ * `IdpConfigSchema` before the snapshot is frozen.
+ */
+export const FrozenIdpConfigSchema = z
+  .discriminatedUnion('mode', [FrozenStaticIdpConfigSchema, FrozenJwksIdpConfigSchema])
+  .superRefine(refineJwksLocation);
+
+export type FrozenIdpConfig = z.infer<typeof FrozenIdpConfigSchema>;
 
 export const IdentityProviderModeSchema = z.enum(['optional', 'required']);
 

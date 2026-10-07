@@ -202,6 +202,78 @@ describe('evidence-policy', () => {
         allowNoCommands: true,
       });
     });
+
+    const CANONICAL_STATIC_IDP = {
+      mode: 'static' as const,
+      issuer: 'https://issuer.example.test',
+      audience: ['flowguard'],
+      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      signingKeys: [
+        {
+          kind: 'jwk' as const,
+          kid: 's2-kid',
+          alg: 'RS256' as const,
+          jwk: { kty: 'RSA' as const, n: 'c2lfMg', e: 'AQAB' },
+        },
+      ],
+    };
+
+    it('parses a canonical persisted IdP snapshot without rewriting it', () => {
+      const parsed = PolicySnapshotSchema.parse({
+        ...CURRENT_SNAPSHOT,
+        identityProvider: CANONICAL_STATIC_IDP,
+      });
+      expect(parsed.identityProvider).toEqual(CANONICAL_STATIC_IDP);
+      // Read -> serialize -> parse is byte-identical: no read-time synthesis.
+      const reParsed = PolicySnapshotSchema.parse(JSON.parse(JSON.stringify(parsed)));
+      expect(JSON.stringify(reParsed)).toBe(JSON.stringify(parsed));
+    });
+
+    it('rejects a scalar IdP audience instead of normalizing it on read', () => {
+      expect(() =>
+        PolicySnapshotSchema.parse({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: { ...CANONICAL_STATIC_IDP, audience: 'flowguard' },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an IdP snapshot missing claimMapping instead of defaulting it', () => {
+      const { claimMapping: _c, ...idp } = CANONICAL_STATIC_IDP;
+      expect(() =>
+        PolicySnapshotSchema.parse({ ...CURRENT_SNAPSHOT, identityProvider: idp }),
+      ).toThrow();
+    });
+
+    it('rejects a jwks IdP snapshot missing cacheTtlSeconds instead of defaulting it', () => {
+      expect(() =>
+        PolicySnapshotSchema.parse({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: {
+            mode: 'jwks',
+            issuer: 'https://issuer.example.test',
+            audience: ['flowguard'],
+            claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+            jwksUri: 'https://issuer.example.test/.well-known/jwks.json',
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('parses a canonical jwks IdP snapshot with its persisted cacheTtlSeconds', () => {
+      const parsed = PolicySnapshotSchema.parse({
+        ...CURRENT_SNAPSHOT,
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.test',
+          audience: ['flowguard', 'flowguard-ci'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksUri: 'https://issuer.example.test/.well-known/jwks.json',
+          cacheTtlSeconds: 300,
+        },
+      });
+      expect(parsed.identityProvider).toMatchObject({ cacheTtlSeconds: 300 });
+    });
   });
 
   // The nested executable policy shapes are authored once as Zod schemas in
