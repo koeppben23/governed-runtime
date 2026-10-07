@@ -5,6 +5,7 @@
  * @internal — do not import directly. Use reasons.ts barrel.
  */
 import type { BlockedReason } from './reasons-types.js';
+import { PREFLIGHT_INFRA_REASONS } from './reasons-infra-preflight.js';
 
 export const INFRA_REASONS: readonly BlockedReason[] = [
   {
@@ -445,7 +446,7 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     ],
   },
 
-  // ─── Hook Session Resolution (Phase 3: #244) ────────────────────────────────
+  // ─── Hook Session Resolution (Phase 3: #244) ────────────────────────────────,
 
   {
     code: 'FINGERPRINT_FAILED',
@@ -525,4 +526,6 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'If persistent, inspect session directory for stale lock diagnostics',
     ],
   },
+
+  ...PREFLIGHT_INFRA_REASONS,
 ];

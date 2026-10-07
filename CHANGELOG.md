@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Pre-upgrade preflight (`flowguard inspect --upgrade-check`).** Read-only,
+  workspace-scoped report of what must be cleaned up before a hard-cut
+  upgrade: active sessions, incompatible/unreadable state, missing state with
+  a live audit trail, and invalid live audit trails are blockers; historical
+  archives are inventoried and classified under the current contract
+  (`extractable`, `compatible | incompatible | invalid | unknown`) as warnings
+  only. Exits 1 when the workspace is not upgrade-ready; `--json` emits the
+  structured report.
+
 ### Fixed
 
 - **Persisted policy snapshots are transformation-free.** The snapshot

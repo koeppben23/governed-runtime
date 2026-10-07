@@ -27,6 +27,10 @@ FlowGuard uses a pre-built proprietary distribution model. Upgrades involve down
 ### Standard Upgrade
 
 ```bash
+# 0. Pre-upgrade preflight (read-only, workspace-scoped). Exits 1 when this
+#    workspace is not upgrade-ready; historical archives are warnings only.
+flowguard inspect --upgrade-check
+
 # 1. Download new release artifact from your approved release source
 #    (e.g., GitHub Releases, internal artifact store)
 
@@ -40,6 +44,14 @@ flowguard install --core-tarball ./flowguard-core-{new}.tgz --force
 # 4. Verify installation
 flowguard doctor
 ```
+
+`flowguard inspect --upgrade-check` answers exactly one question: must this
+workspace be cleaned up before the upgrade? Active sessions, incompatible or
+unreadable state, missing state with a live audit trail, and invalid live audit
+trails are reported as blockers. Historical archives are inventoried and
+classified under the current contract, but never block the upgrade. Full
+archive integrity verification remains the job of the archive verifier, not of
+this preflight.
 
 ### Upgrade with Project Installation
 
