@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
-import { IdpConfigSchema } from '../shared/policy-idp-config.js';
+import { FrozenIdpConfigSchema } from '../shared/policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
 
 /**
@@ -43,63 +43,73 @@ export const CHALLENGE_POLICY_VERSION = 'challenge-policy.v1' as const;
  * a snapshot without it would silently disable mandatory challenge coverage
  * when obligations are minted — absence must fail parsing.
  */
-export const ChallengePolicySchema = z.object({
-  version: z.literal(CHALLENGE_POLICY_VERSION),
-  counts: z.object({
-    TRIVIAL: z.literal(0),
-    STANDARD: z.literal(1),
-    'HIGH-RISK': z.literal(2),
-  }),
-});
+export const ChallengePolicySchema = z
+  .object({
+    version: z.literal(CHALLENGE_POLICY_VERSION),
+    counts: z
+      .object({
+        TRIVIAL: z.literal(0),
+        STANDARD: z.literal(1),
+        'HIGH-RISK': z.literal(2),
+      })
+      .strict(),
+  })
+  .strict();
 export type ChallengePolicy = ExactDeepReadonly<z.infer<typeof ChallengePolicySchema>>;
 
 /** Timestamp assurance evidence configuration for audit events. */
-export const TimestampAssurancePolicySchema = z.object({
-  /** Enable timestamp assurance evidence (default: false). */
-  enabled: z.boolean(),
-  /** Assurance mode: local_only, ntp_check, or tsa_critical. */
-  mode: z.enum(['local_only', 'ntp_check', 'tsa_critical']),
-  /**
-   * Strict mode — TSA failure on critical events → session ERROR.
-   * Slice 1 (#269): always false. Inert until a real TSA verifier lands.
-   */
-  strict: z.boolean(),
-  /** Event kinds that require TSA evidence (e.g., decision, lifecycle). */
-  criticalEvents: z.array(z.string()),
-  /** TSA endpoint URL (required in tsa_critical mode). */
-  tsaUrl: z.string().optional(),
-  /** PEM-encoded TSA trust anchor certificates (for Slice 2 verification). */
-  trustAnchors: z.array(z.string()).optional(),
-  /** NTP server hostnames (default: pool.ntp.org). */
-  ntpServers: z.array(z.string()).optional(),
-  /** Max clock drift before warning (ms, default: 30000). */
-  ntpDriftThresholdMs: z.number(),
-  /** TSA request timeout (ms, default: 10000). */
-  tsaTimeoutMs: z.number(),
-});
+export const TimestampAssurancePolicySchema = z
+  .object({
+    /** Enable timestamp assurance evidence (default: false). */
+    enabled: z.boolean(),
+    /** Assurance mode: local_only, ntp_check, or tsa_critical. */
+    mode: z.enum(['local_only', 'ntp_check', 'tsa_critical']),
+    /**
+     * Strict mode — TSA failure on critical events → session ERROR.
+     * Slice 1 (#269): always false. Inert until a real TSA verifier lands.
+     */
+    strict: z.boolean(),
+    /** Event kinds that require TSA evidence (e.g., decision, lifecycle). */
+    criticalEvents: z.array(z.string()),
+    /** TSA endpoint URL (required in tsa_critical mode). */
+    tsaUrl: z.string().optional(),
+    /** PEM-encoded TSA trust anchor certificates (for Slice 2 verification). */
+    trustAnchors: z.array(z.string()).optional(),
+    /** NTP server hostnames (default: pool.ntp.org). */
+    ntpServers: z.array(z.string()).optional(),
+    /** Max clock drift before warning (ms, default: 30000). */
+    ntpDriftThresholdMs: z.number(),
+    /** TSA request timeout (ms, default: 10000). */
+    tsaTimeoutMs: z.number(),
+  })
+  .strict();
 export type TimestampAssurancePolicy = ExactDeepReadonly<
   z.infer<typeof TimestampAssurancePolicySchema>
 >;
 
 /** Controls which audit events are emitted and how. */
-export const AuditPolicySchema = z.object({
-  /** Emit per-transition audit events (one per state change). */
-  emitTransitions: z.boolean(),
-  /** Emit per-tool-call audit events. */
-  emitToolCalls: z.boolean(),
-  /** Enable SHA-256 hash chain for tamper detection. */
-  enableChainHash: z.boolean(),
-  /** Timestamp assurance evidence configuration. */
-  timestampAssurance: TimestampAssurancePolicySchema,
-});
+export const AuditPolicySchema = z
+  .object({
+    /** Emit per-transition audit events (one per state change). */
+    emitTransitions: z.boolean(),
+    /** Emit per-tool-call audit events. */
+    emitToolCalls: z.boolean(),
+    /** Enable SHA-256 hash chain for tamper detection. */
+    enableChainHash: z.boolean(),
+    /** Timestamp assurance evidence configuration. */
+    timestampAssurance: TimestampAssurancePolicySchema,
+  })
+  .strict();
 export type AuditPolicy = ExactDeepReadonly<z.infer<typeof AuditPolicySchema>>;
 
 /** Canonical iteration budgets for each independent review loop. */
-export const ReviewBudgetSchema = z.object({
-  plan: z.number().int().positive(),
-  architecture: z.number().int().positive(),
-  implementation: z.number().int().positive(),
-});
+export const ReviewBudgetSchema = z
+  .object({
+    plan: z.number().int().positive(),
+    architecture: z.number().int().positive(),
+    implementation: z.number().int().positive(),
+  })
+  .strict();
 export type ReviewBudget = ExactDeepReadonly<z.infer<typeof ReviewBudgetSchema>>;
 
 /**
@@ -115,11 +125,13 @@ export type ReviewBudget = ExactDeepReadonly<z.infer<typeof ReviewBudgetSchema>>
  * Policy NEVER fabricates Discovery evidence; only governs whether a workflow
  * may proceed with degraded/unavailable evidence.
  */
-export const DiscoveryHealthPolicySchema = z.object({
-  enforcement: z.enum(['off', 'advisory', 'required']),
-  onDegraded: z.enum(['allow', 'warn', 'block']),
-  onDrift: z.enum(['allow', 'warn', 'block']),
-});
+export const DiscoveryHealthPolicySchema = z
+  .object({
+    enforcement: z.enum(['off', 'advisory', 'required']),
+    onDegraded: z.enum(['allow', 'warn', 'block']),
+    onDrift: z.enum(['allow', 'warn', 'block']),
+  })
+  .strict();
 export type DiscoveryHealthPolicy = ExactDeepReadonly<z.infer<typeof DiscoveryHealthPolicySchema>>;
 
 /**
@@ -133,10 +145,12 @@ export type DiscoveryHealthPolicy = ExactDeepReadonly<z.infer<typeof DiscoveryHe
  * Never fabricates verification evidence and never permits arbitrary fallback
  * commands; command resolution stays candidate-only.
  */
-export const ValidationEvidencePolicySchema = z.object({
-  enforcement: z.enum(['off', 'advisory', 'required']),
-  allowNoCommands: z.boolean(),
-});
+export const ValidationEvidencePolicySchema = z
+  .object({
+    enforcement: z.enum(['off', 'advisory', 'required']),
+    allowNoCommands: z.boolean(),
+  })
+  .strict();
 export type ValidationEvidencePolicy = ExactDeepReadonly<
   z.infer<typeof ValidationEvidencePolicySchema>
 >;
@@ -211,7 +225,7 @@ export const PolicySnapshotSchema = z
      * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
      * Frozen at hydrate time. Optional: absence means no IdP is configured.
      */
-    identityProvider: IdpConfigSchema.optional(),
+    identityProvider: FrozenIdpConfigSchema.optional(),
     /**
      * P35a: IdP verification mode ('optional' or 'required').
      * Controls whether IdP verification failure blocks session creation.

@@ -202,6 +202,164 @@ describe('evidence-policy', () => {
         allowNoCommands: true,
       });
     });
+
+    const CANONICAL_STATIC_IDP = {
+      mode: 'static' as const,
+      issuer: 'https://issuer.example.test',
+      audience: ['flowguard'],
+      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      signingKeys: [
+        {
+          kind: 'jwk' as const,
+          kid: 's2-kid',
+          alg: 'RS256' as const,
+          jwk: { kty: 'RSA' as const, n: 'c2lfMg', e: 'AQAB' },
+        },
+      ],
+    };
+
+    it('parses a canonical persisted IdP snapshot without rewriting it', () => {
+      const parsed = PolicySnapshotSchema.parse({
+        ...CURRENT_SNAPSHOT,
+        identityProvider: CANONICAL_STATIC_IDP,
+      });
+      expect(parsed.identityProvider).toEqual(CANONICAL_STATIC_IDP);
+      // Read -> serialize -> parse is byte-identical: no read-time synthesis.
+      const reParsed = PolicySnapshotSchema.parse(JSON.parse(JSON.stringify(parsed)));
+      expect(JSON.stringify(reParsed)).toBe(JSON.stringify(parsed));
+    });
+
+    it('rejects a scalar IdP audience instead of normalizing it on read', () => {
+      expect(() =>
+        PolicySnapshotSchema.parse({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: { ...CANONICAL_STATIC_IDP, audience: 'flowguard' },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an IdP snapshot missing claimMapping instead of defaulting it', () => {
+      const { claimMapping: _c, ...idp } = CANONICAL_STATIC_IDP;
+      expect(() =>
+        PolicySnapshotSchema.parse({ ...CURRENT_SNAPSHOT, identityProvider: idp }),
+      ).toThrow();
+    });
+
+    it('rejects a jwks IdP snapshot missing cacheTtlSeconds instead of defaulting it', () => {
+      expect(() =>
+        PolicySnapshotSchema.parse({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: {
+            mode: 'jwks',
+            issuer: 'https://issuer.example.test',
+            audience: ['flowguard'],
+            claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+            jwksUri: 'https://issuer.example.test/.well-known/jwks.json',
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('parses a canonical jwks IdP snapshot with its persisted cacheTtlSeconds', () => {
+      const parsed = PolicySnapshotSchema.parse({
+        ...CURRENT_SNAPSHOT,
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.test',
+          audience: ['flowguard', 'flowguard-ci'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksUri: 'https://issuer.example.test/.well-known/jwks.json',
+          cacheTtlSeconds: 300,
+        },
+      });
+      expect(parsed.identityProvider).toMatchObject({ cacheTtlSeconds: 300 });
+    });
+
+    const CANONICAL_PEM_IDP = {
+      mode: 'static' as const,
+      issuer: 'https://issuer.example.test',
+      audience: ['flowguard'],
+      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      signingKeys: [
+        {
+          kind: 'pem' as const,
+          kid: 'pem-kid',
+          alg: 'RS256' as const,
+          pem: '-----BEGIN PUBLIC KEY-----c2lfMg==-----END PUBLIC KEY-----',
+        },
+      ],
+    };
+
+    it('parses a canonical PEM signing key and round-trips byte-identical', () => {
+      const parsed = PolicySnapshotSchema.parse({
+        ...CURRENT_SNAPSHOT,
+        identityProvider: CANONICAL_PEM_IDP,
+      });
+      expect(parsed.identityProvider).toEqual(CANONICAL_PEM_IDP);
+      const reParsed = PolicySnapshotSchema.parse(JSON.parse(JSON.stringify(parsed)));
+      expect(JSON.stringify(reParsed)).toBe(JSON.stringify(parsed));
+    });
+
+    it('rejects an unknown field on a persisted PEM signing key (no strip-on-read)', () => {
+      expect(() =>
+        PolicySnapshotSchema.parse({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: {
+            ...CANONICAL_PEM_IDP,
+            signingKeys: [
+              {
+                ...CANONICAL_PEM_IDP.signingKeys[0],
+                legacyField: 'must-not-be-stripped',
+              },
+            ],
+          },
+        }),
+      ).toThrow();
+    });
+
+    it.each([
+      ['reviewBudget', { plan: 3, architecture: 3, implementation: 3, extra: 1 }],
+      [
+        'discoveryHealth',
+        { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow', extra: true },
+      ],
+      ['validationEvidence', { enforcement: 'off', allowNoCommands: false, extra: true }],
+      [
+        'challengePolicy',
+        {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          extra: 1,
+        },
+      ],
+      [
+        'challengePolicy',
+        {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2, extra: 1 },
+        },
+      ],
+      [
+        'audit',
+        {
+          emitTransitions: true,
+          emitToolCalls: true,
+          enableChainHash: true,
+          timestampAssurance: {
+            enabled: false,
+            mode: 'local_only',
+            strict: false,
+            criticalEvents: ['decision', 'lifecycle'],
+            ntpServers: ['pool.ntp.org'],
+            ntpDriftThresholdMs: 30000,
+            tsaTimeoutMs: 10000,
+            extra: true,
+          },
+        },
+      ],
+    ] as const)('rejects an unknown nested key on %s (no strip-on-read)', (field, value) => {
+      expect(() => PolicySnapshotSchema.parse({ ...CURRENT_SNAPSHOT, [field]: value })).toThrow();
+    });
   });
 
   // The nested executable policy shapes are authored once as Zod schemas in
