@@ -65,6 +65,14 @@ const SANCTIONED: ReadonlyMap<string, { calls: number; reason: string }> = new M
     { calls: 1, reason: 'fingerprint-parent derivation; no session id is selected' },
   ],
   [
+    'adapters/workspace/upgrade-preflight.ts',
+    {
+      calls: 1,
+      reason:
+        'read-only upgrade preflight classifies raw session directories without trusting state',
+    },
+  ],
+  [
     'integration/review/observations/observation-resolution.ts',
     { calls: 1, reason: 'replay of already-recorded audit entries by persisted fingerprint/id' },
   ],

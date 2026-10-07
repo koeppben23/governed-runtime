@@ -22,6 +22,7 @@ import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 
 import { verifyChain } from '../audit/integrity.js';
 import { generateComplianceSummary, type ComplianceSummary } from '../audit/summary.js';
+import { runUpgradeCheck } from './inspect-upgrade-check.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ const SESSIONS_SUBDIR = 'sessions';
 export interface InspectArgs {
   readonly sessionId?: string;
   readonly json: boolean;
+  readonly upgradeCheck: boolean;
 }
 
 export function parseInspectArgs(
@@ -39,6 +41,7 @@ export function parseInspectArgs(
 ): { ok: true; args: InspectArgs } | { ok: false; error: string } {
   let sessionId: string | undefined;
   let json = false;
+  let upgradeCheck = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -49,6 +52,8 @@ export function parseInspectArgs(
       if (!next) return { ok: false, error: '--session requires a session ID' };
       sessionId = next;
       i++;
+    } else if (arg === '--upgrade-check') {
+      upgradeCheck = true;
     } else if (arg === '--json') {
       json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -58,9 +63,13 @@ export function parseInspectArgs(
     }
   }
 
+  if (upgradeCheck && sessionId !== undefined) {
+    return { ok: false, error: '--upgrade-check cannot be combined with --session' };
+  }
+
   return {
     ok: true,
-    args: { json, ...(sessionId !== undefined ? { sessionId } : {}) },
+    args: { json, upgradeCheck, ...(sessionId !== undefined ? { sessionId } : {}) },
   };
 }
 
@@ -70,13 +79,16 @@ export function getInspectUsage(): string {
 Session compliance reporting (read-only).
 
 Modes:
-  flowguard inspect                 List all sessions in the workspace
-  flowguard inspect --session <id>  Full compliance report for one session
+  flowguard inspect                      List all sessions in the workspace
+  flowguard inspect --session <id>       Full compliance report for one session
+  flowguard inspect --upgrade-check      Pre-upgrade preflight for this workspace
 
 Options:
-  --session <id>  Session ID to inspect
-  --json          Output ComplianceSummary as JSON (requires --session)
-  -h, --help      Show this help
+  --session <id>   Session ID to inspect
+  --upgrade-check  Report sessions/archives that block a hard-cut upgrade
+                   (exit 1 when the workspace is not upgrade-ready)
+  --json           Output JSON (requires --session or --upgrade-check)
+  -h, --help       Show this help
 
 inspect operates on the current repository and does not accept
 installation-target or host-selection flags.`;
@@ -320,18 +332,30 @@ export async function inspectMain(argv: string[]): Promise<number> {
     return exitWithError(parsed.error);
   }
 
-  const { sessionId, json } = parsed.args;
+  const { sessionId, json, upgradeCheck } = parsed.args;
 
-  if (json && !sessionId) {
-    return exitWithError('--json requires --session <id>');
+  if (json && !sessionId && !upgradeCheck) {
+    return exitWithError('--json requires --session <id> or --upgrade-check');
   }
 
   let fingerprint: string;
   try {
     fingerprint = await resolveWorkspace();
-  } catch {
+  } catch (error) {
+    if (upgradeCheck) {
+      console.error(
+        `[blocker] WORKSPACE_UNRESOLVED: cannot resolve the workspace for the upgrade preflight: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return 1;
+    }
     console.log('No FlowGuard sessions found.');
     return 0;
+  }
+
+  if (upgradeCheck) {
+    return runUpgradeCheck(fingerprint, json);
   }
 
   const sessions = listWorkspaceSessions(fingerprint);
