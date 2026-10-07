@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Persisted policy snapshots reject non-canonical IdP shapes.** The snapshot
-  contract now uses a strict frozen schema: a scalar `audience`, a missing
-  `claimMapping`, or a missing jwks `cacheTtlSeconds` fails closed instead of
-  being transformed or defaulted on read. Config input keeps its documented
-  input normalization, and snapshots written by current code are already
-  canonical, so active sessions are unaffected.
+- **Persisted policy snapshots are transformation-free.** The snapshot
+  contract now uses strict canonical schemas: non-canonical IdP shapes (scalar
+  `audience`, missing `claimMapping`, missing jwks `cacheTtlSeconds`) and
+  unknown fields anywhere in the persisted policy tree (IdP signing keys,
+  challenge policy, audit/timestamp assurance, review budget, discovery
+  health, validation evidence) fail closed instead of being normalized,
+  defaulted, or stripped on read. Config input keeps its documented authoring
+  normalization, and snapshots written by current code are already canonical,
+  so active sessions are unaffected.
 
 - **Hydrate risk-class escalation is raise-only.** Re-hydrating an existing
   session with a lower `claimedTaskClass` no longer lowers the persisted
