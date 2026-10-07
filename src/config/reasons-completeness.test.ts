@@ -177,7 +177,9 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
     for (const { file, unions } of BOUNDARY_ERROR_UNIONS) {
       const content = readFileSync(join(SRC_ROOT, file), 'utf8');
       for (const union of unions) {
-        for (const code of collectErrorCodeUnionLiterals(content, union)) {
+        const codes = collectErrorCodeUnionLiterals(content, union);
+        expect(codes.length, `${file}#${union}`).toBeGreaterThan(0);
+        for (const code of codes) {
           if (!EXCLUDED_CODES.has(code) && defaultReasonRegistry.get(code) === undefined) {
             offenders.push(`${file}#${union}:${code}`);
           }
