@@ -5,6 +5,7 @@
  * @internal — do not import directly. Use reasons.ts barrel.
  */
 import type { BlockedReason } from './reasons-types.js';
+import { BOUNDARY_INFRA_REASONS } from './reasons-infra-boundary.js';
 import { PREFLIGHT_INFRA_REASONS } from './reasons-infra-preflight.js';
 
 export const INFRA_REASONS: readonly BlockedReason[] = [
@@ -526,6 +527,8 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'If persistent, inspect session directory for stale lock diagnostics',
     ],
   },
+
+  ...BOUNDARY_INFRA_REASONS,
 
   ...PREFLIGHT_INFRA_REASONS,
 ];

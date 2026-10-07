@@ -53,7 +53,7 @@ describe('developer documentation symbols', () => {
       barrel.includes(`'./${name.replace(/\.ts$/, '.js')}'`),
     );
 
-    expect(modules).toHaveLength(13);
+    expect(modules).toHaveLength(14);
     expect(importedByBarrel).toHaveLength(6);
     for (const moduleFile of modules) {
       expect(agents, moduleFile).toContain(moduleFile);

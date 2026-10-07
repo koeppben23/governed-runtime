@@ -32,6 +32,36 @@ const BLOCK_HELPER_PATTERN = /(?:formatBlocked|strictBlockedOutput)\(\s*['"]([A-
 const MAPPING_CODE_PATTERN = /['"]([A-Z][A-Z0-9_]+)['"]/g;
 const PROOFGRAPH_MAPPING_FILE = 'reason-code-mapping.ts';
 
+/**
+ * Typed governance boundary error-code unions. Every code of these unions can
+ * reach `formatError()` at a tool boundary and must therefore have a catalog
+ * entry; internal/transport/library error classes are intentionally out of
+ * scope (they must not be merged into the governance taxonomy).
+ */
+const BOUNDARY_ERROR_UNIONS: readonly {
+  readonly file: string;
+  readonly unions: readonly string[];
+}[] = [
+  { file: 'adapters/workspace/types.ts', unions: ['WorkspaceErrorCode'] },
+  { file: 'adapters/persistence-core.ts', unions: ['PersistenceErrorCode'] },
+  { file: 'config/policy-errors.ts', unions: ['PolicyConfigurationErrorCode'] },
+  { file: 'adapters/actor.ts', unions: ['ActorClaimErrorCode', 'ActorIdentityErrorCode'] },
+  { file: 'adapters/binding.ts', unions: ['BindingErrorCode'] },
+  { file: 'adapters/git-command.ts', unions: ['GitErrorCode'] },
+  {
+    file: 'adapters/workspace/evidence-artifact-core.ts',
+    unions: ['EvidenceArtifactErrorCode'],
+  },
+];
+
+/** Extract the string literals of one `export type <name> = ...;` union. */
+function collectErrorCodeUnionLiterals(content: string, unionName: string): string[] {
+  const match = content.match(new RegExp(`export type ${unionName}\\s*=([\\s\\S]*?);`));
+  const body = match?.[1];
+  if (body === undefined) return [];
+  return [...body.matchAll(/'([A-Z][A-Z0-9_]+)'/g)].map((entry) => entry[1] ?? '');
+}
+
 // These codes are NOT registry codes — they are CRITICAL/error severities,
 // audit event codes, or external library codes. Excluded explicitly.
 const EXCLUDED_CODES: ReadonlySet<string> = new Set([
@@ -142,6 +172,29 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
     expect(missing).toEqual([]);
   });
 
+  it('every code of the typed governance boundary error unions is registered', () => {
+    const offenders: string[] = [];
+    for (const { file, unions } of BOUNDARY_ERROR_UNIONS) {
+      const content = readFileSync(join(SRC_ROOT, file), 'utf8');
+      for (const union of unions) {
+        for (const code of collectErrorCodeUnionLiterals(content, union)) {
+          if (!EXCLUDED_CODES.has(code) && defaultReasonRegistry.get(code) === undefined) {
+            offenders.push(`${file}#${union}:${code}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('BAD fixture — the boundary-union detector flags an unregistered code', () => {
+    const fixture =
+      "export type SampleErrorCode =\n  | 'READ_FAILED'\n  | 'TOTALLY_NOT_REGISTERED';";
+    const codes = collectErrorCodeUnionLiterals(fixture, 'SampleErrorCode');
+    expect(codes).toEqual(['READ_FAILED', 'TOTALLY_NOT_REGISTERED']);
+    expect(defaultReasonRegistry.get('TOTALLY_NOT_REGISTERED')).toBeUndefined();
+  });
+
   it('every registered code has at least one non-empty recovery step', () => {
     const codes = defaultReasonRegistry.codes();
     const offenders: string[] = [];
@@ -157,7 +210,7 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
 
 // P10c: reason code split validation
 describe('P10c — reason code split', () => {
-  it('all 305 codes from split arrays are registered exactly once (no duplicates)', async () => {
+  it('all 318 codes from split arrays are registered exactly once (no duplicates)', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
     const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
@@ -174,9 +227,9 @@ describe('P10c — reason code split', () => {
       ...MUTATION_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(305);
+    expect(allSplitCodes).toHaveLength(318);
     // No duplicates across the six arrays.
-    expect(new Set(allSplitCodes).size).toBe(305);
+    expect(new Set(allSplitCodes).size).toBe(318);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
@@ -207,19 +260,19 @@ describe('P10c — reason code split', () => {
     }
   });
 
-  it('VALIDATION_REASONS has exactly 119 entries', async () => {
+  it('VALIDATION_REASONS has exactly 122 entries', async () => {
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
-    expect(VALIDATION_REASONS.length).toBe(119);
+    expect(VALIDATION_REASONS.length).toBe(122);
     const allowed = new Set(['input', 'state', 'config', 'admissibility']);
     for (const r of VALIDATION_REASONS) {
       expect(allowed.has(r.category)).toBe(true);
     }
   });
 
-  it('INFRA_REASONS has exactly 62 entries', async () => {
+  it('INFRA_REASONS has exactly 72 entries', async () => {
     const { INFRA_REASONS } = await import('./reasons-infra.js');
     const { PROOFGRAPH_REASONS } = await import('./reasons-proofgraph.js');
-    expect(INFRA_REASONS.length).toBe(62);
+    expect(INFRA_REASONS.length).toBe(72);
     const allowed = new Set(['adapter', 'identity']);
     for (const r of INFRA_REASONS) {
       expect(allowed.has(r.category)).toBe(true);
