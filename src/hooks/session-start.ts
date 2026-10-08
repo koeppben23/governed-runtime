@@ -43,8 +43,9 @@ async function main(): Promise<void> {
  *
  * The payload cwd is never used as a filesystem authority: bootstrap runs only
  * on the root that `git rev-parse --show-toplevel` resolves from it. An active
- * FLOWGUARD_SESSION_DIR override skips bootstrap entirely (the env var is the
- * higher-priority session authority).
+ * FLOWGUARD_SESSION_DIR override skips bootstrap because the resolver accepts it
+ * only when it equals the authority-derived session directory (the workspace
+ * already exists); the override never selects a different session.
  *
  * @returns false when bootstrap was skipped or failed; the caller must stop.
  */
