@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value is denied with `TERMINAL_STATE_MUTATION_DENIED`; an equal or lower claim
   is a no-op. Terminal abort remains an idempotent no-op without any state or
   audit rewrite.
+- **Hydrate is bound to the canonical session authority (#1033).** The hydrate
+  tool no longer derives its worktree/session location from the raw tool
+  context: it resolves the canonical worktree/fingerprint/session projection
+  (including the MCP claimed fingerprint), tolerates `absent` only as the
+  documented bootstrap path, and fails closed on root/fingerprint/binding drift.
+  The canonical location is re-validated under the session write lock before any
+  bootstrap or update (TOCTOU); the architecture guard now sanctions every
+  `initWorkspace`/`ensureWorkspace` call site.
 
 - **Hook git probes share one deadline budget (#1031).** The canonical session
   authority accepts an optional monotone `deadlineMs`: the worktree and

@@ -241,6 +241,14 @@ export function resolveTerminalHydrate(
   policy: FlowGuardPolicy | undefined,
 ): RailResult | null {
   if (!TERMINAL.has(existingState.phase)) return null;
+  // The terminal tool path bypasses executeHydrate(); enforce the canonical
+  // command authority here so rail and tool path share the same policy.
+  if (!isCommandAllowed(existingState.phase, Command.HYDRATE)) {
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/hydrate',
+      phase: existingState.phase,
+    });
+  }
   if (claim !== undefined) {
     const nextClaim =
       existingState.claimedTaskClass === undefined

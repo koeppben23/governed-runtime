@@ -117,6 +117,8 @@ export interface TestToolContext {
   agent: string;
   directory: string;
   worktree: string;
+  /** MCP transport claimed fingerprint (authority parity check). */
+  workspaceFingerprint?: string;
   abort: AbortSignal;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }

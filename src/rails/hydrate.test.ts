@@ -3,8 +3,19 @@
  * @test-policy HAPPY, BAD, CORNER — targets applyHydrateOverrides, input validation,
  * activeChecks fallback, phaseRuleContent, defaults via ?? operators.
  */
-import { describe, it, expect } from 'vitest';
-import { executeHydrate, applyHydrateOverrides, type HydrateInput } from './hydrate.js';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  executeHydrate,
+  applyHydrateOverrides,
+  resolveTerminalHydrate,
+  type HydrateInput,
+} from './hydrate.js';
+import { isCommandAllowed } from '../machine/commands.js';
+
+vi.mock('../machine/commands.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../machine/commands.js')>();
+  return { ...actual, isCommandAllowed: vi.fn(actual.isCommandAllowed) };
+});
 import type { RailContext } from './types.js';
 import {
   FIXED_TIME,
@@ -660,4 +671,14 @@ describe('terminal hydrate read-only contract (D6)', () => {
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') expect(result.code).toBe('TERMINAL_STATE_MUTATION_DENIED');
   });
+});
+
+it('denies the terminal shortcut when the canonical command policy forbids hydrate', () => {
+  const existing = makeState('COMPLETE');
+  vi.mocked(isCommandAllowed).mockReturnValueOnce(false);
+
+  const result = resolveTerminalHydrate(existing, undefined, baseCtx.policy);
+
+  expect(result?.kind).toBe('blocked');
+  if (result?.kind === 'blocked') expect(result.code).toBe('COMMAND_NOT_ALLOWED');
 });
