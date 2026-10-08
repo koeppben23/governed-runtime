@@ -49,7 +49,10 @@ import {
   jsonResponse,
   protocolDenyEventFor,
   readHookPayloadOrRespond,
+  type HookPayloadRead,
+  type IngestFailureSink,
 } from './shared/http-transport.js';
+import { appendHookIngestFailure } from '../adapters/persistence-hook-ingest.js';
 import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
@@ -165,6 +168,26 @@ function log(message: string): void {
   process.stderr.write(`[FlowGuard HTTP Hook] ${message}\n`);
 }
 
+/**
+ * Record an unattributable PostToolUse ingestion failure in the bounded,
+ * non-audit transport ledger. Never throws; returns whether it was persisted.
+ */
+const recordHttpIngestFailure: IngestFailureSink = async (failure) => {
+  const result = await appendHookIngestFailure({
+    transport: 'http_hook',
+    event: 'PostToolUse',
+    reasonCode: failure.reasonCode,
+    observedBytes: failure.observedBytes,
+    observedPrefix: failure.observedPrefix,
+  });
+  log(
+    result.recorded
+      ? `WARN: transport ingestion failure recorded (${failure.reasonCode}); NOT a tool-call audit event`
+      : `WARN: transport ingestion failure NOT recorded (${failure.reasonCode}, ${result.reason ?? 'unknown'}); NOT a tool-call audit event`,
+  );
+  return result.recorded;
+};
+
 // ─── Hook Handlers ───────────────────────────────────────────────────────────
 
 /** @internal Exported for unit testing only. */
@@ -208,8 +231,31 @@ export async function handlePreToolUse(
   return { decision: 'allow' };
 }
 
-async function handlePostToolUse(payload: Record<string, unknown>): Promise<HttpHookResponse> {
-  const validated = validateToolHookPayload(payload);
+async function handlePostToolUse(
+  payload: Record<string, unknown>,
+  ingestion?: HookPayloadRead,
+): Promise<HttpHookResponse> {
+  let validated: ReturnType<typeof validateToolHookPayload>;
+  try {
+    validated = validateToolHookPayload(payload);
+  } catch (err) {
+    // The transport read and parsed the body, so the observed raw bytes are
+    // available: record them instead of claiming an unavailable digest.
+    const recorded = await recordHttpIngestFailure({
+      reasonCode: 'HOOK_PAYLOAD_INVALID',
+      observedBytes: ingestion?.observedBytes ?? null,
+      observedPrefix: ingestion?.observedPrefix ?? null,
+    });
+    log(
+      `WARN: post-tool-use validation failed (${err instanceof Error ? err.message : String(err)}); ` +
+        `transport ingestion failure ${recorded ? 'recorded' : 'NOT recorded'}; NOT a tool-call audit event`,
+    );
+    return {
+      decision: 'allow',
+      reason: 'audit skipped: HOOK_PAYLOAD_INVALID',
+      auditFailureRecorded: recorded,
+    };
+  }
   const { tool_name, tool_input, session_id, cwd } = validated;
   const platform = detectPlatform(payload);
 
@@ -389,7 +435,10 @@ function truncateInput(input: Record<string, unknown>): Record<string, unknown> 
 
 interface HookRoute {
   readonly event: HookEventName;
-  readonly handle: (payload: Record<string, unknown>) => Promise<HttpHookResponse>;
+  readonly handle: (
+    payload: Record<string, unknown>,
+    ingestion?: HookPayloadRead,
+  ) => Promise<HttpHookResponse>;
 }
 
 const ROUTES: Record<string, HookRoute> = {
@@ -406,9 +455,10 @@ async function dispatchHookRoute(
   route: HookRoute,
   payload: Record<string, unknown>,
   res: ServerResponse,
+  ingestion?: HookPayloadRead,
 ): Promise<void> {
   try {
-    const result = await route.handle(payload);
+    const result = await route.handle(payload, ingestion);
 
     // For pre-tool-use denials, also include the hookSpecificOutput format
     // so Claude Code can interpret it directly.
@@ -468,10 +518,15 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  const payload = await readHookPayloadOrRespond(req, res, protocolDenyEventFor(route.event));
-  if (payload === undefined) return;
+  const read = await readHookPayloadOrRespond(
+    req,
+    res,
+    protocolDenyEventFor(route.event),
+    route.event === 'PostToolUse' ? recordHttpIngestFailure : undefined,
+  );
+  if (read === undefined) return;
 
-  await dispatchHookRoute(url, route, payload, res);
+  await dispatchHookRoute(url, route, read.payload, res, read);
 }
 
 const server = createServer(handleHttpRequest);

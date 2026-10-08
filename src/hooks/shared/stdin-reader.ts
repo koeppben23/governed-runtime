@@ -20,15 +20,118 @@ import { MAX_HOOK_PAYLOAD_BYTES } from './limits.js';
 
 /**
  * Error thrown when stdin cannot be read or parsed.
+ *
+ * `observedBytes`/`observedPrefix` describe exactly the raw bytes the reader
+ * actually observed; the retained prefix is capped at the shared payload byte
+ * cap so a single oversized chunk cannot hold more than the cap in memory.
+ * They are never an inference about unread payload bytes.
  */
 export class StdinReadError extends Error {
+  readonly observedBytes: number | null;
+  readonly observedPrefix: Buffer | null;
+
   constructor(
     public readonly code: string,
     message: string,
+    observed?: { readonly bytes: number | null; readonly prefix: Buffer | null },
   ) {
     super(message);
     this.name = 'StdinReadError';
+    this.observedBytes = observed?.bytes ?? null;
+    this.observedPrefix = observed?.prefix ?? null;
   }
+}
+
+export interface StdinReadResult {
+  readonly payload: Record<string, unknown>;
+  /** The observed raw stdin bytes (before trimming), bounded by the shared cap. */
+  readonly raw: Buffer;
+}
+
+/**
+ * Read all data from stdin and parse as JSON, retaining the observed raw bytes
+ * for bounded failure records.
+ *
+ * Memory contract: only up to `MAX_HOOK_PAYLOAD_BYTES` is retained; the
+ * observed byte count still reflects every chunk the reader saw (including one
+ * that crosses the cap), while the retained prefix never exceeds the cap.
+ *
+ * @param stream - Readable stream (defaults to process.stdin). Injectable for testing.
+ * @throws StdinReadError if stdin is empty, not valid JSON, not an object,
+ *   oversized, or the stream fails after bytes were observed.
+ */
+export async function readStdinRaw(stream: Readable = process.stdin): Promise<StdinReadResult> {
+  const kept: Buffer[] = [];
+  let keptBytes = 0;
+  let observedBytes = 0;
+
+  try {
+    for await (const chunk of stream) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      observedBytes += buffer.byteLength;
+      keptBytes = keepCapped(kept, buffer, keptBytes);
+      if (observedBytes > MAX_HOOK_PAYLOAD_BYTES) {
+        stream.destroy();
+        throw new StdinReadError(
+          'STDIN_TOO_LARGE',
+          `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`,
+          { bytes: observedBytes, prefix: Buffer.concat(kept) },
+        );
+      }
+    }
+  } catch (err) {
+    if (err instanceof StdinReadError) throw err;
+    throw new StdinReadError(
+      'STDIN_READ_FAILED',
+      err instanceof Error ? err.message : String(err),
+      { bytes: observedBytes, prefix: kept.length > 0 ? Buffer.concat(kept) : null },
+    );
+  }
+
+  const raw = Buffer.concat(kept);
+  return { payload: parseObservedPayload(raw), raw };
+}
+
+/** Retain at most `MAX_HOOK_PAYLOAD_BYTES` of the observed stream. */
+function keepCapped(kept: Buffer[], buffer: Buffer, keptBytes: number): number {
+  const room = MAX_HOOK_PAYLOAD_BYTES - keptBytes;
+  if (room <= 0) return keptBytes;
+  const slice = buffer.byteLength <= room ? buffer : buffer.subarray(0, room);
+  kept.push(slice);
+  return keptBytes + slice.byteLength;
+}
+
+/** Parse the observed (cap-bounded) raw bytes as a JSON object. */
+function parseObservedPayload(raw: Buffer): Record<string, unknown> {
+  const trimmed = raw.toString('utf-8').trim();
+
+  if (trimmed.length === 0) {
+    throw new StdinReadError('STDIN_EMPTY', 'No data received on stdin', {
+      bytes: raw.byteLength,
+      prefix: raw,
+    });
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new StdinReadError(
+      'STDIN_INVALID_JSON',
+      `stdin is not valid JSON: ${trimmed.slice(0, 200)}`,
+      { bytes: raw.byteLength, prefix: raw },
+    );
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new StdinReadError(
+      'STDIN_NOT_OBJECT',
+      `stdin must be a JSON object, got: ${typeof parsed}`,
+      { bytes: raw.byteLength, prefix: raw },
+    );
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
 /**
@@ -41,40 +144,7 @@ export class StdinReadError extends Error {
 export async function readStdin(
   stream: Readable = process.stdin,
 ): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-
-  for await (const chunk of stream) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buffer.byteLength;
-    if (totalBytes > MAX_HOOK_PAYLOAD_BYTES) {
-      stream.destroy();
-      throw new StdinReadError('STDIN_TOO_LARGE', `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);
-    }
-    chunks.push(buffer);
-  }
-
-  const raw = Buffer.concat(chunks).toString('utf-8').trim();
-
-  if (raw.length === 0) {
-    throw new StdinReadError('STDIN_EMPTY', 'No data received on stdin');
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new StdinReadError('STDIN_INVALID_JSON', `stdin is not valid JSON: ${raw.slice(0, 200)}`);
-  }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new StdinReadError(
-      'STDIN_NOT_OBJECT',
-      `stdin must be a JSON object, got: ${typeof parsed}`,
-    );
-  }
-
-  return parsed as Record<string, unknown>;
+  return (await readStdinRaw(stream)).payload;
 }
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {

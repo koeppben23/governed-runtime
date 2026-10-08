@@ -103,6 +103,16 @@ export function globalConfigPath(): string {
   return path.join(base, CONFIG_FILE);
 }
 
+/**
+ * Resolve the bounded transport hook ingestion-failure ledger path (config
+ * root). This ledger records PostToolUse payloads that can never become a
+ * tool-call audit event; it is not an audit trail and carries no session or
+ * audit-chain claim.
+ */
+export function hookIngestFailureLogPath(): string {
+  return path.join(path.dirname(globalConfigPath()), 'flowguard-hook-ingest-failures.jsonl');
+}
+
 /** Resolve the repo-scoped config file path ({worktree}/.opencode/flowguard.json). */
 export function repoConfigPath(worktree: string): string {
   return path.join(worktree, '.opencode', CONFIG_FILE);
