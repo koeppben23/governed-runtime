@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout behavior are unchanged and documented as residual risks; the
   informational hook routes keep their status codes.
 
+- **Reused reviewer evidence no longer frees the ceremony shortcut (#1028).**
+  A `SUBAGENT_EVIDENCE_REUSED` integrity incident is authorization-relevant
+  separately from deterministic transport/exhaustion blocks: reduced-ceremony
+  eligibility and the approval waiver stay closed for the session while
+  `blocked` stays terminal and open work (`isOpenReviewObligation`) is
+  unchanged. Persisted evidence cannot prove event order after the incident, so
+  later obligations or invocations never auto-resolve it; recovery is a fresh
+  governed session, and the full-ceremony review path remains available.
+
 - **Persisted policy snapshots are transformation-free.** The snapshot
   contract now uses strict canonical schemas: non-canonical IdP shapes (scalar
   `audience`, missing `claimMapping`, missing jwks `cacheTtlSeconds`) and

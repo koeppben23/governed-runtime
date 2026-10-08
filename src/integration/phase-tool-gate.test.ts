@@ -771,6 +771,52 @@ describe('phase-tool-gate', () => {
       expect(result.reason).toBe('POST_IMPL_VERIFIED_TRIVIAL');
     });
 
+    it('BAD — a reuse integrity incident keeps full ceremony despite later evidence', () => {
+      const implementation = IMPL_EVIDENCE;
+      const base = makeState('IMPL_VALIDATION', {
+        claimedTaskClass: 'TRIVIAL',
+        verificationCandidates: VERIFICATION_CANDIDATES,
+        implementation,
+        activeChecks: ['test', 'lint'],
+        implValidation: [validationResult('test'), validationResult('lint')],
+        validationAttempts: [
+          implementationAttempt('test', implementation),
+          implementationAttempt('lint', implementation),
+        ],
+      });
+      const incident = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        status: 'blocked' as const,
+        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+        invocationId: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
+      // A successor review cannot be proven to have happened after the
+      // incident from persisted evidence; reduced ceremony stays closed.
+      const successor = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        obligationId: '00000000-0000-4000-8000-0000000000d2',
+        status: 'fulfilled' as const,
+        invocationId: '00000000-0000-4000-8000-0000000000d3',
+        fulfilledAt: '2026-01-03T00:00:00.000Z',
+        consumedAt: null,
+      };
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+        reviewAssurance: {
+          ...PLAN_REVIEW_ASSURANCE,
+          obligations: [incident, successor],
+        },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('REVIEW_INTEGRITY_INCIDENT');
+    });
+
     it('BAD — default policy keeps full ceremony even for TRIVIAL evidence', () => {
       const state = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
