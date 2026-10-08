@@ -32,6 +32,7 @@ import {
   type BindingErrorCode,
 } from './binding.js';
 import { GitError, resolveRoot, type GitErrorCode } from './git.js';
+import { GIT_COMMAND_TIMEOUT_MS } from './git-command.js';
 import { PersistenceError, readState, type PersistenceErrorCode } from './persistence.js';
 import {
   computeFingerprint,
@@ -77,6 +78,13 @@ export interface SessionAuthorityInput {
    * parity, never a substitute for computing it.
    */
   readonly claimedFingerprint?: string | undefined;
+  /**
+   * Total monotone budget (ms) for the sequential git probes (worktree root and
+   * remote origin). Each probe receives `min(default, remaining)`; an exhausted
+   * budget fails closed with `GIT_TIMEOUT` instead of starting another probe.
+   * The budget bounds the probes, not the whole calling process.
+   */
+  readonly deadlineMs?: number | undefined;
 }
 
 /**
@@ -97,16 +105,37 @@ export async function resolveSessionAuthority(
     };
   }
 
+  // One monotone deadline for the whole probe sequence. `performance.now()` is
+  // monotone, so wall-clock adjustments cannot extend the budget.
+  const deadlineAt = input.deadlineMs === undefined ? null : performance.now() + input.deadlineMs;
+
+  /**
+   * Remaining per-probe timeout, or undefined without a budget. Never returns
+   * 0: `execFile` treats `timeout: 0` as "no timeout", so an exhausted budget
+   * must fail closed before the probe instead.
+   */
+  const nextProbeTimeout = (): number | undefined => {
+    if (deadlineAt === null) return undefined;
+    const remaining = deadlineAt - performance.now();
+    if (remaining <= 0) {
+      throw new GitError(
+        'GIT_TIMEOUT',
+        'Session authority deadline exceeded before the next git probe',
+      );
+    }
+    return Math.max(1, Math.min(GIT_COMMAND_TIMEOUT_MS, Math.floor(remaining)));
+  };
+
   let worktreeRoot: string;
   try {
-    worktreeRoot = await resolveRoot(input.root);
+    worktreeRoot = await resolveRoot(input.root, nextProbeTimeout());
   } catch (err) {
     return unavailable(err, `Cannot resolve the git worktree root from "${input.root}"`);
   }
 
   let fingerprint: string;
   try {
-    fingerprint = (await computeFingerprint(worktreeRoot)).fingerprint;
+    fingerprint = (await computeFingerprint(worktreeRoot, nextProbeTimeout())).fingerprint;
   } catch (err) {
     return unavailable(err, `Cannot compute the workspace fingerprint for "${worktreeRoot}"`);
   }

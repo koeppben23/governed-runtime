@@ -179,4 +179,34 @@ describe('resolveSessionAuthority', () => {
 
     expect(result.status).toBe('resolved');
   });
+
+  it('PERF: cold and warm resolution stay bounded by the hook deadline budget', async () => {
+    await writeBoundState({});
+
+    const coldStart = performance.now();
+    const cold = await resolveSessionAuthority({
+      root: repo,
+      sessionId: SESSION_ID,
+      deadlineMs: 4_000,
+    });
+    const coldMs = performance.now() - coldStart;
+
+    const warmStart = performance.now();
+    const warm = await resolveSessionAuthority({
+      root: repo,
+      sessionId: SESSION_ID,
+      deadlineMs: 4_000,
+    });
+    const warmMs = performance.now() - warmStart;
+
+    console.error(
+      `[PERF] session-authority cold=${coldMs.toFixed(1)}ms warm=${warmMs.toFixed(1)}ms ` +
+        `(budget 4000ms, host window 10000ms)`,
+    );
+    expect([cold.status, warm.status]).toEqual(['resolved', 'resolved']);
+    // Sanity bound: far below the host window even on slow CI runners while
+    // still catching a regression to two stacked 5s git timeouts.
+    expect(coldMs).toBeLessThan(4_000);
+    expect(warmMs).toBeLessThan(4_000);
+  });
 });

@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hook git probes share one deadline budget (#1031).** The canonical session
+  authority accepts an optional monotone `deadlineMs`: the worktree and
+  remote-origin probes each receive `min(5s, remaining)` and an exhausted budget
+  fails closed with `GIT_TIMEOUT` instead of starting another probe. Hook paths
+  use a 4s budget inside the advertised 10s host window; a timed-out remote
+  probe now propagates instead of silently falling back to the local-path
+  fingerprint. The budget bounds the git probes, not Node startup or file I/O.
+
 - **Raw archive export is an administrator ceiling (#1030).** The configurable
   `/archive` export (and the solo auto-archive) projects one effective redaction
   policy: `allowRawExport=true` requires an explicit global
