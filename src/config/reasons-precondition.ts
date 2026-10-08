@@ -514,4 +514,15 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Run /hydrate if the workspace session has not been initialized yet',
     ],
   },
+
+  {
+    code: 'TERMINAL_STATE_MUTATION_DENIED',
+    category: 'precondition',
+    messageTemplate:
+      'Hydrate cannot change the claimed task class of a terminal session (phase {phase}, current {currentTaskClass}, requested {requestedTaskClass}). Terminal sessions are read-only.',
+    recoverySteps: [
+      'Reload the terminal session without a claimedTaskClass argument',
+      'Start a new session with /hydrate for a workflow that needs a different task class',
+    ],
+  },
 ];

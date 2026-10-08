@@ -1106,4 +1106,81 @@ describe('hydrate', () => {
       expect(state!.binding.hostSessionId).not.toBe(state!.initiatedBy);
     });
   });
+
+  // =============================================================================
+  // D6 (#1034): terminal hydrate is strictly read-only
+  // =============================================================================
+
+  describe('terminal hydrate read-only contract (D6)', () => {
+    async function terminalSessionDir(): Promise<string> {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const live = await readState(sessDir);
+      // Seed a schema-valid terminal state while preserving the live binding
+      // and resolved policy snapshot so hydrate resolves normally.
+      await writeState(sessDir, {
+        ...makeProgressedState('COMPLETE'),
+        binding: live!.binding,
+        policySnapshot: live!.policySnapshot,
+        ...(live!.claimedTaskClass !== undefined
+          ? { claimedTaskClass: live!.claimedTaskClass }
+          : {}),
+      });
+      return sessDir;
+    }
+
+    it('HAPPY: reloads a terminal session without rewriting state or audit', async () => {
+      const sessDir = await terminalSessionDir();
+      const statePath = path.join(sessDir, 'session-state.json');
+      const stateBefore = await fs.readFile(statePath, 'utf8');
+      const auditBefore = JSON.stringify(await readAuditTrail(sessDir));
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, ctx));
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('COMPLETE');
+      expect(result.terminalReload).toBe(true);
+      expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+      expect(JSON.stringify(await readAuditTrail(sessDir))).toBe(auditBefore);
+    });
+
+    it('HAPPY: an equal or lower claimedTaskClass on a terminal session is a no-op', async () => {
+      await hydrateSession({ claimedTaskClass: 'STANDARD' });
+      const sessDir = await terminalSessionDir();
+      const statePath = path.join(sessDir, 'session-state.json');
+      const stateBefore = await fs.readFile(statePath, 'utf8');
+
+      const lower = parseToolResult(
+        await hydrate.execute({ policyMode: 'solo', claimedTaskClass: 'TRIVIAL' }, ctx),
+      );
+      const equal = parseToolResult(
+        await hydrate.execute({ policyMode: 'solo', claimedTaskClass: 'STANDARD' }, ctx),
+      );
+
+      expect(lower.error).toBeUndefined();
+      expect(lower.terminalReload).toBe(true);
+      expect(equal.error).toBeUndefined();
+      expect(equal.terminalReload).toBe(true);
+      expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+    });
+
+    it('BAD: raising claimedTaskClass on a terminal session is denied read-only', async () => {
+      const sessDir = await terminalSessionDir();
+      const statePath = path.join(sessDir, 'session-state.json');
+      const stateBefore = await fs.readFile(statePath, 'utf8');
+      const auditBefore = JSON.stringify(await readAuditTrail(sessDir));
+
+      const result = parseToolResult(
+        await hydrate.execute({ policyMode: 'solo', claimedTaskClass: 'HIGH-RISK' }, ctx),
+      );
+
+      expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('TERMINAL_STATE_MUTATION_DENIED');
+      expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+      expect(JSON.stringify(await readAuditTrail(sessDir))).toBe(auditBefore);
+    });
+  });
 });

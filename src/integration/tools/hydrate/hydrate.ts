@@ -9,14 +9,18 @@ import { computeGitControlPlaneMarker } from '../../git-control-plane.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { initWorkspace, writeSessionPointer } from '../../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
-import { executeHydrate } from '../../../rails/hydrate.js';
+import { executeHydrate, resolveTerminalHydrate } from '../../../rails/hydrate.js';
+import { TERMINAL } from '../../../machine/topology.js';
 import { REASON_SESSION_LOCK_CONTENDED } from '../../../shared/flowguard-identifiers.js';
 import { PolicyModeSchema } from '../../../state/policy-mode.js';
-import { TaskClass } from '../../../state/task-class.js';
+import { isTaskClass, TaskClass } from '../../../state/task-class.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { getWorktree, withSessionWriteTransaction } from '../helpers.js';
+import { formatRailResult } from '../helpers-rail-presentation.js';
+import { getWorktree, resolvePolicyFromState, withSessionWriteTransaction } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import type { ToolContext, ToolDefinition, ToolResult } from '../helpers.js';
+import type { RailResult } from '../../../rails/types.js';
+import type { SessionState } from '../../../state/schema.js';
 import { resolveDiscoveryHydration } from './hydrate-discovery.js';
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
 import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
@@ -74,6 +78,34 @@ async function captureBaselineControlPlaneMarker(worktree: string): Promise<stri
 }
 
 /**
+ * Read-only terminal reload response: no persistence, explicitly marked so the
+ * operator can distinguish a reload from a state-mutating hydrate.
+ */
+function formatTerminalReload(result: Extract<RailResult, { kind: 'ok' }>): ToolResult {
+  const rendered = formatRailResult(result);
+  const text = typeof rendered === 'string' ? rendered : rendered.output;
+  const base = JSON.parse(text) as Record<string, unknown>;
+  return JSON.stringify({ ...base, terminalReload: true });
+}
+
+/**
+ * D6 (#1034): terminal hydrate is read-only. A claim that would durably change
+ * claimedTaskClass is denied; an equal or lower claim is a no-op.
+ */
+function handleTerminalHydrate(existing: SessionState, args: HydrateArgs): ToolResult {
+  const claim = isTaskClass(args.claimedTaskClass) ? args.claimedTaskClass : undefined;
+  const terminalResult = resolveTerminalHydrate(existing, claim, resolvePolicyFromState(existing));
+  if (terminalResult === null) {
+    return formatBlocked('TERMINAL_STATE_MUTATION_DENIED', {
+      message: 'Terminal hydrate reload could not be resolved.',
+    });
+  }
+  return terminalResult.kind === 'ok'
+    ? formatTerminalReload(terminalResult)
+    : formatRailResult(terminalResult);
+}
+
+/**
  * The lock is intentionally held across discovery/git for the duration of the
  * transaction; the 10s acquisition timeout in the lock adapter is the
  * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
@@ -85,6 +117,14 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
 
   return withSessionWriteTransaction(workspace.sessionDir, async ({ waited }) => {
     const existing = await readState(workspace.sessionDir);
+
+    // D6 (#1034): a terminal session is reloaded strictly read-only. No state
+    // write, no discovery/artifact mutation, no outbox operation, no audit
+    // event — and a claim that would durably change claimedTaskClass is denied.
+    if (existing !== null && TERMINAL.has(existing.phase)) {
+      return withLockContended(handleTerminalHydrate(existing, args), waited);
+    }
+
     // Pre-implementation baseline (#baseline): for a NEW session, snapshot the
     // files already dirty in the worktree BEFORE any editing, so flowguard_implement
     // can scope evidence to the task's own changes. Fail-soft: if git is

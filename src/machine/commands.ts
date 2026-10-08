@@ -14,8 +14,10 @@
  *   - `/abort` is a strict idempotent no-op on terminal phases
  *     (rails/abort.ts, #421).
  *   - `/hydrate` is the bootstrap/reload/recovery entrypoint; it performs no
- *     terminal transition, and its explicit `claimedTaskClass` recovery remains
- *     subject to the separately tracked G22 surface.
+ *     terminal transition, and a terminal session reloads strictly read-only
+ *     (a claimedTaskClass that would change the persisted value is denied).
+ *     The explicit non-terminal `claimedTaskClass` recovery remains subject to
+ *     the separately tracked G22 surface.
  *
  * @version v4
  */

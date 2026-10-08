@@ -32,6 +32,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ErrorInfo } from '../state/evidence.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
 import { TERMINAL } from '../machine/topology.js';
 import {
   applyTransition,
@@ -52,6 +53,15 @@ export interface AbortInput {
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeAbort(state: SessionState, input: AbortInput, ctx: RailContext): RailResult {
+  // Canonical command authority at the entrypoint (D6/#1034).
+  if (!isCommandAllowed(state.phase, Command.ABORT)) {
+    return {
+      kind: 'blocked',
+      code: 'COMMAND_NOT_ALLOWED',
+      reason: `Command /abort is not allowed in phase ${state.phase}`,
+    };
+  }
+
   // 1. Idempotent at any terminal phase — already terminal, no overwrite
   if (TERMINAL.has(state.phase)) {
     const result = evaluate(state, ctx.policy);

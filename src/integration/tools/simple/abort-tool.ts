@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from '../helpers.js';
 import { withMutableSessionTransaction } from '../helpers.js';
-import { persistAndFormat } from '../helpers-rail-presentation.js';
+import { formatRailResult, persistAndFormat } from '../helpers-rail-presentation.js';
 import { executeAbort } from '../../../rails/abort.js';
 import { TERMINAL } from '../../../machine/topology.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
@@ -35,9 +35,9 @@ export const abort_session: ToolDefinition = {
       async () => {
         return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
           // #421: Abort on a terminal phase is an idempotent no-op (the rail
-          // preserves the state). Emit a diagnostic warn at the boundary so the
-          // attempt is observable, then delegate — the rail remains the sole
-          // authority over abort state transitions.
+          // preserves the state). D6 (#1034): it is also strictly read-only —
+          // format the result without any state or audit rewrite. Emit a
+          // diagnostic warn at the boundary so the attempt is observable.
           if (TERMINAL.has(state.phase)) {
             getAdapterLogger().warn('abort', 'Abort attempted on terminal phase (no-op)', {
               sessionId: context.sessionID,
@@ -45,6 +45,12 @@ export const abort_session: ToolDefinition = {
               reason: 'abort_on_terminal',
               ...getLogTraceFields(),
             });
+            const noOpResult = executeAbort(
+              state,
+              { reason: args.reason, actor: context.sessionID },
+              ctx,
+            );
+            return formatRailResult(noOpResult);
           }
           const result = executeAbort(
             state,
