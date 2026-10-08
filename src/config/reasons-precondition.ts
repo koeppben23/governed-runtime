@@ -492,4 +492,26 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Restart OpenCode if the sidecar session points to stale workspace state.',
     ],
   },
+
+  {
+    code: 'SESSION_OVERRIDE_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      'FLOWGUARD_SESSION_DIR resolves to "{override}" but the canonical authority derives "{expected}". The override is an assertion, not a session authority.',
+    recoverySteps: [
+      'Unset FLOWGUARD_SESSION_DIR or point it at the canonical session directory derived from the worktree, fingerprint, and host session id',
+      'Do not use the override to select a different workspace or host session',
+    ],
+  },
+
+  {
+    code: 'SESSION_OVERRIDE_UNRESOLVABLE',
+    category: 'precondition',
+    messageTemplate:
+      'FLOWGUARD_SESSION_DIR cannot be resolved to an existing path and is not accepted as a session authority.',
+    recoverySteps: [
+      'Unset FLOWGUARD_SESSION_DIR or fix the path so it names the canonical session directory',
+      'Run /hydrate if the workspace session has not been initialized yet',
+    ],
+  },
 ];

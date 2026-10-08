@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The hook session-directory override is a canonical assertion (#1029).**
+  `FLOWGUARD_SESSION_DIR` no longer bypasses session-authority resolution: hook
+  paths resolve the canonical worktree/fingerprint/session projection and accept
+  the override only when its realpath equals the derived session directory.
+  Foreign workspaces, wrong host sessions, symlink escapes, stale bindings, and
+  unresolvable paths fail closed
+  (`SESSION_OVERRIDE_MISMATCH`/`SESSION_OVERRIDE_UNRESOLVABLE`); an
+  unresolvable payload `cwd` now fails closed even when the override is set.
+
 - **HTTP `PreToolUse` transport failures are host-observable DENY (#1027).**
   Authenticated pre-tool-use requests with an invalid content type, an
   unreadable or oversized body, or malformed JSON now receive an HTTP 200

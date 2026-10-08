@@ -267,7 +267,9 @@ export async function handleSessionStart(
 
   // Workspace bootstrap runs only on the git-resolved worktree root; the raw
   // payload cwd is never a filesystem authority. An active
-  // FLOWGUARD_SESSION_DIR override skips bootstrap entirely.
+  // FLOWGUARD_SESSION_DIR override skips bootstrap entirely: the resolver only
+  // accepts an override that equals the authority-derived session directory, so
+  // the workspace already exists.
   const envOverride = process.env['FLOWGUARD_SESSION_DIR'];
   if (envOverride === undefined || envOverride.length === 0) {
     try {
