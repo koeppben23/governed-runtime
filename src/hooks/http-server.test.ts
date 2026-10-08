@@ -54,6 +54,19 @@ vi.mock('../adapters/persistence-audit.js', () => ({
   appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
 }));
 
+// Mock the bounded transport ingestion-failure ledger.
+const mockAppendHookIngestFailure = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({ recorded: true })),
+);
+
+vi.mock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+  return {
+    ...actual,
+    appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+  };
+});
+
 // Mock session-resolver (not used by handleSessionStart, but imported by module).
 const mockResolveSession = vi.fn();
 
@@ -121,6 +134,13 @@ beforeEach(async () => {
   vi.doMock('../adapters/persistence-audit.js', () => ({
     appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
   }));
+  vi.doMock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+    return {
+      ...actual,
+      appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+    };
+  });
   vi.doMock('./shared/session-resolver.js', () => ({
     resolveSession: (...args: unknown[]) => mockResolveSession(...args),
   }));
@@ -587,14 +607,25 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).not.toHaveBeenCalled();
   });
 
-  it('BAD: invalid JSON returns 400', async () => {
+  it('BAD: invalid JSON returns 400 and records a transport ingestion failure', async () => {
     const req = makeRequest({ url: '/hooks/post-tool-use', body: '{not-json}' });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Invalid JSON in request body' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Invalid JSON in request body',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: Buffer.byteLength('{not-json}'),
+        observedPrefix: Buffer.from('{not-json}'),
+      }),
+    );
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
@@ -605,8 +636,114 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body must be a JSON object' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body must be a JSON object',
+      auditFailureRecorded: true,
+    });
     expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('BAD: post-tool-use validation failure is recorded with the observed raw bytes', async () => {
+    const body = JSON.stringify({ foo: 'bar' });
+    const req = makeRequest({ url: '/hooks/post-tool-use', body });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      decision: 'allow',
+      reason: 'audit skipped: HOOK_PAYLOAD_INVALID',
+      auditFailureRecorded: true,
+    });
+    // The transport already read and parsed the body: the observed raw bytes
+    // are preserved instead of claiming an unavailable digest.
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: Buffer.byteLength(body),
+        observedPrefix: Buffer.from(body),
+      }),
+    );
+    expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('BAD: post-tool-use invalid content type is recorded with an unavailable digest', async () => {
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: '{}',
+      headers: { 'content-type': 'text/json' },
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(415);
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Content-Type must be application/json',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: null,
+        observedPrefix: null,
+      }),
+    );
+  });
+
+  it('BAD: a single oversized chunk observes its bytes but retains only the cap prefix', async () => {
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: 'y'.repeat(MAX_HOOK_PAYLOAD_BYTES + 64 * 1024),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(413);
+    const [failure] = mockAppendHookIngestFailure.mock.calls[0] as [
+      { observedBytes: number; observedPrefix: Buffer },
+    ];
+    expect(failure.observedBytes).toBe(MAX_HOOK_PAYLOAD_BYTES + 64 * 1024);
+    expect(Buffer.isBuffer(failure.observedPrefix)).toBe(true);
+    expect(failure.observedPrefix.byteLength).toBe(MAX_HOOK_PAYLOAD_BYTES);
+  });
+
+  it('BAD: a stream failure after observed chunks preserves their bytes', async () => {
+    const req = new Readable({
+      read() {
+        this.push('{"tool_name":"Bash"');
+        this.destroy(new Error('connection reset'));
+      },
+    }) as Readable & {
+      method?: string;
+      url?: string;
+      headers: Record<string, string>;
+      rawHeaders: string[];
+    };
+    req.method = 'POST';
+    req.url = '/hooks/post-tool-use';
+    req.headers = {
+      authorization: `Bearer ${TEST_HOOK_TOKEN}`,
+      'content-type': 'application/json',
+    };
+    req.rawHeaders = [];
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(400);
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_STDIN_INVALID',
+        observedBytes: Buffer.byteLength('{"tool_name":"Bash"'),
+        observedPrefix: Buffer.from('{"tool_name":"Bash"'),
+      }),
+    );
   });
 
   it('HAPPY: /hooks/post-tool-use appends a tool_call audit event', async () => {
@@ -910,7 +1047,10 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(413);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body too large',
+      auditFailureRecorded: true,
+    });
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
@@ -924,7 +1064,17 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(413);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body too large',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_STDIN_INVALID',
+        observedBytes: MAX_HOOK_PAYLOAD_BYTES + 1,
+      }),
+    );
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 

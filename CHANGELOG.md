@@ -28,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   probe now propagates instead of silently falling back to the local-path
   fingerprint. The budget bounds the git probes, not Node startup or file I/O.
 
+- **Oversized and malformed PostToolUse payloads leave a bounded failure
+  record (#1032).** PostToolUse payloads that can never become a tool-call
+  audit event are now recorded in a bounded, lock-protected transport
+  ingestion-failure ledger (single-generation rotation, metadata only) with the
+  reason code, observed byte count, and a binary-exact SHA-256 digest of the
+  observed raw prefix (or an explicit `unavailable`). The ledger stores no raw
+  payload bytes, never claims a session or audit-chain link, and a broken ledger
+  cannot stall the informational hook; digest claims cover only bytes the reader
+  actually observed.
+
 - **Raw archive export is an administrator ceiling (#1030).** The configurable
   `/archive` export (and the solo auto-archive) projects one effective redaction
   policy: `allowRawExport=true` requires an explicit global
