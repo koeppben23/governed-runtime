@@ -414,9 +414,9 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Subagent invocation evidence has already been consumed for this obligation. Each obligation requires a fresh invocation.',
     recoverySteps: [
-      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent for the current obligation`,
-      'Do not reuse findings from a previously consumed invocation',
-      'Each plan version and review iteration requires its own subagent invocation',
+      'The blocked obligation is terminal; create a fresh review obligation through the intended flow',
+      'Complete it with a new, independent reviewer invocation; never reuse prior findings or invocation evidence',
+      'Reduced ceremony stays withheld for this session; start a fresh governed session to restore it',
     ],
   },
 
