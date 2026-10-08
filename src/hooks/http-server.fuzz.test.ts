@@ -176,7 +176,13 @@ describe('HTTP hook fuzz', () => {
 
         await handleHttpRequest(req as never, res as never);
 
-        expect(res.status).toBe(415);
+        // D1 (#1027): the blocking PreToolUse route delivers a protocol DENY
+        // with HTTP 200 because non-2xx responses are non-blocking at the host.
+        expect(res.status).toBe(200);
+        expect(JSON.parse(res.body).hookSpecificOutput).toMatchObject({
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+        });
         expect(mockResolveSession).not.toHaveBeenCalled();
       }),
       {
@@ -246,14 +252,38 @@ describe('HTTP hook fuzz', () => {
     );
   });
 
-  it('oversized bodies always return 413', async () => {
+  it('oversized bodies always return 413 on the informational routes', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 1_048_577, max: 2_000_000 }), async (contentLength) => {
+        const req = makeRequest('{}', {
+          url: '/hooks/post-tool-use',
+          contentLength: String(contentLength),
+        });
+        const res = makeResponse();
+
+        await handleHttpRequest(req as never, res as never);
+        expect(res.status).toBe(413);
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('oversized pre-tool-use bodies always deliver a host-observable DENY', async () => {
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 1_048_577, max: 2_000_000 }), async (contentLength) => {
         const req = makeRequest('{}', { contentLength: String(contentLength) });
         const res = makeResponse();
 
         await handleHttpRequest(req as never, res as never);
-        expect(res.status).toBe(413);
+        expect(res.status).toBe(200);
+        expect(JSON.parse(res.body).hookSpecificOutput).toMatchObject({
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+        });
       }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
@@ -271,7 +301,7 @@ describe('HTTP hook fuzz', () => {
           fc.string({ minLength: 1, maxLength: 200 }).map((s) => s.slice(0, s.length / 2)),
         ),
         async (body) => {
-          const req = makeRequest(body);
+          const req = makeRequest(body, { url: '/hooks/post-tool-use' });
           const res = makeResponse();
 
           await handleHttpRequest(req as never, res as never);

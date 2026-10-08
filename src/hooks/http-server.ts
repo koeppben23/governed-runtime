@@ -17,6 +17,15 @@
  * - POST /hooks/stop           → Cleanup and review check
  * - GET  /health               → Server liveness check
  *
+ * Fail-closed transport (PreToolUse only): Claude Code treats non-2xx HTTP hook
+ * responses as non-blocking, so every authenticated pre-tool-use validation or
+ * transport failure (content type, body read, oversized payload, malformed
+ * JSON) is delivered as HTTP 200 with a protocol DENY body. Authentication
+ * (401), method (405), unknown route (404), an unreachable server, client
+ * disconnect, and timeout cannot be converted into a DENY from inside the
+ * server and remain documented non-blocking residual risks; the informational
+ * routes keep their status codes. See docs/platform-limitations.md (Gap 3).
+ *
  * Configuration:
  * - FLOWGUARD_HOOK_PORT (env): port number (default: 18462)
  * - FLOWGUARD_HOOK_HOST (env): bind address (default: 127.0.0.1)
@@ -34,7 +43,12 @@ import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { formatDenyOutput } from './shared/stdout-writer.js';
 import { validateToolHookPayload, validateSessionPayload } from './shared/stdin-reader.js';
-import { MAX_HOOK_PAYLOAD_BYTES } from './shared/limits.js';
+import {
+  headerValues,
+  jsonResponse,
+  protocolDenyEventFor,
+  readHookPayloadOrRespond,
+} from './shared/http-transport.js';
 import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
@@ -128,55 +142,6 @@ let serverConfig: HttpHookServerConfig | undefined;
 
 // ─── Request Handling ────────────────────────────────────────────────────────
 
-class BodyTooLargeError extends Error {
-  constructor() {
-    super(`request body exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);
-    this.name = 'BodyTooLargeError';
-  }
-}
-
-function contentLengthExceedsLimit(req: IncomingMessage): boolean {
-  const raw = req.headers['content-length'];
-  if (typeof raw !== 'string') return false;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > MAX_HOOK_PAYLOAD_BYTES;
-}
-
-export async function readBody(req: IncomingMessage): Promise<string> {
-  if (contentLengthExceedsLimit(req)) throw new BodyTooLargeError();
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
-    total += buffer.byteLength;
-    if (total > MAX_HOOK_PAYLOAD_BYTES) throw new BodyTooLargeError();
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
-}
-
-function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
-  const json = JSON.stringify(body);
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(json),
-  });
-  res.end(json);
-}
-
-function headerValues(req: IncomingMessage, name: string): string[] {
-  const values: string[] = [];
-  const rawHeaders = req.rawHeaders ?? [];
-  for (let index = 0; index < rawHeaders.length; index += 2) {
-    if (rawHeaders[index]?.toLowerCase() === name) values.push(rawHeaders[index + 1] ?? '');
-  }
-  if (values.length > 0) return values;
-
-  const value = req.headers[name];
-  if (typeof value === 'string') return [value];
-  return Array.isArray(value) ? value : [];
-}
-
 function secureTokenEquals(actual: string, expected: string): boolean {
   const actualBuffer = Buffer.from(actual, 'utf8');
   const expectedBuffer = Buffer.from(expected, 'utf8');
@@ -193,14 +158,6 @@ function isAuthorizedHookRequest(req: IncomingMessage, token: string): boolean {
   if (match === null) return false;
   const [, bearerToken] = match;
   return bearerToken !== undefined && secureTokenEquals(bearerToken, token);
-}
-
-function hasJsonContentType(req: IncomingMessage): boolean {
-  const contentTypes = headerValues(req, 'content-type');
-  const [contentType] = contentTypes;
-  if (contentTypes.length !== 1 || contentType === undefined) return false;
-  const [mediaType] = contentType.split(';', 1);
-  return mediaType !== undefined && mediaType.trim().toLowerCase() === 'application/json';
 }
 
 function log(message: string): void {
@@ -441,43 +398,6 @@ const ROUTES: Record<string, HookRoute> = {
 
 // ─── Server ──────────────────────────────────────────────────────────────────
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-async function readRequestBodyOrRespond(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<string | undefined> {
-  try {
-    return await readBody(req);
-  } catch (err) {
-    if (err instanceof BodyTooLargeError) {
-      jsonResponse(res, 413, { error: 'Request body too large' });
-      return undefined;
-    }
-    jsonResponse(res, 400, { error: 'Failed to read request body' });
-    return undefined;
-  }
-}
-
-function parseJsonObjectOrRespond(
-  body: string,
-  res: ServerResponse,
-): Record<string, unknown> | undefined {
-  try {
-    const parsed: unknown = JSON.parse(body);
-    if (!isJsonObject(parsed)) {
-      jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
-      return undefined;
-    }
-    return parsed;
-  } catch {
-    jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
-    return undefined;
-  }
-}
-
 async function dispatchHookRoute(
   url: string,
   route: HookRoute,
@@ -545,15 +465,7 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  if (!hasJsonContentType(req)) {
-    jsonResponse(res, 415, { error: 'Content-Type must be application/json' });
-    return;
-  }
-
-  const body = await readRequestBodyOrRespond(req, res);
-  if (body === undefined) return;
-
-  const payload = parseJsonObjectOrRespond(body, res);
+  const payload = await readHookPayloadOrRespond(req, res, protocolDenyEventFor(route.event));
   if (payload === undefined) return;
 
   await dispatchHookRoute(url, route, payload, res);

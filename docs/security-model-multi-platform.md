@@ -70,8 +70,13 @@ operators choose that hook transport.
 
 - Hook script: catches all exceptions, emits deny on error
 - HTTP server: explicit localhost listener for Claude Code HTTP hooks; catches
-  handler errors and returns deny on internal failure
+  handler errors and returns deny on internal failure. Authenticated PreToolUse
+  validation/transport failures (content type, unreadable or oversized body,
+  malformed JSON) are delivered as HTTP 200 protocol DENY because non-2xx
+  responses are non-blocking at the host
 - Platform override: if hook process is killed (OOM/SIGKILL), platform proceeds without governance
+- Non-blocking HTTP residual risks: `401` for a missing/misconfigured token, an
+  unreachable server (connection refused), client disconnect, and host timeout
 
 ### Codex (Hook-Gated)
 
@@ -92,21 +97,27 @@ operators choose that hook transport.
 
 ## Fail-Closed Behavior Matrix
 
-| Failure Scenario      | OpenCode                    | Claude Code (HTTP)           | Claude Code (cmd)             | Codex                         |
-| --------------------- | --------------------------- | ---------------------------- | ----------------------------- | ----------------------------- |
-| Hook throws exception | Tool BLOCKED                | Tool BLOCKED (deny returned) | Tool BLOCKED (deny on stdout) | Tool BLOCKED (deny on stdout) |
-| Hook timeout (10s)    | N/A (sync)                  | Tool PROCEEDS\*              | Tool PROCEEDS\*               | Tool PROCEEDS\*               |
-| Hook process killed   | N/A (in-proc)               | Tool PROCEEDS\*              | Tool PROCEEDS\*               | Tool PROCEEDS\*               |
-| State file missing    | Tool BLOCKED                | Tool BLOCKED (deny)          | Tool BLOCKED (deny)           | Tool BLOCKED (deny)           |
-| State file corrupt    | Tool BLOCKED                | Tool BLOCKED (deny)          | Tool BLOCKED (deny)           | Tool BLOCKED (deny)           |
-| Audit write fails     | Tool ALLOWED (non-blocking) | Tool ALLOWED                 | Tool ALLOWED                  | Tool ALLOWED                  |
-| Deny stdout fails     | N/A                         | N/A                          | Hook exits non-zero\*\*       | Hook exits non-zero\*\*       |
+| Failure Scenario                    | OpenCode                    | Claude Code (HTTP)                     | Claude Code (cmd)             | Codex                         |
+| ----------------------------------- | --------------------------- | -------------------------------------- | ----------------------------- | ----------------------------- |
+| Hook throws exception               | Tool BLOCKED                | Tool BLOCKED (deny returned)           | Tool BLOCKED (deny on stdout) | Tool BLOCKED (deny on stdout) |
+| Hook timeout (10s)                  | N/A (sync)                  | Tool PROCEEDS\*                        | Tool PROCEEDS\*               | Tool PROCEEDS\*               |
+| Hook process killed                 | N/A (in-proc)               | Tool PROCEEDS\*                        | Tool PROCEEDS\*               | Tool PROCEEDS\*               |
+| State file missing                  | Tool BLOCKED                | Tool BLOCKED (deny)                    | Tool BLOCKED (deny)           | Tool BLOCKED (deny)           |
+| State file corrupt                  | Tool BLOCKED                | Tool BLOCKED (deny)                    | Tool BLOCKED (deny)           | Tool BLOCKED (deny)           |
+| Malformed hook request (PreToolUse) | N/A (in-proc)               | Tool BLOCKED (2xx deny)                | Tool BLOCKED (deny on stdout) | Tool BLOCKED (deny on stdout) |
+| Unauthenticated HTTP hook request   | N/A                         | Tool PROCEEDS (401 non-blocking)\*\*\* | N/A                           | N/A                           |
+| Audit write fails                   | Tool ALLOWED (non-blocking) | Tool ALLOWED                           | Tool ALLOWED                  | Tool ALLOWED                  |
+| Deny stdout fails                   | N/A                         | N/A                                    | Hook exits non-zero\*\*       | Hook exits non-zero\*\*       |
 
 `*` = Platform limitation. FlowGuard cannot prevent this. See Gap 3 in `platform-limitations.md`.
 
 `**` = FlowGuard treats deny-output failure as fatal and exits non-zero after a
 best-effort stderr fallback. Host-level fail-closed behavior is NOT_VERIFIED for
 hosts that interpret non-zero exit or missing stdout as allow.
+
+`***` = A missing or misconfigured bearer token is a transport configuration
+error, not a governance decision; the host treats the non-2xx response as
+non-blocking. Protect token provisioning and monitor server liveness.
 
 ## Defense-in-Depth Layers
 
