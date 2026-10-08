@@ -12,7 +12,10 @@ import { atomicWrite, readState } from '../persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { hashBuffer } from '../../shared/hashing.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
-import { readConfig } from '../persistence-config.js';
+import {
+  readEffectiveArchivePolicy,
+  type EffectiveArchiveRedactionPolicy,
+} from '../persistence-config.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
 import { workspacesHome, sessionDir } from './init.js';
@@ -47,11 +50,11 @@ export interface ArchivePayloadOptions {
 /**
  * User-configurable archive options.
  *
- * `worktree` is required: the archive config chain (repo `.opencode/flowguard.json`
- * → global config) is authoritative for `allowRawExport`, `allowedModes`, and the
- * redacted-archive `maxAuditEvents` limit. A caller without a canonical worktree
- * would silently fall back to global-only config — the exact divergence this
- * contract forbids.
+ * `worktree` is required: the effective archive policy is projected from the
+ * explicit global installation config (administrator ceiling) and the repo
+ * `.opencode/flowguard.json` (which may only restrict). A caller without a
+ * canonical worktree would silently lose the repository restriction — the exact
+ * divergence this contract forbids.
  */
 export interface ArchiveSessionOptions extends ArchivePayloadOptions {
   /** Canonical worktree root (authority-validated). */
@@ -145,16 +148,14 @@ async function archiveWithAuthorization(
 
 function validateArchiveOptions(
   opts: ArchivePayloadOptions,
-  config: Awaited<ReturnType<typeof readConfig>>,
-  rawEvidenceAuthorized: boolean,
+  policy: EffectiveArchiveRedactionPolicy,
 ): void {
   const { redactionMode, includeRaw } = opts;
-  const rc = config.archive.redaction;
 
-  if (!rawEvidenceAuthorized && !rc.allowedModes.includes(redactionMode)) {
+  if (!policy.allowedModes.includes(redactionMode)) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
-      `Redaction mode '${redactionMode}' is not allowed (config allows: ${rc.allowedModes.join(', ')}).`,
+      `Redaction mode '${redactionMode}' is not allowed (effective config allows: ${policy.allowedModes.join(', ')}).`,
     );
   }
 
@@ -165,10 +166,10 @@ function validateArchiveOptions(
     );
   }
 
-  if (includeRaw && !rc.allowRawExport && !rawEvidenceAuthorized) {
+  if (includeRaw && !policy.allowRawExport) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
-      'Raw export is not enabled. Set archive.redaction.allowRawExport=true in flowguard.json.',
+      'Raw export is not enabled. An administrator must set archive.redaction.allowRawExport=true in the explicit global flowguard.json; the repository config can only restrict the effective policy.',
     );
   }
 }
@@ -229,26 +230,40 @@ async function archiveSessionImpl(
   const state = await readState(sessDir);
   if (state) await verifyEvidenceArtifacts(sessDir, state);
   if (regulatedEvidence) assertRegulatedEvidenceState(state);
-  // Repo config wins over global; a malformed repo config is fail-closed
-  // (PersistenceError), never a silent fallback to the global config.
-  const archiveConfig = authorizedRaw ? undefined : await readConfig(worktree);
-  if (archiveConfig) validateArchiveOptions(opts, archiveConfig, false);
+  // The configurable archive export applies the admin-ceiling projection over
+  // the explicit global config and the repo config. A malformed config and an
+  // empty allowedModes intersection are fail-closed (PersistenceError /
+  // ARCHIVE_FAILED), never a silent fallback. System-authorized raw exports
+  // (regulated completion and the canonical `/export` rail) skip the projection
+  // by design and stay workflow-authorized.
+  let archivePolicy: EffectiveArchiveRedactionPolicy | undefined;
+  if (!authorizedRaw) {
+    const effective = await readEffectiveArchivePolicy(worktree);
+    if (effective.kind === 'blocked') {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Archive redaction policy conflict: ${effective.reason}. Reconcile the global and repository allowedModes.`,
+      );
+    }
+    archivePolicy = effective.policy;
+    validateArchiveOptions(opts, archivePolicy);
+  }
 
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
   const events = await readAuditTrail(sessDir);
   if (regulatedEvidence) assertCompletionAuditEvent(events);
 
   if (opts.redactionMode !== 'none') {
-    if (archiveConfig === undefined) {
+    if (archivePolicy === undefined) {
       throw new WorkspaceError(
         'ARCHIVE_FAILED',
         'Archive audit-trail limits require loaded archive configuration.',
       );
     }
-    if (events.length > archiveConfig.archive.redaction.maxAuditEvents) {
+    if (events.length > archivePolicy.maxAuditEvents) {
       throw new WorkspaceError(
         'ARCHIVE_FAILED',
-        `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
+        `Audit trail length (${events.length}) exceeds maxAuditEvents (${archivePolicy.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
       );
     }
   }

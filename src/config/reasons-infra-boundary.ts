@@ -17,8 +17,20 @@ export const BOUNDARY_INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'Archive operation failed: {message}',
     recoverySteps: [
-      'Check archive.redaction.allowedModes and allowRawExport in the repository config (flowguard.json)',
+      'An administrator authorizes raw export in the explicit global flowguard.json (archive.redaction.allowRawExport); the repository config can only restrict the effective policy',
+      'Check archive.redaction.allowedModes in the global and repository config for an empty intersection',
       'Archive only terminal sessions and verify the archive integrity with the verifier',
+    ],
+  },
+
+  {
+    code: 'ARCHIVE_POLICY_CONFLICT',
+    category: 'adapter',
+    messageTemplate:
+      'Archive redaction policy conflict: the global administrator policy and the repository config have an empty allowedModes intersection. {message}',
+    recoverySteps: [
+      'Reconcile archive.redaction.allowedModes between the explicit global flowguard.json and the repository config',
+      'Remove a restrictive repository allowedModes entry if the administrator intends to permit a mode; the repository config can only restrict',
     ],
   },
 

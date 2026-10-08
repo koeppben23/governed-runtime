@@ -9,6 +9,10 @@ FlowGuard supports per-repository configuration via `flowguard.json`.
 {worktree}/.opencode/flowguard.json            # Repo-scoped (takes priority)
 ```
 
+For the configurable `/archive` export, the global config acts as an
+administrator ceiling over the repo config instead of a fallback: see
+[Archive export redaction](#archive-export-redaction).
+
 ## Configuration Schema
 
 ```json
@@ -383,25 +387,41 @@ Failure reason priority: `CHAIN_BREAK` > `AUDIT_ENVELOPE_INVALID` >
 
 **Type:** `enum`
 **Values:** `none`, `basic`, `pseudonymous`
-**Default:** `basic` for the `/archive` and `/export` tool arguments
+**Default:** `basic` for the `/archive` tool argument; the canonical `/export`
+completion package has no redaction arguments and is always a raw,
+workflow-authorized package
 
 `basic` and `pseudonymous` create redacted sharing archives. They are intentionally
 `not_verifiable`, because canonical audit-chain verification requires raw state
 and audit evidence.
 
-`none` requires `includeRaw=true` and `archive.redaction.allowRawExport=true`; it
-creates a confidential raw-evidence package eligible for verification.
+`none` requires `includeRaw=true` and an effective
+`archive.redaction.allowRawExport=true`; it creates a confidential raw-evidence
+package eligible for verification.
 
-This permission applies to user-requested exports. A regulated clean completion
-always creates its mandatory local raw-evidence archive and verifies it; that
-system-owned completion path does not depend on the manual-export setting.
+**Effective archive policy (administrator ceiling).** The configurable `/archive`
+export (and the solo auto-archive) projects one effective policy:
+`allowRawExport=true` requires an explicit `true` in the global installation
+config AND a repository config that does not forbid it. An absent global config
+binds the secure default (`false`), so a repository `.opencode/flowguard.json`
+can never elevate raw export on its own. `allowedModes` is the intersection of
+the global and repository lists (an empty intersection fails closed with an
+explicit policy-conflict error) and `maxAuditEvents` is the minimum. The archive
+gate and the operator guidance use the same projection; a malformed global
+config fails closed even when a repository config exists.
+
+This permission applies only to the configurable `/archive` export. The
+canonical `/export` completion rail and a regulated clean completion always
+create their raw-evidence packages independent of user configuration.
 
 ### `/archive` `includeRaw` Argument
 
 **Type:** `boolean` tool argument
 **Default:** `false`
 
-Set `true` only for authorized raw-evidence exports. Archive manifests then record
+Set `true` only for authorized raw-evidence exports. The effective policy must
+authorize raw export (an explicit global `archive.redaction.allowRawExport=true`);
+a repository config can only restrict it. Archive manifests then record
 `rawIncluded: true` and the `raw_audit_evidence_export` risk flag.
 
 With `false`, the archive is a redacted sharing package and reports

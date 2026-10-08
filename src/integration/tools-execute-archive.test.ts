@@ -601,7 +601,7 @@ describe('archive', () => {
 // Repo-scoped archive config precedence (repo → global)
 // =============================================================================
 
-describe('archive config precedence (repo → global)', () => {
+describe('effective archive policy (admin ceiling over repo config)', () => {
   const globalConfigPath = (): string =>
     path.join(process.env.OPENCODE_CONFIG_DIR ?? '', 'flowguard.json');
   const repoConfigPath = (): string => path.join(ws.tmpDir, '.opencode', 'flowguard.json');
@@ -637,7 +637,7 @@ describe('archive config precedence (repo → global)', () => {
   }
 
   it.skipIf(!tarOk)(
-    'repo allowRawExport=true without global config enables raw archive',
+    'repo allowRawExport=true without a global config is denied by the secure default',
     async () => {
       await fs.rm(globalConfigPath(), { force: true });
       await writeRepoConfig(permissiveConfig);
@@ -647,15 +647,28 @@ describe('archive config precedence (repo → global)', () => {
         await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
       );
 
-      expect(result.error).toBeUndefined();
-      expect(result).toMatchObject({
-        packagePurpose: 'auditor',
-        integrityCapability: 'verifiable',
-        verificationStatus: 'passed',
-      });
-      await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
+      expect(JSON.stringify(result)).toContain('Raw export is not enabled');
+      expect(result.archivePath).toBeUndefined();
     },
   );
+
+  it.skipIf(!tarOk)('explicit global true with repo true enables raw archive', async () => {
+    await writeGlobalConfig(permissiveConfig);
+    await writeRepoConfig(permissiveConfig);
+    await completeSession();
+
+    const result = parseToolResult(
+      await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({
+      packagePurpose: 'auditor',
+      integrityCapability: 'verifiable',
+      verificationStatus: 'passed',
+    });
+    await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
+  });
 
   it.skipIf(!tarOk)('repo allowRawExport=false overrides a permissive global config', async () => {
     await writeGlobalConfig(permissiveConfig);
@@ -678,7 +691,7 @@ describe('archive config precedence (repo → global)', () => {
     expect(result.archivePath).toBeUndefined();
   });
 
-  it.skipIf(!tarOk)('repo allowedModes overrides a permissive global config', async () => {
+  it.skipIf(!tarOk)('repo allowedModes narrows the effective intersection', async () => {
     await writeGlobalConfig(permissiveConfig);
     await writeRepoConfig({
       schemaVersion: 'v1',
@@ -696,8 +709,35 @@ describe('archive config precedence (repo → global)', () => {
     );
 
     expect(JSON.stringify(result)).toContain(
-      "Redaction mode 'pseudonymous' is not allowed (config allows: basic)",
+      "Redaction mode 'pseudonymous' is not allowed (effective config allows: basic)",
     );
+  });
+
+  it.skipIf(!tarOk)('an empty allowedModes intersection fails closed', async () => {
+    await writeGlobalConfig({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: {
+          allowedModes: ['basic'],
+          allowRawExport: false,
+        },
+      },
+    });
+    await writeRepoConfig({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: {
+          allowedModes: ['none'],
+          allowRawExport: false,
+        },
+      },
+    });
+    await completeSession();
+
+    const result = parseToolResult(await archive.execute({}, ctx));
+
+    expect(JSON.stringify(result)).toContain('empty intersection');
+    expect(result.archivePath).toBeUndefined();
   });
 
   it.skipIf(!tarOk)(
@@ -718,7 +758,23 @@ describe('archive config precedence (repo → global)', () => {
   );
 
   it.skipIf(!tarOk)(
-    'repo maxAuditEvents overrides a permissive global config for redacted archives',
+    'malformed global config fails closed even with a valid repo config',
+    async () => {
+      await completeSession();
+      await fs.writeFile(globalConfigPath(), '{not valid json', 'utf8');
+      await writeRepoConfig(permissiveConfig);
+
+      const result = parseToolResult(
+        await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+      );
+
+      expect(JSON.stringify(result)).toContain('not valid JSON');
+      expect(result.archivePath).toBeUndefined();
+    },
+  );
+
+  it.skipIf(!tarOk)(
+    'repo maxAuditEvents is capped by the global minimum for redacted archives',
     async () => {
       await writeGlobalConfig(permissiveConfig);
       await writeRepoConfig({
@@ -753,7 +809,7 @@ describe('archive config precedence (repo → global)', () => {
     },
   );
 
-  it.skipIf(!tarOk)('archive guidance uses the same repo → global resolution', async () => {
+  it.skipIf(!tarOk)('archive guidance uses the same effective policy projection', async () => {
     await writeGlobalConfig({
       schemaVersion: 'v1',
       archive: {
@@ -769,7 +825,7 @@ describe('archive config precedence (repo → global)', () => {
     const result = parseToolResult(await archive.execute({}, ctx));
 
     expect(result.error).toBeUndefined();
-    expect(String(result.guidance)).toContain('For a raw-evidence package for auditors');
+    expect(String(result.guidance)).toContain('Raw export is not enabled in config');
   });
 });
 

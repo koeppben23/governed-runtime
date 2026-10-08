@@ -60,10 +60,23 @@ The mandatory regulated raw-evidence package is stored separately as
 
 ### Configuration Scope
 
-Archive creation calls `readConfig()` without a worktree argument intentionally.
-The originating worktree may no longer exist at archive time. Archive
-configuration uses global config or default config. Repo config overrides do not
-apply to archives unless a future policy-snapshot change is introduced.
+The configurable `/archive` export (and the solo auto-archive) projects one
+effective redaction policy from two sources:
+
+- the explicit global installation config
+  `~/.config/opencode/flowguard.json` (administrator ceiling), and
+- the repo-scoped `{worktree}/.opencode/flowguard.json`, which may only
+  restrict the effective policy.
+
+`allowRawExport=true` requires an explicit global `true` AND a repository config
+that does not forbid it; an absent global config binds the secure default
+(`false`), so a repository config can never elevate raw export on its own.
+`allowedModes` is the intersection (an empty intersection fails closed with an
+explicit policy-conflict error) and `maxAuditEvents` is the minimum. The archive
+gate and the operator guidance use the same projection; a malformed global
+config fails closed even when a repository config exists. The mandatory
+regulated completion archive and the canonical `/export` completion package are
+workflow-authorized and do not depend on this projection.
 
 ## Manifest
 

@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Raw archive export is an administrator ceiling (#1030).** The configurable
+  `/archive` export (and the solo auto-archive) projects one effective redaction
+  policy: `allowRawExport=true` requires an explicit global
+  `~/.config/opencode/flowguard.json` AND a repository config that does not
+  forbid it (an absent global config binds the secure default `false`), so a
+  repository config can only restrict, never elevate. `allowedModes` is the
+  intersection (an empty intersection fails closed with an explicit conflict)
+  and `maxAuditEvents` is the minimum; a malformed global config fails closed
+  even with a valid repository config. The canonical `/export` completion rail
+  and regulated completion remain workflow-authorized raw exports.
+
 - **HTTP `PreToolUse` transport failures are host-observable DENY (#1027).**
   Authenticated pre-tool-use requests with an invalid content type, an
   unreadable or oversized body, or malformed JSON now receive an HTTP 200
