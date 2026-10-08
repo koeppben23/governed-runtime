@@ -22,11 +22,16 @@ import {
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
-import { readConfig } from '../../../adapters/persistence-config.js';
+import { readEffectiveArchivePolicy } from '../../../adapters/persistence-config.js';
 import { archiveSession } from '../../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import { evaluateArchivePreflight } from '../../archive-preflight.js';
 import { z } from 'zod';
+
+async function resolveRawExportAllowed(worktree: string): Promise<boolean> {
+  const effective = await readEffectiveArchivePolicy(worktree);
+  return effective.kind === 'resolved' && effective.policy.allowRawExport;
+}
 
 function buildArchiveGuidance(
   redactionMode: string,
@@ -158,13 +163,13 @@ export const archive: ToolDefinition = {
         ...getLogTraceFields(),
       });
 
-      // Guidance must use the same repo → global config resolution as the
-      // archive gate; otherwise the response can contradict the applied policy.
-      const config = await readConfig(paths.worktree);
+      // Guidance must use the same effective (admin-ceiling) policy projection
+      // as the archive gate; otherwise the response can contradict the applied
+      // policy. A blocked conflict means raw export is not available.
       const guidance = buildArchiveGuidance(
         redactionMode,
         includeRaw,
-        config.archive.redaction.allowRawExport,
+        await resolveRawExportAllowed(paths.worktree),
       );
 
       // Route the immediate response from the archive that was just created,

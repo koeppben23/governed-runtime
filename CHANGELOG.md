@@ -20,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Raw archive export is an administrator ceiling (#1030).** The configurable
+  `/archive` export (and the solo auto-archive) projects one effective redaction
+  policy: `allowRawExport=true` requires an explicit global
+  `~/.config/opencode/flowguard.json` AND a repository config that does not
+  forbid it (an absent global config binds the secure default `false`), so a
+  repository config can only restrict, never elevate. `allowedModes` is the
+  intersection (an empty intersection fails closed with an explicit conflict)
+  and `maxAuditEvents` is the minimum; a malformed global config fails closed
+  even with a valid repository config. The adapter binds the policy worktree to
+  the persisted session binding before reading the repository policy, and the
+  canonical `/export` completion rail and regulated completion remain
+  workflow-authorized raw exports. OS-level protection of the global config file
+  is an explicit deployment precondition and `NOT_VERIFIED` by FlowGuard.
+
 - **The hook session-directory override is a canonical assertion (#1029).**
   `FLOWGUARD_SESSION_DIR` no longer bypasses session-authority resolution: hook
   paths resolve the canonical worktree/fingerprint/session projection and accept

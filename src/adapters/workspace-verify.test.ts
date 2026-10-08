@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.js';
 import { writeState } from './persistence.js';
-import { makeState } from '../fixtures.js';
+import { BINDING, makeState } from '../fixtures.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
 let restore: (() => void) | null = null;
@@ -31,7 +31,12 @@ async function archiveFixture() {
   );
   const sessionId = '550e8400-e29b-41d4-a716-446655440001';
   const initialized = await initWorkspace(path.resolve('.'), sessionId);
-  await writeState(initialized.sessionDir, makeState('COMPLETE'));
+  await writeState(
+    initialized.sessionDir,
+    // The configurable archive export binds the repository policy to the
+    // persisted worktree, so the fixture must bind the archived worktree.
+    makeState('COMPLETE', { binding: { ...BINDING, worktree: path.resolve('.') } }),
+  );
   await archiveSession(initialized.fingerprint, sessionId, {
     worktree: path.resolve('.'),
     redactionMode: 'none',
