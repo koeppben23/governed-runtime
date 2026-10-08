@@ -34,7 +34,7 @@ function contentLengthExceedsLimit(req: IncomingMessage): boolean {
 }
 
 /** Read the request body under the shared hook payload byte cap. */
-export async function readBody(req: IncomingMessage): Promise<string> {
+async function readBody(req: IncomingMessage): Promise<string> {
   if (contentLengthExceedsLimit(req)) throw new BodyTooLargeError();
   const chunks: Buffer[] = [];
   let total = 0;
@@ -58,7 +58,7 @@ export function jsonResponse(res: ServerResponse, status: number, body: unknown)
 }
 
 /** Deliver an authenticated transport/validation failure as a protocol DENY. */
-export function respondProtocolDeny(
+function respondProtocolDeny(
   res: ServerResponse,
   event: HookEventName,
   code: string,
