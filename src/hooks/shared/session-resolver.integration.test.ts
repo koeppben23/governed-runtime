@@ -24,6 +24,7 @@ describe('resolveSession integration (local-only git repo)', () => {
   let base: string;
   let root: string;
   let worktree: string;
+  let sessionDir: string;
   let originalConfigDir: string | undefined;
   let originalRequireTestConfigDir: string | undefined;
   let originalSessionDir: string | undefined;
@@ -45,6 +46,7 @@ describe('resolveSession integration (local-only git repo)', () => {
     delete process.env.FLOWGUARD_SESSION_DIR;
 
     const initialized = await initWorkspace(worktree, SESSION_ID);
+    sessionDir = initialized.sessionDir;
     await writeState(
       initialized.sessionDir,
       makeState('IMPLEMENTATION', {
@@ -91,5 +93,38 @@ describe('resolveSession integration (local-only git repo)', () => {
     const result = await resolveSession(link, SESSION_ID);
 
     expect(result.ok).toBe(true);
+  });
+
+  it('accepts the override when it names the authorized session directory', async () => {
+    process.env.FLOWGUARD_SESSION_DIR = sessionDir;
+
+    const result = await resolveSession(worktree, SESSION_ID);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.sessionDir).toBe(sessionDir);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'accepts a symlinked override that canonicalizes to the authorized session directory',
+    async () => {
+      const link = join(root, 'session-link');
+      symlinkSync(sessionDir, link, 'dir');
+      process.env.FLOWGUARD_SESSION_DIR = link;
+
+      const result = await resolveSession(worktree, SESSION_ID);
+
+      expect(result.ok).toBe(true);
+    },
+  );
+
+  it('rejects an override that names a foreign session directory', async () => {
+    const foreign = join(root, 'foreign-session');
+    mkdirSync(foreign);
+    process.env.FLOWGUARD_SESSION_DIR = foreign;
+
+    const result = await resolveSession(worktree, SESSION_ID);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('SESSION_OVERRIDE_MISMATCH');
   });
 });
