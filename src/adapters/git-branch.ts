@@ -113,13 +113,24 @@ export async function defaultBranch(worktree: string): Promise<string | null> {
  * - The directory is not a git repository
  * - Git is not available
  *
+ * A `GIT_TIMEOUT` is NOT swallowed: a hung remote probe must never silently
+ * fall back to the local-path fingerprint (that could select a different
+ * session identity). The typed error propagates to the caller.
+ *
  * Used by the workspace registry to derive the canonical repository fingerprint.
+ *
+ * @param worktree - Git worktree root.
+ * @param timeoutMs - Optional per-probe timeout override (deadline budgeting).
  */
-export async function remoteOriginUrl(worktree: string): Promise<string | null> {
+export async function remoteOriginUrl(
+  worktree: string,
+  timeoutMs?: number,
+): Promise<string | null> {
   try {
-    const url = await git(worktree, ['remote', 'get-url', 'origin']);
+    const url = await git(worktree, ['remote', 'get-url', 'origin'], timeoutMs);
     return url || null;
-  } catch {
+  } catch (err) {
+    if (err instanceof GitError && err.code === 'GIT_TIMEOUT') throw err;
     logWarn('git', 'Failed to resolve remote origin URL', { worktree });
     return null;
   }

@@ -97,8 +97,8 @@ describe('resolveSession', () => {
       const result = await resolve('/canonical/worktree/src', 'sess-1');
 
       expect(result.ok).toBe(true);
-      expect(mockResolveRoot).toHaveBeenCalledWith('/canonical/worktree/src');
-      expect(mockComputeFingerprint).toHaveBeenCalledWith(CANONICAL_WORKTREE);
+      expect(mockResolveRoot).toHaveBeenCalledWith('/canonical/worktree/src', expect.any(Number));
+      expect(mockComputeFingerprint).toHaveBeenCalledWith(CANONICAL_WORKTREE, expect.any(Number));
     });
 
     it('HAPPY: an empty override is ignored and the canonical authority resolves normally', async () => {
@@ -208,7 +208,7 @@ describe('resolveSession', () => {
       if (result.ok) {
         expect(result.sessionDir).toBe('/derived/session/dir');
       }
-      expect(mockComputeFingerprint).toHaveBeenCalledWith('/some/cwd');
+      expect(mockComputeFingerprint).toHaveBeenCalledWith('/some/cwd', expect.any(Number));
     });
 
     it('returns GIT_NOT_FOUND when fingerprint computation fails with a typed git error', async () => {
@@ -321,8 +321,8 @@ describe('resolveSession', () => {
       const result = await resolve('/bound/worktree', 'sess-1');
 
       expect(result.ok).toBe(true);
-      expect(mockResolveRoot).toHaveBeenCalledWith('/bound/worktree');
-      expect(mockComputeFingerprint).toHaveBeenCalledWith('/bound/worktree');
+      expect(mockResolveRoot).toHaveBeenCalledWith('/bound/worktree', expect.any(Number));
+      expect(mockComputeFingerprint).toHaveBeenCalledWith('/bound/worktree', expect.any(Number));
     });
 
     it('fingerprints the canonical root for a subdirectory cwd', async () => {
@@ -335,8 +335,8 @@ describe('resolveSession', () => {
       const result = await resolve('/bound/worktree/src', 'sess-1');
 
       expect(result.ok).toBe(true);
-      expect(mockResolveRoot).toHaveBeenCalledWith('/bound/worktree/src');
-      expect(mockComputeFingerprint).toHaveBeenCalledWith('/bound/worktree');
+      expect(mockResolveRoot).toHaveBeenCalledWith('/bound/worktree/src', expect.any(Number));
+      expect(mockComputeFingerprint).toHaveBeenCalledWith('/bound/worktree', expect.any(Number));
     });
 
     it('rejects a cwd that resolves to a different worktree', async () => {

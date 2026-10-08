@@ -10,3 +10,11 @@
 
 /** Maximum accepted hook payload size before fail-closed rejection. */
 export const MAX_HOOK_PAYLOAD_BYTES = 1_048_576;
+
+/**
+ * Total git-probe budget for one hook session-authority resolution. The command
+ * hook host advertises a 10s PreToolUse timeout; this bounds the two sequential
+ * git probes (worktree root + remote origin), not the whole hook process
+ * (Node startup and file I/O remain outside the budget).
+ */
+export const SESSION_AUTHORITY_DEADLINE_MS = 4_000;

@@ -35,7 +35,7 @@ export function logWarn(service: string, message: string, extra?: Record<string,
 const execFileAsync = promisify(execFile);
 
 /** Default timeout for git commands (ms). 5 seconds is generous for local ops. */
-const GIT_TIMEOUT_MS = 5_000;
+export const GIT_COMMAND_TIMEOUT_MS = 5_000;
 
 /**
  * Typed git error.
@@ -73,7 +73,7 @@ export class GitError extends Error {
 export async function gitRaw(
   cwd: string,
   args: string[],
-  timeoutMs: number = GIT_TIMEOUT_MS,
+  timeoutMs: number = GIT_COMMAND_TIMEOUT_MS,
 ): Promise<string> {
   try {
     const { stdout } = await execFileAsync('git', args, {
@@ -121,7 +121,7 @@ export async function gitRaw(
 export async function git(
   cwd: string,
   args: string[],
-  timeoutMs: number = GIT_TIMEOUT_MS,
+  timeoutMs: number = GIT_COMMAND_TIMEOUT_MS,
 ): Promise<string> {
   return (await gitRaw(cwd, args, timeoutMs)).trim();
 }

@@ -20,15 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hook git probes share one deadline budget (#1031).** The canonical session
+  authority accepts an optional monotone `deadlineMs`: the worktree and
+  remote-origin probes each receive `min(5s, remaining)` and an exhausted budget
+  fails closed with `GIT_TIMEOUT` instead of starting another probe. Hook paths
+  use a 4s budget inside the advertised 10s host window; a timed-out remote
+  probe now propagates instead of silently falling back to the local-path
+  fingerprint. The budget bounds the git probes, not Node startup or file I/O.
+
 - **Oversized and malformed PostToolUse payloads leave a bounded failure
   record (#1032).** PostToolUse payloads that can never become a tool-call
   audit event are now recorded in a bounded, lock-protected transport
   ingestion-failure ledger (single-generation rotation, metadata only) with the
-  reason code, observed byte count, and a SHA-256 digest of the observed prefix
-  (or an explicit `unavailable`). The ledger stores no raw payload bytes, never
-  claims a session or audit-chain link, and a broken ledger cannot stall the
-  informational hook. Digest claims cover only bytes the reader actually
-  observed.
+  reason code, observed byte count, and a binary-exact SHA-256 digest of the
+  observed raw prefix (or an explicit `unavailable`). The ledger stores no raw
+  payload bytes, never claims a session or audit-chain link, and a broken ledger
+  cannot stall the informational hook; digest claims cover only bytes the reader
+  actually observed.
 
 - **Raw archive export is an administrator ceiling (#1030).** The configurable
   `/archive` export (and the solo auto-archive) projects one effective redaction
