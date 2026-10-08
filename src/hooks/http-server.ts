@@ -18,13 +18,14 @@
  * - GET  /health               → Server liveness check
  *
  * Fail-closed transport (PreToolUse only): Claude Code treats non-2xx HTTP hook
- * responses as non-blocking, so every authenticated pre-tool-use validation or
- * transport failure (content type, body read, oversized payload, malformed
- * JSON) is delivered as HTTP 200 with a protocol DENY body. Authentication
- * (401), method (405), unknown route (404), an unreachable server, client
- * disconnect, and timeout cannot be converted into a DENY from inside the
- * server and remain documented non-blocking residual risks; the informational
- * routes keep their status codes. See docs/platform-limitations.md (Gap 3).
+ * responses as non-blocking, so every handler-reachable pre-tool-use validation
+ * or body-read failure after authentication, method, and route resolution
+ * (content type, body read, oversized payload, malformed JSON) is delivered as
+ * HTTP 200 with a protocol DENY body. Authentication (401), method (405),
+ * unknown route (404), an unreachable server, client disconnect, and timeout
+ * cannot be converted into a DENY from inside the server and remain documented
+ * non-blocking residual risks; the informational routes keep their status
+ * codes. See docs/platform-limitations.md (Gap 3).
  *
  * Configuration:
  * - FLOWGUARD_HOOK_PORT (env): port number (default: 18462)

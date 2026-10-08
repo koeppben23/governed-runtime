@@ -7,8 +7,8 @@
  *
  * - handleHttpRequest never throws unhandled
  * - res.status is always a valid HTTP code
- * - Binary/truncated → 400 (not crash)
- * - Oversized → 413
+ * - Informational routes: binary/truncated → 400 (not crash); oversized → 413
+ * - Blocking PreToolUse route: payload/transport failures → HTTP 200 protocol DENY
  *
  * JSON depth is capped at 20 to avoid testing Node's stack rather than hook robustness.
  *
