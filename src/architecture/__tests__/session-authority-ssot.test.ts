@@ -78,9 +78,57 @@ const SANCTIONED: ReadonlyMap<string, { calls: number; reason: string }> = new M
   ],
 ]);
 
+/**
+ * Sanctioned workspace bootstrap/initialization call sites. Every other
+ * production file must resolve the session through the canonical authority and
+ * must not create a session directory or workspace metadata on its own.
+ */
+const WORKSPACE_INIT_SANCTIONED: ReadonlyMap<
+  string,
+  { readonly initWorkspace: number; readonly ensureWorkspace: number; readonly reason: string }
+> = new Map([
+  [
+    'adapters/workspace/init.ts',
+    {
+      initWorkspace: 0,
+      ensureWorkspace: 1,
+      reason: 'owns the workspace layout/bootstrap implementation',
+    },
+  ],
+  [
+    'hooks/session-start.ts',
+    { initWorkspace: 0, ensureWorkspace: 1, reason: 'host bootstrap entrypoint' },
+  ],
+  [
+    'hooks/http-server.ts',
+    { initWorkspace: 0, ensureWorkspace: 1, reason: 'host bootstrap entrypoint' },
+  ],
+  [
+    'integration/tools/hydrate/hydrate.ts',
+    {
+      initWorkspace: 1,
+      ensureWorkspace: 0,
+      reason: 'create-or-update bootstrap after authority resolution under the write lock',
+    },
+  ],
+]);
+
 function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
   visit(node);
   node.forEachChild((child) => walk(child, visit));
+}
+
+/** Count direct `initWorkspace(...)` / `ensureWorkspace(...)` calls (or property access). */
+function countWorkspaceInitCalls(content: string, name: string): number {
+  const source = ts.createSourceFile('guard.ts', content, ts.ScriptTarget.Latest, true);
+  let count = 0;
+  walk(source, (node) => {
+    if (!ts.isCallExpression(node)) return;
+    const callee = node.expression;
+    if (ts.isIdentifier(callee) && callee.text === name) count += 1;
+    if (ts.isPropertyAccessExpression(callee) && callee.name.text === name) count += 1;
+  });
+  return count;
 }
 
 /** Count direct `sessionDir(...)` and `x.sessionDir(...)` call expressions. */
@@ -175,5 +223,34 @@ describe('session-authority single source of truth', () => {
     expect(
       declaresName('const resolveSessionAuthority = () => null;', 'resolveSessionAuthority'),
     ).toBe(true);
+
+    const initCall = "import { initWorkspace } from './init.js';\nawait initWorkspace(dir, id);";
+    expect(countWorkspaceInitCalls(initCall, 'initWorkspace')).toBe(1);
+    expect(countWorkspaceInitCalls('apis.initWorkspace(dir, id)', 'initWorkspace')).toBe(1);
+    expect(
+      countWorkspaceInitCalls('export async function initWorkspace() {}', 'initWorkspace'),
+    ).toBe(0);
+    expect(countWorkspaceInitCalls('await ensureWorkspace(dir);', 'ensureWorkspace')).toBe(1);
+  });
+
+  it('A5: workspace bootstrap/initialization call sites are exactly the sanctioned map', () => {
+    for (const file of sources) {
+      const sanction = WORKSPACE_INIT_SANCTIONED.get(file.rel);
+      expect(
+        countWorkspaceInitCalls(file.content, 'initWorkspace'),
+        `${file.rel} must not initialize a session workspace; resolve the canonical authority first`,
+      ).toBe(sanction?.initWorkspace ?? 0);
+      expect(
+        countWorkspaceInitCalls(file.content, 'ensureWorkspace'),
+        `${file.rel} must not ensure workspace metadata outside the sanctioned bootstrap path`,
+      ).toBe(sanction?.ensureWorkspace ?? 0);
+    }
+  });
+
+  it('A6: initWorkspace is declared only by the workspace layout authority', () => {
+    const declaring = sources
+      .filter((file) => declaresName(file.content, 'initWorkspace'))
+      .map((file) => file.rel);
+    expect(declaring).toEqual(['adapters/workspace/init.ts']);
   });
 });
