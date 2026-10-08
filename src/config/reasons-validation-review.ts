@@ -417,6 +417,7 @@ export const REVIEW_VALIDATION_REASONS = [
       `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent for the current obligation`,
       'Do not reuse findings from a previously consumed invocation',
       'Each plan version and review iteration requires its own subagent invocation',
+      'Reduced ceremony stays withheld for this session; start a fresh governed session to restore the reduced-ceremony path',
     ],
   },
 

@@ -197,7 +197,7 @@ real, registered reason.
 | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | L4 — submitted overallVerdict differs from actual subagent verdict | Submit the findings exactly as returned by the orchestrator |
 | `SUBAGENT_FINDINGS_ISSUES_MISMATCH` | L4 — submitted blockingIssues count differs from actual count | Submit the findings exactly as returned |
 | `SUBAGENT_VERDICT_FINDINGS_INCOHERENT` | Captured review is self-contradictory: `accept` verdict with blocking issues | Return a non-accept verdict, or reclassify/resolve the blocking issues, then re-review |
-| `SUBAGENT_EVIDENCE_REUSED` | One-shot review evidence reused for a second obligation | Submit a substantively-new artifact for a fresh review obligation |
+| `SUBAGENT_EVIDENCE_REUSED` | One-shot review evidence reused for a second obligation | Submit a substantively-new artifact for a fresh review obligation; reduced ceremony stays withheld for this session (start a fresh governed session to restore it) |
 | `MAX_REVIEW_ITERATIONS_REACHED` | Retained; no longer emitted — loop force-converges to the review gate | Use `/review-decision` (approve / request-changes / reject) at the gate |
 | `SUBAGENT_UNABLE_TO_REVIEW` | Reviewer declared the artifact unreviewable; obligation consumed | Address the reviewer's reason or substantially revise; do not retry the same artifact |
 | `SUBAGENT_TYPE_UNAUTHORIZED` | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents |

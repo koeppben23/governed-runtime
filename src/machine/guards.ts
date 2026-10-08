@@ -18,7 +18,10 @@
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import { isTechnicalValidationBlock, type ValidationResult } from '../state/evidence-validation.js';
-import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import {
+  hasOutstandingReviewObligation,
+  hasUnresolvedIntegrityIncident,
+} from '../state/review-dispatch.js';
 import {
   resolveEffectiveTaskClass,
   ticketRiskDeclarationFloor,
@@ -334,7 +337,10 @@ function ceremonyBindingMatches(
   if (decision.implementationDigest !== implementation.digest) return false;
   if (!decisionBindsFrozenPolicy(s, decision)) return false;
   if (!decisionBindsRiskAuthority(s, decision, implementation)) return false;
-  return !hasOutstandingReviewObligation(s.reviewAssurance);
+  return (
+    !hasOutstandingReviewObligation(s.reviewAssurance) &&
+    !hasUnresolvedIntegrityIncident(s.reviewAssurance)
+  );
 }
 
 function ceremonyBasisMatches(

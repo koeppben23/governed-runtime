@@ -12,6 +12,7 @@ import {
   appendReviewDispatch,
   emptyReviewAssurance,
   hasOutstandingReviewObligation,
+  hasUnresolvedIntegrityIncident,
   isOpenReviewObligation,
   rebindReviewDispatchHostCall,
 } from './review-dispatch.js';
@@ -154,5 +155,56 @@ describe('review obligation open-work semantics', () => {
         obligations: [obligation('blocked', null), obligation('fulfilled', null)],
       }),
     ).toBe(true);
+  });
+});
+
+describe('review integrity incident semantics (D7)', () => {
+  function blocked(code: string | null): ReviewObligation {
+    return {
+      status: 'blocked',
+      blockedCode: code,
+      consumedAt: null,
+    } as unknown as ReviewObligation;
+  }
+
+  function settled(status: 'consumed' | 'fulfilled'): ReviewObligation {
+    return {
+      status,
+      blockedCode: null,
+      invocationId: '00000000-0000-4000-8000-0000000000e1',
+      fulfilledAt: '2026-01-03T00:00:00.000Z',
+      consumedAt: status === 'consumed' ? '2026-01-03T00:00:00.000Z' : null,
+    } as unknown as ReviewObligation;
+  }
+
+  it('BAD — absent assurance and deterministic blocks are not integrity incidents', () => {
+    expect(hasUnresolvedIntegrityIncident(undefined)).toBe(false);
+    expect(hasUnresolvedIntegrityIncident(null)).toBe(false);
+    expect(
+      hasUnresolvedIntegrityIncident({
+        ...emptyReviewAssurance(),
+        obligations: [blocked('REVIEW_ATTEMPT_UNAVAILABLE'), blocked(null)],
+      }),
+    ).toBe(false);
+  });
+
+  it('HAPPY — a reused-evidence block is an integrity incident', () => {
+    expect(
+      hasUnresolvedIntegrityIncident({
+        ...emptyReviewAssurance(),
+        obligations: [blocked('SUBAGENT_EVIDENCE_REUSED')],
+      }),
+    ).toBe(true);
+  });
+
+  it('BAD — later settled obligations never auto-resolve the incident', () => {
+    for (const successor of [settled('fulfilled'), settled('consumed')]) {
+      expect(
+        hasUnresolvedIntegrityIncident({
+          ...emptyReviewAssurance(),
+          obligations: [blocked('SUBAGENT_EVIDENCE_REUSED'), successor],
+        }),
+      ).toBe(true);
+    }
   });
 });

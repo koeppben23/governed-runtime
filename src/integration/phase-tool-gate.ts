@@ -21,7 +21,10 @@ import type {
   SessionState,
 } from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
-import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import {
+  hasOutstandingReviewObligation,
+  hasUnresolvedIntegrityIncident,
+} from '../state/review-dispatch.js';
 import {
   resolveEffectiveTaskClass,
   ticketRiskDeclarationFloor,
@@ -469,6 +472,13 @@ export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyPro
 
   const staticReason = staticCeremonyIneligibilityReason(input);
   if (staticReason !== null) return { ...base, profile: 'full', reason: staticReason };
+  // D7 (#1028): a reused-evidence integrity incident withholds the
+  // reduced-ceremony shortcut for the session even after later evidence; the
+  // full-ceremony review path stays available and a fresh session is the
+  // explicit recovery.
+  if (hasUnresolvedIntegrityIncident(input.state.reviewAssurance)) {
+    return { ...base, profile: 'full', reason: 'REVIEW_INTEGRITY_INCIDENT' };
+  }
   if (hasOutstandingReviewObligation(input.state.reviewAssurance)) {
     return { ...base, profile: 'full', reason: 'REVIEW_OBLIGATION_REQUIRED' };
   }

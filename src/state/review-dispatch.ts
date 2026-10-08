@@ -197,3 +197,50 @@ export function hasOutstandingReviewObligation(
 ): boolean {
   return assurance?.obligations.some(isOpenReviewObligation) ?? false;
 }
+
+/**
+ * Blocked codes that mark an integrity incident rather than a deterministic
+ * transport/exhaustion failure. A reused reviewer-evidence binding is the
+ * canonical integrity incident: the evidence lineage was compromised, so the
+ * per-obligation recovery (fresh obligation) must never silently restore
+ * session-level ceremony eligibility.
+ *
+ * The vocabulary stays private to this authority; consumers ask the predicate,
+ * never compare codes locally.
+ */
+const INTEGRITY_INCIDENT_BLOCKED_CODES: ReadonlySet<string> = new Set(['SUBAGENT_EVIDENCE_REUSED']);
+
+/**
+ * True while the session carries an unresolved integrity incident.
+ *
+ * D7 (#1028): this is deliberately separate from {@link isOpenReviewObligation}.
+ * `blocked` stays terminal and historically failed; open work stays defined by
+ * pending/fulfilled alone. The integrity predicate instead gates authorization
+ * decisions that a terminal block would otherwise free (reduced-ceremony
+ * eligibility and the approval waiver).
+ *
+ * Recovery contract: an incident stays authorization-relevant until an
+ * explicitly permitted recovery resolves it traceably. The persisted state has
+ * no incident timestamp (`blockedAt`) and the rejected reuse attempt is not
+ * persisted, so a later obligation or invocation cannot be proven to have
+ * happened after the incident with existing authorities. Per the fail-closed
+ * contract the projection therefore never auto-resolves an incident from later
+ * evidence; a new obligation alone must never clear the block. Recovery is a
+ * fresh governed session; within the incident session the full-ceremony review
+ * path remains available, only the reduced-ceremony shortcut is withheld.
+ *
+ * SSOT: this is the only integrity-incident predicate; local reconstructions
+ * (code comparisons) outside this authority are forbidden.
+ */
+export function hasUnresolvedIntegrityIncident(
+  assurance: ReviewAssuranceState | null | undefined,
+): boolean {
+  return (
+    assurance?.obligations.some(
+      (obligation) =>
+        obligation.status === 'blocked' &&
+        obligation.blockedCode !== null &&
+        INTEGRITY_INCIDENT_BLOCKED_CODES.has(obligation.blockedCode),
+    ) ?? false
+  );
+}
