@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Terminal command admissibility is enforced (#1034).** Hydrate and abort
+  entrypoints consult the canonical command policy. A terminal hydrate reload is
+  strictly read-only — no state write, no artifact/discovery/outbox mutation, no
+  audit event — and a `claimedTaskClass` that would durably change the persisted
+  value is denied with `TERMINAL_STATE_MUTATION_DENIED`; an equal or lower claim
+  is a no-op. Terminal abort remains an idempotent no-op without any state or
+  audit rewrite.
 - **Hydrate is bound to the canonical session authority (#1033).** The hydrate
   tool no longer derives its worktree/session location from the raw tool
   context: it resolves the canonical worktree/fingerprint/session projection

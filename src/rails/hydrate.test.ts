@@ -3,8 +3,19 @@
  * @test-policy HAPPY, BAD, CORNER — targets applyHydrateOverrides, input validation,
  * activeChecks fallback, phaseRuleContent, defaults via ?? operators.
  */
-import { describe, it, expect } from 'vitest';
-import { executeHydrate, applyHydrateOverrides, type HydrateInput } from './hydrate.js';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  executeHydrate,
+  applyHydrateOverrides,
+  resolveTerminalHydrate,
+  type HydrateInput,
+} from './hydrate.js';
+import { isCommandAllowed } from '../machine/commands.js';
+
+vi.mock('../machine/commands.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../machine/commands.js')>();
+  return { ...actual, isCommandAllowed: vi.fn(actual.isCommandAllowed) };
+});
 import type { RailContext } from './types.js';
 import {
   FIXED_TIME,
@@ -618,4 +629,56 @@ describe('hydrate rail unit tests', () => {
       expect(state.discoverySummary).toEqual(summary);
     });
   });
+});
+
+// ─── Terminal read-only contract (D6/#1034) ───────────────────────────────────
+
+describe('terminal hydrate read-only contract (D6)', () => {
+  it.each(['COMPLETE', 'ABORTED'] as const)('reloads %s read-only without a claim', (phase) => {
+    const existing = makeState(phase);
+
+    const result = executeHydrate(existing, minimalInput(), baseCtx);
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state).toBe(existing);
+      expect(result.transitions).toEqual([]);
+    }
+  });
+
+  it('allows an equal or lower claim that does not change the persisted value', () => {
+    const existing = makeState('COMPLETE', { claimedTaskClass: 'STANDARD' });
+
+    const result = executeHydrate(
+      existing,
+      minimalInput({ session: { claimedTaskClass: 'TRIVIAL' } }),
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') expect(result.state.claimedTaskClass).toBe('STANDARD');
+  });
+
+  it('denies a claim raise on a terminal session', () => {
+    const existing = makeState('COMPLETE');
+
+    const result = executeHydrate(
+      existing,
+      minimalInput({ session: { claimedTaskClass: 'HIGH-RISK' } }),
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') expect(result.code).toBe('TERMINAL_STATE_MUTATION_DENIED');
+  });
+});
+
+it('denies the terminal shortcut when the canonical command policy forbids hydrate', () => {
+  const existing = makeState('COMPLETE');
+  vi.mocked(isCommandAllowed).mockReturnValueOnce(false);
+
+  const result = resolveTerminalHydrate(existing, undefined, baseCtx.policy);
+
+  expect(result?.kind).toBe('blocked');
+  if (result?.kind === 'blocked') expect(result.code).toBe('COMMAND_NOT_ALLOWED');
 });

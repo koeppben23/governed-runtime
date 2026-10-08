@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
@@ -324,6 +325,12 @@ describe('abort_session', () => {
           error: () => {},
         };
 
+        // D6 (#1034): the terminal no-op must be strictly read-only.
+        const statePath = path.join(sessDir, 'session-state.json');
+        const auditPath = path.join(sessDir, 'audit.jsonl');
+        const stateBefore = await fs.readFile(statePath, 'utf8');
+        const auditBefore = await fs.readFile(auditPath, 'utf8').catch(() => '');
+
         const raw = await runWithAdapterLoggerAsync(capturing, () =>
           abort_session.execute({ reason: 'attempt on terminal' }, ctx),
         );
@@ -335,6 +342,10 @@ describe('abort_session', () => {
         const persisted = await readState(sessDir);
         expect(persisted?.phase).toBe(phase);
         expect(persisted?.error?.code).not.toBe('ABORTED');
+
+        // Strictly read-only: state and audit bytes are unchanged.
+        expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore);
+        expect(await fs.readFile(auditPath, 'utf8').catch(() => '')).toBe(auditBefore);
 
         // Boundary warn carries full structured context — guards against
         // worthless logs (assert sessionId and concrete phase, not just reason).

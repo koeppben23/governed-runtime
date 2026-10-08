@@ -51,6 +51,8 @@ import type {
 } from '../state/discovery-schemas.js';
 import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { evaluate } from '../machine/evaluate.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
+import { TERMINAL } from '../machine/topology.js';
 import { summarizeProofGraph } from '../audit/proofgraph/summary.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
@@ -205,6 +207,12 @@ function handleExistingState(
   s: HydrateSessionInput,
   ctx: RailContext,
 ): RailResult {
+  // D6 (#1034): terminal sessions are read-only. A claim that would durably
+  // change the persisted value is rejected; an equal or lower claim is a
+  // no-op, not a security violation.
+  const terminal = resolveTerminalHydrate(existingState, s.claimedTaskClass, ctx.policy);
+  if (terminal !== null) return terminal;
+
   // Raise-only escalation: an explicit claimedTaskClass can never lower the
   // persisted claim. This matches the documented contract and the effective
   // task-class resolution, which treats every escalation source as a floor.
@@ -220,6 +228,46 @@ function handleExistingState(
     : existingState;
   const result = evaluate(nextState, ctx.policy);
   return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
+}
+
+/**
+ * D6 (#1034): the terminal hydrate contract. A terminal session may only be
+ * reloaded read-only; a claim that would durably change `claimedTaskClass`
+ * fails closed. Returns null for non-terminal sessions.
+ */
+export function resolveTerminalHydrate(
+  existingState: SessionState,
+  claim: TaskClass | undefined,
+  policy: FlowGuardPolicy | undefined,
+): RailResult | null {
+  if (!TERMINAL.has(existingState.phase)) return null;
+  // The terminal tool path bypasses executeHydrate(); enforce the canonical
+  // command authority here so rail and tool path share the same policy.
+  if (!isCommandAllowed(existingState.phase, Command.HYDRATE)) {
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/hydrate',
+      phase: existingState.phase,
+    });
+  }
+  if (claim !== undefined) {
+    const nextClaim =
+      existingState.claimedTaskClass === undefined
+        ? claim
+        : maxTaskClass(existingState.claimedTaskClass, claim);
+    if (nextClaim !== existingState.claimedTaskClass) {
+      return blocked('TERMINAL_STATE_MUTATION_DENIED', {
+        phase: existingState.phase,
+        currentTaskClass: existingState.claimedTaskClass ?? 'unset',
+        requestedTaskClass: claim,
+      });
+    }
+  }
+  return {
+    kind: 'ok',
+    state: existingState,
+    evalResult: evaluate(existingState, policy),
+    transitions: [],
+  };
 }
 
 function defaultGateBehavior(policy: FlowGuardPolicy): EffectiveGateBehavior {
@@ -396,6 +444,14 @@ export function executeHydrate(
   const { session: s, policy: p, profile: pr } = input;
   const validationBlock = validateHydrateInput(s);
   if (validationBlock) return validationBlock;
+  // Canonical command authority at the entrypoint: reload/admissibility is
+  // decided by the machine policy, never locally.
+  if (existingState !== null && !isCommandAllowed(existingState.phase, Command.HYDRATE)) {
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/hydrate',
+      phase: existingState.phase,
+    });
+  }
   if (existingState !== null) return handleExistingState(existingState, s, ctx);
   return buildNewHydrateState(s, p, pr, ctx);
 }
