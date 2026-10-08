@@ -408,7 +408,15 @@ can never elevate raw export on its own. `allowedModes` is the intersection of
 the global and repository lists (an empty intersection fails closed with an
 explicit policy-conflict error) and `maxAuditEvents` is the minimum. The archive
 gate and the operator guidance use the same projection; a malformed global
-config fails closed even when a repository config exists.
+config fails closed even when a repository config exists. The adapter validates
+that the archive worktree matches the persisted session binding before reading
+the repository policy.
+
+FlowGuard does not verify that the global config file is protected from the
+running OS identity. Restricting write access to the installation owner is an
+explicit deployment precondition; independent administrator enforcement of this
+ceiling is `NOT_VERIFIED` until the deployment model is validated (see
+[`docs/security-hardening.md`](./security-hardening.md)).
 
 This permission applies only to the configurable `/archive` export. The
 canonical `/export` completion rail and a regulated clean completion always

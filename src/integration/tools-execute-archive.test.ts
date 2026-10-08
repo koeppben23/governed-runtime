@@ -670,6 +670,31 @@ describe('effective archive policy (admin ceiling over repo config)', () => {
     await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
   });
 
+  it.skipIf(!tarOk)(
+    'a repository config change within the same session cannot elevate raw export',
+    async () => {
+      await writeGlobalConfig({
+        schemaVersion: 'v1',
+        archive: {
+          redaction: {
+            allowedModes: ['none', 'basic', 'pseudonymous'],
+            allowRawExport: false,
+          },
+        },
+      });
+      await completeSession();
+      // The repository config is changed after the session was initialized.
+      await writeRepoConfig(permissiveConfig);
+
+      const result = parseToolResult(
+        await archive.execute({ redactionMode: 'none', includeRaw: true }, ctx),
+      );
+
+      expect(JSON.stringify(result)).toContain('Raw export is not enabled');
+      expect(result.archivePath).toBeUndefined();
+    },
+  );
+
   it.skipIf(!tarOk)('repo allowRawExport=false overrides a permissive global config', async () => {
     await writeGlobalConfig(permissiveConfig);
     await writeRepoConfig({

@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { atomicWrite, readState } from '../persistence.js';
+import { validateBinding } from '../binding.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { hashBuffer } from '../../shared/hashing.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
@@ -204,6 +205,42 @@ function assertCompletionAuditEvent(
   );
 }
 
+/**
+ * Resolve the effective archive policy for the configurable export, binding the
+ * repository-policy worktree to the session that is actually being archived.
+ * Missing state/worktree and worktree-binding drift fail closed.
+ */
+async function resolveBoundArchivePolicy(
+  opts: ArchivePayloadOptions,
+  worktree: string | undefined,
+  state: import('../../state/schema.js').SessionState | null,
+  sessionId: string,
+): Promise<EffectiveArchiveRedactionPolicy> {
+  if (worktree === undefined || state === null) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      'The configurable archive export requires the canonical worktree and persisted session state to bind the repository policy.',
+    );
+  }
+  try {
+    validateBinding(state, { worktreeRoot: worktree, sessionId });
+  } catch (err) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Archive worktree does not match the persisted session binding: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const effective = await readEffectiveArchivePolicy(worktree);
+  if (effective.kind === 'blocked') {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Archive redaction policy conflict: ${effective.reason}. Reconcile the global and repository allowedModes.`,
+    );
+  }
+  validateArchiveOptions(opts, effective.policy);
+  return effective.policy;
+}
+
 async function archiveSessionImpl(
   fingerprint: string,
   sessionId: string,
@@ -231,23 +268,14 @@ async function archiveSessionImpl(
   if (state) await verifyEvidenceArtifacts(sessDir, state);
   if (regulatedEvidence) assertRegulatedEvidenceState(state);
   // The configurable archive export applies the admin-ceiling projection over
-  // the explicit global config and the repo config. A malformed config and an
-  // empty allowedModes intersection are fail-closed (PersistenceError /
-  // ARCHIVE_FAILED), never a silent fallback. System-authorized raw exports
+  // the explicit global config and the repo config, bound to the session's
+  // persisted worktree. A malformed config, an empty allowedModes intersection,
+  // and worktree-binding drift are fail-closed. System-authorized raw exports
   // (regulated completion and the canonical `/export` rail) skip the projection
   // by design and stay workflow-authorized.
-  let archivePolicy: EffectiveArchiveRedactionPolicy | undefined;
-  if (!authorizedRaw) {
-    const effective = await readEffectiveArchivePolicy(worktree);
-    if (effective.kind === 'blocked') {
-      throw new WorkspaceError(
-        'ARCHIVE_FAILED',
-        `Archive redaction policy conflict: ${effective.reason}. Reconcile the global and repository allowedModes.`,
-      );
-    }
-    archivePolicy = effective.policy;
-    validateArchiveOptions(opts, archivePolicy);
-  }
+  const archivePolicy = authorizedRaw
+    ? undefined
+    : await resolveBoundArchivePolicy(opts, worktree, state, validSessionId);
 
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
   const events = await readAuditTrail(sessDir);

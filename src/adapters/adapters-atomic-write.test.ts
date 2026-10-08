@@ -67,6 +67,7 @@ import { withTestEnv } from '../integration/test-helpers.js';
 import {
   makeState,
   makeProgressedState,
+  BINDING,
   FIXED_TIME,
   FIXED_UUID,
   FIXED_SESSION_UUID,
@@ -351,7 +352,9 @@ describe('persistence', () => {
           'utf8',
         );
         const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-        const state = makeState('COMPLETE');
+        // The configurable archive export binds the repository policy to the
+        // persisted worktree, so the fixture must bind the archived worktree.
+        const state = makeState('COMPLETE', { binding: { ...BINDING, worktree } });
         await writeState(sessDir, {
           ...state,
           policySnapshot: { ...state.policySnapshot, mode: 'regulated' },
