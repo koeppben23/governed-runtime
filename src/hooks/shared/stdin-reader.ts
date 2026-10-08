@@ -20,15 +20,90 @@ import { MAX_HOOK_PAYLOAD_BYTES } from './limits.js';
 
 /**
  * Error thrown when stdin cannot be read or parsed.
+ *
+ * `observedBytes`/`observedPrefix` describe exactly the bytes the reader
+ * actually observed (bounded by the shared cap); they are never an inference
+ * about unread payload bytes.
  */
 export class StdinReadError extends Error {
+  readonly observedBytes: number | null;
+  readonly observedPrefix: string | null;
+
   constructor(
     public readonly code: string,
     message: string,
+    observed?: { readonly bytes: number | null; readonly prefix: string | null },
   ) {
     super(message);
     this.name = 'StdinReadError';
+    this.observedBytes = observed?.bytes ?? null;
+    this.observedPrefix = observed?.prefix ?? null;
   }
+}
+
+export interface StdinReadResult {
+  readonly payload: Record<string, unknown>;
+  /** The observed raw stdin text (before trimming); bounded by the shared cap. */
+  readonly raw: string;
+}
+
+/**
+ * Read all data from stdin and parse as JSON, retaining the observed raw text
+ * for bounded failure records.
+ *
+ * @param stream - Readable stream (defaults to process.stdin). Injectable for testing.
+ * @throws StdinReadError if stdin is empty, not valid JSON, not an object, or oversized.
+ */
+export async function readStdinRaw(stream: Readable = process.stdin): Promise<StdinReadResult> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  for await (const chunk of stream) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    chunks.push(buffer);
+    if (totalBytes > MAX_HOOK_PAYLOAD_BYTES) {
+      stream.destroy();
+      throw new StdinReadError('STDIN_TOO_LARGE', `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`, {
+        bytes: totalBytes,
+        prefix: Buffer.concat(chunks).toString('utf-8'),
+      });
+    }
+  }
+
+  const raw = Buffer.concat(chunks).toString('utf-8');
+  const trimmed = raw.trim();
+
+  if (trimmed.length === 0) {
+    throw new StdinReadError('STDIN_EMPTY', 'No data received on stdin', {
+      bytes: Buffer.byteLength(raw),
+      prefix: raw,
+    });
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new StdinReadError(
+      'STDIN_INVALID_JSON',
+      `stdin is not valid JSON: ${trimmed.slice(0, 200)}`,
+      {
+        bytes: Buffer.byteLength(raw),
+        prefix: raw,
+      },
+    );
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new StdinReadError(
+      'STDIN_NOT_OBJECT',
+      `stdin must be a JSON object, got: ${typeof parsed}`,
+      { bytes: Buffer.byteLength(raw), prefix: raw },
+    );
+  }
+
+  return { payload: parsed as Record<string, unknown>, raw };
 }
 
 /**
@@ -41,40 +116,7 @@ export class StdinReadError extends Error {
 export async function readStdin(
   stream: Readable = process.stdin,
 ): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-
-  for await (const chunk of stream) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buffer.byteLength;
-    if (totalBytes > MAX_HOOK_PAYLOAD_BYTES) {
-      stream.destroy();
-      throw new StdinReadError('STDIN_TOO_LARGE', `stdin exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);
-    }
-    chunks.push(buffer);
-  }
-
-  const raw = Buffer.concat(chunks).toString('utf-8').trim();
-
-  if (raw.length === 0) {
-    throw new StdinReadError('STDIN_EMPTY', 'No data received on stdin');
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new StdinReadError('STDIN_INVALID_JSON', `stdin is not valid JSON: ${raw.slice(0, 200)}`);
-  }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new StdinReadError(
-      'STDIN_NOT_OBJECT',
-      `stdin must be a JSON object, got: ${typeof parsed}`,
-    );
-  }
-
-  return parsed as Record<string, unknown>;
+  return (await readStdinRaw(stream)).payload;
 }
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {

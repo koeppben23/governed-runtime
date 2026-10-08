@@ -20,9 +20,36 @@ import { formatDenyOutput } from './stdout-writer.js';
 import type { HookEventName } from './types.js';
 
 class BodyTooLargeError extends Error {
-  constructor() {
+  readonly observedBytes: number | null;
+  readonly observedPrefix: string | null;
+
+  constructor(observed?: { readonly bytes: number; readonly prefix: string }) {
     super(`request body exceeds ${MAX_HOOK_PAYLOAD_BYTES} bytes`);
     this.name = 'BodyTooLargeError';
+    this.observedBytes = observed?.bytes ?? null;
+    this.observedPrefix = observed?.prefix ?? null;
+  }
+}
+
+/** Bounded metadata for a transport ingestion failure (no raw payload claims). */
+export interface IngestFailure {
+  readonly reasonCode: string;
+  readonly observedBytes: number | null;
+  readonly observedPrefix: string | null;
+}
+
+/** Records a transport ingestion failure; returns whether it was persisted. */
+export type IngestFailureSink = (failure: IngestFailure) => Promise<boolean>;
+
+async function reportIngestFailure(
+  sink: IngestFailureSink | undefined,
+  failure: IngestFailure,
+): Promise<boolean> {
+  if (sink === undefined) return false;
+  try {
+    return await sink(failure);
+  } catch {
+    return false;
   }
 }
 
@@ -41,8 +68,13 @@ async function readBody(req: IncomingMessage): Promise<string> {
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
     total += buffer.byteLength;
-    if (total > MAX_HOOK_PAYLOAD_BYTES) throw new BodyTooLargeError();
     chunks.push(buffer);
+    if (total > MAX_HOOK_PAYLOAD_BYTES) {
+      throw new BodyTooLargeError({
+        bytes: total,
+        prefix: Buffer.concat(chunks).toString('utf-8'),
+      });
+    }
   }
   return Buffer.concat(chunks).toString('utf-8');
 }
@@ -90,6 +122,7 @@ async function readRequestBodyOrRespond(
   req: IncomingMessage,
   res: ServerResponse,
   protocolDenyEvent?: HookEventName,
+  onIngestFailure?: IngestFailureSink,
 ): Promise<string | undefined> {
   try {
     return await readBody(req);
@@ -103,20 +136,42 @@ async function readRequestBodyOrRespond(
       );
       return undefined;
     }
+    const observed =
+      err instanceof BodyTooLargeError
+        ? { observedBytes: err.observedBytes, observedPrefix: err.observedPrefix }
+        : { observedBytes: null, observedPrefix: null };
+    const recorded = await reportIngestFailure(onIngestFailure, {
+      reasonCode: 'HOOK_STDIN_INVALID',
+      ...observed,
+    });
     if (err instanceof BodyTooLargeError) {
-      jsonResponse(res, 413, { error: 'Request body too large' });
+      jsonResponse(res, 413, { error: 'Request body too large', auditFailureRecorded: recorded });
       return undefined;
     }
-    jsonResponse(res, 400, { error: 'Failed to read request body' });
+    jsonResponse(res, 400, {
+      error: 'Failed to read request body',
+      auditFailureRecorded: recorded,
+    });
     return undefined;
   }
 }
 
-function parseJsonObjectOrRespond(
+async function parseJsonObjectOrRespond(
   body: string,
   res: ServerResponse,
   protocolDenyEvent?: HookEventName,
-): Record<string, unknown> | undefined {
+  onIngestFailure?: IngestFailureSink,
+): Promise<Record<string, unknown> | undefined> {
+  const reportInvalid = async (error: string): Promise<undefined> => {
+    const recorded = await reportIngestFailure(onIngestFailure, {
+      reasonCode: 'HOOK_PAYLOAD_INVALID',
+      observedBytes: Buffer.byteLength(body),
+      observedPrefix: body,
+    });
+    jsonResponse(res, 400, { error, auditFailureRecorded: recorded });
+    return undefined;
+  };
+
   try {
     const parsed: unknown = JSON.parse(body);
     if (!isJsonObject(parsed)) {
@@ -129,8 +184,7 @@ function parseJsonObjectOrRespond(
         );
         return undefined;
       }
-      jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
-      return undefined;
+      return await reportInvalid('Request body must be a JSON object');
     }
     return parsed;
   } catch {
@@ -143,8 +197,7 @@ function parseJsonObjectOrRespond(
       );
       return undefined;
     }
-    jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
-    return undefined;
+    return await reportInvalid('Invalid JSON in request body');
   }
 }
 
@@ -162,6 +215,7 @@ export async function readHookPayloadOrRespond(
   req: IncomingMessage,
   res: ServerResponse,
   protocolDenyEvent: HookEventName | undefined,
+  onIngestFailure?: IngestFailureSink,
 ): Promise<Record<string, unknown> | undefined> {
   const contentTypes = headerValues(req, 'content-type');
   const [contentType] = contentTypes;
@@ -183,8 +237,8 @@ export async function readHookPayloadOrRespond(
     return undefined;
   }
 
-  const body = await readRequestBodyOrRespond(req, res, protocolDenyEvent);
+  const body = await readRequestBodyOrRespond(req, res, protocolDenyEvent, onIngestFailure);
   if (body === undefined) return undefined;
 
-  return parseJsonObjectOrRespond(body, res, protocolDenyEvent);
+  return parseJsonObjectOrRespond(body, res, protocolDenyEvent, onIngestFailure);
 }

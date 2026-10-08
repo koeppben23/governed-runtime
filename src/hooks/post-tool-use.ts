@@ -17,7 +17,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
+import {
+  readStdinRaw,
+  validateToolHookPayload,
+  StdinReadError,
+  type StdinReadResult,
+} from './shared/stdin-reader.js';
 import { writeLog } from './shared/stdout-writer.js';
 import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import { resolveSession } from './shared/session-resolver.js';
@@ -25,6 +30,7 @@ import { detectPlatform } from './shared/platform-detect.js';
 import { isMutatingHostTool } from './shared/phase-gate.js';
 import { assessObligationEscalation } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
+import { appendHookIngestFailure } from '../adapters/persistence-hook-ingest.js';
 import type { AuditEventBody } from '../state/evidence-audit.js';
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -40,16 +46,43 @@ async function main(): Promise<void> {
   }
 }
 
+/**
+ * Record an unattributable ingestion failure in the bounded, non-audit
+ * transport ledger. The hook must never hang or fail on a broken ledger.
+ */
+async function recordIngestFailure(input: {
+  readonly reasonCode: string;
+  readonly observedBytes: number | null;
+  readonly observedPrefix: string | null;
+}): Promise<void> {
+  const result = await appendHookIngestFailure({
+    transport: 'command_hook',
+    event: 'PostToolUse',
+    ...input,
+  });
+  writeLog(
+    result.recorded
+      ? `WARN: transport ingestion failure recorded (${input.reasonCode}); NOT a tool-call audit event`
+      : `WARN: transport ingestion failure NOT recorded (${input.reasonCode}, ${result.reason ?? 'unknown'}); NOT a tool-call audit event`,
+  );
+}
+
 async function postToolUseLogic(): Promise<void> {
-  let payload: Record<string, unknown>;
+  let read: StdinReadResult;
   try {
-    payload = await readStdin();
+    read = await readStdinRaw();
   } catch (err) {
     writeLog(`stdin read failed: ${err instanceof Error ? err.message : String(err)}`);
     // PostToolUse is informational — exit 0 even on read failure.
+    await recordIngestFailure({
+      reasonCode: err instanceof StdinReadError ? err.code : 'HOOK_STDIN_INVALID',
+      observedBytes: err instanceof StdinReadError ? err.observedBytes : null,
+      observedPrefix: err instanceof StdinReadError ? err.observedPrefix : null,
+    });
     return;
   }
 
+  const payload = read.payload;
   const platform = detectPlatform(payload);
   writeLog(`post-tool-use platform: ${platform}`);
 
@@ -58,6 +91,11 @@ async function postToolUseLogic(): Promise<void> {
     validated = validateToolHookPayload(payload);
   } catch (err) {
     writeLog(`validation failed: ${err instanceof Error ? err.message : String(err)}`);
+    await recordIngestFailure({
+      reasonCode: 'HOOK_PAYLOAD_INVALID',
+      observedBytes: Buffer.byteLength(read.raw),
+      observedPrefix: read.raw,
+    });
     return;
   }
 

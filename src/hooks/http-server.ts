@@ -49,7 +49,9 @@ import {
   jsonResponse,
   protocolDenyEventFor,
   readHookPayloadOrRespond,
+  type IngestFailureSink,
 } from './shared/http-transport.js';
+import { appendHookIngestFailure } from '../adapters/persistence-hook-ingest.js';
 import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
@@ -165,6 +167,26 @@ function log(message: string): void {
   process.stderr.write(`[FlowGuard HTTP Hook] ${message}\n`);
 }
 
+/**
+ * Record an unattributable PostToolUse ingestion failure in the bounded,
+ * non-audit transport ledger. Never throws; returns whether it was persisted.
+ */
+const recordHttpIngestFailure: IngestFailureSink = async (failure) => {
+  const result = await appendHookIngestFailure({
+    transport: 'http_hook',
+    event: 'PostToolUse',
+    reasonCode: failure.reasonCode,
+    observedBytes: failure.observedBytes,
+    observedPrefix: failure.observedPrefix,
+  });
+  log(
+    result.recorded
+      ? `WARN: transport ingestion failure recorded (${failure.reasonCode}); NOT a tool-call audit event`
+      : `WARN: transport ingestion failure NOT recorded (${failure.reasonCode}, ${result.reason ?? 'unknown'}); NOT a tool-call audit event`,
+  );
+  return result.recorded;
+};
+
 // ─── Hook Handlers ───────────────────────────────────────────────────────────
 
 /** @internal Exported for unit testing only. */
@@ -209,7 +231,21 @@ export async function handlePreToolUse(
 }
 
 async function handlePostToolUse(payload: Record<string, unknown>): Promise<HttpHookResponse> {
-  const validated = validateToolHookPayload(payload);
+  let validated: ReturnType<typeof validateToolHookPayload>;
+  try {
+    validated = validateToolHookPayload(payload);
+  } catch (err) {
+    const recorded = await recordHttpIngestFailure({
+      reasonCode: 'HOOK_PAYLOAD_INVALID',
+      observedBytes: null,
+      observedPrefix: null,
+    });
+    log(
+      `WARN: post-tool-use validation failed (${err instanceof Error ? err.message : String(err)}); ` +
+        `transport ingestion failure ${recorded ? 'recorded' : 'NOT recorded'}; NOT a tool-call audit event`,
+    );
+    return { decision: 'allow', reason: 'audit skipped: HOOK_PAYLOAD_INVALID' };
+  }
   const { tool_name, tool_input, session_id, cwd } = validated;
   const platform = detectPlatform(payload);
 
@@ -468,7 +504,12 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  const payload = await readHookPayloadOrRespond(req, res, protocolDenyEventFor(route.event));
+  const payload = await readHookPayloadOrRespond(
+    req,
+    res,
+    protocolDenyEventFor(route.event),
+    route.event === 'PostToolUse' ? recordHttpIngestFailure : undefined,
+  );
   if (payload === undefined) return;
 
   await dispatchHookRoute(url, route, payload, res);

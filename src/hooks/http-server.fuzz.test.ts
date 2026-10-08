@@ -51,6 +51,10 @@ vi.mock('../../adapters/persistence-audit.js', () => ({
   appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
 }));
 
+vi.mock('../../adapters/persistence-hook-ingest.js', () => ({
+  appendHookIngestFailure: vi.fn(async (..._args: unknown[]) => ({ recorded: true })),
+}));
+
 vi.mock('./shared/obligation-tracker.js', () => ({
   unresolvedBlockingObligations: (...args: unknown[]) => mockUnresolvedBlockingObligations(...args),
   formatUnresolvedBlockingObligationReason: (obligations: Array<{ obligationId: string }>) =>

@@ -7,12 +7,31 @@ const mockAppendAuditEvent = vi.hoisted(() => vi.fn());
 const mockResolveSession = vi.hoisted(() => vi.fn());
 const mockWriteLog = vi.hoisted(() => vi.fn());
 const mockResolveRoot = vi.hoisted(() => vi.fn());
+const mockAppendHookIngestFailure = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({ recorded: true })),
+);
 
 vi.mock('./shared/stdin-reader.js', () => ({
+  StdinReadError: class StdinReadError extends Error {
+    readonly observedBytes = null;
+    readonly observedPrefix = null;
+  },
   readStdin: (...args: unknown[]) => mockReadStdin(...args),
+  readStdinRaw: async (...args: unknown[]) => {
+    const payload = (await mockReadStdin(...args)) as Record<string, unknown>;
+    return { payload, raw: JSON.stringify(payload) };
+  },
   validateSessionPayload: (payload: Record<string, unknown>) => payload,
   validateToolHookPayload: (payload: Record<string, unknown>) => payload,
 }));
+
+vi.mock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+  return {
+    ...actual,
+    appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+  };
+});
 
 vi.mock('./shared/stdout-writer.js', () => ({
   writeLog: (...args: unknown[]) => mockWriteLog(...args),

@@ -94,6 +94,37 @@ describe('readStdin', () => {
     });
   });
 
+  it('exposes the observed bytes and prefix on STDIN_TOO_LARGE (D2)', async () => {
+    const observed = 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1);
+
+    let error: StdinReadError | undefined;
+    try {
+      await readStdin(streamFromString(observed));
+    } catch (err) {
+      error = err as StdinReadError;
+    }
+
+    expect(error).toBeInstanceOf(StdinReadError);
+    expect(error?.code).toBe('STDIN_TOO_LARGE');
+    // The observed prefix is exactly the bytes the reader actually saw; the
+    // digest/null scope is derived by the ledger, never here.
+    expect(error?.observedBytes).toBe(MAX_HOOK_PAYLOAD_BYTES + 1);
+    expect(error?.observedPrefix).toBe(observed);
+  });
+
+  it('exposes observed bytes and prefix on malformed JSON (D2)', async () => {
+    let error: StdinReadError | undefined;
+    try {
+      await readStdin(streamFromString('{not-json}'));
+    } catch (err) {
+      error = err as StdinReadError;
+    }
+
+    expect(error?.code).toBe('STDIN_INVALID_JSON');
+    expect(error?.observedBytes).toBe(Buffer.byteLength('{not-json}'));
+    expect(error?.observedPrefix).toBe('{not-json}');
+  });
+
   it('enforces the byte cap across multiple chunks', async () => {
     const stream = streamFromChunks(['x'.repeat(MAX_HOOK_PAYLOAD_BYTES - 1), 'x', 'x']);
 

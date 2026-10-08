@@ -54,6 +54,19 @@ vi.mock('../adapters/persistence-audit.js', () => ({
   appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
 }));
 
+// Mock the bounded transport ingestion-failure ledger.
+const mockAppendHookIngestFailure = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({ recorded: true })),
+);
+
+vi.mock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+  return {
+    ...actual,
+    appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+  };
+});
+
 // Mock session-resolver (not used by handleSessionStart, but imported by module).
 const mockResolveSession = vi.fn();
 
@@ -121,6 +134,13 @@ beforeEach(async () => {
   vi.doMock('../adapters/persistence-audit.js', () => ({
     appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
   }));
+  vi.doMock('../adapters/persistence-hook-ingest.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../adapters/persistence-hook-ingest.js')>();
+    return {
+      ...actual,
+      appendHookIngestFailure: (...args: unknown[]) => mockAppendHookIngestFailure(...args),
+    };
+  });
   vi.doMock('./shared/session-resolver.js', () => ({
     resolveSession: (...args: unknown[]) => mockResolveSession(...args),
   }));
@@ -587,14 +607,25 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).not.toHaveBeenCalled();
   });
 
-  it('BAD: invalid JSON returns 400', async () => {
+  it('BAD: invalid JSON returns 400 and records a transport ingestion failure', async () => {
     const req = makeRequest({ url: '/hooks/post-tool-use', body: '{not-json}' });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Invalid JSON in request body' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Invalid JSON in request body',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: Buffer.byteLength('{not-json}'),
+        observedPrefix: '{not-json}',
+      }),
+    );
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
@@ -605,8 +636,36 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body must be a JSON object' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body must be a JSON object',
+      auditFailureRecorded: true,
+    });
     expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('BAD: post-tool-use validation failure is recorded and stays non-blocking', async () => {
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: JSON.stringify({ foo: 'bar' }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      decision: 'allow',
+      reason: 'audit skipped: HOOK_PAYLOAD_INVALID',
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_PAYLOAD_INVALID',
+        observedBytes: null,
+        observedPrefix: null,
+      }),
+    );
+    expect(mockAppendAuditEvent).not.toHaveBeenCalled();
   });
 
   it('HAPPY: /hooks/post-tool-use appends a tool_call audit event', async () => {
@@ -910,7 +969,10 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(413);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body too large',
+      auditFailureRecorded: true,
+    });
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
@@ -924,7 +986,17 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(413);
-    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'Request body too large',
+      auditFailureRecorded: true,
+    });
+    expect(mockAppendHookIngestFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'http_hook',
+        reasonCode: 'HOOK_STDIN_INVALID',
+        observedBytes: MAX_HOOK_PAYLOAD_BYTES + 1,
+      }),
+    );
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
