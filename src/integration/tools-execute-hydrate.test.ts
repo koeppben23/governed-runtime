@@ -953,10 +953,17 @@ describe('hydrate', () => {
 
   describe('EDGE', () => {
     it('works with repo without remote (path-based fingerprint)', async () => {
-      vi.mocked(gitMock.remoteOriginUrl).mockResolvedValueOnce(null);
-      const result = await hydrateSession();
-      expect(result.phase).toBe('READY');
-      expect(result.error).toBeUndefined();
+      // A remote-less repository must yield the same path-based fingerprint for
+      // both authority resolutions (pre-lock candidate + under-lock TOCTOU).
+      const remoteMock = vi.mocked(gitMock.remoteOriginUrl);
+      remoteMock.mockResolvedValue(null);
+      try {
+        const result = await hydrateSession();
+        expect(result.phase).toBe('READY');
+        expect(result.error).toBeUndefined();
+      } finally {
+        remoteMock.mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl);
+      }
     });
 
     it('two sessions in same workspace have independent state', async () => {
@@ -1104,6 +1111,65 @@ describe('hydrate', () => {
       expect(state!.initiatedBy).toBe(state!.actorInfo!.id);
       expect(state!.binding.hostSessionId).not.toBe(state!.actorInfo!.id);
       expect(state!.binding.hostSessionId).not.toBe(state!.initiatedBy);
+    });
+  });
+
+  // =============================================================================
+  // D4 (#1033): canonical session-authority binding
+  // =============================================================================
+
+  describe('canonical session authority binding (D4)', () => {
+    async function canonicalSessionDir(): Promise<string> {
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    }
+
+    it('BAD: rejects a forged persisted worktree binding instead of reloading it', async () => {
+      await hydrateSession();
+      const sessDir = await canonicalSessionDir();
+      const persisted = await readState(sessDir);
+      expect(persisted).not.toBeNull();
+      await writeState(sessDir, {
+        ...persisted!,
+        binding: { ...persisted!.binding, worktree: '/other/worktree' },
+      });
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, ctx));
+
+      expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('WORKTREE_MISMATCH');
+    });
+
+    it('BAD: rejects a claimed workspace fingerprint that does not match the canonical projection', async () => {
+      const foreignCtx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: ctx.sessionID,
+        workspaceFingerprint: 'f'.repeat(24),
+      });
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, foreignCtx));
+
+      expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('SESSION_BINDING_MISMATCH');
+    });
+
+    it('HAPPY: canonicalizes a subdirectory context to the worktree-root session', async () => {
+      const subdir = path.join(ws.tmpDir, 'src');
+      await fs.mkdir(subdir, { recursive: true });
+      const subCtx = createToolContext({
+        worktree: subdir,
+        directory: subdir,
+        sessionID: ctx.sessionID,
+      });
+
+      const result = parseToolResult(await hydrate.execute({ policyMode: 'solo' }, subCtx));
+
+      expect(result.phase).toBe('READY');
+      const sessDir = await canonicalSessionDir();
+      await expect(fs.access(path.join(sessDir, 'session-state.json'))).resolves.toBeUndefined();
     });
   });
 });

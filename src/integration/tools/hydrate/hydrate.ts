@@ -3,10 +3,11 @@
 import { z } from 'zod';
 
 import { resolveActor, ActorClaimError } from '../../../adapters/actor.js';
-import { readState, PersistenceError } from '../../../adapters/persistence.js';
+import { PersistenceError } from '../../../adapters/persistence.js';
 import { changedFiles, hashWorktreeFiles } from '../../../adapters/git.js';
 import { computeGitControlPlaneMarker } from '../../git-control-plane.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
+import { resolveSessionAuthority } from '../../../adapters/session-authority.js';
 import { initWorkspace, writeSessionPointer } from '../../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import { executeHydrate } from '../../../rails/hydrate.js';
@@ -14,9 +15,12 @@ import { REASON_SESSION_LOCK_CONTENDED } from '../../../shared/flowguard-identif
 import { PolicyModeSchema } from '../../../state/policy-mode.js';
 import { TaskClass } from '../../../state/task-class.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { getWorktree, withSessionWriteTransaction } from '../helpers.js';
+import { IntegrationInvariantError } from '../../errors.js';
+import { getWorktree, requireWorkspacePaths, withSessionWriteTransaction } from '../helpers.js';
+import type { LocatedWorkspacePaths } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import type { ToolContext, ToolDefinition, ToolResult } from '../helpers.js';
+import type { SessionState } from '../../../state/schema.js';
 import { resolveDiscoveryHydration } from './hydrate-discovery.js';
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
 import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
@@ -78,13 +82,58 @@ async function captureBaselineControlPlaneMarker(worktree: string): Promise<stri
  * transaction; the 10s acquisition timeout in the lock adapter is the
  * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
  */
-async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<ToolResult> {
-  const worktree = getWorktree(context);
-  const workspace = await initWorkspace(worktree, context.sessionID);
-  const config = await readConfig(worktree);
+/**
+ * TOCTOU re-validation under the session write lock: re-resolve the canonical
+ * authority and require the locked location to still be the canonical one. An
+ * absent session is a legitimate create path here; a state that appeared while
+ * the lock was being acquired is returned fresh by the authority.
+ */
+async function revalidateUnderLock(
+  context: ToolContext,
+  paths: LocatedWorkspacePaths,
+): Promise<{
+  workspace: Awaited<ReturnType<typeof initWorkspace>>;
+  existing: SessionState | null;
+}> {
+  const fresh = await resolveSessionAuthority({
+    root: getWorktree(context),
+    sessionId: context.sessionID,
+    claimedFingerprint: context.workspaceFingerprint,
+  });
+  if (fresh.status === 'unavailable') {
+    throw new IntegrationInvariantError(fresh.code, fresh.reason);
+  }
+  if (
+    fresh.sessDir !== paths.sessDir ||
+    fresh.fingerprint !== paths.fingerprint ||
+    fresh.worktreeRoot !== paths.worktree
+  ) {
+    throw new IntegrationInvariantError(
+      'SESSION_BINDING_MISMATCH',
+      `Session authority changed while acquiring the write lock (locked "${paths.sessDir}" in "${paths.worktree}", now "${fresh.sessDir}" in "${fresh.worktreeRoot}").`,
+    );
+  }
+  const workspace = await initWorkspace(paths.worktree, context.sessionID);
+  if (workspace.fingerprint !== paths.fingerprint || workspace.sessionDir !== paths.sessDir) {
+    throw new IntegrationInvariantError(
+      'SESSION_BINDING_MISMATCH',
+      `Workspace initialization diverged from the canonical authority (expected "${paths.sessDir}", got "${workspace.sessionDir}").`,
+    );
+  }
+  return { workspace, existing: fresh.status === 'resolved' ? fresh.state : null };
+}
 
-  return withSessionWriteTransaction(workspace.sessionDir, async ({ waited }) => {
-    const existing = await readState(workspace.sessionDir);
+async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<ToolResult> {
+  // The pre-lock authority resolution is only the candidate location; the write
+  // lock is taken on its canonical session directory (create-or-update path).
+  // An unavailable authority (non-git root, unreadable/foreign binding, claimed
+  // fingerprint drift) fails closed before any workspace mutation.
+  const paths = await requireWorkspacePaths(context);
+  const { worktree } = paths;
+
+  return withSessionWriteTransaction(paths.sessDir, async ({ waited }) => {
+    const { workspace, existing } = await revalidateUnderLock(context, paths);
+    const config = await readConfig(worktree);
     // Pre-implementation baseline (#baseline): for a NEW session, snapshot the
     // files already dirty in the worktree BEFORE any editing, so flowguard_implement
     // can scope evidence to the task's own changes. Fail-soft: if git is
