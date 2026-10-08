@@ -16,21 +16,26 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import { hashText } from '../shared/hashing.js';
+import { hashBuffer } from '../shared/hashing.js';
 import { hookIngestFailureLogPath } from './persistence.js';
 import { isEnoent } from './persistence-core.js';
 import { acquireNamedWriteLock } from './persistence-lock.js';
 
 export const HOOK_INGEST_FAILURE_SCHEMA_VERSION = 'hook-ingest-failure.v1';
 
-/** Single-generation rotation bound for the failure ledger. */
+/**
+ * Rotation threshold in bytes. This is a pre-append threshold, not a strict
+ * maximum file size: a single record appended at the threshold may leave the
+ * active file slightly above it until the next append rotates it.
+ */
 export const HOOK_INGEST_FAILURE_MAX_BYTES = 256 * 1024;
 
 const LEDGER_LOCK_FILE = 'flowguard-hook-ingest-failures.lock';
 /**
  * Bounded lock wait with 100ms polling: tolerates a handful of concurrent hook
  * processes while keeping a broken/contended ledger from stalling an
- * informational hook (the host PostToolUse window is 30s).
+ * informational hook (the host PostToolUse window is 30s). The wait bounds lock
+ * acquisition only — it does not bound every subsequent filesystem operation.
  */
 const LEDGER_LOCK_TIMEOUT_MS = 1_500;
 
@@ -44,10 +49,11 @@ export interface HookIngestFailureInput {
   /** Bytes actually observed by the reader, or null when unobservable. */
   readonly observedBytes: number | null;
   /**
-   * The observed prefix as UTF-8 text, or null when no bytes could be retained.
-   * Only this observed text is hashed; nothing beyond it is claimed.
+   * The observed prefix as raw bytes, or null when no bytes could be retained.
+   * Only these raw bytes are hashed (binary-exact, never a UTF-8 replacement
+   * form); nothing beyond the observed, cap-bounded prefix is claimed.
    */
-  readonly observedPrefix: string | null;
+  readonly observedPrefix: Buffer | null;
 }
 
 export interface HookIngestFailureRecord {
@@ -101,7 +107,7 @@ export async function appendHookIngestFailure(
       event: input.event,
       reasonCode: input.reasonCode,
       observedBytes: input.observedBytes,
-      observedPrefixDigest: input.observedPrefix === null ? null : hashText(input.observedPrefix),
+      observedPrefixDigest: input.observedPrefix === null ? null : hashBuffer(input.observedPrefix),
       digestScope: input.observedPrefix === null ? 'unavailable' : 'observed_prefix',
     };
     await fs.appendFile(logPath, `${JSON.stringify(record)}\n`, {

@@ -29,7 +29,7 @@ vi.mock('./shared/stdin-reader.js', async (importOriginal) => {
     // same controllable mock so existing scenarios keep their behavior.
     readStdinRaw: async (...args: unknown[]) => {
       const payload = (await mocks.readStdin(...args)) as Record<string, unknown>;
-      return { payload, raw: JSON.stringify(payload) };
+      return { payload, raw: Buffer.from(JSON.stringify(payload)) };
     },
   };
 });
@@ -217,7 +217,7 @@ describe('post-tool-use hook', () => {
     await runHook({
       stdinRejection: new StdinReadError('STDIN_TOO_LARGE', 'stdin exceeds 1048576 bytes', {
         bytes: 1_100_000,
-        prefix: 'observed-prefix',
+        prefix: Buffer.from('observed-prefix'),
       }),
     });
 
@@ -226,7 +226,7 @@ describe('post-tool-use hook', () => {
         transport: 'command_hook',
         reasonCode: 'STDIN_TOO_LARGE',
         observedBytes: 1_100_000,
-        observedPrefix: 'observed-prefix',
+        observedPrefix: Buffer.from('observed-prefix'),
       }),
     );
     expect(mocks.appendAuditEvent).not.toHaveBeenCalled();

@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withTestEnv } from '../integration/test-helpers.js';
-import { hashText } from '../shared/hashing.js';
+import { hashBuffer } from '../shared/hashing.js';
 import { hookIngestFailureLogPath } from '../adapters/persistence.js';
 
 const mockReadStdin = vi.hoisted(() => vi.fn());
@@ -57,7 +57,8 @@ describe('post-tool-use ingestion failure ledger (real persistence)', () => {
   });
 
   it('persists observed bytes + digest without raw payload bytes and exits non-blocking', async () => {
-    const observedPrefix = 'x'.repeat(1_100_000);
+    const observedPrefixText = 'x'.repeat(1_100_000);
+    const observedPrefix = Buffer.from(observedPrefixText);
     mockReadStdin.mockRejectedValue(
       new StdinReadError('STDIN_TOO_LARGE', 'stdin exceeds 1048576 bytes', {
         bytes: 1_100_000,
@@ -81,10 +82,10 @@ describe('post-tool-use ingestion failure ledger (real persistence)', () => {
       reasonCode: 'STDIN_TOO_LARGE',
       observedBytes: 1_100_000,
       digestScope: 'observed_prefix',
-      observedPrefixDigest: hashText(observedPrefix),
+      observedPrefixDigest: hashBuffer(observedPrefix),
     });
     // Metadata only: the raw payload must never land in the ledger.
-    expect(raw).not.toContain(observedPrefix);
+    expect(raw).not.toContain(observedPrefixText);
     expect(process.exitCode ?? 0).toBe(0);
   });
 });

@@ -19,7 +19,7 @@ vi.mock('./shared/stdin-reader.js', () => ({
   readStdin: (...args: unknown[]) => mockReadStdin(...args),
   readStdinRaw: async (...args: unknown[]) => {
     const payload = (await mockReadStdin(...args)) as Record<string, unknown>;
-    return { payload, raw: JSON.stringify(payload) };
+    return { payload, raw: Buffer.from(JSON.stringify(payload)) };
   },
   validateSessionPayload: (payload: Record<string, unknown>) => payload,
   validateToolHookPayload: (payload: Record<string, unknown>) => payload,

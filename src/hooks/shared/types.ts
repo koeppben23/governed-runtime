@@ -137,4 +137,9 @@ export interface HttpHookResponse {
   readonly decision: 'allow' | 'deny';
   readonly reason?: string;
   readonly code?: string;
+  /**
+   * PostToolUse ingestion-failure visibility: whether an unattributable
+   * transport failure record was persisted in the non-audit ledger.
+   */
+  readonly auditFailureRecorded?: boolean;
 }

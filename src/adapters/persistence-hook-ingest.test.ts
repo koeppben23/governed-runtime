@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { withTestEnv } from '../integration/test-helpers.js';
-import { hashText } from '../shared/hashing.js';
+import { hashBuffer } from '../shared/hashing.js';
 import { hookIngestFailureLogPath } from './persistence.js';
 import {
   appendHookIngestFailure,
@@ -27,7 +27,7 @@ function failureInput(overrides: Partial<HookIngestFailureInput> = {}): HookInge
     event: 'PostToolUse',
     reasonCode: 'HOOK_STDIN_INVALID',
     observedBytes: 42,
-    observedPrefix: 'SECRET-PAYLOAD',
+    observedPrefix: Buffer.from('SECRET-PAYLOAD'),
     ...overrides,
   };
 }
@@ -59,7 +59,7 @@ describe('hook ingest failure ledger', () => {
       reasonCode: 'HOOK_STDIN_INVALID',
       observedBytes: 42,
       digestScope: 'observed_prefix',
-      observedPrefixDigest: hashText('SECRET-PAYLOAD'),
+      observedPrefixDigest: hashBuffer(Buffer.from('SECRET-PAYLOAD')),
     });
   });
 
@@ -71,6 +71,22 @@ describe('hook ingest failure ledger', () => {
       observedPrefixDigest: null,
       digestScope: 'unavailable',
     });
+  });
+
+  it('HAPPY: hashes the raw observed bytes binary-exactly for invalid UTF-8', async () => {
+    const invalidUtf8 = Buffer.from([0xff, 0xfe, 0x00, 0x80]);
+    await appendHookIngestFailure(
+      failureInput({ observedBytes: invalidUtf8.byteLength, observedPrefix: invalidUtf8 }),
+    );
+
+    const record = JSON.parse((await readFile(hookIngestFailureLogPath(), 'utf8')).trim()) as {
+      observedPrefixDigest: string;
+    };
+    expect(record.observedPrefixDigest).toBe(hashBuffer(invalidUtf8));
+    // A text round-trip would replace the invalid sequences and change the
+    // digest; the stored digest must cover the original bytes.
+    const replacementForm = Buffer.from(invalidUtf8.toString('utf-8'));
+    expect(record.observedPrefixDigest).not.toBe(hashBuffer(replacementForm));
   });
 
   it('EDGE: rotates to a single bounded generation', async () => {

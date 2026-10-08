@@ -49,6 +49,7 @@ import {
   jsonResponse,
   protocolDenyEventFor,
   readHookPayloadOrRespond,
+  type HookPayloadRead,
   type IngestFailureSink,
 } from './shared/http-transport.js';
 import { appendHookIngestFailure } from '../adapters/persistence-hook-ingest.js';
@@ -230,21 +231,30 @@ export async function handlePreToolUse(
   return { decision: 'allow' };
 }
 
-async function handlePostToolUse(payload: Record<string, unknown>): Promise<HttpHookResponse> {
+async function handlePostToolUse(
+  payload: Record<string, unknown>,
+  ingestion?: HookPayloadRead,
+): Promise<HttpHookResponse> {
   let validated: ReturnType<typeof validateToolHookPayload>;
   try {
     validated = validateToolHookPayload(payload);
   } catch (err) {
+    // The transport read and parsed the body, so the observed raw bytes are
+    // available: record them instead of claiming an unavailable digest.
     const recorded = await recordHttpIngestFailure({
       reasonCode: 'HOOK_PAYLOAD_INVALID',
-      observedBytes: null,
-      observedPrefix: null,
+      observedBytes: ingestion?.observedBytes ?? null,
+      observedPrefix: ingestion?.observedPrefix ?? null,
     });
     log(
       `WARN: post-tool-use validation failed (${err instanceof Error ? err.message : String(err)}); ` +
         `transport ingestion failure ${recorded ? 'recorded' : 'NOT recorded'}; NOT a tool-call audit event`,
     );
-    return { decision: 'allow', reason: 'audit skipped: HOOK_PAYLOAD_INVALID' };
+    return {
+      decision: 'allow',
+      reason: 'audit skipped: HOOK_PAYLOAD_INVALID',
+      auditFailureRecorded: recorded,
+    };
   }
   const { tool_name, tool_input, session_id, cwd } = validated;
   const platform = detectPlatform(payload);
@@ -425,7 +435,10 @@ function truncateInput(input: Record<string, unknown>): Record<string, unknown> 
 
 interface HookRoute {
   readonly event: HookEventName;
-  readonly handle: (payload: Record<string, unknown>) => Promise<HttpHookResponse>;
+  readonly handle: (
+    payload: Record<string, unknown>,
+    ingestion?: HookPayloadRead,
+  ) => Promise<HttpHookResponse>;
 }
 
 const ROUTES: Record<string, HookRoute> = {
@@ -442,9 +455,10 @@ async function dispatchHookRoute(
   route: HookRoute,
   payload: Record<string, unknown>,
   res: ServerResponse,
+  ingestion?: HookPayloadRead,
 ): Promise<void> {
   try {
-    const result = await route.handle(payload);
+    const result = await route.handle(payload, ingestion);
 
     // For pre-tool-use denials, also include the hookSpecificOutput format
     // so Claude Code can interpret it directly.
@@ -504,15 +518,15 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  const payload = await readHookPayloadOrRespond(
+  const read = await readHookPayloadOrRespond(
     req,
     res,
     protocolDenyEventFor(route.event),
     route.event === 'PostToolUse' ? recordHttpIngestFailure : undefined,
   );
-  if (payload === undefined) return;
+  if (read === undefined) return;
 
-  await dispatchHookRoute(url, route, payload, res);
+  await dispatchHookRoute(url, route, read.payload, res, read);
 }
 
 const server = createServer(handleHttpRequest);

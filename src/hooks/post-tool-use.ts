@@ -53,7 +53,7 @@ async function main(): Promise<void> {
 async function recordIngestFailure(input: {
   readonly reasonCode: string;
   readonly observedBytes: number | null;
-  readonly observedPrefix: string | null;
+  readonly observedPrefix: Buffer | null;
 }): Promise<void> {
   const result = await appendHookIngestFailure({
     transport: 'command_hook',
@@ -93,7 +93,7 @@ async function postToolUseLogic(): Promise<void> {
     writeLog(`validation failed: ${err instanceof Error ? err.message : String(err)}`);
     await recordIngestFailure({
       reasonCode: 'HOOK_PAYLOAD_INVALID',
-      observedBytes: Buffer.byteLength(read.raw),
+      observedBytes: read.raw.byteLength,
       observedPrefix: read.raw,
     });
     return;

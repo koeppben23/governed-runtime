@@ -20,6 +20,13 @@ function streamFromString(content: string): Readable {
   return readable;
 }
 
+function streamFromBuffer(content: Buffer): Readable {
+  const readable = new Readable({ read() {} });
+  readable.push(content);
+  readable.push(null);
+  return readable;
+}
+
 function emptyStream(): Readable {
   const readable = new Readable({ read() {} });
   readable.push(null);
@@ -94,7 +101,7 @@ describe('readStdin', () => {
     });
   });
 
-  it('exposes the observed bytes and prefix on STDIN_TOO_LARGE (D2)', async () => {
+  it('exposes the observed bytes and a cap-bounded raw prefix on STDIN_TOO_LARGE (D2)', async () => {
     const observed = 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1);
 
     let error: StdinReadError | undefined;
@@ -106,13 +113,14 @@ describe('readStdin', () => {
 
     expect(error).toBeInstanceOf(StdinReadError);
     expect(error?.code).toBe('STDIN_TOO_LARGE');
-    // The observed prefix is exactly the bytes the reader actually saw; the
-    // digest/null scope is derived by the ledger, never here.
+    // The observed count reflects every byte seen; the retained prefix never
+    // exceeds the cap (one oversized chunk cannot hold more than the cap).
     expect(error?.observedBytes).toBe(MAX_HOOK_PAYLOAD_BYTES + 1);
-    expect(error?.observedPrefix).toBe(observed);
+    expect(error?.observedPrefix).toEqual(Buffer.from(observed.slice(0, MAX_HOOK_PAYLOAD_BYTES)));
+    expect(error?.observedPrefix?.byteLength).toBe(MAX_HOOK_PAYLOAD_BYTES);
   });
 
-  it('exposes observed bytes and prefix on malformed JSON (D2)', async () => {
+  it('exposes raw bytes and prefix on malformed JSON (D2)', async () => {
     let error: StdinReadError | undefined;
     try {
       await readStdin(streamFromString('{not-json}'));
@@ -122,9 +130,23 @@ describe('readStdin', () => {
 
     expect(error?.code).toBe('STDIN_INVALID_JSON');
     expect(error?.observedBytes).toBe(Buffer.byteLength('{not-json}'));
-    expect(error?.observedPrefix).toBe('{not-json}');
+    expect(error?.observedPrefix).toEqual(Buffer.from('{not-json}'));
   });
 
+  it('keeps the digest input binary-exact for invalid UTF-8 payloads (D2)', async () => {
+    // 0xFF/0xFE are never valid UTF-8; a text round-trip would replace them.
+    const invalidUtf8 = Buffer.from([0x7b, 0x22, 0xff, 0xfe, 0x00, 0x80]);
+
+    let error: StdinReadError | undefined;
+    try {
+      await readStdin(streamFromBuffer(invalidUtf8));
+    } catch (err) {
+      error = err as StdinReadError;
+    }
+
+    expect(error).toBeInstanceOf(StdinReadError);
+    expect(error?.observedPrefix).toEqual(invalidUtf8);
+  });
   it('enforces the byte cap across multiple chunks', async () => {
     const stream = streamFromChunks(['x'.repeat(MAX_HOOK_PAYLOAD_BYTES - 1), 'x', 'x']);
 
