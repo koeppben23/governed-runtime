@@ -126,9 +126,26 @@ export async function resolveSessionAuthority(
     return Math.max(1, Math.min(GIT_COMMAND_TIMEOUT_MS, Math.floor(remaining)));
   };
 
+  /**
+   * Post-probe deadline postcondition: a probe that settles successfully after
+   * the deadline (late promise settlement or subprocess timeout overshoot) must
+   * not have its result accepted — the per-probe `execFile` timeout reduces but
+   * does not replace this check.
+   */
+  const assertWithinDeadline = (probe: string): void => {
+    if (deadlineAt === null) return;
+    if (performance.now() >= deadlineAt) {
+      throw new GitError(
+        'GIT_TIMEOUT',
+        `Session authority deadline exceeded after the ${probe} git probe`,
+      );
+    }
+  };
+
   let worktreeRoot: string;
   try {
     worktreeRoot = await resolveRoot(input.root, nextProbeTimeout());
+    assertWithinDeadline('worktree root');
   } catch (err) {
     return unavailable(err, `Cannot resolve the git worktree root from "${input.root}"`);
   }
@@ -136,6 +153,7 @@ export async function resolveSessionAuthority(
   let fingerprint: string;
   try {
     fingerprint = (await computeFingerprint(worktreeRoot, nextProbeTimeout())).fingerprint;
+    assertWithinDeadline('remote-origin fingerprint');
   } catch (err) {
     return unavailable(err, `Cannot compute the workspace fingerprint for "${worktreeRoot}"`);
   }

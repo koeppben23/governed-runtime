@@ -111,6 +111,57 @@ describe('resolveSessionAuthority git deadline budget (D3)', () => {
     expect(probeArgs.some((args) => args.startsWith('remote '))).toBe(false);
   });
 
+  it('EDGE: an exactly exhausted budget (remaining === 0) fails closed before the second probe', async () => {
+    // now(): [deadline init, first probe timeout, post-root check] = 0,
+    // then exactly the deadline for the second probe timeout.
+    const nowSpy = vi.spyOn(performance, 'now');
+    nowSpy
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(DEADLINE_MS);
+    gitMock.mockImplementation((_cwd: string, args: string[]) => {
+      if (args[0] === 'rev-parse') return Promise.resolve(`${REPO}\n`);
+      return Promise.resolve('https://example.com/repo.git\n');
+    });
+
+    const result = await resolveSessionAuthority({
+      root: REPO,
+      sessionId: SESSION_ID,
+      deadlineMs: DEADLINE_MS,
+    });
+
+    expect(result).toMatchObject({ status: 'unavailable', code: 'GIT_TIMEOUT' });
+    const probeArgs = gitMock.mock.calls.map((call) => (call[1] as string[]).join(' '));
+    expect(probeArgs.some((args) => args.startsWith('remote '))).toBe(false);
+    nowSpy.mockRestore();
+  });
+
+  it('BAD: a probe result accepted exactly at the deadline is still rejected', async () => {
+    // now(): [init, first timeout, post-root check, second timeout] = 0, then
+    // exactly the deadline for the post-fingerprint check.
+    const nowSpy = vi.spyOn(performance, 'now');
+    nowSpy
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(DEADLINE_MS);
+    gitMock.mockImplementation((_cwd: string, args: string[]) => {
+      if (args[0] === 'rev-parse') return Promise.resolve(`${REPO}\n`);
+      return Promise.resolve('https://example.com/repo.git\n');
+    });
+
+    const result = await resolveSessionAuthority({
+      root: REPO,
+      sessionId: SESSION_ID,
+      deadlineMs: DEADLINE_MS,
+    });
+
+    expect(result).toMatchObject({ status: 'unavailable', code: 'GIT_TIMEOUT' });
+    nowSpy.mockRestore();
+  });
+
   it('BAD: a timed-out remote probe propagates instead of the local-path fallback', async () => {
     // rev-parse is instant; the origin probe hangs until the budget expires.
     mockSequentialProbes(0);
@@ -122,6 +173,27 @@ describe('resolveSessionAuthority git deadline budget (D3)', () => {
         deadlineMs: DEADLINE_MS,
       }),
       DEADLINE_MS + 200,
+    );
+
+    expect(result.settled).toBe(true);
+    expect(result.value).toMatchObject({ status: 'unavailable', code: 'GIT_TIMEOUT' });
+  });
+
+  it('BAD: rejects a probe result that settles successfully after the deadline', async () => {
+    // rev-parse consumes 3s; the remote-origin probe resolves successfully at
+    // 4.2s — after the 4s budget. The late fingerprint must not be accepted.
+    gitMock.mockImplementation((_cwd: string, args: string[]) => {
+      if (args[0] === 'rev-parse') return delayed(3_000, () => `${REPO}\n`);
+      return delayed(1_200, () => 'https://example.com/repo.git\n');
+    });
+
+    const result = await settleWithin(
+      resolveSessionAuthority({
+        root: REPO,
+        sessionId: SESSION_ID,
+        deadlineMs: DEADLINE_MS,
+      }),
+      DEADLINE_MS + 500,
     );
 
     expect(result.settled).toBe(true);

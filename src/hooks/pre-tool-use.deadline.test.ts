@@ -93,4 +93,60 @@ describe('pre-tool-use git deadline delivery', () => {
     expect(Date.now() - startedAt).toBeLessThan(HOST_WINDOW_MS);
     expect(process.exitCode ?? 0).toBe(0);
   });
+
+  it('BAD: delivers the complete DENY under a nearly exhausted git budget', async () => {
+    let remoteTimeoutMs: number | undefined;
+    gitMock.mockImplementation((_cwd: string, args: string[], timeoutMs = 5_000) => {
+      if (args[0] === 'rev-parse') {
+        // Real 3.8s delay consumes almost the whole 4s git budget.
+        return new Promise<string>((resolve) => setTimeout(() => resolve(`${REPO}\n`), 3_800));
+      }
+      // The second probe hangs until exactly the small remaining timeout the
+      // authority passed after the first probe consumed its share.
+      remoteTimeoutMs = timeoutMs;
+      return new Promise<string>((_resolve, reject) =>
+        setTimeout(
+          () =>
+            reject(new GitError('GIT_TIMEOUT', `git ${args[0]} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        ),
+      );
+    });
+
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
+      stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      if (done) done(null);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const startedAt = performance.now();
+    await import('./pre-tool-use.js');
+    const hookElapsedMs = performance.now() - startedAt;
+
+    // A complete protocol DENY was delivered on stdout.
+    const output = JSON.parse(stdout) as {
+      decision?: string;
+      code?: string;
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('GIT_TIMEOUT');
+
+    // The second probe only received the remainder of the 4s git budget.
+    expect(remoteTimeoutMs).toBeDefined();
+    expect(remoteTimeoutMs!).toBeGreaterThan(0);
+    expect(remoteTimeoutMs!).toBeLessThanOrEqual(500);
+
+    // Budget separation: git budget 4s, measured hook total, host window 10s.
+    expect(hookElapsedMs).toBeGreaterThanOrEqual(3_800);
+    expect(hookElapsedMs).toBeLessThan(HOST_WINDOW_MS);
+    console.error(
+      `[PERF] pre-tool-use start→complete DENY=${hookElapsedMs.toFixed(0)}ms ` +
+        `(git budget 4000ms, host window ${HOST_WINDOW_MS}ms)`,
+    );
+    expect(process.exitCode ?? 0).toBe(0);
+  }, 15_000);
 });
