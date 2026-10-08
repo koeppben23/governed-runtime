@@ -103,10 +103,14 @@ async function revalidateUnderLock(
   if (fresh.status === 'unavailable') {
     throw new IntegrationInvariantError(fresh.code, fresh.reason);
   }
-  if (fresh.sessDir !== paths.sessDir || fresh.fingerprint !== paths.fingerprint) {
+  if (
+    fresh.sessDir !== paths.sessDir ||
+    fresh.fingerprint !== paths.fingerprint ||
+    fresh.worktreeRoot !== paths.worktree
+  ) {
     throw new IntegrationInvariantError(
       'SESSION_BINDING_MISMATCH',
-      `Session authority changed while acquiring the write lock (locked "${paths.sessDir}", now "${fresh.sessDir}").`,
+      `Session authority changed while acquiring the write lock (locked "${paths.sessDir}" in "${paths.worktree}", now "${fresh.sessDir}" in "${fresh.worktreeRoot}").`,
     );
   }
   const workspace = await initWorkspace(paths.worktree, context.sessionID);

@@ -118,14 +118,38 @@ function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
   node.forEachChild((child) => walk(child, visit));
 }
 
-/** Count direct `initWorkspace(...)` / `ensureWorkspace(...)` calls (or property access). */
+/**
+ * Local names bound to an imported symbol, including named-import aliases
+ * (`import { initWorkspace as bootstrap }`). Namespace imports are covered by
+ * the property-access counting in {@link countWorkspaceInitCalls}.
+ */
+function importAliasesOf(content: string, importedName: string): Set<string> {
+  const source = ts.createSourceFile('guard.ts', content, ts.ScriptTarget.Latest, true);
+  const names = new Set<string>();
+  walk(source, (node) => {
+    if (!ts.isImportDeclaration(node)) return;
+    const bindings = node.importClause?.namedBindings;
+    if (bindings === undefined || !ts.isNamedImports(bindings)) return;
+    for (const element of bindings.elements) {
+      const imported = (element.propertyName ?? element.name).text;
+      if (imported === importedName) names.add(element.name.text);
+    }
+  });
+  return names;
+}
+
+/**
+ * Count direct `initWorkspace(...)` / `ensureWorkspace(...)` calls (or property
+ * access) including named-import aliases, so an alias cannot bypass the guard.
+ */
 function countWorkspaceInitCalls(content: string, name: string): number {
+  const callNames = new Set([name, ...importAliasesOf(content, name)]);
   const source = ts.createSourceFile('guard.ts', content, ts.ScriptTarget.Latest, true);
   let count = 0;
   walk(source, (node) => {
     if (!ts.isCallExpression(node)) return;
     const callee = node.expression;
-    if (ts.isIdentifier(callee) && callee.text === name) count += 1;
+    if (ts.isIdentifier(callee) && callNames.has(callee.text)) count += 1;
     if (ts.isPropertyAccessExpression(callee) && callee.name.text === name) count += 1;
   });
   return count;
@@ -231,6 +255,18 @@ describe('session-authority single source of truth', () => {
       countWorkspaceInitCalls('export async function initWorkspace() {}', 'initWorkspace'),
     ).toBe(0);
     expect(countWorkspaceInitCalls('await ensureWorkspace(dir);', 'ensureWorkspace')).toBe(1);
+    // Named-import aliases cannot bypass the call-site guard.
+    const aliasedCall =
+      "import { initWorkspace as bootstrap } from './init.js';\nawait bootstrap(dir, id);";
+    expect(countWorkspaceInitCalls(aliasedCall, 'initWorkspace')).toBe(1);
+    const aliasedEnsure = "import { ensureWorkspace as prep } from './init.js';\nawait prep(dir);";
+    expect(countWorkspaceInitCalls(aliasedEnsure, 'ensureWorkspace')).toBe(1);
+    expect(
+      countWorkspaceInitCalls(
+        "import { initWorkspace as bootstrap } from './init.js';\nawait other(dir, id);",
+        'initWorkspace',
+      ),
+    ).toBe(0);
   });
 
   it('A5: workspace bootstrap/initialization call sites are exactly the sanctioned map', () => {
