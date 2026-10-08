@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTTP `PreToolUse` transport failures are host-observable DENY (#1027).**
+  Authenticated pre-tool-use requests with an invalid content type, an
+  unreadable or oversized body, or malformed JSON now receive an HTTP 200
+  protocol DENY (`HOOK_PAYLOAD_INVALID` / `HOOK_STDIN_INVALID`) instead of a
+  bare 4xx that Claude Code treats as non-blocking. Authentication (401),
+  method (405), unknown route (404), unreachable-server, client-disconnect, and
+  timeout behavior are unchanged and documented as residual risks; the
+  informational hook routes keep their status codes.
+
 - **Reused reviewer evidence no longer frees the ceremony shortcut (#1028).**
   A `SUBAGENT_EVIDENCE_REUSED` integrity incident is authorization-relevant
   separately from deterministic transport/exhaustion blocks: reduced-ceremony

@@ -106,14 +106,17 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 3. **Audit trail**: PostToolUse persists tool-call audit events to the JSONL audit trail. PreToolUse gate decisions and hook failures/timeouts are not persisted as dedicated JSONL audit events by default; they may only be visible through host or stderr logs or inferred from subsequent tool-call records.
 4. **HTTP health monitoring** (optional HTTP mode only): Claude Code HTTP hooks include `/health` endpoint for liveness verification.
 5. **Fail-closed on internal error**: Hook scripts catch all exceptions and emit deny — crashes produce explicit denials, not silent pass-through.
+6. **Fail-closed HTTP transport (PreToolUse payload failures)**: once authentication, method, and route checks have passed, an authenticated pre-tool-use request no longer fails with a bare non-2xx status for handler-reachable payload/transport failures. Invalid content type, unreadable/oversized bodies, and malformed JSON are delivered as HTTP 200 with a protocol DENY (`HOOK_PAYLOAD_INVALID` / `HOOK_STDIN_INVALID`), because Claude Code treats non-2xx hook responses as non-blocking. Failures before the application layer (401 authentication, 405 method, 404 unknown route) and the informational routes (`post-tool-use`, `session-start`, `stop`) keep their status codes.
 
 **Code references**:
 
 - `src/templates/claude-code-plugin.ts` (timeout: 10s)
 - `src/templates/codex-plugin.ts` (timeout: 10s)
-- `src/hooks/http-server.ts:388-402` (fail-closed on handler error)
+- `src/hooks/http-server.ts` (fail-closed transport and handler decisions)
 
 **Residual Risk**: HIGH — This is a fundamental platform limitation. If the hook process is killed by the OS (OOM, SIGKILL) or the HTTP server crashes without restart, the platform will allow tool execution without governance. This is documented as "best-effort fail-closed" for out-of-process platforms.
+
+Additional HTTP-mode residual risks that the server cannot eliminate from the inside: a missing or misconfigured bearer token returns `401`, and an unreachable server (connection refused), a client disconnect, or a request that exceeds the host hook deadline cannot be converted into a protocol DENY. These remain non-blocking host errors and must be covered by transport monitoring.
 
 **Recommendation for critical deployments**: Use Claude Code with HTTP hooks and external process monitoring (systemd, Docker health checks) to restart the hook server on failure.
 

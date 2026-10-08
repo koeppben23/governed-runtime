@@ -534,7 +534,7 @@ describe('handleHttpRequest', () => {
     { label: 'missing content type', headers: { 'content-type': '' } },
     { label: 'wrong content type', headers: { 'content-type': 'text/json' } },
   ])('BAD: $label returns 415 before state resolution', async ({ headers }) => {
-    const req = makeRequest({ body: '{}', headers });
+    const req = makeRequest({ url: '/hooks/post-tool-use', body: '{}', headers });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -588,7 +588,7 @@ describe('handleHttpRequest', () => {
   });
 
   it('BAD: invalid JSON returns 400', async () => {
-    const req = makeRequest({ body: '{not-json}' });
+    const req = makeRequest({ url: '/hooks/post-tool-use', body: '{not-json}' });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -599,7 +599,7 @@ describe('handleHttpRequest', () => {
   });
 
   it.each(['[]', 'null', '"string"'])('BAD: non-object JSON body %s returns 400', async (body) => {
-    const req = makeRequest({ body });
+    const req = makeRequest({ url: '/hooks/post-tool-use', body });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -901,6 +901,7 @@ describe('handleHttpRequest', () => {
 
   it('BAD: rejects Content-Length over the hook body limit with 413', async () => {
     const req = makeRequest({
+      url: '/hooks/post-tool-use',
       body: '{}',
       contentLength: String(MAX_HOOK_PAYLOAD_BYTES + 1),
     });
@@ -914,7 +915,10 @@ describe('handleHttpRequest', () => {
   });
 
   it('BAD: rejects streamed bodies over the hook body limit with 413', async () => {
-    const req = makeRequest({ body: 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1) });
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1),
+    });
     const res = makeResponse();
 
     await handleHttpRequest(req as never, res as never);
@@ -922,6 +926,132 @@ describe('handleHttpRequest', () => {
     expect(res.status).toBe(413);
     expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
     expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  // D1 (#1027): Claude Code treats non-2xx HTTP hook responses as non-blocking.
+  // Every authenticated pre-tool-use transport/validation failure must therefore
+  // be delivered as a protocol-correct HTTP 2xx DENY. Transport failures on the
+  // non-blocking informational routes keep their status codes.
+  describe('D1: pre-tool-use transport failures are host-observable DENY', () => {
+    function expectPreToolUseDeny(
+      res: ReturnType<typeof makeResponse>,
+      expectedCode: string,
+    ): void {
+      expect(res.status).toBe(200);
+      expect(res.headers['Content-Type']).toBe('application/json');
+      const body = JSON.parse(res.body);
+      expect(body.decision).toBe('deny');
+      expect(body.code).toBe(expectedCode);
+      expect(body.hookSpecificOutput).toEqual(
+        expect.objectContaining({
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: expect.stringContaining(expectedCode),
+        }),
+      );
+    }
+
+    it.each([
+      { label: 'missing content type', headers: { 'content-type': '' } },
+      { label: 'wrong content type', headers: { 'content-type': 'text/json' } },
+    ])('BAD: $label returns 200 host-observable DENY', async ({ headers }) => {
+      const req = makeRequest({ body: '{}', headers });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_PAYLOAD_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: Content-Length over the hook body limit returns 200 host-observable DENY', async () => {
+      const req = makeRequest({
+        body: '{}',
+        contentLength: String(MAX_HOOK_PAYLOAD_BYTES + 1),
+      });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_STDIN_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: streamed body over the hook body limit returns 200 host-observable DENY', async () => {
+      const req = makeRequest({ body: 'x'.repeat(MAX_HOOK_PAYLOAD_BYTES + 1) });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_STDIN_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('HAPPY: streamed body exactly at the hook body limit is not rejected as oversized', async () => {
+      const payload = JSON.stringify({
+        tool_name: 'Read',
+        tool_input: {},
+        session_id: 's1',
+        cwd: '/tmp',
+      });
+      const body = payload + ' '.repeat(MAX_HOOK_PAYLOAD_BYTES - payload.length);
+      const req = makeRequest({ body });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ decision: 'allow' });
+    });
+
+    it.each(['{not-json}', '[]', 'null', '"string"'])(
+      'BAD: malformed body %s returns 200 host-observable DENY',
+      async (body) => {
+        const req = makeRequest({ body });
+        const res = makeResponse();
+
+        await handleHttpRequest(req as never, res as never);
+
+        expectPreToolUseDeny(res, 'HOOK_PAYLOAD_INVALID');
+        expect(mockResolveSession).not.toHaveBeenCalled();
+      },
+    );
+
+    it('BAD: body read failure returns 200 host-observable DENY', async () => {
+      const req = makeRequest({ body: '' });
+      Object.defineProperty(req, Symbol.asyncIterator, {
+        value: () => {
+          throw new Error('read exploded');
+        },
+      });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expectPreToolUseDeny(res, 'HOOK_STDIN_INVALID');
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: unauthenticated pre-tool-use still returns 401 (trust boundary unchanged)', async () => {
+      const req = makeRequest({ body: '{}', headers: { authorization: '' } });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(401);
+      expect(JSON.parse(res.body)).toEqual({ error: 'Unauthorized' });
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
+
+    it('BAD: non-POST pre-tool-use still returns 405 before route resolution', async () => {
+      const req = makeRequest({ method: 'GET', url: '/hooks/pre-tool-use', body: '' });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(405);
+      expect(mockResolveSession).not.toHaveBeenCalled();
+    });
   });
 });
 
