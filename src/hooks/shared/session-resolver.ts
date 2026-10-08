@@ -21,6 +21,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { resolveSessionAuthority } from '../../adapters/session-authority.js';
 import type { SessionState } from '../../state/schema.js';
+import { SESSION_AUTHORITY_DEADLINE_MS } from './limits.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,11 @@ export async function resolveSession(cwd: string, sessionId: string): Promise<Se
   // before the hook trusts the state. This runs even under an override.
   let resolution: Awaited<ReturnType<typeof resolveSessionAuthority>>;
   try {
-    resolution = await resolveSessionAuthority({ root: cwd, sessionId });
+    resolution = await resolveSessionAuthority({
+      root: cwd,
+      sessionId,
+      deadlineMs: SESSION_AUTHORITY_DEADLINE_MS,
+    });
   } catch (err) {
     return {
       ok: false,
