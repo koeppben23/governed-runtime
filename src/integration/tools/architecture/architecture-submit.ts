@@ -8,7 +8,10 @@
 import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
-import { buildArchitectureReviewInstruction } from './architecture-shared.js';
+import {
+  buildArchitectureReviewInstruction,
+  parseArchitectureClaimsInput,
+} from './architecture-shared.js';
 import { formatBlocked } from '../../blocked-result.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 import { IntegrationInvariantError } from '../../errors.js';
@@ -180,7 +183,9 @@ export async function handleAdrSubmission(
   if (!args.title) return formatBlocked('EMPTY_ADR_TITLE');
   if (!args.adrText) return formatBlocked('EMPTY_ADR_TEXT');
 
-  const claims = normalizeArchitectureClaims(args.claims);
+  const parsedClaims = parseArchitectureClaimsInput(args.claims);
+  if (parsedClaims.kind === 'blocked') return parsedClaims.message;
+  const claims = normalizeArchitectureClaims(parsedClaims.claims);
   const result = executeArchitecture(
     state,
     {

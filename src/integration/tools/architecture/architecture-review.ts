@@ -43,6 +43,7 @@ import { buildReviewChallengeContract } from '../../review/obligations/challenge
 import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
 
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
+import { parseArchitectureClaimsInput } from './architecture-shared.js';
 import { IntegrationInvariantError } from '../../errors.js';
 import {
   persistAndFormatReviewResult,
@@ -205,7 +206,9 @@ function applyAdrRevision(
       }
     | undefined;
   if (args.claims) {
-    const normalizedClaims = normalizeArchitectureClaims(args.claims);
+    const parsedClaims = parseArchitectureClaimsInput(args.claims);
+    if (parsedClaims.kind === 'blocked') return parsedClaims.message;
+    const normalizedClaims = normalizeArchitectureClaims(parsedClaims.claims);
     if (normalizedClaims === undefined) {
       throw new IntegrationInvariantError(
         'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
