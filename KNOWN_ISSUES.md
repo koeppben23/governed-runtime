@@ -640,7 +640,20 @@ suites now create temporary git worktrees through the test-only
 including `maxAuditEvents`), and `test-config-isolation.test.ts` guards the
 suites against reintroducing a real-root or cwd worktree. No production behavior
 changed. The Run-6 `/export` versus `/archive` package collision is unrelated and
-remains tracked separately.
+tracked in #1055.
+
+## 2026-10-09 — Completion Export / Archive Package Collision (#1055)
+
+Run 6 (reduced-off) materialized the verifiable completion export
+(`exportCompletionEvidence` digest `a1737a76…`, `purpose auditor`) and then
+overwrote it in the same run with a redacted sharing archive at the shared
+`{sessionId}.tar.gz` path. `/export` is not admissible at `COMPLETE`, so the
+verified package was unrecoverable; in solo mode the audit after-hook
+auto-archive made the collision systematic. Fixed by purpose-scoped artifact
+names: completion export `export-{sessionId}.tar.gz`, regulated evidence
+`regulated-{sessionId}.tar.gz`, user archive `{sessionId}.tar.gz`, with
+file-scoped publication bindings. No schema change; no compatibility aliases
+(hard-cut contract).
 
 ## Maintenance Rules
 

@@ -106,6 +106,8 @@ const wsOriginals = vi.hoisted(() => ({
     null as unknown as (typeof import('../adapters/workspace/index.js'))['archiveSession'],
   verifyArchive:
     null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
+  verifyCompletionExport:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyCompletionExport'],
 }));
 const regulatedArchiveMock = vi.hoisted(() => ({
   archiveRegulatedEvidence: vi.fn(),
@@ -124,10 +126,12 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
   wsOriginals.archiveSession = original.archiveSession;
   wsOriginals.verifyArchive = original.verifyArchive;
+  wsOriginals.verifyCompletionExport = original.verifyCompletionExport;
   return {
     ...original,
     archiveSession: vi.fn(original.archiveSession),
     verifyArchive: vi.fn(original.verifyArchive),
+    verifyCompletionExport: vi.fn(original.verifyCompletionExport),
   };
 });
 
@@ -223,6 +227,12 @@ beforeEach(async () => {
     manifest: null,
     verifiedAt: '2026-01-01T00:00:00.000Z',
   });
+  vi.mocked(wsMock.verifyCompletionExport).mockResolvedValue({
+    passed: true,
+    findings: [],
+    manifest: null,
+    verifiedAt: '2026-01-01T00:00:00.000Z',
+  });
   vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValue({
     passed: true,
     findings: [],
@@ -247,6 +257,7 @@ afterEach(async () => {
     verifiedAt: '2026-01-01T00:00:00.000Z',
   });
   vi.mocked(wsMock.verifyArchive).mockReset();
+  vi.mocked(wsMock.verifyCompletionExport).mockReset();
   // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()

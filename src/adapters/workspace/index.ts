@@ -60,4 +60,4 @@ export {
 
 // ── Archive ──────────────────────────────────────────────────────────────────
 export { archiveSession } from './archive.js';
-export { verifyArchive } from './archive-verify-chain.js';
+export { verifyArchive, verifyCompletionExport } from './archive-verify-chain.js';

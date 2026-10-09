@@ -114,14 +114,13 @@ vi.mock('../adapters/workspace/index.js', async (importOriginal) => {
     ...original,
     archiveSession: vi.fn(original.archiveSession),
     verifyArchive: vi.fn(original.verifyArchive),
+    verifyCompletionExport: vi.fn(original.verifyCompletionExport),
   };
 });
 
 const regulatedArchiveMock = vi.hoisted(() => ({
   archiveRegulatedEvidence: vi.fn(),
   archiveCompletionExport: vi.fn(),
-  archiveFileName: (sessionId: string, regulatedEvidence = false) =>
-    `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`,
 }));
 
 vi.mock('../adapters/workspace/archive.js', () => regulatedArchiveMock);
@@ -164,6 +163,13 @@ beforeEach(async () => {
         '../adapters/workspace/index.js',
       )
     ).verifyArchive,
+  );
+  vi.mocked(workspaceMock.verifyCompletionExport).mockImplementation(
+    (
+      await vi.importActual<typeof import('../adapters/workspace/index.js')>(
+        '../adapters/workspace/index.js',
+      )
+    ).verifyCompletionExport,
   );
   vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockImplementation(
     (

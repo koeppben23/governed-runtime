@@ -34,7 +34,7 @@ vi.mock('./git-control-plane', async (importOriginal) => {
 });
 
 import { readState } from '../adapters/persistence.js';
-import { sessionDir, verifyArchive } from '../adapters/workspace/index.js';
+import { sessionDir, verifyCompletionExport } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { hashText } from '../shared/hashing.js';
 import { parseTicketRiskDeclaration } from '../state/risk-declaration.js';
@@ -532,7 +532,7 @@ describe('team opt-in completion (real git)', () => {
       implementationDigest: state!.implementation!.digest,
     });
 
-    // The completion package is named by the HOST session id and binds the
+    // The completion export is named by the HOST session id and binds the
     // archived state to the same host id and fingerprint.
     const archivePath = join(
       se.configDir,
@@ -540,7 +540,7 @@ describe('team opt-in completion (real git)', () => {
       se.fingerprint,
       'sessions',
       'archive',
-      `${se.sId}.tar.gz`,
+      `export-${se.sId}.tar.gz`,
     );
     expect(existsSync(archivePath)).toBe(true);
     const members = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf-8' })
@@ -575,7 +575,7 @@ describe('team opt-in completion (real git)', () => {
     // build`. The standalone CLI verifier on the concrete package runs
     // post-build in the smoke project
     // (src/cli/demo-evidence-verify.smoke.test.ts).
-    const verification = await verifyArchive(se.fingerprint, se.sId);
+    const verification = await verifyCompletionExport(se.fingerprint, se.sId);
     expect(verification.passed).toBe(true);
   });
 });

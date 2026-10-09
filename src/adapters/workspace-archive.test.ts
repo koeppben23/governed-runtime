@@ -11,12 +11,15 @@ import {
   verifyArchive,
 } from './workspace/index.js';
 import {
-  archiveFileName,
+  archiveCompletionExport,
   archiveRegulatedEvidence,
   type ArchivePayloadOptions,
 } from './workspace/archive.js';
+import { archiveFileName } from './workspace/archive-layout.js';
 import { verifyRegulatedArchive } from './workspace/archive-verify-chain.js';
+import { verifyCompletionExport } from './workspace/index.js';
 import { writeState, readState } from './persistence.js';
+import { hashFile } from '../shared/hashing.js';
 import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
 import * as persistenceAudit from './persistence-audit.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
@@ -187,11 +190,13 @@ function resealAuditTrailWithClockAnomaly(
 }
 
 describe('Archive Layout v2', () => {
-  it('uses a distinct filename for mandatory regulated evidence', () => {
+  it('uses distinct filenames per archive purpose', () => {
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
 
     expect(archiveFileName(sessionId)).toBe(`${sessionId}.tar.gz`);
-    expect(archiveFileName(sessionId, true)).toBe(`regulated-${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, 'archive')).toBe(`${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, 'regulated')).toBe(`regulated-${sessionId}.tar.gz`);
+    expect(archiveFileName(sessionId, 'export')).toBe(`export-${sessionId}.tar.gz`);
   });
 
   it('fails closed when the session directory disappears during archive setup', async () => {
@@ -517,6 +522,53 @@ describe('Archive Layout v2', () => {
     expect(regulatedPath).not.toBe(sharingPath);
     await expect(fs.access(regulatedPath)).resolves.toBeUndefined();
     expect((await verifyRegulatedArchive(initialized.fingerprint, sessionId)).passed).toBe(true);
+  });
+
+  it('keeps the verified completion export byte-identical across later sharing archives', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
+    });
+    // Sharing-only policy: the user archive is a redacted sharing package, the
+    // completion export stays workflow-authorized raw evidence.
+    await writeConfigForTest(configDir, 'basic', false);
+
+    const sessionId = '550e8400-e29b-41d4-a716-4466554400aa';
+    const initialized = await initWorkspace(WORKTREE, sessionId);
+    await writeState(initialized.sessionDir, boundState('COMPLETE'));
+
+    const exportPath = await archiveCompletionExport(initialized.fingerprint, sessionId);
+    expect(path.basename(exportPath)).toBe(`export-${sessionId}.tar.gz`);
+    const exportDigestBefore = await hashFile(exportPath);
+    expect((await verifyCompletionExport(initialized.fingerprint, sessionId)).passed).toBe(true);
+
+    const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'basic',
+      includeRaw: false,
+    });
+    expect(path.basename(archivePath)).toBe(`${sessionId}.tar.gz`);
+    expect(archivePath).not.toBe(exportPath);
+
+    // The export artifact keeps its bytes and stays independently verifiable.
+    expect(await hashFile(exportPath)).toBe(exportDigestBefore);
+    expect((await verifyCompletionExport(initialized.fingerprint, sessionId)).passed).toBe(true);
+
+    // Repeated archiving must not touch the export either.
+    await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'basic',
+      includeRaw: false,
+    });
+    expect(await hashFile(exportPath)).toBe(exportDigestBefore);
+    expect((await verifyCompletionExport(initialized.fingerprint, sessionId)).passed).toBe(true);
+
+    // Publication bindings are file-scoped: both artifacts carry their own.
+    const bindings = (await readAuditTrail(initialized.sessionDir))
+      .filter((event) => event.event === 'archive:publication_bound')
+      .map((event) => (event.detail as { archiveFile?: string }).archiveFile);
+    expect(bindings).toContain(`export-${sessionId}.tar.gz`);
+    expect(bindings).toContain(`${sessionId}.tar.gz`);
   });
 
   it('rejects the regulated evidence path for a non-regulated session', async () => {

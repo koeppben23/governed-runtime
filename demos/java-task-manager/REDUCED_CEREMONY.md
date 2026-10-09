@@ -208,7 +208,7 @@ and determine the real member name first:
 # --verify-session output (hostSessionId: ...) or the structured
 # flowguard_status({}) response (hostSessionId).
 SESSION_ID="<hostSessionId from run-reduced-ceremony-demo-setup.sh --verify-session>"
-PKG=$(find "$HOME/.config/opencode/workspaces" -type f -name "$SESSION_ID.tar.gz" -print -quit)
+PKG=$(find "$HOME/.config/opencode/workspaces" -type f -name "export-$SESSION_ID.tar.gz" -print -quit)
 MEMBER=$(tar -tzf "$PKG" | grep '/audit/audit.jsonl$' | head -n 1)
 tar -xOzf "$PKG" "$MEMBER" | grep reduced_ceremony_applied
 ```

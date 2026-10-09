@@ -490,7 +490,8 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 - `{sessionId}.tar.gz.sha256`
 
 Regulated clean completion stores its mandatory raw-evidence package separately
-as `regulated-{sessionId}.tar.gz`; later sharing exports cannot overwrite it.
+as `regulated-{sessionId}.tar.gz`; the `/export` completion package is stored as
+`export-{sessionId}.tar.gz`. Later sharing exports cannot overwrite either.
 
 - `archive-manifest.json`
 - `audit/decision-receipts.v1.json`

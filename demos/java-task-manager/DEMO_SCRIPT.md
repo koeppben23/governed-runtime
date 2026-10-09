@@ -474,11 +474,15 @@ If someone in the audience knows the other name, this is why both exist:
   evidence path.
 - **`/export` vs `/archive`:** `/export` is the canonical completion step at
   EXPORT_READY (tool `flowguard_export`). It materializes and verifies the
-  required package, persists `ExportCompletionEvidence`, and only then reaches
-  COMPLETE; a blocked or failed export stays in EXPORT_READY. `/archive` is an
-  operational action for **terminal** sessions only and defaults to a redacted
+  required package as `export-{sessionId}.tar.gz`, persists
+  `ExportCompletionEvidence`, and only then reaches COMPLETE; a blocked or
+  failed export stays in EXPORT_READY. `/archive` is an
+  operational action for **terminal** sessions only, writes
+  `{sessionId}.tar.gz`, and defaults to a redacted
   sharing archive (`integrityCapability: not_verifiable`,
-  `verificationStatus: not_run`). They are **not** synonyms.
+  `verificationStatus: not_run`). The distinct file names keep the verified
+  completion export intact across any later archiving. They are **not**
+  synonyms.
 - **`/finish` vs `/status`:** both are read-only and call `flowguard_status`.
   `/status` returns the status projection; `/finish` additionally derives the
   pre-export Finish Card (`overallStatus`, non-normative `actionGuidance`, exit

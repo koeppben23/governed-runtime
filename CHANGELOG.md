@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The verified completion export is immutable across `/archive`.** `/export`
+  now materializes `export-{sessionId}.tar.gz`, the user archive keeps
+  `{sessionId}.tar.gz`, and regulated evidence keeps
+  `regulated-{sessionId}.tar.gz`. A later manual or solo auto archive can no
+  longer overwrite the verified completion package (`/export` stays admissible
+  only at `EXPORT_READY`), and archive publication bindings are file-scoped.
+
 - **Plan claim admission fails before spending review capacity.** Blocking
   declarations prevent creation of a new plan version, obligation, attempt or
   dispatch. Continuation and reviewer-verdict routing retain priority. Claim

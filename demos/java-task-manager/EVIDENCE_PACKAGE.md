@@ -11,7 +11,7 @@ the demo workspace is gone.
 raw evidence package through the canonical archive path and records
 `ExportCompletionEvidence` in the session state:
 
-- package: `<sessionId>.tar.gz` under
+- package: `export-<sessionId>.tar.gz` under
   `~/.config/opencode/workspaces/<fingerprint>/sessions/archive/`
 - sidecar: the same path plus `.sha256`
 - contents: `archive-manifest.json` (schema `archive-manifest.v4`), the
@@ -94,7 +94,7 @@ node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-man
 
 ```bash
 node demos/java-task-manager/verify-evidence-package.mjs \
-  /path/to/<sessionId>.tar.gz \
+  /path/to/export-<sessionId>.tar.gz \
   --expect-session <session-id> \
   --expect-flow development \
   --expect-phase EXPORT_READY
