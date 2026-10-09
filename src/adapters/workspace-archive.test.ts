@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -25,8 +25,15 @@ import { verifyChain } from '../audit/integrity.js';
 import { BINDING, makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { withTestEnv } from '../integration/test-helpers.js';
+import { createTempWorktree } from './workspace-test-helpers.js';
 
-const WORKTREE = path.resolve('.');
+/**
+ * Temporary git worktree for the current test. The suite must never bind the
+ * real repository root: `workspace-archive` writes repo-scoped config under
+ * `{worktree}/.opencode/`, and a real-root binding could clobber or leak a
+ * developer's local `flowguard.json` (#1047).
+ */
+let WORKTREE: string;
 
 /**
  * Session state bound to the canonical repo worktree this suite archives from.
@@ -41,8 +48,16 @@ function boundState(
 }
 
 const cleanups: Array<() => Promise<void>> = [];
+beforeEach(async () => {
+  const temp = await createTempWorktree({ prefix: 'archive-v2-worktree-' });
+  WORKTREE = temp.worktree;
+  cleanups.push(temp.cleanup);
+});
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  // LIFO and sequential: nested environment restores must unwind in reverse
+  // registration order, and a failing cleanup must not skip the remaining ones.
+  const pending = cleanups.splice(0).reverse();
+  for (const cleanup of pending) await cleanup();
 });
 
 /**
@@ -54,7 +69,7 @@ function archiveSession(
   sessionId: string,
   opts: ArchivePayloadOptions,
 ): Promise<string> {
-  return realArchiveSession(fingerprint, sessionId, { ...opts, worktree: path.resolve('.') });
+  return realArchiveSession(fingerprint, sessionId, { ...opts, worktree: WORKTREE });
 }
 
 async function createArchive() {
@@ -65,22 +80,18 @@ async function createArchive() {
     await fs.rm(configDir, { recursive: true, force: true });
   });
   const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-  const worktree = path.resolve('.');
+  const worktree = WORKTREE;
   const initialized = await initWorkspace(worktree, sessionId);
   await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
-  // Write config to both global and repo-scoped locations.
+  // The global fixture config is sufficient: the repo-scoped precedence and
+  // negative-path coverage lives in the dedicated tests below. Writing a
+  // repo-scoped config here would only duplicate the global one (policy-equivalent).
   const configBody = {
     schemaVersion: 'v1' as const,
     archive: { redaction: { allowedModes: ['none'] as const, allowRawExport: true } },
   };
   await fs.writeFile(path.join(configDir, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
-  const repoOpenCode = path.join(worktree, '.opencode');
-  await fs.mkdir(repoOpenCode, { recursive: true });
-  await fs.writeFile(path.join(repoOpenCode, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
-  cleanups.push(async () => {
-    await fs.rm(path.join(repoOpenCode, 'flowguard.json'), { force: true });
-  });
 
   const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
     redactionMode: 'none',
@@ -191,7 +202,7 @@ describe('Archive Layout v2', () => {
       await fs.rm(configDir, { recursive: true, force: true });
     });
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeConfigForTest(configDir, 'none', true);
     await fs.rm(initialized.sessionDir, { recursive: true, force: true });
 
@@ -255,7 +266,7 @@ describe('Archive Layout v2', () => {
       'utf8',
     );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await appendAuditEvent(initialized.sessionDir, {
       id: '11111111-1111-4111-8111-111111111111',
@@ -336,7 +347,7 @@ describe('Archive Layout v2', () => {
       'utf8',
     );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
     await expect(
@@ -363,7 +374,7 @@ describe('Archive Layout v2', () => {
       'utf8',
     );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
     await expect(
@@ -400,7 +411,7 @@ describe('Archive Layout v2', () => {
     });
     await fs.writeFile(path.join(configDir, 'flowguard.json'), config, 'utf8');
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
@@ -430,7 +441,7 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
 
     await expect(
@@ -457,7 +468,7 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(
       initialized.sessionDir,
       boundState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
@@ -490,7 +501,7 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(
       initialized.sessionDir,
       boundState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
@@ -518,7 +529,7 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'none', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
@@ -537,13 +548,13 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const missingStateSession = '550e8400-e29b-41d4-a716-446655440000';
-    const missingState = await initWorkspace(path.resolve('.'), missingStateSession);
+    const missingState = await initWorkspace(WORKTREE, missingStateSession);
     await expect(
       archiveRegulatedEvidence(missingState.fingerprint, missingStateSession),
     ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
 
     const abortedSession = '550e8400-e29b-41d4-a716-446655440001';
-    const aborted = await initWorkspace(path.resolve('.'), abortedSession);
+    const aborted = await initWorkspace(WORKTREE, abortedSession);
     await writeState(
       aborted.sessionDir,
       boundState('COMPLETE', {
@@ -571,7 +582,7 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'basic', false);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(
       initialized.sessionDir,
       boundState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
@@ -602,7 +613,7 @@ describe('Archive Layout v2', () => {
     await writeConfigForTest(configDir, 'none', true);
 
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
     await fs.mkdir(path.join(initialized.sessionDir, 'artifacts'), { recursive: true });
     await fs.writeFile(path.join(initialized.sessionDir, 'artifacts', 'proof.json'), '{}', 'utf8');
@@ -651,7 +662,7 @@ describe('Archive Layout v2', () => {
     });
     await writeConfigForTest(configDir, 'none', true);
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
     const proofPath = path.join(initialized.sessionDir, 'artifacts', 'proof.json');
     await fs.mkdir(path.dirname(proofPath), { recursive: true });
@@ -967,9 +978,9 @@ describe('Archive Layout v2', () => {
       restore();
       await fs.rm(configDir, { recursive: true, force: true });
     });
-    await writeConfigForTest(configDir, 'none', true, path.resolve('.'));
+    await writeConfigForTest(configDir, 'none', true, WORKTREE);
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    const initialized = await initWorkspace(WORKTREE, sessionId);
     await writeState(initialized.sessionDir, boundState('COMPLETE'));
     const archivePath = path.join(
       configDir,

@@ -8,18 +8,29 @@ import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.
 import { writeState } from './persistence.js';
 import { BINDING, makeState } from '../fixtures.js';
 import { withTestEnv } from '../integration/test-helpers.js';
+import { createTempWorktree } from './workspace-test-helpers.js';
 
 let restore: (() => void) | null = null;
 let configDir = '';
+let worktreeCleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
   restore?.();
   restore = null;
   if (configDir) await fs.rm(configDir, { recursive: true, force: true });
+  configDir = '';
+  const cleanup = worktreeCleanup;
+  worktreeCleanup = null;
+  if (cleanup) await cleanup();
 });
 
 async function archiveFixture() {
   configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'verify-v2-'));
   restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+  // Isolated worktree: never the real repository root, so a developer's
+  // repo-scoped .opencode/flowguard.json cannot influence the fixture (#1047).
+  const temp = await createTempWorktree({ prefix: 'verify-v2-worktree-' });
+  worktreeCleanup = temp.cleanup;
+  const worktree = temp.worktree;
   // Write config with raw export enabled for archive verification tests.
   await fs.writeFile(
     path.join(configDir, 'flowguard.json'),
@@ -30,15 +41,15 @@ async function archiveFixture() {
     'utf8',
   );
   const sessionId = '550e8400-e29b-41d4-a716-446655440001';
-  const initialized = await initWorkspace(path.resolve('.'), sessionId);
+  const initialized = await initWorkspace(worktree, sessionId);
   await writeState(
     initialized.sessionDir,
     // The configurable archive export binds the repository policy to the
     // persisted worktree, so the fixture must bind the archived worktree.
-    makeState('COMPLETE', { binding: { ...BINDING, worktree: path.resolve('.') } }),
+    makeState('COMPLETE', { binding: { ...BINDING, worktree } }),
   );
   await archiveSession(initialized.fingerprint, sessionId, {
-    worktree: path.resolve('.'),
+    worktree,
     redactionMode: 'none',
     includeRaw: true,
   });

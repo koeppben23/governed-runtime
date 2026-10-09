@@ -626,6 +626,22 @@ outcomes), by replacing every local reconstruction, and by the
 both directions: `pending`/`fulfilled` keep denying mutating tools and keep full
 ceremony; blocked-only allows and keeps reduced ceremony.
 
+## 2026-10-09 — Archive Adapter Test Isolation (#1047)
+
+`workspace-archive.test.ts`, `workspace-verify.test.ts`, and `workspace.test.ts`
+bound their fixtures to the real repository root. `workspace-archive` additionally
+wrote and deleted `{repository}/.opencode/flowguard.json` (overwrite + cleanup
+delete, no restore), so a local test run could clobber or leak a developer's
+repo-scoped FlowGuard config; `workspace-verify` read that config through
+`readEffectiveArchivePolicy`, making the outcome depend on local state. The three
+suites now create temporary git worktrees through the test-only
+`adapters/workspace-test-helpers.ts`, the redundant repo-config write in
+`createArchive()` is removed (global fixture config is policy-equivalent,
+including `maxAuditEvents`), and `test-config-isolation.test.ts` guards the
+suites against reintroducing a real-root or cwd worktree. No production behavior
+changed. The Run-6 `/export` versus `/archive` package collision is unrelated and
+remains tracked separately.
+
 ## Maintenance Rules
 
 - Keep this file aligned with #487 and child issues.
