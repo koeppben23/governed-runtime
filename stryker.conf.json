@@ -82,6 +82,8 @@
     "src/integration/review/validation/review-validation.ts",
     "src/integration/review/validation/review-validation-structured-evidence.ts",
     "src/integration/tools/architecture/architecture-submit.ts",
+    "src/integration/tools/plan/plan.ts",
+    "src/integration/tools/plan/plan-claim-submission.ts",
     "src/integration/tools/challenge/pre-implementation-challenge.ts",
     "src/integration/tools/mutation/record-mutation-evidence.ts",
     "src/integration/tools/mutation/reconcile-mutation-episode.ts",

@@ -321,6 +321,8 @@ describe('plan', () => {
         ],
       });
 
+      const beforeAdmission = await readState(sessionDir);
+      const beforeAudit = await readAuditTrail(sessionDir);
       const raw = await plan.execute(
         {
           planText: '## Plan\n1. Fix missing task updates',
@@ -353,7 +355,8 @@ describe('plan', () => {
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
       expect(result.claimSubmissionDiagnostics).toMatchObject({
         rejectedClaims: [
           {
@@ -363,10 +366,6 @@ describe('plan', () => {
           },
         ],
       });
-      expect((result.presentation as { markdown: string }).markdown).toContain(
-        '## Declarations not admitted',
-      );
-      expect((result.presentation as { markdown: string }).markdown).toContain('## Next action');
 
       // The blocking consequence must be named, the claim must not be
       // mislabeled as non-critical, and the recovery must name the explicit
@@ -376,28 +375,16 @@ describe('plan', () => {
           rejectedClaims: { reason: string; recovery: string[] }[];
         }
       ).rejectedClaims[0]!;
-      expect(rejected.reason).toContain('Rejected critical claims block evidence approval');
+      expect(rejected.reason).toContain('Rejected blocking declarations prevent approval');
       expect(rejected.reason).not.toContain('Non-critical');
       expect(rejected.recovery).toContainEqual(expect.stringContaining('claims: []'));
       // The recovery must name the state transition out of the blocked gate:
       // /plan is not admissible at PLAN_REVIEW, so changes_requested comes first.
       expect(rejected.recovery).toContainEqual(expect.stringContaining('changes_requested'));
-      expect((result.presentation as { markdown: string }).markdown).toContain(
-        'Rejected critical claims block evidence approval',
-      );
-
       const persisted = await readState(sessionDir);
-      expect(persisted?.plan?.claimDeclarations?.claims).toHaveLength(1);
-      expect(persisted?.plan?.claimDeclarations?.claims[0]?.statement).toBe(
-        'missing task updates return 404',
-      );
-      expect(persisted?.plan?.claimSubmissionDiagnostics?.rejectedClaims).toHaveLength(1);
-      expect(persisted?.plan?.claimSubmissionHistory).toMatchObject([
-        {
-          planVersion: 1,
-          rejectedClaims: [{ statement: 'the repository test suite passes' }],
-        },
-      ]);
+      expect(persisted).toEqual(beforeAdmission);
+      expect(persisted?.phase).toBe('TICKET');
+      expect(await readAuditTrail(sessionDir)).toEqual(beforeAudit);
     });
 
     it('records an unsatisfiable non-critical claim as a non-blocking diagnostic', async () => {
@@ -470,7 +457,7 @@ describe('plan', () => {
       expect(presentation).not.toContain('rejected critical');
     });
 
-    it('unblocks a rejected-claims plan approval through changes_requested and a claim-withdrawing revision', async () => {
+    it('withdraws a rejected submission without spending a plan version or reviewer attempt', async () => {
       // Team mode keeps the human gate: solo would auto-approve the plan.
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
@@ -493,35 +480,12 @@ describe('plan', () => {
         },
         ctx,
       );
-      expect(parseToolResult(v1Raw).error).toBeUndefined();
+      expect(parseToolResult(v1Raw).error).toBe(true);
       const afterPlan = await readState(sessionDir);
-      expect(afterPlan?.phase).toBe('PLAN');
-      expect(afterPlan?.plan?.claimSubmissionDiagnostics?.rejectedClaims[0]?.disposition).toBe(
-        'rejected_blocking',
-      );
-
-      const firstFindings = await fulfillPlanReview(0, 'accept');
-      await plan.execute({ reviewVerdict: 'accept', reviewFindings: firstFindings }, ctx);
-      expect((await readState(sessionDir))?.phase).toBe('PLAN_REVIEW');
-
-      recordUserDecision('approve');
-      const blockedRaw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
-      const blocked = parseToolResult(blockedRaw);
-      expect(blocked.error).toBe(true);
-      expect(blocked.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
-      expect(blocked.recovery as string[]).toContainEqual(
-        expect.stringContaining('changes_requested'),
-      );
-      expect(blocked.recovery as string[]).toContainEqual(expect.stringContaining('claims: []'));
-
-      // The documented recovery: the gate returns to PLAN via the decision.
-      recordUserDecision('changes_requested');
-      const backRaw = await decision.execute(
-        { verdict: 'changes_requested', rationale: 'Withdraw the rejected declaration' },
-        ctx,
-      );
-      expect(parseToolResult(backRaw).error).not.toBe(true);
-      expect((await readState(sessionDir))?.phase).toBe('PLAN');
+      expect(afterPlan?.phase).toBe('TICKET');
+      expect(afterPlan?.plan).toBeNull();
+      expect(afterPlan?.reviewAssurance?.obligations ?? []).toHaveLength(0);
+      expect(afterPlan?.reviewAssurance?.attempts ?? []).toHaveLength(0);
 
       // An explicit empty claims array withdraws the rejected declarations.
       await plan.execute(
@@ -533,13 +497,14 @@ describe('plan', () => {
         ctx,
       );
       const revised = await readState(sessionDir);
+      expect(revised?.plan?.current.planVersion).toBe(1);
       expect(revised?.plan?.claimDeclarations?.claims).toHaveLength(0);
       expect(revised?.plan?.claimSubmissionDiagnostics?.rejectedClaims ?? []).toHaveLength(0);
 
       const secondFindings = await fulfillStrictReviewObligation(sessionDir, {
         obligationType: 'plan',
         iteration: 0,
-        planVersion: 2,
+        planVersion: 1,
         overallVerdict: 'accept',
       });
       await plan.execute({ reviewVerdict: 'accept', reviewFindings: secondFindings }, ctx);

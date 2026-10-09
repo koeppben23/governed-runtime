@@ -23,6 +23,8 @@ export default defineConfig({
       'src/integration/tools/review-validation-mode.test.ts',
       'src/integration/tools/review-validation-findings.test.ts',
       'src/integration/tools-execute-planning.test.ts',
+      'src/integration/proofgraph-lifecycle-e2e.test.ts',
+      'src/integration/tools/plan/plan-claim-submission.test.ts',
       'src/integration/tools-execute-implement.test.ts',
       'src/integration/tools-execute-review.test.ts',
       'src/integration/tools-execute-review-flow.test.ts',

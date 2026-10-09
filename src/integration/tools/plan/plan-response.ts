@@ -181,7 +181,7 @@ function partialClaimAcceptancePresentation(
   // rejections must not be told that approval is blocked.
   const consequence =
     blockingCount > 0
-      ? `${blockingCount} rejected critical claim declaration(s) block evidence approval until corrected or explicitly withdrawn in a new plan revision.`
+      ? `${blockingCount} blocking declaration(s) prevent approval until corrected or explicitly withdrawn in a new plan revision.`
       : 'The rejected declaration(s) are non-blocking; the plan and its accepted claims remain valid.';
   return {
     markdown:

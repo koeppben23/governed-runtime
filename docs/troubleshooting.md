@@ -131,6 +131,21 @@ Legacy `location` text is not accepted.
 
 ## Error Codes
 
+### Plan claim admission and review cost
+
+Blocking claim declarations are rejected before a new plan version or independent
+review is created. Correct and resubmit the call in `TICKET` or `PLAN`, or pass an
+explicit `claims: []` to withdraw declarations. Noncritical declarations can also
+be blocking when their contract is incomplete; only canonically non-blocking
+rejections permit partial acceptance.
+
+For already persisted rejection diagnostics at `PLAN_REVIEW`, request changes
+(`changes_requested`) to return to `PLAN` before submitting the corrected plan.
+At `EVIDENCE_REVIEW`, changes requested returns to `IMPLEMENTATION`; there is no
+admissible in-session path to plan revision. Start a new session with a corrected
+plan in that case. Existing reviewer continuations and transport recovery retain
+their authority and do not create a new plan version through claim admission.
+
 All BLOCKED responses carry a `code`, a `reason`, and a `recovery` array. The
 canonical registry is in `src/config/reasons.ts`. Every code listed below is a
 real, registered reason.

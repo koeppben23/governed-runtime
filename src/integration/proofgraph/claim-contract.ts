@@ -85,9 +85,9 @@ export function classifyProofClaimContract(input: ClaimContractInput): ClaimCont
       violations.find((violation) => violation.failureKind !== 'unsatisfiable') ?? firstViolation;
     const rejected = { claim, index, result };
     if (result.failureKind === 'unsatisfiable' && !claim.critical) {
-      rejectedNonBlocking.push(rejected);
+      rejectedNonBlocking.push({ ...rejected, disposition: 'rejected_non_blocking' });
     } else {
-      rejectedBlocking.push(rejected);
+      rejectedBlocking.push({ ...rejected, disposition: 'rejected_blocking' });
     }
   }
   return { accepted, rejectedNonBlocking, rejectedBlocking, setViolations: [] };

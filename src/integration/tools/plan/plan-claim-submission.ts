@@ -26,13 +26,18 @@ export type PlanClaimSubmissionClassification =
     }
   | { readonly kind: 'blocked'; readonly message: string };
 
-/** Keep set-level failures fail-closed; persist rejected declarations for later admission. */
+/** Reject blocking declarations before review; only nonblocking rejections permit partial acceptance. */
 export function classifyPlanClaimSubmission(
   args: PlanArgs,
   state: SessionState,
   digest: (value: string) => string,
 ): PlanClaimSubmissionClassification {
-  if (!args.claims || args.claims.length === 0) return { kind: 'ok', args };
+  if (args.claims === undefined) {
+    const diagnostics = state.plan?.claimSubmissionDiagnostics;
+    const blocked = blockRejectedDeclarations(diagnostics);
+    return blocked ?? { kind: 'ok', args };
+  }
+  if (args.claims.length === 0) return { kind: 'ok', args };
   const normalized = normalizePlanClaims(args.claims);
   if (normalized === undefined) {
     throw new IntegrationInvariantError(
@@ -76,12 +81,39 @@ export function classifyPlanClaimSubmission(
   const rejected = [...batch.rejectedNonBlocking, ...batch.rejectedBlocking];
   if (rejected.length === 0) return { kind: 'ok', args };
 
+  const diagnostics = buildPartialAcceptanceDiagnostics(normalized, batch, digest);
+  const blocked = blockRejectedDeclarations(diagnostics);
+  if (blocked) return blocked;
+
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
   const acceptedClaims = args.claims.filter((_, index) => acceptedIndexes.has(index));
   return {
     kind: 'ok',
     args: { ...args, claims: acceptedClaims },
-    diagnostics: buildPartialAcceptanceDiagnostics(normalized, batch, digest),
+    diagnostics,
+  };
+}
+
+function blockRejectedDeclarations(
+  diagnostics: PlanClaimSubmissionDiagnostics | undefined,
+): Extract<PlanClaimSubmissionClassification, { kind: 'blocked' }> | undefined {
+  const first = diagnostics?.rejectedClaims.find(
+    (claim) => claim.disposition === 'rejected_blocking',
+  );
+  if (!first) return undefined;
+  return {
+    kind: 'blocked',
+    message: formatBlocked(
+      'PROOFGRAPH_CLAIM_NOT_DECLARED',
+      {
+        claimRef: first.claimRef,
+        field: 'declaration admission',
+        detail:
+          'blocking declarations must be corrected or explicitly withdrawn before admitting this revision',
+        consequence: 'No plan version or independent review was created by this rejected call.',
+      },
+      { claimSubmissionDiagnostics: diagnostics },
+    ),
   };
 }
 
@@ -105,7 +137,7 @@ function buildPartialAcceptanceDiagnostics(
   return {
     submittedClaimDeclarationsDigest: digest(canonicalJsonStringify(submittedDeclarations)),
     acceptedClaimDeclarationsDigest: digest(canonicalJsonStringify(acceptedDeclarations)),
-    rejectedClaims: rejected.map(({ claim, result }) => {
+    rejectedClaims: rejected.map(({ claim, result, disposition }) => {
       const claimId = claim.claimId;
       if (claimId === undefined) {
         throw new IntegrationInvariantError(
@@ -120,17 +152,16 @@ function buildPartialAcceptanceDiagnostics(
         detail: result.detail,
         // The same catalog code covers partial acceptance and the blocking
         // withdrawal case; the consequence sentence must follow the severity.
-        consequence: claim.critical
-          ? 'Rejected critical claims block evidence approval until they are admitted or explicitly withdrawn in a new plan revision.'
-          : 'The plan and its accepted claims remain valid.',
+        consequence:
+          disposition === 'rejected_blocking'
+            ? 'Rejected blocking declarations prevent approval until admitted or explicitly withdrawn.'
+            : 'The plan and its accepted claims remain valid.',
       });
       return {
         claimRef: claimId,
         statement: claim.statement,
         critical: claim.critical,
-        disposition: claim.critical
-          ? ('rejected_blocking' as const)
-          : ('rejected_non_blocking' as const),
+        disposition,
         code,
         reason: formatted.reason,
         recovery: [...formatted.recovery],

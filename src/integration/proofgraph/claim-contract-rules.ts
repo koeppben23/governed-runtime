@@ -83,6 +83,7 @@ export type ClaimContractResult =
     };
 
 export interface ClaimContractRejectedDeclaration {
+  readonly disposition: 'rejected_blocking' | 'rejected_non_blocking';
   readonly claim: NormalizedClaimDeclaration;
   readonly index: number;
   readonly result: Extract<ClaimContractResult, { kind: 'invalid' }>;
