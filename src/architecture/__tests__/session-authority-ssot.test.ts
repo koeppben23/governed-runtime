@@ -269,19 +269,26 @@ describe('session-authority single source of truth', () => {
     ).toBe(0);
   });
 
-  it('A5: workspace bootstrap/initialization call sites are exactly the sanctioned map', () => {
-    for (const file of sources) {
-      const sanction = WORKSPACE_INIT_SANCTIONED.get(file.rel);
-      expect(
-        countWorkspaceInitCalls(file.content, 'initWorkspace'),
-        `${file.rel} must not initialize a session workspace; resolve the canonical authority first`,
-      ).toBe(sanction?.initWorkspace ?? 0);
-      expect(
-        countWorkspaceInitCalls(file.content, 'ensureWorkspace'),
-        `${file.rel} must not ensure workspace metadata outside the sanctioned bootstrap path`,
-      ).toBe(sanction?.ensureWorkspace ?? 0);
-    }
-  });
+  // A5 parses every production source twice (initWorkspace + ensureWorkspace)
+  // and is starved past the default 15s budget on loaded coverage runs.
+  // Same explicit-timeout pattern as dependency-rules.test.ts.
+  it(
+    'A5: workspace bootstrap/initialization call sites are exactly the sanctioned map',
+    { timeout: 60_000 },
+    () => {
+      for (const file of sources) {
+        const sanction = WORKSPACE_INIT_SANCTIONED.get(file.rel);
+        expect(
+          countWorkspaceInitCalls(file.content, 'initWorkspace'),
+          `${file.rel} must not initialize a session workspace; resolve the canonical authority first`,
+        ).toBe(sanction?.initWorkspace ?? 0);
+        expect(
+          countWorkspaceInitCalls(file.content, 'ensureWorkspace'),
+          `${file.rel} must not ensure workspace metadata outside the sanctioned bootstrap path`,
+        ).toBe(sanction?.ensureWorkspace ?? 0);
+      }
+    },
+  );
 
   it('A6: initWorkspace is declared only by the workspace layout authority', () => {
     const declaring = sources
