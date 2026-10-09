@@ -41,6 +41,7 @@ import {
 } from './workspace/index.js';
 import * as crypto from 'node:crypto';
 import { withTestEnv } from '../integration/test-helpers.js';
+import { createTempWorktree, runCleanups, TEST_REMOTE_ORIGIN } from './workspace-test-helpers.js';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
@@ -49,6 +50,9 @@ import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 let tmpDir: string;
+/** Temporary git worktree for suite cases that need a real repository. */
+let worktreeDir: string;
+let worktreeCleanup: (() => Promise<void>) | null = null;
 
 async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'ws-test-'));
@@ -60,6 +64,21 @@ async function cleanTmpDir(dir: string): Promise<void> {
   } catch {
     // Best effort on Windows (file locks)
   }
+}
+
+async function createWorktree(remote?: string): Promise<void> {
+  const temp = await createTempWorktree({
+    prefix: 'ws-test-worktree-',
+    ...(remote !== undefined ? { remote } : {}),
+  });
+  worktreeDir = temp.worktree;
+  worktreeCleanup = temp.cleanup;
+}
+
+async function removeWorktree(): Promise<void> {
+  const cleanup = worktreeCleanup;
+  worktreeCleanup = null;
+  if (cleanup) await cleanup();
 }
 
 // =============================================================================
@@ -493,15 +512,15 @@ describe('ensureWorkspace', () => {
   beforeEach(async () => {
     tmpDir = await createTmpDir();
     cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
+    await createWorktree();
   });
 
   afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
+    await runCleanups([async () => cleanupEnv(), async () => cleanTmpDir(tmpDir), removeWorktree]);
   });
 
   it('creates workspace.json and directories', async () => {
-    const { fingerprint, info, workspaceDir: wsDir } = await ensureWorkspace(path.resolve('.'));
+    const { fingerprint, info, workspaceDir: wsDir } = await ensureWorkspace(worktreeDir);
     expect(fingerprint).toMatch(/^[0-9a-f]{24}$/);
     expect(info.fingerprint).toBe(fingerprint);
     expect(info.schemaVersion).toBe('v1');
@@ -511,14 +530,14 @@ describe('ensureWorkspace', () => {
   });
 
   it('is idempotent — second call returns same workspace', async () => {
-    const first = await ensureWorkspace(path.resolve('.'));
-    const second = await ensureWorkspace(path.resolve('.'));
+    const first = await ensureWorkspace(worktreeDir);
+    const second = await ensureWorkspace(worktreeDir);
     expect(second.fingerprint).toBe(first.fingerprint);
     expect(second.workspaceDir).toBe(first.workspaceDir);
   });
 
   it('does NOT create a session directory', async () => {
-    const { workspaceDir: wsDir } = await ensureWorkspace(path.resolve('.'));
+    const { workspaceDir: wsDir } = await ensureWorkspace(worktreeDir);
     const sessionsDir = path.join(wsDir, 'sessions');
     const entries = await fs.readdir(sessionsDir);
     expect(entries).toHaveLength(0);
@@ -535,18 +554,20 @@ describe('initWorkspace', () => {
   beforeEach(async () => {
     tmpDir = await createTmpDir();
     cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
+    // A deterministic test remote keeps the fingerprint remote-based and the
+    // canonicalRemote-mismatch negative path exercisable.
+    await createWorktree(TEST_REMOTE_ORIGIN);
   });
 
   afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
+    await runCleanups([async () => cleanupEnv(), async () => cleanTmpDir(tmpDir), removeWorktree]);
   });
 
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('creates workspace, session, and discovery directories', async () => {
-      // Use a mock worktree that points to this test's git repo
-      const worktree = path.resolve('.');
+      // Use an isolated worktree for this test (never the real repository root)
+      const worktree = worktreeDir;
       const sessionId = 'test-session-001';
 
       const result = await initWorkspace(worktree, sessionId);
@@ -576,7 +597,7 @@ describe('initWorkspace', () => {
     });
 
     it('is idempotent: second call returns same info', async () => {
-      const worktree = path.resolve('.');
+      const worktree = worktreeDir;
       const sessionId = 'test-session-002';
 
       const first = await initWorkspace(worktree, sessionId);
@@ -588,7 +609,7 @@ describe('initWorkspace', () => {
     });
 
     it('creates separate session directories for different session IDs', async () => {
-      const worktree = path.resolve('.');
+      const worktree = worktreeDir;
 
       const a = await initWorkspace(worktree, 'session-a');
       const b = await initWorkspace(worktree, 'session-b');
@@ -601,41 +622,40 @@ describe('initWorkspace', () => {
   // ─── BAD ────────────────────────────────────────────────────
   describe('BAD', () => {
     it('rejects empty session ID', async () => {
-      await expect(initWorkspace(path.resolve('.'), '')).rejects.toThrow(WorkspaceError);
+      await expect(initWorkspace(worktreeDir, '')).rejects.toThrow(WorkspaceError);
     });
 
     it('rejects path-traversal session ID', async () => {
-      await expect(initWorkspace(path.resolve('.'), '..')).rejects.toThrow(WorkspaceError);
+      await expect(initWorkspace(worktreeDir, '..')).rejects.toThrow(WorkspaceError);
     });
   });
 
   // ─── CORNER ─────────────────────────────────────────────────
   describe('CORNER', () => {
     it('workspace.json mismatch: different canonicalRemote → throws WORKSPACE_MISMATCH', async () => {
-      const worktree = path.resolve('.');
+      const worktree = worktreeDir;
       const sessionId = 'test-session-003';
 
-      // First: create workspace normally
+      // First: create workspace normally against the configured test remote.
       const result = await initWorkspace(worktree, sessionId);
+      expect(result.info.canonicalRemote).not.toBeNull();
 
       // Tamper: overwrite workspace.json with different canonicalRemote but same fingerprint
-      if (result.info.canonicalRemote) {
-        const tamperedInfo = {
-          ...result.info,
-          canonicalRemote: 'repo://evil.com/different/repo',
-        };
-        await fs.writeFile(
-          path.join(result.workspaceDir, 'workspace.json'),
-          JSON.stringify(tamperedInfo, null, 2),
-          'utf-8',
-        );
+      const tamperedInfo = {
+        ...result.info,
+        canonicalRemote: 'repo://evil.com/different/repo',
+      };
+      await fs.writeFile(
+        path.join(result.workspaceDir, 'workspace.json'),
+        JSON.stringify(tamperedInfo, null, 2),
+        'utf-8',
+      );
 
-        await expect(initWorkspace(worktree, 'session-new')).rejects.toThrow('WORKSPACE_MISMATCH');
-      }
+      await expect(initWorkspace(worktree, 'session-new')).rejects.toThrow('WORKSPACE_MISMATCH');
     });
 
     it('handles corrupt workspace.json gracefully (throws READ_FAILED)', async () => {
-      const worktree = path.resolve('.');
+      const worktree = worktreeDir;
       const sessionId = 'test-session-004';
 
       // Create workspace first
@@ -663,11 +683,11 @@ describe('readWorkspaceInfo', () => {
   beforeEach(async () => {
     tmpDir = await createTmpDir();
     cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
+    await createWorktree();
   });
 
   afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
+    await runCleanups([async () => cleanupEnv(), async () => cleanTmpDir(tmpDir), removeWorktree]);
   });
 
   it('returns null for non-existent workspace', async () => {
@@ -676,7 +696,7 @@ describe('readWorkspaceInfo', () => {
   });
 
   it('returns workspace info after initWorkspace', async () => {
-    const worktree = path.resolve('.');
+    const worktree = worktreeDir;
     const { fingerprint } = await initWorkspace(worktree, 'sess-001');
     const info = await readWorkspaceInfo(fingerprint);
     expect(info).not.toBeNull();
