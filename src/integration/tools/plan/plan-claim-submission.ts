@@ -34,7 +34,7 @@ export function classifyPlanClaimSubmission(
 ): PlanClaimSubmissionClassification {
   if (args.claims === undefined) {
     const diagnostics = state.plan?.claimSubmissionDiagnostics;
-    const blocked = blockRejectedDeclarations(diagnostics);
+    const blocked = blockRejectedDeclarations(diagnostics, 'historical');
     return blocked ?? { kind: 'ok', args };
   }
   if (args.claims.length === 0) return { kind: 'ok', args };
@@ -82,7 +82,7 @@ export function classifyPlanClaimSubmission(
   if (rejected.length === 0) return { kind: 'ok', args };
 
   const diagnostics = buildPartialAcceptanceDiagnostics(normalized, batch, digest);
-  const blocked = blockRejectedDeclarations(diagnostics);
+  const blocked = blockRejectedDeclarations(diagnostics, 'submitted');
   if (blocked) return blocked;
 
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
@@ -96,25 +96,60 @@ export function classifyPlanClaimSubmission(
 
 function blockRejectedDeclarations(
   diagnostics: PlanClaimSubmissionDiagnostics | undefined,
+  origin: 'historical' | 'submitted',
 ): Extract<PlanClaimSubmissionClassification, { kind: 'blocked' }> | undefined {
-  const first = diagnostics?.rejectedClaims.find(
+  if (!diagnostics) return undefined;
+  const first = diagnostics.rejectedClaims.find(
     (claim) => claim.disposition === 'rejected_blocking',
   );
   if (!first) return undefined;
+  const canonicalResponse = formatBlocked(
+    'PROOFGRAPH_CLAIM_NOT_DECLARED',
+    {
+      claimRef: first.claimRef,
+      field: 'declaration admission',
+      detail:
+        'blocking declarations must be corrected or explicitly withdrawn before admitting this revision',
+      consequence: 'No plan version or independent review was created by this rejected call.',
+    },
+    { claimSubmissionDiagnostics: diagnostics, claimSubmissionDiagnosticsOrigin: origin },
+  );
   return {
     kind: 'blocked',
-    message: formatBlocked(
-      'PROOFGRAPH_CLAIM_NOT_DECLARED',
-      {
-        claimRef: first.claimRef,
-        field: 'declaration admission',
-        detail:
-          'blocking declarations must be corrected or explicitly withdrawn before admitting this revision',
-        consequence: 'No plan version or independent review was created by this rejected call.',
-      },
-      { claimSubmissionDiagnostics: diagnostics },
-    ),
+    message: appendClaimPresentation(canonicalResponse, diagnostics.rejectedClaims, origin),
   };
+}
+
+/** Append declaration details without replacing the canonical blocker or its recovery. */
+function appendClaimPresentation(
+  canonicalResponse: string,
+  claims: PlanClaimSubmissionDiagnostics['rejectedClaims'],
+  origin: 'historical' | 'submitted',
+): string {
+  const response = JSON.parse(canonicalResponse) as {
+    presentation: { markdown: string };
+    [key: string]: unknown;
+  };
+  const heading =
+    origin === 'historical'
+      ? 'Historical rejected declarations (carried over)'
+      : 'Declarations rejected by this call';
+  const declarations = claims
+    .map(
+      (claim) =>
+        `### ${claim.statement}\n\n` +
+        `- Claim: ${claim.claimRef}\n- Disposition: ${claim.disposition}\n\n` +
+        `${claim.reason}\n\nRecovery:\n` +
+        claim.recovery.map((step) => `- ${step}`).join('\n'),
+    )
+    .join('\n\n');
+  return JSON.stringify({
+    ...response,
+    presentation: {
+      ...response.presentation,
+      markdown: `${response.presentation.markdown}\n\n## ${heading}\n\n${declarations}`,
+    },
+  });
 }
 
 function buildPartialAcceptanceDiagnostics(

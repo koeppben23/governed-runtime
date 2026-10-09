@@ -5,6 +5,7 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { normalizePlanClaims } from '../../../state/proofgraph-approval.js';
 import type { PlanArgs } from './plan-types.js';
+import { formatBlocked } from '../../blocked-result.js';
 
 const claim = {
   statement: 'the API rejects invalid requests',
@@ -102,6 +103,61 @@ describe('plan claim admission boundary', () => {
     expect(JSON.parse(result.message).code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
   });
 
+  it('appends every rejection cause and recovery while preserving the canonical blocked envelope', () => {
+    const before = canonicalJsonStringify(state);
+    const result = classifyPlanClaimSubmission(
+      {
+        claims: [
+          {
+            ...claim,
+            critical: true,
+            counterexampleRequirement: { kind: 'aggregate_check', checkId: 'test' },
+          },
+          { ...claim, statement: 'request validation is complete', expectedCheckId: 'inactive' },
+        ],
+      },
+      state,
+      hashText,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind !== 'blocked') return;
+    const response = JSON.parse(result.message);
+    const rejected = response.claimSubmissionDiagnostics.rejectedClaims;
+    expect(rejected).toHaveLength(2);
+    expect(rejected[0].reason).toContain('assertion counterexample requirement');
+    expect(rejected[1].reason).toContain('expectedCheckId');
+    expect(rejected[1].reason).toContain('not an active check');
+    for (const entry of rejected) {
+      expect(response.presentation.markdown).toContain(entry.statement);
+      expect(response.presentation.markdown).toContain(entry.disposition);
+      expect(response.presentation.markdown).toContain(entry.reason);
+      for (const step of entry.recovery) expect(response.presentation.markdown).toContain(step);
+    }
+    const canonical = JSON.parse(
+      formatBlocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
+        claimRef: rejected[0].claimRef,
+        field: 'declaration admission',
+        detail:
+          'blocking declarations must be corrected or explicitly withdrawn before admitting this revision',
+        consequence: 'No plan version or independent review was created by this rejected call.',
+      }),
+    );
+    expect(response.presentation.markdown.startsWith(canonical.presentation.markdown)).toBe(true);
+    for (const key of [
+      'error',
+      'code',
+      'message',
+      'recovery',
+      'quickFix',
+      'diagnostics',
+      'headline',
+    ]) {
+      expect(response[key]).toEqual(canonical[key]);
+    }
+    expect(response.claimSubmissionDiagnosticsOrigin).toBe('submitted');
+    expect(canonicalJsonStringify(state)).toBe(before);
+  });
+
   it('blocks carried diagnostics but honors explicit withdrawal and fresh valid replacement', () => {
     const invalid = classifyPlanClaimSubmission(
       { claims: [{ ...claim, critical: true }] },
@@ -118,7 +174,21 @@ describe('plan claim admission boundary', () => {
         claimSubmissionDiagnostics: JSON.parse(invalid.message).claimSubmissionDiagnostics,
       },
     });
-    expect(classifyPlanClaimSubmission({}, prior, hashText).kind).toBe('blocked');
+    const before = canonicalJsonStringify(prior);
+    const carried = classifyPlanClaimSubmission({}, prior, hashText);
+    expect(carried.kind).toBe('blocked');
+    if (carried.kind !== 'blocked') return;
+    const response = JSON.parse(carried.message);
+    expect(response.claimSubmissionDiagnosticsOrigin).toBe('historical');
+    expect(response.presentation.markdown).toContain(
+      'Historical rejected declarations (carried over)',
+    );
+    expect(response.claimSubmissionDiagnostics).toEqual(prior.plan?.claimSubmissionDiagnostics);
+    for (const entry of response.claimSubmissionDiagnostics.rejectedClaims) {
+      expect(response.presentation.markdown).toContain(entry.reason);
+      for (const step of entry.recovery) expect(response.presentation.markdown).toContain(step);
+    }
+    expect(canonicalJsonStringify(prior)).toBe(before);
     expect(classifyPlanClaimSubmission({ claims: [] }, prior, hashText)).toEqual({
       kind: 'ok',
       args: { claims: [] },

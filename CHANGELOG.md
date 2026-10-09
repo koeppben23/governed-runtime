@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejection disposition now comes from the canonical admission batch, including
   noncritical incomplete contracts; explicit `claims: []` remains withdrawal.
   Recovery distinguishes submission, plan approval and evidence approval phases.
+  The blocking presentation retains the canonical blocker and appends every
+  rejected declaration's statement, disposition, reason and recovery; carried
+  rejection diagnostics are explicitly identified as historical.
 
 - **Rejected plan claims name their consequence, transition, and withdrawal
   path.** `PROOFGRAPH_CLAIM_NOT_DECLARED` no longer labels blocking critical

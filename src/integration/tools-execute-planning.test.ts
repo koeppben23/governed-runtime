@@ -294,7 +294,7 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
-    it('records an unsupported critical suite claim as a blocking diagnostic with withdrawal guidance', async () => {
+    it('presents multiple rejection causes without spending state, audit or review authority', async () => {
       await hydrateAndTicket();
       const sessionDir = await currentSessionDir();
       const state = await readState(sessionDir);
@@ -344,8 +344,15 @@ describe('plan', () => {
             },
             {
               statement: 'the repository test suite passes',
-              critical: true,
+              critical: false,
               claimScope: 'suite',
+              expectedCheckId: 'inactive',
+              authoritySectionId: 'step-1',
+            },
+            {
+              statement: 'request validation rejects invalid input',
+              critical: true,
+              claimScope: 'specific_behavior',
               expectedCheckId: 'test',
               authoritySectionId: 'step-1',
             },
@@ -361,6 +368,11 @@ describe('plan', () => {
         rejectedClaims: [
           {
             statement: 'the repository test suite passes',
+            disposition: 'rejected_blocking',
+            code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          },
+          {
+            statement: 'request validation rejects invalid input',
             disposition: 'rejected_blocking',
             code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
           },
@@ -381,6 +393,11 @@ describe('plan', () => {
       // The recovery must name the state transition out of the blocked gate:
       // /plan is not admissible at PLAN_REVIEW, so changes_requested comes first.
       expect(rejected.recovery).toContainEqual(expect.stringContaining('changes_requested'));
+      const markdown = (result.presentation as { markdown: string }).markdown;
+      expect(markdown).toContain('the repository test suite passes');
+      expect(markdown).toContain('request validation rejects invalid input');
+      expect(markdown).toContain('expectedCheckId');
+      expect(markdown).toContain('counterexampleRequirement');
       const persisted = await readState(sessionDir);
       expect(persisted).toEqual(beforeAdmission);
       expect(persisted?.phase).toBe('TICKET');
