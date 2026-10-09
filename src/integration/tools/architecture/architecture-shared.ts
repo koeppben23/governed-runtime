@@ -7,13 +7,15 @@
 
 import { formatBlocked } from '../../blocked-result.js';
 import { validateAdrSections } from '../../../state/evidence.js';
-import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
+import {
+  ArchitectureClaimDeclarationInput,
+  normalizeArchitectureClaims,
+} from '../../../state/proofgraph-approval.js';
 import { IntegrationInvariantError } from '../../errors.js';
 
 import type { MutableSession } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict } from '../../../state/evidence.js';
-import type { ArchitectureClaimDeclarationInput } from '../../../state/proofgraph-approval.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { classifyToolCallMode } from '../review-validation-mode.js';
@@ -42,6 +44,51 @@ export type ArchitectureSession = MutableSession;
 
 export function hasText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+export type ArchitectureClaimsParseResult =
+  | { readonly kind: 'ok'; readonly claims: ArchitectureClaimDeclarationInput[] | undefined }
+  | { readonly kind: 'blocked'; readonly message: string };
+
+/**
+ * Validate architecture claim declarations at the tool boundary.
+ *
+ * The host may deliver raw model args that never passed the declared Zod
+ * schema (defaults/strictness are not applied on every host path), so the
+ * normalizer must only ever see schema-valid claims. Invalid input fails
+ * closed with a typed blocked result instead of a raw spread TypeError.
+ */
+export function parseArchitectureClaimsInput(
+  claims: readonly unknown[] | undefined,
+): ArchitectureClaimsParseResult {
+  if (claims === undefined) return { kind: 'ok', claims: undefined };
+  if (!Array.isArray(claims)) {
+    return {
+      kind: 'blocked',
+      message: formatBlocked('ARCHITECTURE_CLAIM_INVALID', {
+        index: '1',
+        field: 'claims',
+        detail: 'claims must be an array of architecture claim declarations',
+      }),
+    };
+  }
+  const parsed: ArchitectureClaimDeclarationInput[] = [];
+  for (const [index, claim] of claims.entries()) {
+    const result = ArchitectureClaimDeclarationInput.safeParse(claim);
+    if (!result.success) {
+      const issue = result.error.issues[0];
+      return {
+        kind: 'blocked',
+        message: formatBlocked('ARCHITECTURE_CLAIM_INVALID', {
+          index: String(index + 1),
+          field: issue?.path.join('.') || 'claim',
+          detail: issue?.message ?? 'invalid claim declaration',
+        }),
+      };
+    }
+    parsed.push(result.data);
+  }
+  return { kind: 'ok', claims: parsed };
 }
 
 /** Argument-shape validation only — never gates on obligation lifecycle state. */
@@ -177,8 +224,34 @@ export function resolveRestartRevision(
       'an architecture review restart resolution requires ADR state',
     );
   }
+  // Claim validation runs on every restart revision, including an unchanged
+  // ADR: a claim-only revision must be validated instead of silently ignored.
+  const parsedClaims = parseArchitectureClaimsInput(args.claims);
+  if (parsedClaims.kind === 'blocked') {
+    return { kind: 'blocked', blocked: parsedClaims.message };
+  }
+  let claimDeclarations:
+    | {
+        flow: 'architecture';
+        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
+      }
+    | undefined;
+  if (parsedClaims.claims !== undefined) {
+    const normalizedClaims = normalizeArchitectureClaims(parsedClaims.claims);
+    if (normalizedClaims === undefined) {
+      throw new IntegrationInvariantError(
+        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
+        'normalizing submitted architecture claims produced no canonical declarations',
+      );
+    }
+    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
+  }
   if (sameRevision) {
-    return { kind: 'ok', nextAdr: architecture, revisionDelta: 'none' };
+    return {
+      kind: 'ok',
+      nextAdr: claimDeclarations ? { ...architecture, claimDeclarations } : architecture,
+      revisionDelta: 'none',
+    };
   }
   const adrText = args.adrText;
   if (adrText === undefined) {
@@ -195,22 +268,6 @@ export function resolveRestartRevision(
         sections: missingSections.join(', '),
       }),
     };
-  }
-  let claimDeclarations:
-    | {
-        flow: 'architecture';
-        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
-      }
-    | undefined;
-  if (args.claims) {
-    const normalizedClaims = normalizeArchitectureClaims(args.claims);
-    if (normalizedClaims === undefined) {
-      throw new IntegrationInvariantError(
-        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
-        'normalizing submitted architecture claims produced no canonical declarations',
-      );
-    }
-    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
   }
   return {
     kind: 'ok',

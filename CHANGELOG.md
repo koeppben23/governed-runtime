@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Architecture claims are validated at the tool boundary.** Schema-invalid or
+  plan-shaped architecture claims previously crashed `flowguard_architecture`
+  with an untyped `INTERNAL_ERROR` (spread over a missing
+  `requiredReviewEvidence`). They now block with `ARCHITECTURE_CLAIM_INVALID`
+  and recovery guidance, leaving phase and state unchanged; the normalizers only
+  run on schema-valid input. The review-revision path validates the same way.
+
 - **The verified completion export is immutable across `/archive`.** `/export`
   now materializes `export-{sessionId}.tar.gz`, the user archive keeps
   `{sessionId}.tar.gz`, and regulated evidence keeps

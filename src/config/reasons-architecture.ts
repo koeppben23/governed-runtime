@@ -41,6 +41,20 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'ARCHITECTURE_CLAIM_INVALID',
+    category: 'input',
+    messageTemplate:
+      'Architecture claim {index} is not a valid declaration: {field} — {detail}. Architecture claims carry statement, critical, authoritySectionId, and requiredReviewEvidence; plan-only fields are not accepted.',
+    recoverySteps: [
+      'Submit each architecture claim with statement, critical, authoritySectionId, and requiredReviewEvidence (optional: assumptions)',
+      'Remove plan-only fields from architecture claims, for example claimScope, expectedCheckId, counterexampleRequirement, structuralSurface, and mutationProfile',
+      'New ADR submission: if no claims are needed, omit the claims array entirely',
+      'Revising an existing ADR: pass an explicit empty claims array (claims: []) to withdraw the previous declarations; omitting claims keeps them',
+    ],
+    quickFixCommand: '/architecture',
+  },
+
+  {
     code: 'ADR_APPROVE_WITH_TEXT',
     category: 'precondition',
     messageTemplate:

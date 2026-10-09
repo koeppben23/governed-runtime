@@ -655,6 +655,17 @@ names: completion export `export-{sessionId}.tar.gz`, regulated evidence
 file-scoped publication bindings. No schema change; no compatibility aliases
 (hard-cut contract).
 
+## 2026-10-09 — Architecture Claim Input Crash (Run 7, #1057)
+
+`flowguard_architecture` Mode A crashed with an untyped `INTERNAL_ERROR:
+Spread syntax requires ...iterable not be null or undefined` when claims carried
+the plan-only shape and no `requiredReviewEvidence`; the projection introduced
+by #1052 spread a missing array. Fixed by validating architecture claims at the
+tool boundary against the strict `ArchitectureClaimDeclarationInput` schema on
+both the submission and revision paths, returning the new typed
+`ARCHITECTURE_CLAIM_INVALID` block with recovery guidance. Fail-closed behavior
+is unchanged (no state write); valid and claim-free submissions still work.
+
 ## Maintenance Rules
 
 - Keep this file aligned with #487 and child issues.

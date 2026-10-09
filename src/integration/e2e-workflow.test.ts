@@ -1076,6 +1076,63 @@ describe('e2e-workflow', () => {
       expect(state!.architecture!.status).toBe('accepted');
     });
 
+    it('architecture rejects plan-shaped claims with a typed input error and no state write', async () => {
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+      const sessDir = await getSessDir();
+      const before = await readState(sessDir);
+      const adrText =
+        '## Context\nNull handling.\n\n## Decision\nThrow 404.\n\n## Consequences\nClients see 404.';
+
+      // Run-7 payload: plan-shaped claims without requiredReviewEvidence.
+      const raw = await architecture.execute(
+        {
+          title: 'Null-safety standard',
+          adrText,
+          claims: [
+            {
+              statement: 'missing ids return 404',
+              critical: true,
+              authoritySectionId: 'decision',
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ARCHITECTURE_CLAIM_INVALID');
+      expect(String(result.message)).toContain('requiredReviewEvidence');
+
+      // Fail-closed: no phase change, no architecture state written.
+      expect(await getPhase()).toBe('READY');
+      expect(await readState(sessDir)).toEqual(before);
+    });
+
+    it('architecture accepts schema-valid claims', async () => {
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+      const adrText =
+        '## Context\nClaims.\n\n## Decision\nUse claims.\n\n## Consequences\nBound evidence.';
+      await callOk(architecture, {
+        title: 'Claimed ADR',
+        adrText,
+        claims: [
+          {
+            statement: 'the decision keeps service data durable',
+            critical: true,
+            authoritySectionId: 'decision',
+            requiredReviewEvidence: ['architecture-review'],
+          },
+        ],
+        targetPaths: ['docs/test.md'],
+      });
+      expect(await getPhase()).toBe('ARCHITECTURE');
+      const state = await readState(await getSessDir());
+      expect(state!.architecture!.claimDeclarations?.claims).toHaveLength(1);
+    });
+
     it('architecture reject at ARCH_REVIEW transitions to terminal REJECTED and preserves evidence', async () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       const adrText =

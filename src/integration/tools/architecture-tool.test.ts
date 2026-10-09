@@ -1100,4 +1100,55 @@ describe('integration/tools/architecture (wrapper)', () => {
       expect(schema.safeParse({ reviewVerdict: 'accept' }).success).toBe(true);
     });
   });
+
+  describe('parseArchitectureClaimsInput', () => {
+    const validClaim = {
+      statement: 'the decision keeps service data durable',
+      critical: true,
+      authoritySectionId: 'decision',
+      requiredReviewEvidence: ['architecture-review'],
+    };
+
+    it('accepts schema-valid claims and passes them through', async () => {
+      const { parseArchitectureClaimsInput } =
+        await import('./architecture/architecture-shared.js');
+      expect(parseArchitectureClaimsInput([validClaim])).toEqual({
+        kind: 'ok',
+        claims: [validClaim],
+      });
+      expect(parseArchitectureClaimsInput(undefined)).toEqual({ kind: 'ok', claims: undefined });
+    });
+
+    it('rejects a non-array claims payload with a typed block', async () => {
+      const { parseArchitectureClaimsInput } =
+        await import('./architecture/architecture-shared.js');
+      const result = parseArchitectureClaimsInput({} as unknown as readonly unknown[] | undefined);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.message).toContain('ARCHITECTURE_CLAIM_INVALID');
+        expect(result.message).toContain('claims');
+      }
+    });
+
+    it('rejects plan-shaped claims and reports the failing position and field', async () => {
+      const { parseArchitectureClaimsInput } =
+        await import('./architecture/architecture-shared.js');
+      const result = parseArchitectureClaimsInput([
+        validClaim,
+        {
+          statement: 'missing ids return 404',
+          critical: true,
+          authoritySectionId: 'decision',
+          claimScope: 'specific_behavior',
+          expectedCheckId: 'test',
+        },
+      ]);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.message).toContain('ARCHITECTURE_CLAIM_INVALID');
+        expect(result.message).toContain('"index":"2"');
+        expect(result.message).toContain('requiredReviewEvidence');
+      }
+    });
+  });
 });
