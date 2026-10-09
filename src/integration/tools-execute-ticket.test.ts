@@ -260,6 +260,25 @@ describe('ticket', () => {
   });
 
   describe('EDGE', () => {
+    it('defaults source to user when the host omits it for repository-file adoption', async () => {
+      await hydrateSession();
+      await fs.writeFile(path.join(ws.tmpDir, 'TICKET_DOCS.md'), 'Adopt build docs', 'utf-8');
+      const raw = await ticket.execute(
+        { ticketSource: { kind: 'repository_file', path: 'TICKET_DOCS.md' } },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('TICKET');
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.ticket!.source).toBe('user');
+      expect(state!.ticket!.text).toBe('Adopt build docs');
+    });
+
     it('accepts external source', async () => {
       await hydrateSession();
       const raw = await ticket.execute({ text: 'JIRA-1234: Fix bug', source: 'external' }, ctx);

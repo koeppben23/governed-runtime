@@ -120,11 +120,40 @@ export type PlanClaimDeclarationInput = z.infer<typeof PlanClaimDeclarationInput
  * Normalize architecture claim inputs to persisted declarations by minting a
  * deterministic claimId host-side.
  */
+/**
+ * Project a counterexample requirement onto its declared fields. Inputs arrive
+ * from the host model, so undeclared keys must not leak into persisted state;
+ * the strict declaration schema downstream would refuse the whole write.
+ */
+function projectCounterexampleRequirement(
+  requirement: CounterexampleRequirement | undefined,
+): CounterexampleRequirement | undefined {
+  if (requirement === undefined) return undefined;
+  return requirement.kind === 'aggregate_check'
+    ? {
+        kind: 'aggregate_check',
+        checkId: requirement.checkId,
+        ...(requirement.candidateId !== undefined ? { candidateId: requirement.candidateId } : {}),
+      }
+    : {
+        kind: 'assertion',
+        checkId: requirement.checkId,
+        assertion: {
+          providerId: requirement.assertion.providerId,
+          localId: requirement.assertion.localId,
+        },
+      };
+}
+
 export function normalizeArchitectureClaims(
   claims: readonly ArchitectureClaimDeclarationInput[] | undefined,
 ): ArchitectureClaimDeclaration[] | undefined {
   return claims?.map((claim) => ({
-    ...claim,
+    statement: claim.statement,
+    critical: claim.critical,
+    authoritySectionId: claim.authoritySectionId,
+    requiredReviewEvidence: [...claim.requiredReviewEvidence],
+    ...(claim.assumptions !== undefined ? { assumptions: [...claim.assumptions] } : {}),
     claimId: mintProofGraphClaimId({
       domain: 'architecture',
       statement: claim.statement,
@@ -140,14 +169,28 @@ export function normalizeArchitectureClaims(
 export function normalizePlanClaims(
   claims: readonly PlanClaimDeclarationInput[] | undefined,
 ): z.infer<typeof V2PlanClaimDeclaration>[] | undefined {
-  return claims?.map((claim) => ({
-    ...claim,
-    claimId: mintProofGraphClaimId({
-      domain: 'plan',
+  return claims?.map((claim) => {
+    const counterexampleRequirement = projectCounterexampleRequirement(
+      claim.counterexampleRequirement,
+    );
+    return {
       statement: claim.statement,
+      critical: claim.critical,
       authoritySectionId: claim.authoritySectionId,
-    }),
-  }));
+      claimScope: claim.claimScope,
+      expectedCheckId: claim.expectedCheckId,
+      ...(counterexampleRequirement !== undefined ? { counterexampleRequirement } : {}),
+      ...(claim.structuralSurface !== undefined
+        ? { structuralSurface: claim.structuralSurface }
+        : {}),
+      ...(claim.mutationProfile !== undefined ? { mutationProfile: claim.mutationProfile } : {}),
+      claimId: mintProofGraphClaimId({
+        domain: 'plan',
+        statement: claim.statement,
+        authoritySectionId: claim.authoritySectionId,
+      }),
+    };
+  });
 }
 
 /** An ADR claim names the review evidence and assumptions for the decision. */

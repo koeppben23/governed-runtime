@@ -11,7 +11,10 @@ import {
   PlanApprovalCertificate,
   ReviewBinding,
   mintProofGraphClaimId,
+  normalizeArchitectureClaims,
+  normalizePlanClaims,
   PlanClaimDeclarationInput,
+  ArchitectureClaimDeclaration,
   ArchitectureClaimDeclarationInput,
   hasCurrentPlanApprovalCertificate,
   type PlanClaimAuthority,
@@ -628,5 +631,62 @@ describe('read-model schema boundaries', () => {
       kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'x#y' },
     });
+  });
+});
+
+describe('claim input normalization', () => {
+  it('projects plan claim inputs onto the declared fields', () => {
+    const normalized = normalizePlanClaims([
+      {
+        statement: 'documented behavior stays stable',
+        critical: true,
+        authoritySectionId: 'step-1',
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+        counterexampleRequirement: {
+          kind: 'assertion',
+          checkId: 'test',
+          assertion: { providerId: 'junit', localId: 'A#b' },
+          undeclaredNested: 'leak',
+        },
+        structuralSurface: 'api',
+        mutationProfile: 'proofgraph-evaluator',
+        undeclaredTopLevel: 'leak',
+      } as unknown as PlanClaimDeclarationInput,
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    const declaration = normalized![0]!;
+    // Host-supplied undeclared keys must not leak into persisted state; the
+    // strict declaration schema would otherwise refuse the whole write.
+    expect(declaration).not.toHaveProperty('undeclaredTopLevel');
+    expect(declaration.counterexampleRequirement).toEqual({
+      kind: 'assertion',
+      checkId: 'test',
+      assertion: { providerId: 'junit', localId: 'A#b' },
+    });
+    expect(PlanClaimDeclaration.safeParse(declaration).success).toBe(true);
+  });
+
+  it('projects architecture claim inputs onto the declared fields', () => {
+    const normalized = normalizeArchitectureClaims([
+      {
+        statement: 'the decision keeps service data durable',
+        critical: true,
+        authoritySectionId: 'Decision',
+        requiredReviewEvidence: ['architecture-review'],
+        assumptions: ['single writer'],
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+      } as unknown as ArchitectureClaimDeclarationInput,
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    const declaration = normalized![0]!;
+    expect(declaration).not.toHaveProperty('claimScope');
+    expect(declaration).not.toHaveProperty('expectedCheckId');
+    expect(declaration.requiredReviewEvidence).toEqual(['architecture-review']);
+    expect(declaration.assumptions).toEqual(['single writer']);
+    expect(ArchitectureClaimDeclaration.safeParse(declaration).success).toBe(true);
   });
 });

@@ -44,11 +44,11 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
     category: 'precondition',
     messageTemplate:
-      "Non-critical claim '{claimRef}' was not admitted to the ProofGraph: {field} — {detail}. The plan and its accepted claims remain valid.",
+      "Claim '{claimRef}' was not admitted to the ProofGraph: {field} — {detail}. {consequence}",
     recoverySteps: [
-      'Keep the related command as a Verification obligation when no ProofGraph authority is required',
+      'Request changes with the review decision (`changes_requested`) to return the session to PLAN — `/plan` is not admissible at PLAN_REVIEW',
+      'Then resubmit `/plan` with the corrected declaration set, or with an explicit empty claims array (claims: []) to withdraw the rejected declarations',
       'Narrow the claim to a concrete behavior with assertion-capable evidence, or select a provider with explicit aggregate full-check completeness authority',
-      'Submit a plan revision only if suite-level ProofGraph authority is required',
     ],
   },
 

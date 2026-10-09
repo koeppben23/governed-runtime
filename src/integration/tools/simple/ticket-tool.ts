@@ -184,11 +184,14 @@ export const ticket: ToolDefinition = {
           async ({ worktree, sessDir, state, ctx }): Promise<ToolResult> => {
             const resolved = resolveCanonicalTicketSource(worktree, args);
             if (resolved.kind === 'blocked') return formatBlocked(resolved.code);
+            // Hosts that do not apply the declared arg defaults deliver
+            // `source` as undefined; resolve the documented default here so the
+            // value never reaches state validation unset.
             const result = executeTicket(
               state,
               {
                 text: resolved.text,
-                source: args.source,
+                source: args.source ?? 'user',
                 ...(resolved.inputOrigin !== undefined
                   ? { inputOrigin: resolved.inputOrigin }
                   : {}),

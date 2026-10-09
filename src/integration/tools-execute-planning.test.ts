@@ -294,7 +294,7 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
-    it('admits valid claims while recording an unsupported non-critical suite claim as diagnostic', async () => {
+    it('records an unsupported critical suite claim as a blocking diagnostic with withdrawal guidance', async () => {
       await hydrateAndTicket();
       const sessionDir = await currentSessionDir();
       const state = await readState(sessionDir);
@@ -368,6 +368,24 @@ describe('plan', () => {
       );
       expect((result.presentation as { markdown: string }).markdown).toContain('## Next action');
 
+      // The blocking consequence must be named, the claim must not be
+      // mislabeled as non-critical, and the recovery must name the explicit
+      // withdrawal mechanism (empty claims array) for a claim-free revision.
+      const rejected = (
+        result.claimSubmissionDiagnostics as {
+          rejectedClaims: { reason: string; recovery: string[] }[];
+        }
+      ).rejectedClaims[0]!;
+      expect(rejected.reason).toContain('Rejected critical claims block evidence approval');
+      expect(rejected.reason).not.toContain('Non-critical');
+      expect(rejected.recovery).toContainEqual(expect.stringContaining('claims: []'));
+      // The recovery must name the state transition out of the blocked gate:
+      // /plan is not admissible at PLAN_REVIEW, so changes_requested comes first.
+      expect(rejected.recovery).toContainEqual(expect.stringContaining('changes_requested'));
+      expect((result.presentation as { markdown: string }).markdown).toContain(
+        'Rejected critical claims block evidence approval',
+      );
+
       const persisted = await readState(sessionDir);
       expect(persisted?.plan?.claimDeclarations?.claims).toHaveLength(1);
       expect(persisted?.plan?.claimDeclarations?.claims[0]?.statement).toBe(
@@ -380,6 +398,161 @@ describe('plan', () => {
           rejectedClaims: [{ statement: 'the repository test suite passes' }],
         },
       ]);
+    });
+
+    it('records an unsatisfiable non-critical claim as a non-blocking diagnostic', async () => {
+      await hydrateAndTicket();
+      const sessionDir = await currentSessionDir();
+      const state = await readState(sessionDir);
+      await writeState(sessionDir, {
+        ...state!,
+        activeChecks: ['test'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'structured',
+            candidateId: 'vc_test_junit',
+            kind: 'test',
+            command: 'npm test',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'repo test script',
+            assertionReport: {
+              collection: 'snapshot_diff',
+              transport: 'file',
+              format: 'junit_xml',
+              providerId: 'junit',
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+          },
+        ],
+      });
+
+      const raw = await plan.execute(
+        {
+          planText: '## Plan\n1. Document behavior',
+          claims: [
+            {
+              statement: 'the mutation profile stays clean',
+              critical: false,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+              mutationProfile: 'proofgraph-evaluator',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.claimSubmissionDiagnostics).toMatchObject({
+        rejectedClaims: [
+          {
+            disposition: 'rejected_non_blocking',
+            code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          },
+        ],
+      });
+      const rejected = (
+        result.claimSubmissionDiagnostics as {
+          rejectedClaims: { reason: string }[];
+        }
+      ).rejectedClaims[0]!;
+      expect(rejected.reason).toContain('The plan and its accepted claims remain valid.');
+      expect(rejected.reason).not.toContain('Non-critical');
+
+      // A non-blocking-only rejection must not tell the user that approval is
+      // blocked, nor that critical claims were rejected.
+      const presentation = (result.presentation as { markdown: string }).markdown;
+      expect(presentation).toContain('non-blocking');
+      expect(presentation).not.toContain('block evidence approval');
+      expect(presentation).not.toContain('rejected critical');
+    });
+
+    it('unblocks a rejected-claims plan approval through changes_requested and a claim-withdrawing revision', async () => {
+      // Team mode keeps the human gate: solo would auto-approve the plan.
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      const sessionDir = await currentSessionDir();
+
+      // Plan v1 carries a critical claim without a counterexample requirement.
+      const v1Raw = await plan.execute(
+        {
+          planText: '## Plan v1\n1. Fix missing task updates',
+          claims: [
+            {
+              statement: 'missing task updates return 404',
+              critical: true,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      expect(parseToolResult(v1Raw).error).toBeUndefined();
+      const afterPlan = await readState(sessionDir);
+      expect(afterPlan?.phase).toBe('PLAN');
+      expect(afterPlan?.plan?.claimSubmissionDiagnostics?.rejectedClaims[0]?.disposition).toBe(
+        'rejected_blocking',
+      );
+
+      const firstFindings = await fulfillPlanReview(0, 'accept');
+      await plan.execute({ reviewVerdict: 'accept', reviewFindings: firstFindings }, ctx);
+      expect((await readState(sessionDir))?.phase).toBe('PLAN_REVIEW');
+
+      recordUserDecision('approve');
+      const blockedRaw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const blocked = parseToolResult(blockedRaw);
+      expect(blocked.error).toBe(true);
+      expect(blocked.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+      expect(blocked.recovery as string[]).toContainEqual(
+        expect.stringContaining('changes_requested'),
+      );
+      expect(blocked.recovery as string[]).toContainEqual(expect.stringContaining('claims: []'));
+
+      // The documented recovery: the gate returns to PLAN via the decision.
+      recordUserDecision('changes_requested');
+      const backRaw = await decision.execute(
+        { verdict: 'changes_requested', rationale: 'Withdraw the rejected declaration' },
+        ctx,
+      );
+      expect(parseToolResult(backRaw).error).not.toBe(true);
+      expect((await readState(sessionDir))?.phase).toBe('PLAN');
+
+      // An explicit empty claims array withdraws the rejected declarations.
+      await plan.execute(
+        {
+          planText: '## Plan v2\n1. Document the fix',
+          claims: [],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const revised = await readState(sessionDir);
+      expect(revised?.plan?.claimDeclarations?.claims).toHaveLength(0);
+      expect(revised?.plan?.claimSubmissionDiagnostics?.rejectedClaims ?? []).toHaveLength(0);
+
+      const secondFindings = await fulfillStrictReviewObligation(sessionDir, {
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 2,
+        overallVerdict: 'accept',
+      });
+      await plan.execute({ reviewVerdict: 'accept', reviewFindings: secondFindings }, ctx);
+      expect((await readState(sessionDir))?.phase).toBe('PLAN_REVIEW');
+
+      // The stale rejected-claim blocker must be gone: approval now advances.
+      recordUserDecision('approve');
+      const approvedRaw = await decision.execute(
+        { verdict: 'approve', rationale: 'Accepted after withdrawal' },
+        ctx,
+      );
+      expect(parseToolResult(approvedRaw).error).not.toBe(true);
+      expect((await readState(sessionDir))?.phase).toBe('IMPLEMENTATION');
     });
 
     it('Mode B: approve converges after mandatory subagent review', async () => {
