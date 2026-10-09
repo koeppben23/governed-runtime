@@ -171,13 +171,16 @@ function rejectedCriticalClaimBlock(state: SessionState): RailBlocked | null {
   const claim = state.plan?.claimSubmissionDiagnostics?.rejectedClaims.find(
     (item) => item.disposition === 'rejected_blocking',
   );
-  return claim
-    ? blocked('PROOFGRAPH_CLAIM_NOT_DECLARED', {
-        claimRef: claim.claimRef,
-        field: 'claim declaration',
-        detail: claim.reason,
-      })
-    : null;
+  if (!claim) return null;
+  // The diagnostics persist the canonical registry-formatted reason and
+  // recovery; re-formatting the catalog entry here would nest the message
+  // inside itself and duplicate the recovery guidance.
+  return {
+    kind: 'blocked',
+    code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+    reason: claim.reason,
+    recovery: claim.recovery,
+  };
 }
 
 /** True when the decision is a human approval at the plan or evidence gate. */

@@ -118,6 +118,11 @@ function buildPartialAcceptanceDiagnostics(
         claimRef: claimId,
         field: result.field,
         detail: result.detail,
+        // The same catalog code covers partial acceptance and the blocking
+        // withdrawal case; the consequence sentence must follow the severity.
+        consequence: claim.critical
+          ? 'Rejected critical claims block evidence approval until they are admitted or explicitly withdrawn in a new plan revision.'
+          : 'The plan and its accepted claims remain valid.',
       });
       return {
         claimRef: claimId,

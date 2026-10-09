@@ -200,6 +200,62 @@ describe('review-decision rail', () => {
     }
   });
 
+  it('blocks plan approval on persisted rejected critical claims without re-formatting the diagnostic', () => {
+    const rejectedClaimRef = '00000000-0000-4000-8000-000000000009';
+    const rejectedReason =
+      `Claim '${rejectedClaimRef}' was not admitted to the ProofGraph: counterexampleRequirement — ` +
+      'a critical claim requires a counterexample requirement; without it the claim can never become PROVEN. ' +
+      'Rejected critical claims block evidence approval until they are admitted or explicitly withdrawn in a new plan revision.';
+    const rejectedRecovery = [
+      'Correct the rejected declaration and resubmit the complete declaration set in a new plan revision',
+      'If no ProofGraph authority is required, resubmit the plan revision with an explicit empty claims array (claims: []) to withdraw the rejected declarations',
+    ];
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        reviewFindings: [],
+        claimDeclarations: emptyClaimDeclarations('plan'),
+        reviewCompletion: 'reviewer_accepted',
+        claimSubmissionDiagnostics: {
+          submittedClaimDeclarationsDigest: 'a'.repeat(64),
+          acceptedClaimDeclarationsDigest: hashText(
+            canonicalJsonStringify(emptyClaimDeclarations('plan')),
+          ),
+          rejectedClaims: [
+            {
+              claimRef: rejectedClaimRef,
+              statement: 'the repository test suite passes',
+              critical: true,
+              disposition: 'rejected_blocking',
+              code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+              reason: rejectedReason,
+              recovery: rejectedRecovery,
+            },
+          ],
+        },
+      },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+      }),
+    });
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+      // The persisted canonical diagnostic is surfaced verbatim; a second
+      // registry pass would nest "claim declaration — <reason>" inside itself.
+      expect(result.reason).toBe(rejectedReason);
+      expect(result.recovery).toEqual(rejectedRecovery);
+    }
+  });
+
   it('preserves the decision evidence when changes_requested clears the persisted decision', () => {
     const state = makeState('PLAN_REVIEW', {
       plan: {

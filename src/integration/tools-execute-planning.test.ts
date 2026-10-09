@@ -294,7 +294,7 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
-    it('admits valid claims while recording an unsupported non-critical suite claim as diagnostic', async () => {
+    it('records an unsupported critical suite claim as a blocking diagnostic with withdrawal guidance', async () => {
       await hydrateAndTicket();
       const sessionDir = await currentSessionDir();
       const state = await readState(sessionDir);
@@ -368,6 +368,21 @@ describe('plan', () => {
       );
       expect((result.presentation as { markdown: string }).markdown).toContain('## Next action');
 
+      // The blocking consequence must be named, the claim must not be
+      // mislabeled as non-critical, and the recovery must name the explicit
+      // withdrawal mechanism (empty claims array) for a claim-free revision.
+      const rejected = (
+        result.claimSubmissionDiagnostics as {
+          rejectedClaims: { reason: string; recovery: string[] }[];
+        }
+      ).rejectedClaims[0]!;
+      expect(rejected.reason).toContain('Rejected critical claims block evidence approval');
+      expect(rejected.reason).not.toContain('Non-critical');
+      expect(rejected.recovery).toContainEqual(expect.stringContaining('claims: []'));
+      expect((result.presentation as { markdown: string }).markdown).toContain(
+        'Rejected critical claims block evidence approval',
+      );
+
       const persisted = await readState(sessionDir);
       expect(persisted?.plan?.claimDeclarations?.claims).toHaveLength(1);
       expect(persisted?.plan?.claimDeclarations?.claims[0]?.statement).toBe(
@@ -380,6 +395,69 @@ describe('plan', () => {
           rejectedClaims: [{ statement: 'the repository test suite passes' }],
         },
       ]);
+    });
+
+    it('records an unsatisfiable non-critical claim as a non-blocking diagnostic', async () => {
+      await hydrateAndTicket();
+      const sessionDir = await currentSessionDir();
+      const state = await readState(sessionDir);
+      await writeState(sessionDir, {
+        ...state!,
+        activeChecks: ['test'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'structured',
+            candidateId: 'vc_test_junit',
+            kind: 'test',
+            command: 'npm test',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'repo test script',
+            assertionReport: {
+              collection: 'snapshot_diff',
+              transport: 'file',
+              format: 'junit_xml',
+              providerId: 'junit',
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+          },
+        ],
+      });
+
+      const raw = await plan.execute(
+        {
+          planText: '## Plan\n1. Document behavior',
+          claims: [
+            {
+              statement: 'the mutation profile stays clean',
+              critical: false,
+              claimScope: 'specific_behavior',
+              expectedCheckId: 'test',
+              authoritySectionId: 'step-1',
+              mutationProfile: 'proofgraph-evaluator',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.claimSubmissionDiagnostics).toMatchObject({
+        rejectedClaims: [
+          {
+            disposition: 'rejected_non_blocking',
+            code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          },
+        ],
+      });
+      const rejected = (
+        result.claimSubmissionDiagnostics as {
+          rejectedClaims: { reason: string }[];
+        }
+      ).rejectedClaims[0]!;
+      expect(rejected.reason).toContain('The plan and its accepted claims remain valid.');
+      expect(rejected.reason).not.toContain('Non-critical');
     });
 
     it('Mode B: approve converges after mandatory subagent review', async () => {

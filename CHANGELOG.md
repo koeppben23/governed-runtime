@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Rejected plan claims name their consequence and withdrawal path.**
+  `PROOFGRAPH_CLAIM_NOT_DECLARED` no longer labels blocking critical
+  declarations as "non-critical": the persisted diagnostic now states whether
+  evidence approval is blocked or the accepted claims remain valid, and the
+  recovery steps name the explicit empty `claims: []` plan revision that
+  withdraws rejected declarations. The plan-approval gate surfaces the stored
+  diagnostic verbatim instead of nesting the catalog message inside itself.
+
 - **Terminal command admissibility is enforced (#1034).** Hydrate and abort
   entrypoints consult the canonical command policy. A terminal hydrate reload is
   strictly read-only — no state write, no artifact/discovery/outbox mutation, no
