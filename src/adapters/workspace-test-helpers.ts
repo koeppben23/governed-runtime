@@ -62,3 +62,26 @@ export async function createTempWorktree(options: TempWorktreeOptions = {}): Pro
     throw error;
   }
 }
+
+/**
+ * Run cleanup functions sequentially in registration order.
+ *
+ * Every cleanup runs even when an earlier one throws, so a single failure can
+ * never skip the remaining resources. Failures surface afterwards: a single
+ * failure rethrows the original error, multiple failures throw one
+ * `AggregateError` carrying all of them.
+ */
+export async function runCleanups(cleanups: readonly (() => Promise<void>)[]): Promise<void> {
+  const failures: unknown[] = [];
+  for (const cleanup of cleanups) {
+    try {
+      await cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, `${failures.length} test cleanups failed`);
+  }
+}

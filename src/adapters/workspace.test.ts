@@ -41,7 +41,7 @@ import {
 } from './workspace/index.js';
 import * as crypto from 'node:crypto';
 import { withTestEnv } from '../integration/test-helpers.js';
-import { createTempWorktree, TEST_REMOTE_ORIGIN } from './workspace-test-helpers.js';
+import { createTempWorktree, runCleanups, TEST_REMOTE_ORIGIN } from './workspace-test-helpers.js';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
@@ -516,9 +516,7 @@ describe('ensureWorkspace', () => {
   });
 
   afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
-    await removeWorktree();
+    await runCleanups([async () => cleanupEnv(), async () => cleanTmpDir(tmpDir), removeWorktree]);
   });
 
   it('creates workspace.json and directories', async () => {
@@ -562,9 +560,7 @@ describe('initWorkspace', () => {
   });
 
   afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
-    await removeWorktree();
+    await runCleanups([async () => cleanupEnv(), async () => cleanTmpDir(tmpDir), removeWorktree]);
   });
 
   // ─── HAPPY ──────────────────────────────────────────────────
@@ -691,9 +687,7 @@ describe('readWorkspaceInfo', () => {
   });
 
   afterEach(async () => {
-    cleanupEnv();
-    await cleanTmpDir(tmpDir);
-    await removeWorktree();
+    await runCleanups([async () => cleanupEnv(), async () => cleanTmpDir(tmpDir), removeWorktree]);
   });
 
   it('returns null for non-existent workspace', async () => {

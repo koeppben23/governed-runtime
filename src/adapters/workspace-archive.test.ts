@@ -25,7 +25,7 @@ import { verifyChain } from '../audit/integrity.js';
 import { BINDING, makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { withTestEnv } from '../integration/test-helpers.js';
-import { createTempWorktree } from './workspace-test-helpers.js';
+import { createTempWorktree, runCleanups } from './workspace-test-helpers.js';
 
 /**
  * Temporary git worktree for the current test. The suite must never bind the
@@ -54,10 +54,10 @@ beforeEach(async () => {
   cleanups.push(temp.cleanup);
 });
 afterEach(async () => {
-  // LIFO and sequential: nested environment restores must unwind in reverse
-  // registration order, and a failing cleanup must not skip the remaining ones.
-  const pending = cleanups.splice(0).reverse();
-  for (const cleanup of pending) await cleanup();
+  // LIFO and complete: reverse registration order so nested environment
+  // restores unwind correctly, and aggregate failures instead of letting the
+  // first one skip the remaining resources.
+  await runCleanups(cleanups.splice(0).reverse());
 });
 
 /**

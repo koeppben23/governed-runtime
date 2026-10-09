@@ -8,19 +8,25 @@ import { archiveSession, initWorkspace, verifyArchive } from './workspace/index.
 import { writeState } from './persistence.js';
 import { BINDING, makeState } from '../fixtures.js';
 import { withTestEnv } from '../integration/test-helpers.js';
-import { createTempWorktree } from './workspace-test-helpers.js';
+import { createTempWorktree, runCleanups } from './workspace-test-helpers.js';
 
 let restore: (() => void) | null = null;
 let configDir = '';
 let worktreeCleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
-  restore?.();
+  const pending: Array<() => Promise<void>> = [];
+  const restoreFn = restore;
   restore = null;
-  if (configDir) await fs.rm(configDir, { recursive: true, force: true });
-  configDir = '';
+  if (restoreFn) pending.push(async () => restoreFn());
+  if (configDir) {
+    const dir = configDir;
+    configDir = '';
+    pending.push(async () => fs.rm(dir, { recursive: true, force: true }));
+  }
   const cleanup = worktreeCleanup;
   worktreeCleanup = null;
-  if (cleanup) await cleanup();
+  if (cleanup) pending.push(cleanup);
+  await runCleanups(pending);
 });
 
 async function archiveFixture() {
