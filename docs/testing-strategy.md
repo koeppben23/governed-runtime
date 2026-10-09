@@ -530,12 +530,12 @@ required mutation target.
 
 ### Admission Candidates
 
-The plan fail-fast work stages `src/integration/tools/plan/plan.ts` and
-`src/integration/tools/plan/plan-claim-submission.ts` in the base profile. The
-2026-10-09 full base run measured 64.94% and 84.62%, respectively (aggregate
-85.32%). The routing module remains below the per-target gate and is tracked for
-further test hardening. Immutable admission is not claimed without verified
-freeze-commit manifest provenance.
+The plan fail-fast work stages `src/integration/tools/plan/plan.ts` in the base
+profile. The 2026-10-09 freeze run on `40e86768` measured 62.65% (aggregate
+85.22%); the routing module remains below the per-target gate and is tracked for
+further test hardening. `src/integration/tools/plan/plan-claim-submission.ts` was
+admitted at 84.62% (22 killed, 4 survived) using that full-run report and its
+verified freeze-commit manifest.
 
 A candidate is staged inside a profile for authoritative admission
 measurement. It is mutated by its profile but carries no provenance yet: only

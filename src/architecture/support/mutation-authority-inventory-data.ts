@@ -1787,19 +1787,21 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/integration/tools-execute-planning.test.ts',
       'src/integration/proofgraph-lifecycle-e2e.test.ts',
     ],
-    'Fail-fast revision boundary: 2026-10-09 full base run measured 64.94%, below the per-target admission threshold; aggregate 85.32%. New revision-gate mutants were killed, but other routing-module gaps remain. Remains a candidate; no admission evidence is synthesized.',
+    'Fail-fast revision boundary: 2026-10-09 freeze-commit full base run measured 62.65%, below the per-target admission threshold; aggregate 85.22%. Remains a candidate for further routing-module test hardening; no admission evidence is synthesized.',
     { source: [SOURCE.integration], critical: true },
   ),
-  candidate(
+  required(
     'src/integration/tools/plan/plan-claim-submission.ts',
     'Blocking declaration admission and explicit withdrawal',
-    'base',
     [
       'src/integration/tools/plan/plan-claim-submission.test.ts',
       'src/integration/proofgraph-lifecycle-e2e.test.ts',
     ],
-    'Fail-fast admission policy: 2026-10-09 full base run measured 84.62%; aggregate 85.32%. Immutable admission remains pending a verified freeze-commit manifest; execution alone does not synthesize admission provenance.',
-    { source: [SOURCE.integration], critical: true },
+    {
+      source: [SOURCE.integration],
+      critical: true,
+      admission: admissionRecord('src/integration/tools/plan/plan-claim-submission.ts'),
+    },
   ),
   candidate(
     'src/integration/plugin-audit-context.ts',
