@@ -24,7 +24,7 @@ import {
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { reducedCeremonyReady } from '../machine/guards.js';
 import type { RailBlocked, RailContext } from './types.js';
-import { blocked } from '../config/reasons.js';
+import { blocked, defaultReasonRegistry } from '../config/reasons.js';
 import { compareActorIdentity } from '../identity/actor-info.js';
 import { isApprovalVerdict } from '../state/evidence.js';
 import { isAssuranceAtLeast } from '../shared/actor-assurance.js';
@@ -172,14 +172,17 @@ function rejectedCriticalClaimBlock(state: SessionState): RailBlocked | null {
     (item) => item.disposition === 'rejected_blocking',
   );
   if (!claim) return null;
-  // The diagnostics persist the canonical registry-formatted reason and
-  // recovery; re-formatting the catalog entry here would nest the message
-  // inside itself and duplicate the recovery guidance.
+  // The persisted reason is a historical forensic record: it is surfaced
+  // verbatim, never rewritten. Its recovery is supplemented with the current
+  // catalog steps, so sessions blocked before a catalog change still receive
+  // the up-to-date state-transition guidance.
+  const currentRecovery =
+    defaultReasonRegistry.get('PROOFGRAPH_CLAIM_NOT_DECLARED')?.recoverySteps ?? [];
   return {
     kind: 'blocked',
     code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
     reason: claim.reason,
-    recovery: claim.recovery,
+    recovery: [...new Set([...claim.recovery, ...currentRecovery])],
   };
 }
 

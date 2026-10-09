@@ -20,13 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Rejected plan claims name their consequence and withdrawal path.**
-  `PROOFGRAPH_CLAIM_NOT_DECLARED` no longer labels blocking critical
-  declarations as "non-critical": the persisted diagnostic now states whether
-  evidence approval is blocked or the accepted claims remain valid, and the
-  recovery steps name the explicit empty `claims: []` plan revision that
-  withdraws rejected declarations. The plan-approval gate surfaces the stored
-  diagnostic verbatim instead of nesting the catalog message inside itself.
+- **Rejected plan claims name their consequence, transition, and withdrawal
+  path.** `PROOFGRAPH_CLAIM_NOT_DECLARED` no longer labels blocking critical
+  declarations as "non-critical": the persisted diagnostic states whether
+  evidence approval is blocked or the accepted claims remain valid, the plan
+  presentation derives that consequence from the actual claim dispositions, and
+  the recovery steps name the full path out of the blocked gate
+  (`changes_requested` to return to PLAN, then `/plan` with corrected claims or
+  an explicit empty `claims: []` to withdraw). The plan-approval gate surfaces
+  the stored diagnostic reason verbatim, supplemented with the current catalog
+  recovery for sessions blocked before a catalog change.
+
+- **Tool-boundary input normalization is robust to host arg handling.**
+  Architecture and plan claim normalizers project inputs onto their declared
+  fields instead of spreading host-supplied keys into persisted state (which
+  made the whole state write fail with `SCHEMA_VALIDATION_FAILED`), and
+  `flowguard_ticket` resolves its documented `source` default itself instead of
+  trusting a host-applied Zod default.
 
 - **Terminal command admissibility is enforced (#1034).** Hydrate and abort
   entrypoints consult the canonical command policy. A terminal hydrate reload is

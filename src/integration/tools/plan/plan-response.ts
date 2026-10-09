@@ -174,10 +174,19 @@ function partialClaimAcceptancePresentation(
   const rejected = diagnostics.rejectedClaims
     .map((claim) => `- ${claim.statement}\n  ${claim.reason}`)
     .join('\n');
+  const blockingCount = diagnostics.rejectedClaims.filter(
+    (claim) => claim.disposition === 'rejected_blocking',
+  ).length;
+  // The disposition decides the consequence: a session with only non-blocking
+  // rejections must not be told that approval is blocked.
+  const consequence =
+    blockingCount > 0
+      ? `${blockingCount} rejected critical claim declaration(s) block evidence approval until corrected or explicitly withdrawn in a new plan revision.`
+      : 'The rejected declaration(s) are non-blocking; the plan and its accepted claims remain valid.';
   return {
     markdown:
       '## Plan submitted\n\n' +
-      `FlowGuard did not admit ${diagnostics.rejectedClaims.length} claim declaration(s) to the ProofGraph. Rejected critical claims block final evidence approval until corrected in a new plan revision.\n\n` +
+      `FlowGuard did not admit ${diagnostics.rejectedClaims.length} claim declaration(s) to the ProofGraph. ${consequence}\n\n` +
       '## Declarations not admitted\n\n' +
       rejected +
       '\n\n## Next action\n\n' +

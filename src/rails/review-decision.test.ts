@@ -252,7 +252,15 @@ describe('review-decision rail', () => {
       // The persisted canonical diagnostic is surfaced verbatim; a second
       // registry pass would nest "claim declaration — <reason>" inside itself.
       expect(result.reason).toBe(rejectedReason);
-      expect(result.recovery).toEqual(rejectedRecovery);
+      // Historical recovery is preserved and supplemented with the current
+      // catalog steps, so pre-fix sessions get the state-transition guidance.
+      expect(result.recovery).toEqual(
+        expect.arrayContaining([
+          ...rejectedRecovery,
+          expect.stringContaining('changes_requested'),
+          expect.stringContaining('claims: []'),
+        ]),
+      );
     }
   });
 
