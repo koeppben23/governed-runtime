@@ -48,7 +48,8 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Submit each architecture claim with statement, critical, authoritySectionId, and requiredReviewEvidence (optional: assumptions)',
       'Remove plan-only fields from architecture claims, for example claimScope, expectedCheckId, counterexampleRequirement, structuralSurface, and mutationProfile',
-      'If the ADR needs no claims, omit the claims array entirely and resubmit',
+      'New ADR submission: if no claims are needed, omit the claims array entirely',
+      'Revising an existing ADR: pass an explicit empty claims array (claims: []) to withdraw the previous declarations; omitting claims keeps them',
     ],
     quickFixCommand: '/architecture',
   },

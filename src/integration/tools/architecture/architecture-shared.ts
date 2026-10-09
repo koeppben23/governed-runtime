@@ -224,8 +224,34 @@ export function resolveRestartRevision(
       'an architecture review restart resolution requires ADR state',
     );
   }
+  // Claim validation runs on every restart revision, including an unchanged
+  // ADR: a claim-only revision must be validated instead of silently ignored.
+  const parsedClaims = parseArchitectureClaimsInput(args.claims);
+  if (parsedClaims.kind === 'blocked') {
+    return { kind: 'blocked', blocked: parsedClaims.message };
+  }
+  let claimDeclarations:
+    | {
+        flow: 'architecture';
+        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
+      }
+    | undefined;
+  if (parsedClaims.claims !== undefined) {
+    const normalizedClaims = normalizeArchitectureClaims(parsedClaims.claims);
+    if (normalizedClaims === undefined) {
+      throw new IntegrationInvariantError(
+        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
+        'normalizing submitted architecture claims produced no canonical declarations',
+      );
+    }
+    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
+  }
   if (sameRevision) {
-    return { kind: 'ok', nextAdr: architecture, revisionDelta: 'none' };
+    return {
+      kind: 'ok',
+      nextAdr: claimDeclarations ? { ...architecture, claimDeclarations } : architecture,
+      revisionDelta: 'none',
+    };
   }
   const adrText = args.adrText;
   if (adrText === undefined) {
@@ -242,22 +268,6 @@ export function resolveRestartRevision(
         sections: missingSections.join(', '),
       }),
     };
-  }
-  let claimDeclarations:
-    | {
-        flow: 'architecture';
-        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
-      }
-    | undefined;
-  if (args.claims) {
-    const normalizedClaims = normalizeArchitectureClaims(args.claims);
-    if (normalizedClaims === undefined) {
-      throw new IntegrationInvariantError(
-        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
-        'normalizing submitted architecture claims produced no canonical declarations',
-      );
-    }
-    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
   }
   return {
     kind: 'ok',
