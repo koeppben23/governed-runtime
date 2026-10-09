@@ -55,8 +55,17 @@ Archives are stored at:
 ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz
 ```
 
-The mandatory regulated raw-evidence package is stored separately as
-`regulated-{sessionId}.tar.gz`, so a later sharing export cannot replace it.
+Each archive purpose owns a distinct file name, so one operation can never
+overwrite another purpose's artifact:
+
+- `{sessionId}.tar.gz` — the user-requested `/archive` package,
+- `regulated-{sessionId}.tar.gz` — the mandatory system-owned regulated
+  evidence package,
+- `export-{sessionId}.tar.gz` — the mandatory `/export` completion package.
+
+A verified completion export therefore stays byte-identical and independently
+verifiable after any later `/archive` (including the solo auto-archive) and
+after repeated archiving. `/export` remains admissible only at `EXPORT_READY`.
 
 ### Configuration Scope
 

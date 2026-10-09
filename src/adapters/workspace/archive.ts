@@ -8,7 +8,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { atomicWrite, readState } from '../persistence.js';
+import { readState } from '../persistence.js';
 import { validateBinding } from '../binding.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { hashBuffer } from '../../shared/hashing.js';
@@ -23,7 +23,12 @@ import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { createArchiveStaging } from './archive-staging.js';
 import { listSessionFiles } from './archive-files.js';
-import { ARCHIVE_MANIFEST_FILE, archiveArtifactPath } from './archive-layout.js';
+import {
+  ARCHIVE_MANIFEST_FILE,
+  archiveArtifactPath,
+  archiveFileName,
+  type ArchivePurpose,
+} from './archive-layout.js';
 import type { RedactionMode } from '../../redaction/export-redaction.js';
 import {
   type ArtifactBindingEntry,
@@ -40,7 +45,11 @@ import {
   lastPublicationBinding,
 } from './archive-verify-helpers.js';
 import { inspectArchiveTar } from './archive-tar.js';
-import { publishArchiveArtifacts, removeArchiveArtifacts } from './archive-publish.js';
+import {
+  publishArchiveArtifacts,
+  removeArchiveArtifacts,
+  writeArchiveChecksum,
+} from './archive-publish.js';
 
 /** Redaction shape shared by every archive entrypoint. */
 export interface ArchivePayloadOptions {
@@ -62,10 +71,6 @@ export interface ArchiveSessionOptions extends ArchivePayloadOptions {
   readonly worktree: string;
 }
 
-export function archiveFileName(sessionId: string, regulatedEvidence = false): string {
-  return `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`;
-}
-
 export async function archiveSession(
   fingerprint: string,
   sessionId: string,
@@ -78,6 +83,7 @@ export async function archiveSession(
     {
       authorizedRaw: false,
       regulatedEvidence: false,
+      purpose: 'archive',
     },
     opts.worktree,
   );
@@ -98,7 +104,7 @@ export async function archiveRegulatedEvidence(
     fingerprint,
     sessionId,
     { redactionMode: 'none', includeRaw: true },
-    { authorizedRaw: true, regulatedEvidence: true },
+    { authorizedRaw: true, regulatedEvidence: true, purpose: 'regulated' },
   );
 }
 
@@ -120,13 +126,14 @@ export async function archiveCompletionExport(
     fingerprint,
     sessionId,
     { redactionMode: 'none', includeRaw: true },
-    { authorizedRaw: true, regulatedEvidence: false },
+    { authorizedRaw: true, regulatedEvidence: false, purpose: 'export' },
   );
 }
 
 interface ArchiveAuthorization {
   readonly authorizedRaw: boolean;
   readonly regulatedEvidence: boolean;
+  readonly purpose: ArchivePurpose;
 }
 
 async function archiveWithAuthorization(
@@ -253,7 +260,7 @@ async function archiveSessionImpl(
   const validSessionId = validateSessionId(sessionId);
   const sessDir = sessionDir(fingerprint, validSessionId);
   const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archivePath = path.join(archiveDir, archiveFileName(validSessionId, regulatedEvidence));
+  const archivePath = path.join(archiveDir, archiveFileName(validSessionId, authorization.purpose));
   try {
     await fs.access(sessDir);
     await fs.mkdir(archiveDir, { recursive: true });
@@ -363,7 +370,10 @@ async function stagePublishAndBind(input: {
     temporaryArchivePath,
     temporaryChecksumPath,
   };
-  const existingPublication = lastPublicationBinding(input.events);
+  const existingPublication = lastPublicationBinding(
+    input.events,
+    path.basename(input.archivePath),
+  );
   try {
     let publication: ArchivePublicationBinding;
     try {
@@ -551,24 +561,6 @@ function isSafeArchiveMemberPath(relativePath: string): boolean {
       .some((segment) => segment.length === 0 || segment === '.' || segment === '..') &&
     !relativePath.includes('\\')
   );
-}
-
-async function writeArchiveChecksum(
-  archivePath: string,
-  checksumPath: string,
-  archiveFileName: string,
-): Promise<void> {
-  try {
-    await atomicWrite(
-      checksumPath,
-      `${hashBuffer(await fs.readFile(archivePath))}  ${archiveFileName}\n`,
-    );
-  } catch (error) {
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `Checksum sidecar write failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
 }
 
 async function appendArtifactBindingAuditEvent(

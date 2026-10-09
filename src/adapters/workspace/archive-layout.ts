@@ -5,6 +5,22 @@
 
 import * as path from 'node:path';
 
+/**
+ * Canonical archive artifact purposes. Each purpose owns a distinct file name
+ * so a later operation can never overwrite another purpose's package.
+ */
+export type ArchivePurpose = 'archive' | 'regulated' | 'export';
+
+const ARCHIVE_FILE_PREFIX: Readonly<Record<ArchivePurpose, string>> = {
+  archive: '',
+  regulated: 'regulated-',
+  export: 'export-',
+};
+
+export function archiveFileName(sessionId: string, purpose: ArchivePurpose = 'archive'): string {
+  return `${ARCHIVE_FILE_PREFIX[purpose]}${sessionId}.tar.gz`;
+}
+
 export const ARCHIVE_MANIFEST_FILE = 'archive-manifest.json';
 
 export const ARCHIVE_LAYOUT = {

@@ -541,6 +541,7 @@ describe('demo evidence package verifier', () => {
   describe('HAPPY', () => {
     it('verifies the real /export snapshot at EXPORT_READY', async () => {
       const packagePath = await buildExportReadyPackage();
+      expect(path.basename(packagePath)).toBe(`export-${SESSION_A}.tar.gz`);
 
       const result = await runVerifier([
         packagePath,

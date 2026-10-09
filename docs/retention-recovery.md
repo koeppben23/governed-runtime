@@ -71,6 +71,11 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ### Raw-Evidence Archive Contents
 
+Completion exports are stored as `export-{sessionId}.tar.gz`; the user
+`/archive` package uses `{sessionId}.tar.gz` and regulated evidence uses
+`regulated-{sessionId}.tar.gz`. Distinct names keep a verified export intact
+across later archiving.
+
 ```
 {sessionId}.tar.gz
 ├── archive-manifest.json                  # Session metadata, file inventory, digests

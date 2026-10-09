@@ -4,6 +4,9 @@
  */
 
 import * as fs from 'node:fs/promises';
+import { atomicWrite } from '../persistence.js';
+import { hashBuffer } from '../../shared/hashing.js';
+import { WorkspaceError } from './types.js';
 
 export interface ArchiveArtifactPaths {
   readonly archivePath: string;
@@ -34,5 +37,24 @@ export async function publishArchiveArtifacts(
   } catch (error) {
     await removeArchiveArtifacts(paths);
     throw error;
+  }
+}
+
+/** Write the SHA-256 sidecar for a published archive bundle. */
+export async function writeArchiveChecksum(
+  archivePath: string,
+  checksumPath: string,
+  archiveFileName: string,
+): Promise<void> {
+  try {
+    await atomicWrite(
+      checksumPath,
+      `${hashBuffer(await fs.readFile(archivePath))}  ${archiveFileName}\n`,
+    );
+  } catch (error) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Checksum sidecar write failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }

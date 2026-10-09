@@ -21,7 +21,7 @@ import {
   checkUnexpectedFiles,
 } from './archive-verify-manifest.js';
 import { fileExists, snapshotArchive } from './archive-files.js';
-import { archiveFileName } from './archive.js';
+import { archiveFileName, type ArchivePurpose } from './archive-layout.js';
 import { inspectArchiveTar } from './archive-tar.js';
 import { verifyArchiveIntegrity } from './archive-verify-integrity.js';
 
@@ -57,7 +57,7 @@ export async function verifyArchive(
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return verifyArchiveImpl(fingerprint, sessionId, false);
+      return verifyArchiveImpl(fingerprint, sessionId, 'archive');
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
@@ -73,7 +73,23 @@ export async function verifyRegulatedArchive(
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return verifyArchiveImpl(fingerprint, sessionId, true);
+      return verifyArchiveImpl(fingerprint, sessionId, 'regulated');
+    },
+    { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
+  );
+}
+
+/** Verify the completion export created by the canonical `/export` rail. */
+export async function verifyCompletionExport(
+  fingerprint: string,
+  sessionId: string,
+): Promise<ArchiveVerification> {
+  return withSpan(
+    'archive.verify',
+    async () => {
+      addFingerprint(fingerprint);
+      addSessionId(sessionId);
+      return verifyArchiveImpl(fingerprint, sessionId, 'export');
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
@@ -198,16 +214,13 @@ async function discardExtractionAndFail(
 async function verifyArchiveImpl(
   fingerprint: string,
   sessionId: string,
-  regulatedEvidence: boolean,
+  purpose: ArchivePurpose,
 ): Promise<ArchiveVerification> {
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
 
   const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archiveTarPath = path.join(
-    archiveCheckDir,
-    archiveFileName(validSessionId, regulatedEvidence),
-  );
+  const archiveTarPath = path.join(archiveCheckDir, archiveFileName(validSessionId, purpose));
   const findings: ArchiveFinding[] = [];
   const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-archive-verify-'));
   const sessDir = path.join(extractionRoot, validSessionId);

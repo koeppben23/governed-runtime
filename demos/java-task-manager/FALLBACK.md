@@ -105,12 +105,12 @@ find ~/.config/opencode/workspaces -path '*/archive/*.tar.gz' -type f -print
 Record the reference-run values next to the package; without them the package
 assignment cannot be re-verified later:
 
-| Value                    | Where it comes from                                                                                                   |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Session id               | `/start` output (the archive file name)                                                                               |
-| Flow / phase             | `development` / `EXPORT_READY` for the `/export` package; `COMPLETE` for a raw terminal archive                       |
-| Runtime version + commit | The FlowGuard tarball used for the run (`flowguard --version`, `git rev-parse HEAD` of the checkout that produced it) |
-| Package + sidecar        | `<sessionId>.tar.gz` and `<sessionId>.tar.gz.sha256`                                                                  |
+| Value                    | Where it comes from                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session id               | `/start` output (the archive file name)                                                                                                         |
+| Flow / phase             | `development` / `EXPORT_READY` for the `/export` package; `COMPLETE` for a raw terminal archive                                                 |
+| Runtime version + commit | The FlowGuard tarball used for the run (`flowguard --version`, `git rev-parse HEAD` of the checkout that produced it)                           |
+| Package + sidecar        | `/export`: `export-<sessionId>.tar.gz` and `export-<sessionId>.tar.gz.sha256`; `/archive`: `<sessionId>.tar.gz` and `<sessionId>.tar.gz.sha256` |
 
 Re-verify the frozen package before the pitch (and after copying it between
 machines) with the standalone verifier — scope, limits, and exit codes are
@@ -119,7 +119,7 @@ documented in `EVIDENCE_PACKAGE.md`:
 ```bash
 # Run from the governed-runtime checkout of the same version that produced the package.
 node demos/java-task-manager/verify-evidence-package.mjs \
-  ~/.config/opencode/workspaces/<fingerprint>/sessions/archive/<sessionId>.tar.gz \
+  ~/.config/opencode/workspaces/<fingerprint>/sessions/archive/export-<sessionId>.tar.gz \
   --expect-session <session-id> \
   --expect-flow development \
   --expect-phase EXPORT_READY
