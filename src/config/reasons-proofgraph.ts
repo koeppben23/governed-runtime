@@ -46,8 +46,10 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       "Claim '{claimRef}' was not admitted to the ProofGraph: {field} — {detail}. {consequence}",
     recoverySteps: [
-      'Request changes with the review decision (`changes_requested`) to return the session to PLAN — `/plan` is not admissible at PLAN_REVIEW',
-      'Then resubmit `/plan` with the corrected declaration set, or with an explicit empty claims array (claims: []) to withdraw the rejected declarations',
+      'In TICKET or PLAN, correct the declarations and resubmit /plan; for a pending reviewer changes_requested verdict, resubmit the revision call with corrected claims',
+      'At PLAN_REVIEW, request changes (`changes_requested`) to return to PLAN, then resubmit /plan with corrected declarations or explicit claims: [] to withdraw them',
+      'At EVIDENCE_REVIEW, changes_requested returns to IMPLEMENTATION, not PLAN; start a new session with a corrected plan because no in-session plan revision is admissible there',
+      'Use explicit claims: [] to withdraw declarations when no ProofGraph authority is required',
       'Narrow the claim to a concrete behavior with assertion-capable evidence, or select a provider with explicit aggregate full-check completeness authority',
     ],
   },

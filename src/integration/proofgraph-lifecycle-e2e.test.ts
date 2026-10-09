@@ -515,7 +515,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     expect(context).toContain('Plan approval certificate: none recorded');
   });
 
-  it('persists a critical claim without a counterexample check as rejected_blocking', async () => {
+  it('blocks a critical claim without a counterexample before creating a plan', async () => {
     env = await boot('plan-reject');
     await writeStateWithArtifacts(
       env.sDir,
@@ -535,18 +535,17 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
     expect(parsed.claimSubmissionDiagnostics).toMatchObject({
       rejectedClaims: [{ disposition: 'rejected_blocking' }],
     });
-    // The plan persists, but nothing unprovable reaches the declaration authority.
+    // Admission failure cannot create a plan or consume review capacity.
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeTruthy();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
+    expect(state!.phase).toBe('TICKET');
   });
 
-  it('persists a critical claim that reuses its positive check as rejected_blocking', async () => {
+  it('blocks a critical claim that reuses its positive check before creating a plan', async () => {
     env = await boot('plan-same-check');
     await writeStateWithArtifacts(
       env.sDir,
@@ -575,17 +574,15 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
     expect(parsed.claimSubmissionDiagnostics).toMatchObject({
       rejectedClaims: [{ disposition: 'rejected_blocking' }],
     });
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeTruthy();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
   });
 
-  it('persists a claim referencing a check that is not active as rejected_blocking', async () => {
+  it('blocks a noncritical incomplete claim referencing an inactive check', async () => {
     env = await boot('plan-inactive-check');
     await writeStateWithArtifacts(
       env.sDir,
@@ -596,17 +593,125 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
       }),
     );
 
-    const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
+    const raw = await plan.execute(
+      { planText: PLAN_TEXT, claims: [{ ...CRITICAL_CLAIM_INPUT, critical: false }] },
+      env.tc,
+    );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
     expect(parsed.claimSubmissionDiagnostics).toMatchObject({
-      rejectedClaims: [{ disposition: 'rejected_blocking' }],
+      rejectedClaims: [{ critical: false, disposition: 'rejected_blocking' }],
     });
     const state = await readState(env.sDir);
-    expect(state!.plan).toBeTruthy();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
+  });
+
+  it('preserves legacy continuation and changed-subject precedence despite blocking claims', async () => {
+    env = await boot('admission-routing');
+    await writeStateWithArtifacts(
+      env.sDir,
+      await canonicalState(env, 'TICKET', { ticket: TICKET }),
+    );
+    await plan.execute({ planText: PLAN_TEXT, claims: [] }, env.tc);
+    const pending = await readState(env.sDir);
+    expect(pending?.plan).toBeTruthy();
+    const diagnostics = {
+      submittedClaimDeclarationsDigest: 'a'.repeat(64),
+      acceptedClaimDeclarationsDigest: 'b'.repeat(64),
+      rejectedClaims: [
+        {
+          claimRef: CRITICAL_CLAIM_ID,
+          statement: 'old rejected claim',
+          critical: true,
+          disposition: 'rejected_blocking' as const,
+          code: 'PROOFGRAPH_CLAIM_NOT_DECLARED',
+          reason: 'historical diagnostic',
+          recovery: ['historical recovery'],
+        },
+      ],
+    };
+    await writeStateWithArtifacts(env.sDir, {
+      ...pending!,
+      plan: { ...pending!.plan!, claimSubmissionDiagnostics: diagnostics },
+    });
+    const invalid = [{ ...CRITICAL_CLAIM_INPUT, counterexampleRequirement: undefined }];
+    const same = JSON.parse(
+      String(await plan.execute({ planText: PLAN_TEXT, claims: invalid }, env.tc)),
+    );
+    expect(same.error).not.toBe(true);
+    const changed = JSON.parse(
+      String(await plan.execute({ planText: `${PLAN_TEXT}\nChanged`, claims: invalid }, env.tc)),
+    );
+    expect(changed.code).toBe('REVIEW_SUBJECT_CHANGED_WHILE_PENDING');
+    const recovery = JSON.parse(
+      String(await plan.execute({ reviewRecovery: 'retry_transport' }, env.tc)),
+    );
+    expect(recovery.code).not.toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+    const { fulfillStrictReviewObligation } = await import('./test-helpers.js');
+    await fulfillStrictReviewObligation(env.sDir, {
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion: 1,
+      overallVerdict: 'accept',
+    });
+    const verdict = JSON.parse(String(await plan.execute({ reviewVerdict: 'accept' }, env.tc)));
+    expect(verdict.error).not.toBe(true);
+    const reviewed = await readState(env.sDir);
+    // A genuine new revision in PLAN must not carry the old blocker forward.
+    await writeStateWithArtifacts(env.sDir, { ...reviewed!, phase: 'PLAN', selfReview: null });
+    const before = await readState(env.sDir);
+    const blocked = JSON.parse(
+      String(await plan.execute({ planText: `${PLAN_TEXT}\nRevision` }, env.tc)),
+    );
+    expect(blocked.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+    expect(await readState(env.sDir)).toEqual(before);
+    const withdrawal = JSON.parse(
+      String(await plan.execute({ planText: `${PLAN_TEXT}\nRevision`, claims: [] }, env.tc)),
+    );
+    expect(withdrawal.error).not.toBe(true);
+    expect((await readState(env.sDir))?.plan?.claimSubmissionDiagnostics).toBeUndefined();
+  });
+
+  it('rejects invalid revision claims before consuming the captured reviewer verdict', async () => {
+    env = await boot('admission-revision');
+    await writeStateWithArtifacts(
+      env.sDir,
+      await canonicalState(env, 'TICKET', { ticket: TICKET }),
+    );
+    await plan.execute({ planText: PLAN_TEXT, claims: [] }, env.tc);
+    const { fulfillStrictReviewObligation } = await import('./test-helpers.js');
+    await fulfillStrictReviewObligation(env.sDir, {
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion: 1,
+      overallVerdict: 'changes_requested',
+    });
+    const before = await readState(env.sDir);
+    const blocked = JSON.parse(
+      String(
+        await plan.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            planText: `${PLAN_TEXT}\nRevision`,
+            claims: [{ ...CRITICAL_CLAIM_INPUT, counterexampleRequirement: undefined }],
+          },
+          env.tc,
+        ),
+      ),
+    );
+    expect(blocked.code).toBe('PROOFGRAPH_CLAIM_NOT_DECLARED');
+    expect(await readState(env.sDir)).toEqual(before);
+    const corrected = JSON.parse(
+      String(
+        await plan.execute(
+          { reviewVerdict: 'changes_requested', planText: `${PLAN_TEXT}\nRevision`, claims: [] },
+          env.tc,
+        ),
+      ),
+    );
+    expect(corrected.error).not.toBe(true);
+    expect((await readState(env.sDir))?.plan?.current.planVersion).toBe(2);
   });
 
   it('warns early when target paths look HIGH-RISK without a critical claim', async () => {

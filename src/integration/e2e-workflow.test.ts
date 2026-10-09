@@ -1482,7 +1482,7 @@ describe('ProofGraph demo fixtures', () => {
     expect(after!.proofContract?.claims[1]?.provenance).not.toHaveProperty('approval');
   });
 
-  it('persists a plan claim with mutationProfile but no proving provider as rejected_blocking', async () => {
+  it('blocks a plan claim with mutationProfile but no proving provider before review', async () => {
     await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf-8');
     await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
     await fs.writeFile(
@@ -1501,13 +1501,11 @@ describe('ProofGraph demo fixtures', () => {
         ctx,
       ),
     );
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBe(true);
     expect(result.claimSubmissionDiagnostics).toMatchObject({
       rejectedClaims: [{ disposition: 'rejected_blocking' }],
     });
     const state = await readState(await getSessDir());
-    expect(state!.plan).not.toBeNull();
-    expect(state!.plan!.claimDeclarations?.claims).toHaveLength(0);
-    expect(state!.plan!.claimSubmissionDiagnostics!.rejectedClaims).toHaveLength(1);
+    expect(state!.plan).toBeNull();
   });
 });

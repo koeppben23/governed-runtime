@@ -9,6 +9,15 @@
 import type { AdmissionRecord } from './mutation-authority-inventory.js';
 
 const RECORDS: Readonly<Record<string, AdmissionRecord>> = {
+  'src/integration/tools/plan/plan-claim-submission.ts': {
+    verifiedAt: '2026-10-09',
+    commitSha: '40e867681041026a26df8c3e784abb85c90d0196',
+    scoreAtAdmission: 84.62,
+    killed: 22,
+    survived: 4,
+    config: 'stryker.conf.json',
+    reportDigest: '2d70fb6fdf1ee6e926c8417d2b7eba2588ce3f7aa37e91f076a7b97bb262fb15',
+  },
   'src/adapters/host-adapter.ts': {
     verifiedAt: '2026-09-21',
     commitSha: 'df9f8b4dcdab11dd554e4d048ea8cb0784671f2b',

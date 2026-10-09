@@ -190,6 +190,10 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const planBody = normalizeReviewArtifactText(scope.args.planText ?? '');
   if (!planBody) return formatBlocked('EMPTY_PLAN');
 
+  const admission = admitPlanRevision(scope);
+  if (typeof admission === 'string') return admission;
+  scope = admission;
+
   const predecessorVersion = scope.state.plan?.current.planVersion;
   const planVersion = predecessorVersion ? predecessorVersion + 1 : 1;
 
@@ -282,6 +286,12 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
   );
   if (blocked) return blocked;
 
+  if (hasFreshRevisionClaims(scope)) {
+    const admission = admitPlanRevision(scope);
+    if (typeof admission === 'string') return admission;
+    scope = admission;
+  }
+
   const revision = applyPlanRevision(scope, lookup.pendingObligation?.obligationId);
   if (typeof revision === 'string') return revision;
   const consumedAssurance = consumePlanObligation(
@@ -301,6 +311,22 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
 }
 
 // ---- tool definition ----
+
+function admitPlanRevision(scope: PlanExecutionScope): PlanExecutionScope | string {
+  const admission = classifyPlanClaimSubmission(scope.args, scope.state, scope.ctx.digest);
+  if (admission.kind === 'blocked') return admission.message;
+  return {
+    ...scope,
+    args: admission.args,
+    ...(admission.diagnostics ? { claimSubmissionDiagnostics: admission.diagnostics } : {}),
+  };
+}
+
+function hasFreshRevisionClaims(scope: PlanExecutionScope): boolean {
+  return (
+    classifyPlanCall(scope.args, scope.input).kind === 'revision' && scope.args.claims !== undefined
+  );
+}
 
 export const plan: ToolDefinition = {
   description:
@@ -371,7 +397,7 @@ export const plan: ToolDefinition = {
           args as PlanArgs,
           mutableSession.state,
         );
-        let scope: PlanExecutionScope = {
+        const scope: PlanExecutionScope = {
           ...mutableSession,
           args: typedArgs,
           context,
@@ -382,19 +408,6 @@ export const plan: ToolDefinition = {
         // any lifecycle routing can re-emit a review instruction.
         const shapeBlocked = validatePlanCallShape(scope);
         if (shapeBlocked) return shapeBlocked;
-        const claimClassification = classifyPlanClaimSubmission(
-          scope.args,
-          scope.state,
-          scope.ctx.digest,
-        );
-        if (claimClassification.kind === 'blocked') return claimClassification.message;
-        scope = {
-          ...scope,
-          args: claimClassification.args,
-          ...(claimClassification.diagnostics
-            ? { claimSubmissionDiagnostics: claimClassification.diagnostics }
-            : {}),
-        };
         if (scope.input.isInitialSubmission) {
           const routed = await routeInitialPlanCall(scope);
           if (routed !== null) return routed;

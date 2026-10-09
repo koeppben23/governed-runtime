@@ -10,6 +10,17 @@ import { resolveRuntimePolicyMode } from '../config/policy.js';
 import { benchmarkSync } from '../test-policy.js';
 
 describe('config/reasons', () => {
+  it('claim admission recovery distinguishes submission and both approval gates', () => {
+    const recovery = defaultReasonRegistry
+      .get('PROOFGRAPH_CLAIM_NOT_DECLARED')!
+      .recoverySteps.join('\n');
+    expect(recovery).toContain('TICKET or PLAN');
+    expect(recovery).toContain('At PLAN_REVIEW');
+    expect(recovery).toContain('At EVIDENCE_REVIEW');
+    expect(recovery).toContain('IMPLEMENTATION, not PLAN');
+    expect(recovery).toContain('start a new session');
+    expect(recovery).toContain('claims: []');
+  });
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
     it('format produces structured result for known code', () => {

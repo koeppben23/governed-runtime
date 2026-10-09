@@ -1780,6 +1780,30 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
 
   // ── Base profile: admission candidates (H8 payload-cwd, I4 audit context) ─
   candidate(
+    'src/integration/tools/plan/plan.ts',
+    'Plan revision admission after canonical continuation routing',
+    'base',
+    [
+      'src/integration/tools-execute-planning.test.ts',
+      'src/integration/proofgraph-lifecycle-e2e.test.ts',
+    ],
+    'Fail-fast revision boundary: 2026-10-09 freeze-commit full base run measured 62.65%, below the per-target admission threshold; aggregate 85.22%. Remains a candidate for further routing-module test hardening; no admission evidence is synthesized.',
+    { source: [SOURCE.integration], critical: true },
+  ),
+  required(
+    'src/integration/tools/plan/plan-claim-submission.ts',
+    'Blocking declaration admission and explicit withdrawal',
+    [
+      'src/integration/tools/plan/plan-claim-submission.test.ts',
+      'src/integration/proofgraph-lifecycle-e2e.test.ts',
+    ],
+    {
+      source: [SOURCE.integration],
+      critical: true,
+      admission: admissionRecord('src/integration/tools/plan/plan-claim-submission.ts'),
+    },
+  ),
+  candidate(
     'src/integration/plugin-audit-context.ts',
     'Audit-context projection of the canonical session authority',
     'base',
