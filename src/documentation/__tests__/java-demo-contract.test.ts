@@ -11,13 +11,19 @@ import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_FLOWS,
+  Runner,
   assertArchitectureProbeNotPersisted,
   assertExpectedDenial,
   assertSessionBinding,
   matrixExitCode,
   readPins,
+  runFlows,
+  sha256,
   transcriptTargets,
   verificationFlowFor,
+  verifyChecksumSidecar,
+  withRawExportGrant,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 
 const execFile = promisify(execFileCallback);
@@ -143,6 +149,79 @@ describe('Java Task Manager demo contract', () => {
 
     expect(() => assertArchitectureProbeNotPersisted({ architecture: null })).not.toThrow();
     expect(() => assertArchitectureProbeNotPersisted({ architecture: {} })).toThrow(/persisted/);
+  });
+
+  it('initializes the runner with the workspace root and wires every flow entry', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-init-'));
+    try {
+      const runner = new Runner(
+        root,
+        { model: 'test/model', flows: [] },
+        path.join(root, 'config'),
+      );
+      expect(runner.workspaces).toBe(path.join(root, 'workspaces'));
+
+      const flows = await runFlows(runner);
+      expect(Object.keys(flows).sort()).toEqual([...DEFAULT_FLOWS].sort());
+      expect(flows.development.workspace).toBe(path.join(root, 'workspaces', 'java-task-manager'));
+      expect(flows['reduced-on'].workspace).toBe(
+        path.join(root, 'workspaces', 'reduced-ceremony', 'reduced-on'),
+      );
+      expect(flows['architecture-negative']).toBeDefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed on a tarball that does not match its checksums.sha256', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-sha-'));
+    try {
+      const tarball = path.join(dir, 'flowguard-core-9.9.9.tgz');
+      const sidecar = path.join(dir, 'checksums.sha256');
+      await fs.writeFile(tarball, 'tarball-bytes');
+      const digest = sha256(tarball);
+      await fs.writeFile(sidecar, `${digest}  flowguard-core-9.9.9.tgz\n`);
+      expect(verifyChecksumSidecar(tarball, sidecar)).toEqual({
+        sha256: digest,
+        name: 'flowguard-core-9.9.9.tgz',
+      });
+
+      // Tampered tarball: the recorded digest no longer matches.
+      await fs.writeFile(tarball, 'tampered-bytes');
+      expect(() => verifyChecksumSidecar(tarball, sidecar)).toThrow(/checksum mismatch/);
+
+      // The sidecar must record exactly this tarball's filename.
+      await fs.writeFile(tarball, 'tarball-bytes');
+      await fs.writeFile(sidecar, `${digest}  other-name.tgz\n`);
+      expect(() => verifyChecksumSidecar(tarball, sidecar)).toThrow(/records 'other-name.tgz'/);
+
+      await fs.writeFile(sidecar, 'not-a-checksum\n');
+      expect(() => verifyChecksumSidecar(tarball, sidecar)).toThrow(/malformed/);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes the raw-export grant on success and on initialization failure', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-grant-'));
+    const grant = path.join(dir, 'flowguard.json');
+    try {
+      const value = await withRawExportGrant(dir, async () => {
+        expect(await fs.readFile(grant, 'utf-8')).toContain('"allowRawExport":true');
+        return 42;
+      });
+      expect(value).toBe(42);
+      await expect(fs.access(grant)).rejects.toThrow();
+
+      await expect(
+        withRawExportGrant(dir, async () => {
+          throw new Error('initialization failed');
+        }),
+      ).rejects.toThrow('initialization failed');
+      await expect(fs.access(grant)).rejects.toThrow();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('collects the parent and reviewer-child transcripts for one flow', () => {

@@ -134,6 +134,30 @@ function assertToolchain(pins) {
   return { nodeVersion, opencodeVersion };
 }
 
+/**
+ * Verify a tarball against its `checksums.sha256` sidecar using the canonical
+ * `pack-with-checksums` contract (`<sha256>  <basename>`). A missing, malformed,
+ * name-mismatched, or digest-mismatched sidecar fails closed: the installer
+ * must never run against a tarball whose recorded checksum does not match.
+ */
+export function verifyChecksumSidecar(tarball, sidecar) {
+  const content = fs.readFileSync(sidecar, 'utf8').trim();
+  const match = /^([0-9a-f]{64})\s+\*?(\S+)$/.exec(content);
+  if (!match) throw new Error(`checksums.sha256 is malformed: ${sidecar}`);
+  const [, expected, recordedName] = match;
+  const actualName = path.basename(tarball);
+  if (recordedName !== actualName) {
+    throw new Error(
+      `checksums.sha256 records '${recordedName}', but the tarball is '${actualName}'`,
+    );
+  }
+  const actual = sha256(tarball);
+  if (actual !== expected) {
+    throw new Error(`checksum mismatch for ${actualName}: ${actual} != ${expected}`);
+  }
+  return { sha256: actual, name: actualName };
+}
+
 function tarballFor(options) {
   if (options.tarball) {
     const tarball = path.resolve(options.tarball);
@@ -142,6 +166,7 @@ function tarballFor(options) {
     if (!fs.existsSync(sidecar)) {
       throw new Error(`checksums.sha256 is required next to the tarball: ${sidecar}`);
     }
+    verifyChecksumSidecar(tarball, sidecar);
     return { tarball, sidecar, builtFromCheckout: false };
   }
   execFileSync('npm', ['run', 'build'], { cwd: REPO, stdio: 'inherit' });
@@ -151,6 +176,7 @@ function tarballFor(options) {
   const sidecar = path.join(REPO, 'checksums.sha256');
   if (!fs.existsSync(tarball)) throw new Error(`pack did not produce ${tarball}`);
   if (!fs.existsSync(sidecar)) throw new Error('pack did not produce checksums.sha256');
+  verifyChecksumSidecar(tarball, sidecar);
   return { tarball, sidecar, builtFromCheckout: true };
 }
 
@@ -299,10 +325,12 @@ function allToolOutputs(result) {
     .join('\n');
 }
 
-class Runner {
+export class Runner {
   constructor(root, options, configDir) {
+    this.root = root;
     this.options = options;
     this.configDir = configDir;
+    this.workspaces = path.join(root, 'workspaces');
     this.evidenceDir = path.join(root, 'evidence');
     this.logFile = path.join(this.evidenceDir, 'driver.log');
     this.flows = [];
@@ -490,7 +518,7 @@ async function runReduced(runner, session, label, ticket) {
   ];
 }
 
-async function runFlows(runner) {
+export async function runFlows(runner) {
   const { workspaces, configDir } = runner;
   const mainWorkspace = path.join(workspaces, 'java-task-manager');
   const reducedRoot = path.join(workspaces, 'reduced-ceremony');
@@ -570,6 +598,24 @@ async function runFlows(runner) {
   return flows;
 }
 
+/**
+ * Run `task` with the temporary raw-export grant present in the isolated
+ * config dir, and remove the grant in a `finally` — including when
+ * initialization fails. The grant never touches the global user config.
+ */
+export async function withRawExportGrant(configDir, task) {
+  const globalConfig = path.join(configDir, 'flowguard.json');
+  fs.writeFileSync(
+    globalConfig,
+    JSON.stringify({ schemaVersion: 'v1', archive: { redaction: { allowRawExport: true } } }),
+  );
+  try {
+    return await task();
+  } finally {
+    fs.rmSync(globalConfig, { force: true });
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const pins = readPins();
@@ -612,15 +658,9 @@ async function main() {
     stdio: 'inherit',
   });
 
-  const globalConfig = path.join(configDir, 'flowguard.json');
-  fs.writeFileSync(
-    globalConfig,
-    JSON.stringify({ schemaVersion: 'v1', archive: { redaction: { allowRawExport: true } } }),
-  );
-
   const runner = new Runner(options.root, options, configDir);
-  const flows = await runFlows(runner);
-  try {
+  const exitCode = await withRawExportGrant(configDir, async () => {
+    const flows = await runFlows(runner);
     for (const name of options.flows) {
       const flow = flows[name];
       const record = { name, workspace: flow.workspace, result: 'BLOCKED' };
@@ -662,27 +702,27 @@ async function main() {
       fs.writeFileSync(
         path.join(evidenceDir, 'host-sessions.json'),
         JSON.stringify(
-          runner.flows.map(({ name, hostSessionId, flowguardSessionId, transcripts, packages, installedBuild }) => ({
-            flow: name,
-            hostSessionId: hostSessionId ?? null,
-            flowguardSessionId: flowguardSessionId ?? null,
-            transcripts: transcripts ?? null,
-            packages: packages ?? [],
-            installedBuild: installedBuild ?? null,
-          })),
+          runner.flows.map(
+            ({ name, hostSessionId, flowguardSessionId, transcripts, packages, installedBuild }) => ({
+              flow: name,
+              hostSessionId: hostSessionId ?? null,
+              flowguardSessionId: flowguardSessionId ?? null,
+              transcripts: transcripts ?? null,
+              packages: packages ?? [],
+              installedBuild: installedBuild ?? null,
+            }),
+          ),
           null,
           2,
         ),
       );
     }
-  } finally {
-    fs.rmSync(globalConfig, { force: true });
-    runner.log('raw-export grant removed from the isolated config dir');
-  }
+    return matrixExitCode(runner.flows);
+  });
 
+  runner.log('raw-export grant removed from the isolated config dir');
   const completed = runner.flows.filter((flow) => flow.result === 'COMPLETE').length;
   runner.log(`MATRIX RESULT: ${completed}/${runner.flows.length} flows COMPLETE`);
-  const exitCode = matrixExitCode(runner.flows);
   if (exitCode !== 0) {
     runner.log('MATRIX FAILED: at least one flow did not complete');
   }
