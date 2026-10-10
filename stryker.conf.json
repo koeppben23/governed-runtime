@@ -126,7 +126,13 @@
     "src/state/evidence-mutation-episode.ts",
     "src/templates/claude-code-plugin.ts",
     "src/templates/codex-plugin.ts",
-    "src/verification/execution-subject.ts"
+    "src/verification/execution-subject.ts",
+    "src/integration/review/evidence/reviewer-evidence-recorder.ts",
+    "src/integration/review/obligations/assurance.ts",
+    "src/integration/tools/implementation-review-activation.ts",
+    "src/integration/review/dispatch/native-task-review-bindings.ts",
+    "src/integration/blocked-result.ts",
+    "src/integration/status/status.ts"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]
