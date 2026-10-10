@@ -19,6 +19,7 @@ import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { auditPath } from '../adapters/persistence.js';
 import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { GitError, resolveRoot } from '../adapters/git.js';
 
 import { verifyChain } from '../audit/integrity.js';
 import { generateComplianceSummary, type ComplianceSummary } from '../audit/summary.js';
@@ -96,10 +97,48 @@ installation-target or host-selection flags.`;
 
 // ─── Session Discovery ────────────────────────────────────────────────────────
 
-/** Resolve the workspace fingerprint for the current directory. */
-async function resolveWorkspace(): Promise<string> {
-  const fpResult = await computeFingerprint(process.cwd());
-  return fpResult.fingerprint;
+/** A canonically resolved workspace: worktree root plus its fingerprint. */
+interface ResolvedWorkspace {
+  readonly fingerprint: string;
+  readonly worktreeRoot: string;
+  readonly normalizedRoot: string;
+}
+
+/** Resolve the workspace identity for the current directory. */
+async function resolveWorkspace(): Promise<ResolvedWorkspace> {
+  const worktreeRoot = await resolveRoot(process.cwd());
+  const fpResult = await computeFingerprint(worktreeRoot);
+  return {
+    fingerprint: fpResult.fingerprint,
+    worktreeRoot,
+    normalizedRoot: fpResult.normalizedRoot,
+  };
+}
+
+/**
+ * Map a workspace-resolution failure to the mode-specific exit contract.
+ * Only "not a repository" is an empty inventory for the plain list mode; every
+ * other git failure (timeout, missing executable, command failure) is a
+ * resolution error and must not masquerade as a successful empty listing.
+ */
+function resolveFailureExit(
+  error: unknown,
+  mode: { readonly upgradeCheck: boolean; readonly json: boolean; readonly sessionId?: string },
+): number {
+  const message = error instanceof Error ? error.message : String(error);
+  if (mode.upgradeCheck) {
+    return reportWorkspaceUnresolved(mode.json, message);
+  }
+  if (mode.sessionId !== undefined) {
+    return exitWithError(
+      `Cannot resolve the workspace for session "${mode.sessionId}": ${message}`,
+    );
+  }
+  if (error instanceof GitError && error.code === 'NOT_GIT_REPO') {
+    console.log('No FlowGuard sessions found.');
+    return 0;
+  }
+  return exitWithError(`Cannot resolve the workspace: ${message}`);
 }
 
 /** List all session IDs with audit trails in the given workspace. */
@@ -338,33 +377,30 @@ export async function inspectMain(argv: string[]): Promise<number> {
     return exitWithError('--json requires --session <id> or --upgrade-check');
   }
 
-  let fingerprint: string;
+  let workspace: ResolvedWorkspace;
   try {
-    fingerprint = await resolveWorkspace();
+    workspace = await resolveWorkspace();
   } catch (error) {
-    if (upgradeCheck) {
-      return reportWorkspaceUnresolved(
-        json,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-    console.log('No FlowGuard sessions found.');
-    return 0;
+    return resolveFailureExit(error, {
+      upgradeCheck,
+      json,
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    });
   }
 
   if (upgradeCheck) {
-    return runUpgradeCheck(fingerprint, json);
+    return runUpgradeCheck(workspace, json);
   }
 
-  const sessions = listWorkspaceSessions(fingerprint);
+  const sessions = listWorkspaceSessions(workspace.fingerprint);
 
   if (!sessionId) {
-    return listWorkspaceSessionsMode(fingerprint, sessions);
+    return listWorkspaceSessionsMode(workspace.fingerprint, sessions);
   }
 
   if (!sessions.includes(sessionId)) {
     return exitWithError(`Session ${sessionId} not found in this workspace.`);
   }
 
-  return inspectSingleSessionMode(fingerprint, sessionId, json);
+  return inspectSingleSessionMode(workspace.fingerprint, sessionId, json);
 }

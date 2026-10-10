@@ -144,9 +144,19 @@ pre-boundary session is rejected again at the next read.
 
 1. **Preflight (when the installed release supports it).** Run
    `flowguard inspect --upgrade-check` with the currently installed artifact and
-   resolve every `blocker` before upgrading. Historical archives are reported as
-   warnings only. A release that predates `--upgrade-check` skips this step; the
-   blockers below still apply. The preflight reports an active session as
+   resolve every `blocker` before upgrading. A directory that is not a git
+   worktree reports `WORKSPACE_UNRESOLVED`; a resolvable worktree without an
+   initialized FlowGuard workspace reports `WORKSPACE_NOT_INITIALIZED` — run
+   `flowguard install` for that worktree first. A worktree whose identity
+   changed (for example a git remote was added or removed) reports
+   `WORKSPACE_IDENTITY_CHANGED` while a session of the prior fingerprint still
+   belongs to this worktree and is unresolved — active, or carrying a state or
+   audit blocker. Fully resolved sessions and empty historical workspaces do
+   not block. Resolve or repair the prior sessions with the release that wrote
+   them, then re-run the preflight. Historical archives are
+   reported as warnings only. A release that predates `--upgrade-check` skips
+   this step; the blockers below still apply. The preflight reports an active
+   session as
    `ACTIVE_SESSION` and incompatible or unreadable state as `STATE_INCOMPATIBLE`
    or `STATE_UNREADABLE`, and exits 1 until every blocker is resolved. Manually
    accepting a residual risk is a documented operator decision, not a successful
