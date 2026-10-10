@@ -168,6 +168,35 @@ describe('developer onboarding documentation contract', () => {
     expect(diagram).not.toContain('/approve` → `/check` → `/implement`');
   });
 
+  it('keeps the two-document first-contribution path in the development guide', () => {
+    const guide = read('docs/development/index.md');
+    const firstChange = read('docs/development/first-change.md');
+
+    expect(guide).toContain('[Your First Change](./first-change.md)');
+    expect(guide).toContain('only required');
+    expect(guide).toContain('## Reference (not required for a first contribution)');
+    expect(firstChange).toContain('Open the pull request');
+    expect(firstChange).toContain('CONTRIBUTING.md');
+  });
+
+  it('keeps the architecture diagram consistent with the module dependency policy', () => {
+    const diagram = read('docs/architecture/architecture-diagram.md');
+
+    expect(diagram).toContain('MODULE_DEPENDENCY_POLICY');
+    // Wrong dependency directions and stale adapter claims must not return.
+    for (const wrong of [
+      'EvidenceNode -->|record| Audit',
+      'SSOT -->|derive| Cards',
+      'EvidenceNode -->|persist| Archive',
+      'SSOT -->|persist via| Adapters',
+      'SSOT -->|log via| Logging',
+      '(Persistence, Workspace, Fingerprint)',
+    ]) {
+      expect(diagram, wrong).not.toContain(wrong);
+    }
+    expect(diagram).toContain('(persistence, workspace, git, host, actor)');
+  });
+
   it('uses the canonical peer-review terminal phase in the quick reference', () => {
     const index = read('docs/index.md');
     const quickReference = index.split('## Quick Reference')[1] ?? '';
