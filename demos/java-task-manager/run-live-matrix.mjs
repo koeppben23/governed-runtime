@@ -4,18 +4,26 @@
  * @description Reproducible live demo matrix runner for the Java Task Manager
  * demo. It drives the five demo flows plus the architecture negative probe
  * through real headless `opencode run` processes against freshly installed
- * workspaces and records verified evidence per flow.
+ * workspaces and records verifiable evidence per flow.
  *
  * This runner contains NO governance logic and changes no product behavior:
  * - toolchain pins are READ from the canonical repository files
  *   (`src/cli/opencode-runtime-compat.ts` and `.node-version`); no version is
  *   hardcoded here;
  * - every command runs with an explicit `--dir` and a matching `PWD`; the
- *   observed host session is checked against the real persisted runtime state;
- * - the flow stops at the first host failure, tool-level block, missing gate,
- *   or unexpected terminal phase; it never force-advances past a gate;
+ *   persisted host-session and worktree binding are verified before a flow is
+ *   accepted;
+ * - a flow stops at the first unexpected host failure, tool-level block,
+ *   missing gate, or unexpected terminal phase; it never force-advances past a
+ *   gate;
+ * - the architecture negative probe uses a controlled denial step: the exact
+ *   expected reason code must be observed and nothing may be persisted before
+ *   the allowed recovery continues;
+ * - parent and reviewer-child host transcripts are exported and hashed; the
+ *   installed build identity is recorded from the installed package;
  * - evidence files are written once per step; a failed run is preserved and a
- *   rerun must use a fresh `--root`;
+ *   rerun must use a fresh `--root`; a matrix with any incomplete flow exits
+ *   non-zero;
  * - the isolated raw-export grant lives in the run-local OPENCODE_CONFIG_DIR
  *   and is removed again on exit.
  *
@@ -40,7 +48,7 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
 
-const DEFAULT_FLOWS = [
+export const DEFAULT_FLOWS = [
   'architecture',
   'development',
   'peer-review',
@@ -49,7 +57,24 @@ const DEFAULT_FLOWS = [
   'architecture-negative',
 ];
 
-function parseArgs(argv) {
+/**
+ * Verifier flow identity per matrix scenario. The reduced-ceremony scenarios
+ * are development flows; their scenario names are never verifier flow names.
+ */
+export function verificationFlowFor(flowName) {
+  if (flowName === 'reduced-on' || flowName === 'reduced-off') return 'development';
+  if (flowName === 'architecture' || flowName === 'development' || flowName === 'peer-review') {
+    return flowName;
+  }
+  throw new Error(`no verifier flow for scenario: ${flowName}`);
+}
+
+/** Non-zero when any requested flow did not complete. */
+export function matrixExitCode(flows) {
+  return flows.every((flow) => flow.result === 'COMPLETE') ? 0 : 1;
+}
+
+export function parseArgs(argv) {
   const options = { check: false };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -77,7 +102,7 @@ function parseArgs(argv) {
 }
 
 /** Canonical toolchain pins, read from the repository authorities. */
-function readPins() {
+export function readPins() {
   const compat = fs.readFileSync(
     path.join(REPO, 'src', 'cli', 'opencode-runtime-compat.ts'),
     'utf8',
@@ -117,7 +142,7 @@ function tarballFor(options) {
     if (!fs.existsSync(sidecar)) {
       throw new Error(`checksums.sha256 is required next to the tarball: ${sidecar}`);
     }
-    return { tarball, sidecar };
+    return { tarball, sidecar, builtFromCheckout: false };
   }
   execFileSync('npm', ['run', 'build'], { cwd: REPO, stdio: 'inherit' });
   execFileSync('npm', ['run', 'pack:checksums'], { cwd: REPO, stdio: 'inherit' });
@@ -126,10 +151,10 @@ function tarballFor(options) {
   const sidecar = path.join(REPO, 'checksums.sha256');
   if (!fs.existsSync(tarball)) throw new Error(`pack did not produce ${tarball}`);
   if (!fs.existsSync(sidecar)) throw new Error('pack did not produce checksums.sha256');
-  return { tarball, sidecar };
+  return { tarball, sidecar, builtFromCheckout: true };
 }
 
-function sha256(file) {
+export function sha256(file) {
   return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
@@ -158,7 +183,7 @@ function run(command, args, options = {}) {
   });
 }
 
-function eventsOf(output) {
+export function eventsOf(output) {
   return output
     .split('\n')
     .filter(Boolean)
@@ -170,6 +195,70 @@ function eventsOf(output) {
       }
     })
     .filter(Boolean);
+}
+
+/** Reason codes of every blocked/denied tool output in a host transcript. */
+export function toolDenialCodes(output) {
+  const codes = new Set();
+  for (const event of eventsOf(output)) {
+    const part = event.part?.state?.output ?? '';
+    if (!/"error":true/.test(part)) continue;
+    const match = /"code":"([A-Z0-9_]+)"/.exec(part);
+    if (match) codes.add(match[1]);
+  }
+  return [...codes];
+}
+
+/** The controlled negative probe: exactly the expected denial, nothing else. */
+export function assertExpectedDenial(output, expectedCode) {
+  const codes = toolDenialCodes(output);
+  if (!codes.includes(expectedCode)) {
+    throw new Error(`expected denial ${expectedCode}, observed [${codes.join(', ') || 'none'}]`);
+  }
+  const unexpected = codes.filter((code) => code !== expectedCode);
+  if (unexpected.length > 0) {
+    throw new Error(`unexpected denial(s) alongside ${expectedCode}: ${unexpected.join(', ')}`);
+  }
+}
+
+export function assertArchitectureProbeNotPersisted(state) {
+  if (state.architecture !== null) {
+    throw new Error('the rejected architecture probe declaration was persisted');
+  }
+}
+
+export function canonicalPath(target) {
+  try {
+    return fs.realpathSync.native(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+/** The persisted session must be bound to the observed host session and worktree. */
+export function assertSessionBinding(state, hostSessionId, workspace) {
+  const boundHost = state.binding?.hostSessionId;
+  if (boundHost !== hostSessionId) {
+    throw new Error(`persisted host binding '${String(boundHost)}' != observed '${hostSessionId}'`);
+  }
+  const boundWorktree = state.binding?.worktree;
+  if (typeof boundWorktree !== 'string' || canonicalPath(boundWorktree) !== canonicalPath(workspace)) {
+    throw new Error(
+      `persisted worktree binding '${String(boundWorktree)}' != delivered workspace '${workspace}'`,
+    );
+  }
+}
+
+/** Sessions whose transcripts belong to one flow's evidence: parent + reviewers. */
+export function transcriptTargets(state) {
+  const reviewers = [
+    ...new Set(
+      (state.reviewAssurance?.invocations ?? [])
+        .map((invocation) => invocation.childSessionId)
+        .filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0),
+    ),
+  ].filter((sessionId) => sessionId !== state.binding?.hostSessionId);
+  return { parent: state.binding?.hostSessionId ?? null, reviewers };
 }
 
 function sessionStateDir(configDir, sessionId) {
@@ -191,7 +280,10 @@ function sessionStateDir(configDir, sessionId) {
 function readState(configDir, sessionId) {
   const found = sessionStateDir(configDir, sessionId);
   if (!found) return null;
-  return { state: JSON.parse(fs.readFileSync(found.statePath, 'utf8')), sessionDir: found.sessionDir };
+  return {
+    state: JSON.parse(fs.readFileSync(found.statePath, 'utf8')),
+    sessionDir: found.sessionDir,
+  };
 }
 
 function assertHostCallOk(result, label) {
@@ -201,16 +293,10 @@ function assertHostCallOk(result, label) {
   if (hostErrors.length > 0) throw new Error(`${label}: host error event observed`);
 }
 
-function toolOutputs(result) {
+function allToolOutputs(result) {
   return eventsOf(result.stdout)
     .map((event) => event.part?.state?.output ?? '')
     .join('\n');
-}
-
-function assertNoToolBlock(result, label) {
-  if (/"error":true|"kind":"blocked"/.test(toolOutputs(result))) {
-    throw new Error(`${label}: tool-level block observed; stopping the flow`);
-  }
 }
 
 class Runner {
@@ -253,7 +339,7 @@ class Runner {
     return { ...result, stdout: output, sessionIds };
   }
 
-  async turn(session, label, prompt, command) {
+  async turn(session, label, prompt, options = {}) {
     const args = [
       'run',
       '--dir',
@@ -264,7 +350,7 @@ class Runner {
       'json',
     ];
     if (session.sessionId) args.push('--session', session.sessionId);
-    if (command) args.push('--command', command);
+    if (options.command) args.push('--command', options.command);
     if (prompt) args.push(prompt);
     const result = await this.hostStep(label, session.workspace, args);
     assertHostCallOk(result, label);
@@ -274,38 +360,106 @@ class Runner {
     }
     session.sessionId = session.sessionId ?? observed;
     if (!session.sessionId) throw new Error(`${label}: no host session id observed`);
-    assertNoToolBlock(result, label);
+    if (options.expectedDenial) {
+      assertExpectedDenial(result.stdout, options.expectedDenial);
+    } else if (/"error":true|"kind":"blocked"/.test(allToolOutputs(result))) {
+      throw new Error(`${label}: unexpected tool-level block observed; stopping the flow`);
+    }
     return result;
   }
 
   async approve(session, label, expectedPhase) {
-    const snapshot = readState(this.configDir, session.sessionId);
-    if (snapshot?.state.phase !== expectedPhase) {
+    const snapshot = this.requireBoundState(session);
+    if (snapshot.state.phase !== expectedPhase) {
       throw new Error(
-        `${label}: expected gate ${expectedPhase}, observed ${String(snapshot?.state.phase)}`,
+        `${label}: expected gate ${expectedPhase}, observed ${String(snapshot.state.phase)}`,
       );
     }
-    await this.turn(session, label, 'Demo approval through the real command boundary.', 'approve');
+    await this.turn(session, label, 'Demo approval through the real command boundary.', {
+      command: 'approve',
+    });
   }
 
-  verifyPackage(session, kind, flow, phase) {
+  requireBoundState(session) {
     const snapshot = readState(this.configDir, session.sessionId);
-    if (!snapshot) throw new Error(`${flow}: no persisted state for verification`);
+    if (!snapshot) throw new Error(`no persisted state for ${session.sessionId}`);
+    assertSessionBinding(snapshot.state, session.sessionId, session.workspace);
+    return snapshot;
+  }
+
+  installedBuild(workspace) {
+    const buildInfoPath = path.join(
+      workspace,
+      '.opencode',
+      'node_modules',
+      '@flowguard',
+      'core',
+      'dist',
+      'build-info.json',
+    );
+    if (!fs.existsSync(buildInfoPath)) {
+      throw new Error(`installed build info missing: ${buildInfoPath}`);
+    }
+    return JSON.parse(fs.readFileSync(buildInfoPath, 'utf8'));
+  }
+
+  async exportTranscript(label, sessionId, workspace) {
+    const result = await run('opencode', ['export', sessionId], {
+      cwd: workspace,
+      env: { OPENCODE_CONFIG_DIR: this.configDir, OPENCODE_DISABLE_AUTOUPDATE: '1' },
+      timeoutMs: 5 * 60_000,
+    });
+    if (result.timedOut || result.code !== 0 || result.stdout.trim().length === 0) {
+      throw new Error(`${label}: host transcript export failed for ${sessionId}`);
+    }
+    const file = path.join(this.evidenceDir, `${label}-host-${sessionId}.json`);
+    if (fs.existsSync(file)) throw new Error(`transcript already exists: ${file}`);
+    fs.writeFileSync(file, result.stdout);
+    return { sessionId, file: path.relative(this.evidenceDir, file), sha256: sha256(file) };
+  }
+
+  async captureProvenance(flow, session) {
+    const snapshot = this.requireBoundState(session);
+    const targets = transcriptTargets(snapshot.state);
+    if (targets.parent !== session.sessionId) {
+      throw new Error(`${flow}: persisted host binding is not the observed session`);
+    }
+    const parent = await this.exportTranscript(flow, targets.parent, session.workspace);
+    const reviewers = [];
+    for (const childSessionId of targets.reviewers) {
+      reviewers.push(await this.exportTranscript(flow, childSessionId, session.workspace));
+    }
+    flow.transcripts = { parent, reviewers };
+    flow.installedBuild = this.installedBuild(session.workspace);
+  }
+
+  verifyPackage(session, kind, expectFlow, expectPhase, label) {
+    const snapshot = this.requireBoundState(session);
     const archiveDir = path.join(path.dirname(snapshot.sessionDir), 'archive');
     const file =
       kind === 'export'
         ? path.join(archiveDir, `export-${session.sessionId}.tar.gz`)
         : path.join(archiveDir, `${session.sessionId}.tar.gz`);
-    if (!fs.existsSync(file)) throw new Error(`${flow}: ${kind} package missing`);
+    if (!fs.existsSync(file)) throw new Error(`${label}: ${kind} package missing`);
     const verification = execFileSync(
       process.execPath,
-      [path.join(SCRIPT_DIR, 'verify-evidence-package.mjs'), file, '--expect-session', session.sessionId, '--expect-flow', flow, '--expect-phase', phase],
+      [
+        path.join(SCRIPT_DIR, 'verify-evidence-package.mjs'),
+        file,
+        '--expect-session',
+        session.sessionId,
+        '--expect-flow',
+        verificationFlowFor(expectFlow),
+        '--expect-phase',
+        expectPhase,
+      ],
       { cwd: REPO, encoding: 'utf8' },
     );
     if (!/result: VERIFIED/.test(verification)) {
-      throw new Error(`${flow}: package verification failed`);
+      throw new Error(`${label}: package verification failed`);
     }
-    this.log(`${flow}: ${kind} package VERIFIED (${sha256(file).slice(0, 12)}…)`);
+    this.log(`${label}: ${kind} package VERIFIED (${sha256(file).slice(0, 12)}…)`);
+    return { kind, file: path.relative(this.evidenceDir, file), sha256: sha256(file) };
   }
 }
 
@@ -317,19 +471,103 @@ async function runDevelopment(runner, session) {
   await runner.approve(session, 'development-06-approve-impl', 'EVIDENCE_REVIEW');
   await runner.turn(session, 'development-07-finish', '/finish');
   await runner.turn(session, 'development-08-export', '/export');
-  runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY');
+  const first = runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', 'development');
   await runner.turn(session, 'development-09-archive', '/archive');
-  runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY');
+  const after = runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', 'development');
+  if (first.sha256 !== after.sha256) throw new Error('development: export changed after /archive');
+  session.packages = [after];
 }
 
-async function runReduced(runner, session, prefix, ticket) {
-  await runner.turn(session, `${prefix}-02-task`, `/task --file ${ticket}`);
-  await runner.turn(session, `${prefix}-03-plan`, '/plan');
-  await runner.approve(session, `${prefix}-04-approve-plan`, 'PLAN_REVIEW');
-  await runner.turn(session, `${prefix}-05-implement`, '/implement');
-  await runner.approve(session, `${prefix}-06-approve-impl`, 'EVIDENCE_REVIEW');
-  await runner.turn(session, `${prefix}-07-export`, '/export');
-  runner.verifyPackage(session, 'export', prefix, 'EXPORT_READY');
+async function runReduced(runner, session, label, ticket) {
+  await runner.turn(session, `${label}-02-task`, `/task --file ${ticket}`);
+  await runner.turn(session, `${label}-03-plan`, '/plan');
+  await runner.approve(session, `${label}-04-approve-plan`, 'PLAN_REVIEW');
+  await runner.turn(session, `${label}-05-implement`, '/implement');
+  await runner.approve(session, `${label}-06-approve-impl`, 'EVIDENCE_REVIEW');
+  await runner.turn(session, `${label}-07-export`, '/export');
+  session.packages = [
+    runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', label),
+  ];
+}
+
+async function runFlows(runner) {
+  const { workspaces, configDir } = runner;
+  const mainWorkspace = path.join(workspaces, 'java-task-manager');
+  const reducedRoot = path.join(workspaces, 'reduced-ceremony');
+
+  const flows = {
+    architecture: {
+      workspace: mainWorkspace,
+      terminal: 'ARCH_COMPLETE',
+      run: async (session) => {
+        await runner.turn(
+          session,
+          'architecture-02-architecture',
+          '/architecture Read ADR_TICKET.md and TICKET.md, then create an ADR based on them. Record ProofGraph claims using the architecture claim fields (statement, critical, authoritySectionId, requiredReviewEvidence). If a claim submission is rejected, read the recovery guidance and resubmit corrected claims.',
+        );
+        await runner.approve(session, 'architecture-03-approve', 'ARCH_REVIEW');
+        await runner.turn(session, 'architecture-04-archive', '/archive redactionMode=none includeRaw=true');
+        session.packages = [
+          runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE', 'architecture'),
+        ];
+      },
+    },
+    development: {
+      workspace: mainWorkspace,
+      terminal: 'COMPLETE',
+      run: (session) => runDevelopment(runner, session),
+    },
+    'peer-review': {
+      workspace: mainWorkspace,
+      terminal: 'PEER_REVIEW_COMPLETE',
+      run: async (session) => {
+        await runner.turn(session, 'peer-review-02-review', '/review branch=feature/add-due-date');
+        await runner.turn(session, 'peer-review-03-archive', '/archive redactionMode=none includeRaw=true');
+        session.packages = [
+          runner.verifyPackage(session, 'archive', 'peer-review', 'PEER_REVIEW_COMPLETE', 'peer-review'),
+        ];
+      },
+    },
+    'reduced-on': {
+      workspace: path.join(reducedRoot, 'reduced-on'),
+      terminal: 'COMPLETE',
+      preflight: ['--verify-session', path.join(reducedRoot, 'reduced-on')],
+      run: (session) => runReduced(runner, session, 'reduced-on', 'TICKET_DOCS.md'),
+    },
+    'reduced-off': {
+      workspace: path.join(reducedRoot, 'reduced-off'),
+      terminal: 'COMPLETE',
+      preflight: ['--verify-session', path.join(reducedRoot, 'reduced-off')],
+      run: (session) => runReduced(runner, session, 'reduced-off', 'TICKET_DOCS.md'),
+    },
+    'architecture-negative': {
+      workspace: mainWorkspace,
+      terminal: 'ARCH_COMPLETE',
+      run: async (session) => {
+        // Controlled negative step: the exact typed denial must be observed and
+        // nothing may be persisted before the allowed recovery continues.
+        await runner.turn(
+          session,
+          'architecture-negative-02-probe',
+          'Call flowguard_architecture exactly once with a minimal ADR (title Negative-Path Probe, adrText with the sections ## Context, ## Decision, ## Consequences) and EXACTLY this intentionally invalid plan-shaped claims array: [{"statement":"probe plan-shaped claim","claimScope":"specific_behavior","expectedCheckId":"probe","critical":true}]. Report the typed rejection code, do not resubmit in this step, and stop.',
+          { expectedDenial: 'ARCHITECTURE_CLAIM_INVALID' },
+        );
+        const probed = runner.requireBoundState(session);
+        assertArchitectureProbeNotPersisted(probed.state);
+        await runner.turn(
+          session,
+          'architecture-negative-03-recovery',
+          'Resubmit the ADR with one schema-valid architecture claim (statement: "the negative probe boundary is typed", critical: true, authoritySectionId: "decision", requiredReviewEvidence: ["architecture boundary probe"]) and complete the independent review normally.',
+        );
+        await runner.approve(session, 'architecture-negative-04-approve', 'ARCH_REVIEW');
+        await runner.turn(session, 'architecture-negative-05-archive', '/archive redactionMode=none includeRaw=true');
+        session.packages = [
+          runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE', 'architecture-negative'),
+        ];
+      },
+    },
+  };
+  return flows;
 }
 
 async function main() {
@@ -348,7 +586,8 @@ async function main() {
   fs.mkdirSync(evidenceDir, { recursive: true });
   fs.mkdirSync(configDir, { recursive: true });
 
-  const { tarball, sidecar } = tarballFor(options);
+  const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim();
+  const { tarball, sidecar, builtFromCheckout } = tarballFor(options);
   fs.writeFileSync(
     path.join(evidenceDir, 'metadata.json'),
     JSON.stringify(
@@ -356,7 +595,9 @@ async function main() {
         startedAt: new Date().toISOString(),
         model: options.model,
         pins,
+        checkoutHead,
         tarball,
+        tarballBuiltFromCheckout: builtFromCheckout,
         tarballSha256: sha256(tarball),
         sidecarSha256: sha256(sidecar),
         flows: options.flows,
@@ -378,66 +619,7 @@ async function main() {
   );
 
   const runner = new Runner(options.root, options, configDir);
-  const mainWorkspace = path.join(workspaces, 'java-task-manager');
-  const reducedRoot = path.join(workspaces, 'reduced-ceremony');
-
-  const flows = {
-    architecture: {
-      workspace: mainWorkspace,
-      terminal: 'ARCH_COMPLETE',
-      run: async (session) => {
-        await runner.turn(
-          session,
-          'architecture-02-architecture',
-          '/architecture Read ADR_TICKET.md and TICKET.md, then create an ADR based on them. Record ProofGraph claims using the architecture claim fields (statement, critical, authoritySectionId, requiredReviewEvidence). If a claim submission is rejected, read the recovery guidance and resubmit corrected claims.',
-        );
-        await runner.approve(session, 'architecture-03-approve', 'ARCH_REVIEW');
-        await runner.turn(session, 'architecture-04-archive', '/archive redactionMode=none includeRaw=true');
-        runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE');
-      },
-    },
-    development: {
-      workspace: mainWorkspace,
-      terminal: 'COMPLETE',
-      run: (session) => runDevelopment(runner, session),
-    },
-    'peer-review': {
-      workspace: mainWorkspace,
-      terminal: 'PEER_REVIEW_COMPLETE',
-      run: async (session) => {
-        await runner.turn(session, 'peer-review-02-review', '/review branch=feature/add-due-date');
-        await runner.turn(session, 'peer-review-03-archive', '/archive redactionMode=none includeRaw=true');
-        runner.verifyPackage(session, 'archive', 'peer-review', 'PEER_REVIEW_COMPLETE');
-      },
-    },
-    'reduced-on': {
-      workspace: path.join(reducedRoot, 'reduced-on'),
-      terminal: 'COMPLETE',
-      preflight: ['--verify-session', path.join(reducedRoot, 'reduced-on')],
-      run: (session) => runReduced(runner, session, 'reduced-on', 'TICKET_DOCS.md'),
-    },
-    'reduced-off': {
-      workspace: path.join(reducedRoot, 'reduced-off'),
-      terminal: 'COMPLETE',
-      preflight: ['--verify-session', path.join(reducedRoot, 'reduced-off')],
-      run: (session) => runReduced(runner, session, 'reduced-off', 'TICKET_DOCS.md'),
-    },
-    'architecture-negative': {
-      workspace: mainWorkspace,
-      terminal: 'ARCH_COMPLETE',
-      run: async (session) => {
-        await runner.turn(
-          session,
-          'architecture-negative-02-probe',
-          '/architecture First call flowguard_architecture with a minimal ADR and EXACTLY this intentionally plan-shaped claims array: [{"statement":"probe plan-shaped claim","claimScope":"specific_behavior","expectedCheckId":"probe","critical":true}]. It is intentionally invalid. After the typed block, read the recovery guidance and resubmit the same ADR with one schema-valid architecture claim (statement, critical, authoritySectionId: "decision", requiredReviewEvidence: ["architecture boundary probe"]). Complete the independent review normally.',
-        );
-        await runner.approve(session, 'architecture-negative-03-approve', 'ARCH_REVIEW');
-        await runner.turn(session, 'architecture-negative-04-archive', '/archive redactionMode=none includeRaw=true');
-        runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE');
-      },
-    },
-  };
-
+  const flows = await runFlows(runner);
   try {
     for (const name of options.flows) {
       const flow = flows[name];
@@ -447,33 +629,64 @@ async function main() {
       try {
         const session = { workspace: flow.workspace };
         await runner.turn(session, `${name}-01-start`, '/start');
+        const installed = runner.installedBuild(flow.workspace);
+        record.installedBuild = installed;
+        if (builtFromCheckout && installed.gitSha !== checkoutHead) {
+          throw new Error(
+            `installed artifact gitSha ${String(installed.gitSha)} != checkout ${checkoutHead}`,
+          );
+        }
         if (flow.preflight) {
           execFileSync(path.join(SCRIPT_DIR, 'run-reduced-ceremony-demo-setup.sh'), flow.preflight, {
             cwd: REPO,
             stdio: 'inherit',
+            env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
           });
         }
         await flow.run(session);
-        const snapshot = readState(configDir, session.sessionId);
-        if (!snapshot) throw new Error('no persisted session state');
+        const snapshot = runner.requireBoundState(session);
         record.phase = snapshot.state.phase;
         record.hostSessionId = session.sessionId;
         record.flowguardSessionId = snapshot.state.flowguardSessionId;
         if (snapshot.state.phase !== flow.terminal) {
           throw new Error(`expected terminal ${flow.terminal}, observed ${snapshot.state.phase}`);
         }
+        await runner.captureProvenance(record, session);
+        record.packages = session.packages ?? [];
         record.result = 'COMPLETE';
       } catch (error) {
         record.error = String(error);
         runner.log(`BLOCKED ${name}: ${error}`);
       }
       fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2));
+      fs.writeFileSync(
+        path.join(evidenceDir, 'host-sessions.json'),
+        JSON.stringify(
+          runner.flows.map(({ name, hostSessionId, flowguardSessionId, transcripts, packages, installedBuild }) => ({
+            flow: name,
+            hostSessionId: hostSessionId ?? null,
+            flowguardSessionId: flowguardSessionId ?? null,
+            transcripts: transcripts ?? null,
+            packages: packages ?? [],
+            installedBuild: installedBuild ?? null,
+          })),
+          null,
+          2,
+        ),
+      );
     }
-    runner.log('MATRIX FINISHED');
   } finally {
     fs.rmSync(globalConfig, { force: true });
     runner.log('raw-export grant removed from the isolated config dir');
   }
+
+  const completed = runner.flows.filter((flow) => flow.result === 'COMPLETE').length;
+  runner.log(`MATRIX RESULT: ${completed}/${runner.flows.length} flows COMPLETE`);
+  const exitCode = matrixExitCode(runner.flows);
+  if (exitCode !== 0) {
+    runner.log('MATRIX FAILED: at least one flow did not complete');
+  }
+  process.exitCode = exitCode;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

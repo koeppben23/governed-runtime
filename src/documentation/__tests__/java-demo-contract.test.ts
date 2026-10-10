@@ -10,6 +10,16 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
+import {
+  assertArchitectureProbeNotPersisted,
+  assertExpectedDenial,
+  assertSessionBinding,
+  matrixExitCode,
+  readPins,
+  transcriptTargets,
+  verificationFlowFor,
+} from '../../../demos/java-task-manager/run-live-matrix.mjs';
+
 const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DEMO_DIR = path.join(REPO_ROOT, 'demos', 'java-task-manager');
@@ -71,7 +81,7 @@ function extractSection(markdown: string, heading: string): string {
 }
 
 describe('Java Task Manager demo contract', () => {
-  it('ships a reproducible live-matrix runner that reads the canonical toolchain pins', async () => {
+  it('ships a live-matrix runner whose pins come from the canonical authorities', async () => {
     const runnerPath = path.join(DEMO_DIR, 'run-live-matrix.mjs');
     const runner = await fs.readFile(runnerPath, 'utf-8');
     const readme = await fs.readFile(README_PATH, 'utf-8');
@@ -79,17 +89,77 @@ describe('Java Task Manager demo contract', () => {
     // Pins come from the canonical authorities; no semver literal is hardcoded.
     expect(runner).toContain('opencode-runtime-compat.ts');
     expect(runner).toContain('.node-version');
-    expect(runner).toMatch(/TESTED_OPENCODE_HOST_VERSION/);
     expect(runner).not.toMatch(/\b\d+\.\d+\.\d+\b/);
+    expect(readPins()).toEqual({
+      opencode: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      node: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+    });
 
-    // Explicit host context and abort rules.
+    // Explicit host context and the isolated config environment.
     expect(runner).toContain("'--dir'");
-    expect(runner).toMatch(/PWD/);
-    expect(runner).toContain('tool-level block observed');
-    expect(runner).toContain('raw-export grant removed');
+    expect(runner).toContain('OPENCODE_CONFIG_DIR');
 
     // The README points operators at the runner instead of ad-hoc drivers.
     expect(readme).toContain('run-live-matrix.mjs');
+  });
+
+  it('maps matrix scenarios to verifier flows and fails the matrix on any incomplete flow', () => {
+    // The reduced-ceremony scenarios are development flows for the verifier;
+    // scenario names are never verifier flow names.
+    expect(verificationFlowFor('reduced-on')).toBe('development');
+    expect(verificationFlowFor('reduced-off')).toBe('development');
+    expect(verificationFlowFor('development')).toBe('development');
+    expect(() => verificationFlowFor('architecture-negative')).toThrow(/verifier flow/);
+
+    expect(matrixExitCode([{ result: 'COMPLETE' }])).toBe(0);
+    expect(matrixExitCode([{ result: 'COMPLETE' }, { result: 'BLOCKED' }])).toBe(1);
+    expect(matrixExitCode([{ result: 'BLOCKED' }])).toBe(1);
+  });
+
+  it('verifies the persisted host and worktree binding before accepting a flow', () => {
+    const state = { binding: { hostSessionId: 'ses_parent', worktree: REPO_ROOT } };
+    expect(() => assertSessionBinding(state, 'ses_parent', REPO_ROOT)).not.toThrow();
+    expect(() => assertSessionBinding(state, 'ses_other', REPO_ROOT)).toThrow(/host binding/);
+    expect(() => assertSessionBinding(state, 'ses_parent', path.join(REPO_ROOT, 'demos'))).toThrow(
+      /worktree binding/,
+    );
+  });
+
+  it('treats the architecture probe as a controlled denial with non-persistence', () => {
+    const toolLine = (code: string) =>
+      JSON.stringify({
+        type: 'tool_use',
+        part: { state: { output: JSON.stringify({ error: true, code }) } },
+      });
+    const expected = toolLine('ARCHITECTURE_CLAIM_INVALID');
+    expect(() => assertExpectedDenial(expected, 'ARCHITECTURE_CLAIM_INVALID')).not.toThrow();
+    expect(() => assertExpectedDenial(expected, 'OTHER_CODE')).toThrow(/expected denial/);
+    expect(() =>
+      assertExpectedDenial(
+        `${expected}\n${toolLine('SOME_OTHER_DENIAL')}`,
+        'ARCHITECTURE_CLAIM_INVALID',
+      ),
+    ).toThrow(/unexpected denial/);
+
+    expect(() => assertArchitectureProbeNotPersisted({ architecture: null })).not.toThrow();
+    expect(() => assertArchitectureProbeNotPersisted({ architecture: {} })).toThrow(/persisted/);
+  });
+
+  it('collects the parent and reviewer-child transcripts for one flow', () => {
+    const state = {
+      binding: { hostSessionId: 'ses_parent', worktree: REPO_ROOT },
+      reviewAssurance: {
+        invocations: [
+          { childSessionId: 'ses_reviewer_1' },
+          { childSessionId: 'ses_reviewer_1' },
+          { childSessionId: 'ses_parent' },
+        ],
+      },
+    };
+    expect(transcriptTargets(state)).toEqual({
+      parent: 'ses_parent',
+      reviewers: ['ses_reviewer_1'],
+    });
   });
 
   it('keeps the ticket and runbook explicit about the complete regression fix', async () => {
