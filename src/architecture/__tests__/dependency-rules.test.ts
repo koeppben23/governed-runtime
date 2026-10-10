@@ -589,7 +589,7 @@ function detectStateSharedPrimitiveViolations(
           rule: 'state-shared-primitive',
           message: `state/ imports an unapproved shared primitive: ${imp.module}`,
           imports: [imp.module],
-          hint: 'state/ may use only the listed shared primitives; move a new primitive into src/shared/ itself or drop the state dependency.',
+          hint: 'state/ may use only the listed shared primitives; switch to an approved primitive, move the dependency out of state/, or make the allowlist extension an explicit architecture decision.',
         });
       }
     }
@@ -1249,6 +1249,14 @@ describe('Layer Dependency Rules', () => {
           `${violation.rule}: ${violation.file}`,
         ).toBeGreaterThan(0);
       }
+
+      // The state-primitive hint must repair the actual violation: state
+      // already imports an unlisted shared primitive, so "move it into shared/"
+      // would not fix anything.
+      const stateHint =
+        violations.find((violation) => violation.rule === 'state-shared-primitive')?.hint ?? '';
+      expect(stateHint).toContain('approved primitive');
+      expect(stateHint).not.toContain('move a new primitive');
     });
   });
 

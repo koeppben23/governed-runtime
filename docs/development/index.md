@@ -60,7 +60,10 @@ First decision:
 - Git, file, or archive I/O → `src/adapters/`.
 
 Then follow the [Developer Architecture Map](./architecture-map.md), which owns
-the change-type checklists and the exact authorities.
+the change-type checklists and the exact authorities. The [first-change
+walkthrough](./first-change.md) is complete without it; the map is the next
+step only for changes that need deeper routing, placement, or top-level module
+work the walkthrough does not cover.
 
 ## Mental model
 
