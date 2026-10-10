@@ -143,6 +143,30 @@ FlowGuard session ID for every row; the host-session ID is the package identity
 used by `verify-evidence-package.mjs`. Do not reuse a session or a chat export
 between flows.
 
+`run-live-matrix.mjs` executes this checklist reproducibly: it reads the
+toolchain pins from the canonical repository files (`opencode-runtime-compat.ts`
+and `.node-version`), verifies the tarball against its `checksums.sha256`
+sidecar before installing, prepares fresh workspaces, runs every step through
+real headless `opencode run` processes with an explicit `--dir`, verifies the
+persisted host/worktree binding and each package, exports the parent and
+reviewer-child host transcripts with hashes, records the installed build
+identity, stops a flow at the first unexpected block, removes the isolated
+raw-export grant on exit, and exits non-zero when any requested flow did not
+complete. It performs no governance work itself.
+
+The architecture negative probe is a controlled denial step: the runner
+requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that nothing
+was persisted, and only then continues with the corrected submission.
+
+```bash
+# Full matrix: builds + packs the current tree, prepares fresh workspaces,
+# runs every flow, and verifies each package.
+node demos/java-task-manager/run-live-matrix.mjs --root /tmp/flowguard-live-run
+
+# Toolchain/preflight check only (no live run).
+node demos/java-task-manager/run-live-matrix.mjs --root /tmp/flowguard-live-run --check
+```
+
 | Flow         | Workspace                      | Required terminal state    | Individual evidence package                                                |
 | ------------ | ------------------------------ | -------------------------- | -------------------------------------------------------------------------- |
 | Architecture | `java-task-manager`            | `ARCH_COMPLETE`            | Create a raw `/archive`; verify as `architecture` / `ARCH_COMPLETE`.       |

@@ -10,6 +10,22 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
+import {
+  DEFAULT_FLOWS,
+  Runner,
+  assertArchitectureProbeNotPersisted,
+  assertExpectedDenial,
+  assertSessionBinding,
+  matrixExitCode,
+  readPins,
+  runFlows,
+  sha256,
+  transcriptTargets,
+  verificationFlowFor,
+  verifyChecksumSidecar,
+  withRawExportGrant,
+} from '../../../demos/java-task-manager/run-live-matrix.mjs';
+
 const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DEMO_DIR = path.join(REPO_ROOT, 'demos', 'java-task-manager');
@@ -71,6 +87,160 @@ function extractSection(markdown: string, heading: string): string {
 }
 
 describe('Java Task Manager demo contract', () => {
+  it('ships a live-matrix runner whose pins come from the canonical authorities', async () => {
+    const runnerPath = path.join(DEMO_DIR, 'run-live-matrix.mjs');
+    const runner = await fs.readFile(runnerPath, 'utf-8');
+    const readme = await fs.readFile(README_PATH, 'utf-8');
+
+    // Pins come from the canonical authorities; no semver literal is hardcoded.
+    expect(runner).toContain('opencode-runtime-compat.ts');
+    expect(runner).toContain('.node-version');
+    expect(runner).not.toMatch(/\b\d+\.\d+\.\d+\b/);
+    expect(readPins()).toEqual({
+      opencode: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      node: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+    });
+
+    // Explicit host context and the isolated config environment.
+    expect(runner).toContain("'--dir'");
+    expect(runner).toContain('OPENCODE_CONFIG_DIR');
+
+    // The README points operators at the runner instead of ad-hoc drivers.
+    expect(readme).toContain('run-live-matrix.mjs');
+  });
+
+  it('maps matrix scenarios to verifier flows and fails the matrix on any incomplete flow', () => {
+    // The reduced-ceremony scenarios are development flows for the verifier;
+    // scenario names are never verifier flow names.
+    expect(verificationFlowFor('reduced-on')).toBe('development');
+    expect(verificationFlowFor('reduced-off')).toBe('development');
+    expect(verificationFlowFor('development')).toBe('development');
+    expect(() => verificationFlowFor('architecture-negative')).toThrow(/verifier flow/);
+
+    expect(matrixExitCode([{ result: 'COMPLETE' }])).toBe(0);
+    expect(matrixExitCode([{ result: 'COMPLETE' }, { result: 'BLOCKED' }])).toBe(1);
+    expect(matrixExitCode([{ result: 'BLOCKED' }])).toBe(1);
+  });
+
+  it('verifies the persisted host and worktree binding before accepting a flow', () => {
+    const state = { binding: { hostSessionId: 'ses_parent', worktree: REPO_ROOT } };
+    expect(() => assertSessionBinding(state, 'ses_parent', REPO_ROOT)).not.toThrow();
+    expect(() => assertSessionBinding(state, 'ses_other', REPO_ROOT)).toThrow(/host binding/);
+    expect(() => assertSessionBinding(state, 'ses_parent', path.join(REPO_ROOT, 'demos'))).toThrow(
+      /worktree binding/,
+    );
+  });
+
+  it('treats the architecture probe as a controlled denial with non-persistence', () => {
+    const toolLine = (code: string) =>
+      JSON.stringify({
+        type: 'tool_use',
+        part: { state: { output: JSON.stringify({ error: true, code }) } },
+      });
+    const expected = toolLine('ARCHITECTURE_CLAIM_INVALID');
+    expect(() => assertExpectedDenial(expected, 'ARCHITECTURE_CLAIM_INVALID')).not.toThrow();
+    expect(() => assertExpectedDenial(expected, 'OTHER_CODE')).toThrow(/expected denial/);
+    expect(() =>
+      assertExpectedDenial(
+        `${expected}\n${toolLine('SOME_OTHER_DENIAL')}`,
+        'ARCHITECTURE_CLAIM_INVALID',
+      ),
+    ).toThrow(/unexpected denial/);
+
+    expect(() => assertArchitectureProbeNotPersisted({ architecture: null })).not.toThrow();
+    expect(() => assertArchitectureProbeNotPersisted({ architecture: {} })).toThrow(/persisted/);
+  });
+
+  it('initializes the runner with the workspace root and wires every flow entry', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-init-'));
+    try {
+      const runner = new Runner(
+        root,
+        { model: 'test/model', flows: [] },
+        path.join(root, 'config'),
+      );
+      expect(runner.workspaces).toBe(path.join(root, 'workspaces'));
+
+      const flows = await runFlows(runner);
+      expect(Object.keys(flows).sort()).toEqual([...DEFAULT_FLOWS].sort());
+      expect(flows.development.workspace).toBe(path.join(root, 'workspaces', 'java-task-manager'));
+      expect(flows['reduced-on'].workspace).toBe(
+        path.join(root, 'workspaces', 'reduced-ceremony', 'reduced-on'),
+      );
+      expect(flows['architecture-negative']).toBeDefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed on a tarball that does not match its checksums.sha256', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-sha-'));
+    try {
+      const tarball = path.join(dir, 'flowguard-core-9.9.9.tgz');
+      const sidecar = path.join(dir, 'checksums.sha256');
+      await fs.writeFile(tarball, 'tarball-bytes');
+      const digest = sha256(tarball);
+      await fs.writeFile(sidecar, `${digest}  flowguard-core-9.9.9.tgz\n`);
+      expect(verifyChecksumSidecar(tarball, sidecar)).toEqual({
+        sha256: digest,
+        name: 'flowguard-core-9.9.9.tgz',
+      });
+
+      // Tampered tarball: the recorded digest no longer matches.
+      await fs.writeFile(tarball, 'tampered-bytes');
+      expect(() => verifyChecksumSidecar(tarball, sidecar)).toThrow(/checksum mismatch/);
+
+      // The sidecar must record exactly this tarball's filename.
+      await fs.writeFile(tarball, 'tarball-bytes');
+      await fs.writeFile(sidecar, `${digest}  other-name.tgz\n`);
+      expect(() => verifyChecksumSidecar(tarball, sidecar)).toThrow(/records 'other-name.tgz'/);
+
+      await fs.writeFile(sidecar, 'not-a-checksum\n');
+      expect(() => verifyChecksumSidecar(tarball, sidecar)).toThrow(/malformed/);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes the raw-export grant on success and on initialization failure', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-grant-'));
+    const grant = path.join(dir, 'flowguard.json');
+    try {
+      const value = await withRawExportGrant(dir, async () => {
+        expect(await fs.readFile(grant, 'utf-8')).toContain('"allowRawExport":true');
+        return 42;
+      });
+      expect(value).toBe(42);
+      await expect(fs.access(grant)).rejects.toThrow();
+
+      await expect(
+        withRawExportGrant(dir, async () => {
+          throw new Error('initialization failed');
+        }),
+      ).rejects.toThrow('initialization failed');
+      await expect(fs.access(grant)).rejects.toThrow();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('collects the parent and reviewer-child transcripts for one flow', () => {
+    const state = {
+      binding: { hostSessionId: 'ses_parent', worktree: REPO_ROOT },
+      reviewAssurance: {
+        invocations: [
+          { childSessionId: 'ses_reviewer_1' },
+          { childSessionId: 'ses_reviewer_1' },
+          { childSessionId: 'ses_parent' },
+        ],
+      },
+    };
+    expect(transcriptTargets(state)).toEqual({
+      parent: 'ses_parent',
+      reviewers: ['ses_reviewer_1'],
+    });
+  });
+
   it('keeps the ticket and runbook explicit about the complete regression fix', async () => {
     const [ticket, readme, demoScript, controllerTest, demoPackage, proofGraphVariants] =
       await Promise.all([
