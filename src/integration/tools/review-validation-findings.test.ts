@@ -922,15 +922,19 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     expect(String(parsed.message)).toContain('reviewMode=self');
   });
 
-  it('interpolates the unable_to_review obligation context', () => {
+  it('names the real obligation identity for unable_to_review, never the obligation type', () => {
     const parsed = blockedPayload(
       serializedValidation(
         makeFindings({ overallVerdict: 'unable_to_review' }),
-        makeCtx({ obligationType: 'architecture' }),
+        makeCtx({
+          obligationType: 'architecture',
+          expectedObligationId: '11111111-1111-4111-8111-111111111111',
+        }),
       )!,
     );
     expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
-    expect(String(parsed.message)).toContain('architecture');
+    expect(String(parsed.message)).toContain('11111111-1111-4111-8111-111111111111');
+    expect(String(parsed.message)).not.toContain('architecture');
   });
 
   it('interpolates the coherence block count', () => {

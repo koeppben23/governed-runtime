@@ -74,7 +74,11 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
     );
   }
   if (declaration.mutationProfile) positive.push('fault_injection');
-  return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
+  // A declared assertion is claim-carrying evidence at ANY criticality: the
+  // positive check pass alone must never prove a specific behavior (Run-9 F4).
+  const requiresAdversarial =
+    declaration.critical || declaration.counterexampleRequirement !== undefined;
+  return { positive, adversarial: requiresAdversarial ? ['counterexample' as const] : [] };
 }
 
 function isAggregateCounterexampleAttempt(
@@ -237,10 +241,12 @@ function validateApprovedPlanCertificate(state: SessionState): CertificateValida
   const certificate = plan?.approvalCertificate;
   // The certificate is the PLAN_REVIEW approval. A later implementation-review
   // decision is unrelated, and a certificate for another plan digest is stale.
-  if (!certificate) return { kind: 'invalid', cause: 'missing_certificate' };
-  if (state.phase !== 'IMPL_REVIEW' || !plan) {
-    return { kind: 'invalid', cause: 'invalid_certificate' };
-  }
+  //
+  // WHEN materialization may run is owned by the post-validation entry
+  // authority (`materializePostValidationContract`: IMPL_REVIEW or a
+  // reduced-ceremony EVIDENCE_REVIEW). This authority owns only the binding:
+  // the certificate must authorize the exact current plan declaration set.
+  if (!certificate || !plan) return { kind: 'invalid', cause: 'missing_certificate' };
   return hasCurrentPlanApprovalCertificate({
     current: plan.current,
     ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),

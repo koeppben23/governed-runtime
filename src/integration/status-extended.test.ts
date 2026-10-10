@@ -33,6 +33,7 @@ import {
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';
+import { PLAN_REVIEW_ASSURANCE } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
@@ -408,6 +409,33 @@ describe('status.ts MUTATION_KILL matrix', () => {
         expect(blocked.nextResolvableCommand).toBe(command);
         expect(blocked.nextResolvableCommand).toBe(status.directive.commands[0] ?? null);
       }
+    });
+
+    it('a blocked artifact review surfaces its canonical recovery without locking commands', () => {
+      const blocked = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        status: 'blocked' as const,
+        blockedCode: 'SUBAGENT_UNABLE_TO_REVIEW',
+        invocationId: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
+      const state = makeState('PLAN', {
+        reviewAssurance: { ...PLAN_REVIEW_ASSURANCE, obligations: [blocked] },
+      });
+
+      const status = buildStatusProjection(state, solo);
+      expect(status.blocker).toMatchObject({ reasonCode: 'SUBAGENT_UNABLE_TO_REVIEW' });
+      // The machine directive and execution disposition stay untouched: the
+      // recovery is a fresh submission, not a global command lock.
+      expect(status.directive).toMatchObject({
+        kind: 'system_work',
+        code: 'PLAN_REVIEW_IN_PROGRESS',
+      });
+      expect(status.executionDisposition).toBe('active');
+
+      const blockedProjection = buildBlockedProjection(state, solo);
+      expect(blockedProjection.blocked).toBe(false);
     });
 
     it('waiting user gates expose waiting reason and humanActionRequired=true', () => {

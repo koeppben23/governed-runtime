@@ -515,6 +515,40 @@ function checkSuitePositiveSatisfiability(
   return null;
 }
 
+/**
+ * Rule 10: a `specific_behavior` claim must name at least one claim-specific
+ * evidence binding — an assertion counterexample requirement, a structural
+ * surface, or a mutation profile.
+ *
+ * Without one, only execution evidence (a passing check) can ever attach, and
+ * the claim could be reported PROVEN by a check that never observed the
+ * declared behavior (Run-9 F4). Critical claims without a requirement are
+ * already blocked by Rule 3; this rule closes the non-critical gap and keeps
+ * the diagnostic actionable at the write boundary.
+ */
+function checkSpecificityBinding(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (claim.claimScope !== 'specific_behavior') return null;
+  if (
+    claim.counterexampleRequirement !== undefined ||
+    claim.structuralSurface !== undefined ||
+    claim.mutationProfile !== undefined
+  ) {
+    return null;
+  }
+  return invalid(
+    input.source,
+    claim,
+    'counterexampleRequirement',
+    'a specific_behavior claim requires at least one claim-specific evidence binding: ' +
+      'a counterexample requirement (assertion), a structuralSurface, or a mutationProfile; ' +
+      'a passing check alone does not prove the declared behavior',
+    'unsatisfiable',
+  );
+}
+
 export function claimViolations(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
@@ -528,6 +562,7 @@ export function claimViolations(
     checkSuitePositiveSatisfiability(input, claim),
     checkCounterexampleScope(input, claim),
     checkCounterexampleSatisfiability(input, claim),
+    checkSpecificityBinding(input, claim),
   ].filter(
     (violation): violation is Extract<ClaimContractResult, { kind: 'invalid' }> =>
       violation !== null,

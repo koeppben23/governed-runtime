@@ -13,6 +13,9 @@ const claim = {
   claimScope: 'specific_behavior' as const,
   expectedCheckId: 'test',
   authoritySectionId: 'step-1',
+  // Claim-carrying specific binding (Run-9 F4): a check pass alone never
+  // proves a specific_behavior claim.
+  structuralSurface: 'command-registration',
 };
 const state = makeState('TICKET', {
   activeChecks: ['test'],

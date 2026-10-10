@@ -19,6 +19,7 @@
  *   3. a provider errored (execution)            -> BLOCKED
  *   4. a required provider was unavailable       -> NOT_VERIFIED
  *   5. a provider reported a failure             -> UNPROVEN
+ *  5.5 a specific_behavior claim without claim-carrying binding -> NOT_VERIFIED
  *   6. required positive (fresh) + adversarial evidence all satisfied -> PROVEN
  *   7. required adversarial evidence missing/unresolved -> NOT_VERIFIED
  *   8. positive evidence only stale -> STALE, otherwise -> UNPROVEN
@@ -180,6 +181,26 @@ function analyzeCounterexamples(
   };
 }
 
+/** Provider kinds that carry a specific behavior claim beyond plain execution. */
+const SPECIFIC_CARRYING_KINDS: readonly ProofProviderResult['providerKind'][] = [
+  'structural_assertion',
+  'schema_compare',
+  'fault_injection',
+];
+
+/**
+ * Whether a `specific_behavior` claim declares claim-carrying evidence: a
+ * counterexample (assertion/aggregate) requirement or a required specific
+ * provider kind. Old persisted contracts without any such binding can never be
+ * PROVEN from a check pass alone; the evaluator reports them NOT_VERIFIED.
+ */
+function hasClaimCarryingBinding(claim: DeclaredClaim): boolean {
+  if (claim.counterexampleRequirement !== undefined) return true;
+  return (claim.requiredEvidence?.positive ?? []).some((kind) =>
+    SPECIFIC_CARRYING_KINDS.includes(kind),
+  );
+}
+
 /** Resolve a claim's state once precedence 1-5 has not already decided it. */
 function deriveFromRequiredEvidence(
   claim: DeclaredClaim,
@@ -187,6 +208,12 @@ function deriveFromRequiredEvidence(
   cx: AdversarialAnalysis,
   input: ProofGraphEvaluationInput,
 ): ClaimVerificationState {
+  // Execution evidence (a fresh check pass) is NECESSARY but never sufficient
+  // for a specific behavior: without a claim-carrying binding the claim stays
+  // not verified instead of inheriting a verdict from an unrelated check.
+  if (claim.claimScope === 'specific_behavior' && !hasClaimCarryingBinding(claim)) {
+    return 'NOT_VERIFIED';
+  }
   const required = claim.requiredEvidence ?? EMPTY_REQUIRED;
   const freshPassKinds = new Set(
     passing

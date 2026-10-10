@@ -1524,6 +1524,7 @@ describe('ProofGraph demo fixtures', () => {
           critical: false,
           claimScope: 'specific_behavior',
           authority: 'plan',
+          structuralSurface: 'command-registration',
         },
       ],
     });

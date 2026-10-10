@@ -1008,6 +1008,7 @@ describe('plan', () => {
               claimScope: 'specific_behavior',
               authoritySectionId: 'authentication',
               expectedCheckId: 'typecheck',
+              structuralSurface: 'command-registration',
             },
           ],
           targetPaths: ['docs/test.md'],
@@ -1027,6 +1028,7 @@ describe('plan', () => {
             claimScope: 'specific_behavior',
             authoritySectionId: 'authentication',
             expectedCheckId: 'typecheck',
+            structuralSurface: 'command-registration',
           },
         ],
       });

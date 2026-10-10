@@ -12,7 +12,7 @@
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';
-import { formatBlocked } from '../../blocked-result.js';
+import { formatBlocked, unableReviewDiagnostics } from '../../blocked-result.js';
 
 import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
@@ -121,7 +121,10 @@ export function validateEffectiveFindings(
   obligationId: string,
 ): string | null {
   if (findings.overallVerdict === 'unable_to_review') {
-    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId,
+      ...unableReviewDiagnostics(findings),
+    });
   }
   if (findings.overallVerdict !== submittedVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {

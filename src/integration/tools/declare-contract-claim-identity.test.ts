@@ -156,6 +156,10 @@ function claimInput(statement: string) {
     checkId: CHECK,
     critical: false,
     claimScope: 'specific_behavior' as const,
+    // Claim-carrying specific binding (Run-9 F4): manual claims must name at
+    // least one specific evidence source; identity tests exercise admission
+    // beyond that boundary.
+    structuralSurface: 'command-registration',
   };
 }
 

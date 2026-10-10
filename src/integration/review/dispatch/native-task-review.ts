@@ -13,7 +13,11 @@
 
 import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import { readState } from '../../../adapters/persistence.js';
-import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
+import {
+  buildEnforcementError,
+  strictBlockedOutput,
+  unableReviewDiagnostics,
+} from '../../blocked-result.js';
 
 import type { SessionEnforcementState, PendingReviewRetryDiagnostic } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
@@ -25,6 +29,7 @@ import type {
 } from '../../types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewObligation, ReviewObligationType } from '../../../state/evidence.js';
+import type { ReviewFindings } from '../../../state/evidence.js';
 import { hashText } from '../../../shared/hashing.js';
 import { ensureReviewAssurance, hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { findBindableAttempt } from '../../../state/review-continuation.js';
@@ -414,8 +419,15 @@ async function projectFulfilledReview(input: {
   });
 }
 
-function projectUnableToReview(output: ToolHookAfterOutput, obligationId: string): void {
-  output.output = strictBlockedOutput('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
+function projectUnableToReview(
+  output: ToolHookAfterOutput,
+  obligationId: string,
+  findings: Pick<ReviewFindings, 'missingVerification' | 'unknowns'>,
+): void {
+  output.output = strictBlockedOutput('SUBAGENT_UNABLE_TO_REVIEW', {
+    obligationId,
+    ...unableReviewDiagnostics(findings),
+  });
 }
 
 type NativeTaskContextResolution =
@@ -609,7 +621,7 @@ async function completeStructuredReview(
     return;
   }
   if (validation.findings.overallVerdict === 'unable_to_review') {
-    projectUnableToReview(hookOutput, lineage.obligation.obligationId);
+    projectUnableToReview(hookOutput, lineage.obligation.obligationId, validation.findings);
     return;
   }
 

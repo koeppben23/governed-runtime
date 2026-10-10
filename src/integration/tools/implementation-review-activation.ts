@@ -33,6 +33,8 @@ import { buildFrozenReviewMaterialContent } from '../review/context/reviewer-con
 import { resolveAttemptDiscoveryOrBlock } from '../review/context/discovery-attempt-context.js';
 import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 import { hasFrozenRepositoryAuthority } from '../../state/evidence-review-authority.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { reducedCeremonyReady } from '../../machine/guards.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
 
 export type ImplementationReviewActivationResult = {
@@ -180,20 +182,71 @@ export async function activateImplementationReviewObligation(
   };
 }
 
-/** Materialize the approved-plan claim contract at IMPL_REVIEW entry. */
-export async function materializeImplReviewContract(
+/**
+ * Materialize the approved-plan claim contract at the post-validation review
+ * entry. Two entries carry a plan whose implementation must be evaluated:
+ *
+ * - `IMPL_REVIEW` (full ceremony), and
+ * - `EVIDENCE_REVIEW` reached through the reduced-ceremony shortcut, which is
+ *   legal only while the persisted reduced decision still satisfies the
+ *   canonical machine authority `reducedCeremonyReady`.
+ *
+ * Reconciliation: certificate-bound claims from a superseded plan are replaced
+ * by the current materialization, while advisory claims that never carried a
+ * certificate approval (manual `/declare-contract` declarations) are
+ * preserved. A stale manual claim is NOT silently deleted — it stays in the
+ * contract and the evaluator's freshness authority reports it STALE /
+ * NOT_VERIFIED against the current implementation. Manual claims remain
+ * advisory: they never gain approval authority and never become gate-eligible.
+ *
+ * Idempotency is bound to the CURRENT plan/implementation/evidence generation:
+ * only a persisted contract that already equals this reconciliation is left
+ * untouched. An invalid certificate over existing declarations materializes
+ * the explicit coverage gap (never a silent claimless fallback); the evidence
+ * gate keeps blocking that state through the certificate-invalid enforcement
+ * path.
+ */
+export async function materializePostValidationContract(
   state: SessionState,
   worktree: string,
 ): Promise<SessionState> {
-  if (state.phase !== 'IMPL_REVIEW') return state;
+  const entersFullReview = state.phase === 'IMPL_REVIEW';
+  const entersReducedReview = state.phase === 'EVIDENCE_REVIEW' && reducedCeremonyReady(state);
+  if (!entersFullReview && !entersReducedReview) return state;
+
   const materialized = await materializeApprovedPlanContractResult(state, worktree);
-  return materialized
-    ? {
-        ...state,
-        proofContract: materialized.contract,
-        proofContractCoverage: [...materialized.coverage],
-      }
-    : state;
+  const planClaimIds = new Set(materialized.contract.claims.map((claim) => claim.claimId));
+  const preservedAdvisoryClaims = (state.proofContract?.claims ?? []).filter(
+    (claim) => !hasCertificateApproval(claim) && !planClaimIds.has(claim.claimId),
+  );
+  const nextContract: NonNullable<SessionState['proofContract']> = {
+    ...materialized.contract,
+    claims: [...materialized.contract.claims, ...preservedAdvisoryClaims],
+  };
+  const nextCoverage = [...materialized.coverage];
+  if (
+    state.proofContract !== undefined &&
+    canonicalJsonStringify(state.proofContract) === canonicalJsonStringify(nextContract) &&
+    canonicalJsonStringify(state.proofContractCoverage ?? []) ===
+      canonicalJsonStringify(nextCoverage)
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    proofContract: nextContract,
+    proofContractCoverage: nextCoverage,
+  };
+}
+
+function hasCertificateApproval(
+  claim: NonNullable<SessionState['proofContract']>['claims'][number],
+): boolean {
+  return (
+    claim.provenance !== null &&
+    claim.provenance.kind === 'canonical_authority' &&
+    claim.provenance.approval !== undefined
+  );
 }
 
 /**

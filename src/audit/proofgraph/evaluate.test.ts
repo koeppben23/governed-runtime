@@ -889,3 +889,127 @@ describe('evaluateProofGraph', () => {
     });
   });
 });
+
+// ─── Run-9 F4: specific_behavior claims require claim-carrying evidence ─────
+
+describe('specific_behavior claim-carrying evidence (Run-9 F4)', () => {
+  function providerResult(
+    claimId: string,
+    providerKind: ProofProviderResultType['providerKind'],
+    status: ProofProviderResultType['status'] = 'pass',
+  ): ProofProviderResultType {
+    return ProofProviderResult.parse({
+      claimId,
+      providerKind,
+      providerId: `provider:${providerKind}`,
+      providerVersion: '1.0.0',
+      input: { assertion: `kind:${providerKind}` },
+      source: { location: `provider:${providerKind}`, stableId: claimId },
+      binding: { kind: 'implementation', digest: CURR },
+      status,
+      resultDigest: SHA,
+      executedAt: NOW,
+      attestation: 'flowguard_executed',
+    });
+  }
+
+  function specificClaim(overrides: Partial<DeclaredClaimType> = {}): DeclaredClaimType {
+    return claim(uuid(1), {
+      claimScope: 'specific_behavior',
+      critical: false,
+      requiredEvidence: { positive: ['executed_test'], adversarial: [] },
+      ...overrides,
+    });
+  }
+
+  it('BAD: a check pass alone never proves a persisted specific_behavior claim', () => {
+    const out = evaluate({
+      claims: [specificClaim()],
+      providerResults: [result(uuid(1), 'pass', CURR)],
+    });
+    expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+  });
+
+  it('HAPPY: assertion-carrying evidence proves it with fresh execution evidence', () => {
+    const out = evaluate({
+      claims: [
+        specificClaim({
+          counterexampleRequirement: {
+            kind: 'assertion',
+            checkId: 'test',
+            assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
+          },
+          requiredEvidence: { positive: ['executed_test'], adversarial: ['counterexample'] },
+        }),
+      ],
+      providerResults: [result(uuid(1), 'pass', CURR)],
+      counterexamples: [counterexample(uuid(1), 'supported')],
+    });
+    expect(out.claims[0]!.verificationState).toBe('PROVEN');
+  });
+
+  it('BAD: an assertion requirement without a supported counterexample stays NOT_VERIFIED', () => {
+    const out = evaluate({
+      claims: [
+        specificClaim({
+          counterexampleRequirement: {
+            kind: 'assertion',
+            checkId: 'test',
+            assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
+          },
+          requiredEvidence: { positive: ['executed_test'], adversarial: ['counterexample'] },
+        }),
+      ],
+      providerResults: [result(uuid(1), 'pass', CURR)],
+      counterexamples: [counterexample(uuid(1), 'not_verified')],
+    });
+    expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+  });
+
+  it('HAPPY: structural evidence proves it without invalidating execution evidence', () => {
+    const out = evaluate({
+      claims: [
+        specificClaim({
+          evidenceRefs: [{ kind: 'structural_surface', surfaceId: 'command-registration' }],
+          requiredEvidence: {
+            positive: ['executed_test', 'structural_assertion'],
+            adversarial: [],
+          },
+        }),
+      ],
+      providerResults: [
+        result(uuid(1), 'pass', CURR),
+        providerResult(uuid(1), 'structural_assertion'),
+      ],
+    });
+    expect(out.claims[0]!.verificationState).toBe('PROVEN');
+  });
+
+  it('HAPPY: mutation evidence proves it without invalidating execution evidence', () => {
+    const out = evaluate({
+      claims: [
+        specificClaim({
+          requiredEvidence: { positive: ['executed_test', 'fault_injection'], adversarial: [] },
+        }),
+      ],
+      providerResults: [result(uuid(1), 'pass', CURR), providerResult(uuid(1), 'fault_injection')],
+    });
+    expect(out.claims[0]!.verificationState).toBe('PROVEN');
+  });
+
+  it('BAD: a fresh structural pass alone (no execution evidence) is not enough', () => {
+    const out = evaluate({
+      claims: [
+        specificClaim({
+          evidenceRefs: [{ kind: 'structural_surface', surfaceId: 'command-registration' }],
+          requiredEvidence: {
+            positive: ['executed_test', 'structural_assertion'],
+            adversarial: [],
+          },
+        }),
+      ],
+      providerResults: [providerResult(uuid(1), 'structural_assertion')],
+    });
+    expect(out.claims[0]!.verificationState).not.toBe('PROVEN');
+  });
+});
