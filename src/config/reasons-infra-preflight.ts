@@ -113,6 +113,16 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'WORKSPACE_NOT_INITIALIZED',
+    category: 'adapter',
+    messageTemplate: 'No initialized FlowGuard workspace for this worktree: {detail}',
+    recoverySteps: [
+      'Run flowguard install for this worktree, or run the preflight inside a managed workspace',
+      'The preflight is read-only and never initializes a workspace itself',
+    ],
+  },
+
+  {
     code: 'WORKSPACE_UNRESOLVED',
     category: 'adapter',
     messageTemplate: 'Cannot resolve the workspace for the upgrade preflight: {message}',

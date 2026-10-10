@@ -38,17 +38,23 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
+let workspaceConfigDir: string | null = null;
+
 async function createWorkspaceRoot(
   options: { readonly createSessions?: boolean } = {},
 ): Promise<{ configDir: string; sessionsRoot: string }> {
   const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'upgrade-check-'));
+  workspaceConfigDir = configDir;
   const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
   cleanups.push(async () => {
     restore();
     await fs.rm(configDir, { recursive: true, force: true });
   });
   const sessionsRoot = path.join(workspaceDir(FINGERPRINT), 'sessions');
-  if (options.createSessions !== false) {
+  if (options.createSessions === false) {
+    // Managed workspace without a sessions directory (never used).
+    await fs.mkdir(workspaceDir(FINGERPRINT), { recursive: true });
+  } else {
     await fs.mkdir(sessionsRoot, { recursive: true });
   }
   return { configDir, sessionsRoot };
@@ -77,7 +83,10 @@ async function runCheck(): Promise<{ exit: number; report: UpgradeCheckReport }>
     output += `${String(value)}\n`;
   };
   try {
-    const exit = await runUpgradeCheck(FINGERPRINT, true);
+    const exit = await runUpgradeCheck(
+      { fingerprint: FINGERPRINT, worktreeRoot: workspaceConfigDir ?? process.cwd() },
+      true,
+    );
     return { exit, report: JSON.parse(output) as UpgradeCheckReport };
   } finally {
     console.log = original;

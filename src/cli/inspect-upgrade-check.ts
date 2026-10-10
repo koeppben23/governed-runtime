@@ -5,10 +5,11 @@
  * Read-only pre-upgrade preflight for the current workspace. The read model and
  * classification live in `adapters/workspace/upgrade-preflight.ts`; this module
  * only renders the report and applies the exit contract: `0` when the
- * workspace is upgrade-ready, `1` when at least one blocker exists or the
- * inventory cannot be determined reliably.
+ * workspace is upgrade-ready, `1` when at least one blocker exists, the
+ * workspace is not initialized, or the inventory cannot be determined
+ * reliably.
  *
- * @version v1
+ * @version v2
  */
 
 import {
@@ -47,13 +48,40 @@ export function reportWorkspaceUnresolved(json: boolean, message: string): numbe
 }
 
 /** Run the workspace upgrade preflight. Returns the process exit code. */
-export async function runUpgradeCheck(fingerprint: string, json: boolean): Promise<number> {
-  const result = await runUpgradePreflight(fingerprint);
+export async function runUpgradeCheck(
+  identity: { readonly fingerprint: string; readonly worktreeRoot: string },
+  json: boolean,
+): Promise<number> {
+  const result = await runUpgradePreflight(identity.fingerprint, identity.worktreeRoot);
+  if (result.kind === 'workspace-not-initialized') {
+    const message = `No initialized FlowGuard workspace for this worktree (${result.detail}).`;
+    if (json) {
+      const payload: UpgradeCheckReport = {
+        scope: 'workspace',
+        workspaceFingerprint: identity.fingerprint,
+        upgradeReady: false,
+        summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
+        sessions: [],
+        archives: [],
+        findings: [
+          {
+            severity: 'blocker',
+            code: 'WORKSPACE_NOT_INITIALIZED',
+            message,
+          },
+        ],
+      };
+      console.log(JSON.stringify(payload));
+    } else {
+      console.log(`[blocker] WORKSPACE_NOT_INITIALIZED: ${message}`);
+    }
+    return 1;
+  }
   if (result.kind === 'inventory-unreadable') {
     if (json) {
       const payload: UpgradeCheckReport = {
         scope: 'workspace',
-        workspaceFingerprint: fingerprint,
+        workspaceFingerprint: identity.fingerprint,
         upgradeReady: false,
         summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
         sessions: [],

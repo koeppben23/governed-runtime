@@ -9,7 +9,11 @@
  * or fully verifies archives — full integrity verification stays with
  * `verifyArchive`, and historical archives never block upgrade readiness.
  *
- * @version v1
+ * The caller passes the canonically resolved worktree root alongside the
+ * fingerprint; a resolvable worktree without an initialized FlowGuard
+ * workspace fails closed instead of reporting an empty inventory.
+ *
+ * @version v2
  */
 
 import { existsSync, readdirSync } from 'node:fs';
@@ -19,7 +23,7 @@ import { verifyChain } from '../../audit/integrity.js';
 import { ARCHIVE_MANIFEST_SCHEMA_VERSION, ArchiveManifestSchema } from '../../archive/types.js';
 import { TERMINAL } from '../../machine/topology.js';
 import type { SessionState } from '../../state/schema.js';
-import { auditPath, readState } from '../persistence.js';
+import { auditPath, readState, repoConfigPath } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { inspectArchiveTar, readArchiveTextMember } from './archive-tar.js';
 import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
@@ -78,7 +82,8 @@ export interface UpgradeCheckReport {
 
 export type UpgradePreflightResult =
   | { readonly kind: 'ok'; readonly report: UpgradeCheckReport }
-  | { readonly kind: 'inventory-unreadable'; readonly detail: string };
+  | { readonly kind: 'inventory-unreadable'; readonly detail: string }
+  | { readonly kind: 'workspace-not-initialized'; readonly detail: string };
 
 // ─── Pure classification ─────────────────────────────────────────────────────
 
@@ -449,8 +454,27 @@ function isValidSessionName(name: string): boolean {
   }
 }
 
+/**
+ * A workspace is managed when the fingerprint has a workspace store or the
+ * resolved worktree carries a repo-scoped FlowGuard config. Both checks are
+ * read-only; a filesystem error is never silently treated as an empty store.
+ */
+function isManagedWorkspace(fingerprint: string, worktreeRoot: string): boolean {
+  return existsSync(workspaceDir(fingerprint)) || existsSync(repoConfigPath(worktreeRoot));
+}
+
 /** Run the workspace upgrade preflight and return its structured report. */
-export async function runUpgradePreflight(fingerprint: string): Promise<UpgradePreflightResult> {
+export async function runUpgradePreflight(
+  fingerprint: string,
+  worktreeRoot: string,
+): Promise<UpgradePreflightResult> {
+  if (!isManagedWorkspace(fingerprint, worktreeRoot)) {
+    return {
+      kind: 'workspace-not-initialized',
+      detail: `no workspace store at ${workspaceDir(fingerprint)} and no repo config for ${worktreeRoot}`,
+    };
+  }
+
   const sessionsRoot = join(workspaceDir(fingerprint), 'sessions');
   const archiveDir = join(sessionsRoot, 'archive');
 
