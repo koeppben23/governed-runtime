@@ -73,6 +73,14 @@ const SANCTIONED: ReadonlyMap<string, { calls: number; reason: string }> = new M
     },
   ],
   [
+    'adapters/workspace/upgrade-preflight-identity.ts',
+    {
+      calls: 1,
+      reason:
+        'read-only worktree attribution of foreign session bindings for identity-change detection',
+    },
+  ],
+  [
     'integration/review/observations/observation-resolution.ts',
     { calls: 1, reason: 'replay of already-recorded audit entries by persisted fingerprint/id' },
   ],

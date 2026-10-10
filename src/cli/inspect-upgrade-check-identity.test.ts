@@ -16,7 +16,7 @@ import * as path from 'node:path';
 
 import { makeState } from '../fixtures.js';
 import { writeState } from '../adapters/persistence.js';
-import { sessionDir, ensureWorkspace } from '../adapters/workspace/index.js';
+import { sessionDir, ensureWorkspace, workspaceDir } from '../adapters/workspace/index.js';
 import { GitError } from '../adapters/git-command.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { runUpgradePreflight } from '../adapters/workspace/upgrade-preflight.js';
@@ -299,6 +299,99 @@ describe('inspect workspace identity resolution', () => {
     const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
     expect(exit).toBe(1);
     expect(reportCodes(parseReport(stdout))).toContain('WORKSPACE_IDENTITY_CHANGED');
+  });
+
+  it('blocks when a shared-origin clone changes identity and its session lives in the shared store', async () => {
+    await isolateConfigDir();
+    const sharedRemote = 'https://example.com/org/shared-repo.git';
+
+    const cloneB = await makeGitRepo();
+    execFileSync('git', ['remote', 'add', 'origin', sharedRemote], {
+      cwd: cloneB,
+      windowsHide: true,
+    });
+    const shared = await ensureWorkspace(cloneB);
+
+    const cloneA = await makeGitRepo();
+    execFileSync('git', ['remote', 'add', 'origin', sharedRemote], {
+      cwd: cloneA,
+      windowsHide: true,
+    });
+    await writeRepoConfig(cloneA, DEFAULT_CONFIG);
+
+    // Clone A's active session lives in the shared remote-fingerprint store;
+    // workspace.json still records clone B as the initializer.
+    const sessDir = sessionDir(shared.fingerprint, 'ses_clone_a');
+    await fs.mkdir(sessDir, { recursive: true });
+    const base = makeState('PLAN');
+    await writeState(sessDir, { ...base, binding: { ...base.binding, worktree: cloneA } });
+
+    execFileSync('git', ['remote', 'set-url', 'origin', 'https://example.com/org/moved.git'], {
+      cwd: cloneA,
+      windowsHide: true,
+    });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], cloneA);
+    expect(exit).toBe(1);
+    const report = parseReport(stdout);
+    expect(report.upgradeReady).toBe(false);
+    expect(reportCodes(report)).toContain('WORKSPACE_IDENTITY_CHANGED');
+  });
+
+  it('does not ignore a session store whose metadata is missing', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await ensureWorkspace(root);
+
+    const orphan = 'c'.repeat(24);
+    const sessDir = sessionDir(orphan, 'ses_orphan');
+    await fs.mkdir(sessDir, { recursive: true });
+    const base = makeState('PLAN');
+    await writeState(sessDir, { ...base, binding: { ...base.binding, worktree: root } });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    expect(reportCodes(parseReport(stdout))).toContain('WORKSPACE_IDENTITY_CHANGED');
+  });
+
+  it('fails closed when a foreign session binding cannot be read', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await ensureWorkspace(root);
+
+    const orphan = 'c'.repeat(24);
+    const sessDir = sessionDir(orphan, 'ses_orphan');
+    await fs.mkdir(sessDir, { recursive: true });
+    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{ not json', 'utf8');
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    expect(reportCodes(parseReport(stdout))).toContain('INVENTORY_UNREADABLE');
+  });
+
+  it('does not block on an unrelated store with inconsistent metadata and no sessions', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await ensureWorkspace(root);
+
+    const stranger = 'd'.repeat(24);
+    await fs.mkdir(workspaceDir(stranger), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir(stranger), 'workspace.json'),
+      JSON.stringify({
+        schemaVersion: 'workspace.v1',
+        fingerprint: 'e'.repeat(24),
+        materialClass: 'local_path',
+        canonicalRemote: null,
+        worktreePath: '/definitely/elsewhere',
+        createdAt: new Date().toISOString(),
+      }),
+      'utf8',
+    );
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(0);
+    expect(parseReport(stdout).upgradeReady).toBe(true);
   });
 
   it('reports workspace-not-initialized from the read model for an unmanaged fingerprint', async () => {

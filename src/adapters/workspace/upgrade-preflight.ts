@@ -17,7 +17,7 @@
  * @version v3
  */
 
-import { existsSync, readdirSync, type Dirent } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { verifyChain } from '../../audit/integrity.js';
@@ -28,8 +28,9 @@ import { auditPath, readState, repoConfigPath } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { inspectArchiveTar, readArchiveTextMember } from './archive-tar.js';
 import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
-import { sessionDir, workspaceDir, workspacesHome, readWorkspaceInfo } from './init.js';
-import { validateSessionId, WorkspaceError } from './types.js';
+import { sessionDir, workspaceDir } from './init.js';
+import { scanWorktreeWorkspaces } from './upgrade-preflight-identity.js';
+import { validateSessionId } from './types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -475,43 +476,6 @@ function isManagedWorkspace(identity: WorkspaceIdentity): boolean {
   );
 }
 
-type WorktreeWorkspaceScan =
-  | { readonly status: 'ok'; readonly fingerprints: readonly string[] }
-  | { readonly status: 'unreadable'; readonly detail: string };
-
-/**
- * Read-only scan of the workspace store for records of this exact worktree.
- * Metadata that cannot be read is never treated as "not this worktree": a
- * non-matching entry with unreadable metadata fails the scan closed, while
- * directory names that are not fingerprints are not workspace records at all.
- */
-async function scanWorktreeWorkspaces(normalizedRoot: string): Promise<WorktreeWorkspaceScan> {
-  const home = workspacesHome();
-  let entries: Dirent[];
-  try {
-    if (!existsSync(home)) return { status: 'ok', fingerprints: [] };
-    entries = readdirSync(home, { withFileTypes: true, encoding: 'utf8' });
-  } catch (error) {
-    return { status: 'unreadable', detail: `workspace store: ${String(error)}` };
-  }
-
-  const fingerprints: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    let info: Awaited<ReturnType<typeof readWorkspaceInfo>>;
-    try {
-      info = await readWorkspaceInfo(entry.name);
-    } catch (error) {
-      if (error instanceof WorkspaceError && error.code === 'INVALID_FINGERPRINT') continue;
-      return { status: 'unreadable', detail: `workspace metadata ${entry.name}: ${String(error)}` };
-    }
-    if (info !== null && info.worktreePath === normalizedRoot) {
-      fingerprints.push(info.fingerprint);
-    }
-  }
-  return { status: 'ok', fingerprints };
-}
-
 type IdentityBlocker = Extract<
   UpgradePreflightResult,
   { kind: 'inventory-unreadable' | 'workspace-not-initialized' | 'workspace-identity-changed' }
@@ -525,7 +489,7 @@ type IdentityBlocker = Extract<
 async function classifyWorkspaceIdentity(
   identity: WorkspaceIdentity,
 ): Promise<IdentityBlocker | null> {
-  const scan = await scanWorktreeWorkspaces(identity.normalizedRoot);
+  const scan = await scanWorktreeWorkspaces(identity);
   if (scan.status === 'unreadable') {
     return { kind: 'inventory-unreadable', detail: scan.detail };
   }

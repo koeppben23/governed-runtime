@@ -297,8 +297,11 @@ export function fromOpenCodeContext(openCodeCtx: {
  * - Replace backslashes with forward slashes
  * - Remove trailing separators
  * - Lowercase on Windows (NTFS is case-insensitive)
+ *
+ * Exported for read-only worktree attribution (workspace store scans) so the
+ * comparison stays one authority; it is not a persistence or validation API.
  */
-function normalizeBindingPath(p: string): string {
+export function normalizeBindingPath(p: string): string {
   let normalized = path.resolve(p).replace(/\\/g, '/').replace(/\/+$/, '');
 
   // Windows: case-insensitive comparison
