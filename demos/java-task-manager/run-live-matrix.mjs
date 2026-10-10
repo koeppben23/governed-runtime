@@ -235,6 +235,30 @@ export function toolDenialCodes(output) {
   return [...codes];
 }
 
+/**
+ * Typed, recoverable denials the governed agent is expected to recover from
+ * in-session (fail-fast admission, call-shape corrections). Run 8/9 evidence
+ * shows these occur on normal successful flows; they are recorded but do not
+ * stop the flow. Every other denial stays flow-stopping.
+ */
+export const RECOVERABLE_DENIAL_CODES = new Set([
+  'PROOFGRAPH_CLAIM_NOT_DECLARED',
+  'PROOFGRAPH_CLAIM_UNSATISFIABLE',
+  'PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE',
+  'PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED',
+  'ADR_SUBMISSION_MIXED_INPUTS',
+  'ADR_REVIEW_IN_PROGRESS',
+  'ARCHITECTURE_CLAIM_INVALID',
+  'TICKET_SOURCE_CONFLICT',
+  'CONTENT_ANALYSIS_REQUIRED',
+  'REVISED_PLAN_CLAIMS_REQUIRED',
+]);
+
+/** Denials observed in a step that must stop the flow (never recovered in-session). */
+export function unexpectedDenialCodes(output) {
+  return toolDenialCodes(output).filter((code) => !RECOVERABLE_DENIAL_CODES.has(code));
+}
+
 /** The controlled negative probe: exactly the expected denial, nothing else. */
 export function assertExpectedDenial(output, expectedCode) {
   const codes = toolDenialCodes(output);
@@ -245,6 +269,21 @@ export function assertExpectedDenial(output, expectedCode) {
   if (unexpected.length > 0) {
     throw new Error(`unexpected denial(s) alongside ${expectedCode}: ${unexpected.join(', ')}`);
   }
+}
+
+/**
+ * Opt the installed repository config into raw auditor archives, mirroring the
+ * documented demo setup. The isolated global config remains the admin ceiling;
+ * the repository config can only restrict, so both layers must allow raw
+ * export for `/archive redactionMode=none includeRaw=true`.
+ */
+export function enableRawArchiveInRepoConfig(workspace) {
+  const file = path.join(workspace, '.opencode', 'flowguard.json');
+  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  config.archive = config.archive ?? {};
+  config.archive.redaction = config.archive.redaction ?? {};
+  config.archive.redaction.allowRawExport = true;
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export function assertArchitectureProbeNotPersisted(state) {
@@ -319,12 +358,6 @@ function assertHostCallOk(result, label) {
   if (hostErrors.length > 0) throw new Error(`${label}: host error event observed`);
 }
 
-function allToolOutputs(result) {
-  return eventsOf(result.stdout)
-    .map((event) => event.part?.state?.output ?? '')
-    .join('\n');
-}
-
 export class Runner {
   constructor(root, options, configDir) {
     this.root = root;
@@ -390,8 +423,21 @@ export class Runner {
     if (!session.sessionId) throw new Error(`${label}: no host session id observed`);
     if (options.expectedDenial) {
       assertExpectedDenial(result.stdout, options.expectedDenial);
-    } else if (/"error":true|"kind":"blocked"/.test(allToolOutputs(result))) {
-      throw new Error(`${label}: unexpected tool-level block observed; stopping the flow`);
+    } else {
+      const unexpected = unexpectedDenialCodes(result.stdout);
+      if (unexpected.length > 0) {
+        throw new Error(
+          `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
+        );
+      }
+      const recovered = toolDenialCodes(result.stdout).filter((code) =>
+        RECOVERABLE_DENIAL_CODES.has(code),
+      );
+      if (recovered.length > 0) {
+        session.recoveredDenials = session.recoveredDenials ?? [];
+        session.recoveredDenials.push({ step: label, codes: recovered });
+        this.log(`${label}: recovered typed denial(s) [${recovered.join(', ')}]`);
+      }
     }
     return result;
   }
@@ -657,6 +703,10 @@ async function main() {
     cwd: REPO,
     stdio: 'inherit',
   });
+  // The installer writes allowRawExport=false into the repo config, which
+  // restricts the effective policy; the documented raw-auditor flow needs the
+  // repo opt-in as well as the isolated global grant.
+  enableRawArchiveInRepoConfig(path.join(workspaces, 'java-task-manager'));
 
   const runner = new Runner(options.root, options, configDir);
   const exitCode = await withRawExportGrant(configDir, async () => {
@@ -693,6 +743,7 @@ async function main() {
         }
         await runner.captureProvenance(record, session);
         record.packages = session.packages ?? [];
+        record.recoveredDenials = session.recoveredDenials ?? [];
         record.result = 'COMPLETE';
       } catch (error) {
         record.error = String(error);

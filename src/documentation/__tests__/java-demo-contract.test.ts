@@ -14,6 +14,8 @@ import {
   DEFAULT_FLOWS,
   Runner,
   assertArchitectureProbeNotPersisted,
+  enableRawArchiveInRepoConfig,
+  unexpectedDenialCodes,
   assertExpectedDenial,
   assertSessionBinding,
   matrixExitCode,
@@ -221,6 +223,48 @@ describe('Java Task Manager demo contract', () => {
       await expect(fs.access(grant)).rejects.toThrow();
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('distinguishes recoverable typed denials from flow-stopping blocks', () => {
+    const toolLine = (code: string) =>
+      JSON.stringify({
+        type: 'tool_use',
+        part: { state: { output: JSON.stringify({ error: true, code }) } },
+      });
+    const recoverable = [
+      toolLine('PROOFGRAPH_CLAIM_NOT_DECLARED'),
+      toolLine('ADR_REVIEW_IN_PROGRESS'),
+    ].join('\n');
+    expect(unexpectedDenialCodes(recoverable)).toEqual([]);
+    const mixed = `${recoverable}\n${toolLine('ARCHIVE_FAILED')}`;
+    expect(unexpectedDenialCodes(mixed)).toEqual(['ARCHIVE_FAILED']);
+    const hard = toolLine('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
+    expect(unexpectedDenialCodes(hard)).toEqual(['HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION']);
+  });
+
+  it('opts the installed repository config into raw auditor archives', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-raw-'));
+    try {
+      await fs.mkdir(path.join(workspace, '.opencode'), { recursive: true });
+      const file = path.join(workspace, '.opencode', 'flowguard.json');
+      await fs.writeFile(
+        file,
+        JSON.stringify({
+          schemaVersion: 'v1',
+          policy: { defaultMode: 'team' },
+          archive: { redaction: { allowedModes: ['none'], allowRawExport: false } },
+        }),
+      );
+
+      enableRawArchiveInRepoConfig(workspace);
+
+      const updated = JSON.parse(await fs.readFile(file, 'utf-8'));
+      expect(updated.archive.redaction.allowRawExport).toBe(true);
+      expect(updated.archive.redaction.allowedModes).toEqual(['none']);
+      expect(updated.policy.defaultMode).toBe('team');
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
     }
   });
 
