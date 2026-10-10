@@ -19,12 +19,13 @@ import { join } from 'node:path';
 
 import { initWorkspace } from '../adapters/workspace/index.js';
 import { writeState } from '../adapters/persistence.js';
-import { makeState, PLAN_REVIEW_ASSURANCE } from '../fixtures.js';
+import { makeState, PLAN_REVIEW_ASSURANCE, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { canonicalBinding } from '../integration/test-helpers.js';
 
 const TEST_HOOK_TOKEN = 'governance-wire-test-token-at-least-32-characters';
 const OPEN_OBLIGATION_SESSION = 'wire-open-obligation-session';
 const PLAN_PHASE_SESSION = 'wire-plan-phase-session';
+const UNKNOWN_TOOL_SESSION = 'wire-unknown-tool-session';
 
 const captured = vi.hoisted(() => ({ server: undefined as Server | undefined }));
 
@@ -116,6 +117,15 @@ beforeAll(async () => {
     }),
   );
 
+  const unknownToolWorkspace = await initWorkspace(worktree, UNKNOWN_TOOL_SESSION);
+  await writeState(
+    unknownToolWorkspace.sessionDir,
+    makeState('IMPLEMENTATION', {
+      binding: await canonicalBinding(worktree, UNKNOWN_TOOL_SESSION),
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+    }),
+  );
+
   await import('./http-server.js');
   const server = captured.server;
   if (!server) throw new Error('the real HTTP hook server was not created on import');
@@ -181,6 +191,26 @@ describe('real HTTP PreToolUse governance denials', () => {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason: expect.stringContaining('HOST_TOOL_PHASE_DENIED'),
+      },
+    });
+  });
+
+  it('denies an unregistered host tool with HOST_TOOL_UNKNOWN_DENIED over the wire', async () => {
+    const { status, json } = await postPreToolUse({
+      session_id: UNKNOWN_TOOL_SESSION,
+      cwd: worktree,
+      tool_name: 'unregistered_host_tool',
+      tool_input: { command: 'echo hostile' },
+    });
+
+    expect(status).toBe(200);
+    expect(json).toMatchObject({
+      decision: 'deny',
+      code: 'HOST_TOOL_UNKNOWN_DENIED',
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringContaining('HOST_TOOL_UNKNOWN_DENIED'),
       },
     });
   });

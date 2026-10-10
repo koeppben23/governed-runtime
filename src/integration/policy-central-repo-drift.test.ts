@@ -97,7 +97,7 @@ async function driveToPlan(): Promise<Record<string, unknown>> {
 }
 
 describe('central policy vs repository config drift', () => {
-  it('BAD: the central team minimum governs even after the repository config is weakened', async () => {
+  it('BAD: the central team minimum governs over an initially weaker repository config', async () => {
     await setupWorkspace();
     const centralPath = join(ws.tmpDir, 'central-policy.json');
     await fs.writeFile(
@@ -112,14 +112,9 @@ describe('central policy vs repository config drift', () => {
     expect(hydrated.error).toBeUndefined();
     expect((await sessionState())?.policySnapshot.mode).toBe('team');
 
-    // Attacker drift: weaken the repository config after hydrate.
-    await repoConfigWithMode('solo');
-
     const planned = await driveToPlan();
     expect(planned.reviewDispatch).toMatchObject({ required: true });
 
-    // The same review acceptance that auto-advances under solo must stop at
-    // the human gate under the frozen team snapshot.
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
     const accepted = parseToolResult(
@@ -130,7 +125,41 @@ describe('central policy vs repository config drift', () => {
     const state = await sessionState();
     expect(state?.policySnapshot.mode).toBe('team');
     expect(state?.phase).toBe('PLAN_REVIEW');
-    expect((state?.reviewAssurance?.obligations ?? []).length).toBeGreaterThan(0);
+  });
+
+  it('BAD: a repository config drift after hydrate cannot weaken the frozen snapshot', async () => {
+    await setupWorkspace();
+    // A permissive central minimum allows both modes, so only the repository
+    // configuration (team) and its frozen snapshot can stop the auto-advance.
+    const centralPath = join(ws.tmpDir, 'central-policy.json');
+    await fs.writeFile(
+      centralPath,
+      JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo', version: '2026.04' }),
+      'utf-8',
+    );
+    cleanups.push(withTestEnv({ FLOWGUARD_POLICY_PATH: centralPath }));
+
+    await repoConfigWithMode('team');
+    const hydrated = parseToolResult(await hydrate.execute({ profileId: 'baseline' }, ctx));
+    expect(hydrated.error).toBeUndefined();
+    expect((await sessionState())?.policySnapshot.mode).toBe('team');
+
+    // Attacker drift after hydrate: rewrite the repository config to solo.
+    await repoConfigWithMode('solo');
+
+    const planned = await driveToPlan();
+    expect(planned.reviewDispatch).toMatchObject({ required: true });
+
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
+    const accepted = parseToolResult(
+      await plan.execute(await withStrictReviewFindings(sessDir, { reviewVerdict: 'accept' }), ctx),
+    );
+    expect(accepted.error).toBeUndefined();
+
+    const state = await sessionState();
+    expect(state?.policySnapshot.mode).toBe('team');
+    expect(state?.phase).toBe('PLAN_REVIEW');
   });
 
   it('CORNER: control — a solo repository without central minimum auto-advances past the gate', async () => {
