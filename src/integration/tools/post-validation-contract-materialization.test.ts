@@ -110,11 +110,7 @@ function declarations(): PlanClaimDeclarations {
         authoritySectionId: 'implementation',
         claimScope: 'specific_behavior',
         expectedCheckId: 'test',
-        counterexampleRequirement: {
-          kind: 'assertion',
-          checkId: 'test',
-          assertion: { providerId: 'jest', localId: 'tests/a.test.ts::passes' },
-        },
+        structuralSurface: 'command-registration',
       },
     ],
   };
@@ -189,18 +185,64 @@ describe('materializePostValidationContract — reduced entry (Run-9 F1)', () =>
     expect(materialized.proofGraph).toBe(state.proofGraph);
   });
 
-  it('HAPPY: is idempotent — an existing contract is never overwritten', async () => {
+  it('HAPPY: repeating the same generation is idempotent', async () => {
     const state = reducedReadyState();
     const first = await materializePostValidationContract(state, '/tmp/worktree');
-    const sentinel = {
-      ...first,
-      proofContract: { version: 'contract.v2' as const, claims: [] },
+
+    const second = await materializePostValidationContract(first, '/tmp/worktree');
+
+    expect(second).toBe(first);
+  });
+
+  it('BAD: a foreign pre-gate contract is replaced by the approved-plan materialization', async () => {
+    const manualClaim = {
+      claimId: randomUUID(),
+      statement: 'a manual declaration created before the review gate',
+      signalClass: 'hypothesis' as const,
+      critical: false,
+      provenance: null,
+      evidenceRefs: [],
+      counterexampleRefs: [],
     };
+    const state = reducedReadyState({
+      proofContract: { version: 'contract.v2', claims: [manualClaim] },
+      proofContractCoverage: [],
+    });
 
-    const second = await materializePostValidationContract(sentinel, '/tmp/worktree');
+    const materialized = await materializePostValidationContract(state, '/tmp/worktree');
 
-    expect(second).toBe(sentinel);
-    expect(second.proofContract?.claims).toEqual([]);
+    expect(materialized.proofContract?.claims.map((claim) => claim.claimId)).toEqual([CLAIM_ID]);
+    expect(materialized.proofContractCoverage).toEqual([]);
+  });
+
+  it('BAD: a stale contract from an earlier implementation generation is replaced', async () => {
+    // IMPL_REVIEW needs no reduced binding, so the rework generation can be
+    // simulated by adding the implementation attempts after the first
+    // materialization.
+    const withoutAttempts = reducedReadyState({
+      phase: 'IMPL_REVIEW',
+      validationAttempts: [],
+    });
+    const first = await materializePostValidationContract(withoutAttempts, '/tmp/worktree');
+    expect(first.proofContractCoverage).toEqual([
+      { claimId: CLAIM_ID, cause: 'missing_expected_check' },
+    ]);
+    expect(first.proofContract?.claims[0]?.evidenceRefs).toEqual([
+      { kind: 'structural_surface', surfaceId: 'command-registration' },
+    ]);
+
+    const withAttempts = {
+      ...first,
+      validationAttempts: [attempt('test'), attempt('lint')],
+    };
+    const second = await materializePostValidationContract(withAttempts, '/tmp/worktree');
+
+    expect(second.proofContract).not.toBe(first.proofContract);
+    expect(second.proofContract?.claims[0]?.evidenceRefs).toEqual([
+      { kind: 'validation_attempt', attemptId: TEST_ATTEMPT_ID },
+      { kind: 'structural_surface', surfaceId: 'command-registration' },
+    ]);
+    expect(second.proofContractCoverage).toEqual([]);
   });
 
   it('BAD: no contract without the canonical reduced-ceremony binding', async () => {

@@ -33,6 +33,7 @@ import { buildFrozenReviewMaterialContent } from '../review/context/reviewer-con
 import { resolveAttemptDiscoveryOrBlock } from '../review/context/discovery-attempt-context.js';
 import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 import { hasFrozenRepositoryAuthority } from '../../state/evidence-review-authority.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { reducedCeremonyReady } from '../../machine/guards.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
 
@@ -190,28 +191,40 @@ export async function activateImplementationReviewObligation(
  *   legal only while the persisted reduced decision still satisfies the
  *   canonical machine authority `reducedCeremonyReady`.
  *
- * The call is idempotent: an already materialized contract is never
- * overwritten, so a retried write cannot mint a different contract version.
- * An invalid certificate over existing declarations materializes the explicit
- * coverage gap (never a silent claimless fallback); the evidence gate keeps
- * blocking that state through the certificate-invalid enforcement path.
+ * Idempotency is bound to the CURRENT plan/implementation/evidence generation:
+ * only a persisted contract that already equals this materialization is left
+ * untouched. A stale contract from an earlier implementation generation (for
+ * example a rework after `changes_requested`) or a foreign pre-gate contract
+ * (a manual `/declare-contract` declaration) is replaced by the approved-plan
+ * materialization — the existence of any `proofContract` is never treated as
+ * proof that the current plan was materialized. An invalid certificate over
+ * existing declarations materializes the explicit coverage gap (never a silent
+ * claimless fallback); the evidence gate keeps blocking that state through the
+ * certificate-invalid enforcement path.
  */
 export async function materializePostValidationContract(
   state: SessionState,
   worktree: string,
 ): Promise<SessionState> {
-  if (state.proofContract !== undefined) return state;
   const entersFullReview = state.phase === 'IMPL_REVIEW';
   const entersReducedReview = state.phase === 'EVIDENCE_REVIEW' && reducedCeremonyReady(state);
   if (!entersFullReview && !entersReducedReview) return state;
+
   const materialized = await materializeApprovedPlanContractResult(state, worktree);
-  return materialized
-    ? {
-        ...state,
-        proofContract: materialized.contract,
-        proofContractCoverage: [...materialized.coverage],
-      }
-    : state;
+  const nextCoverage = [...materialized.coverage];
+  if (
+    state.proofContract !== undefined &&
+    canonicalJsonStringify(state.proofContract) === canonicalJsonStringify(materialized.contract) &&
+    canonicalJsonStringify(state.proofContractCoverage ?? []) ===
+      canonicalJsonStringify(nextCoverage)
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    proofContract: materialized.contract,
+    proofContractCoverage: nextCoverage,
+  };
 }
 
 /**
