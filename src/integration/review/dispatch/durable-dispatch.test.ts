@@ -19,6 +19,7 @@ import {
   type DispatchLedgerWriteDeps,
 } from './durable-dispatch.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
+import { nativeReviewAuditIntents } from './native-task-review-bindings.js';
 import { createSessionState } from '../enforcement/enforcement.js';
 import { handleReviewTransportRecovery } from '../../tools/review-transport-recovery.js';
 import {
@@ -766,6 +767,83 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     const after = stateRef.current.reviewAssurance!;
     expect(after.obligations[0]).toMatchObject({ status: 'consumed', fulfilledAt: null });
     expect(after.invocations[0]?.consumedByObligationId).toBe(obligation.obligationId);
+  });
+
+  it('HAPPY: closes an unable plan obligation as blocked with its bound invocation retained', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const result = await recordEvidenceOrBlockReuse(
+      deps as never,
+      SESS_DIR,
+      recordingParams(attempt.attemptId, obligation.obligationId, 'plan', 'unable_to_review'),
+    );
+
+    expect(result).toBe('fulfilled');
+    const after = stateRef.current.reviewAssurance!;
+    // The evidence was recorded (invocation + bound attempt + completed
+    // dispatch), but the obligation is deterministically blocked: a verdict can
+    // never repair an unreviewable frozen artifact.
+    expect(after.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'SUBAGENT_UNABLE_TO_REVIEW',
+      invocationId: after.invocations[0]!.invocationId,
+    });
+    expect(after.invocations).toHaveLength(1);
+    expect(after.invocations[0]!.capturedRawFindings).toMatchObject({
+      overallVerdict: 'unable_to_review',
+    });
+    expect(after.attempts[0]).toMatchObject({ status: 'bound', childSessionId: CHILD });
+    expect(after.dispatches[0]).toMatchObject({ dispatchStatus: 'completed' });
+    // The blocked obligation is the recovery trigger: a fresh submission
+    // mints a new obligation instead of deadlocking on a verdict request.
+    expect(resolveReviewContinuation(after, 'plan')).toMatchObject({ kind: 'blocked' });
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('CORNER: native audit intents report the actual settlement outcome', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    await recordEvidenceOrBlockReuse(
+      deps as never,
+      SESS_DIR,
+      recordingParams(attempt.attemptId, obligation.obligationId, 'plan', 'unable_to_review'),
+    );
+
+    const intents = nativeReviewAuditIntents({
+      obligation,
+      parentSessionId: PARENT,
+      childSessionId: CHILD,
+      attemptId: attempt.attemptId,
+      promptHash: PROMPT_DIGEST,
+      findingsHash: 'f'.repeat(64),
+      phase: 'PLAN',
+    })('fulfilled', stateRef.current, NOW);
+
+    expect(intents.map((intent) => intent.event)).toEqual([
+      'review:subagent_invoked',
+      'review:obligation_blocked',
+    ]);
+    expect(intents[1].detail).toMatchObject({
+      obligationId: obligation.obligationId,
+      blockedCode: 'SUBAGENT_UNABLE_TO_REVIEW',
+    });
   });
 
   it('BAD: an out-of-scope finding never binds the attempt or fulfills the obligation', async () => {

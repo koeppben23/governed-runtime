@@ -391,6 +391,30 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
       const pendingObligations = obligations.filter((o) => o.status !== 'blocked');
       expect(pendingObligations.length).toBeGreaterThanOrEqual(1);
     });
+
+    it('EDGE: the original verdict path stays blocked while a fresh submission is executable', async () => {
+      await setupPlanDeadState(1);
+
+      const verdict = parseToolResult(
+        await plan.execute({ reviewVerdict: 'changes_requested' }, ctx),
+      );
+      expect(verdict.error).toBe(true);
+      expect(verdict.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+      expect(verdict.planDigest).toBeUndefined();
+
+      const fresh = parseToolResult(
+        await plan.execute(
+          {
+            planText:
+              '## Objective\nRetry\n## Approach\nRetry\n## Steps\n1. retry\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+            targetPaths: ['docs/test.md'],
+          },
+          ctx,
+        ),
+      );
+      expect(fresh.error).not.toBe(true);
+      expect(fresh.status).toContain('Plan submitted');
+    });
   });
 
   describe('BAD: max-cap prevents infinite retry loop', () => {

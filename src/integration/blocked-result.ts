@@ -11,6 +11,7 @@
 
 import { buildBlockedDiagnostics, formatDiagnosticCard } from '../diagnostics/index.js';
 import type { RuntimeDiagnostics } from '../diagnostics/index.js';
+import type { ReviewFindings } from '../state/evidence.js';
 import { normalizedMarkdown } from '../presentation/model.js';
 import { renderMarkdown } from '../presentation/markdown.js';
 import { projectReasonFromRegistry } from '../presentation/reason-projection.js';
@@ -219,4 +220,28 @@ export function buildEnforcementError(
 function appendUnregisteredContext(formattedReason: string, reason: string): string {
   if (!reason) return formattedReason;
   return `${formattedReason} Context: ${reason}`;
+}
+
+/**
+ * Bounded diagnostics from already validated, host-bound reviewer findings for
+ * an unable_to_review block. The reason template never embeds reviewer text;
+ * this detail map carries the concrete cause as data (first three entries,
+ * never unbounded), so the operator and the audit surface can see WHY the
+ * reviewer declared the input unreviewable.
+ */
+export function unableReviewDiagnostics(
+  findings: Pick<ReviewFindings, 'missingVerification' | 'unknowns'>,
+): Record<string, string> {
+  const detail: Record<string, string> = {};
+  const missing = findings.missingVerification
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .slice(0, 3);
+  const unknowns = findings.unknowns
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .slice(0, 3);
+  if (missing.length > 0) detail.missingVerification = missing.join(' | ');
+  if (unknowns.length > 0) detail.unknowns = unknowns.join(' | ');
+  return detail;
 }

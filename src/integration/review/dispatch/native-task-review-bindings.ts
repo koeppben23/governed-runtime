@@ -38,7 +38,14 @@ export interface NativeReviewRuntimePort {
   readonly logError: ReplayPersistDeps['logError'];
 }
 
-function nativeAuditIntents(input: {
+/**
+ * Semantic audit intents for one bound native review invocation.
+ *
+ * The settlement event reflects the ACTUAL persisted outcome: a plan/ADR
+ * unreviewable verdict closes the obligation as blocked, and the audit trail
+ * must not report that as a fulfilled obligation.
+ */
+export function nativeReviewAuditIntents(input: {
   obligation: ReviewObligation;
   parentSessionId: string;
   childSessionId: string;
@@ -47,8 +54,11 @@ function nativeAuditIntents(input: {
   findingsHash: string;
   phase: SessionState['phase'];
 }) {
-  return (_result: 'fulfilled' | 'reused', _state: SessionState, occurredAt: string) =>
-    [
+  return (_result: 'fulfilled' | 'reused', state: SessionState, occurredAt: string) => {
+    const settled = state.reviewAssurance?.obligations.find(
+      (item) => item.obligationId === input.obligation.obligationId,
+    );
+    return [
       {
         phase: input.phase,
         event: 'review:subagent_invoked',
@@ -69,16 +79,28 @@ function nativeAuditIntents(input: {
           reviewAssuranceLevel: 'structured_high',
         },
       },
-      {
-        phase: input.phase,
-        event: 'review:obligation_fulfilled',
-        occurredAt,
-        detail: {
-          obligationId: input.obligation.obligationId,
-          childSessionId: input.childSessionId,
-        },
-      },
+      settled?.status === 'blocked'
+        ? {
+            phase: input.phase,
+            event: 'review:obligation_blocked',
+            occurredAt,
+            detail: {
+              obligationId: input.obligation.obligationId,
+              childSessionId: input.childSessionId,
+              blockedCode: settled.blockedCode,
+            },
+          }
+        : {
+            phase: input.phase,
+            event: 'review:obligation_fulfilled',
+            occurredAt,
+            detail: {
+              obligationId: input.obligation.obligationId,
+              childSessionId: input.childSessionId,
+            },
+          },
     ] as const;
+  };
 }
 
 export async function resolveNativeReviewLineage(
@@ -245,7 +267,7 @@ export async function bindNativeReviewEvidence(input: {
     invokedAt: dispatch.dispatchAuthorizedAt,
     fulfilledAt: input.fulfilledAt,
     reviewerResult,
-    semanticIntents: nativeAuditIntents({
+    semanticIntents: nativeReviewAuditIntents({
       obligation,
       parentSessionId: input.sessionId,
       childSessionId: input.childSessionId,

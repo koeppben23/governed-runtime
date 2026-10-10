@@ -100,7 +100,7 @@ import {
 import {
   activateReviewObligationAndPersist,
   buildImplementationReviewInstruction,
-  materializeImplReviewContract,
+  materializePostValidationContract,
   nextImplementationReviewIteration,
 } from '../implementation-review-activation.js';
 
@@ -467,7 +467,7 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
     return formatAutoAdvanceOverflow(advanced);
   }
   const { state: finalState, transitions } = advanced;
-  const stateWithMaterializedContract = await materializeImplReviewContract(
+  const stateWithMaterializedContract = await materializePostValidationContract(
     finalState,
     input.worktree,
   );

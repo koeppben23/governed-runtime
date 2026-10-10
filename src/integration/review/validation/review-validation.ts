@@ -107,6 +107,15 @@ export function validateReviewFindings(
   const modeBlock = checkReviewMode(findings);
   if (modeBlock) return modeBlock;
 
+  const obligation = ctx.assurance
+    ? findLatestObligation(
+        ctx.assurance.obligations,
+        ctx.obligationType ?? 'review',
+        ctx.expectedIteration,
+        ctx.expectedPlanVersion,
+      )
+    : null;
+
   // P1.3 slice 4e: third-verdict tool-layer assertion.
   // The schema (slice 1) accepts overallVerdict='unable_to_review' so
   // that the subagent can declare the artifact unreviewable. However,
@@ -121,7 +130,7 @@ export function validateReviewFindings(
   // Per Decision C (obligation IS consumed via SUBAGENT_UNABLE_TO_REVIEW)
   // and Decision G (BLOCKED is the only legitimate outcome on this
   // verdict), this layer fail-closes with the SSOT reason from slice 2.
-  const verdictBlock = checkUnreviewableVerdict(findings, ctx);
+  const verdictBlock = checkUnreviewableVerdict(findings, obligation, ctx);
   if (verdictBlock) return verdictBlock;
 
   // F12: verdict/blocking-issues coherence. An `accept` verdict that still
@@ -131,15 +140,6 @@ export function validateReviewFindings(
   // findings-consistency.ts; this boundary passes the submitted array length.
   const consistencyBlock = checkFindingsConsistency(findings);
   if (consistencyBlock) return consistencyBlock;
-
-  const obligation = ctx.assurance
-    ? findLatestObligation(
-        ctx.assurance.obligations,
-        ctx.obligationType ?? 'review',
-        ctx.expectedIteration,
-        ctx.expectedPlanVersion,
-      )
-    : null;
 
   // Rule 3 (planVersion binding) and Rule 4 (iteration binding).
   const versionBlock = checkFindingsVersionBinding(findings, ctx);
@@ -171,12 +171,15 @@ function checkReviewMode(findings: ReviewFindings): ReviewValidationFailure | nu
 
 function checkUnreviewableVerdict(
   findings: ReviewFindings,
+  obligation: ReviewObligation | null,
   ctx: ReviewFindingsValidationContext,
 ): ReviewValidationFailure | null {
   if ((findings as { overallVerdict?: unknown }).overallVerdict !== 'unable_to_review') return null;
   return {
     code: 'SUBAGENT_UNABLE_TO_REVIEW',
-    vars: { obligationId: ctx.obligationType ?? 'review' },
+    // The diagnostic names the REAL obligation: the obligation type is not an
+    // identity and made the operator-facing block misleading (Run-9 F3).
+    vars: { obligationId: obligation?.obligationId ?? ctx.expectedObligationId ?? 'unknown' },
   };
 }
 

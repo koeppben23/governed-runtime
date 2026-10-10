@@ -7,7 +7,7 @@
 
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { ToolContext } from '../helpers.js';
-import { formatBlocked } from '../../blocked-result.js';
+import { formatBlocked, unableReviewDiagnostics } from '../../blocked-result.js';
 import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
 
@@ -165,7 +165,10 @@ function validateResolvedFindings(
   obligationId: string | undefined,
 ): string | null {
   if (effectiveFindings.overallVerdict === 'unable_to_review') {
-    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: obligationId ?? 'unknown' });
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: obligationId ?? 'unknown',
+      ...unableReviewDiagnostics(effectiveFindings),
+    });
   }
   if (effectiveFindings.overallVerdict !== submittedVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {

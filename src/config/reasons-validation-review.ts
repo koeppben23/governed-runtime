@@ -491,11 +491,14 @@ export const REVIEW_VALIDATION_REASONS = [
   {
     code: 'SUBAGENT_UNABLE_TO_REVIEW',
     category: 'state',
-    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} subagent reported it is unable to review obligation {obligationId} ({reason}). The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.`,
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} subagent reported it is unable to review obligation {obligationId}. The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.`,
     recoverySteps: [
       'Do NOT retry the same submission — the reviewer has already declared the input unreviewable',
+      'Do not submit a verdict to recover: the unreviewable obligation can never pass review',
       'Inspect the captured reviewer findings (missingVerification[], unknowns[]) for the specific tool-failure cause',
-      'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
+      'Plan or ADR: submit the artifact again (/plan or /architecture) to mint a fresh review obligation',
+      'Implementation: re-record the implementation and re-run the independent review',
+      'Standalone /review: start a fresh /review for the current content',
       'If the cause is a corrupted mandate digest or template hash mismatch, re-hydrate the session before retrying',
     ],
   },
