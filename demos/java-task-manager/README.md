@@ -146,13 +146,15 @@ between flows.
 `run-live-matrix.mjs` executes this checklist reproducibly: it reads the
 toolchain pins from the canonical repository files (`opencode-runtime-compat.ts`
 and `.node-version`), verifies the tarball against its `checksums.sha256`
-sidecar before installing, prepares fresh workspaces, runs every step through
-real headless `opencode run` processes with an explicit `--dir`, verifies the
-persisted host/worktree binding and each package, exports the parent and
-reviewer-child host transcripts with hashes, records the installed build
-identity, stops a flow at the first unexpected block, removes the isolated
-raw-export grant on exit, and exits non-zero when any requested flow did not
-complete. It performs no governance work itself.
+sidecar before installing, prepares fresh workspaces, opts the repository
+config into raw auditor archives next to the isolated global grant, runs every
+step through real headless `opencode run` processes with an explicit `--dir`,
+verifies the persisted host/worktree binding and each package, exports the
+parent and reviewer-child host transcripts with hashes, records the installed
+build identity, records recovered typed denials while stopping on any
+non-recoverable block, removes the isolated raw-export grant on exit, and exits
+non-zero when any requested flow did not complete. It performs no governance
+work itself.
 
 The architecture negative probe is a controlled denial step: the runner
 requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that nothing
