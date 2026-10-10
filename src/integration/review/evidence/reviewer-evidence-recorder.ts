@@ -14,6 +14,7 @@ import {
   consumeReviewObligation,
   buildInvocationEvidence,
   fulfillObligation,
+  blockObligationWithInvocation,
   hasEvidenceReuse,
 } from '../obligations/assurance.js';
 import {
@@ -133,12 +134,32 @@ function settleBoundEvidence(
   invocationId: string,
   now: string,
 ): ReturnType<typeof ensureReviewAssurance> {
-  const unableToReview =
-    params.obligationType === 'review' &&
-    params.reviewerResult.findings.overallVerdict === 'unable_to_review';
-  return unableToReview
-    ? consumeReviewObligation(assurance, obligation, now, invocationId)
-    : fulfillObligation(assurance, params.obligationId, invocationId, now);
+  const unableToReview = params.reviewerResult.findings.overallVerdict === 'unable_to_review';
+  if (!unableToReview) {
+    return fulfillObligation(assurance, params.obligationId, invocationId, now);
+  }
+  // Standalone peer review has exactly one pass: the unreviewable evidence is
+  // consumed and cannot pass review.
+  if (params.obligationType === 'review') {
+    return consumeReviewObligation(assurance, obligation, now, invocationId);
+  }
+  // Implementation review keeps the fulfilled path: the tool layer consumes the
+  // bound unable verdict and mints an explicit fresh successor attempt.
+  if (params.obligationType === 'implement') {
+    return fulfillObligation(assurance, params.obligationId, invocationId, now);
+  }
+  // Plan/architecture: a verdict can never repair an unreviewable frozen
+  // artifact, and leaving the obligation open deadlocks the review loop
+  // (continuation expects a verdict that validation forbids). Close it
+  // deterministically with its invocation retained; a fresh submission mints a
+  // new obligation through the standard blocked-obligation recovery.
+  return blockObligationWithInvocation(
+    assurance,
+    params.obligationId,
+    invocationId,
+    'SUBAGENT_UNABLE_TO_REVIEW',
+    now,
+  );
 }
 
 function applyEvidenceMutation(

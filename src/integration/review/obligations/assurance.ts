@@ -557,6 +557,60 @@ export function fulfillObligation(
   };
 }
 
+/**
+ * Deterministically close a pending review obligation as blocked by bound
+ * reviewer evidence that cannot carry a verdict (`unable_to_review`).
+ *
+ * The invocation reference is retained so the failure stays auditable: the
+ * evidence was recorded, but it can never be consumed as an approval and the
+ * obligation cannot be repaired by submitting a verdict. Recovery is flow
+ * specific — an artifact flow submits a fresh revision, which mints a new
+ * obligation.
+ */
+export function blockObligationWithInvocation(
+  assurance: ReviewAssuranceState,
+  obligationId: string,
+  invocationId: string,
+  blockedCode: string,
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  const obligation = base.obligations.find((item) => item.obligationId === obligationId);
+  if (!obligation) {
+    throw new IntegrationInvariantError(
+      'REVIEW_OBLIGATION_NOT_FOUND',
+      `Review obligation not found: ${obligationId}`,
+    );
+  }
+  if (obligation.status !== 'pending') {
+    if (
+      obligation.status === 'blocked' &&
+      obligation.blockedCode === blockedCode &&
+      obligation.invocationId === invocationId
+    ) {
+      return base;
+    }
+    throw new IntegrationInvariantError(
+      'REVIEW_OBLIGATION_STATUS_INVALID',
+      `Cannot block review obligation in status ${obligation.status}`,
+    );
+  }
+  return {
+    ...base,
+    obligations: base.obligations.map((item) =>
+      item.obligationId !== obligationId
+        ? item
+        : {
+            ...item,
+            status: 'blocked' as const,
+            blockedCode,
+            invocationId,
+            fulfilledAt: now,
+          },
+    ),
+  };
+}
+
 export function validateStrictAttestation(
   findings: ReviewFindings,
   expected: {
