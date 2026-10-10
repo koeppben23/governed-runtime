@@ -69,7 +69,16 @@ async function trustedMetadataOwnsWorktree(
     }
     return { status: 'unreadable', detail: `workspace metadata ${fingerprint}: ${String(error)}` };
   }
-  if (metadata === null || metadata.fingerprint !== fingerprint) {
+  if (metadata === null) {
+    return { status: 'ok', ownsWorktree: false };
+  }
+  if (typeof metadata.worktreePath !== 'string' || metadata.worktreePath.length === 0) {
+    return {
+      status: 'unreadable',
+      detail: `workspace metadata ${fingerprint}: missing worktreePath`,
+    };
+  }
+  if (metadata.fingerprint !== fingerprint) {
     return { status: 'ok', ownsWorktree: false };
   }
   return {
@@ -93,7 +102,8 @@ async function sessionBindingsOwnWorktree(
     return { status: 'unreadable', detail: `sessions of ${fingerprint}: ${String(error)}` };
   }
   for (const session of sessionEntries) {
-    if (!session.isDirectory()) continue;
+    // `sessions/archive/` is the canonical archive slot, not a session.
+    if (!session.isDirectory() || session.name === 'archive') continue;
     const bindingWorktree = await readBindingWorktree(sessionDir(fingerprint, session.name));
     if (bindingWorktree === null || bindingWorktree === 'unreadable') {
       return {

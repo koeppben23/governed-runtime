@@ -394,6 +394,44 @@ describe('inspect workspace identity resolution', () => {
     expect(parseReport(stdout).upgradeReady).toBe(true);
   });
 
+  it('does not treat the archive slot of another workspace as an unreadable session', async () => {
+    await isolateConfigDir();
+    const repoA = await makeGitRepo();
+    const workspaceA = await ensureWorkspace(repoA);
+    await fs.mkdir(sessionDir(workspaceA.fingerprint, 'archive'), { recursive: true });
+
+    const repoB = await makeGitRepo();
+    await ensureWorkspace(repoB);
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], repoB);
+    expect(exit).toBe(0);
+    expect(parseReport(stdout).upgradeReady).toBe(true);
+  });
+
+  it('fails closed with structured output when workspace metadata lacks worktreePath', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await ensureWorkspace(root);
+
+    const stranger = 'd'.repeat(24);
+    await fs.mkdir(workspaceDir(stranger), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir(stranger), 'workspace.json'),
+      JSON.stringify({
+        schemaVersion: 'workspace.v1',
+        fingerprint: stranger,
+        materialClass: 'local_path',
+        canonicalRemote: null,
+        createdAt: new Date().toISOString(),
+      }),
+      'utf8',
+    );
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    expect(reportCodes(parseReport(stdout))).toContain('INVENTORY_UNREADABLE');
+  });
+
   it('reports workspace-not-initialized from the read model for an unmanaged fingerprint', async () => {
     await isolateConfigDir();
     const root = await makeGitRepo();
