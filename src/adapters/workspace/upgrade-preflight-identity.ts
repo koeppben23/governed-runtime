@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 import { normalizeBindingPath } from '../binding.js';
 import { readWorkspaceInfo, sessionDir, workspaceDir, workspacesHome } from './init.js';
-import { WorkspaceError } from './types.js';
+import { FINGERPRINT_RE, WorkspaceError, validateSessionId } from './types.js';
 
 export type WorktreeWorkspaceScan =
   | { readonly status: 'ok'; readonly fingerprints: readonly string[] }
@@ -31,6 +31,16 @@ export interface WorkspaceIdentityInput {
 
 function isEnoent(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
+/** Session directory names must satisfy the canonical session-id contract. */
+function isValidSessionDirectoryName(name: string): boolean {
+  try {
+    validateSessionId(name);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -104,6 +114,12 @@ async function sessionBindingsOwnWorktree(
   for (const session of sessionEntries) {
     // `sessions/archive/` is the canonical archive slot, not a session.
     if (!session.isDirectory() || session.name === 'archive') continue;
+    if (!isValidSessionDirectoryName(session.name)) {
+      return {
+        status: 'unreadable',
+        detail: `session directory name ${fingerprint}/${session.name} is not a valid session id`,
+      };
+    }
     const bindingWorktree = await readBindingWorktree(sessionDir(fingerprint, session.name));
     if (bindingWorktree === null || bindingWorktree === 'unreadable') {
       return {
@@ -157,6 +173,9 @@ export async function scanWorktreeWorkspaces(
   const fingerprints: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === identity.fingerprint) continue;
+    // Non-fingerprint directories are not workspace records (backups, stray
+    // tooling output); they must not reach the fingerprint-validating helpers.
+    if (!FINGERPRINT_RE.test(entry.name)) continue;
     const attribution = await attributeWorkspaceToWorktree(entry.name, currentWorktree);
     if (attribution.status === 'unreadable') return attribution;
     if (attribution.ownsWorktree) fingerprints.push(entry.name);

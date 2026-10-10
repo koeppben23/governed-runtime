@@ -432,6 +432,32 @@ describe('inspect workspace identity resolution', () => {
     expect(reportCodes(parseReport(stdout))).toContain('INVENTORY_UNREADABLE');
   });
 
+  it('ignores non-fingerprint directories in the workspace store', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await ensureWorkspace(root);
+    const storeHome = path.dirname(workspaceDir('a'.repeat(24)));
+    await fs.mkdir(path.join(storeHome, 'backup'), { recursive: true });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(0);
+    expect(parseReport(stdout).upgradeReady).toBe(true);
+  });
+
+  it('fails closed with structured output on an invalid session directory name', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await ensureWorkspace(root);
+
+    const stranger = 'c'.repeat(24);
+    const sessionsRoot = path.dirname(sessionDir(stranger, 'placeholder'));
+    await fs.mkdir(path.join(sessionsRoot, 'legacy.'), { recursive: true });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    expect(reportCodes(parseReport(stdout))).toContain('INVENTORY_UNREADABLE');
+  });
+
   it('reports workspace-not-initialized from the read model for an unmanaged fingerprint', async () => {
     await isolateConfigDir();
     const root = await makeGitRepo();
