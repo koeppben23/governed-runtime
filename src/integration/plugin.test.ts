@@ -55,6 +55,7 @@ import {
   reviewObligationResponseFields,
 } from './review/dispatch/dispatch-authority.js';
 import {
+  seedStrictPlanSession,
   unobservedEvidenceFindings,
   withRepositoryHeadAuthority,
 } from './plugin-host-task-diagnostics-test-helpers.js';
@@ -82,102 +83,6 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
     serverUrl: new URL('http://localhost:3000'),
     ...overrides,
   } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0];
-}
-
-async function seedStrictPlanSession(worktree: string, sessionID: string) {
-  const now = new Date().toISOString();
-  const fp = await computeFingerprint(worktree);
-  const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
-  const obligationId = '11111111-1111-4111-8111-111111111111';
-  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix auth', 'test-subject-digest');
-  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
-
-  await fs.mkdir(sessDir, { recursive: true });
-  await writeState(
-    sessDir,
-    makeState('PLAN', {
-      binding: await canonicalBinding(worktree, sessionID),
-      ticket: {
-        text: 'Fix auth issue',
-        digest: 'ticket-digest',
-        source: 'user',
-        createdAt: now,
-        riskDeclaration: { kind: 'absent' },
-      },
-      plan: {
-        current: planCurrent,
-        history: [],
-        reviewCompletion: 'pending',
-        reviewFindings: [],
-      },
-      selfReview: {
-        iteration: 0,
-        reviewCycle: 1,
-        maxIterations: 3,
-        prevDigest: null,
-        currDigest: planCurrent.digest,
-        revisionDelta: 'major',
-        verdict: 'changes_requested',
-      },
-      policySnapshot: {
-        ...makeState('PLAN').policySnapshot,
-      },
-      reviewAssurance: {
-        assuranceSchemaVersion: 'review-assurance.v7' as const,
-        obligations: [
-          {
-            obligationId,
-            obligationType: 'plan',
-            reviewCycle: 1,
-            requiredChallengeCount: 0,
-            requiredChallengeKind: 'design_challenge',
-            challengePolicyVersion: 'challenge-policy.v1',
-            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-            subjectDigest: 'test-subject-digest',
-            iteration: 0,
-            planVersion: 1,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerAttempts: 1,
-            createdAt: now,
-            pluginHandshakeAt: null,
-            status: 'pending',
-            invocationId: null,
-            blockedCode: null,
-            fulfilledAt: null,
-            consumedAt: null,
-            reviewSubjectScope: {
-              kind: 'artifact',
-              artifact: {
-                kind: 'plan',
-                digest: 'test-subject-digest',
-                sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }]],
-              },
-            },
-            reviewMaterial,
-          },
-        ],
-        invocations: [],
-        attempts: [
-          {
-            attemptId: '11111111-2222-4111-8111-111111111111',
-            obligationId,
-            obligationType: 'plan' as const,
-            subjectDigest: 'test-subject-digest',
-            ordinal: 0,
-            status: 'created' as const,
-            origin: { kind: 'initial' } as const,
-            repositoryDiscovery: { kind: 'not_applicable' } as const,
-            observations: [],
-            createdAt: now,
-          },
-        ],
-        dispatches: [],
-      },
-    }),
-  );
-
-  return { sessDir, obligationId };
 }
 
 async function seedStrictImplementationSession(worktree: string, sessionID: string) {
@@ -1551,6 +1456,41 @@ describe('integration/plugin', () => {
         expect(obligation?.invocationId).toBeNull();
         expect(obligation?.fulfilledAt).toBeNull();
         expect(state?.reviewAssurance?.invocations).toEqual([]);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks a reviewer Task whose child metadata spoofs the parent session', async () => {
+      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession((obligationId) =>
+        nativeFindings(obligationId),
+      );
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const output: { title: string; output: string; metadata: Record<string, unknown> } = {
+          title: 'task',
+          output: 'spoofed child identity',
+          metadata: { sessionId: sessionID },
+        };
+        await hooks['tool.execute.after']!(
+          {
+            tool: 'task',
+            sessionID,
+            callID: CALL_ID,
+            args: { subagent_type: 'flowguard-reviewer' },
+          },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('REVIEW_SELF_APPROVAL_DENIED');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.invocations ?? []).toEqual([]);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('pending');
+        expect(state?.reviewAssurance?.obligations[0]?.fulfilledAt).toBeNull();
+        expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
       } finally {
         await ws.cleanup();
       }

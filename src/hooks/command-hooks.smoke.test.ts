@@ -98,7 +98,7 @@ describe('command hook binaries', () => {
       const initialized = await initWorkspace(worktree, SESSION_ID);
       await writeState(
         initialized.sessionDir,
-        makeState('IMPLEMENTATION', {
+        makeState('PLAN', {
           binding: {
             hostSessionId: SESSION_ID,
             worktree,
@@ -143,6 +143,53 @@ describe('command hook binaries', () => {
         expect(result.stdout).toBe('');
       },
     );
+
+    it('denies with WORKTREE_MISMATCH when the payload cwd is a foreign clone of the same repository', async () => {
+      const sharedRemote = 'https://example.com/acme/shared-repo.git';
+      execFileSync('git', ['remote', 'add', 'origin', sharedRemote], {
+        cwd: worktree,
+        windowsHide: true,
+      });
+      const foreign = join(root, 'foreign');
+      await mkdir(foreign);
+      execFileSync('git', ['init', '--quiet', foreign], { windowsHide: true });
+      execFileSync('git', ['remote', 'add', 'origin', sharedRemote], {
+        cwd: foreign,
+        windowsHide: true,
+      });
+      // Both clones share the remote fingerprint, so the session store and the
+      // persisted binding are reachable from the foreign cwd; only the worktree
+      // binding prevents the spoof.
+      const initialized = await initWorkspace(worktree, SESSION_ID);
+      await writeState(
+        initialized.sessionDir,
+        makeState('PLAN', {
+          binding: {
+            hostSessionId: SESSION_ID,
+            worktree,
+            fingerprint: initialized.fingerprint,
+            resolvedAt: '2026-01-01T00:00:00.000Z',
+          },
+        }),
+      );
+
+      const result = await runHook(
+        'pre-tool-use',
+        JSON.stringify({
+          session_id: SESSION_ID,
+          cwd: foreign,
+          tool_name: 'bash',
+          tool_input: { command: 'echo hostile' },
+        }),
+      );
+
+      expect(result.code).toBe(0);
+      const output = JSON.parse(result.stdout) as {
+        hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+      };
+      expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain('WORKTREE_MISMATCH');
+    });
   });
 
   describe('CORNER', () => {

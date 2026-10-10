@@ -4,7 +4,16 @@
  */
 
 import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
+import * as fs from 'node:fs/promises';
 import { isTerminalPhase } from '../machine/topology.js';
+import { writeState } from '../adapters/persistence.js';
+import { makeState } from '../fixtures.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
+import { canonicalBinding } from './test-helpers.js';
 import { reviewDispatchRequired } from './review/enforcement/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
@@ -322,4 +331,107 @@ export function unobservedEvidenceFindings(
     challenges: [],
     attestation: { toolObligationId: obligationId },
   };
+}
+
+// ─── Session Seeding ─────────────────────────────────────────────────────────
+
+/**
+ * Seed a strict PLAN-phase session with one pending plan review obligation and
+ * its first attempt, plus frozen review material for the native reviewer Task.
+ * Shared by the plugin native-review transport suites.
+ */
+export async function seedStrictPlanSession(worktree: string, sessionID: string) {
+  const now = new Date().toISOString();
+  const fp = await computeFingerprint(worktree);
+  const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const obligationId = '11111111-1111-4111-8111-111111111111';
+  const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix auth', 'test-subject-digest');
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
+
+  await fs.mkdir(sessDir, { recursive: true });
+  await writeState(
+    sessDir,
+    makeState('PLAN', {
+      binding: await canonicalBinding(worktree, sessionID),
+      ticket: {
+        text: 'Fix auth issue',
+        digest: 'ticket-digest',
+        source: 'user',
+        createdAt: now,
+        riskDeclaration: { kind: 'absent' },
+      },
+      plan: {
+        current: planCurrent,
+        history: [],
+        reviewCompletion: 'pending',
+        reviewFindings: [],
+      },
+      selfReview: {
+        iteration: 0,
+        reviewCycle: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: planCurrent.digest,
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      policySnapshot: {
+        ...makeState('PLAN').policySnapshot,
+      },
+      reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v7' as const,
+        obligations: [
+          {
+            obligationId,
+            obligationType: 'plan',
+            reviewCycle: 1,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+            challengePolicyVersion: 'challenge-policy.v1',
+            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            subjectDigest: 'test-subject-digest',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            maxReviewerAttempts: 1,
+            createdAt: now,
+            pluginHandshakeAt: null,
+            status: 'pending',
+            invocationId: null,
+            blockedCode: null,
+            fulfilledAt: null,
+            consumedAt: null,
+            reviewSubjectScope: {
+              kind: 'artifact',
+              artifact: {
+                kind: 'plan',
+                digest: 'test-subject-digest',
+                sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }]],
+              },
+            },
+            reviewMaterial,
+          },
+        ],
+        invocations: [],
+        attempts: [
+          {
+            attemptId: '11111111-2222-4111-8111-111111111111',
+            obligationId,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            ordinal: 0,
+            status: 'created' as const,
+            origin: { kind: 'initial' } as const,
+            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
+            createdAt: now,
+          },
+        ],
+        dispatches: [],
+      },
+    }),
+  );
+
+  return { sessDir, obligationId };
 }

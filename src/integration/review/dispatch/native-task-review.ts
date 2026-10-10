@@ -511,6 +511,23 @@ async function fulfillNativeReviewTask(
     return;
   }
 
+  // The strict self-approval invariant (see review/validation) applied at the
+  // native transport: the child identity reported by the host must differ from
+  // the governed parent session it was dispatched from.
+  if (childSessionId === sessionId) {
+    await abandonAndBlock({
+      runtime,
+      sessDir,
+      callId,
+      output: hookOutput,
+      code: 'REVIEW_SELF_APPROVAL_DENIED',
+      reason:
+        'The native reviewer Task reported the governed parent session as its child. ' +
+        'Review evidence must come from an independent flowguard-reviewer child session.',
+    });
+    return;
+  }
+
   await completeStructuredReview(runtime, {
     sessionId,
     callId,

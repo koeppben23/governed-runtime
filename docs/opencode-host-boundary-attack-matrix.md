@@ -77,6 +77,15 @@ Line citations are CI-checked for bounds (a range must lie inside the cited
 file); the content of a specific line is not validated, so a citation may still
 point at the wrong line inside a valid range as files evolve.
 
+Status classes are strict: `Covered` requires a host-observable or
+canonical-path reproduction, `Partial` means only handler- or predicate-level
+evidence, and `Gap` means no reproduction. Architecture and SSOT guards assert
+structural uniqueness; they are never treated as behavioral security proof.
+Even the strongest `Covered` integrations here — a real local `node:http` wire
+request, a spawned hook binary, and real plugin hook invocations — are not a
+real OpenCode process E2E; F-08 remains `NOT_VERIFIED`, and no mutation score is
+claimed without an admitted target report.
+
 ---
 
 ## Hook Failure Semantics
@@ -84,17 +93,17 @@ point at the wrong line inside a valid range as files evolve.
 <!-- prettier-ignore -->
 | ID    | Scenario / vector                                                                       | Expected fail-closed behavior                                                           | Coverage                                                                                                                                       | Status  | Finding |
 | ----- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| HS-01 | `tool.execute.before` throws for a denied mutation; the host must not execute the tool. | Thrown enforcement error aborts the host tool call; no mutation occurs.                 | Handler/root block tests: `src/integration/plugin-bootstrap.test.ts:408`, `src/integration/plugin.test.ts:1341`; no real-host execution proof. | Partial | F-08    |
-| HS-02 | Malformed before payload (`output`/`input` null, missing identity, non-object).         | Deny with structured enforcement error; never default-allow.                            | `src/integration/plugin.test.ts:1561`, `src/integration/plugin-beforehooks.test.ts:174`, `src/integration/sdk-contract-runtime.test.ts:30`.    | Covered | —       |
-| HS-03 | After hook is never delivered (host drop, or process killed between before and after).  | Mutation episode stays unresolved; next mutating tool is blocked until reconciliation.  | `src/integration/mutation-episode-e2e.test.ts:176`, `src/integration/plugin-bootstrap.test.ts:482`.                                            | Partial | F-11    |
-| HS-04 | After hook throws.                                                                      | Error surfaces in audit/diagnostics; no silent completion; subsequent mutation blocked. | `src/integration/plugin-enforcement-tracking.test.ts:89`, `src/integration/plugin-bootstrap.test.ts:943`.                                     | Covered | —       |
+| HS-01 | `tool.execute.before` throws for a denied mutation; the host must not execute the tool. | Thrown enforcement error aborts the host tool call; no mutation occurs.                 | Handler/root block tests: `src/integration/plugin-bootstrap.test.ts:409`, `src/integration/plugin.test.ts:1036`; no real-host execution proof (F-08). | Partial | F-08    |
+| HS-02 | Malformed before payload (`output`/`input` null, missing identity, non-object).         | Deny with structured enforcement error; never default-allow.                            | `src/integration/plugin-beforehooks.test.ts:197`, `src/integration/plugin.test.ts:1765`, `src/integration/sdk-contract-runtime.test.ts:30`.    | Covered | —       |
+| HS-03 | After hook is never delivered (host drop, or process killed between before and after).  | Mutation episode stays unresolved; next mutating tool is blocked until reconciliation.  | `src/integration/mutation-episode-e2e.test.ts:176`, `src/integration/plugin-bootstrap.test.ts:378`.                                            | Partial | F-11    |
+| HS-04 | After hook throws.                                                                      | Error surfaces in audit/diagnostics; no silent completion; subsequent mutation blocked. | `src/integration/plugin-enforcement-tracking.test.ts:89`, `src/integration/plugin-bootstrap.test.ts:1092`.                                     | Covered | —       |
 | HS-05 | Host tool throws or aborts during execution after the before hook allowed it.           | Failure is audited; no success evidence; recovery path remains.                         | `src/integration/plugin-integration.test.ts:799`, `src/integration/mutation-episode-e2e.test.ts:254`.                                          | Partial | —       |
 | HS-06 | Host retries the same tool call (same or new `callID`).                                 | No duplicate evidence or second authority effect; deterministic call identity.          | Deterministic retry and duplicate-callID tests: `src/integration/plugin-shared.test.ts`, `src/integration/plugin-beforehooks.test.ts`.         | Covered | F-11    |
 | HS-07 | Duplicate `callID` across before/after (retry, replay, identity confusion).             | Deterministic resolution or fail-closed deny; trace map cannot be poisoned.             | `src/integration/plugin-shared.test.ts` (duplicate callIDs never touch the fallback registry).                                                 | Covered | F-11    |
-| HS-08 | Process crashes between before and after.                                               | Same as HS-03: unknown episode on disk; next mutation fails closed.                     | `src/integration/mutation-episode-e2e.test.ts:293`, `src/integration/plugin-bootstrap.test.ts:482`.                                            | Covered | —       |
+| HS-08 | Process crashes between before and after.                                               | Same as HS-03: unknown episode on disk; next mutation fails closed.                     | `src/integration/mutation-episode-e2e.test.ts:293`, `src/integration/plugin-bootstrap.test.ts:378`.                                            | Covered | —       |
 | HS-09 | After hook arrives for a call the plugin never observed in before.                      | Ignore without corrupting trace state; no evidence fabrication.                         | Foreign after-hook test: `src/integration/plugin-afterhooks-more.test.ts`, `src/integration/plugin-shared.test.ts`.                            | Covered | F-11    |
 | HS-10 | Command-hook stdin or HTTP hook body exceeds the shared payload byte cap.                | Reject before JSON parsing; command stdin stops buffering and is destroyed. The blocking PreToolUse HTTP route delivers HTTP 200 protocol DENY (non-2xx would be non-blocking at the host); the informational HTTP routes return 413 at the same 1 MiB boundary. | Boundary/unit coverage: `src/hooks/shared/stdin-reader.test.ts`, `src/hooks/hook-failure-modes.test.ts`, `src/hooks/http-server.test.ts`. | Covered | H7      |
-| HS-11 | Hook payload claims a cwd outside the session's bound worktree (payload cwd spoofing).   | Fail closed before state is trusted: normalized equality or git-resolved worktree-root equality; SessionStart bootstraps only the git-resolved root. | Resolver/binding/hook coverage: `src/hooks/shared/session-resolver.test.ts`, `src/adapters/adapters-binding.test.ts`, `src/hooks/pre-tool-use.test.ts`, `src/hooks/http-server.test.ts`. | Covered | H8      |
+| HS-11 | Hook payload claims a cwd outside the session's bound worktree (payload cwd spoofing).   | Fail closed before state is trusted: normalized equality or git-resolved worktree-root equality; SessionStart bootstraps only the git-resolved root. | Resolver/binding/hook coverage: `src/hooks/shared/session-resolver.test.ts`, `src/adapters/adapters-binding.test.ts`, `src/hooks/pre-tool-use.test.ts`, `src/hooks/http-server.test.ts`; spawned-binary foreign-clone deny (WORKTREE_MISMATCH worktree binding): `src/hooks/command-hooks.smoke.test.ts`; real-wire governance deny: `src/hooks/http-server.transport-governance.test.ts`. | Covered | H8      |
 
 ---
 
@@ -103,11 +112,11 @@ point at the wrong line inside a valid range as files evolve.
 <!-- prettier-ignore -->
 | ID    | Scenario / vector                                                             | Expected fail-closed behavior                                     | Coverage                                                                                                                                                    | Status  | Finding |
 | ----- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| TS-01 | Unknown host tool name.                                                       | Treated as mutating/fail-closed; never implicit read-only.        | `src/integration/phase-tool-gate.test.ts:93`, `src/integration/plugin.test.ts:1420`, `src/integration/tool-classification.test.ts:126`.                     | Covered | —       |
+| TS-01 | Unknown host tool name.                                                       | Treated as mutating/fail-closed; never implicit read-only.        | `src/integration/phase-tool-gate.test.ts:93`, `src/integration/tool-classification.test.ts:126`.                                                             | Covered | —       |
 | TS-02 | Custom third-party tool not in the registry.                                  | Governed default-deny unless explicitly allowlisted as read-only. | `src/integration/plugin.test.ts:290`, `src/integration/plugin-integration.test.ts:465`.                                                                     | Covered | —       |
 | TS-03 | MCP-prefixed tool (`mcp__...`) at the hook boundary.                          | Same classification and phase gates as native names.              | Classifier parity: `src/integration/phase-tool-gate.test.ts`; reviewer deny-rule smoke: `src/cli/opencode-reviewer-capability.smoke.test.ts:82` (smoke project).  | Covered | F-09    |
-| TS-04 | `task` tool invoked without reviewer provenance.                              | Blocked before execution.                                         | `src/integration/plugin-beforehooks.test.ts:743`, `src/integration/plugin.test.ts:1371`.                                                                    | Covered | —       |
-| TS-05 | `flowguard_*` name spoofing at prefix boundaries (for example `flowguardx_`). | Exact registry match; non-registered names fail closed.           | `src/integration/plugin.test.ts:774`, `src/integration/tool-classification.test.ts:108`.                                                                    | Covered | —       |
+| TS-04 | `task` tool invoked without reviewer provenance.                              | Blocked before execution.                                         | `src/integration/plugin.test.ts:1079`, `src/integration/plugin.test.ts:1422`.                                                                                | Covered | —       |
+| TS-05 | `flowguard_*` name spoofing at prefix boundaries (for example `flowguardx_`). | Exact registry match; non-registered names fail closed.           | `src/integration/plugin.test.ts`, `src/integration/tool-classification.test.ts:108`.                                                                         | Covered | —       |
 | TS-06 | Mutating tool success contract is unrecognized or malformed (`apply_patch`).  | Stays unknown/pending; no silent success evidence.                | `src/integration/mutation-episode-e2e.test.ts:176`, `src/integration/mutation-episode-e2e.test.ts:220`, `src/integration/mutation-episode-e2e.test.ts:254`. | Covered | —       |
 | TS-07 | Reviewer child session attempts mutating tools or a nested `task`.            | Denied by installed reviewer agent permissions.                   | Real-host probe: `src/cli/opencode-reviewer-capability.smoke.test.ts:57`; now wired into the smoke project (`vitest.config.ts`).                                  | Covered | F-09    |
 
@@ -118,12 +127,12 @@ point at the wrong line inside a valid range as files evolve.
 <!-- prettier-ignore -->
 | ID    | Scenario / vector                                                          | Expected fail-closed behavior                                                                                | Coverage                                                                                                                                                               | Status  | Finding |
 | ----- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| SL-01 | Host emits a session termination event.                                    | Cleanup runs for the terminated session.                                                                     | Canonical union pin + runtime cleanup: `src/integration/sdk-contract-events.test.ts`, `src/integration/plugin-events.test.ts:73`.                                      | Covered | F-02    |
+| SL-01 | Host emits a session termination event.                                    | Cleanup runs for the terminated session.                                                                     | Canonical union pin + runtime cleanup: `src/integration/sdk-contract-events.test.ts`, `src/integration/plugin-events.test.ts`.                                         | Covered | F-02    |
 | SL-02 | Termination payload uses `properties.info.id` (SDK `EventSessionDeleted`). | Session id resolves from the real payload.                                                                   | Compile-time `info.id` pin and runtime cleanup: `src/integration/sdk-contract-events.test.ts`; production: `src/integration/plugin-events.ts:31`.                      | Covered | F-02    |
 | SL-03 | `session.error` carries an object error (SDK union).                       | Audit captures meaningful error detail without crashing.                                                     | SDK error-union matrix: `src/integration/sdk-contract-events.test.ts`; extraction: `src/integration/plugin-events.ts:120`.                                             | Covered | F-02    |
 | SL-04 | Session termination must clear all session-scoped ephemera.                | `activeCommandScopes`, `checkReworkContinuations`, trace ids, and chain state are removed deterministically. | Central `cleanupSessionRuntime`: `src/integration/plugin-shared.ts`; tests: `src/integration/plugin-shared.test.ts`, `src/integration/plugin-afterhooks-more.test.ts`. | Covered | F-06    |
-| SL-05 | Session directory disappears between hooks (TOCTOU).                       | Fail closed with a structured error; no state guess.                                                         | `src/integration/plugin-bootstrap.test.ts:688`, `src/integration/plugin-bootstrap.test.ts:707`.                                                                        | Covered | —       |
-| SL-06 | Host restarts with stale in-memory state.                                  | Persisted state remains authority; hydrate/status reconstruct from disk.                                     | `src/integration/tools-execute-hydrate.test.ts:229`, `src/integration/session-state-upgrade.test.ts:60`.                                                               | Covered | —       |
+| SL-05 | Session directory disappears between hooks (TOCTOU).                       | Fail closed with a structured error; no state guess.                                                         | `src/integration/plugin-bootstrap.test.ts:684`, `src/integration/plugin-bootstrap.test.ts:734`.                                                                        | Covered | —       |
+| SL-06 | Host restarts with stale in-memory state.                                  | Persisted state remains authority; hydrate/status reconstruct from disk.                                     | `src/integration/tools-execute-hydrate.test.ts`, `src/integration/session-state-upgrade.test.ts:60`.                                                                   | Covered | —       |
 
 ---
 
@@ -132,8 +141,8 @@ point at the wrong line inside a valid range as files evolve.
 <!-- prettier-ignore -->
 | ID    | Scenario / vector                                                       | Expected fail-closed behavior                                                        | Coverage                                                                                                                         | Status  | Finding |
 | ----- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| CI-01 | Two sessions in one workspace with interleaved tool calls.              | Session-scoped state and audit separation.                                           | `src/integration/e2e-workflow.test.ts:727`, `src/integration/tools-execute-hydrate.test.ts:918`.                                 | Covered | —       |
-| CI-02 | Two plugin instances or worktrees.                                      | No shared authoritative state; chain state is independent. Diagnostic human-projection telemetry is process-global. | `src/integration/plugin.test.ts:766`, `src/integration/plugin-integration.test.ts:651`. | Covered | —       |
+| CI-01 | Two sessions in one workspace with interleaved tool calls.              | Session-scoped state and audit separation.                                           | `src/integration/e2e-workflow.test.ts:826`, `src/integration/tools-execute-hydrate.test.ts`.                                     | Covered | —       |
+| CI-02 | Two plugin instances or worktrees.                                      | No shared authoritative state; chain state is independent. Diagnostic human-projection telemetry is process-global. | `src/integration/plugin.test.ts:712`, `src/integration/plugin-integration.test.ts:747`.                                          | Covered | —       |
 | CI-03 | Interleaved sessions A/B on one instance read mutable `getSessionId()`. | No cross-session authority; session id is call-scoped.                               | Mutable session-id state removed from the HAI: `src/adapters/host-adapter.ts`, `src/integration/plugin.ts`; no resolver remains. | Covered | F-07    |
 | CI-04 | Parallel calls in one session with distinct `callID`s.                  | Unique decision ids; correct trace correlation.                                      | `src/integration/plugin-integration.test.ts:739`, `src/integration/plugin-beforehooks.test.ts:1157`.                             | Covered | —       |
 | CI-05 | Duplicate `callID` concurrently.                                        | No double evidence or double authority; deterministic reject or idempotent handling. | Duplicate-callID determinism: `src/integration/plugin-shared.test.ts`.                                                           | Covered | F-11    |
@@ -147,7 +156,7 @@ point at the wrong line inside a valid range as files evolve.
 | ID    | Scenario / vector                                             | Expected fail-closed behavior                                          | Coverage                                                                                          | Status  | Finding |
 | ----- | ------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------- | ------- |
 | CP-01 | Compaction while a review obligation is pending.              | Mandatory pending-obligation context is injected.                      | `src/integration/plugin-compaction.test.ts:97` plus the in-flight review case below.              | Covered | F-12    |
-| CP-02 | Compaction hook receives null, throws, or a missing snapshot. | Fail-safe context build; the plugin never crashes.                     | `src/integration/plugin-compaction.test.ts:150`, `src/integration/plugin-compaction.test.ts:194`. | Covered | —       |
+| CP-02 | Compaction hook receives null, throws, or a missing snapshot. | Fail-safe context build; the plugin never crashes.                     | `src/integration/plugin-compaction.test.ts:150`.                                                   | Covered | —       |
 | CP-03 | Compaction during an active review attempt or challenge loop. | Attempt and obligation state survive; context never claims completion. | In-flight review compaction case: `src/integration/plugin-compaction.test.ts`.                    | Covered | F-12    |
 
 ---
@@ -161,7 +170,7 @@ point at the wrong line inside a valid range as files evolve.
 | PL-02 | Boot capability assurance without host I/O.                               | No unproven boot claims; reviewer capability verifies lazily and fails closed on the invocation path. | Adapter performs no boot host call: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`; lazy resolution: `src/integration/review/dispatch/agent-resolution.ts`. | Covered | F-01    |
 | PL-03 | Advertised capabilities versus what is actually probed.                   | Only verified capabilities may be claimed; the rest are marked unverified.  | All six reported `contractAttested` with `runtimeVerified: []`: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`.                                  | Covered | F-04    |
 | PL-04 | Dispose must shut down the adapter and logging.                           | Composed shutdown; no leaked resources.                                     | Composed dispose (`adapter.shutdown()` + logging): `src/integration/plugin.ts`; dispose test: `src/integration/plugin.test.ts`.                                       | Covered | F-01    |
-| PL-05 | Plugin reload or repeated init.                                           | No leaked listeners, duplicate state, or stale caches.                      | Repeated init: `src/integration/plugin.test.ts:1672`.                                                                                                                 | Partial | —       |
+| PL-05 | Plugin reload or repeated init.                                           | No leaked listeners, duplicate state, or stale caches.                      | Repeated init: `src/integration/plugin.test.ts:712`.                                                                                                                  | Partial | —       |
 | PL-06 | Hook output mutation (`output.args`, `output.output`, `output.context`).  | Single host-adapter authority for host mutation semantics.                  | No-op adapter methods: `src/integration/opencode-host-adapter.ts:159`; hook code mutates references directly.                                                         | Gap     | F-04    |
 
 ---
@@ -191,6 +200,17 @@ point at the wrong line inside a valid range as files evolve.
 | RC-03 | Same reviewer attempt is released to the host twice.             | Second release refused with `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` before host execution. | `src/integration/plugin.test.ts` (native visible review transport: refuses double release), `src/state/review-dispatch.test.ts`.                            | Covered | —       |
 | RC-04 | Parent session is deleted or crashes while the Task child runs.  | The authorized dispatch stays unresolved and can never satisfy a later bind; recovery requires a fresh attempt. | `src/integration/review/dispatch/durable-dispatch.test.ts`, `src/integration/review/obligations/assurance.test.ts`.                                                              | Covered | —       |
 | RC-05 | Duplicate or stale reviewer evidence binding.                    | Second bind refused; the dispatch/completion/invocation/fulfillment mutation is atomic. | `src/integration/review/obligations/assurance.test.ts`, `src/integration/review/dispatch/durable-dispatch.test.ts`.                                                              | Covered | —       |
+| RC-06 | Completed Task metadata reports the governed parent session as the reviewer child (identity spoof). | Fail closed with `REVIEW_SELF_APPROVAL_DENIED`: no invocation, no evidence bind, the obligation stays pending, and the dispatch is spent as `outcome_unknown`. | `src/integration/plugin.test.ts` (native visible review transport: parent-session spoof); production guard: `src/integration/review/dispatch/native-task-review.ts`. | Covered | F-14    |
+
+---
+
+## Policy And Audit Authority
+
+<!-- prettier-ignore -->
+| ID    | Scenario / vector                                                                     | Expected fail-closed behavior                                                                                                                     | Coverage                                                                                                                                                              | Status  | Finding |
+| ----- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| CA-01 | Repository config is weaker than the central policy minimum, or changes after hydrate. | The central minimum governs the new session; the frozen policy snapshot governs later calls, so a config drift cannot weaken governance.         | `src/integration/policy-central-repo-drift.test.ts` (central minimum plus solo control), `src/integration/tools-execute-hydrate.test.ts` (central-minimum cases), `src/config/policy-resolver.ts`. | Covered | —       |
+| AU-01 | Committed semantic outbox operation payload is modified on disk while its digest stays. | The next mutation fails closed with `AUDIT_PERSISTENCE_FAILED`; the tampered operation is never appended and the state stays unchanged.            | `src/integration/plugin-bootstrap.test.ts` (tampered committed semantic operation), `src/integration/plugin-audit.test.ts` (digest mismatch cases).                     | Covered | —       |
 
 ---
 
@@ -209,6 +229,11 @@ addressing findings:
 - The reviewer agent permission surface is verified against the real
   `opencode` binary by the smoke-project capability probe (F-09).
 - Hook payload runtime shapes are validated with runtime schemas (HD-04).
+- The central policy minimum and the frozen policy snapshot decide governance,
+  with an observable solo control proving the difference (CA-01).
+- Committed audit operations are digest-bound before reconciliation (AU-01).
+- Reviewer child identity must differ from the governed parent session at the
+  native Task transport (RC-06).
 
 ---
 
@@ -364,6 +389,17 @@ Task transport binds only host-observed completion evidence and spends any
 release without bindable evidence as `outcome_unknown`; a later (late)
 completion can never satisfy the durable dispatch contract again.
 
+### F-14 — Reviewer child metadata could spoof the governed parent session
+
+**Severity:** P2. **Status:** Fixed — the native Task transport rejects a child session equal to the governed parent session with `REVIEW_SELF_APPROVAL_DENIED`. **Scenarios:** RC-06.
+
+The strict self-approval invariant existed on the review-validation path but
+was not applied at the native Task transport: a completion whose
+`metadata.sessionId` reported the governed parent session was accepted as
+reviewer evidence (invocation bound, obligation fulfilled). The
+attacker-negative integration reproduces the spoof and pins the refusal, the
+absent invocation, the pending obligation, and the abandoned dispatch.
+
 ---
 
 ## Remediation Order
@@ -389,6 +425,10 @@ completion can never satisfy the durable dispatch contract again.
   behind the HAI or remain an explicitly host-owned hook concern.
 - Extend the matrix to the remaining hosts (Claude Code, Codex) once the
   OpenCode slice is closed.
+- Mid-session live `audit.jsonl` tail truncation is not detectable from the
+  chain alone (archive verification detects it via the manifest count);
+  treat it as an accepted residual risk unless a session-level count anchor is
+  introduced. `NOT_VERIFIED`, no test claims it.
 
 ## References
 

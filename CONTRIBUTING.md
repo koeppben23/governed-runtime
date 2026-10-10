@@ -399,6 +399,9 @@ High-risk work must include:
 - fail-closed behavior preservation
 - no duplicate runtime authority
 - negative-path tests
+- for security-relevant fixes, an attacker-negative reproduction or an explicit
+  not-applicable explanation (the PR template records this as a review contract;
+  it is not a separate CI gate)
 - docs and changelog decision
 - rollback or recovery notes
 

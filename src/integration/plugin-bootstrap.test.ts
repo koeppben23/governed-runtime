@@ -25,6 +25,7 @@ import {
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
+import { writeStateWithAuditOperations } from './audit-outbox.js';
 import {
   computeFingerprint,
   ensureWorkspace,
@@ -413,6 +414,85 @@ describe('plugin bootstrap fail-closed', () => {
             ),
           ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
         }
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — a tampered committed semantic operation blocks the next mutation', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        const implementationState = await boundState(ws, sessionID, 'IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+        });
+        await writeState(sessDir, implementationState);
+
+        await writeStateWithAuditOperations(sessDir, implementationState, [
+          {
+            phase: 'IMPLEMENTATION',
+            event: 'decision:TEST-001',
+            occurredAt: '2026-05-15T12:00:00.000Z',
+            actor: 'human',
+            actorInfo: {
+              id: 'tamper-probe',
+              email: null,
+              source: 'env',
+              assurance: 'best_effort',
+            },
+            detail: { kind: 'decision', decisionId: 'TEST-001' },
+          },
+        ]);
+
+        // Attacker with filesystem access: change the committed payload but
+        // keep the recorded digest (the typed writer refuses this by design).
+        const persisted = await readState(sessDir);
+        expect(persisted).not.toBeNull();
+        const tampered = {
+          ...persisted!,
+          pendingAuditOperations: persisted!.pendingAuditOperations.map((operation) =>
+            operation.kind === 'semantic'
+              ? {
+                  ...operation,
+                  semantic: {
+                    ...operation.semantic,
+                    detail: { kind: 'decision', decisionId: 'FORGED' },
+                  },
+                }
+              : operation,
+          ),
+        };
+        await fs.writeFile(
+          path.join(sessDir, 'session-state.json'),
+          JSON.stringify(tampered),
+          'utf-8',
+        );
+
+        const auditBefore = await readAuditTrail(sessDir);
+        const stateBefore = await readState(sessDir);
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        await expect(
+          beforeHook(
+            { tool: 'bash', sessionID, callID: 'c1' },
+            { args: { command: 'echo hostile' } },
+          ),
+        ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+
+        // The tampered operation was never appended: the only new event is the
+        // canonical denial evidence, and the state stayed unchanged.
+        const afterTrail = await readAuditTrail(sessDir);
+        expect(afterTrail.filter((event) => event.event.includes('decision:'))).toEqual([]);
+        expect(afterTrail).toHaveLength(auditBefore.length + 1);
+        expect(afterTrail.at(-1)?.event).toBe('enforcement:denied');
+        expect(await readState(sessDir)).toEqual(stateBefore);
       } finally {
         await ws.cleanup();
       }
