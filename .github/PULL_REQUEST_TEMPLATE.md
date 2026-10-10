@@ -47,6 +47,7 @@ Reason if not needed:
 
 - [ ] Tests added or updated where needed.
 - [ ] Negative path covered where relevant.
+- [ ] Security/attack reproduction included, or explicitly not applicable (state the reason).
 - [ ] Commands run:
 
 ```text
