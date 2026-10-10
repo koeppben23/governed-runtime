@@ -125,7 +125,8 @@ async function seedActiveSession(root: string): Promise<string> {
   const workspace = await ensureWorkspace(root);
   const sessDir = sessionDir(workspace.fingerprint, 'ses_identity_active');
   await fs.mkdir(sessDir, { recursive: true });
-  await writeState(sessDir, makeState('PLAN'));
+  const active = makeState('PLAN');
+  await writeState(sessDir, { ...active, binding: { ...active.binding, worktree: root } });
   return workspace.fingerprint;
 }
 
@@ -456,6 +457,50 @@ describe('inspect workspace identity resolution', () => {
     const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
     expect(exit).toBe(1);
     expect(reportCodes(parseReport(stdout))).toContain('INVENTORY_UNREADABLE');
+  });
+
+  it('does not block after a remote is added to a never-used workspace', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await ensureWorkspace(root);
+    await writeRepoConfig(root, DEFAULT_CONFIG);
+
+    execFileSync('git', ['remote', 'add', 'origin', 'https://example.com/org/empty.git'], {
+      cwd: root,
+      windowsHide: true,
+    });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(0);
+    expect(parseReport(stdout).upgradeReady).toBe(true);
+  });
+
+  it('clears the identity-change block once the prior session is terminal', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    const workspace = await ensureWorkspace(root);
+    await writeRepoConfig(root, DEFAULT_CONFIG);
+
+    const sessDir = sessionDir(workspace.fingerprint, 'ses_resolvable');
+    await fs.mkdir(sessDir, { recursive: true });
+    const active = makeState('PLAN');
+    await writeState(sessDir, { ...active, binding: { ...active.binding, worktree: root } });
+
+    execFileSync('git', ['remote', 'add', 'origin', 'https://example.com/org/resolvable.git'], {
+      cwd: root,
+      windowsHide: true,
+    });
+
+    const blocked = await runInspect(['--upgrade-check', '--json'], root);
+    expect(blocked.exit).toBe(1);
+    expect(reportCodes(parseReport(blocked.stdout))).toContain('WORKSPACE_IDENTITY_CHANGED');
+
+    const terminal = makeState('COMPLETE');
+    await writeState(sessDir, { ...terminal, binding: { ...terminal.binding, worktree: root } });
+
+    const resolved = await runInspect(['--upgrade-check', '--json'], root);
+    expect(resolved.exit).toBe(0);
+    expect(parseReport(resolved.stdout).upgradeReady).toBe(true);
   });
 
   it('reports workspace-not-initialized from the read model for an unmanaged fingerprint', async () => {

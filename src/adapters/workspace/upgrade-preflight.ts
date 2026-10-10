@@ -499,7 +499,7 @@ async function classifyWorkspaceIdentity(
   if (foreignFingerprints.length > 0) {
     return {
       kind: 'workspace-identity-changed',
-      detail: `prior workspace fingerprint(s) for this worktree: ${foreignFingerprints.join(', ')}`,
+      detail: `prior workspace fingerprint(s) with unresolved sessions for this worktree: ${foreignFingerprints.join(', ')}`,
     };
   }
   if (!isManagedWorkspace(identity)) {
