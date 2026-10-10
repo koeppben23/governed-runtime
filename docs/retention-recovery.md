@@ -43,12 +43,12 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ### Retention Triggers
 
-| Event                | FlowGuard Action      | Customer Action           |
-| -------------------- | --------------------- | ------------------------- |
-| **Session complete** | Preserves state       | Archive recommended       |
-| **Session abort**    | Preserves state       | Archive for analysis      |
-| **Workspace change** | Marks session invalid | Archive before change     |
-| **Version upgrade**  | Installs new version  | Archive previous artifact |
+| Event                | FlowGuard Action      | Customer Action                                                                                    |
+| -------------------- | --------------------- | -------------------------------------------------------------------------------------------------- |
+| **Session complete** | Preserves state       | Archive recommended                                                                                |
+| **Session abort**    | Preserves state       | Preserve evidence for analysis; an aborted session is not exportable as a verifiable audit package |
+| **Workspace change** | Marks session invalid | Complete the session before the change; archive it once terminal                                   |
+| **Version upgrade**  | Installs new version  | Complete active sessions (archive terminal ones) with the previous artifact                        |
 
 ---
 
@@ -138,23 +138,28 @@ shown above.
 3. Verify archive integrity
 4. Review state in OpenCode using `/review`
 
+**Version scope:** archive restore re-creates evidence at the schema version
+that wrote it. A pre-hard-cut session stays unreadable after restore; use the
+operator recovery tree in [Upgrade and Rollback](./upgrade-rollback.md#operator-recovery-for-incompatible-persisted-state)
+instead of restoring session files across a schema boundary.
+
 ### Disaster Recovery
 
-| Step | Action                                  | Owner         |
-| ---- | --------------------------------------- | ------------- |
-| 1    | Restore `.opencode/` directory          | Customer      |
-| 2    | Verify installation: `flowguard doctor` | Customer      |
-| 3    | Verify archives                         | Customer      |
-| 4    | Archive incomplete sessions             | Session owner |
+| Step | Action                                                                         | Owner         |
+| ---- | ------------------------------------------------------------------------------ | ------------- |
+| 1    | Restore `.opencode/` directory                                                 | Customer      |
+| 2    | Verify installation: `flowguard doctor`                                        | Customer      |
+| 3    | Verify archives                                                                | Customer      |
+| 4    | Preserve evidence of incomplete sessions (running sessions cannot be archived) | Session owner |
 
 ### Backup Recommendations
 
-| Data                      | Frequency            | Method                     |
-| ------------------------- | -------------------- | -------------------------- |
-| **Active sessions**       | Daily or per session | Archive + external storage |
-| **Archives**              | Weekly incremental   | External storage           |
-| **Installation artifact** | Per version          | Artifact repository        |
-| **Configuration**         | On change            | Version control            |
+| Data                      | Frequency            | Method                                                          |
+| ------------------------- | -------------------- | --------------------------------------------------------------- |
+| **Active sessions**       | Daily or per session | Copy the session directory to external storage (not `/archive`) |
+| **Archives**              | Weekly incremental   | External storage                                                |
+| **Installation artifact** | Per version          | Artifact repository                                             |
+| **Configuration**         | On change            | Version control                                                 |
 
 **Customer Responsibility:**
 
@@ -221,13 +226,13 @@ shown above.
 
 ### Health Indicators
 
-| Indicator                | Normal     | Action                |
-| ------------------------ | ---------- | --------------------- |
-| **Archive verification** | Pass       | None                  |
-| **Archive verification** | Fail       | Investigate + restore |
-| **Session state**        | Valid      | None                  |
-| **Session state**        | Invalid    | Recover from archive  |
-| **Disk space**           | > 10% free | Archive old sessions  |
+| Indicator                | Normal     | Action                              |
+| ------------------------ | ---------- | ----------------------------------- |
+| **Archive verification** | Pass       | None                                |
+| **Archive verification** | Fail       | Investigate + restore               |
+| **Session state**        | Valid      | None                                |
+| **Session state**        | Invalid    | Recover from a same-version archive |
+| **Disk space**           | > 10% free | Archive old sessions                |
 
 ### Audit Trail Health
 

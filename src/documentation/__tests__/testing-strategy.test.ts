@@ -130,6 +130,18 @@ describe('documentation/testing-strategy', () => {
     expect(workflow).toContain('schedule:');
   });
 
+  it('HAPPY: pins the mutation cadence to the workflow schedule', () => {
+    const workflow = readRepoFile('.github/workflows/mutation.yml');
+    const docs = readRepoFile('docs/testing-strategy.md');
+    const branchProtection = readRepoFile('.github/BRANCH-PROTECTION.md');
+
+    // The workflow cron is the schedule authority; the docs and branch
+    // protection must describe the same cadence (weekly, Mondays 02:00 UTC).
+    expect(workflow).toContain("cron: '0 2 * * 1'");
+    expect(docs).toContain('weekly/release/manual');
+    expect(branchProtection).toContain('weekly/release');
+  });
+
   it('HAPPY: documents the per-profile admission policy', () => {
     const docs = readRepoFile('docs/testing-strategy.md');
 

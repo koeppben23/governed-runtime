@@ -245,7 +245,7 @@ pending`) instead of the later live verification status. A small
   add an optional adversarial host-tool denial step (`HOST_TOOL_PHASE_DENIED` /
   `enforcement:denied`).
 
-- **Reviewer execution-continuity provenance (state schema v6).** Every
+- **BREAKING — reviewer execution-continuity provenance (state schema v6).** Every
   runtime-executed validation attempt now persists the host-observed execution
   continuity (`executionObservedStateDigest`, `preCommitStateDigest`), and the
   reviewer projection derives `stateChangedDuringExecution` from that pair
@@ -733,6 +733,27 @@ true })` returns the evaluated projection. Key invariants:
   gate always remains, `implReview` is reported as an explicit `waived` status
   instead of fabricated evidence, and approval/export re-attest the frozen
   bytes before proceeding.
+
+- **BREAKING — session state v8 requires the risk-trigger and risk-assessment slots.**
+  `SessionState.riskTriggers` is now required (no absent field; empty is the
+  explicit `[]`) and `implementationRiskAssessment` is nullable instead of
+  optional, so "not yet assessed" is the explicit `null` rather than a missing
+  key. `v7` and earlier states are rejected at the read boundary with
+  `SESSION_STATE_INCOMPATIBLE`; there is no read default or migration. The
+  historic `TaskClass` re-export from the state layer is removed (breaking
+  TypeScript API change); import the vocabulary from its owning module. Dead
+  compatibility surfaces such as the legacy review-binding fallback are
+  deleted rather than migrated.
+
+- **BREAKING — session state v9 hard cut after the policy digest change.**
+  The semantically empty `PlanReviewPolicy` scope field is removed from the
+  policy contract, so `POLICY_DIGEST_VERSION` advances to `policy-digest.v4`
+  and the policy snapshot digest changes. Any state carrying an older digest,
+  and every state written as `v8` or earlier, is rejected at the read boundary
+  with `SESSION_STATE_INCOMPATIBLE`; there is no read default or migration.
+  The same change deletes unused review facades, aliases and dead exports
+  (breaking TypeScript API change) and replaces hard review-zone budgets with
+  named, justified `budgetExceptions`.
 
 - **Shared state-write preparation and recovery regression coverage.** Governed
   writes now finalize the Implementation Base and refresh the ProofGraph once

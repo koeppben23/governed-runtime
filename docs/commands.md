@@ -532,15 +532,24 @@ Read-only CLI command that surfaces existing audit and compliance data without m
 flowguard inspect                      # List all sessions in the workspace
 flowguard inspect --session <id>       # Full compliance report for one session
 flowguard inspect --session <id> --json # ComplianceSummary as JSON
+flowguard inspect --upgrade-check      # Read-only pre-upgrade preflight; exits 1 when the workspace is not upgrade-ready
+flowguard inspect --upgrade-check --json # Upgrade preflight report as JSON
 ```
 
 **Modes:**
 
-| Mode           | Output                                                        |
-| -------------- | ------------------------------------------------------------- |
-| List (no args) | Session ID, event count, phase progression, last event age    |
-| Single session | Check-by-check pass/fail with statistics and chain integrity  |
-| `--json`       | Direct `ComplianceSummary` object from `src/audit/summary.ts` |
+| Mode                     | Output                                                        |
+| ------------------------ | ------------------------------------------------------------- |
+| List (no args)           | Session ID, event count, phase progression, last event age    |
+| Single session           | Check-by-check pass/fail with statistics and chain integrity  |
+| `--json`                 | Direct `ComplianceSummary` object from `src/audit/summary.ts` |
+| `--upgrade-check`        | Workspace-scoped hard-cut preflight (blockers and warnings)   |
+| `--upgrade-check --json` | Structured preflight report for automation                    |
+
+The `--upgrade-check` mode is part of the operator recovery path in
+[Upgrade and Rollback](./upgrade-rollback.md) (section "Operator recovery for
+incompatible persisted state"); a release that predates the flag does not
+support it.
 
 **Data sources (delegated, no duplicate logic):**
 

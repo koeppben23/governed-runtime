@@ -27,6 +27,7 @@ import {
 } from '../adapters/workspace/upgrade-preflight.js';
 import { runUpgradeCheck, reportWorkspaceUnresolved } from './inspect-upgrade-check.js';
 import { getInspectUsage, parseInspectArgs } from './inspect-command.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
 
 const tarOk = await isTarAvailable();
 const execFileAsync = promisify(execFile);
@@ -225,6 +226,52 @@ describe('inspect --upgrade-check workspace report', () => {
     const { exit, report } = await runCheck();
     expect(exit).toBe(1);
     expect(findingCodes(report)).toContain('STATE_INCOMPATIBLE');
+  });
+
+  it('never recommends archiving active or aborted sessions in recovery guidance', async () => {
+    const { sessionsRoot } = await createWorkspaceRoot();
+    await seedSession(sessionsRoot, 'active-1', { phase: 'PLAN' });
+    const sessDir = await seedSession(sessionsRoot, 'legacy-1', { state: false });
+    await fs.writeFile(
+      path.join(sessDir, 'session-state.json'),
+      JSON.stringify({ schemaVersion: 'v9' }),
+      'utf8',
+    );
+
+    const { report } = await runCheck();
+    const recoveries = report.sessions
+      .flatMap((session) => session.findings)
+      .flatMap((finding) => finding.recovery ?? []);
+
+    // Active sessions: archiving is only mentioned as a phase constraint.
+    const activeLines = recoveries.filter((line) => line.includes('Complete the session'));
+    expect(activeLines.length).toBeGreaterThan(0);
+    for (const line of activeLines) {
+      expect(line).not.toContain('or archive it');
+      expect(line).toContain('terminal phase');
+    }
+
+    // Incompatible state: no promise that any terminal session is archivable.
+    expect(recoveries.some((line) => line.includes('release that wrote'))).toBe(true);
+    expect(recoveries.some((line) => line.includes('complete active sessions normally'))).toBe(
+      true,
+    );
+    expect(
+      recoveries.some((line) => line.toLowerCase().includes('archive preflight permits')),
+    ).toBe(true);
+    expect(recoveries.some((line) => line.includes('aborted or otherwise non-exportable'))).toBe(
+      true,
+    );
+
+    // The reason registry carries the same operator contract.
+    const incompatibleContract =
+      defaultReasonRegistry.get('STATE_INCOMPATIBLE')?.recoverySteps.join(' ') ?? '';
+    expect(incompatibleContract).toContain('archive preflight permits');
+    expect(incompatibleContract).toContain('aborted or otherwise non-exportable');
+    const activeContract =
+      defaultReasonRegistry.get('ACTIVE_SESSION')?.recoverySteps.join(' ') ?? '';
+    expect(activeContract).toContain('terminal phase');
+    expect(activeContract).not.toContain('Or archive it');
   });
 
   it('blocks when state is missing but a live audit trail exists', async () => {
