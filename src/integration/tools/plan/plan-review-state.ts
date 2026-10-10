@@ -13,6 +13,7 @@
 
 import { IntegrationInvariantError } from '../../errors.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { unableReviewDiagnostics } from '../../blocked-result.js';
 import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
 
 import type { SessionState } from '../../../state/schema.js';
@@ -89,6 +90,7 @@ export function blockedInvalidPlanFindings(
   if (effectiveFindings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
       obligationId: obligationId ?? 'unknown',
+      ...unableReviewDiagnostics(effectiveFindings),
     });
   }
   if (effectiveFindings.overallVerdict !== args.reviewVerdict) {
