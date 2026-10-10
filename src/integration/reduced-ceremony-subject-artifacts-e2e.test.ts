@@ -37,12 +37,16 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir, verifyCompletionExport } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
 import { parseTicketRiskDeclaration } from '../state/risk-declaration.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { executeCheck } from '../verification/executor.js';
 import { makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 import type { SessionState } from '../state/schema.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { canonicalBinding } from './test-helpers.js';
@@ -636,5 +640,106 @@ describe('effective risk class (real git)', () => {
     const state = await readState(se.sDir);
     expect(state!.phase).toBe('IMPL_REVIEW');
     expect(state!.reducedCeremony).toBeNull();
+  });
+});
+
+// ─── Run-9 F1: reduced-ceremony contract materialization ─────────────────────
+
+const F1_CLAIM_ID = '22222222-2222-4222-8222-222222222222';
+
+function f1ClaimDeclarations(): PlanClaimDeclarations {
+  return {
+    flow: 'plan',
+    version: 'v2',
+    claims: [
+      {
+        claimId: F1_CLAIM_ID,
+        statement: 'the docs guide documents both Maven commands',
+        critical: true,
+        authoritySectionId: '### 1. Create docs/usage-notes.md',
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+        counterexampleRequirement: {
+          kind: 'assertion',
+          checkId: 'test',
+          assertion: { providerId: 'jest', localId: 'tests/a.test.ts::passes' },
+        },
+      },
+    ],
+  };
+}
+
+/** Attach an approved, certificate-bound plan to the reduced subject state. */
+async function f1ClaimBearingState(se: SE, staleCertificate = false): Promise<void> {
+  const subject = await subjectState(se, true);
+  const planCurrent = makePlanRevision({ body: 'approved plan for the docs task' });
+  const declarations = f1ClaimDeclarations();
+  await writeStateWithArtifacts(se.sDir, {
+    ...subject.state,
+    plan: {
+      current: planCurrent,
+      history: [],
+      reviewFindings: [],
+      reviewCompletion: 'reviewer_accepted' as const,
+      claimDeclarations: declarations,
+      approvalCertificate: {
+        flow: 'plan' as const,
+        authorityDigest: planCurrent.digest,
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+        decisionAttestationDigest: 'a'.repeat(64),
+        approvedAt: '2026-01-02T00:00:00.000Z',
+        approvedBy: 'FlowGuard Demo',
+        certificateId: randomUUID(),
+        planVersion: planCurrent.planVersion,
+        planRecordDigest: staleCertificate ? 'd'.repeat(64) : planCurrent.recordDigest,
+        reviewBinding: {
+          kind: 'current_review' as const,
+          reviewObligationId: randomUUID(),
+          reviewEvidenceDigest: 'b'.repeat(64),
+          reviewedSubjectDigest: planCurrent.digest,
+        },
+      },
+    },
+  });
+}
+
+describe('reduced-ceremony contract materialization (Run-9 F1, real git)', () => {
+  it('HAPPY: materializes the approved-plan contract and clears the certificate-authorized claim gate', async () => {
+    s = await boot({ allowReducedCeremony: true });
+    const se = s;
+    await f1ClaimBearingState(se);
+    executorWritesReport();
+
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    expect(state!.proofContract?.claims.map((claim) => claim.claimId)).toEqual([F1_CLAIM_ID]);
+    expect(state!.proofGraph.claims).toHaveLength(1);
+    expect(state!.proofGraph.claims[0]!.verificationState).toBe('PROVEN');
+    const gate = evaluateProofGraphGateFromState(state!);
+    expect(gate.gated).toBe(false);
+    // The materialization is committed in the same governed write as the
+    // contract: a retried materialization must not mint a different version.
+    expect(state!.proofContract?.version).toBe('contract.v2');
+  });
+
+  it('BAD: a stale certificate with declarations stays blocked, never claimless', async () => {
+    s = await boot({ allowReducedCeremony: true });
+    const se = s;
+    await f1ClaimBearingState(se, true);
+    executorWritesReport();
+
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    expect(state!.proofContract?.claims).toEqual([]);
+    expect(state!.proofContractCoverage).toEqual([{ cause: 'invalid_certificate' }]);
+    const gate = evaluateProofGraphGateFromState(state!);
+    expect(gate.gated).toBe(true);
+    expect(gate.kind).toBe('certificate_invalid');
   });
 });

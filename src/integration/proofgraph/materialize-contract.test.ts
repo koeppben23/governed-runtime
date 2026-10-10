@@ -762,13 +762,29 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     ]);
   });
 
-  it('fails closed with invalid_certificate coverage outside IMPL_REVIEW', async () => {
+  it('validates the certificate binding independently of phase (entry timing is owned by the post-validation authority)', async () => {
     const state = stateWithClaims();
-    const result = await materializeApprovedPlanContractResult(
+    const valid = await materializeApprovedPlanContractResult(
       { ...state, phase: 'IMPLEMENTATION' as const },
       process.cwd(),
     );
-    expect(result.coverage).toEqual([{ cause: 'invalid_certificate' }]);
-    expect(result.contract.claims).toHaveLength(0);
+    expect(valid.contract.claims).toHaveLength(1);
+
+    const stale = await materializeApprovedPlanContractResult(
+      {
+        ...state,
+        phase: 'IMPLEMENTATION' as const,
+        plan: {
+          ...state.plan!,
+          approvalCertificate: {
+            ...state.plan!.approvalCertificate!,
+            authorityDigest: 'other-plan',
+          },
+        },
+      },
+      process.cwd(),
+    );
+    expect(stale.coverage).toEqual([{ cause: 'invalid_certificate' }]);
+    expect(stale.contract.claims).toHaveLength(0);
   });
 });

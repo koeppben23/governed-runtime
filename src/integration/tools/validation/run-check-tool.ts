@@ -72,7 +72,7 @@ import { TOOL_FLOWGUARD_RUN_CHECK } from '../../tool-names.js';
 import { resolveReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import {
   activateReviewObligationAndPersist,
-  materializeImplReviewContract,
+  materializePostValidationContract,
   nextImplementationReviewIteration,
 } from '../implementation-review-activation.js';
 import {
@@ -491,7 +491,12 @@ async function finalizeCheckUnderLock(input: {
     executionObservation,
     advanced,
   } = input.revalidated;
-  const stateWithMaterializedContract = await materializeImplReviewContract(
+  // #819/#1066: materialize the approved-plan contract for both review entries —
+  // the full IMPL_REVIEW path and the reduced EVIDENCE_REVIEW shortcut. Without
+  // the reduced entry a certificate-authorized critical claim had no persisted
+  // ProofGraph evaluation and the evidence gate blocked with
+  // PROOFGRAPH_EVALUATION_UNAVAILABLE.
+  const stateWithMaterializedContract = await materializePostValidationContract(
     advanced.state,
     freshState.binding.worktree,
   );
