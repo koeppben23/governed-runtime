@@ -257,6 +257,8 @@ describe('declare_contract', () => {
       digest?: string;
       /** Active checks deliberately left without an implementation attempt. */
       unattemptedChecks?: string[];
+      /** Omit the structured assertion extraction from the security attempt. */
+      securityAssertion?: 'extracted' | 'missing';
     } = {},
   ): Promise<string> {
     const checkId = overrides.checkId ?? 'test';
@@ -324,10 +326,14 @@ describe('declare_contract', () => {
             outputDigest: SHA,
             timedOut: false,
             outcome: 'supported' as const,
-            assertionExtraction: makeAssertionExtraction(
-              'junit:com.example.SecurityTest#verify',
-              'passed',
-            ),
+            ...(overrides.securityAssertion === 'missing'
+              ? {}
+              : {
+                  assertionExtraction: makeAssertionExtraction(
+                    'junit:com.example.SecurityTest#verify',
+                    'passed',
+                  ),
+                }),
           },
         },
       ],
@@ -380,6 +386,81 @@ describe('declare_contract', () => {
     const persisted = await readState(sessDir);
     expect(persisted!.proofContract?.claims).toHaveLength(1);
     expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+  });
+
+  it('requires the declared assertion for a non-critical declared claim (Run-9 F4)', async () => {
+    const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'the non-critical behavior is covered by the named assertion',
+              checkId: 'test',
+              critical: false,
+              claimScope: 'specific_behavior',
+              counterexampleRequirement: {
+                checkId: 'security',
+                kind: 'assertion',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
+              },
+              authority: 'ticket',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBeUndefined();
+
+    const persisted = await readState(sessDir);
+    const claim = persisted!.proofContract!.claims.at(-1)!;
+    expect(claim.requiredEvidence).toEqual({
+      positive: ['executed_test'],
+      adversarial: ['counterexample'],
+    });
+    // With the assertion extraction present, the carrying evidence is
+    // satisfied and the claim is PROVEN.
+    const projection = result.proofGraph as { claims: Array<{ verificationState: string }> };
+    expect(projection.claims.at(-1)!.verificationState).toBe('PROVEN');
+  });
+
+  it('keeps a non-critical declared claim NOT_VERIFIED when its assertion evidence is missing (Run-9 F4)', async () => {
+    const sessDir = await seedImplValidation({
+      checkId: 'test',
+      passed: true,
+      securityAssertion: 'missing',
+    });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'the non-critical behavior is covered by the named assertion',
+              checkId: 'test',
+              critical: false,
+              claimScope: 'specific_behavior',
+              counterexampleRequirement: {
+                checkId: 'security',
+                kind: 'assertion',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
+              },
+              authority: 'ticket',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBeUndefined();
+
+    const persisted = await readState(sessDir);
+    // The overall check passed and the positive execution evidence is bound,
+    // but the declared assertion never resolved: PROVEN is impossible.
+    const claim = persisted!.proofGraph.claims.at(-1)!;
+    expect(claim.verificationState).toBe('NOT_VERIFIED');
+    const contractClaim = persisted!.proofContract!.claims.at(-1)!;
+    expect(contractClaim.requiredEvidence?.adversarial).toEqual(['counterexample']);
   });
 
   it('appends a manual plan-provenanced fact without changing certificate-bound claims or coverage', async () => {

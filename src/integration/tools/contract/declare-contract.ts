@@ -253,11 +253,17 @@ function buildDeclaredClaims(
       provenance,
       evidenceRefs,
       counterexampleRefs,
-      // A critical fact claim must survive an executed counterexample before it
-      // may be PROVEN; a missing/unresolved counterexample keeps it NOT_VERIFIED.
+      // A declared assertion is claim-carrying evidence at ANY criticality:
+      // the positive check pass alone must never prove a specific behavior
+      // (Run-9 F4). A critical fact claim additionally requires an executed
+      // counterexample; a missing/unresolved counterexample keeps it
+      // NOT_VERIFIED.
       requiredEvidence: {
         positive,
-        adversarial: critical && isFact ? ['counterexample' as const] : [],
+        adversarial:
+          (critical && isFact) || rc.counterexampleRequirement !== undefined
+            ? ['counterexample' as const]
+            : [],
       },
       counterexampleRequirement: rc.counterexampleRequirement,
     });
