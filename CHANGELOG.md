@@ -245,7 +245,7 @@ pending`) instead of the later live verification status. A small
   add an optional adversarial host-tool denial step (`HOST_TOOL_PHASE_DENIED` /
   `enforcement:denied`).
 
-- **Reviewer execution-continuity provenance (state schema v6).** Every
+- **BREAKING — reviewer execution-continuity provenance (state schema v6).** Every
   runtime-executed validation attempt now persists the host-observed execution
   continuity (`executionObservedStateDigest`, `preCommitStateDigest`), and the
   reviewer projection derives `stateChangedDuringExecution` from that pair

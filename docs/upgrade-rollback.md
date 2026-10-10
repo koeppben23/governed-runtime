@@ -106,29 +106,30 @@ preflight, and audit records that violate the canonical audit-chain.v3
 envelope are rejected with `AUDIT_ENVELOPE_INVALID` at every audit persistence
 and verification boundary — the trust boundary never classifies legacy
 formats, and non-v3 artifacts are never migrated, reinterpreted, or re-sealed.
-Archive or complete active sessions before crossing the epoch boundary. See
+Complete active sessions (archive terminal ones) before crossing the epoch
+boundary. See
 [`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
 for the superseded migration proposal.
 
-| From Version                                                     | To Version                                | Compatibility                                                                                                                                                                             |
-| ---------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any prerelease                                                   | Later prerelease                          | No forward-compatibility guarantee. Archive or complete active sessions before upgrading.                                                                                                 |
-| State `schemaVersion: v9`/earlier                                | Current state contract (`v10`)            | Incompatible by design. State is rejected with `SESSION_STATE_INCOMPATIBLE`; no migration path exists. Archive or complete the session with its old artifact, then start a fresh session. |
-| Audit trail `audit-chain.v2`/earlier, regardless of state schema | Current audit contract (`audit-chain.v3`) | Incompatible by design. Records are rejected with `AUDIT_ENVELOPE_INVALID`; no migration or re-seal path exists.                                                                          |
-| `v1.2.0-tp.2` and earlier policy digests                         | A release requiring `policy-digest.v4`    | Incompatible by design. The current digest excludes removed policy authorities; archive or complete the session with the old artifact, then start a new session.                          |
+| From Version                                                     | To Version                                | Compatibility                                                                                                                                                                                                      |
+| ---------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Any prerelease                                                   | Later prerelease                          | No forward-compatibility guarantee. Complete active sessions (or archive terminal ones) with the release that wrote them before upgrading; see the operator recovery tree below.                                   |
+| State `schemaVersion: v9`/earlier                                | Current state contract (`v10`)            | Incompatible by design. State is rejected with `SESSION_STATE_INCOMPATIBLE`; no migration path exists. Recover with the release that wrote the session per the operator recovery tree, then start a fresh session. |
+| Audit trail `audit-chain.v2`/earlier, regardless of state schema | Current audit contract (`audit-chain.v3`) | Incompatible by design. Records are rejected with `AUDIT_ENVELOPE_INVALID`; no migration or re-seal path exists.                                                                                                   |
+| `v1.2.0-tp.2` and earlier policy digests                         | A release requiring `policy-digest.v4`    | Incompatible by design. The current digest excludes removed policy authorities; recover with the release that wrote the session per the operator recovery tree, then start a new session.                          |
 
 **FlowGuard validates state on read.** A release that requires an incompatible
 schema or evidence contract rejects the state at hydrate time with an explicit
 BLOCKED `SCHEMA_VALIDATION_FAILED` (or `SESSION_STATE_INCOMPATIBLE` at the
 `readState` contract preflight for pre-v10 state).
-Do not edit persisted state to bridge that boundary. Use the previously
-installed artifact to archive or complete the session, then start a fresh
-session after upgrading.
+Do not edit persisted state to bridge that boundary. Complete an active session
+or archive a terminal one with the release that wrote it, then start a fresh
+session after upgrading — see the operator recovery tree below.
 
 **Customer Responsibility:**
 
-- Complete or archive every active session with the currently installed artifact
-  before upgrading
+- Complete every active session with the currently installed artifact before
+  upgrading; archive terminal sessions per the operator recovery tree
 - Test upgrade in non-production
 - Treat every changed schema or required evidence contract as breaking —
   the Assurance epoch replaces migration with hard rejection
@@ -144,17 +145,21 @@ pre-boundary session is rejected again at the next read.
    `flowguard inspect --upgrade-check` with the currently installed artifact and
    resolve every `blocker` before upgrading. Historical archives are reported as
    warnings only. A release that predates `--upgrade-check` skips this step; the
-   blockers below still apply.
-2. **Decide per blocked session while the matching release artifact is
-   available:**
-   - **Artifact installed:** use that release to `/archive` (raw or regulated as
-     configured) or to complete the session. This is a controlled operator
-     action with the matching version, not a runtime compatibility path.
-   - **Artifact unavailable:** reinstall the matching release from the approved
-     release source solely to archive or complete the session. If that is not
-     possible, leave the session directory untouched as evidence and start a
-     fresh session after the upgrade; the old session stays unreadable by
-     design.
+   blockers below still apply. Preserving an incompatible session is evidence
+   retention, not a resolved blocker: the preflight keeps reporting the session
+   as an `ACTIVE_SESSION` blocker (exit 1) until it is terminal or the remaining
+   conflict is explicitly accepted.
+2. **Recover each blocked session with the release that wrote it.** `/archive`
+   requires a terminal phase, so the correct action depends on the session
+   state:
+
+   | Session state                                                  | Correct recovery                                                                                                                                                                                                                                       |
+   | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+   | **Active and readable under the matching release**             | Complete the workflow normally with that release. Do not archive an active session — `/archive` blocks with `COMMAND_NOT_ALLOWED` until the workflow reaches a terminal phase. Export or archive the finished evidence afterwards.                     |
+   | **Already terminal**                                           | Archive or export with the matching release when the terminal state is exportable; an aborted session is preserved but is not verifiable as an audit package.                                                                                          |
+   | **Not completable or incompatible under the matching release** | Leave the original evidence untouched. Document the remaining blocker explicitly and treat the conflict as accepted or unresolved; do not present it as a clean preflight result.                                                                      |
+   | **Matching release artifact unavailable**                      | No migration, no state repair, no compatibility shim. Reinstall the matching release from the approved release source if it is needed to complete or archive the session; otherwise preserve the evidence and handle the hard-cut conflict explicitly. |
+
 3. **Upgrade** with the new artifact (checksum-verified).
 4. **Start new sessions** on the current contract and verify archives with the
    archive verifier. Archive restore re-creates evidence at the schema version
@@ -175,8 +180,9 @@ read-only research tools. The `p40-v1` mandate additionally denies the reviewer'
 `task` capability, preventing subagent cascades. Each version has its own digest.
 
 Existing obligations remain bound to their persisted `p38-v1` or `p39-v1` criteria and
-digest and are never reinterpreted as `p40-v1` evidence. Archive or complete an
-in-flight review before upgrading when its attestation must remain reproducible; create
+digest and are never reinterpreted as `p40-v1` evidence. Complete an in-flight
+review (then export the finished evidence) before upgrading when its
+attestation must remain reproducible; create
 a new artifact review cycle to use p40. Rolling back to a p39 build likewise requires a
 new review cycle for any p40-bound obligation. Do not edit obligation attestation values
 or mandate digests to bridge the version boundary.

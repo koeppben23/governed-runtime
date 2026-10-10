@@ -161,22 +161,37 @@ describe('developer contract version documentation', () => {
       );
     });
 
-    it('documents every schema hard cut in the changelog', () => {
+    it('documents every schema hard cut as a BREAKING entry in its release section', () => {
       const changelog = read('CHANGELOG.md');
-      // The changelog is the operator-facing release record: every schema bump
-      // must carry a BREAKING entry that names the version and the fail-closed
-      // rejection. Extend the historical list when a new cut lands.
-      const hardCutTokens = [
+      // The changelog is the operator-facing release record: every schema cut
+      // must be a BREAKING entry inside the release section that shipped it,
+      // naming the version and the fail-closed rejection. Extend the historical
+      // list when a new cut lands.
+      const releaseSection = changelog
+        .split(/\n## /)
+        .find((candidate) => candidate.startsWith('[2.0.0-tp.2]'));
+      expect(releaseSection, '2.0.0-tp.2 section').toBeDefined();
+
+      const entries = releaseSection!.split(/\n(?=- )/);
+      const hardCutVersions = [
         'state schema v6',
-        'schema is `v7`',
+        '`v7`',
         'session state v8',
         'session state v9',
         `session state ${CURRENT_SESSION_STATE_SCHEMA_VERSION}`,
       ];
-      for (const token of hardCutTokens) {
-        expect(changelog, `CHANGELOG.md lacks a hard-cut entry for ${token}`).toContain(token);
+      for (const version of hardCutVersions) {
+        const entry = entries.find(
+          (candidate) =>
+            candidate.startsWith('- **BREAKING') &&
+            candidate.includes(version) &&
+            candidate.includes('SESSION_STATE_INCOMPATIBLE'),
+        );
+        expect(
+          entry,
+          `2.0.0-tp.2 lacks a BREAKING hard-cut entry for ${version} with the rejection contract`,
+        ).toBeDefined();
       }
-      expect(changelog).toContain('SESSION_STATE_INCOMPATIBLE');
     });
   });
 });
