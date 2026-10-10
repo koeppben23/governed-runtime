@@ -386,6 +386,102 @@ describe('plugin-integration', () => {
       expect(toolCall!.actor).toBe('human');
     });
 
+    it('names the deciding actor on a decision tool call while the transition keeps the principal', async () => {
+      const initiator = {
+        id: 'alice-initiator',
+        email: 'alice@example.com',
+        source: 'env' as const,
+        assurance: 'best_effort' as const,
+      };
+      const reviewer = {
+        actorId: 'bob-reviewer',
+        actorEmail: 'bob@example.com',
+        actorSource: 'oidc' as const,
+        actorAssurance: 'idp_verified' as const,
+      };
+      await writeState(sessDir, { ...(await readState(sessDir))!, actorInfo: initiator });
+      const reviewDecision = {
+        verdict: 'approve' as const,
+        rationale: 'four eyes satisfied',
+        decidedAt: new Date().toISOString(),
+        decisionIdentity: reviewer,
+      };
+      const current = (await readState(sessDir))!;
+      await persistTransition(
+        {
+          from: 'TICKET',
+          to: 'PLAN',
+          event: 'PLAN_READY',
+          at: new Date().toISOString(),
+        },
+        { ...current, actorInfo: initiator, reviewDecision },
+      );
+
+      await handler(
+        { tool: 'flowguard_decision', sessionID: sessionId },
+        { title: 'decision', output: makeToolOutput({ phase: 'PLAN' }), metadata: {} },
+      );
+
+      const events = await getEvents();
+      const toolCall = events.find(
+        (e) => eventKind(e) === 'tool_call' && e.detail.tool === 'flowguard_decision',
+      );
+      expect(toolCall).toBeDefined();
+      expect(toolCall!.actor).toBe('human');
+      expect(toolCall!.actorInfo).toEqual({
+        id: 'bob-reviewer',
+        email: 'bob@example.com',
+        source: 'oidc',
+        assurance: 'idp_verified',
+      });
+
+      // The machine-applied transition still names the session principal.
+      const transition = events.find((e) => eventKind(e) === 'transition');
+      expect(transition).toBeDefined();
+      expect(transition!.actor).toBe('machine');
+      expect(transition!.actorInfo).toEqual(initiator);
+      expect(toolCall!.actorInfo?.id).not.toBe(transition!.actorInfo?.id);
+    });
+
+    it('omits actorInfo on a blocked decision call instead of attributing the initiator', async () => {
+      await writeState(sessDir, {
+        ...(await readState(sessDir))!,
+        actorInfo: {
+          id: 'alice-initiator',
+          email: 'alice@example.com',
+          source: 'env' as const,
+          assurance: 'best_effort' as const,
+        },
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'previous decision',
+          decidedAt: new Date().toISOString(),
+          decisionIdentity: {
+            actorId: 'bob-reviewer',
+            actorEmail: 'bob@example.com',
+            actorSource: 'oidc' as const,
+            actorAssurance: 'idp_verified' as const,
+          },
+        },
+      });
+
+      await handler(
+        { tool: 'flowguard_decision', sessionID: sessionId },
+        {
+          title: 'decision',
+          output: makeToolOutput({ phase: 'TICKET', error: true, errorMessage: 'blocked' }),
+          metadata: {},
+        },
+      );
+
+      const events = await getEvents();
+      const toolCall = events.find(
+        (e) => eventKind(e) === 'tool_call' && e.detail.tool === 'flowguard_decision',
+      );
+      expect(toolCall).toBeDefined();
+      expect(toolCall!.actorInfo).toBeUndefined();
+    });
+
     it('session_created lifecycle reason includes policy resolution fields', async () => {
       await handler(
         { tool: 'flowguard_hydrate', sessionID: sessionId },

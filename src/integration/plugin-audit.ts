@@ -14,8 +14,10 @@
 
 import { readState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
+import { actorInfoFromDecisionIdentity } from '../adapters/actor.js';
 import { serializeError } from '../logging/error-serialize.js';
 import type { PendingAuditOperation, SessionState, Phase } from '../state/schema.js';
+import type { ActorInfo } from '../state/evidence.js';
 import {
   buildToolCallBody,
   buildErrorBody,
@@ -30,7 +32,11 @@ import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import { auditIdentity, resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
 import { getToolMetadata } from './plugin-helpers.js';
 import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
-import { TOOL_FLOWGUARD_ABORT, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_HYDRATE,
+} from './tool-names.js';
 import {
   createStrictTimestampTracker,
   emitAuditBodyWithEvidence,
@@ -249,6 +255,22 @@ function scheduleSoloArchive(
   });
 }
 
+/**
+ * Select the actorInfo for a tool_call event. A successful decision tool call
+ * names the deciding actor from the persisted decision identity; a blocked
+ * decision call carries none instead of attributing the session initiator;
+ * every other tool keeps the session principal.
+ */
+function toolCallActorInfo(
+  toolName: string,
+  success: boolean,
+  state: SessionState | null,
+): ActorInfo | undefined {
+  if (toolName !== TOOL_FLOWGUARD_DECISION) return state?.actorInfo;
+  if (!success || !state?.reviewDecision) return undefined;
+  return actorInfoFromDecisionIdentity(state.reviewDecision.decisionIdentity);
+}
+
 async function emitToolCallAudit(input: {
   deps: AuditDeps;
   ctx: AuditContext;
@@ -263,6 +285,7 @@ async function emitToolCallAudit(input: {
   if (!ctx.emitToolCalls) return;
   const identity = auditIdentity(state);
   if (!identity) return;
+  const toolActorInfo = toolCallActorInfo(toolName, ctx.success, state);
   const body = buildToolCallBody({
     flowguardSessionId: identity.flowguardSessionId,
     ...(identity.hostSessionId !== undefined ? { hostSessionId: identity.hostSessionId } : {}),
@@ -278,7 +301,7 @@ async function emitToolCallAudit(input: {
     occurredAt: ctx.now,
     actor: ctx.actor,
     prevHash: ctx.prevHash,
-    ...(state?.actorInfo !== undefined ? { actorInfo: state.actorInfo } : {}),
+    ...(toolActorInfo !== undefined ? { actorInfo: toolActorInfo } : {}),
   });
   await emitAuditBodyWithEvidence({
     deps,

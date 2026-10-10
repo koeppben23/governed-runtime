@@ -33,7 +33,7 @@
 
 import { z } from 'zod';
 import * as fs from 'node:fs/promises';
-import type { ActorInfo } from '../state/evidence.js';
+import type { ActorInfo, DecisionIdentity } from '../state/evidence.js';
 import { gitUserEmail, gitUserName } from './git.js';
 import { IdpError } from '../identity/errors.js';
 import { resolveIdpToken, isIdpConfigured } from '../identity/index.js';
@@ -302,4 +302,22 @@ export async function resolveActor(
   const gitActor = await resolveGitActor(worktree);
   if (gitActor) return gitActor;
   return unknownActor();
+}
+
+/**
+ * Project a persisted decision identity onto the audit `ActorInfo` shape.
+ *
+ * This is a field mapping, not a second identity authority: the persisted
+ * `decisionIdentity` remains the sole decision attribution authority, and this
+ * projection only lets audit events name the deciding actor. `verificationMeta`
+ * is not persisted in `DecisionIdentity` and is therefore absent.
+ */
+export function actorInfoFromDecisionIdentity(identity: DecisionIdentity): ActorInfo {
+  return {
+    id: identity.actorId,
+    email: identity.actorEmail,
+    ...(identity.actorDisplayName !== undefined ? { displayName: identity.actorDisplayName } : {}),
+    source: identity.actorSource,
+    assurance: identity.actorAssurance,
+  };
 }
