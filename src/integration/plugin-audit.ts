@@ -256,10 +256,32 @@ function scheduleSoloArchive(
 }
 
 /**
+ * The actor of the newest unreconciled semantic decision operation. The
+ * decision rail clears `reviewDecision` on `changes_requested`, so the
+ * operation committed with the call is the per-call identity evidence.
+ */
+function pendingDecisionActorInfo(state: SessionState | null): ActorInfo | undefined {
+  const operations = state?.pendingAuditOperations ?? [];
+  for (let index = operations.length - 1; index >= 0; index -= 1) {
+    const operation = operations[index];
+    if (
+      operation?.kind === 'semantic' &&
+      operation.status !== 'reconciled' &&
+      operation.semantic.event.startsWith('decision:') &&
+      operation.semantic.actorInfo !== undefined
+    ) {
+      return operation.semantic.actorInfo;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Select the actorInfo for a tool_call event. A successful decision tool call
- * names the deciding actor from the persisted decision identity; a blocked
- * decision call carries none instead of attributing the session initiator;
- * every other tool keeps the session principal.
+ * names the deciding actor from the decision evidence committed with the call
+ * (or the persisted review decision); a blocked decision call carries none
+ * instead of attributing the session initiator; every other tool keeps the
+ * session principal.
  */
 function toolCallActorInfo(
   toolName: string,
@@ -267,8 +289,12 @@ function toolCallActorInfo(
   state: SessionState | null,
 ): ActorInfo | undefined {
   if (toolName !== TOOL_FLOWGUARD_DECISION) return state?.actorInfo;
-  if (!success || !state?.reviewDecision) return undefined;
-  return actorInfoFromDecisionIdentity(state.reviewDecision.decisionIdentity);
+  if (!success) return undefined;
+  const pending = pendingDecisionActorInfo(state);
+  if (pending !== undefined) return pending;
+  return state?.reviewDecision
+    ? actorInfoFromDecisionIdentity(state.reviewDecision.decisionIdentity)
+    : undefined;
 }
 
 async function emitToolCallAudit(input: {

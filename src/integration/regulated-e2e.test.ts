@@ -16,6 +16,7 @@ import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
+  createBootableHostClient,
   parseToolResult,
   withStrictReviewFindings,
   GIT_MOCK_DEFAULTS,
@@ -42,6 +43,7 @@ import {
 import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
 import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import { FlowGuardAuditPlugin } from './plugin.js';
 import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
@@ -216,7 +218,95 @@ async function driveToEvidenceReview(): Promise<void> {
   expect(await phase()).toBe('EVIDENCE_REVIEW');
 }
 
+async function decideWithReviewer(
+  verdict: 'approve' | 'changes_requested',
+  id: string,
+): Promise<Record<string, unknown>> {
+  vi.mocked(actorMock.resolveActor).mockResolvedValue({
+    id,
+    email: `${id}@regulated.dev`,
+    displayName: null,
+    source: 'claim' as const,
+    assurance: 'claim_validated' as const,
+  });
+  return callOk(decision, { verdict, rationale: `Verdict ${verdict} by separate actor` });
+}
+
+/** Run the real plugin after-hook for a decision tool output. */
+async function runDecisionAfterHook(output: Record<string, unknown>): Promise<void> {
+  const hooks = await FlowGuardAuditPlugin({
+    project: {} as never,
+    client: createBootableHostClient({ app: { log: async () => {} } }) as never,
+    $: {} as never,
+    directory: ws.tmpDir,
+    worktree: ws.tmpDir,
+    serverUrl: new URL('http://localhost:3000'),
+    experimental_workspace: undefined as never,
+  });
+  const handler = hooks['tool.execute.after']! as (
+    input: { tool: string; sessionID: string },
+    output: { title: string; output: string; metadata: Record<string, unknown> },
+  ) => Promise<void>;
+  await handler(
+    { tool: 'flowguard_decision', sessionID: ctx.sessionID },
+    { title: 'decision', output: JSON.stringify(output), metadata: {} },
+  );
+}
+
 describe('regulated-e2e critical path', () => {
+  it('attributes a changes_requested decision at PLAN_REVIEW to the deciding reviewer', async () => {
+    await bootstrapRegulatedPlanReview();
+    const result = await decideWithReviewer('changes_requested', 'plan-reviewer');
+    const afterDecision = await readState(await sessDir());
+    // The rail clears the decision state on changes_requested; the audit
+    // attribution must still name the deciding reviewer.
+    expect(afterDecision?.reviewDecision).toBeNull();
+
+    await runDecisionAfterHook(result);
+
+    const events = await readAuditTrail(await sessDir());
+    const toolCall = events.find(
+      (event) => event.detail.kind === 'tool_call' && event.detail.tool === 'flowguard_decision',
+    );
+    expect(toolCall).toBeDefined();
+    expect(toolCall!.actor).toBe('human');
+    expect(toolCall!.actorInfo).toEqual({
+      id: 'plan-reviewer',
+      email: 'plan-reviewer@regulated.dev',
+      displayName: null,
+      source: 'claim',
+      assurance: 'claim_validated',
+    });
+  });
+
+  it('attributes a changes_requested decision at EVIDENCE_REVIEW to the deciding reviewer', async () => {
+    await bootstrapRegulatedPlanReview();
+    await driveToEvidenceReview();
+    const result = await decideWithReviewer('changes_requested', 'evidence-reviewer');
+    const afterDecision = await readState(await sessDir());
+    expect(afterDecision?.reviewDecision).toBeNull();
+
+    await runDecisionAfterHook(result);
+
+    const events = await readAuditTrail(await sessDir());
+    const toolCall = events.find(
+      (event) => event.detail.kind === 'tool_call' && event.detail.tool === 'flowguard_decision',
+    );
+    expect(toolCall).toBeDefined();
+    expect(toolCall!.actor).toBe('human');
+    expect(toolCall!.actorInfo).toEqual({
+      id: 'evidence-reviewer',
+      email: 'evidence-reviewer@regulated.dev',
+      displayName: null,
+      source: 'claim',
+      assurance: 'claim_validated',
+    });
+    const decisionEvent = events.find(
+      (event) => event.detail.kind === 'decision' && event.detail.fromPhase === 'EVIDENCE_REVIEW',
+    );
+    expect(decisionEvent).toBeDefined();
+    expect(decisionEvent!.actorInfo).toEqual(toolCall!.actorInfo);
+  });
   it('completes regulated lifecycle with different approving actor and archive status recorded', async () => {
     await bootstrapRegulatedPlanReview();
     await driveToEvidenceReview();
