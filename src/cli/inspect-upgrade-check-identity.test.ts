@@ -503,6 +503,56 @@ describe('inspect workspace identity resolution', () => {
     expect(parseReport(resolved.stdout).upgradeReady).toBe(true);
   });
 
+  it('does not hide a state blocker behind a remote change (terminal incompatible state)', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    const workspace = await ensureWorkspace(root);
+    await writeRepoConfig(root, DEFAULT_CONFIG);
+
+    const sessDir = sessionDir(workspace.fingerprint, 'ses_incompatible');
+    await fs.mkdir(sessDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessDir, 'session-state.json'),
+      JSON.stringify({ schemaVersion: 'v9', phase: 'COMPLETE', binding: { worktree: root } }),
+      'utf8',
+    );
+
+    execFileSync('git', ['remote', 'add', 'origin', 'https://example.com/org/incompat.git'], {
+      cwd: root,
+      windowsHide: true,
+    });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    const report = parseReport(stdout);
+    expect(report.upgradeReady).toBe(false);
+    expect(reportCodes(report)).toContain('WORKSPACE_IDENTITY_CHANGED');
+  });
+
+  it('does not hide an audit blocker behind a remote change (terminal state, invalid audit)', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    const workspace = await ensureWorkspace(root);
+    await writeRepoConfig(root, DEFAULT_CONFIG);
+
+    const sessDir = sessionDir(workspace.fingerprint, 'ses_bad_audit');
+    await fs.mkdir(sessDir, { recursive: true });
+    const terminal = makeState('COMPLETE');
+    await writeState(sessDir, { ...terminal, binding: { ...terminal.binding, worktree: root } });
+    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), '{ not json', 'utf8');
+
+    execFileSync('git', ['remote', 'add', 'origin', 'https://example.com/org/bad-audit.git'], {
+      cwd: root,
+      windowsHide: true,
+    });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    const report = parseReport(stdout);
+    expect(report.upgradeReady).toBe(false);
+    expect(reportCodes(report)).toContain('WORKSPACE_IDENTITY_CHANGED');
+  });
+
   it('reports workspace-not-initialized from the read model for an unmanaged fingerprint', async () => {
     await isolateConfigDir();
     const root = await makeGitRepo();

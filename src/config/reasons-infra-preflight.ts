@@ -117,8 +117,8 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'The worktree workspace identity changed after sessions existed: {detail}',
     recoverySteps: [
-      'Resolve the previous workspace (complete or archive its sessions) before upgrading',
-      'Do not delete the previous workspace store to clear the blocker',
+      'Resolve or repair the prior sessions with the release that wrote them (complete, archive, or fix the state/audit blocker)',
+      'Historical metadata and fully resolved sessions do not block the preflight',
     ],
   },
 

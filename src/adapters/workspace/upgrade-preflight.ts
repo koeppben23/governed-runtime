@@ -29,7 +29,7 @@ import { readAuditTrail } from '../persistence-audit.js';
 import { inspectArchiveTar, readArchiveTextMember } from './archive-tar.js';
 import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
 import { sessionDir, workspaceDir } from './init.js';
-import { scanWorktreeWorkspaces } from './upgrade-preflight-identity.js';
+import { scanWorktreeWorkspaces, type WorkspaceEvidence } from './upgrade-preflight-identity.js';
 import { validateSessionId } from './types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -482,6 +482,32 @@ type IdentityBlocker = Extract<
 >;
 
 /**
+ * Classify the prior sessions attributed to this worktree with the existing
+ * preflight classification. A terminal phase alone is not proof of resolved
+ * evidence: a state or audit blocker in a prior session stays a blocker.
+ */
+async function unresolvedPriorSessions(evidence: readonly WorkspaceEvidence[]): Promise<string[]> {
+  const unresolved: string[] = [];
+  for (const prior of evidence) {
+    for (const sessionId of prior.sessionIds) {
+      let entry: SessionCheckEntry;
+      try {
+        entry = await checkSession(prior.fingerprint, sessionId);
+      } catch (error) {
+        entry = unclassifiableSessionEntry(sessionId, error);
+      }
+      const blockers = entry.findings.filter((finding) => finding.severity === 'blocker');
+      if (blockers.length > 0) {
+        unresolved.push(
+          `${prior.fingerprint}/${sessionId}: ${blockers.map((finding) => finding.code).join(', ')}`,
+        );
+      }
+    }
+  }
+  return unresolved;
+}
+
+/**
  * Classify identity-level blockers before any inventory is read: unreadable
  * store metadata, prior workspace evidence under another fingerprint (identity
  * change), or a resolvable worktree that is not initialized at all.
@@ -493,13 +519,11 @@ async function classifyWorkspaceIdentity(
   if (scan.status === 'unreadable') {
     return { kind: 'inventory-unreadable', detail: scan.detail };
   }
-  const foreignFingerprints = scan.fingerprints.filter(
-    (fingerprint) => fingerprint !== identity.fingerprint,
-  );
-  if (foreignFingerprints.length > 0) {
+  const unresolved = await unresolvedPriorSessions(scan.evidence);
+  if (unresolved.length > 0) {
     return {
       kind: 'workspace-identity-changed',
-      detail: `prior workspace fingerprint(s) with unresolved sessions for this worktree: ${foreignFingerprints.join(', ')}`,
+      detail: `unresolved prior sessions for this worktree: ${unresolved.join('; ')}`,
     };
   }
   if (!isManagedWorkspace(identity)) {
