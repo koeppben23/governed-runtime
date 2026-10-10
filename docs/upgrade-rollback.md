@@ -88,7 +88,8 @@ upgrade before managed artifacts are written.
 
 **Customer Responsibility:**
 
-- Archive active sessions before upgrade
+- Complete active sessions before upgrading; archive or export only terminal
+  sessions (see the operator recovery tree below)
 - Verify archives after upgrade
 - Test upgrade in non-production
 
@@ -145,10 +146,12 @@ pre-boundary session is rejected again at the next read.
    `flowguard inspect --upgrade-check` with the currently installed artifact and
    resolve every `blocker` before upgrading. Historical archives are reported as
    warnings only. A release that predates `--upgrade-check` skips this step; the
-   blockers below still apply. Preserving an incompatible session is evidence
-   retention, not a resolved blocker: the preflight keeps reporting the session
-   as an `ACTIVE_SESSION` blocker (exit 1) until it is terminal or the remaining
-   conflict is explicitly accepted.
+   blockers below still apply. The preflight reports an active session as
+   `ACTIVE_SESSION` and incompatible or unreadable state as `STATE_INCOMPATIBLE`
+   or `STATE_UNREADABLE`, and exits 1 until every blocker is resolved. Manually
+   accepting a residual risk is a documented operator decision, not a successful
+   preflight: the classification and exit code stay unchanged, and preserving an
+   incompatible session is evidence retention only.
 2. **Recover each blocked session with the release that wrote it.** `/archive`
    requires a terminal phase, so the correct action depends on the session
    state:
@@ -262,13 +265,13 @@ checksums:
 
 ### Pre-Upgrade Checklist
 
-| Step | Action                  | Verified |
-| ---- | ----------------------- | -------- |
-| 1    | Archive active sessions | ☐        |
-| 2    | Verify archives         | ☐        |
-| 3    | Download new artifact   | ☐        |
-| 4    | Verify checksum         | ☐        |
-| 5    | Test in non-production  | ☐        |
+| Step | Action                                              | Verified |
+| ---- | --------------------------------------------------- | -------- |
+| 1    | Complete active sessions; archive terminal sessions | ☐        |
+| 2    | Verify archives                                     | ☐        |
+| 3    | Download new artifact                               | ☐        |
+| 4    | Verify checksum                                     | ☐        |
+| 5    | Test in non-production                              | ☐        |
 
 ### Non-Production Testing
 

@@ -43,12 +43,12 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ### Retention Triggers
 
-| Event                | FlowGuard Action      | Customer Action                                                             |
-| -------------------- | --------------------- | --------------------------------------------------------------------------- |
-| **Session complete** | Preserves state       | Archive recommended                                                         |
-| **Session abort**    | Preserves state       | Archive for analysis                                                        |
-| **Workspace change** | Marks session invalid | Archive before change                                                       |
-| **Version upgrade**  | Installs new version  | Complete active sessions (archive terminal ones) with the previous artifact |
+| Event                | FlowGuard Action      | Customer Action                                                                                    |
+| -------------------- | --------------------- | -------------------------------------------------------------------------------------------------- |
+| **Session complete** | Preserves state       | Archive recommended                                                                                |
+| **Session abort**    | Preserves state       | Preserve evidence for analysis; an aborted session is not exportable as a verifiable audit package |
+| **Workspace change** | Marks session invalid | Complete the session before the change; archive it once terminal                                   |
+| **Version upgrade**  | Installs new version  | Complete active sessions (archive terminal ones) with the previous artifact                        |
 
 ---
 
