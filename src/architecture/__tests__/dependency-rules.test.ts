@@ -26,7 +26,10 @@
  * (`import-specifiers.ts`). Computed module paths are not statically
  * resolvable; for those, an explicit exception comment is required.
  *
- * @version v2
+ * Production files are analyzed with bounded concurrency; the analysis result
+ * and every guard decision are independent of the bound.
+ *
+ * @version v3
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -59,6 +62,9 @@ import { normalizeRepoPath, repoRelative } from '../support/repo-path.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
+// Bounded I/O parallelism for the per-file analysis; the result is identical
+// to a serial pass and the bound never changes guard semantics.
+const ANALYSIS_CONCURRENCY = 8;
 
 const NODE_BUILTINS = new Set([
   'fs',
@@ -275,6 +281,56 @@ async function analyzeFile(filePath: string): Promise<FileAnalysis> {
     relativePath,
     imports,
   };
+}
+
+/**
+ * Analyze files with bounded concurrency. Completion order is deliberately
+ * discarded: the returned Map preserves the input order and the exact content
+ * of a serial analysis, so no rule can observe the bound.
+ *
+ * The hook reports progress and a timing summary so a cold-runner timeout can
+ * be diagnosed from the captured numbers instead of an opaque skip.
+ */
+async function analyzeFiles(
+  files: readonly string[],
+  concurrency: number,
+  analyze: (file: string) => Promise<FileAnalysis> = analyzeFile,
+): Promise<Map<string, FileAnalysis>> {
+  const workerCount = Math.max(1, Math.min(concurrency, files.length));
+  const results = new Array<FileAnalysis>(files.length);
+  const durations = new Array<number>(files.length);
+  const startedAt = performance.now();
+  let next = 0;
+  let completed = 0;
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= files.length) return;
+      const fileStartedAt = performance.now();
+      results[index] = await analyze(files[index]!);
+      durations[index] = performance.now() - fileStartedAt;
+      completed += 1;
+      if (completed % 250 === 0) {
+        console.log(
+          `[dependency-rules] analyzed ${completed}/${files.length} files in ` +
+            `${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
+      }
+    }
+  });
+  await Promise.all(workers);
+
+  const elapsed = performance.now() - startedAt;
+  const total = durations.reduce((sum, value) => sum + value, 0);
+  const max = files.length > 0 ? Math.max(...durations) : 0;
+  console.log(
+    `[dependency-rules] analyzed ${files.length} files with concurrency ${workerCount}: ` +
+      `wall=${elapsed.toFixed(0)}ms sum=${total.toFixed(0)}ms ` +
+      `mean=${files.length > 0 ? (total / files.length).toFixed(2) : '0.00'}ms max=${max.toFixed(0)}ms`,
+  );
+
+  return new Map(files.map((file, index) => [file, results[index]!]));
 }
 
 async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
@@ -608,16 +664,53 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
   return [...new Set(cycles)].sort();
 }
 
+describe('bounded file analysis', () => {
+  const files = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'];
+
+  /** Analyzer with a deterministic per-file delay to force completion skew. */
+  function skewedAnalyzer(track?: { active: number; maxActive: number; seen: string[] }) {
+    return async (file: string): Promise<FileAnalysis> => {
+      if (track) {
+        track.seen.push(file);
+        track.active += 1;
+        track.maxActive = Math.max(track.maxActive, track.active);
+      }
+      await new Promise((resolve) => setTimeout(resolve, file.charCodeAt(0) % 4));
+      if (track) track.active -= 1;
+      return { filePath: file, relativePath: file, imports: [] };
+    };
+  }
+
+  it('preserves serial order and completeness at every concurrency', async () => {
+    for (const concurrency of [1, 2, 8, 64]) {
+      const result = await analyzeFiles(files, concurrency, skewedAnalyzer());
+      expect([...result.keys()]).toEqual(files);
+      expect([...result.values()].map((entry) => entry.relativePath)).toEqual(files);
+    }
+  });
+
+  it('never exceeds the concurrency bound', async () => {
+    const track = { active: 0, maxActive: 0, seen: [] as string[] };
+    await analyzeFiles(files, 3, skewedAnalyzer(track));
+    expect(track.seen.sort()).toEqual([...files].sort());
+    expect(track.maxActive).toBeGreaterThan(1);
+    expect(track.maxActive).toBeLessThanOrEqual(3);
+  });
+
+  it('does not spawn more workers than files', async () => {
+    const track = { active: 0, maxActive: 0, seen: [] as string[] };
+    const result = await analyzeFiles(files.slice(0, 2), 8, skewedAnalyzer(track));
+    expect(result.size).toBe(2);
+    expect(track.maxActive).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('Layer Dependency Rules', () => {
   let analyses: Map<string, FileAnalysis>;
 
   beforeAll(async () => {
-    analyses = new Map();
     const tsFiles = await collectFiles(SRC_DIR, /\.ts$/);
-    for (const file of tsFiles) {
-      const analysis = await analyzeFile(file);
-      analyses.set(file, analysis);
-    }
+    analyses = await analyzeFiles(tsFiles, ANALYSIS_CONCURRENCY);
   });
 
   describe('Rule 1: state/ shared-primitive boundary (fine-grained)', () => {
