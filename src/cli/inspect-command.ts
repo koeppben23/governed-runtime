@@ -101,13 +101,18 @@ installation-target or host-selection flags.`;
 interface ResolvedWorkspace {
   readonly fingerprint: string;
   readonly worktreeRoot: string;
+  readonly normalizedRoot: string;
 }
 
 /** Resolve the workspace identity for the current directory. */
 async function resolveWorkspace(): Promise<ResolvedWorkspace> {
   const worktreeRoot = await resolveRoot(process.cwd());
   const fpResult = await computeFingerprint(worktreeRoot);
-  return { fingerprint: fpResult.fingerprint, worktreeRoot };
+  return {
+    fingerprint: fpResult.fingerprint,
+    worktreeRoot,
+    normalizedRoot: fpResult.normalizedRoot,
+  };
 }
 
 /**

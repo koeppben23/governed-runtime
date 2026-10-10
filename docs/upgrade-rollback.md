@@ -147,7 +147,11 @@ pre-boundary session is rejected again at the next read.
    resolve every `blocker` before upgrading. A directory that is not a git
    worktree reports `WORKSPACE_UNRESOLVED`; a resolvable worktree without an
    initialized FlowGuard workspace reports `WORKSPACE_NOT_INITIALIZED` — run
-   `flowguard install` for that worktree first. Historical archives are
+   `flowguard install` for that worktree first. A worktree whose identity
+   changed (for example a git remote was added or removed) while workspace
+   evidence exists under the prior fingerprint reports
+   `WORKSPACE_IDENTITY_CHANGED`; resolve the previous workspace before
+   upgrading. Historical archives are
    reported as warnings only. A release that predates `--upgrade-check` skips
    this step; the blockers below still apply. The preflight reports an active
    session as

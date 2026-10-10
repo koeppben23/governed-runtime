@@ -269,11 +269,47 @@ describe('inspect workspace identity resolution', () => {
     expect(session.exit).toBe(1);
   });
 
+  it('blocks when the worktree identity changes after sessions existed (remote added)', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    await seedActiveSession(root);
+
+    execFileSync('git', ['remote', 'add', 'origin', 'https://example.com/org/repo.git'], {
+      cwd: root,
+      windowsHide: true,
+    });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    const report = parseReport(stdout);
+    expect(report.upgradeReady).toBe(false);
+    expect(reportCodes(report)).toContain('WORKSPACE_IDENTITY_CHANGED');
+  });
+
+  it('blocks when the worktree identity changes after sessions existed (remote removed)', async () => {
+    await isolateConfigDir();
+    const root = await makeGitRepo();
+    execFileSync('git', ['remote', 'add', 'origin', 'https://example.com/org/repo.git'], {
+      cwd: root,
+      windowsHide: true,
+    });
+    await seedActiveSession(root);
+    execFileSync('git', ['remote', 'remove', 'origin'], { cwd: root, windowsHide: true });
+
+    const { exit, stdout } = await runInspect(['--upgrade-check', '--json'], root);
+    expect(exit).toBe(1);
+    expect(reportCodes(parseReport(stdout))).toContain('WORKSPACE_IDENTITY_CHANGED');
+  });
+
   it('reports workspace-not-initialized from the read model for an unmanaged fingerprint', async () => {
     await isolateConfigDir();
     const root = await makeGitRepo();
 
-    const result = await runUpgradePreflight('b'.repeat(24), root);
+    const result = await runUpgradePreflight({
+      fingerprint: 'b'.repeat(24),
+      worktreeRoot: root,
+      normalizedRoot: root,
+    });
     expect(result.kind).toBe('workspace-not-initialized');
   });
 });

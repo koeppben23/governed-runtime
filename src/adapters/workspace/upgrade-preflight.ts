@@ -9,14 +9,15 @@
  * or fully verifies archives — full integrity verification stays with
  * `verifyArchive`, and historical archives never block upgrade readiness.
  *
- * The caller passes the canonically resolved worktree root alongside the
- * fingerprint; a resolvable worktree without an initialized FlowGuard
- * workspace fails closed instead of reporting an empty inventory.
+ * The caller passes the canonically resolved workspace identity; a resolvable
+ * worktree without an initialized FlowGuard workspace fails closed instead of
+ * reporting an empty inventory, and prior workspace evidence under a different
+ * fingerprint (identity change) blocks instead of being silently skipped.
  *
- * @version v2
+ * @version v3
  */
 
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
 
 import { verifyChain } from '../../audit/integrity.js';
@@ -27,8 +28,8 @@ import { auditPath, readState, repoConfigPath } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { inspectArchiveTar, readArchiveTextMember } from './archive-tar.js';
 import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
-import { sessionDir, workspaceDir } from './init.js';
-import { validateSessionId } from './types.js';
+import { sessionDir, workspaceDir, workspacesHome, readWorkspaceInfo } from './init.js';
+import { validateSessionId, WorkspaceError } from './types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,10 +81,18 @@ export interface UpgradeCheckReport {
   readonly findings?: readonly UpgradeCheckFinding[];
 }
 
+/** Canonically resolved workspace identity (worktree root + fingerprint). */
+export interface WorkspaceIdentity {
+  readonly fingerprint: string;
+  readonly worktreeRoot: string;
+  readonly normalizedRoot: string;
+}
+
 export type UpgradePreflightResult =
   | { readonly kind: 'ok'; readonly report: UpgradeCheckReport }
   | { readonly kind: 'inventory-unreadable'; readonly detail: string }
-  | { readonly kind: 'workspace-not-initialized'; readonly detail: string };
+  | { readonly kind: 'workspace-not-initialized'; readonly detail: string }
+  | { readonly kind: 'workspace-identity-changed'; readonly detail: string };
 
 // ─── Pure classification ─────────────────────────────────────────────────────
 
@@ -459,23 +468,100 @@ function isValidSessionName(name: string): boolean {
  * resolved worktree carries a repo-scoped FlowGuard config. Both checks are
  * read-only; a filesystem error is never silently treated as an empty store.
  */
-function isManagedWorkspace(fingerprint: string, worktreeRoot: string): boolean {
-  return existsSync(workspaceDir(fingerprint)) || existsSync(repoConfigPath(worktreeRoot));
+function isManagedWorkspace(identity: WorkspaceIdentity): boolean {
+  return (
+    existsSync(workspaceDir(identity.fingerprint)) ||
+    existsSync(repoConfigPath(identity.worktreeRoot))
+  );
 }
 
-/** Run the workspace upgrade preflight and return its structured report. */
-export async function runUpgradePreflight(
-  fingerprint: string,
-  worktreeRoot: string,
-): Promise<UpgradePreflightResult> {
-  if (!isManagedWorkspace(fingerprint, worktreeRoot)) {
-    return {
-      kind: 'workspace-not-initialized',
-      detail: `no workspace store at ${workspaceDir(fingerprint)} and no repo config for ${worktreeRoot}`,
-    };
+type WorktreeWorkspaceScan =
+  | { readonly status: 'ok'; readonly fingerprints: readonly string[] }
+  | { readonly status: 'unreadable'; readonly detail: string };
+
+/**
+ * Read-only scan of the workspace store for records of this exact worktree.
+ * Metadata that cannot be read is never treated as "not this worktree": a
+ * non-matching entry with unreadable metadata fails the scan closed, while
+ * directory names that are not fingerprints are not workspace records at all.
+ */
+async function scanWorktreeWorkspaces(normalizedRoot: string): Promise<WorktreeWorkspaceScan> {
+  const home = workspacesHome();
+  let entries: Dirent[];
+  try {
+    if (!existsSync(home)) return { status: 'ok', fingerprints: [] };
+    entries = readdirSync(home, { withFileTypes: true, encoding: 'utf8' });
+  } catch (error) {
+    return { status: 'unreadable', detail: `workspace store: ${String(error)}` };
   }
 
-  const sessionsRoot = join(workspaceDir(fingerprint), 'sessions');
+  const fingerprints: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    let info: Awaited<ReturnType<typeof readWorkspaceInfo>>;
+    try {
+      info = await readWorkspaceInfo(entry.name);
+    } catch (error) {
+      if (error instanceof WorkspaceError && error.code === 'INVALID_FINGERPRINT') continue;
+      return { status: 'unreadable', detail: `workspace metadata ${entry.name}: ${String(error)}` };
+    }
+    if (info !== null && info.worktreePath === normalizedRoot) {
+      fingerprints.push(info.fingerprint);
+    }
+  }
+  return { status: 'ok', fingerprints };
+}
+
+type IdentityBlocker = Extract<
+  UpgradePreflightResult,
+  { kind: 'inventory-unreadable' | 'workspace-not-initialized' | 'workspace-identity-changed' }
+>;
+
+/**
+ * Classify identity-level blockers before any inventory is read: unreadable
+ * store metadata, prior workspace evidence under another fingerprint (identity
+ * change), or a resolvable worktree that is not initialized at all.
+ */
+async function classifyWorkspaceIdentity(
+  identity: WorkspaceIdentity,
+): Promise<IdentityBlocker | null> {
+  const scan = await scanWorktreeWorkspaces(identity.normalizedRoot);
+  if (scan.status === 'unreadable') {
+    return { kind: 'inventory-unreadable', detail: scan.detail };
+  }
+  const foreignFingerprints = scan.fingerprints.filter(
+    (fingerprint) => fingerprint !== identity.fingerprint,
+  );
+  if (foreignFingerprints.length > 0) {
+    return {
+      kind: 'workspace-identity-changed',
+      detail: `prior workspace fingerprint(s) for this worktree: ${foreignFingerprints.join(', ')}`,
+    };
+  }
+  if (!isManagedWorkspace(identity)) {
+    return {
+      kind: 'workspace-not-initialized',
+      detail: `no workspace store at ${workspaceDir(identity.fingerprint)} and no repo config for ${identity.worktreeRoot}`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Run the workspace upgrade preflight and return its structured report.
+ *
+ * A worktree whose identity changed (for example a remote was added or
+ * removed) keeps its prior workspace under a different fingerprint. That prior
+ * evidence is reported as a blocker instead of being treated as an empty
+ * inventory, and a repo config alone only counts as a never-used workspace.
+ */
+export async function runUpgradePreflight(
+  identity: WorkspaceIdentity,
+): Promise<UpgradePreflightResult> {
+  const identityBlocker = await classifyWorkspaceIdentity(identity);
+  if (identityBlocker !== null) return identityBlocker;
+
+  const sessionsRoot = join(workspaceDir(identity.fingerprint), 'sessions');
   const archiveDir = join(sessionsRoot, 'archive');
 
   let sessionNames: string[];
@@ -499,7 +585,7 @@ export async function runUpgradePreflight(
       continue;
     }
     try {
-      sessions.push(await checkSession(fingerprint, name));
+      sessions.push(await checkSession(identity.fingerprint, name));
     } catch (error) {
       sessions.push(unclassifiableSessionEntry(name, error));
     }
@@ -532,7 +618,7 @@ export async function runUpgradePreflight(
     kind: 'ok',
     report: {
       scope: 'workspace',
-      workspaceFingerprint: fingerprint,
+      workspaceFingerprint: identity.fingerprint,
       upgradeReady: blockers === 0,
       summary: {
         sessions: sessions.length,

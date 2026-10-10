@@ -15,6 +15,7 @@
 import {
   runUpgradePreflight,
   type UpgradeCheckReport,
+  type WorkspaceIdentity,
 } from '../adapters/workspace/upgrade-preflight.js';
 
 export type { UpgradeCheckReport } from '../adapters/workspace/upgrade-preflight.js';
@@ -47,60 +48,56 @@ export function reportWorkspaceUnresolved(json: boolean, message: string): numbe
   return 1;
 }
 
-/** Run the workspace upgrade preflight. Returns the process exit code. */
-export async function runUpgradeCheck(
-  identity: { readonly fingerprint: string; readonly worktreeRoot: string },
+/** Emit a standalone blocker report for a result that fails before inventory. */
+function emitStandaloneBlocker(
+  identity: WorkspaceIdentity,
   json: boolean,
-): Promise<number> {
-  const result = await runUpgradePreflight(identity.fingerprint, identity.worktreeRoot);
+  code: string,
+  message: string,
+): number {
+  if (json) {
+    const payload: UpgradeCheckReport = {
+      scope: 'workspace',
+      workspaceFingerprint: identity.fingerprint,
+      upgradeReady: false,
+      summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
+      sessions: [],
+      archives: [],
+      findings: [{ severity: 'blocker', code, message }],
+    };
+    console.log(JSON.stringify(payload));
+  } else {
+    console.log(`[blocker] ${code}: ${message}`);
+  }
+  return 1;
+}
+
+/** Run the workspace upgrade preflight. Returns the process exit code. */
+export async function runUpgradeCheck(identity: WorkspaceIdentity, json: boolean): Promise<number> {
+  const result = await runUpgradePreflight(identity);
   if (result.kind === 'workspace-not-initialized') {
-    const message = `No initialized FlowGuard workspace for this worktree (${result.detail}).`;
-    if (json) {
-      const payload: UpgradeCheckReport = {
-        scope: 'workspace',
-        workspaceFingerprint: identity.fingerprint,
-        upgradeReady: false,
-        summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
-        sessions: [],
-        archives: [],
-        findings: [
-          {
-            severity: 'blocker',
-            code: 'WORKSPACE_NOT_INITIALIZED',
-            message,
-          },
-        ],
-      };
-      console.log(JSON.stringify(payload));
-    } else {
-      console.log(`[blocker] WORKSPACE_NOT_INITIALIZED: ${message}`);
-    }
-    return 1;
+    return emitStandaloneBlocker(
+      identity,
+      json,
+      'WORKSPACE_NOT_INITIALIZED',
+      `No initialized FlowGuard workspace for this worktree (${result.detail}).`,
+    );
+  }
+  if (result.kind === 'workspace-identity-changed') {
+    return emitStandaloneBlocker(
+      identity,
+      json,
+      'WORKSPACE_IDENTITY_CHANGED',
+      `The worktree workspace identity changed after sessions existed (${result.detail}). Resolve the previous workspace before upgrading.`,
+    );
   }
   if (result.kind === 'inventory-unreadable') {
-    if (json) {
-      const payload: UpgradeCheckReport = {
-        scope: 'workspace',
-        workspaceFingerprint: identity.fingerprint,
-        upgradeReady: false,
-        summary: { sessions: 0, archives: 0, blockers: 1, warnings: 0 },
-        sessions: [],
-        archives: [],
-        findings: [
-          {
-            severity: 'blocker',
-            code: 'INVENTORY_UNREADABLE',
-            message: `Workspace session/archive inventory cannot be determined (${result.detail}).`,
-          },
-        ],
-      };
-      console.log(JSON.stringify(payload));
-    } else {
-      console.log(
-        `[blocker] INVENTORY_UNREADABLE: cannot determine the workspace inventory (${result.detail}).`,
-      );
-    }
-    return 1;
+    return emitStandaloneBlocker(
+      identity,
+      json,
+      'INVENTORY_UNREADABLE',
+      `Workspace session/archive inventory cannot be determined (${result.detail}).`,
+    );
   }
 
   const report = result.report;

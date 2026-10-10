@@ -113,6 +113,16 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'WORKSPACE_IDENTITY_CHANGED',
+    category: 'adapter',
+    messageTemplate: 'The worktree workspace identity changed after sessions existed: {detail}',
+    recoverySteps: [
+      'Resolve the previous workspace (complete or archive its sessions) before upgrading',
+      'Do not delete the previous workspace store to clear the blocker',
+    ],
+  },
+
+  {
     code: 'WORKSPACE_NOT_INITIALIZED',
     category: 'adapter',
     messageTemplate: 'No initialized FlowGuard workspace for this worktree: {detail}',

@@ -84,7 +84,11 @@ async function runCheck(): Promise<{ exit: number; report: UpgradeCheckReport }>
   };
   try {
     const exit = await runUpgradeCheck(
-      { fingerprint: FINGERPRINT, worktreeRoot: workspaceConfigDir ?? process.cwd() },
+      {
+        fingerprint: FINGERPRINT,
+        worktreeRoot: workspaceConfigDir ?? process.cwd(),
+        normalizedRoot: workspaceConfigDir ?? process.cwd(),
+      },
       true,
     );
     return { exit, report: JSON.parse(output) as UpgradeCheckReport };
