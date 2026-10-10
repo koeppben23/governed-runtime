@@ -180,7 +180,7 @@ async function classifyLiveState(
           code: `STATE_${status.toUpperCase()}`,
           message: `Session ${sessionId} state cannot be read under the current contract (${code}).`,
           recovery: [
-            'Archive or complete the session with the currently installed version.',
+            'Recover the session with the release that wrote it: complete an active session, archive a terminal one.',
             'Do not edit persisted state to bridge the contract boundary.',
           ],
         },
@@ -199,7 +199,7 @@ async function classifyLiveState(
           code: 'ACTIVE_SESSION',
           message: `Session ${sessionId} is active in phase ${state.phase}.`,
           recovery: [
-            'Complete the session or archive it with the currently installed version.',
+            'Complete the session with the currently installed version; archiving requires a terminal phase.',
             'Then run the upgrade.',
           ],
         },
@@ -226,7 +226,8 @@ async function classifyLiveAudit(
       code: 'STATE_MISSING_WITH_AUDIT',
       message: `Session ${sessionId} has an audit trail but no readable state.`,
       recovery: [
-        'Archive or complete the session with the currently installed version before upgrading.',
+        'Restore the missing session state from a matching backup if one exists.',
+        'Otherwise preserve the audit trail as evidence and document the unresolved blocker; do not fabricate state.',
       ],
     });
   }
@@ -282,7 +283,9 @@ function auditMissingFindings(
         severity: 'warning',
         code: 'AUDIT_MISSING',
         message: `Session ${sessionId} has no audit trail.`,
-        recovery: ['Verify whether this session must be archived before the upgrade.'],
+        recovery: [
+          'Verify whether this session keeps evidence that must be preserved before the upgrade.',
+        ],
       },
     ];
   }

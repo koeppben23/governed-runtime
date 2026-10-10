@@ -145,21 +145,21 @@ instead of restoring session files across a schema boundary.
 
 ### Disaster Recovery
 
-| Step | Action                                  | Owner         |
-| ---- | --------------------------------------- | ------------- |
-| 1    | Restore `.opencode/` directory          | Customer      |
-| 2    | Verify installation: `flowguard doctor` | Customer      |
-| 3    | Verify archives                         | Customer      |
-| 4    | Archive incomplete sessions             | Session owner |
+| Step | Action                                                                         | Owner         |
+| ---- | ------------------------------------------------------------------------------ | ------------- |
+| 1    | Restore `.opencode/` directory                                                 | Customer      |
+| 2    | Verify installation: `flowguard doctor`                                        | Customer      |
+| 3    | Verify archives                                                                | Customer      |
+| 4    | Preserve evidence of incomplete sessions (running sessions cannot be archived) | Session owner |
 
 ### Backup Recommendations
 
-| Data                      | Frequency            | Method                     |
-| ------------------------- | -------------------- | -------------------------- |
-| **Active sessions**       | Daily or per session | Archive + external storage |
-| **Archives**              | Weekly incremental   | External storage           |
-| **Installation artifact** | Per version          | Artifact repository        |
-| **Configuration**         | On change            | Version control            |
+| Data                      | Frequency            | Method                                                          |
+| ------------------------- | -------------------- | --------------------------------------------------------------- |
+| **Active sessions**       | Daily or per session | Copy the session directory to external storage (not `/archive`) |
+| **Archives**              | Weekly incremental   | External storage                                                |
+| **Installation artifact** | Per version          | Artifact repository                                             |
+| **Configuration**         | On change            | Version control                                                 |
 
 **Customer Responsibility:**
 

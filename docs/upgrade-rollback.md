@@ -308,7 +308,8 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 **Customer Responsibility:**
 
-- Complete or archive sessions before every prerelease upgrade
+- Complete active sessions and archive terminal ones before every prerelease
+  upgrade
 - Verify archives after upgrade; do not expect an active pre-upgrade session to
   remain readable
 

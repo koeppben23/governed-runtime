@@ -14,10 +14,10 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
     code: 'ACTIVE_SESSION',
     category: 'adapter',
     messageTemplate:
-      'Session {sessionId} is active in phase {phase} and must be completed or archived before upgrading',
+      'Session {sessionId} is active in phase {phase} and must be completed before upgrading',
     recoverySteps: [
       'Complete the session with the currently installed version',
-      'Or archive it with the currently installed version',
+      'Archiving requires a terminal phase; do not archive an active session',
     ],
   },
 
@@ -27,7 +27,8 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Session {sessionId} state is incompatible with the current contract and cannot be read',
     recoverySteps: [
-      'Archive or complete the session with the currently installed version',
+      'Recover the session with the release that wrote it',
+      'Complete an active session, or archive a session that is already terminal',
       'Do not edit persisted state to bridge the contract boundary',
     ],
   },
@@ -37,7 +38,8 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'Session {sessionId} has an audit trail but no readable state',
     recoverySteps: [
-      'Archive or complete the session with the currently installed version before upgrading',
+      'Restore the missing session state from a matching backup if one exists',
+      'Otherwise preserve the audit trail as evidence and document the unresolved blocker',
     ],
   },
 
@@ -52,7 +54,9 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
     code: 'AUDIT_MISSING',
     category: 'adapter',
     messageTemplate: 'Session {sessionId} has no audit trail',
-    recoverySteps: ['Verify whether this session must be archived before the upgrade'],
+    recoverySteps: [
+      'Verify whether this session keeps evidence that must be preserved before the upgrade',
+    ],
   },
 
   {
