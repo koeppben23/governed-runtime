@@ -443,7 +443,7 @@ Fine-grained boundaries are additionally enforced by
 
 1. **`state/`** may only import the listed shared primitives (canonicalization,
    hashing, actor assurance) and owns its evidence discriminators
-2. **Leaf modules** (`archive/types`, `discovery/types`) must not import other FF modules
+2. **Restricted boundary modules**: `archive/types` may import only `shared`; `discovery/types` may import only `shared` and `state` — both carry dedicated rules
 3. **`rails/`** must not import node built-ins directly (I/O is handled by adapters)
 4. **`integration/tools/`** must not import integration composition (`plugin.ts`, `plugin-*`; `plugin-helpers.ts` is a root authority)
 5. **`integration/review/`** may import `review/**`, root authorities and lower layers; it must not import `tools/**`, composition, or host/runtime wiring

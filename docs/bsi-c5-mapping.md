@@ -290,16 +290,16 @@ The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGu
 
 The following FlowGuard artifacts provide verifiable evidence for the mappings above.
 
-| Artifact                        | Location                                                                                           | Supports                                             |
-| ------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| State machine topology          | `src/machine/topology.ts`                                                                          | RB (change management), DEV (structured workflow)    |
-| Evidence completeness matrix    | `src/audit/completeness.ts`                                                                        | COM (evidence management)                            |
-| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts`                                                     | RB (logging), CRY (hash chain)                       |
-| Policy presets and resolution   | `src/config/policy-presets.ts`, `src/config/policy-resolver.ts`                                    | IDM (separation of duties), OIS (policy enforcement) |
-| Review decision logic           | `src/rails/review-decision.ts`                                                                     | IDM (four-eyes principle)                            |
-| Archive verification            | `src/adapters/workspace/archive.ts` (`verifyArchive`); finding-code enum in `src/archive/types.ts` | COM (audit support), PI (portability)                |
-| Release workflow                | `.github/workflows/release.yml` (tarball, checksums, SBOM, SLSA attestation)                       | AM (checksums + SBOM), DLL (supply chain)            |
-| Security policy                 | `SECURITY.md`                                                                                      | PSS (vulnerability management)                       |
+| Artifact                        | Location                                                                                                        | Supports                                             |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| State machine topology          | `src/machine/topology.ts`                                                                                       | RB (change management), DEV (structured workflow)    |
+| Evidence completeness matrix    | `src/audit/completeness.ts`                                                                                     | COM (evidence management)                            |
+| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts`                                                                  | RB (logging), CRY (hash chain)                       |
+| Policy presets and resolution   | `src/config/policy-presets.ts`, `src/config/policy-resolver.ts`                                                 | IDM (separation of duties), OIS (policy enforcement) |
+| Review decision logic           | `src/rails/review-decision.ts`                                                                                  | IDM (four-eyes principle)                            |
+| Archive verification            | `src/adapters/workspace/archive-verify-chain.ts` (`verifyArchive`); finding-code enum in `src/archive/types.ts` | COM (audit support), PI (portability)                |
+| Release workflow                | `.github/workflows/release.yml` (tarball, checksums, SBOM, SLSA attestation)                                    | AM (checksums + SBOM), DLL (supply chain)            |
+| Security policy                 | `SECURITY.md`                                                                                                   | PSS (vulnerability management)                       |
 
 ---
 

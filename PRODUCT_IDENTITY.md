@@ -126,7 +126,7 @@ Nineteen installed core FlowGuard commands cover workflow, diagnostics, and oper
 | `/ticket`                           | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.      |
 | `/plan`                             | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                 |
 | `/architecture`                     | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**.  |
-| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.         |
+| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.                          |
 | `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
 | `/implement`                        | Execute implementation, record evidence, run review loop                                                            |
 | `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted   |
@@ -283,12 +283,12 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **6. Logging**             | Structured logging (logger interface + factories)                                                                                                        | `logging/logger.ts`                                                             |
 | **7. Audit**               | Hash chain, query, summary, completeness matrix                                                                                                          | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts`   |
 | **8. Discovery**           | Repo discovery (6 collectors + orchestrator + Zod types)                                                                                                 | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts`  |
-| **9. Archive**             | Archive manifest types, verification                                                                                                                     | `archive/types.ts`                                                              |
+| **9. Archive**             | Archive manifest types and verification schemas; verification implementation in the adapter layer                                                        | `archive/types.ts`, `adapters/workspace/archive-*.ts`                           |
 | **10. Integration**        | Host integration surfaces, including OpenCode custom tools + plugin (thin wrappers)                                                                      | `integration/tools.ts`, `plugin.ts`, `index.ts`                                 |
 | **11. CLI**                | Installer (install/uninstall/doctor)                                                                                                                     | `cli/install.ts`, `cli/templates.ts`                                            |
 | **12. CLI (experimental)** | Headless wrappers: `flowguard run`, `flowguard serve` — for non-interactive CI/CD use. Not for production; use `opencode run`/`opencode serve` directly. | `cli/run.ts`                                                                    |
 
-Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
+Dependencies flow **inward**: `cli` and `integration` compose `rails`, `adapters`, `machine`, and `state`; `rails` orchestrates `machine`; `machine` reads and writes `state`. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility. The exact allowed directions are owned by `MODULE_DEPENDENCY_POLICY` (`src/architecture/support/module-dependency-policy.ts`); no circular dependencies exist.
 
 ### Distribution Model
 
@@ -403,12 +403,12 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (`baseline`, `typescript`, `backend-java`, `frontend-angular` — IDs as declared in `src/config/profile.ts`)
 - **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
-- **Archive Verification:** Enumerated finding codes in `src/archive/types.ts`; emitted by `verifyArchive()` in `src/adapters/workspace/archive.ts`
+- **Archive Verification:** Enumerated finding codes in `src/archive/types.ts`; emitted by `verifyArchive()` in `src/adapters/workspace/archive-verify-chain.ts`
 - **Reason Codes:** 30+ with recovery guidance (canonical registry in `src/config/reasons.ts` and `src/config/reasons-*.ts`)
 - **Evidence Types:** Zod-validated schemas across `src/state/evidence-*.ts` plus discovery schemas under `src/discovery/` and `src/state/discovery-schemas.ts`
 - **Framework Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Unit project enforces 80% (branches/lines/functions/statements); integration project enforces 70% (see `vitest.config.ts`)
-- **Mutation Testing:** StrykerJS (v9.6.1) on 68 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
+- **Mutation Testing:** StrykerJS (v9.6.1) on 116 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — offline-capable / local-first by default; network-dependent features (remote JWKS, `/review url=...`, TSA timestamping) are opt-in and documented
 

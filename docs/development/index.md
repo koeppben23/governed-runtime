@@ -1,22 +1,30 @@
 # Development Guide
 
-This guide is the contributor entry point. It routes to the developer
-authorities; it does not define workflow, architecture, or verification rules
-itself.
+This guide and [Your First Change](./first-change.md) are the only required
+reading for a first contribution. Everything else on this page is reference.
 
-## First 30 minutes
+## First 15 minutes
 
 1. Clone the repository.
 2. Use the pinned Node version from `.node-version`.
 3. Install exactly from the lockfile: `npm ci`.
-4. Type-check: `npm run check`.
-5. Run the default suite: `npm test`.
-6. Read the [Developer Architecture Map](./architecture-map.md).
-7. Work through [Your First Change](./first-change.md).
+4. Type-check and run the default suite once: `npm run check && npm test`.
+5. Work through [Your First Change](./first-change.md) — owning file, test,
+   placement rule, checks, and the pull-request workflow for one small additive
+   change.
 
-Local setup details, debugging, and dogfooding live in
-[Development and Debugging](./debugging.md) — this page intentionally does not
-duplicate them.
+The repository-wide `AGENTS.md` rules (root and nested) remain binding
+regardless of this short path; see [AGENTS.md](../../AGENTS.md#verification).
+
+## Reference (not required for a first contribution)
+
+| Document                                                              | Owns                                                                         |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [Developer Architecture Map](./architecture-map.md)                   | Change-type checklists, exact authorities, placement/zone/mutation procedure |
+| [Development and Debugging](./debugging.md)                           | Local setup, debugging, dogfood installation, isolated playgrounds           |
+| [Following a State-Changing Operation](./state-changing-operation.md) | Persisted workflow tracing and evidence                                      |
+| [Testing Strategy](../testing-strategy.md)                            | Test layers and the executable verification surface                          |
+| [CONTRIBUTING.md](../../CONTRIBUTING.md)                              | Branch naming, PR process, commit and verification contracts                 |
 
 ## Repository map
 
@@ -52,7 +60,10 @@ First decision:
 - Git, file, or archive I/O → `src/adapters/`.
 
 Then follow the [Developer Architecture Map](./architecture-map.md), which owns
-the change-type checklists and the exact authorities.
+the change-type checklists and the exact authorities. The [first-change
+walkthrough](./first-change.md) is complete without it; the map is the next
+step only for changes that need deeper routing, placement, or top-level module
+work the walkthrough does not cover.
 
 ## Mental model
 
@@ -64,16 +75,3 @@ Four terms are enough to start:
   never a second source of truth.
 - **Trust boundary** — a place where untrusted input is validated or fails
   closed.
-
-## Develop And Debug
-
-- [Development and Debugging](./debugging.md) is the canonical local setup,
-  debugging, dogfood-installation, and isolated-playground guide.
-- [Following a State-Changing Operation](./state-changing-operation.md) traces
-  persisted workflow behavior and its evidence.
-
-## Contribution Workflow
-
-[CONTRIBUTING.md](../../CONTRIBUTING.md) owns branch naming, pull-request,
-release, and contributor verification guidance. Repository-local requirements
-remain in [AGENTS.md](../../AGENTS.md).

@@ -1,6 +1,13 @@
 # FlowGuard Architecture
 
-## Layered Architecture
+## Conceptual Architecture
+
+**Runtime flow and module direction.** Arrows show runtime flow; where the
+arrow connects two governed modules it follows the allowed dependency
+direction. The single authority for module directions is
+[`MODULE_DEPENDENCY_POLICY`](../../src/architecture/support/module-dependency-policy.ts)
+(observed edges must equal the declared policy exactly); this diagram neither
+defines nor widens it.
 
 ```mermaid
 graph TD
@@ -47,7 +54,7 @@ graph TD
   subgraph AuditBox["Audit, Evidence & Proof Surfaces"]
     Audit["Audit Trail<br/>(hash-chain integrity)"]
     Completeness["Completeness<br/>(four-eyes principle)"]
-    Archive["Evidence Export<br/>(artifacts/{id}.md + .json)"]
+    Archive["Evidence Archive<br/>(packaging + verification)"]
   end
 
   %% ── Proof Surfaces ──
@@ -57,7 +64,7 @@ graph TD
   end
 
   %% ── Adapters ──
-  Adapters["Adapters<br/>(Persistence, Workspace, Fingerprint)"]
+  Adapters["Adapters<br/>(persistence, workspace, git, host, actor)"]
 
   %% ── Logging ──
   Logging["Structured Logging<br/>(redact-safe PII filtering)"]
@@ -77,6 +84,7 @@ graph TD
 
   %% ── Connections ──
   Agent -->|tool calls| Hooks
+  Tools -->|tool.execute.before| Hooks
   Hooks -->|intercept| PluginEntry
   PluginEntry -->|route| Orchestrator
   PluginEntry -->|route| ToolExec
@@ -91,14 +99,14 @@ graph TD
   Machine -->|read/write| SSOT
 
   SSOT -->|feed| EvidenceNode
-  EvidenceNode -->|record| Audit
+  Audit -->|read evidence| SSOT
   Audit -->|hash-chain| Completeness
-  SSOT -->|derive| Cards
-  EvidenceNode -->|persist| Archive
+  Cards -->|read| SSOT
+  Adapters -->|package| Archive
   Cards -->|render| Status
 
-  SSOT -->|persist via| Adapters
-  SSOT -->|log via| Logging
+  Adapters -->|persist| SSOT
+  Adapters -->|log via| Logging
 
   CLI -->|writes| Config
   CLI -->|reads via| Adapters

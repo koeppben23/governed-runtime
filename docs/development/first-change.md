@@ -124,7 +124,21 @@ npm run lint:strict
 npm run test:architecture
 ```
 
-## 7. What a reviewer looks for
+## 7. Open the pull request
+
+The short path is complete when the change is reviewable:
+
+1. Create the topic branch from `develop` with the canonical prefix for the
+   change type (`docs/`, `fix/`, `feat/`, `test/`, `refactor/`, `chore/`).
+2. Commit with a Conventional Commit subject, for example
+   `test(run-check): pin the remaining-check count`.
+3. Open the PR against `develop`, fill out the template (Touched Surface, Risk
+   Class, verification commands), and link the issue.
+4. Wait for CI. Branch naming, commit types, the merge strategy, and the
+   required checks are owned by [CONTRIBUTING.md](../../CONTRIBUTING.md); this
+   walkthrough does not replace that contract.
+
+## 8. What a reviewer looks for
 
 - The field is genuinely additive and derived — no schema, state, audit, or
   digest authority changed.
