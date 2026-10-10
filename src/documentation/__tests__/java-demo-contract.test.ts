@@ -71,6 +71,27 @@ function extractSection(markdown: string, heading: string): string {
 }
 
 describe('Java Task Manager demo contract', () => {
+  it('ships a reproducible live-matrix runner that reads the canonical toolchain pins', async () => {
+    const runnerPath = path.join(DEMO_DIR, 'run-live-matrix.mjs');
+    const runner = await fs.readFile(runnerPath, 'utf-8');
+    const readme = await fs.readFile(README_PATH, 'utf-8');
+
+    // Pins come from the canonical authorities; no semver literal is hardcoded.
+    expect(runner).toContain('opencode-runtime-compat.ts');
+    expect(runner).toContain('.node-version');
+    expect(runner).toMatch(/TESTED_OPENCODE_HOST_VERSION/);
+    expect(runner).not.toMatch(/\b\d+\.\d+\.\d+\b/);
+
+    // Explicit host context and abort rules.
+    expect(runner).toContain("'--dir'");
+    expect(runner).toMatch(/PWD/);
+    expect(runner).toContain('tool-level block observed');
+    expect(runner).toContain('raw-export grant removed');
+
+    // The README points operators at the runner instead of ad-hoc drivers.
+    expect(readme).toContain('run-live-matrix.mjs');
+  });
+
   it('keeps the ticket and runbook explicit about the complete regression fix', async () => {
     const [ticket, readme, demoScript, controllerTest, demoPackage, proofGraphVariants] =
       await Promise.all([

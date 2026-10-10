@@ -143,6 +143,22 @@ FlowGuard session ID for every row; the host-session ID is the package identity
 used by `verify-evidence-package.mjs`. Do not reuse a session or a chat export
 between flows.
 
+`run-live-matrix.mjs` executes this checklist reproducibly: it reads the
+toolchain pins from the canonical repository files (`opencode-runtime-compat.ts`
+and `.node-version`), prepares fresh workspaces from a built-and-packed tarball,
+runs every step through real headless `opencode run` processes with an explicit
+`--dir`, verifies each package, stops a flow at the first block, and removes the
+isolated raw-export grant on exit. It performs no governance work itself.
+
+```bash
+# Full matrix: builds + packs the current tree, prepares fresh workspaces,
+# runs every flow, and verifies each package.
+node demos/java-task-manager/run-live-matrix.mjs --root /tmp/flowguard-live-run
+
+# Toolchain/preflight check only (no live run).
+node demos/java-task-manager/run-live-matrix.mjs --root /tmp/flowguard-live-run --check
+```
+
 | Flow         | Workspace                      | Required terminal state    | Individual evidence package                                                |
 | ------------ | ------------------------------ | -------------------------- | -------------------------------------------------------------------------- |
 | Architecture | `java-task-manager`            | `ARCH_COMPLETE`            | Create a raw `/archive`; verify as `architecture` / `ARCH_COMPLETE`.       |
