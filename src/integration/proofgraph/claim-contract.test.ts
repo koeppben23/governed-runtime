@@ -109,8 +109,12 @@ describe('validateProofClaimContract — accepted declarations', () => {
     });
   });
 
-  it('accepts a non-critical claim without a counterexample check', () => {
-    const claim = planClaim({ critical: false, counterexampleRequirement: undefined });
+  it('accepts a non-critical claim with a structural-only specific binding', () => {
+    const claim = planClaim({
+      critical: false,
+      counterexampleRequirement: undefined,
+      structuralSurface: 'command-registration',
+    });
     expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] })).toEqual({
       kind: 'ok',
     });
@@ -120,6 +124,40 @@ describe('validateProofClaimContract — accepted declarations', () => {
     expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [] })).toEqual({
       kind: 'ok',
     });
+  });
+});
+
+describe('validateProofClaimContract — specific_behavior evidence binding (Run-9 F4)', () => {
+  it('rejects a non-critical specific_behavior claim without any claim-specific binding', () => {
+    const result = classifyProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [planClaim({ critical: false, counterexampleRequirement: undefined })],
+    });
+    expect(result.rejectedNonBlocking).toHaveLength(1);
+    expect(result.rejectedBlocking).toEqual([]);
+    expect(result.rejectedNonBlocking[0]?.result.detail).toContain(
+      'claim-specific evidence binding',
+    );
+    expect(result.rejectedNonBlocking[0]?.result.field).toBe('counterexampleRequirement');
+  });
+
+  it('keeps suite claims on the full-check aggregate contract, not this rule', () => {
+    expect(
+      validateProofClaimContract({
+        ...BASE,
+        source: 'plan',
+        verificationCandidates: [BASE.verificationCandidates[0]!, securityFullCheckCandidate],
+        claims: [
+          planClaim({
+            critical: false,
+            claimScope: 'suite',
+            positiveCheckId: 'security',
+            counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+          }),
+        ],
+      }),
+    ).toEqual({ kind: 'ok' });
   });
 });
 

@@ -508,7 +508,13 @@ describe('declare_contract', () => {
       await declare_contract.execute(
         {
           claims: [
-            { statement, checkId: 'test', critical: false, claimScope: 'specific_behavior' },
+            {
+              statement,
+              checkId: 'test',
+              critical: false,
+              claimScope: 'specific_behavior',
+              structuralSurface: 'command-registration',
+            },
           ],
         },
         ctx,
@@ -792,6 +798,7 @@ describe('declare_contract', () => {
               checkId: 'test',
               critical: false,
               claimScope: 'specific_behavior',
+              structuralSurface: 'command-registration',
             },
           ],
         },
@@ -817,6 +824,7 @@ describe('declare_contract', () => {
               checkId: 'test',
               critical: false,
               claimScope: 'specific_behavior',
+              structuralSurface: 'command-registration',
               authority: 'ticket',
             },
           ],
@@ -836,7 +844,13 @@ describe('declare_contract', () => {
       await declare_contract.execute(
         {
           claims: [
-            { statement: 'x', checkId: 'lint', critical: false, claimScope: 'specific_behavior' },
+            {
+              statement: 'x',
+              checkId: 'lint',
+              critical: false,
+              claimScope: 'specific_behavior',
+              structuralSurface: 'command-registration',
+            },
           ],
         },
         ctx,

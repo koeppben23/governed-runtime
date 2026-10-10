@@ -74,7 +74,11 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
     );
   }
   if (declaration.mutationProfile) positive.push('fault_injection');
-  return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
+  // A declared assertion is claim-carrying evidence at ANY criticality: the
+  // positive check pass alone must never prove a specific behavior (Run-9 F4).
+  const requiresAdversarial =
+    declaration.critical || declaration.counterexampleRequirement !== undefined;
+  return { positive, adversarial: requiresAdversarial ? ['counterexample' as const] : [] };
 }
 
 function isAggregateCounterexampleAttempt(

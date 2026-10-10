@@ -372,6 +372,32 @@ describe('materializeApprovedPlanContract', () => {
     });
   });
 
+  it('requires the declared assertion as adversarial carrying evidence even for non-critical claims', async () => {
+    const base = stateWithClaims();
+    const declarations = {
+      ...base.plan!.claimDeclarations!,
+      claims: [{ ...base.plan!.claimDeclarations!.claims[0]!, critical: false }],
+    };
+    const state = {
+      ...base,
+      plan: {
+        ...base.plan!,
+        claimDeclarations: declarations,
+        approvalCertificate: {
+          ...base.plan!.approvalCertificate!,
+          claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+        },
+      },
+    };
+
+    const contract = await materializeApprovedPlanContract(state, process.cwd());
+
+    expect(contract.claims[0]!.requiredEvidence).toEqual({
+      positive: ['executed_test', 'structural_assertion', 'fault_injection'],
+      adversarial: ['counterexample'],
+    });
+  });
+
   it('counterexample requirement is materialized with counterexampleRefs', async () => {
     const state = stateWithClaims();
     const result = await materializeApprovedPlanContractResult(

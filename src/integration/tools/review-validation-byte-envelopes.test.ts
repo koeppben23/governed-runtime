@@ -8,6 +8,11 @@
  * (`review-validation-byte-test-fixtures.ts`) against the base implementation
  * and persisting the exact serialized strings. Field order, recovery texts,
  * optional fields, and failure precedence are therefore pinned byte for byte.
+ *
+ * Amendment (Run-9 F3): `validation.unable-to-review` was re-captured after the
+ * canonical fix — the reason now interpolates the real obligation id and the
+ * reason template no longer embeds reviewer-supplied text. Every other entry
+ * is still the base capture.
  */
 
 import { readFileSync } from 'node:fs';
