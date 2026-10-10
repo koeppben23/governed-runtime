@@ -191,16 +191,20 @@ export async function activateImplementationReviewObligation(
  *   legal only while the persisted reduced decision still satisfies the
  *   canonical machine authority `reducedCeremonyReady`.
  *
+ * Reconciliation: certificate-bound claims from a superseded plan are replaced
+ * by the current materialization, while advisory claims that never carried a
+ * certificate approval (manual `/declare-contract` declarations) are
+ * preserved. A stale manual claim is NOT silently deleted — it stays in the
+ * contract and the evaluator's freshness authority reports it STALE /
+ * NOT_VERIFIED against the current implementation. Manual claims remain
+ * advisory: they never gain approval authority and never become gate-eligible.
+ *
  * Idempotency is bound to the CURRENT plan/implementation/evidence generation:
- * only a persisted contract that already equals this materialization is left
- * untouched. A stale contract from an earlier implementation generation (for
- * example a rework after `changes_requested`) or a foreign pre-gate contract
- * (a manual `/declare-contract` declaration) is replaced by the approved-plan
- * materialization — the existence of any `proofContract` is never treated as
- * proof that the current plan was materialized. An invalid certificate over
- * existing declarations materializes the explicit coverage gap (never a silent
- * claimless fallback); the evidence gate keeps blocking that state through the
- * certificate-invalid enforcement path.
+ * only a persisted contract that already equals this reconciliation is left
+ * untouched. An invalid certificate over existing declarations materializes
+ * the explicit coverage gap (never a silent claimless fallback); the evidence
+ * gate keeps blocking that state through the certificate-invalid enforcement
+ * path.
  */
 export async function materializePostValidationContract(
   state: SessionState,
@@ -211,10 +215,18 @@ export async function materializePostValidationContract(
   if (!entersFullReview && !entersReducedReview) return state;
 
   const materialized = await materializeApprovedPlanContractResult(state, worktree);
+  const planClaimIds = new Set(materialized.contract.claims.map((claim) => claim.claimId));
+  const preservedAdvisoryClaims = (state.proofContract?.claims ?? []).filter(
+    (claim) => !hasCertificateApproval(claim) && !planClaimIds.has(claim.claimId),
+  );
+  const nextContract: NonNullable<SessionState['proofContract']> = {
+    ...materialized.contract,
+    claims: [...materialized.contract.claims, ...preservedAdvisoryClaims],
+  };
   const nextCoverage = [...materialized.coverage];
   if (
     state.proofContract !== undefined &&
-    canonicalJsonStringify(state.proofContract) === canonicalJsonStringify(materialized.contract) &&
+    canonicalJsonStringify(state.proofContract) === canonicalJsonStringify(nextContract) &&
     canonicalJsonStringify(state.proofContractCoverage ?? []) ===
       canonicalJsonStringify(nextCoverage)
   ) {
@@ -222,9 +234,19 @@ export async function materializePostValidationContract(
   }
   return {
     ...state,
-    proofContract: materialized.contract,
+    proofContract: nextContract,
     proofContractCoverage: nextCoverage,
   };
+}
+
+function hasCertificateApproval(
+  claim: NonNullable<SessionState['proofContract']>['claims'][number],
+): boolean {
+  return (
+    claim.provenance !== null &&
+    claim.provenance.kind === 'canonical_authority' &&
+    claim.provenance.approval !== undefined
+  );
 }
 
 /**

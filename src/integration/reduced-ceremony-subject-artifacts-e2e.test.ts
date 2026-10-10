@@ -44,14 +44,14 @@ import { evaluateCompleteness } from '../audit/completeness.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { executeCheck } from '../verification/executor.js';
-import { makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
-import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { makeProgressedState, POLICY_SNAPSHOT, VALIDATION_PASSED } from '../fixtures.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 import type { SessionState } from '../state/schema.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { canonicalBinding } from './test-helpers.js';
 import type { ToolContext } from './tools/helpers.js';
-import { decision, export as exportTool } from './tools/index.js';
+import { decision, declare_contract, export as exportTool } from './tools/index.js';
 import { reconcilePendingAuditOperations } from './plugin-audit.js';
 import { createSessionCompletionAuditDeps } from './services/regulated-completion.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
@@ -741,5 +741,71 @@ describe('reduced-ceremony contract materialization (Run-9 F1, real git)', () =>
     const gate = evaluateProofGraphGateFromState(state!);
     expect(gate.gated).toBe(true);
     expect(gate.kind).toBe('certificate_invalid');
+  });
+
+  it('HAPPY: a manual /declare-contract claim survives the review entry alongside the approved plan', async () => {
+    s = await boot({ allowReducedCeremony: true });
+    const se = s;
+    await f1ClaimBearingState(se);
+
+    // The manual declaration resolves against the current implementation
+    // generation before the review entry.
+    const before = await readState(se.sDir);
+    await writeStateWithArtifacts(se.sDir, {
+      ...before!,
+      validationAttempts: [
+        {
+          attemptId: randomUUID(),
+          scope: 'implementation' as const,
+          implementationId: before!.implementation!.implementationId,
+          implementationDigest: before!.implementation!.digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: {
+            ...VALIDATION_PASSED[0]!,
+            checkId: 'test',
+            candidateId: RUN_SPECIFIC_CANDIDATE.candidateId,
+            passed: true,
+          },
+        },
+      ],
+    });
+    const declared = JSON.parse(
+      String(
+        await declare_contract.execute(
+          {
+            claims: [
+              {
+                statement: 'the docs guide keeps its manual advisory declaration',
+                checkId: 'test',
+                critical: false,
+                claimScope: 'specific_behavior',
+                structuralSurface: 'command-registration',
+              },
+            ],
+          },
+          se.tc,
+        ),
+      ),
+    ) as { error?: boolean };
+    expect(declared.error).toBeUndefined();
+
+    const withManual = await readState(se.sDir);
+    const manualClaim = withManual!.proofContract!.claims.at(-1)!;
+
+    executorWritesReport();
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    // The certificate-bound plan claim is materialized and the advisory manual
+    // claim is preserved with its identity and evidence reference.
+    expect(state!.proofContract?.claims.map((claim) => claim.claimId)).toEqual([
+      F1_CLAIM_ID,
+      manualClaim.claimId,
+    ]);
+    expect(state!.proofContract?.claims.at(-1)).toEqual(manualClaim);
+    expect(state!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+    expect(evaluateProofGraphGateFromState(state!).gated).toBe(false);
   });
 });

@@ -194,14 +194,15 @@ describe('materializePostValidationContract — reduced entry (Run-9 F1)', () =>
     expect(second).toBe(first);
   });
 
-  it('BAD: a foreign pre-gate contract is replaced by the approved-plan materialization', async () => {
+  it('HAPPY: preserves advisory manual claims while materializing the approved plan', async () => {
+    const attemptId = '00000000-0000-4000-8000-0000000000ee';
     const manualClaim = {
       claimId: randomUUID(),
       statement: 'a manual declaration created before the review gate',
       signalClass: 'hypothesis' as const,
       critical: false,
       provenance: null,
-      evidenceRefs: [],
+      evidenceRefs: [{ kind: 'validation_attempt' as const, attemptId }],
       counterexampleRefs: [],
     };
     const state = reducedReadyState({
@@ -211,8 +212,43 @@ describe('materializePostValidationContract — reduced entry (Run-9 F1)', () =>
 
     const materialized = await materializePostValidationContract(state, '/tmp/worktree');
 
-    expect(materialized.proofContract?.claims.map((claim) => claim.claimId)).toEqual([CLAIM_ID]);
+    // Plan claims carry the certificate-bound authority; the manual advisory
+    // claim is preserved with its evidence reference, never silently deleted.
+    expect(materialized.proofContract?.claims.map((claim) => claim.claimId)).toEqual([
+      CLAIM_ID,
+      manualClaim.claimId,
+    ]);
+    expect(materialized.proofContract?.claims[1]).toEqual(manualClaim);
     expect(materialized.proofContractCoverage).toEqual([]);
+  });
+
+  it('HAPPY: preserves stale advisory claims for explicit staleness evaluation', async () => {
+    // A manual claim bound to an attempt that no longer belongs to the current
+    // implementation generation stays in the contract: the evaluator's
+    // freshness authority reports it STALE / NOT_VERIFIED instead of the merge
+    // silently dropping accepted evidence.
+    const staleManualClaim = {
+      claimId: randomUUID(),
+      statement: 'a manual declaration from an earlier implementation generation',
+      signalClass: 'hypothesis' as const,
+      critical: false,
+      provenance: null,
+      evidenceRefs: [
+        { kind: 'validation_attempt' as const, attemptId: '00000000-0000-4000-8000-00000000dead' },
+      ],
+      counterexampleRefs: [],
+    };
+    const state = reducedReadyState({
+      proofContract: { version: 'contract.v2', claims: [staleManualClaim] },
+      proofContractCoverage: [],
+    });
+
+    const materialized = await materializePostValidationContract(state, '/tmp/worktree');
+
+    expect(materialized.proofContract?.claims.map((claim) => claim.claimId)).toEqual([
+      CLAIM_ID,
+      staleManualClaim.claimId,
+    ]);
   });
 
   it('BAD: a stale contract from an earlier implementation generation is replaced', async () => {
