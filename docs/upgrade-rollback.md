@@ -134,6 +134,37 @@ session after upgrading.
   the Assurance epoch replaces migration with hard rejection
   (`docs/architecture/schema-migration.md`)
 
+### Operator recovery for incompatible persisted state
+
+One decision tree governs every hard-cut recovery. Do not edit persisted state,
+and do not restore session files across a schema boundary — a restored
+pre-boundary session is rejected again at the next read.
+
+1. **Preflight (when the installed release supports it).** Run
+   `flowguard inspect --upgrade-check` with the currently installed artifact and
+   resolve every `blocker` before upgrading. Historical archives are reported as
+   warnings only. A release that predates `--upgrade-check` skips this step; the
+   blockers below still apply.
+2. **Decide per blocked session while the matching release artifact is
+   available:**
+   - **Artifact installed:** use that release to `/archive` (raw or regulated as
+     configured) or to complete the session. This is a controlled operator
+     action with the matching version, not a runtime compatibility path.
+   - **Artifact unavailable:** reinstall the matching release from the approved
+     release source solely to archive or complete the session. If that is not
+     possible, leave the session directory untouched as evidence and start a
+     fresh session after the upgrade; the old session stays unreadable by
+     design.
+3. **Upgrade** with the new artifact (checksum-verified).
+4. **Start new sessions** on the current contract and verify archives with the
+   archive verifier. Archive restore re-creates evidence at the schema version
+   that wrote it; it never produces a session readable across a hard cut.
+
+`SESSION_STATE_INCOMPATIBLE` (readState contract preflight) and
+`SCHEMA_VALIDATION_FAILED` (hydrate-time evidence contract) are the two
+observable block codes on this path. Both are terminal for the affected
+session and share the tree above.
+
 ### Reviewer Mandate Compatibility
 
 Reviewer obligations bind both `criteriaVersion` and the reviewer-mandate digest. The

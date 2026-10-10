@@ -7,20 +7,28 @@
 ## Context
 
 The integration root zone (`src/integration/*.ts`) is the composition and
-host/runtime boundary. `integration-placement.test.ts` freezes its exact shape:
+host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
+(counts updated 2026-10-10):
 
 - `root-composition`: 23 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 4 named files (`installed-commands.ts`,
   `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
-- `root-authority`: 13 files (cross-context authorities such as
+- `root-authority`: 14 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 40 root production files
+- total: 41 root production files
 
-The guard-layer maintainability pass (PR #946) deliberately removed the
+The guard-layer maintainability pass (PR #945) deliberately removed the
 hardcoded total production-file count (221) and derived owner lists from the
 placement authority, but kept these root counts explicit. The reason is that
 the counts encode an architecture decision — which files may live at the root
 at all — not an observation of the current directory.
+
+The counts were 23 + 4 + 13 = 40 at decision time; PR #963 added
+`integration/risk-path-extraction.ts` at the root before the pins were
+enforced, and PR #987 dropped the count pins from the placement suite. This
+record's decision still governs, so the explicit count pins are reinstated in
+`integration-placement.test.ts` and a documentation drift test keeps this
+record aligned with the placement manifest.
 
 ## Options
 

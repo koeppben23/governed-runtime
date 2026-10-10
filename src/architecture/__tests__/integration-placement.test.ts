@@ -143,6 +143,20 @@ describe('integration placement authority', () => {
     }
   });
 
+  it('pins the root zone owner counts as explicit architecture invariants', () => {
+    // ADR-004: the root bound is a deliberate matrix decision, not a projection
+    // of the current tree. The literals below are the invariant; the placement
+    // manifest is the file mapping they constrain.
+    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => targetZoneOf(entry) === 'root');
+    const countByOwner = (owner: string) =>
+      rootFiles.filter((entry) => entry.owner === owner).length;
+
+    expect(countByOwner('root-composition')).toBe(23);
+    expect(countByOwner('root-host-runtime')).toBe(4);
+    expect(countByOwner('root-authority')).toBe(14);
+    expect(rootFiles.length).toBe(41);
+  });
+
   it('freezes the host/runtime boundary set exactly', () => {
     const hostRuntimeFiles = INTEGRATION_PLACEMENT.filter(
       (entry) => entry.owner === 'root-host-runtime',

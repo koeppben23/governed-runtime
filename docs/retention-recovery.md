@@ -43,12 +43,12 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ### Retention Triggers
 
-| Event                | FlowGuard Action      | Customer Action           |
-| -------------------- | --------------------- | ------------------------- |
-| **Session complete** | Preserves state       | Archive recommended       |
-| **Session abort**    | Preserves state       | Archive for analysis      |
-| **Workspace change** | Marks session invalid | Archive before change     |
-| **Version upgrade**  | Installs new version  | Archive previous artifact |
+| Event                | FlowGuard Action      | Customer Action                                                |
+| -------------------- | --------------------- | -------------------------------------------------------------- |
+| **Session complete** | Preserves state       | Archive recommended                                            |
+| **Session abort**    | Preserves state       | Archive for analysis                                           |
+| **Workspace change** | Marks session invalid | Archive before change                                          |
+| **Version upgrade**  | Installs new version  | Archive or complete active sessions with the previous artifact |
 
 ---
 
@@ -138,6 +138,11 @@ shown above.
 3. Verify archive integrity
 4. Review state in OpenCode using `/review`
 
+**Version scope:** archive restore re-creates evidence at the schema version
+that wrote it. A pre-hard-cut session stays unreadable after restore; use the
+operator recovery tree in [Upgrade and Rollback](./upgrade-rollback.md#operator-recovery-for-incompatible-persisted-state)
+instead of restoring session files across a schema boundary.
+
 ### Disaster Recovery
 
 | Step | Action                                  | Owner         |
@@ -221,13 +226,13 @@ shown above.
 
 ### Health Indicators
 
-| Indicator                | Normal     | Action                |
-| ------------------------ | ---------- | --------------------- |
-| **Archive verification** | Pass       | None                  |
-| **Archive verification** | Fail       | Investigate + restore |
-| **Session state**        | Valid      | None                  |
-| **Session state**        | Invalid    | Recover from archive  |
-| **Disk space**           | > 10% free | Archive old sessions  |
+| Indicator                | Normal     | Action                              |
+| ------------------------ | ---------- | ----------------------------------- |
+| **Archive verification** | Pass       | None                                |
+| **Archive verification** | Fail       | Investigate + restore               |
+| **Session state**        | Valid      | None                                |
+| **Session state**        | Invalid    | Recover from a same-version archive |
+| **Disk space**           | > 10% free | Archive old sessions                |
 
 ### Audit Trail Health
 

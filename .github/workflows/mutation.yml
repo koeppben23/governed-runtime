@@ -7,7 +7,7 @@ name: Mutation Testing
 # `perTest` coverageAnalysis + vitest-runner patch (spurious test-runner
 # errors and artificially low scores). The supported `--incremental` cache
 # mode still pays a full cold run and needs cross-run cache plumbing. Until
-# that is solved, the full-suite mutation run stays on the nightly/release
+# that is solved, the full-suite mutation run stays on the weekly/release
 # cadence and is intentionally NOT a required PR check
 # (see .github/BRANCH-PROTECTION.md).
 

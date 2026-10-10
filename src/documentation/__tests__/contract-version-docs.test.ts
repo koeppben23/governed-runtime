@@ -160,5 +160,23 @@ describe('developer contract version documentation', () => {
         `Current state contract (\`${CURRENT_SESSION_STATE_SCHEMA_VERSION}\`)`,
       );
     });
+
+    it('documents every schema hard cut in the changelog', () => {
+      const changelog = read('CHANGELOG.md');
+      // The changelog is the operator-facing release record: every schema bump
+      // must carry a BREAKING entry that names the version and the fail-closed
+      // rejection. Extend the historical list when a new cut lands.
+      const hardCutTokens = [
+        'state schema v6',
+        'schema is `v7`',
+        'session state v8',
+        'session state v9',
+        `session state ${CURRENT_SESSION_STATE_SCHEMA_VERSION}`,
+      ];
+      for (const token of hardCutTokens) {
+        expect(changelog, `CHANGELOG.md lacks a hard-cut entry for ${token}`).toContain(token);
+      }
+      expect(changelog).toContain('SESSION_STATE_INCOMPATIBLE');
+    });
   });
 });
