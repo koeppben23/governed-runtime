@@ -403,7 +403,10 @@ Representative typed fail-closed IdP errors:
   tool_call, decision) and on transition events when a session principal is resolved.
   Error events never carry `actorInfo`. Classification and identity context are
   orthogonal: a transition remains a machine-applied transition (`actor: 'machine'`)
-  even when it names the resolved principal.
+  even when it names the resolved principal. A successful `flowguard_decision` tool
+  call names the deciding actor from the persisted `decisionIdentity`; a blocked
+  decision call carries no `actorInfo` instead of attributing the session initiator.
+  The decision event and its receipt remain the decision attribution authority.
 
 ---
 
