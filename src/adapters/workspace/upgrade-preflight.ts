@@ -180,7 +180,8 @@ async function classifyLiveState(
           code: `STATE_${status.toUpperCase()}`,
           message: `Session ${sessionId} state cannot be read under the current contract (${code}).`,
           recovery: [
-            'Recover the session with the release that wrote it: complete an active session, archive a terminal one.',
+            'Recover the session with the release that wrote it: complete active sessions normally.',
+            'Archive terminal sessions only when the archive preflight permits it; preserve aborted or otherwise non-exportable evidence unchanged.',
             'Do not edit persisted state to bridge the contract boundary.',
           ],
         },

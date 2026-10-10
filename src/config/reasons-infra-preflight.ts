@@ -28,7 +28,8 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
       'Session {sessionId} state is incompatible with the current contract and cannot be read',
     recoverySteps: [
       'Recover the session with the release that wrote it',
-      'Complete an active session, or archive a session that is already terminal',
+      'Complete active sessions normally; archive terminal sessions only when the archive preflight permits it',
+      'Preserve aborted or otherwise non-exportable session evidence unchanged',
       'Do not edit persisted state to bridge the contract boundary',
     ],
   },
