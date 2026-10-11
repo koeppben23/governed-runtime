@@ -17,9 +17,31 @@ registry and codec. Do not invent a second declaration format or assertion codec
 Evidence roles must remain distinct under the integrated soundness contract:
 the same observation must not be counted as both positive and falsification
 evidence. Check actual role/binding diagnostics, not just check names or verdicts.
-Finalize the live fixture/driver against that integrated contract before running
-these controls; a successful result against an obsolete contract is not admission
-evidence for its replacement.
+A successful result against an obsolete contract is not admission evidence for its
+replacement.
+
+## Executable controls
+
+`run-live-claim-controls.mjs` runs both cases on real OpenCode/FlowGuard tools with
+the same pinned toolchain and checksummed tarball as `run-live-matrix.mjs`:
+
+```bash
+OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","provider":{"deepseek":{"models":{"deepseek-flash":{"options":{"reasoningEffort":"none","thinking":{"type":"disabled"}}}}}}}' \
+FLOWGUARD_REVIEWER_EFFORT=none \
+node demos/java-task-manager/run-live-claim-controls.mjs \
+  --root /tmp/flowguard-claim-controls --model deepseek/deepseek-flash
+```
+
+Before `/start`, each case receives the same committed fixtures: a documentation
+ticket and two JUnit classes — a positive assertion
+(`UsageNotesHintTest#documentsTestCommand`) and an adversarial falsification probe
+(`UsageNotesFalsificationProbeTest#noConflictingCommandIsDocumented`) that does not
+repeat the positive assertion. Both checks (`test`, `build`) execute real Maven so
+the two evidence roles come from distinct executions and attempts. A critical
+`specific_behavior` plan claim binds positive `test` and adversarial `build` to the
+adversarial assertion. The runtime mints the claim id, review evidence and approval
+certificate. The workspace opts into reduced ceremony so the evidence gate is the
+real final gate.
 
 ## Positive case
 
@@ -65,15 +87,20 @@ NOT_VERIFIED. It is not interchangeable with the required ProofGraph denial.
 No override, claim withdrawal, fabricated reviewer acceptance or state edit may
 be used to reach the desired result.
 
-## Required record and status
+## Status
 
-Record both session identities, installed git SHA/tarball checksum, exact retained
-declaration and certificate, assertion/role diagnostics, executed check results,
-review rounds and capture retries, canonical final state/audit and validated host
-exports. Count a correctly blocked negative case as a passed **control**, not as
-a completed workflow or a retrospectively green six-case matrix.
+Verified on the integrated head with DeepSeek V4.1 Flash and explicit thinking
+disabled (76 wire requests, 3 structured, 0 non-200). Both controls passed with
+real host sessions and validated parent/reviewer transcripts:
 
-**NOT_VERIFIED:** this document specifies the acceptance contract; it does not
-claim either live control has executed. Run both after the relevant changes have
-been reviewed and integrated. Full mutation admission remains a separate evidence
-requirement with its own selectors and records.
+- **claim-positive:** the retained critical claim reached `PROVEN` with the
+  adversarial assertion `passed` and both real checks green, passed ordinary
+  approval, and its `/export` package independently verified (`381fd11dee76…`).
+- **claim-negative:** both checks green, the adversarial assertion genuinely
+  `skipped`, the claim `NOT_VERIFIED`, and the real approval was denied with the
+  exact `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` at unchanged `EVIDENCE_REVIEW`; the
+  persisted review decision was unchanged and no package was created.
+
+Full mutation admission remains a separate requirement with its own selectors and
+records. A correctly blocked negative case is a passed control, not a completed
+development workflow.
