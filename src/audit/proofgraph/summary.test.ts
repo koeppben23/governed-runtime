@@ -355,6 +355,60 @@ describe('summarizeProofGraph reviewer projection', () => {
     expect(summary.projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
     expect(summary.claimDiagnostics.get(CLAIM)).toBe('evidence_role_collision');
   });
+
+  it('keeps the persisted role-collision cause over a co-existing binding diagnostic', () => {
+    // A materialized contract can keep a non-overlapping counterexample attempt
+    // while recording the collision gap for the shared one. The binding failure
+    // of the remaining attempt must not hide the primary collision cause.
+    const CX_ATT = '00000000-0000-4000-8000-0000000000cc';
+    const adversarialClaim = {
+      claimId: CLAIM,
+      statement: 'covered by a passing implementation test',
+      signalClass: 'fact' as const,
+      critical: true,
+      provenance: AUTHORITY_REF,
+      evidenceRefs: [{ kind: 'validation_attempt' as const, attemptId: ATT }],
+      counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId: CX_ATT }],
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'security',
+        assertion: { providerId: 'junit' as const, localId: 'com.example.Test#case' },
+      },
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+    };
+    const summary = summarizeProofGraph(
+      makeState('IMPL_VALIDATION', {
+        implementation: IMPL,
+        proofContract: { version: 'contract.v2', claims: [adversarialClaim] },
+        proofContractCoverage: [{ claimId: CLAIM, cause: 'evidence_role_collision' }],
+        validationAttempts: [
+          {
+            attemptId: ATT,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
+            result: attemptResult(true),
+          },
+          {
+            attemptId: CX_ATT,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
+            result: { ...attemptResult(true), checkId: 'security' },
+          },
+        ],
+      }),
+      NOW,
+    );
+
+    expect(summary.projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(summary.claimDiagnostics.get(CLAIM)).toBe('evidence_role_collision');
+  });
 });
 
 describe('summarizePersistedProofGraph contract coverage', () => {

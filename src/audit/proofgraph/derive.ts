@@ -91,8 +91,9 @@ function roleIndependenceDiagnostics(
 
 /**
  * Merge role-independence diagnostics over the binder-provided record. A role
- * collision is the claim's primary defect; a missing execution identity fills
- * in only when no more specific binding code exists.
+ * collision is the claim's primary defect: a persisted coverage cause and a
+ * runtime collision both take precedence over a more specific binding code; a
+ * missing execution identity fills in only when no other code exists.
  */
 function mergeRoleDiagnostics(
   provided: Readonly<Record<string, AssertionBindingReasonCode>>,
@@ -151,7 +152,7 @@ export function deriveProofGraph(
     evaluatedAt,
   );
   const diagnostics = mergeRoleDiagnostics(
-    { ...coverageGapDiagnostics(state), ...(opts?.claimDiagnostics ?? {}) },
+    { ...(opts?.claimDiagnostics ?? {}), ...coverageGapDiagnostics(state) },
     roleIndependenceDiagnostics(declaredClaims, providerResults, counterexamples),
   );
   return Object.keys(diagnostics).length > 0 ? { ...base, claimDiagnostics: diagnostics } : base;
