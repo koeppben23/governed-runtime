@@ -254,6 +254,30 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   'REVISED_PLAN_CLAIMS_REQUIRED',
 ]);
 
+/**
+ * Successful reviewer capture re-arms are NOT error blocks: the transport
+ * projects a structured `reviewRetry` outcome (reviewDispatch.completed=false,
+ * no `error:true`) for the SAME code that a terminal block carries as
+ * `error:true`. Only the structured re-arm counts as recovered; the terminal
+ * block stays flow-stopping.
+ */
+export function captureRetryCodes(output) {
+  const codes = new Set();
+  for (const event of eventsOf(output)) {
+    const part = event.part?.state?.output ?? '';
+    if (/"error":true/.test(part)) continue;
+    if (!/"reviewRetry"/.test(part)) continue;
+    try {
+      const parsed = JSON.parse(part);
+      const code = parsed?.reviewRetry?.code;
+      if (typeof code === 'string') codes.add(code);
+    } catch {
+      // Not the structured retry projection.
+    }
+  }
+  return [...codes];
+}
+
 /** Denials observed in a step that must stop the flow (never recovered in-session). */
 export function unexpectedDenialCodes(output) {
   return toolDenialCodes(output).filter((code) => !RECOVERABLE_DENIAL_CODES.has(code));
@@ -430,9 +454,14 @@ export class Runner {
           `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
         );
       }
-      const recovered = toolDenialCodes(result.stdout).filter((code) =>
-        RECOVERABLE_DENIAL_CODES.has(code),
-      );
+      const recovered = [
+        ...new Set([
+          ...toolDenialCodes(result.stdout).filter((code) =>
+            RECOVERABLE_DENIAL_CODES.has(code),
+          ),
+          ...captureRetryCodes(result.stdout),
+        ]),
+      ];
       if (recovered.length > 0) {
         session.recoveredDenials = session.recoveredDenials ?? [];
         session.recoveredDenials.push({ step: label, codes: recovered });

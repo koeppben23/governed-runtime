@@ -132,7 +132,8 @@
     "src/integration/tools/implementation-review-activation.ts",
     "src/integration/review/dispatch/native-task-review-bindings.ts",
     "src/integration/blocked-result.ts",
-    "src/integration/status/status.ts"
+    "src/integration/status/status.ts",
+    "src/integration/review/dispatch/native-task-review.ts"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]

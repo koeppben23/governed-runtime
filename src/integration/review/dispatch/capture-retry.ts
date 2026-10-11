@@ -13,6 +13,7 @@
 import type { ChallengeConsistencyCode } from '../enforcement/challenge-consistency.js';
 import type { ReviewFindingsScopeFailureCode } from '../enforcement/findings-consistency.js';
 import type { EvidenceLocationFailure } from '../observations/observation-binding.js';
+import type { ReviewObligationType } from '../../../state/evidence.js';
 import { REASON_MANDATE_MISSING, REASON_MANDATE_MISMATCH } from '../shared-helpers.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
 import type { StructuredFollowupFailureCode } from './structured-followup.js';
@@ -108,6 +109,74 @@ export const RETRYABLE_REVIEWER_CAPTURE_CODES: readonly RetryableReviewerCapture
 /** Every known terminal capture/binding failure code. */
 export const TERMINAL_REVIEWER_CAPTURE_CODES: readonly TerminalReviewerCaptureCode[] =
   codesWithClassification('terminal') as readonly TerminalReviewerCaptureCode[];
+
+/**
+ * Phase-legal recovery for a spent/interrupted reviewer release. Every
+ * obligation family has a typed or command-native recovery that re-arms the
+ * same frozen obligation with a fresh attempt.
+ */
+export function transportRecoveryInstruction(obligationType: ReviewObligationType): string {
+  switch (obligationType) {
+    case 'implement':
+      return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'plan':
+      return 'Call flowguard_plan({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'architecture':
+      return 'Call flowguard_architecture({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'review':
+      return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
+  }
+}
+
+const MAX_BLOCK_REASON_CHARS = 240;
+const MAX_DIAGNOSTIC_SUMMARY_ENTRIES = 3;
+const MAX_DIAGNOSTIC_VALUE_CHARS = 160;
+
+function boundCaptureReason(reason: string): string {
+  const firstLine = reason.split('\n')[0]?.trim() ?? '';
+  return firstLine.length > MAX_BLOCK_REASON_CHARS
+    ? `${firstLine.slice(0, MAX_BLOCK_REASON_CHARS)}…`
+    : firstLine;
+}
+
+/** Bounded, structured diagnostic summary derived from the retry diagnostics. */
+function boundedDiagnosticSummary(diagnostics: readonly PendingReviewRetryDiagnostic[]): string[] {
+  const entries: string[] = [];
+  for (const diagnostic of diagnostics) {
+    for (const [key, value] of Object.entries(diagnostic.data ?? {}).slice(0, 2)) {
+      entries.push(
+        `${key}=${
+          value.length > MAX_DIAGNOSTIC_VALUE_CHARS
+            ? `${value.slice(0, MAX_DIAGNOSTIC_VALUE_CHARS)}…`
+            : value
+        }`,
+      );
+      if (entries.length >= MAX_DIAGNOSTIC_SUMMARY_ENTRIES) return entries;
+    }
+  }
+  return entries;
+}
+
+/**
+ * Block detail for a native reviewer capture/binding failure. The real
+ * obligation id is always interpolated (never a `{obligationId}` placeholder),
+ * the raw capture reason is bounded to its first line, and the concrete
+ * location failures travel as a bounded structured summary instead of a raw
+ * JSON blob (Run-10 diagnostics).
+ */
+export function captureFailureBlockDetail(input: {
+  readonly obligationId: string;
+  readonly reason: string;
+  readonly diagnostics?: readonly PendingReviewRetryDiagnostic[];
+}): Record<string, string> {
+  const detail: Record<string, string> = {
+    obligationId: input.obligationId,
+    reason: boundCaptureReason(input.reason),
+  };
+  const summary = boundedDiagnosticSummary(input.diagnostics ?? []);
+  if (summary.length > 0) detail.diagnostics = summary.join(' | ');
+  return detail;
+}
 
 /** Capture-retry decision. Unknown codes are terminal with their original code. */
 export type ReviewerCaptureFailureDecision =

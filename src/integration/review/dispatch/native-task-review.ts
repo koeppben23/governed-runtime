@@ -45,7 +45,9 @@ import {
   buildCaptureFailureDiagnostics,
   buildCodeOnlyRetryDiagnostic,
   buildReviewerCaptureRetryOutput,
+  captureFailureBlockDetail,
   classifyReviewerCaptureFailure,
+  transportRecoveryInstruction,
 } from './capture-retry.js';
 import { registerPendingReviewForAttempt } from '../enforcement/enforcement.js';
 import { reviewableToolForObligationType } from '../obligations/obligation-tools.js';
@@ -101,6 +103,8 @@ interface BlockOutputInput {
   readonly output: ToolHookAfterOutput;
   readonly code: string;
   readonly reason: string;
+  readonly obligationId: string;
+  readonly diagnostics?: readonly PendingReviewRetryDiagnostic[];
 }
 
 export function isNativeReviewerTaskBefore(output: unknown): boolean {
@@ -202,19 +206,6 @@ function requireCurrentAttempt(
  * obligation family has a typed or command-native recovery that re-arms the
  * same frozen obligation with a fresh attempt.
  */
-function transportRecoveryInstruction(obligationType: ReviewObligationType): string {
-  switch (obligationType) {
-    case 'implement':
-      return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
-    case 'plan':
-      return 'Call flowguard_plan({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
-    case 'architecture':
-      return 'Call flowguard_architecture({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
-    case 'review':
-      return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
-  }
-}
-
 function mutateNativeTask(output: ToolHookBeforeOutput, prompt: string): void {
   output.args.subagent_type = REVIEWER_SUBAGENT_TYPE;
   output.args.description = TASK_DESCRIPTION;
@@ -289,7 +280,14 @@ async function abandonAndBlock(input: BlockOutputInput): Promise<void> {
     input.sessDir,
     input.callId,
   );
-  input.output.output = strictBlockedOutput(input.code, { reason: input.reason });
+  input.output.output = strictBlockedOutput(
+    input.code,
+    captureFailureBlockDetail({
+      obligationId: input.obligationId,
+      reason: input.reason,
+      ...(input.diagnostics !== undefined ? { diagnostics: input.diagnostics } : {}),
+    }),
+  );
 }
 
 interface CaptureFailureContext extends Omit<BlockOutputInput, 'code' | 'reason'> {
@@ -337,7 +335,12 @@ async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise
           ? `FlowGuard closed the broken review obligation because the re-arm budget is exhausted (${rearm.reason}). Re-run the originating command to mint a fresh obligation.`
           : `FlowGuard could not re-arm a fresh reviewer attempt: ${rearm.reason}.`
         : 'FlowGuard found no exact abandoned dispatch lineage to re-arm.';
-    await abandonAndBlock({ ...input, reason: `${input.reason} ${blockedReason}` });
+    await abandonAndBlock({
+      ...input,
+      // The actionable recovery cause leads: the bounded reason keeps it even
+      // when the underlying capture detail is truncated.
+      reason: `${blockedReason} Previous capture failure: ${input.reason}`,
+    });
     return;
   }
   const reviewTool = reviewableToolForObligationType(input.obligationType);
@@ -385,7 +388,10 @@ async function writeBindingFailure(
       : result === 'lineage_unavailable'
         ? 'REVIEW_ATTEMPT_UNAVAILABLE'
         : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-    { reason: `Native reviewer evidence binding returned ${result}.` },
+    captureFailureBlockDetail({
+      obligationId: input.obligationId,
+      reason: `Native reviewer evidence binding returned ${result}.`,
+    }),
   );
 }
 
@@ -519,6 +525,7 @@ async function fulfillNativeReviewTask(
       output: hookOutput,
       code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
       reason: 'OpenCode Task metadata did not expose the authoritative child session ID.',
+      obligationId: lineage.obligation.obligationId,
     });
     return;
   }
@@ -536,6 +543,7 @@ async function fulfillNativeReviewTask(
       reason:
         'The native reviewer Task reported the governed parent session as its child. ' +
         'Review evidence must come from an independent flowguard-reviewer child session.',
+      obligationId: lineage.obligation.obligationId,
     });
     return;
   }
@@ -553,6 +561,7 @@ async function fulfillNativeReviewTask(
       sessionId,
       callId,
       obligationType: lineage.obligation.obligationType,
+      obligationId: lineage.obligation.obligationId,
       output: hookOutput,
     },
   });
@@ -576,6 +585,7 @@ async function completeStructuredReview(
       reason:
         'Persisted FlowGuard state disappeared after reviewer observation replay; ' +
         'the captured findings cannot be validated or bound.',
+      obligationId: lineage.obligation.obligationId,
     });
     return;
   }
