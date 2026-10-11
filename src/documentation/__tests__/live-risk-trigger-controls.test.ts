@@ -201,8 +201,26 @@ describe('risk-trigger control oracles', () => {
     const unboundAttempt = state(false);
     unboundAttempt.proofGraph.claims[0]!.evidenceRefs = [];
     expect(() => assertFullEvidence(unboundAttempt, false)).toThrow(
-      /not referenced by the claim evidence/,
+      /positive evidence does not reference/,
     );
+
+    const swappedRoles = state(false);
+    swappedRoles.proofGraph.claims[0]!.evidenceRefs = [
+      { kind: 'validation_attempt', attemptId: 'build-attempt' },
+    ];
+    swappedRoles.proofGraph.claims[0]!.counterexampleRefs = [
+      { kind: 'validation_attempt', attemptId: 'test-attempt' },
+    ];
+    expect(() => assertFullEvidence(swappedRoles, false)).toThrow(
+      /positive evidence does not reference/,
+    );
+
+    const crossReferenced = state(false);
+    crossReferenced.proofGraph.claims[0]!.evidenceRefs = [
+      { kind: 'validation_attempt', attemptId: 'test-attempt' },
+      { kind: 'validation_attempt', attemptId: 'build-attempt' },
+    ];
+    expect(() => assertFullEvidence(crossReferenced, false)).toThrow(/roles are not independent/);
   });
 
   it('binds the installed build to the checkout when built from source', () => {

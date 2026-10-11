@@ -155,16 +155,27 @@ export function assertFullEvidence(state, covered) {
   if (assertionOf(build, ADVERSARIAL_ASSERTION)?.status !== 'passed') {
     throw new Error('the bound adversarial assertion must be passed and fresh');
   }
-  // The checked attempts must actually be referenced by the claim evidence, so
-  // PROVEN is bound to these executions rather than merely asserted.
-  const boundAttemptIds = [
-    ...(projected.evidenceRefs ?? []),
-    ...(projected.counterexampleRefs ?? []),
-  ]
-    .filter((ref) => ref?.kind === 'validation_attempt')
-    .map((ref) => ref.attemptId);
-  if (!boundAttemptIds.includes(test.attemptId) || !boundAttemptIds.includes(build.attemptId)) {
-    throw new Error('the checked attempt ids are not referenced by the claim evidence');
+  // Role-specific binding: the positive evidence refs must reference exactly the
+  // `test` attempt and the counterexample refs exactly the `build` attempt. A
+  // swapped, shared or missing binding fails closed instead of being accepted via
+  // a union of both roles.
+  const attemptIdsOf = (refs) =>
+    (refs ?? []).filter((ref) => ref?.kind === 'validation_attempt').map((ref) => ref.attemptId);
+  const evidenceAttemptIds = attemptIdsOf(projected.evidenceRefs);
+  const counterexampleAttemptIds = attemptIdsOf(projected.counterexampleRefs);
+  if (!evidenceAttemptIds.includes(test.attemptId)) {
+    throw new Error('the positive evidence does not reference the checked test attempt');
+  }
+  if (!counterexampleAttemptIds.includes(build.attemptId)) {
+    throw new Error('the counterexample evidence does not reference the checked build attempt');
+  }
+  if (
+    evidenceAttemptIds.includes(build.attemptId) ||
+    counterexampleAttemptIds.includes(test.attemptId)
+  ) {
+    throw new Error(
+      'the evidence roles are not independent: a checked attempt is cross-referenced',
+    );
   }
   return { claimId, buildAttemptId: build.attemptId, testAttemptId: test.attemptId };
 }

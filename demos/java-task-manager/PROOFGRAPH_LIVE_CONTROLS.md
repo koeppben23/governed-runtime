@@ -130,9 +130,24 @@ approved claim set differs:
   part of the approved plan claim set; the same trigger must reach `PROVEN` and
   pass ordinary approval.
 
-Verified on the integrated head (DeepSeek V4.1 Flash, thinking disabled, 117 wire
-requests): **2/2 PASS**. `risk-uncovered` blocked at `EVIDENCE_REVIEW` with the
-exact denial and no package; `risk-covered` reached `PROVEN`, `COMPLETE` and a
-verified export (`0385c0edd52e…`). Both detected `state_integrity` from the real
-implementation change. No runtime or demo change was needed; the existing contract
-model already expresses both cases.
+### Recorded live evidence
+
+DeepSeek V4.1 Flash with thinking disabled throughout; `state_integrity` detected
+from the real implementation change in every run; no runtime or demo change.
+
+- `bc3cee7a` (initial runner): one combined run reported 2/2 PASS;
+  `risk-covered` export `0385c0edd52e…`.
+- `6aa154a5` (strict oracles: full evidence contract, role-specific attempt refs,
+  toolchain/tarball/build identity, package-absence):
+  - `risk-uncovered` PASS — run root `flowguard-risk-trigger-6`: PROVEN claim
+    verified before the attempt, denial exactly `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`
+    at `EVIDENCE_REVIEW`, `archiveDirContents: []`.
+  - `risk-covered` PASS — run root `flowguard-risk-trigger-5`: `PROVEN`,
+    `COMPLETE`, export `fb0f7d638b29…`.
+  - A single combined 2/2 run on this HEAD stayed **NOT_VERIFIED**: the model
+    intermittently submitted no plan or the plan review hit a terminal capture
+    failure, which the runner reports fail-closed.
+
+Each evidence root keeps canonical state/audit, validated parent/reviewer
+transcripts, the provider receipts and the recorded metadata (checkout head,
+tarball SHA-256, installed build).
