@@ -235,10 +235,15 @@ async function runCase(runner, name, workspace, covered, context) {
       ) {
         throw new Error('the blocked approval changed the persisted review decision');
       }
+      const absence = assertNoCompletionPackage(runner, session);
       Object.assign(record, {
         expectedOutcome: 'blocked_at_evidence_gate',
         denial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
         riskTriggers: assessment.riskTriggers,
+        claimId: evidence.claimId.slice(0, 8),
+        buildAttemptId: evidence.buildAttemptId,
+        testAttemptId: evidence.testAttemptId,
+        archiveDirContents: absence.produced,
         phase: after.phase,
         packages: [],
         result: 'PASS',
@@ -369,6 +374,8 @@ async function main() {
         pins,
         checkoutHead,
         tarball,
+        tarballSha256: sha256(tarball),
+        tarballBuiltFromCheckout: builtFromCheckout,
         flows: ['risk-uncovered', 'risk-covered'],
         invariant: INVARIANT,
         assertions: { positive: POSITIVE_ASSERTION, adversarial: ADVERSARIAL_ASSERTION },
