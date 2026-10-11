@@ -148,6 +148,9 @@ async function buildProofGraphProjectionResponse(
   const proofGraphGate = evaluateProofGraphGate({
     projection: proofGraph.projection,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation ? { implementationDigest: state.implementation.digest } : {}),
     ...(riskAssessment !== null ? { riskAssessment } : {}),

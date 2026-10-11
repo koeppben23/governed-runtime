@@ -14,6 +14,7 @@
  */
 
 import type { RiskTrigger, SessionState } from '../../../state/schema.js';
+import type { SpecificRiskTrigger } from '../../../state/risk-trigger.js';
 import type { ProofGraphProjection } from '../../../state/proofgraph.js';
 import {
   authorizedCriticalPlanClaimIds,
@@ -27,6 +28,8 @@ import {
 export interface ReviewProofGraphGateInput {
   readonly projection?: ProofGraphProjection;
   readonly authorizedCriticalClaimIds?: readonly string[];
+  /** Certificate-bound coverage relation; mirrors the canonical gate input. */
+  readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessment?: {
@@ -39,6 +42,8 @@ export interface ReviewProofGraphGateInput {
 export interface ReviewProofGraphGateDecision {
   readonly kind: string;
   readonly relevantTriggers: readonly string[];
+  /** Detected triggers without approved critical-claim coverage, when projected. */
+  readonly uncoveredTriggers?: readonly string[];
 }
 
 export type ReviewProofGraphGateEvaluator = (
@@ -230,6 +235,9 @@ function renderCriticalClaimRequirement(
   const decision = authorities.evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation.digest,
     ...(riskAssessment !== null
@@ -250,6 +258,17 @@ function renderCriticalClaimRequirement(
     ];
   }
   if (decision.relevantTriggers.length === 0) return [];
+  if (decision.kind === 'risk_trigger_uncovered') {
+    const uncovered = decision.uncoveredTriggers ?? decision.relevantTriggers;
+    return [
+      '## Critical Fact Claim Requirement (persisted)',
+      '',
+      `- Relevant triggers: ${decision.relevantTriggers.join(', ')}.`,
+      `- Triggers without approved critical-claim coverage: ${uncovered.join(', ')}.`,
+      '- Declare coversRiskTriggers for every trigger on a critical plan claim and obtain plan approval for the new declaration set.',
+      '',
+    ];
+  }
   return [
     '## Critical Fact Claim Requirement (persisted)',
     '',

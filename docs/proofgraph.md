@@ -78,7 +78,10 @@ ignores whether it was ever proven — which contradicts the meaning of
 For an implementation with a specific persisted risk trigger, FlowGuard
 requires that **every** detected trigger is explicitly covered by at least one
 certificate-authorized critical `fact` claim. Coverage is declared with
-`coversRiskTriggers` on the claim; it is never inferred from claim text. A claim
+`coversRiskTriggers` on the claim; it is never inferred from claim text. The
+final gate enforces the coverage relation from the current approval
+certificate's declaration set — not from the persisted projection — so a stale
+or tampered projection cannot widen the approved contract. A claim
 may cover several triggers, and several claims may split the coverage. A
 non-critical or certificate-less claim can never cover a trigger, and a trigger
 detected at the final gate but not declared as covered blocks with

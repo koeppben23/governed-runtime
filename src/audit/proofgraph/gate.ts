@@ -122,6 +122,12 @@ function relevantTriggers(
 export function evaluateProofGraphGate(input: {
   readonly projection?: ProofGraphSummary['projection'];
   readonly authorizedCriticalClaimIds?: readonly string[];
+  /**
+   * Certificate-bound coverage relation from the current plan approval. The
+   * projector trusts this relation, never the persisted projection's own
+   * `coversRiskTriggers` entries.
+   */
+  readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
@@ -145,6 +151,9 @@ export function evaluateProofGraphGate(input: {
     ...(input.projection !== undefined ? { projection: input.projection } : {}),
     ...(input.authorizedCriticalClaimIds !== undefined
       ? { authorizedCriticalClaimIds: input.authorizedCriticalClaimIds }
+      : {}),
+    ...(input.authorizedRiskTriggerCoverage !== undefined
+      ? { authorizedRiskTriggerCoverage: input.authorizedRiskTriggerCoverage }
       : {}),
     ...(input.certificateValid !== undefined ? { certificateValid: input.certificateValid } : {}),
     ...(input.implementationDigest !== undefined
@@ -177,6 +186,9 @@ export function evaluateProofGraphGateFromState(state: SessionState): ProofGraph
   return evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }

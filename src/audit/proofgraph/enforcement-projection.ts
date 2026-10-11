@@ -155,20 +155,34 @@ export interface ComputeEnforcementInput {
   readonly riskAssessmentStale?: boolean;
   /** Specific triggers detected for the current implementation (`ceremony_only` excluded). */
   readonly riskTriggers?: readonly SpecificRiskTrigger[];
+  /**
+   * Certificate-bound coverage relation (critical claim id -> approved
+   * triggers). Coverage is enforced from THIS relation, never from the
+   * persisted projection's `coversRiskTriggers`, so a tampered or stale
+   * projection cannot widen the approved contract.
+   */
+  readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
   /** Per-claim binding diagnostic codes from counterexample evaluation. */
   readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
 }
 
 /**
- * Specific triggers that no gate-eligible claim explicitly covers. Coverage is
- * the declared relation on eligible claims; proof status is enforced separately
- * by the per-claim loop.
+ * Specific triggers that no authorized and gate-eligible claim covers.
+ *
+ * A coverage entry counts only when its claim is present and eligible in the
+ * projection; the per-claim loop separately requires every eligible claim to be
+ * PROVEN.
  */
 function uncoveredRiskTriggers(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
 ): readonly SpecificRiskTrigger[] {
-  const covered = new Set(eligibleClaims.flatMap((claim) => claim.coversRiskTriggers ?? []));
+  const eligibleIds = new Set(eligibleClaims.map((claim) => claim.claimId));
+  const covered = new Set<SpecificRiskTrigger>();
+  for (const [claimId, triggers] of input.authorizedRiskTriggerCoverage ?? []) {
+    if (!eligibleIds.has(claimId)) continue;
+    for (const trigger of triggers) covered.add(trigger);
+  }
   return (input.riskTriggers ?? []).filter((trigger) => !covered.has(trigger));
 }
 

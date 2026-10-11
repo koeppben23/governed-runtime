@@ -449,9 +449,20 @@ export function hasCurrentArchitectureApprovalCertificate(
   );
 }
 
-/** Critical plan claims authorized by the certificate bound to the current plan. */
+/**
+ * Certificate-authorized critical plan claims and their exact coverage relation.
+ *
+ * `coverage` maps every authorized critical claim id to the triggers its
+ * approved declaration declares. The enforcement projector must use THIS
+ * relation — never the persisted projection's `coversRiskTriggers` — so a
+ * tampered or stale projection cannot widen the approved contract.
+ */
 export type AuthorizedCriticalPlanClaimIds =
-  | { readonly kind: 'authorized'; readonly claimIds: readonly string[] }
+  | {
+      readonly kind: 'authorized';
+      readonly claimIds: readonly string[];
+      readonly coverage: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+    }
   | { readonly kind: 'certificate_missing' }
   | { readonly kind: 'certificate_invalid' };
 
@@ -464,13 +475,17 @@ export function authorizedCriticalPlanClaimIds(
     );
     return hasCriticalDeclarations
       ? { kind: 'certificate_missing' }
-      : { kind: 'authorized', claimIds: [] };
+      : { kind: 'authorized', claimIds: [], coverage: new Map() };
   }
   if (!hasCurrentPlanApprovalCertificate(plan)) return { kind: 'certificate_invalid' };
+  const criticalClaims = (plan.claimDeclarations?.claims ?? []).filter((claim) => claim.critical);
+  const coverage = new Map<string, readonly SpecificRiskTrigger[]>();
+  for (const claim of criticalClaims) {
+    coverage.set(claim.claimId, claim.coversRiskTriggers ?? []);
+  }
   return {
     kind: 'authorized',
-    claimIds: (plan.claimDeclarations?.claims ?? [])
-      .filter((claim) => claim.critical)
-      .map((claim) => claim.claimId),
+    claimIds: criticalClaims.map((claim) => claim.claimId),
+    coverage,
   };
 }

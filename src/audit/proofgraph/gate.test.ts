@@ -210,6 +210,8 @@ describe('evaluateProofGraphGate', () => {
   it('clears when the eligible claim declares the covering relation', () => {
     const decision = evaluateProofGraphGate({
       ...summary([claim(UUID(1), { coversRiskTriggers: ['state_integrity'] })]),
+      authorizedCriticalClaimIds: [UUID(1)],
+      authorizedRiskTriggerCoverage: new Map([[UUID(1), ['state_integrity']]]),
       implementationDigest: 'implementation-digest',
       riskAssessment: {
         implementationDigest: 'implementation-digest',
@@ -220,6 +222,24 @@ describe('evaluateProofGraphGate', () => {
       gated: false,
       kind: 'clear',
       uncoveredTriggers: [],
+    });
+  });
+
+  it('does not trust projection coverage without the certificate-bound relation', () => {
+    const decision = evaluateProofGraphGate({
+      ...summary([claim(UUID(1), { coversRiskTriggers: ['state_integrity'] })]),
+      authorizedCriticalClaimIds: [UUID(1)],
+      authorizedRiskTriggerCoverage: new Map([[UUID(1), []]]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'risk_trigger_uncovered',
+      uncoveredTriggers: ['state_integrity'],
     });
   });
 
@@ -266,6 +286,8 @@ describe('evaluateProofGraphGate', () => {
     // instead of demanding one.
     const decision = evaluateProofGraphGate({
       ...summary([claim(UUID(1), { state: 'PROVEN', coversRiskTriggers: ['state_integrity'] })]),
+      authorizedCriticalClaimIds: [UUID(1)],
+      authorizedRiskTriggerCoverage: new Map([[UUID(1), ['state_integrity']]]),
       implementationDigest: 'implementation-digest',
       riskAssessment: {
         implementationDigest: 'implementation-digest',
@@ -294,7 +316,11 @@ describe('evaluateProofGraphGate', () => {
 });
 
 describe('evaluateProofGraphGateFromState', () => {
-  function declarations(critical: boolean, claimId: string = UUID(1)): PlanClaimDeclarations {
+  function declarations(
+    critical: boolean,
+    claimId: string = UUID(1),
+    coversRiskTriggers?: readonly SpecificRiskTrigger[],
+  ): PlanClaimDeclarations {
     return {
       flow: 'plan',
       version: 'v2',
@@ -306,6 +332,9 @@ describe('evaluateProofGraphGateFromState', () => {
           authoritySectionId: 's1',
           claimScope: 'specific_behavior',
           expectedCheckId: 'test',
+          ...(coversRiskTriggers !== undefined
+            ? { coversRiskTriggers: [...coversRiskTriggers] }
+            : {}),
         },
       ],
     };
@@ -444,5 +473,64 @@ describe('evaluateProofGraphGateFromState', () => {
       }),
     );
     expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
+
+  it('clears when the projection coverage matches the approved declaration', () => {
+    const decls = declarations(true, UUID(1), ['state_integrity']);
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection([
+          claim(UUID(1), { state: 'PROVEN', coversRiskTriggers: ['state_integrity'] }),
+        ]),
+        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'STANDARD',
+          effectiveTaskClass: 'STANDARD',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          touchedSurfaces: ['src/'],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 1,
+          implementationDigest: 'impl-digest',
+          riskTriggers: ['state_integrity'],
+        },
+      }),
+    );
+    expect(decision).toMatchObject({ gated: false, kind: 'clear', uncoveredTriggers: [] });
+  });
+
+  it('blocks a projection that widens the approved trigger coverage', () => {
+    const decls = declarations(true, UUID(1), ['state_integrity']);
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection([
+          claim(UUID(1), {
+            state: 'PROVEN',
+            coversRiskTriggers: ['state_integrity', 'audit_authority'],
+          }),
+        ]),
+        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'STANDARD',
+          effectiveTaskClass: 'STANDARD',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
+          touchedSurfaces: ['src/'],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 1,
+          implementationDigest: 'impl-digest',
+          riskTriggers: ['state_integrity', 'audit_authority'],
+        },
+      }),
+    );
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'risk_trigger_uncovered',
+      uncoveredTriggers: ['audit_authority'],
+    });
   });
 });

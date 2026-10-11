@@ -61,6 +61,7 @@ import {
   assuranceWith,
 } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import type { SpecificRiskTrigger } from '../state/risk-trigger.js';
 import {
   completedDispatchForInvocation,
   makePlanRevision,
@@ -1392,6 +1393,62 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     );
 
     expect(approved.kind).toBe('ok');
+  });
+
+  it('NEGATIVE gate: a tampered projection cannot widen the approved coverage', async () => {
+    const coveringClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      coversRiskTriggers: ['state_integrity'],
+    };
+    const state = implReviewState(fullEvidence(), coveringClaim);
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    const tampered = {
+      ...summary.projection,
+      claims: summary.projection.claims.map((claim) => ({
+        ...claim,
+        coversRiskTriggers: ['state_integrity', 'audit_authority'] as SpecificRiskTrigger[],
+      })),
+    };
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: tampered,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity', 'audit_authority'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_RISK_TRIGGER_UNCOVERED');
+    expect(blocked.reason).toContain('audit_authority');
   });
 
   it('projects the full declaration-to-evidence chain for audit', async () => {

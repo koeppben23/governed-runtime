@@ -370,6 +370,9 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
         projection: state.proofGraph,
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
+        ...(authorization.kind === 'authorized'
+          ? { authorizedRiskTriggerCoverage: authorization.coverage }
+          : {}),
         certificateValid: authorization.kind === 'authorized',
         ...(implementationDigest !== undefined ? { implementationDigest } : {}),
         riskAssessment:

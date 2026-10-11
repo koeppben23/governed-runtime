@@ -140,6 +140,7 @@ describe('computeProofGraphEnforcement', () => {
         provenClaim({ coversRiskTriggers: ['state_integrity', 'identity_boundary'] }),
       ]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedRiskTriggerCoverage: new Map([['c1', ['state_integrity', 'identity_boundary']]]),
       riskTriggers: ['state_integrity', 'identity_boundary'],
     });
 
@@ -148,10 +149,49 @@ describe('computeProofGraphEnforcement', () => {
     expect(result.uncoveredTriggers).toEqual([]);
   });
 
+  it('does not trust projection coverage without the certificate-bound relation', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([provenClaim({ coversRiskTriggers: ['state_integrity'] })]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedRiskTriggerCoverage: new Map(),
+      riskTriggers: ['state_integrity'],
+    });
+
+    expect(result.decisionKind).toBe('risk_trigger_uncovered');
+    expect(result.uncoveredTriggers).toEqual(['state_integrity']);
+  });
+
+  it('rejects projection coverage widened beyond the approved relation', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([
+        provenClaim({ coversRiskTriggers: ['state_integrity', 'audit_authority'] }),
+      ]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedRiskTriggerCoverage: new Map([['c1', ['state_integrity']]]),
+      riskTriggers: ['state_integrity', 'audit_authority'],
+    });
+
+    expect(result.decisionKind).toBe('risk_trigger_uncovered');
+    expect(result.uncoveredTriggers).toEqual(['audit_authority']);
+  });
+
+  it('ignores authorized coverage for a claim that is not eligible in the projection', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([provenClaim({ claimId: 'c1' })]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedRiskTriggerCoverage: new Map([['c2', ['state_integrity']]]),
+      riskTriggers: ['state_integrity'],
+    });
+
+    expect(result.decisionKind).toBe('risk_trigger_uncovered');
+    expect(result.uncoveredTriggers).toEqual(['state_integrity']);
+  });
+
   it('reports only the triggers without coverage', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim({ coversRiskTriggers: ['state_integrity'] })]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedRiskTriggerCoverage: new Map([['c1', ['state_integrity']]]),
       riskTriggers: ['state_integrity', 'audit_authority'],
     });
 
@@ -166,6 +206,10 @@ describe('computeProofGraphEnforcement', () => {
         provenClaim({ claimId: 'c2', coversRiskTriggers: ['audit_authority'] }),
       ]).projection,
       authorizedCriticalClaimIds: ['c1', 'c2'],
+      authorizedRiskTriggerCoverage: new Map([
+        ['c1', ['state_integrity']],
+        ['c2', ['audit_authority']],
+      ]),
       riskTriggers: ['state_integrity', 'audit_authority'],
     });
 

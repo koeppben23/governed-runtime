@@ -201,6 +201,9 @@ function evaluateEvidenceProofGraphGate(
   return evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }

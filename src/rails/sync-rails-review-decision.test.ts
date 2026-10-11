@@ -365,6 +365,53 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('ok');
     });
 
+    it('blocks a projection that adds coverage beyond the approved declaration', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'), {
+        coversRiskTriggers: ['state_integrity'],
+      });
+      const projected = proofGraph('fact', 'PROVEN');
+      const result = executeReviewDecision(
+        {
+          ...certified,
+          proofGraph: {
+            ...projected,
+            claims: projected.claims.map((claim) => ({
+              ...claim,
+              claimId: '00000000-0000-4000-8000-000000000763',
+              coversRiskTriggers: ['state_integrity', 'audit_authority'],
+            })),
+          },
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...certified.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity', 'audit_authority'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+      });
+      if (result.kind === 'blocked') expect(result.reason).toContain('audit_authority');
+    });
+
     it('blocks a stale assessment whose digest does not match the recorded implementation', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
