@@ -159,12 +159,22 @@ non-zero when any requested flow did not complete. It performs no governance
 work itself.
 
 The persisted terminal phase is the outcome authority: when a transport-level
-block appears after the session already reached that phase (for example a
-blocked reviewer-capture obligation that the continuation replaced with a
-completed review), the flow records it under `terminalBlocks` instead of
-discarding the completed flow. Package verification still runs and fails the
+block appears after the session already reached that phase, the flow records it
+under `terminalBlocks` instead of discarding the completed flow. Each entry keeps
+`phaseBefore`, `phaseAfter` and a `denialAfterTerminal` flag that is `true` only
+when the terminal phase was already persisted before the turn — otherwise it stays
+`null` and no ordering is claimed. Package verification still runs and fails the
 flow if the required artifact is missing. Any block observed before the terminal
 phase still stops the flow.
+
+Recoverable typed denials are evidence-bound, never allow-listed blank. A denial
+counts as recovered only when the same tool succeeded later in the same turn
+(`same_turn_retry_success`) or a structured reviewer re-arm was observed
+(`structured_rearm`). `CONTINUE_AMBIGUOUS` is different: it mutates nothing and
+demands an explicit flow choice, so it is recorded as `pending_recovery` and only
+becomes `recovered` when the next required step completes with a demonstrable
+state transition (`next_step_state_transition:<step>`). A recoverable denial
+without such proof stops the flow.
 
 The architecture negative probe is a controlled denial step: the runner
 requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that the rejected

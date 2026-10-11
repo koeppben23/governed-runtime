@@ -289,11 +289,17 @@ describe('Java Task Manager demo contract', () => {
       const completed: {
         workspace: string;
         terminal: string;
-        terminalBlocks?: Array<{ step: string; codes: string[] }>;
+        terminalBlocks?: Array<Record<string, unknown>>;
       } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
       await expect(runner.turn(completed, 'peer-review-02-review', 'x')).resolves.toBeDefined();
       expect(completed.terminalBlocks).toEqual([
-        { step: 'peer-review-02-review', codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'] },
+        {
+          step: 'peer-review-02-review',
+          codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
+          phaseBefore: 'PEER_REVIEW_COMPLETE',
+          phaseAfter: 'PEER_REVIEW_COMPLETE',
+          denialAfterTerminal: true,
+        },
       ]);
 
       // Any other phase keeps the fail-closed stop.
@@ -301,12 +307,177 @@ describe('Java Task Manager demo contract', () => {
       const unfinished: {
         workspace: string;
         terminal: string;
-        terminalBlocks?: Array<{ step: string; codes: string[] }>;
+        terminalBlocks?: Array<Record<string, unknown>>;
       } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
       await expect(runner.turn(unfinished, 'peer-review-02-review', 'x')).rejects.toThrow(
         /unexpected tool-level block/,
       );
       expect(unfinished.terminalBlocks).toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('records the terminal block ordering only when it is causally proven', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-terminal-order-'));
+    const blockLine = JSON.stringify({
+      type: 'tool_use',
+      part: { state: { output: JSON.stringify({ error: true, code: 'ARCHIVE_FAILED' }) } },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${blockLine}\n`,
+      });
+
+      // Terminal reached DURING this turn: ordering is not provable -> null.
+      const phases = ['PEER_REVIEW', 'PEER_REVIEW_COMPLETE'];
+      runner.requireBoundState = () => ({
+        state: { phase: phases.shift() ?? 'PEER_REVIEW_COMPLETE' },
+        sessionDir: root,
+      });
+      const during = {
+        workspace: root,
+        terminal: 'PEER_REVIEW_COMPLETE',
+        terminalBlocks: [] as Array<Record<string, unknown>>,
+      };
+      await runner.turn(during, 'peer-review-09', 'x');
+      expect(during.terminalBlocks[0]).toEqual({
+        step: 'peer-review-09',
+        codes: ['ARCHIVE_FAILED'],
+        phaseBefore: 'PEER_REVIEW',
+        phaseAfter: 'PEER_REVIEW_COMPLETE',
+        denialAfterTerminal: null,
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('requires a proven in-session retry before a recoverable denial counts as recovered', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-same-turn-'));
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const denial = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ error: true, code: 'REVISED_PLAN_REQUIRED' }) },
+        },
+      });
+      const success = JSON.stringify({
+        type: 'tool_use',
+        part: { tool: 'flowguard_plan', state: { output: JSON.stringify({ reviewDispatch: {} }) } },
+      });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.requireBoundState = () => ({ state: { phase: 'PLAN' }, sessionDir: root });
+
+      // No later success: the recovery is unproven and the flow stops.
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${denial}\n`,
+      });
+      await expect(runner.turn({ workspace: root }, 'plan-a', 'x')).rejects.toThrow(
+        /without a proven in-session correction/,
+      );
+
+      // Later success of the same tool proves the in-session correction.
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${denial}\n${success}\n`,
+      });
+      const session: {
+        workspace: string;
+        recoveredDenials?: Array<Record<string, unknown>>;
+      } = { workspace: root };
+      await runner.turn(session, 'plan-b', 'x');
+      expect(session.recoveredDenials).toEqual([
+        { step: 'plan-b', codes: ['REVISED_PLAN_REQUIRED'], evidence: 'same_turn_retry_success' },
+      ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves a next-step recovery only on a demonstrated state transition', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-next-step-'));
+    const statePath = path.join(root, 'session-state.json');
+    const pending = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'flowguard_continue',
+        state: { output: JSON.stringify({ error: true, code: 'CONTINUE_AMBIGUOUS' }) },
+      },
+    });
+    const clean = JSON.stringify({
+      type: 'tool_use',
+      part: { tool: 'flowguard_architecture', state: { output: JSON.stringify({ ok: true }) } },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      await fs.writeFile(statePath, JSON.stringify({ phase: 'READY' }));
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.requireBoundState = () => ({ state: { phase: 'READY' }, sessionDir: root });
+
+      // Turn 1: the denial is pending, not yet recovered.
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${pending}\n`,
+      });
+      const session: {
+        workspace: string;
+        recoveredDenials?: Array<Record<string, unknown>>;
+        awaitingRecovery?: { step: string; codes: string[] };
+      } = { workspace: root };
+      await runner.turn(session, 'start', 'x');
+      expect(session.recoveredDenials ?? []).toEqual([]);
+      expect(session.awaitingRecovery).toMatchObject({
+        step: 'start',
+        codes: ['CONTINUE_AMBIGUOUS'],
+      });
+
+      // Turn 2 without a state change: unproven -> stop.
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${clean}\n`,
+      });
+      await expect(runner.turn(session, 'task', 'x')).rejects.toThrow(
+        /was not demonstrated by a state transition/,
+      );
+
+      // Turn 3 with a real state change: recovered, evidence-bound.
+      await fs.writeFile(statePath, JSON.stringify({ phase: 'TICKET' }));
+      await runner.turn(session, 'task-2', 'x');
+      expect(session.recoveredDenials).toEqual([
+        {
+          step: 'start',
+          codes: ['CONTINUE_AMBIGUOUS'],
+          evidence: 'next_step_state_transition:task-2',
+        },
+      ]);
+      expect(session.awaitingRecovery).toBeNull();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

@@ -272,11 +272,18 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   // Run 13: a plan revision submission omitted planText; the author corrected
   // the call in the same turn and the plan was accepted.
   'REVISED_PLAN_REQUIRED',
-  // Run 14: /start's model turn probed /continue while several flows were
-  // available. The admissibility denial happens before any state mutation and
-  // demands an explicit flow choice — exactly the runner's next step.
-  'CONTINUE_AMBIGUOUS',
 ]);
+
+/**
+ * Recoverable denials whose correction is NOT a same-turn retry of the denied
+ * tool but the immediately following explicit runner step. `CONTINUE_AMBIGUOUS`
+ * is an admissibility signal that mutates nothing and demands an explicit flow
+ * choice; the runner's next step performs exactly that. Such a denial is recorded
+ * as `pending_recovery` and only becomes `recovered` when the next required step
+ * completes with a demonstrable state transition. There is no blanket allowance:
+ * without that proof the flow is blocked.
+ */
+export const NEXT_STEP_RECOVERY_CODES = new Set(['CONTINUE_AMBIGUOUS']);
 
 /**
  * Successful reviewer capture re-arms are NOT error blocks: the transport
@@ -302,9 +309,58 @@ export function captureRetryCodes(output) {
   return [...codes];
 }
 
+/** Recoverable-family denial: corrected in-session or by the required next step. */
+export function isRecoverableFamily(code) {
+  return RECOVERABLE_DENIAL_CODES.has(code) || NEXT_STEP_RECOVERY_CODES.has(code);
+}
+
+/**
+ * The tool whose call produced `code` as a typed error, in transcript order.
+ * Identity pairing backs the same-turn correction proof below.
+ */
+export function deniedToolForCode(output, code) {
+  for (const event of eventsOf(output)) {
+    if (event.type !== 'tool_use') continue;
+    const raw = event.part?.state?.output ?? '';
+    if (!/"error":true/.test(raw) || !raw.includes(`"code":"${code}"`)) continue;
+    if (typeof event.part?.tool === 'string') return event.part.tool;
+  }
+  return undefined;
+}
+
+/**
+ * Tools that were denied and then invoked successfully LATER in the same turn.
+ * This is the only proof accepted for a same-turn recovery: the author retried
+ * the very call that was rejected and it succeeded.
+ */
+export function sameTurnCorrectedTools(output) {
+  const denied = new Set();
+  const corrected = new Set();
+  for (const event of eventsOf(output)) {
+    if (event.type !== 'tool_use') continue;
+    const tool = event.part?.tool;
+    const raw = event.part?.state?.output ?? '';
+    let errored = /"error":true/.test(raw);
+    if (!errored) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.error === true) errored = true;
+      } catch {
+        // Non-JSON output is not an error envelope.
+      }
+    }
+    if (errored) {
+      if (typeof tool === 'string') denied.add(tool);
+      continue;
+    }
+    if (typeof tool === 'string' && denied.has(tool)) corrected.add(tool);
+  }
+  return corrected;
+}
+
 /** Denials observed in a step that must stop the flow (never recovered in-session). */
 export function unexpectedDenialCodes(output) {
-  return toolDenialCodes(output).filter((code) => !RECOVERABLE_DENIAL_CODES.has(code));
+  return toolDenialCodes(output).filter((code) => !isRecoverableFamily(code));
 }
 
 /** The controlled negative probe: exactly the expected denial, nothing else. */
@@ -456,6 +512,7 @@ export class Runner {
   }
 
   async turn(session, label, prompt, options = {}) {
+    const phaseBefore = this.currentPhase(session);
     const args = ['run', '--dir', session.workspace, '-m', this.options.model, '--format', 'json'];
     if (session.sessionId) args.push('--session', session.sessionId);
     if (options.command) args.push('--command', options.command);
@@ -470,52 +527,124 @@ export class Runner {
     if (!session.sessionId) throw new Error(`${label}: no host session id observed`);
     if (options.expectedDenial) {
       assertExpectedDenial(result.stdout, options.expectedDenial);
-    } else {
-      const recovered = [
-        ...new Set([
-          ...toolDenialCodes(result.stdout).filter((code) => RECOVERABLE_DENIAL_CODES.has(code)),
-          ...captureRetryCodes(result.stdout),
-        ]),
-      ];
-      if (recovered.length > 0) {
-        session.recoveredDenials = session.recoveredDenials ?? [];
-        session.recoveredDenials.push({ step: label, codes: recovered });
-        this.log(`${label}: recovered typed denial(s) [${recovered.join(', ')}]`);
+      return result;
+    }
+
+    // A pending next-step recovery recorded by the previous turn becomes
+    // `recovered` only when this required step completed with a demonstrable
+    // state transition. Without that proof the flow is blocked.
+    if (session.awaitingRecovery) {
+      const digestAfter = this.currentStateDigest(session);
+      if (digestAfter === null || digestAfter === session.awaitingRecovery.digestBefore) {
+        throw new Error(
+          `${label}: pending recovery [${session.awaitingRecovery.codes.join(', ')}] was not demonstrated by a state transition; stopping the flow`,
+        );
       }
-      const unexpected = unexpectedDenialCodes(result.stdout);
-      if (unexpected.length > 0) {
-        // The persisted terminal phase is FlowGuard's outcome authority. When a
-        // flow already reached that phase (for example: a reviewer capture was
-        // blocked on one obligation and the continuation completed a fresh one),
-        // the transport-level block is recorded — never hidden — instead of
-        // discarding an already-completed flow. Package verification still runs
-        // and fails the flow if the required artifact is absent.
-        if (this.reachedFlowTerminal(session)) {
-          session.terminalBlocks = session.terminalBlocks ?? [];
-          session.terminalBlocks.push({ step: label, codes: unexpected });
-          this.log(
-            `${label}: terminal block(s) recorded after ${session.terminal} [${unexpected.join(', ')}]`,
-          );
-        } else {
-          throw new Error(
-            `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
-          );
-        }
+      session.recoveredDenials = session.recoveredDenials ?? [];
+      session.recoveredDenials.push({
+        step: session.awaitingRecovery.step,
+        codes: session.awaitingRecovery.codes,
+        evidence: `next_step_state_transition:${label}`,
+      });
+      this.log(
+        `${session.awaitingRecovery.step}: recovered via ${label} state transition [${session.awaitingRecovery.codes.join(', ')}]`,
+      );
+      session.awaitingRecovery = null;
+    }
+
+    const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
+    const correctedTools = sameTurnCorrectedTools(result.stdout);
+    const sameTurnRecovered = recoverable.filter((code) => {
+      const tool = deniedToolForCode(result.stdout, code);
+      return tool !== undefined && correctedTools.has(tool);
+    });
+    const retryRecovered = captureRetryCodes(result.stdout);
+    session.recoveredDenials = session.recoveredDenials ?? [];
+    if (sameTurnRecovered.length > 0) {
+      session.recoveredDenials.push({
+        step: label,
+        codes: sameTurnRecovered,
+        evidence: 'same_turn_retry_success',
+      });
+      this.log(`${label}: recovered via same-turn retry [${sameTurnRecovered.join(', ')}]`);
+    }
+    if (retryRecovered.length > 0) {
+      session.recoveredDenials.push({
+        step: label,
+        codes: retryRecovered,
+        evidence: 'structured_rearm',
+      });
+      this.log(`${label}: recovered via structured re-arm [${retryRecovered.join(', ')}]`);
+    }
+    const pendingCodes = recoverable.filter(
+      (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
+    );
+    const unproven = recoverable.filter(
+      (code) => !sameTurnRecovered.includes(code) && !pendingCodes.includes(code),
+    );
+    if (unproven.length > 0) {
+      throw new Error(
+        `${label}: recoverable denial(s) without a proven in-session correction (${unproven.join(', ')}); stopping the flow`,
+      );
+    }
+    if (pendingCodes.length > 0) {
+      session.awaitingRecovery = {
+        step: label,
+        codes: pendingCodes,
+        digestBefore: this.currentStateDigest(session),
+      };
+      this.log(
+        `${label}: pending recovery [${pendingCodes.join(', ')}]; the next required step must demonstrate a state transition`,
+      );
+    }
+
+    const unexpected = unexpectedDenialCodes(result.stdout);
+    if (unexpected.length > 0) {
+      // The persisted terminal phase is FlowGuard's outcome authority: when the
+      // session already reached it, the transport-level block is recorded — never
+      // hidden — instead of discarding the completed flow. `denialAfterTerminal`
+      // is `true` only when the terminal phase was already persisted BEFORE this
+      // turn, which causally places the denial after the transition; otherwise it
+      // stays `null` and the ordering is not claimed. Package verification still
+      // runs and fails the flow if the required artifact is absent.
+      const phaseAfter = this.currentPhase(session);
+      if (phaseAfter === session.terminal) {
+        session.terminalBlocks = session.terminalBlocks ?? [];
+        session.terminalBlocks.push({
+          step: label,
+          codes: unexpected,
+          phaseBefore,
+          phaseAfter,
+          denialAfterTerminal: phaseBefore === session.terminal ? true : null,
+        });
+        this.log(
+          `${label}: terminal block(s) recorded (phaseBefore=${String(phaseBefore)}, phaseAfter=${String(phaseAfter)}) [${unexpected.join(', ')}]`,
+        );
+      } else {
+        throw new Error(
+          `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
+        );
       }
     }
     return result;
   }
 
-  /**
-   * Whether the session already reached its flow's persisted terminal phase.
-   * A missing or unreadable state is never treated as terminal.
-   */
-  reachedFlowTerminal(session) {
-    if (typeof session.terminal !== 'string') return false;
+  /** Best-effort persisted phase; `null` when the state is unreadable. */
+  currentPhase(session) {
     try {
-      return this.requireBoundState(session).state.phase === session.terminal;
+      return this.requireBoundState(session).state.phase;
     } catch {
-      return false;
+      return null;
+    }
+  }
+
+  /** Digest of the persisted session state; `null` when unreadable. */
+  currentStateDigest(session) {
+    try {
+      const snapshot = this.requireBoundState(session);
+      return sha256(path.join(snapshot.sessionDir, 'session-state.json'));
+    } catch {
+      return null;
     }
   }
 
@@ -871,6 +1000,11 @@ async function main() {
           );
         }
         await flow.run(session);
+        if (session.awaitingRecovery) {
+          throw new Error(
+            `pending recovery [${session.awaitingRecovery.codes.join(', ')}] was not demonstrated by a following step`,
+          );
+        }
         const snapshot = runner.requireBoundState(session);
         record.phase = snapshot.state.phase;
         record.hostSessionId = session.sessionId;
