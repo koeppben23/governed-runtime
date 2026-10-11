@@ -44,6 +44,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exportHostTranscript } from './live-host-export.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -511,18 +512,11 @@ export class Runner {
     return JSON.parse(fs.readFileSync(buildInfoPath, 'utf8'));
   }
 
-  async exportTranscript(label, sessionId, workspace) {
-    const result = await run('opencode', ['export', sessionId], {
-      cwd: workspace,
-      env: { OPENCODE_CONFIG_DIR: this.configDir, OPENCODE_DISABLE_AUTOUPDATE: '1' },
-      timeoutMs: 5 * 60_000,
+  async exportTranscript(label, sessionId, workspace, parentSessionId) {
+    const file = await exportHostTranscript({
+      label, sessionId, workspace, parentSessionId,
+      evidenceDir: this.evidenceDir, configDir: this.configDir,
     });
-    if (result.timedOut || result.code !== 0 || result.stdout.trim().length === 0) {
-      throw new Error(`${label}: host transcript export failed for ${sessionId}`);
-    }
-    const file = path.join(this.evidenceDir, `${label}-host-${sessionId}.json`);
-    if (fs.existsSync(file)) throw new Error(`transcript already exists: ${file}`);
-    fs.writeFileSync(file, result.stdout);
     return { sessionId, file: path.relative(this.evidenceDir, file), sha256: sha256(file) };
   }
 
@@ -532,10 +526,10 @@ export class Runner {
     if (targets.parent !== session.sessionId) {
       throw new Error(`${flow}: persisted host binding is not the observed session`);
     }
-    const parent = await this.exportTranscript(flow, targets.parent, session.workspace);
+    const parent = await this.exportTranscript(flow.name, targets.parent, session.workspace);
     const reviewers = [];
     for (const childSessionId of targets.reviewers) {
-      reviewers.push(await this.exportTranscript(flow, childSessionId, session.workspace));
+      reviewers.push(await this.exportTranscript(flow.name, childSessionId, session.workspace, targets.parent));
     }
     flow.transcripts = { parent, reviewers };
     flow.installedBuild = this.installedBuild(session.workspace);
@@ -665,7 +659,7 @@ export async function runFlows(runner) {
         await runner.turn(
           session,
           'architecture-negative-03-recovery',
-          'Resubmit the ADR with one schema-valid architecture claim (statement: "the negative probe boundary is typed", critical: true, authoritySectionId: "decision", requiredReviewEvidence: ["architecture boundary probe"]) and complete the independent review normally.',
+          '/architecture Read ADR_TICKET.md and TICKET.md and create a complete ticket-aligned Service-Layer Null-Safety ADR, including the required options, trade-offs, consequences and falsifiable validation path. Submit schema-valid architecture claims about that ADR using statement, critical, authoritySectionId and requiredReviewEvidence. The preceding invalid-claim probe is separate runner evidence, not the ADR subject and not repository evidence for its claims. Complete the full fresh independent review normally; correct substantive blocking findings and stop at the ordinary approval gate. Do not use a governance override.',
         );
         await runner.approve(session, 'architecture-negative-04-approve', 'ARCH_REVIEW');
         await runner.turn(session, 'architecture-negative-05-archive', '/archive redactionMode=none includeRaw=true');

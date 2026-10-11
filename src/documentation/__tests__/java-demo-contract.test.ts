@@ -205,6 +205,55 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('recovers the negative probe with a ticket-aligned ADR while retaining the denial and gates', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-negative-recovery-'));
+    const calls: Array<{ label: string; prompt?: string; options?: { expectedDenial?: string } }> =
+      [];
+    try {
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.turn = async (_session, label, prompt, options = {}) => {
+        calls.push({ label, prompt, options });
+        return { code: 0, stdout: '', stderr: '', timedOut: false, durationMs: 0, sessionIds: [] };
+      };
+      runner.requireBoundState = () => ({ state: { architecture: null }, sessionDir: root });
+      runner.approve = async (_session, label, phase) => {
+        expect(phase).toBe('ARCH_REVIEW');
+        calls.push({ label });
+      };
+      runner.verifyPackage = () => ({
+        kind: 'archive',
+        file: 'archive.tar.gz',
+        sha256: 'a'.repeat(64),
+      });
+      const flow = (await runFlows(runner))['architecture-negative'];
+      await flow.run({ workspace: flow.workspace });
+      expect(calls.map((call) => call.label)).toEqual([
+        'architecture-negative-02-probe',
+        'architecture-negative-03-recovery',
+        'architecture-negative-04-approve',
+        'architecture-negative-05-archive',
+      ]);
+      expect(calls[0]!.options?.expectedDenial).toBe('ARCHITECTURE_CLAIM_INVALID');
+      expect(calls[0]!.prompt).toContain('"claimScope":"specific_behavior"');
+      expect(calls[1]!.prompt).toContain('ADR_TICKET.md and TICKET.md');
+      expect(calls[1]!.prompt).toContain('Service-Layer Null-Safety');
+      expect(calls[1]!.prompt).toContain(
+        'options, trade-offs, consequences and falsifiable validation path',
+      );
+      expect(calls[1]!.prompt).toContain('not the ADR subject and not repository evidence');
+      expect(calls[1]!.prompt).toContain('full fresh independent review');
+      expect(calls[1]!.prompt).toContain('Do not use a governance override');
+      calls.length = 0;
+      runner.requireBoundState = () => ({ state: { architecture: {} }, sessionDir: root });
+      await expect(flow.run({ workspace: flow.workspace })).rejects.toThrow(
+        /probe declaration was persisted/,
+      );
+      expect(calls.map((call) => call.label)).toEqual(['architecture-negative-02-probe']);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('removes the raw-export grant on success and on initialization failure', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-grant-'));
     const grant = path.join(dir, 'flowguard.json');

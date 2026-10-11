@@ -150,15 +150,30 @@ sidecar before installing, prepares fresh workspaces, opts the repository
 config into raw auditor archives next to the isolated global grant, runs every
 step through real headless `opencode run` processes with an explicit `--dir`,
 verifies the persisted host/worktree binding and each package, exports the
-parent and reviewer-child host transcripts with hashes, records the installed
+parent and reviewer-child host transcripts directly to files, validates JSON,
+session/worktree/parent identity and message/part structure before registering
+their hashes, records the installed
 build identity, records recovered typed denials and successful reviewer re-arms while
 stopping on any non-recoverable block, removes the isolated raw-export grant on exit, and exits
 non-zero when any requested flow did not complete. It performs no governance
 work itself.
 
 The architecture negative probe is a controlled denial step: the runner
-requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that nothing
-was persisted, and only then continues with the corrected submission.
+requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that the rejected
+ADR was not persisted, and only then creates a complete Service-Layer Null-Safety
+ADR aligned with `ADR_TICKET.md` and `TICKET.md`. The probe's runtime rejection is
+separate runner evidence, not the ADR subject or repository evidence for its
+claims. Full independent review and ordinary approval still apply; an exhausted
+review is not bypassed with a governance override.
+
+Failed exports remain as diagnostic bytes and stop the flow. Hashes of truncated
+or structurally invalid JSON are never registered as accepted transcript evidence.
+Filenames use the actual scenario name; child exports must identify its parent.
+
+The separate [critical ProofGraph live-control contract](./PROOFGRAPH_LIVE_CONTROLS.md)
+defines the positive and negative evidence required before claiming critical-claim
+enforcement was verified. A claimless completion or an unrelated earlier gate
+block does not satisfy that contract.
 
 ```bash
 # Full matrix: builds + packs the current tree, prepares fresh workspaces,

@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Live-demo transcript completeness.** Host exports are captured directly to
+  files and validated for JSON structure and session/worktree/parent identity
+  before their hashes are registered. Architecture negative-probe recovery now
+  creates a ticket-aligned ADR under full independent review and ordinary approval.
+
 - **Reviewer-capability smoke isolation.** The real-host probe uses private
   OpenCode directories and the installed locked dependency graph, retains startup
   failures and proves execution of the allowed observation-tool fixture. Tarball
