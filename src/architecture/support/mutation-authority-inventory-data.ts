@@ -1851,6 +1851,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.integration], critical: true },
   ),
   candidate(
+    'src/integration/review/dispatch/native-task-review.ts',
+    'Native reviewer Task transport and capture-failure block composition',
+    'base',
+    ['src/integration/plugin.test.ts'],
+    'Run-10 diagnostics: the capture-failure block interpolates the real obligation id and bounds the raw reason and location failures. New transport authority; admission requires a profile full run meeting the per-target threshold.',
+    { source: [SOURCE.integration], critical: true },
+  ),
+  candidate(
     'src/integration/review/dispatch/native-task-review-bindings.ts',
     'Native reviewer capture, validation, binding, and settlement audit intents',
     'base',
