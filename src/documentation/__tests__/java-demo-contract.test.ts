@@ -235,12 +235,21 @@ describe('Java Task Manager demo contract', () => {
     const recoverable = [
       toolLine('PROOFGRAPH_CLAIM_NOT_DECLARED'),
       toolLine('ADR_REVIEW_IN_PROGRESS'),
+      // Retryable reviewer capture codes (Run 7/10 evidence: flows converged).
+      toolLine('REVIEW_EVIDENCE_NOT_OBSERVED'),
+      toolLine('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'),
     ].join('\n');
     expect(unexpectedDenialCodes(recoverable)).toEqual([]);
     const mixed = `${recoverable}\n${toolLine('ARCHIVE_FAILED')}`;
     expect(unexpectedDenialCodes(mixed)).toEqual(['ARCHIVE_FAILED']);
-    const hard = toolLine('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
-    expect(unexpectedDenialCodes(hard)).toEqual(['HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION']);
+    const terminal = [
+      toolLine('REVIEW_ATTEMPT_UNAVAILABLE'),
+      toolLine('SUBAGENT_MANDATE_MISMATCH'),
+    ].join('\n');
+    expect(unexpectedDenialCodes(terminal)).toEqual([
+      'REVIEW_ATTEMPT_UNAVAILABLE',
+      'SUBAGENT_MANDATE_MISMATCH',
+    ]);
   });
 
   it('opts the installed repository config into raw auditor archives', async () => {
