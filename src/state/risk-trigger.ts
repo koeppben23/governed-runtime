@@ -19,7 +19,7 @@
 import { z } from 'zod';
 
 /** Specific authorities a HIGH-RISK implementation change can touch. */
-export const SPECIFIC_RISK_TRIGGERS = [
+const SPECIFIC_RISK_TRIGGERS = [
   'state_integrity',
   'audit_authority',
   'identity_boundary',

@@ -89,8 +89,8 @@ export type Phase = z.infer<typeof Phase>;
 
 // Canonical vocabulary lives in the leaf module `risk-trigger.ts`; imported for
 // local use and re-exported so existing schema consumers keep their import path.
-import { RiskTrigger, SpecificRiskTrigger, SPECIFIC_RISK_TRIGGERS } from './risk-trigger.js';
-export { RiskTrigger, SpecificRiskTrigger, SPECIFIC_RISK_TRIGGERS };
+import { RiskTrigger } from './risk-trigger.js';
+export { RiskTrigger };
 
 /**
  * Exact verification basis of one reduced-ceremony decision: the frozen active
