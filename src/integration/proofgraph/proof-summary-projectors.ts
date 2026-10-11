@@ -327,6 +327,11 @@ function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
         primaryReason:
           'At least one mandatory critical claim is undeclared. Declare the claim in your plan first.',
       };
+    case 'risk_trigger_uncovered':
+      return {
+        primaryReason:
+          'Detected risk triggers have no certificate-authorized critical claim coverage. Declare coversRiskTriggers on the critical plan claim.',
+      };
     case 'certificate_invalid':
       return {
         primaryReason:
@@ -365,6 +370,12 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
         projection: state.proofGraph,
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
+        ...(authorization.kind === 'authorized'
+          ? { authorizedRiskTriggerCoverage: authorization.coverage }
+          : {}),
+        ...(authorization.kind === 'authorized'
+          ? { authorizedClaimBindings: authorization.bindings }
+          : {}),
         certificateValid: authorization.kind === 'authorized',
         ...(implementationDigest !== undefined ? { implementationDigest } : {}),
         riskAssessment:

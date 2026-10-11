@@ -480,7 +480,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
             provenance: {
               kind: 'canonical_authority',
               authorityId: 'plan',
-              digest: 'd',
+              digest: PLAN_CURRENT.digest,
               approval: {
                 certificateId: CERT_ID,
                 claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),

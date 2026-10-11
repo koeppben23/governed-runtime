@@ -14,9 +14,11 @@
  */
 
 import type { RiskTrigger, SessionState } from '../../../state/schema.js';
+import type { SpecificRiskTrigger } from '../../../state/risk-trigger.js';
 import type { ProofGraphProjection } from '../../../state/proofgraph.js';
 import {
   authorizedCriticalPlanClaimIds,
+  type AuthorizedClaimBinding,
   type PlanClaimDeclarations,
 } from '../../../state/proofgraph-approval.js';
 
@@ -27,6 +29,10 @@ import {
 export interface ReviewProofGraphGateInput {
   readonly projection?: ProofGraphProjection;
   readonly authorizedCriticalClaimIds?: readonly string[];
+  /** Certificate-bound coverage relation; mirrors the canonical gate input. */
+  readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+  /** Expected certificate binding per authorized critical claim. */
+  readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessment?: {
@@ -39,6 +45,8 @@ export interface ReviewProofGraphGateInput {
 export interface ReviewProofGraphGateDecision {
   readonly kind: string;
   readonly relevantTriggers: readonly string[];
+  /** Detected triggers without approved critical-claim coverage, when projected. */
+  readonly uncoveredTriggers?: readonly string[];
 }
 
 export type ReviewProofGraphGateEvaluator = (
@@ -206,6 +214,28 @@ export function renderCoverageGaps(state: SessionState): string[] {
   ];
 }
 
+/** Render the trigger requirement section from an evaluated gate decision. */
+function renderTriggerRequirement(decision: ReviewProofGraphGateDecision): string[] {
+  if (decision.relevantTriggers.length === 0) return [];
+  const header = ['## Critical Fact Claim Requirement (persisted)', ''];
+  if (decision.kind === 'risk_trigger_uncovered') {
+    const uncovered = decision.uncoveredTriggers ?? decision.relevantTriggers;
+    return [
+      ...header,
+      `- Relevant triggers: ${decision.relevantTriggers.join(', ')}.`,
+      `- Triggers without approved critical-claim coverage: ${uncovered.join(', ')}.`,
+      '- Declare coversRiskTriggers for every trigger on a critical plan claim and obtain plan approval for the new declaration set.',
+      '',
+    ];
+  }
+  return [
+    ...header,
+    `- Relevant triggers: ${decision.relevantTriggers.join(', ')}.`,
+    '- At least one critical, certificate-authorized fact claim is required before final evidence approval.',
+    '',
+  ];
+}
+
 /** Render the persisted critical-fact requirement without performing fresh classification. */
 function renderCriticalClaimRequirement(
   state: SessionState,
@@ -230,6 +260,12 @@ function renderCriticalClaimRequirement(
   const decision = authorities.evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation.digest,
     ...(riskAssessment !== null
@@ -249,14 +285,7 @@ function renderCriticalClaimRequirement(
       '',
     ];
   }
-  if (decision.relevantTriggers.length === 0) return [];
-  return [
-    '## Critical Fact Claim Requirement (persisted)',
-    '',
-    `- Relevant triggers: ${decision.relevantTriggers.join(', ')}.`,
-    '- At least one critical, certificate-authorized fact claim is required before final evidence approval.',
-    '',
-  ];
+  return renderTriggerRequirement(decision);
 }
 
 /**

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Risk-trigger coverage authority (ProofGraph).** Every specific risk trigger
+  detected for the current implementation must be explicitly covered by a
+  certificate-authorized critical fact claim. Coverage is declared with
+  `coversRiskTriggers` on the plan claim — a claim may cover several triggers and
+  several claims may split the coverage — and is bound into the approval
+  certificate. The final gate enforces the certificate-bound relation, never the
+  persisted projection, so a stale or tampered projection cannot widen the
+  approved contract; a PROVEN claim only counts when its provenance binds the
+  current plan certificate and it appears exactly once in the projection. A
+  detected trigger without coverage blocks final
+  evidence approval with `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`. `ceremony_only`
+  neither requires nor accepts coverage.
+
 - **Pre-upgrade preflight (`flowguard inspect --upgrade-check`).** Read-only,
   workspace-scoped report of what must be cleaned up before a hard-cut
   upgrade: active sessions, incompatible/unreadable state, missing state with

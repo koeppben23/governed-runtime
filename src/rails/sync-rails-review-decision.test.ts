@@ -12,6 +12,7 @@ import {
 import { ReviewDecision } from '../state/evidence.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 import type { ProofGraphProjection } from '../state/proofgraph.js';
+import type { SpecificRiskTrigger } from '../state/risk-trigger.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
 
@@ -53,7 +54,10 @@ function proofGraph(
   };
 }
 
-function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>) {
+function withCertifiedCriticalPlan(
+  state: ReturnType<typeof makeProgressedState>,
+  opts: { readonly coversRiskTriggers?: readonly SpecificRiskTrigger[] } = {},
+) {
   const declarations = {
     flow: 'plan' as const,
     version: 'v2' as const,
@@ -70,6 +74,9 @@ function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>
           checkId: 'security',
           assertion: { providerId: 'junit', localId: 'some-id' },
         },
+        ...(opts.coversRiskTriggers !== undefined
+          ? { coversRiskTriggers: [...opts.coversRiskTriggers] }
+          : {}),
       },
     ],
   };
@@ -99,6 +106,34 @@ function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>
         reviewEvidenceDigest: 'review-evidence-digest',
       },
     },
+  };
+}
+
+/**
+ * Rebind a projection to the certificate carried by `state.plan`, so the
+ * evaluated claim's provenance matches the authorized certificate identity.
+ */
+function bindToCurrentCertificate(
+  state: ReturnType<typeof withCertifiedCriticalPlan>,
+  projection: ProofGraphProjection,
+): ProofGraphProjection {
+  const certificate = state.plan.approvalCertificate;
+  return {
+    ...projection,
+    claims: projection.claims.map((claim) => ({
+      ...claim,
+      provenance: {
+        kind: 'canonical_authority',
+        authorityId: 'plan',
+        digest: certificate.authorityDigest,
+        approval: {
+          certificateId: certificate.certificateId,
+          claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+          decisionAttestationDigest: certificate.decisionAttestationDigest,
+          declarationId: claim.claimId,
+        },
+      },
+    })),
   };
 }
 
@@ -269,6 +304,140 @@ describe('review-decision rail', () => {
         ctx,
       );
       expect(result).toMatchObject({ kind: 'ok' });
+    });
+
+    it('blocks a detected risk trigger that no certified claim covers', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
+      const projected = proofGraph('fact', 'PROVEN');
+      const result = executeReviewDecision(
+        {
+          ...certified,
+          proofGraph: bindToCurrentCertificate(certified, {
+            ...projected,
+            claims: projected.claims.map((claim) => ({
+              ...claim,
+              claimId: '00000000-0000-4000-8000-000000000763',
+            })),
+          }),
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...certified.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+      });
+      if (result.kind === 'blocked') expect(result.reason).toContain('state_integrity');
+    });
+
+    it('allows approval when the certified claim covers the detected trigger', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'), {
+        coversRiskTriggers: ['state_integrity'],
+      });
+      const projected = proofGraph('fact', 'PROVEN');
+      const result = executeReviewDecision(
+        {
+          ...certified,
+          proofGraph: bindToCurrentCertificate(certified, {
+            ...projected,
+            claims: projected.claims.map((claim) => ({
+              ...claim,
+              claimId: '00000000-0000-4000-8000-000000000763',
+              coversRiskTriggers: ['state_integrity'],
+            })),
+          }),
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...certified.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('blocks a projection that adds coverage beyond the approved declaration', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'), {
+        coversRiskTriggers: ['state_integrity'],
+      });
+      const projected = proofGraph('fact', 'PROVEN');
+      const result = executeReviewDecision(
+        {
+          ...certified,
+          proofGraph: bindToCurrentCertificate(certified, {
+            ...projected,
+            claims: projected.claims.map((claim) => ({
+              ...claim,
+              claimId: '00000000-0000-4000-8000-000000000763',
+              coversRiskTriggers: ['state_integrity', 'audit_authority'],
+            })),
+          }),
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...certified.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity', 'audit_authority'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+      });
+      if (result.kind === 'blocked') expect(result.reason).toContain('audit_authority');
     });
 
     it('blocks a stale assessment whose digest does not match the recorded implementation', () => {

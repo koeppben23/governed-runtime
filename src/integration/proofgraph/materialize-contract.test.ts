@@ -88,6 +88,7 @@ function stateWithClaims() {
             },
             structuralSurface: 'command-registration',
             mutationProfile: 'semantic',
+            coversRiskTriggers: ['state_integrity'],
           },
         ],
       },
@@ -113,6 +114,7 @@ function stateWithClaims() {
                 },
                 structuralSurface: 'command-registration',
                 mutationProfile: 'semantic',
+                coversRiskTriggers: ['state_integrity'],
               },
             ],
           }),
@@ -194,6 +196,7 @@ describe('materializeApprovedPlanContract', () => {
       { kind: 'validation_attempt', attemptId: ATTEMPT_ID },
       { kind: 'structural_surface', surfaceId: 'command-registration' },
     ]);
+    expect(contract.claims[0]!.coversRiskTriggers).toEqual(['state_integrity']);
     expect(contract.claims[0]!.provenance).toEqual({
       kind: 'canonical_authority',
       authorityId: 'plan',

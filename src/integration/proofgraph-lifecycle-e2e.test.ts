@@ -61,6 +61,7 @@ import {
   assuranceWith,
 } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import type { SpecificRiskTrigger } from '../state/risk-trigger.js';
 import {
   completedDispatchForInvocation,
   makePlanRevision,
@@ -1298,6 +1299,216 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     if (blocked.kind !== 'blocked') return;
     expect(blocked.code).toBe('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
     expect(blocked.reason).toContain(CRITICAL_CLAIM_ID);
+  });
+
+  it('NEGATIVE gate: an uncovered specific risk trigger blocks approval', async () => {
+    const state = implReviewState(fullEvidence());
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_RISK_TRIGGER_UNCOVERED');
+    expect(blocked.reason).toContain('state_integrity');
+  });
+
+  it('POSITIVE gate: a declared trigger coverage clears the risk requirement', async () => {
+    const coveringClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      coversRiskTriggers: ['state_integrity'],
+    };
+    const state = implReviewState(fullEvidence(), coveringClaim);
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    expect(contract.claims[0]?.coversRiskTriggers).toEqual(['state_integrity']);
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
+
+    const approved = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(approved.kind).toBe('ok');
+  });
+
+  it('NEGATIVE gate: a tampered projection cannot widen the approved coverage', async () => {
+    const coveringClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      coversRiskTriggers: ['state_integrity'],
+    };
+    const state = implReviewState(fullEvidence(), coveringClaim);
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    const tampered = {
+      ...summary.projection,
+      claims: summary.projection.claims.map((claim) => ({
+        ...claim,
+        coversRiskTriggers: ['state_integrity', 'audit_authority'] as SpecificRiskTrigger[],
+      })),
+    };
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: tampered,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity', 'audit_authority'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_RISK_TRIGGER_UNCOVERED');
+    expect(blocked.reason).toContain('audit_authority');
+  });
+
+  it('NEGATIVE gate: a claim evaluated under a different certificate cannot authorize approval', async () => {
+    const state = implReviewState(fullEvidence());
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    const tampered = {
+      ...summary.projection,
+      claims: summary.projection.claims.map((claim) => {
+        const provenance = claim.provenance;
+        if (provenance?.kind !== 'canonical_authority' || provenance.approval === undefined) {
+          return claim;
+        }
+        return {
+          ...claim,
+          provenance: {
+            ...provenance,
+            approval: {
+              ...provenance.approval,
+              certificateId: '00000000-0000-4000-8000-0000000000ff',
+            },
+          },
+        };
+      }),
+    };
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: tampered,
+        implementationRiskAssessment: currentRiskAssessment,
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_EVALUATION_UNAVAILABLE');
   });
 
   it('projects the full declaration-to-evidence chain for audit', async () => {
