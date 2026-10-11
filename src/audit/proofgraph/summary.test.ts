@@ -321,6 +321,40 @@ describe('summarizeProofGraph reviewer projection', () => {
     expect(summary.projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
     expect(summary.claimDiagnostics.get(CLAIM)).toBe('evidence_role_collision');
   });
+
+  it('projects the persisted role-collision coverage cause when the shared ref was removed', () => {
+    // Materialization removes the shared counterexample ref and records the
+    // cause in `proofContractCoverage`; the diagnostic projection must carry
+    // that already-determined cause without re-detecting the collision.
+    const adversarialClaim = {
+      ...claim(),
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+    };
+    const summary = summarizeProofGraph(
+      makeState('IMPL_VALIDATION', {
+        implementation: IMPL,
+        proofContract: { version: 'contract.v2', claims: [adversarialClaim] },
+        proofContractCoverage: [{ claimId: CLAIM, cause: 'evidence_role_collision' }],
+        validationAttempts: [
+          {
+            attemptId: ATT,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
+            result: attemptResult(true),
+          },
+        ],
+      }),
+      NOW,
+    );
+
+    expect(summary.projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(summary.claimDiagnostics.get(CLAIM)).toBe('evidence_role_collision');
+  });
 });
 
 describe('summarizePersistedProofGraph contract coverage', () => {
@@ -384,6 +418,36 @@ describe('summarizePersistedProofGraph contract coverage', () => {
   it('does not report PROVEN when an undeclared governing authority claim is projected', () => {
     const summary = summarizePersistedProofGraph(
       persistedState([projectedClaim(CONTRACT_CLAIM_A), projectedClaim(EXTRA_CLAIM)]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+  });
+
+  it('does not report PROVEN when an undeclared approved_ticket claim is projected', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([
+        projectedClaim(CONTRACT_CLAIM_A),
+        projectedClaim(EXTRA_CLAIM, {
+          provenance: { kind: 'approved_ticket', ticketDigest: 'ticket-digest' },
+        }),
+      ]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+  });
+
+  it('does not report PROVEN when an undeclared plan_adr_section claim is projected', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([
+        projectedClaim(CONTRACT_CLAIM_A),
+        projectedClaim(EXTRA_CLAIM, {
+          provenance: {
+            kind: 'plan_adr_section',
+            artifactKind: 'plan',
+            artifactDigest: 'artifact-digest',
+            sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Section' }],
+            excerptDigest: 'excerpt-digest',
+          },
+        }),
+      ]),
     );
     expect(summary.coverage).toBe('NOT_VERIFIED');
   });

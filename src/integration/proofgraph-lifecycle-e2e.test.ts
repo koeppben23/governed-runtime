@@ -1253,8 +1253,15 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     });
     expect(contract.claims[0]?.counterexampleRefs).toEqual([]);
 
-    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    const summary = summarizeProofGraph(
+      { ...state, proofContract: contract, proofContractCoverage: [...coverage] },
+      FIXED_TIME,
+    );
     expect(summary.projection.claims[0]?.verificationState).toBe('NOT_VERIFIED');
+    // The removed shared ref still surfaces through its persisted coverage cause.
+    expect(summary.projection.claimDiagnostics?.[CRITICAL_CLAIM_ID]).toBe(
+      'evidence_role_collision',
+    );
 
     const blocked = executeReviewDecision(
       {

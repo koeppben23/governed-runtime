@@ -29,6 +29,7 @@ const REQUIREMENT: CounterexampleRequirement = {
 function passResult(input: {
   readonly providerKind?: 'executed_test' | 'structural_assertion';
   readonly executionRecordId?: string | undefined;
+  readonly stableId?: string;
   readonly status?: 'pass' | 'fail' | 'error';
 }): ProofProviderResultType {
   const providerKind = input.providerKind ?? 'executed_test';
@@ -38,7 +39,7 @@ function passResult(input: {
     providerId: providerKind === 'executed_test' ? 'executed-test' : 'registration-consistency',
     providerVersion: '1.0.0',
     input: providerKind === 'executed_test' ? { command: 'npm test' } : { assertion: 'surfaces' },
-    source: { location: 'validation-check:test', stableId: 'test' },
+    source: { location: 'validation-check:test', stableId: input.stableId ?? 'test' },
     ...(input.executionRecordId !== undefined
       ? { executionRecordId: input.executionRecordId }
       : {}),
@@ -141,6 +142,31 @@ describe('assessEvidenceRoleIndependence', () => {
       providerResults: [passResult({ executionRecordId: COUNTEREXAMPLE_ATTEMPT })],
     });
     expect(result.kind).toBe('role_collision');
+  });
+
+  it('reports role_collision when one check carries both roles from distinct attempts', () => {
+    const result = assess({
+      adversarialCounterexampleRequired: true,
+      counterexampleRequirement: REQUIREMENT,
+      providerResults: [
+        passResult({
+          executionRecordId: POSITIVE_ATTEMPT,
+          stableId: REQUIREMENT.checkId,
+        }),
+      ],
+    });
+    expect(result.kind).toBe('role_collision');
+  });
+
+  it('does not compare structural provider identities with adversarial checks', () => {
+    const result = assess({
+      adversarialCounterexampleRequired: true,
+      counterexampleRequirement: REQUIREMENT,
+      providerResults: [
+        passResult({ providerKind: 'structural_assertion', stableId: REQUIREMENT.checkId }),
+      ],
+    });
+    expect(result.kind).toBe('independent');
   });
 
   it('reports not_verifiable when the positive executed_test pass has no execution identity', () => {

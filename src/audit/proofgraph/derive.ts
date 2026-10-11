@@ -107,6 +107,23 @@ function mergeRoleDiagnostics(
   return merged;
 }
 
+/**
+ * Project the coverage causes already determined at materialization. A claim
+ * whose shared attempt was removed from `counterexampleRefs` can no longer be
+ * re-detected from evidence, so the persisted cause supplies the diagnostic.
+ */
+function coverageGapDiagnostics(
+  state: SessionState,
+): Readonly<Record<string, AssertionBindingReasonCode>> {
+  const record: Record<string, AssertionBindingReasonCode> = {};
+  for (const gap of state.proofContractCoverage ?? []) {
+    if (gap.cause === 'evidence_role_collision' && gap.claimId !== undefined) {
+      record[gap.claimId] = 'evidence_role_collision';
+    }
+  }
+  return record;
+}
+
 export function deriveProofGraph(
   state: SessionState,
   providerResults: readonly ProofProviderResult[],
@@ -134,7 +151,7 @@ export function deriveProofGraph(
     evaluatedAt,
   );
   const diagnostics = mergeRoleDiagnostics(
-    opts?.claimDiagnostics ?? {},
+    { ...coverageGapDiagnostics(state), ...(opts?.claimDiagnostics ?? {}) },
     roleIndependenceDiagnostics(declaredClaims, providerResults, counterexamples),
   );
   return Object.keys(diagnostics).length > 0 ? { ...base, claimDiagnostics: diagnostics } : base;

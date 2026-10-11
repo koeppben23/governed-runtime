@@ -99,10 +99,10 @@ export interface PersistedProofGraphSummary {
 /**
  * Contract coverage requires set identity: every declared contract claim must be
  * present EXACTLY once in the projection and PROVEN. Advisory hypotheses and
- * other explicitly supported sources may be projected additionally, but an
- * undeclared governing-authority claim means the projection and the contract
- * disagree — never PROVEN. Missing, duplicated, or unauthorized claims are
- * inconsistencies, not coverage.
+ * other explicitly supported sources may be projected additionally, but a
+ * projected claim with any governing provenance that the contract does not
+ * declare means the projection and the contract disagree — never PROVEN.
+ * Missing, duplicated, or unauthorized claims are inconsistencies, not coverage.
  */
 function declaredClaimIds(
   contract: NonNullable<SessionState['proofContract']>,
@@ -129,9 +129,11 @@ function hasUndeclaredGoverningClaim(
   claims: ProofGraphProjection['claims'],
   declaredIds: ReadonlySet<string>,
 ): boolean {
-  return claims.some(
-    (claim) => !declaredIds.has(claim.claimId) && claim.provenance?.kind === 'canonical_authority',
-  );
+  // Any non-null provenance is a governing authority (`approved_ticket`,
+  // `plan_adr_section`, or `canonical_authority`). Only unsourced advisory
+  // claims (`provenance: null`, e.g. peer-review hypotheses) may exist beyond
+  // the declared contract.
+  return claims.some((claim) => !declaredIds.has(claim.claimId) && claim.provenance !== null);
 }
 
 function contractCoverage(

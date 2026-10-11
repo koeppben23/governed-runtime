@@ -25,7 +25,7 @@ import type {
 /** Outcome of the evidence-role independence assessment for one claim. */
 export type EvidenceRoleIndependence =
   | { readonly kind: 'independent' }
-  | { readonly kind: 'role_collision'; readonly attemptId: string }
+  | { readonly kind: 'role_collision' }
   | { readonly kind: 'not_verifiable' };
 
 /**
@@ -48,11 +48,16 @@ export function declaredEvidenceRolesCollide(input: {
  * Assess whether a claim's positive and adversarial evidence come from
  * independent executions.
  *
- * Results are matched by execution record: a passing positive result that
- * points at the same validation attempt as a bound counterexample is a
- * collision. When the adversarial role is engaged and a positive
- * `executed_test` pass carries no execution identity at all, independence
- * cannot be established and the claim is not verifiable.
+ * Independence is violated when a passing positive result points at the same
+ * validation attempt as a bound counterexample, or when the same check provides
+ * both roles even from two distinct attempts. The controller requires an
+ * independent CHECK for the counterexample; two executions of one check are not
+ * two independent evidence sources.
+ *
+ * When the adversarial role is engaged and a positive `executed_test` pass
+ * carries no execution identity at all, independence cannot be established and
+ * the claim is not verifiable. Structural/schema providers are deliberately not
+ * constrained here: they have their own identity contract.
  */
 export function assessEvidenceRoleIndependence(input: {
   readonly counterexampleRequirement?: CounterexampleRequirement | undefined;
@@ -65,6 +70,7 @@ export function assessEvidenceRoleIndependence(input: {
   if (!engaged) return { kind: 'independent' };
 
   const counterexampleAttempts = new Set(input.counterexamples.map((c) => c.attemptId));
+  const counterexampleChecks = new Set(input.counterexamples.map((c) => c.checkId));
   let missingExecutionIdentity = false;
   for (const result of input.providerResults) {
     if (result.status !== 'pass') continue;
@@ -72,7 +78,16 @@ export function assessEvidenceRoleIndependence(input: {
       result.executionRecordId !== undefined &&
       counterexampleAttempts.has(result.executionRecordId)
     ) {
-      return { kind: 'role_collision', attemptId: result.executionRecordId };
+      return { kind: 'role_collision' };
+    }
+    // The executed-test binder records the check identity as `source.stableId`
+    // (stable across executions), distinct from the single-execution
+    // `executionRecordId`.
+    if (
+      result.providerKind === 'executed_test' &&
+      counterexampleChecks.has(result.source.stableId)
+    ) {
+      return { kind: 'role_collision' };
     }
     if (result.providerKind === 'executed_test' && result.executionRecordId === undefined) {
       missingExecutionIdentity = true;

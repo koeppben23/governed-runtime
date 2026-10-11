@@ -48,6 +48,7 @@ function result(
   status: ProofProviderResultType['status'],
   boundDigest: string = CURR,
   executionRecordId: string | null = POSITIVE_ATTEMPT,
+  stableId: string = claimId,
 ): ProofProviderResultType {
   if (status === 'unavailable') {
     return ProofProviderResult.parse({
@@ -67,7 +68,7 @@ function result(
     providerId: 'executed-test',
     providerVersion: '1.0.0',
     input: { command: 'npm test' },
-    source: { location: 'test', stableId: claimId },
+    source: { location: 'test', stableId },
     ...(executionRecordId !== null ? { executionRecordId } : {}),
     binding: { kind: 'implementation', digest: boundDigest },
     status,
@@ -481,6 +482,15 @@ describe('evaluateProofGraph', () => {
         counterexamples: [
           counterexample(uuid(1), 'supported', CURR, { attemptId: POSITIVE_ATTEMPT }),
         ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('NOT_VERIFIED when one check carries both roles from distinct attempts', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', CURR, POSITIVE_ATTEMPT, 'test')],
+        counterexamples: [counterexample(uuid(1), 'supported', CURR)],
       });
       expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
     });

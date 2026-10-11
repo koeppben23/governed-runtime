@@ -103,9 +103,10 @@ declaration is therefore rejected when it is authored
 The positive check and the counterexample check must be **different checks**,
 and they must resolve to **different executions**. A declaration that reuses one
 check for both evidence roles is rejected at the write boundary for every
-criticality; an already-persisted contract that binds the same validation
-attempt to both roles never becomes `PROVEN` (its diagnostic is
-`evidence_role_collision` / `PROOFGRAPH_EVIDENCE_ROLE_COLLISION`).
+criticality. An already-persisted contract that binds the same check (even from
+two distinct attempts) or the same validation attempt to both roles never
+becomes `PROVEN`; its diagnostic is `evidence_role_collision` /
+`PROOFGRAPH_EVIDENCE_ROLE_COLLISION`.
 
 If a current plan approval certificate authorizes a critical declaration but its
 claim is absent from the persisted ProofGraph projection, final evidence approval
