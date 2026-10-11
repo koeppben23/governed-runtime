@@ -64,6 +64,9 @@ export function classifyPlanClaimSubmission(
         ? { structuralSurface: claim.structuralSurface }
         : {}),
       ...(claim.mutationProfile !== undefined ? { mutationProfile: claim.mutationProfile } : {}),
+      ...(claim.coversRiskTriggers !== undefined
+        ? { coversRiskTriggers: claim.coversRiskTriggers }
+        : {}),
       authoritySectionId: claim.authoritySectionId,
     })),
   });

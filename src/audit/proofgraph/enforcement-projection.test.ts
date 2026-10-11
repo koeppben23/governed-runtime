@@ -114,11 +114,97 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([]).projection,
       authorizedCriticalClaimIds: [],
-      riskTriggersPresent: true,
+      riskTriggers: ['state_integrity'],
     });
 
     expect(result.decisionKind).toBe('critical_fact_required');
     expect(result.reasonCode).toBe('critical_fact_required');
+  });
+
+  it('risk_trigger_uncovered when no eligible claim declares the trigger coverage', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([provenClaim()]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      riskTriggers: ['state_integrity'],
+    });
+
+    expect(result.satisfied).toBe(false);
+    expect(result.decisionKind).toBe('risk_trigger_uncovered');
+    expect(result.reasonCode).toBe('risk_trigger_uncovered');
+    expect(result.uncoveredTriggers).toEqual(['state_integrity']);
+  });
+
+  it('clear when an eligible proven claim covers every detected trigger', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([
+        provenClaim({ coversRiskTriggers: ['state_integrity', 'identity_boundary'] }),
+      ]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      riskTriggers: ['state_integrity', 'identity_boundary'],
+    });
+
+    expect(result.satisfied).toBe(true);
+    expect(result.decisionKind).toBe('clear');
+    expect(result.uncoveredTriggers).toEqual([]);
+  });
+
+  it('reports only the triggers without coverage', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([provenClaim({ coversRiskTriggers: ['state_integrity'] })]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      riskTriggers: ['state_integrity', 'audit_authority'],
+    });
+
+    expect(result.decisionKind).toBe('risk_trigger_uncovered');
+    expect(result.uncoveredTriggers).toEqual(['audit_authority']);
+  });
+
+  it('splits coverage across several eligible claims', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([
+        provenClaim({ claimId: 'c1', coversRiskTriggers: ['state_integrity'] }),
+        provenClaim({ claimId: 'c2', coversRiskTriggers: ['audit_authority'] }),
+      ]).projection,
+      authorizedCriticalClaimIds: ['c1', 'c2'],
+      riskTriggers: ['state_integrity', 'audit_authority'],
+    });
+
+    expect(result.satisfied).toBe(true);
+  });
+
+  it('does not let an advisory claim cover a trigger', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([
+        provenClaim({
+          signalClass: 'hypothesis',
+          critical: false,
+          coversRiskTriggers: ['state_integrity'],
+        }),
+      ]).projection,
+      authorizedCriticalClaimIds: [],
+      riskTriggers: ['state_integrity'],
+    });
+
+    expect(result.decisionKind).toBe('critical_fact_required');
+  });
+
+  it('does not let a certificate-less claim cover a trigger', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([
+        provenClaim({
+          provenance: {
+            kind: 'canonical_authority',
+            authorityId: 'auth-1',
+            digest: 'a'.repeat(64),
+          },
+          coversRiskTriggers: ['state_integrity'],
+        }),
+      ]).projection,
+      authorizedCriticalClaimIds: [],
+      riskTriggers: ['state_integrity'],
+    });
+
+    expect(result.decisionKind).toBe('critical_fact_required');
   });
 
   it('riskAssessmentStale causes stale decision', () => {
@@ -136,7 +222,6 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([]).projection,
       authorizedCriticalClaimIds: [],
-      riskTriggersPresent: false,
     });
 
     expect(result.satisfied).toBe(true);

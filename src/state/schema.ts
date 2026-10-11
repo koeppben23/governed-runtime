@@ -87,19 +87,10 @@ export type Phase = z.infer<typeof Phase>;
 
 // ─── Task Risk Classification ────────────────────────────────────────────────
 
-/** Specific authority affected by a HIGH-RISK implementation change. */
-export const RiskTrigger = z.enum([
-  'state_integrity',
-  'audit_authority',
-  'identity_boundary',
-  'approval_authority',
-  'policy_authority',
-  'migration',
-  'distribution_integrity',
-  'command_contract',
-  'ceremony_only',
-]);
-export type RiskTrigger = z.infer<typeof RiskTrigger>;
+// Canonical vocabulary lives in the leaf module `risk-trigger.ts`; imported for
+// local use and re-exported so existing schema consumers keep their import path.
+import { RiskTrigger, SpecificRiskTrigger, SPECIFIC_RISK_TRIGGERS } from './risk-trigger.js';
+export { RiskTrigger, SpecificRiskTrigger, SPECIFIC_RISK_TRIGGERS };
 
 /**
  * Exact verification basis of one reduced-ceremony decision: the frozen active

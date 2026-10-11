@@ -16,6 +16,7 @@ import {
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim, ProofGraphProjection } from '../../state/proofgraph.js';
 import type { ClaimVerificationState, SignalClass } from '../../state/proofgraph-primitives.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { SessionState } from '../../state/schema.js';
 import type {
   PlanApprovalCertificate,
@@ -44,6 +45,7 @@ function claim(
     state?: ClaimVerificationState;
     /** Omit to model a self-declared claim that never passed a human approval. */
     certified?: boolean;
+    coversRiskTriggers?: readonly SpecificRiskTrigger[];
   } = {},
 ): ProofClaim {
   return {
@@ -59,6 +61,9 @@ function claim(
     },
     evidenceRefs: [],
     counterexampleRefs: [],
+    ...(opts.coversRiskTriggers !== undefined
+      ? { coversRiskTriggers: [...opts.coversRiskTriggers] }
+      : {}),
     verificationState: opts.state ?? 'PROVEN',
   };
 }
@@ -186,6 +191,38 @@ describe('evaluateProofGraphGate', () => {
     expect(decision).toMatchObject({ gated: false, kind: 'clear', relevantTriggers: [] });
   });
 
+  it('blocks a specific trigger that no eligible claim covers', () => {
+    const decision = evaluateProofGraphGate({
+      ...summary([claim(UUID(1))]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'risk_trigger_uncovered',
+      uncoveredTriggers: ['state_integrity'],
+    });
+  });
+
+  it('clears when the eligible claim declares the covering relation', () => {
+    const decision = evaluateProofGraphGate({
+      ...summary([claim(UUID(1), { coversRiskTriggers: ['state_integrity'] })]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision).toMatchObject({
+      gated: false,
+      kind: 'clear',
+      uncoveredTriggers: [],
+    });
+  });
+
   // The following pin the discriminating conditions of the risk-assessment path.
   // Without them the corresponding branches can be inverted without any test
   // noticing (confirmed by surviving mutants).
@@ -223,12 +260,12 @@ describe('evaluateProofGraphGate', () => {
     expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
   });
 
-  it('does not demand another critical fact when an eligible claim already exists', () => {
-    // triggers present AND an eligible claim present: the critical-fact
+  it('does not demand another critical fact when an eligible covering claim already exists', () => {
+    // triggers present AND an eligible claim covering them: the critical-fact
     // requirement is already satisfied, so the gate must judge that claim
     // instead of demanding one.
     const decision = evaluateProofGraphGate({
-      ...summary([claim(UUID(1), { state: 'PROVEN' })]),
+      ...summary([claim(UUID(1), { state: 'PROVEN', coversRiskTriggers: ['state_integrity'] })]),
       implementationDigest: 'implementation-digest',
       riskAssessment: {
         implementationDigest: 'implementation-digest',

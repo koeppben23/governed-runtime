@@ -34,6 +34,7 @@ import {
   Freshness,
 } from './proofgraph-primitives.js';
 import { AssertionIdentity } from './assertion-identity.js';
+import { SpecificRiskTrigger } from './risk-trigger.js';
 
 // ─── Evidence Attestation ───────────────────────────────────────────────────
 
@@ -129,6 +130,13 @@ const proofClaimBase = {
   requiredEvidence: RequiredEvidence.optional(),
   /** Optional counterexample requirement (assertion-level). */
   counterexampleRequirement: CounterexampleRequirement.optional(),
+  /**
+   * Specific risk triggers this claim explicitly covers for the current
+   * implementation. Coverage is DECLARED, never inferred from claim text, and
+   * only a gate-eligible (critical, certificate-authorized `fact`) claim can
+   * satisfy the final trigger requirement. `ceremony_only` is not coverable.
+   */
+  coversRiskTriggers: z.array(SpecificRiskTrigger).optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;

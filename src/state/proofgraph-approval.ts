@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
 import { CounterexampleRequirement } from './proofgraph.js';
+import { SpecificRiskTrigger } from './risk-trigger.js';
 export {
   AggregateCounterexampleRequirement,
   AssertionCounterexampleRequirement,
@@ -105,6 +106,11 @@ const v2PlanBase = z
     counterexampleRequirement: CounterexampleRequirement.optional(),
     structuralSurface: z.string().min(1).optional(),
     mutationProfile: z.string().min(1).optional(),
+    /**
+     * Specific risk triggers this critical claim explicitly covers. Declared,
+     * never inferred; the certificate binds the exact set.
+     */
+    coversRiskTriggers: z.array(SpecificRiskTrigger).optional(),
   })
   .strict();
 export const V2PlanClaimDeclaration = v2PlanBase.readonly();
@@ -184,6 +190,9 @@ export function normalizePlanClaims(
         ? { structuralSurface: claim.structuralSurface }
         : {}),
       ...(claim.mutationProfile !== undefined ? { mutationProfile: claim.mutationProfile } : {}),
+      ...(claim.coversRiskTriggers !== undefined
+        ? { coversRiskTriggers: [...claim.coversRiskTriggers] }
+        : {}),
       claimId: mintProofGraphClaimId({
         domain: 'plan',
         statement: claim.statement,

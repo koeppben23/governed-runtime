@@ -227,6 +227,11 @@ function enforceProofGraphEvidenceApproval(
       triggers: decision.relevantTriggers.join(', '),
     });
   }
+  if (decision.kind === 'risk_trigger_uncovered') {
+    return blocked('PROOFGRAPH_RISK_TRIGGER_UNCOVERED', {
+      triggers: decision.uncoveredTriggers.join(', '),
+    });
+  }
   if (decision.kind === 'facts_unproven') {
     // facts_unproven — include per-claim registry details in the message
     const claimDetails = decision.blockingClaims

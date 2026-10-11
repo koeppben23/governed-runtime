@@ -17,6 +17,7 @@
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   mapBindingReasonToRegistryCode,
@@ -38,6 +39,7 @@ export type EnforcementDecisionKind =
   | 'risk_assessment_stale'
   | 'certificate_invalid'
   | 'critical_fact_required'
+  | 'risk_trigger_uncovered'
   | 'facts_unproven';
 
 /** Reason codes emitted by the enforcement projection. */
@@ -69,6 +71,8 @@ export interface ProofGraphEnforcement {
   readonly decisionKind: EnforcementDecisionKind;
   readonly reasonCode: EnforcementReasonCode;
   readonly reason: string;
+  /** Specific triggers detected for the current implementation but not covered. */
+  readonly uncoveredTriggers: readonly SpecificRiskTrigger[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -149,15 +153,30 @@ export interface ComputeEnforcementInput {
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessmentStale?: boolean;
-  readonly riskTriggersPresent?: boolean;
+  /** Specific triggers detected for the current implementation (`ceremony_only` excluded). */
+  readonly riskTriggers?: readonly SpecificRiskTrigger[];
   /** Per-claim binding diagnostic codes from counterexample evaluation. */
   readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+}
+
+/**
+ * Specific triggers that no gate-eligible claim explicitly covers. Coverage is
+ * the declared relation on eligible claims; proof status is enforced separately
+ * by the per-claim loop.
+ */
+function uncoveredRiskTriggers(
+  input: ComputeEnforcementInput,
+  eligibleClaims: readonly ProofClaim[],
+): readonly SpecificRiskTrigger[] {
+  const covered = new Set(eligibleClaims.flatMap((claim) => claim.coversRiskTriggers ?? []));
+  return (input.riskTriggers ?? []).filter((trigger) => !covered.has(trigger));
 }
 
 function evaluatePreconditions(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
 ): ProofGraphEnforcement | null {
+  const triggers = input.riskTriggers ?? [];
   if (input.certificateValid === false) {
     return {
       claims: [],
@@ -166,6 +185,7 @@ function evaluatePreconditions(
       decisionKind: 'certificate_invalid',
       reasonCode: 'certificate_invalid',
       reason: 'The plan approval certificate is missing, stale, or does not bind the current plan.',
+      uncoveredTriggers: [],
     };
   }
   const eligibleIds = new Set(eligibleClaims.map((c) => c.claimId));
@@ -184,6 +204,7 @@ function evaluatePreconditions(
       reasonCode: 'evaluation_unavailable',
       reason:
         'Certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation.',
+      uncoveredTriggers: [],
     };
   }
 
@@ -196,15 +217,13 @@ function evaluatePreconditions(
       reasonCode: 'risk_assessment_stale',
       reason:
         'The implementation risk assessment is missing, stale, or predates trigger classification.',
+      uncoveredTriggers: [],
     };
   }
 
-  // Authority invariant: zero claims + riskTriggersPresent → critical_fact_required.
-  // Zero claims + no risk triggers → clear (satisfied). The enforcement outcome
-  // for zero claims depends solely on whether risk triggers were detected for
-  // the current implementation. This differs from the evaluation_unavailable path
-  // (authorized claims missing from projection), which always blocks.
-  if (eligibleClaims.length === 0 && input.riskTriggersPresent === true) {
+  // Authority invariant: zero eligible claims + specific triggers → a critical
+  // fact claim is required. Zero claims + no triggers → clear (satisfied).
+  if (eligibleClaims.length === 0 && triggers.length > 0) {
     return {
       claims: [],
       blockingClaims: [],
@@ -213,6 +232,22 @@ function evaluatePreconditions(
       reasonCode: 'critical_fact_required',
       reason:
         'A critical, certificate-authorized fact claim is required for the current risk triggers.',
+      uncoveredTriggers: [],
+    };
+  }
+
+  // Coverage invariant: every detected specific trigger must be explicitly
+  // covered by an eligible claim. Coverage is declared, never inferred.
+  const uncovered = uncoveredRiskTriggers(input, eligibleClaims);
+  if (uncovered.length > 0) {
+    return {
+      claims: [],
+      blockingClaims: [],
+      satisfied: false,
+      decisionKind: 'risk_trigger_uncovered',
+      reasonCode: 'risk_trigger_uncovered',
+      reason: `Risk trigger(s) have no certificate-authorized critical claim coverage: ${uncovered.join(', ')}.`,
+      uncoveredTriggers: uncovered,
     };
   }
 
@@ -271,5 +306,6 @@ export function computeProofGraphEnforcement(
     reason: satisfied
       ? 'All critical fact claims are PROVEN.'
       : `${blockingClaims.length} critical fact claim(s) are not PROVEN.`,
+    uncoveredTriggers: [],
   };
 }

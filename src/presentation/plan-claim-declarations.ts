@@ -26,6 +26,7 @@ export function renderPlanClaimDeclarations(
         `  - Counterexample requirement: ${counterexampleText}`,
         `  - Structural surface: ${claim.structuralSurface ?? 'none'}`,
         `  - Mutation profile: ${claim.mutationProfile ?? 'none'}`,
+        `  - Risk triggers covered: ${claim.coversRiskTriggers?.join(', ') ?? 'none'}`,
       ].join('\n');
     })
     .join('\n');

@@ -1300,6 +1300,100 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     expect(blocked.reason).toContain(CRITICAL_CLAIM_ID);
   });
 
+  it('NEGATIVE gate: an uncovered specific risk trigger blocks approval', async () => {
+    const state = implReviewState(fullEvidence());
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_RISK_TRIGGER_UNCOVERED');
+    expect(blocked.reason).toContain('state_integrity');
+  });
+
+  it('POSITIVE gate: a declared trigger coverage clears the risk requirement', async () => {
+    const coveringClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      coversRiskTriggers: ['state_integrity'],
+    };
+    const state = implReviewState(fullEvidence(), coveringClaim);
+    const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');
+    expect(contract.claims[0]?.coversRiskTriggers).toEqual(['state_integrity']);
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+    expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
+
+    const approved = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: {
+          ...currentRiskAssessment,
+          riskTriggers: ['state_integrity'],
+        },
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
+      realDigestContext(),
+    );
+
+    expect(approved.kind).toBe('ok');
+  });
+
   it('projects the full declaration-to-evidence chain for audit', async () => {
     const state = implReviewState(fullEvidence());
     const { contract } = await materializeApprovedPlanContractResult(state, '/tmp');

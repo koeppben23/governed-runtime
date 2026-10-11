@@ -75,15 +75,21 @@ ignores whether it was ever proven — which contradicts the meaning of
 - a session whose implementation has only `ceremony_only` risk triggers is
   unaffected.
 
-For an implementation with a specific persisted risk trigger, FlowGuard also
-requires at least one certificate-authorized critical `fact` claim before final
-evidence approval. The trigger taxonomy is `state_integrity`, `audit_authority`,
-`identity_boundary`, `approval_authority`, `policy_authority`, `migration`,
-`distribution_integrity`, and `command_contract`. A trigger is computed from the
-actual changed files, bound to the implementation digest, and rendered to the
-reviewer. Multiple specific triggers are retained. `ceremony_only` preserves the
-existing HIGH-RISK ceremony for broad sensitive surfaces but never creates this
-claim requirement.
+For an implementation with a specific persisted risk trigger, FlowGuard
+requires that **every** detected trigger is explicitly covered by at least one
+certificate-authorized critical `fact` claim. Coverage is declared with
+`coversRiskTriggers` on the claim; it is never inferred from claim text. A claim
+may cover several triggers, and several claims may split the coverage. A
+non-critical or certificate-less claim can never cover a trigger, and a trigger
+detected at the final gate but not declared as covered blocks with
+`PROOFGRAPH_RISK_TRIGGER_UNCOVERED`. The trigger taxonomy is `state_integrity`,
+`audit_authority`, `identity_boundary`, `approval_authority`,
+`policy_authority`, `migration`, `distribution_integrity`, and
+`command_contract`. A trigger is computed from the actual changed files, bound
+to the implementation digest, and rendered to the reviewer. Multiple specific
+triggers are retained. `ceremony_only` preserves the existing HIGH-RISK ceremony
+for broad sensitive surfaces but never creates this claim requirement and can
+never be declared as covered.
 
 Assessments persisted before risk triggers existed are treated as superseded at
 the final gate. The same applies when no assessment exists at all: as soon as an
