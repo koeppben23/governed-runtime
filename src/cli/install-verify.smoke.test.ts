@@ -48,7 +48,7 @@ async function runFile(
   args: readonly string[],
   cwd: string,
   timeoutMs = 30_000,
-): Promise<{ stdout: string; stderr: string; code: number }> {
+): Promise<{ stdout: string; stderr: string; code: number; failure?: string }> {
   return await new Promise((resolve) => {
     execFile(
       command,
@@ -70,6 +70,7 @@ async function runFile(
           stdout: stdout || error.message || '',
           stderr: stderr || '',
           code,
+          failure: `${error.message.split('\n')[0]}\nProcess code: ${String(error.code)}; signal: ${String(error.signal)}; killed: ${String(error.killed)}`,
         });
       },
     );
@@ -88,7 +89,7 @@ function npmArgs(args: readonly string[]): string[] {
 }
 
 function assertSuccess(
-  result: { stdout: string; stderr: string; code: number },
+  result: { stdout: string; stderr: string; code: number; failure?: string },
   command: string,
 ): void {
   if (result.code === 0) {
@@ -98,7 +99,7 @@ function assertSuccess(
   const stdout = result.stdout.slice(0, 4000);
   const stderr = result.stderr.slice(0, 4000);
   throw new Error(
-    `Command failed: ${command}\nExit code: ${result.code}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
+    `Command failed: ${command}\nExit code: ${result.code}\n${result.failure ?? ''}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
   );
 }
 

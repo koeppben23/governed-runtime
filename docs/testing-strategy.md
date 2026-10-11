@@ -136,6 +136,13 @@ Each test and check job maps to its npm script(s) for clear diagnosis:
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
 
+The reviewer-capability smoke uses the pinned OpenCode host with isolated global
+directories and the repository's installed, locked dependency graph. It checks
+real denials for direct and MCP-prefixed tools and actual execution of the allowed
+observation-tool fixture. Startup failures remain failures under the unchanged
+45-second per-command limit. Tarball-install failures retain the subprocess error,
+signal and killed status so an install timeout is distinguishable from npm rejection.
+
 The technical sources are the workflow files: `.github/workflows/ci.yml` for the
 main PR-CI jobs, `.github/workflows/agent-instruction-evals-pr.yml` for deterministic
 PR evals, and `.github/workflows/mutation.yml` for mutation testing.
