@@ -167,21 +167,21 @@ describe('risk-trigger control oracles', () => {
     expect(() => assertFullEvidence(redTest, false)).toThrow(/checks must be green/);
 
     const skippedAdversarial = state(false);
-    skippedAdversarial.validationAttempts[0]!.result.assertionExtraction!.assertions[0]!.status =
+    skippedAdversarial.validationAttempts[0]!.result.assertionExtraction.assertions[0]!.status =
       'skipped';
     expect(() => assertFullEvidence(skippedAdversarial, false)).toThrow(
       /adversarial assertion must be passed/,
     );
 
     const skippedPositive = state(false);
-    skippedPositive.validationAttempts[1]!.result.assertionExtraction!.assertions[0]!.status =
+    skippedPositive.validationAttempts[1]!.result.assertionExtraction.assertions[0]!.status =
       'skipped';
     expect(() => assertFullEvidence(skippedPositive, false)).toThrow(
       /positive assertion must be passed/,
     );
 
     const noPositive = state(false);
-    noPositive.validationAttempts[1]!.result.assertionExtraction!.assertions = [];
+    noPositive.validationAttempts[1]!.result.assertionExtraction.assertions = [];
     expect(() => assertFullEvidence(noPositive, false)).toThrow(
       /positive assertion must be passed/,
     );
@@ -193,7 +193,7 @@ describe('risk-trigger control oracles', () => {
     );
 
     const wrongDigest = state(false);
-    wrongDigest.proofGraph.claims[0]!.freshness!.boundDigest = 'other-digest';
+    wrongDigest.proofGraph.claims[0]!.freshness.boundDigest = 'other-digest';
     expect(() => assertFullEvidence(wrongDigest, false)).toThrow(
       /bound to the current implementation/,
     );
