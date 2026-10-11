@@ -450,18 +450,36 @@ export function hasCurrentArchitectureApprovalCertificate(
 }
 
 /**
- * Certificate-authorized critical plan claims and their exact coverage relation.
+ * Exact approval binding a materialized claim must carry to be evaluated under
+ * the current plan certificate.
+ */
+export interface AuthorizedClaimBinding {
+  readonly authorityId: string;
+  readonly authorityDigest: string;
+  readonly certificateId: string;
+  readonly claimDeclarationsDigest: string;
+  readonly decisionAttestationDigest: string;
+  readonly declarationId: string;
+}
+
+/**
+ * Certificate-authorized critical plan claims, their exact coverage relation,
+ * and the approval binding each evaluated claim must carry.
  *
  * `coverage` maps every authorized critical claim id to the triggers its
  * approved declaration declares. The enforcement projector must use THIS
  * relation — never the persisted projection's `coversRiskTriggers` — so a
- * tampered or stale projection cannot widen the approved contract.
+ * tampered or stale projection cannot widen the approved contract. `bindings`
+ * is the expected certificate identity per claim: a projection claim whose
+ * provenance binds a different certificate is not an evaluation of the
+ * authorized claim.
  */
 export type AuthorizedCriticalPlanClaimIds =
   | {
       readonly kind: 'authorized';
       readonly claimIds: readonly string[];
       readonly coverage: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+      readonly bindings: ReadonlyMap<string, AuthorizedClaimBinding>;
     }
   | { readonly kind: 'certificate_missing' }
   | { readonly kind: 'certificate_invalid' };
@@ -475,17 +493,28 @@ export function authorizedCriticalPlanClaimIds(
     );
     return hasCriticalDeclarations
       ? { kind: 'certificate_missing' }
-      : { kind: 'authorized', claimIds: [], coverage: new Map() };
+      : { kind: 'authorized', claimIds: [], coverage: new Map(), bindings: new Map() };
   }
   if (!hasCurrentPlanApprovalCertificate(plan)) return { kind: 'certificate_invalid' };
+  const certificate = plan.approvalCertificate;
   const criticalClaims = (plan.claimDeclarations?.claims ?? []).filter((claim) => claim.critical);
   const coverage = new Map<string, readonly SpecificRiskTrigger[]>();
+  const bindings = new Map<string, AuthorizedClaimBinding>();
   for (const claim of criticalClaims) {
     coverage.set(claim.claimId, claim.coversRiskTriggers ?? []);
+    bindings.set(claim.claimId, {
+      authorityId: 'plan',
+      authorityDigest: certificate.authorityDigest,
+      certificateId: certificate.certificateId,
+      claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+      decisionAttestationDigest: certificate.decisionAttestationDigest,
+      declarationId: claim.claimId,
+    });
   }
   return {
     kind: 'authorized',
     claimIds: criticalClaims.map((claim) => claim.claimId),
     coverage,
+    bindings,
   };
 }

@@ -18,6 +18,7 @@ import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
+import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   mapBindingReasonToRegistryCode,
@@ -162,8 +163,28 @@ export interface ComputeEnforcementInput {
    * projection cannot widen the approved contract.
    */
   readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+  /**
+   * Expected certificate binding per authorized critical claim. A projection
+   * claim whose provenance does not match is not an evaluation of the
+   * authorized claim and counts as missing (fail-closed).
+   */
+  readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
   /** Per-claim binding diagnostic codes from counterexample evaluation. */
   readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+}
+
+/** Whether the evaluated claim's provenance binds exactly the expected certificate. */
+function matchesAuthorizedBinding(claim: ProofClaim, expected: AuthorizedClaimBinding): boolean {
+  const provenance = claim.provenance;
+  if (provenance?.kind !== 'canonical_authority' || provenance.approval === undefined) return false;
+  return (
+    provenance.authorityId === expected.authorityId &&
+    provenance.digest === expected.authorityDigest &&
+    provenance.approval.certificateId === expected.certificateId &&
+    provenance.approval.claimDeclarationsDigest === expected.claimDeclarationsDigest &&
+    provenance.approval.decisionAttestationDigest === expected.decisionAttestationDigest &&
+    provenance.approval.declarationId === expected.declarationId
+  );
 }
 
 /**
@@ -202,8 +223,15 @@ function evaluatePreconditions(
       uncoveredTriggers: [],
     };
   }
-  const eligibleIds = new Set(eligibleClaims.map((c) => c.claimId));
-  const missingIds = (input.authorizedCriticalClaimIds ?? []).filter((id) => !eligibleIds.has(id));
+  const eligibleById = new Map(eligibleClaims.map((c) => [c.claimId, c] as const));
+  // An authorized claim counts as evaluated only when the projection carries a
+  // gate-eligible claim whose provenance binds exactly the current certificate.
+  const missingIds = (input.authorizedCriticalClaimIds ?? []).filter((id) => {
+    const claim = eligibleById.get(id);
+    if (claim === undefined) return true;
+    const expected = input.authorizedClaimBindings?.get(id);
+    return expected === undefined || !matchesAuthorizedBinding(claim, expected);
+  });
   if (missingIds.length > 0) {
     return {
       claims: [],

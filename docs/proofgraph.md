@@ -81,7 +81,10 @@ certificate-authorized critical `fact` claim. Coverage is declared with
 `coversRiskTriggers` on the claim; it is never inferred from claim text. The
 final gate enforces the coverage relation from the current approval
 certificate's declaration set — not from the persisted projection — so a stale
-or tampered projection cannot widen the approved contract. A claim
+or tampered projection cannot widen the approved contract. A `PROVEN` claim
+only counts when its provenance binds the current certificate (certificate id,
+declaration digest, attestation digest, declaration id, and authority digest);
+a claim evaluated under a different certificate is treated as missing. A claim
 may cover several triggers, and several claims may split the coverage. A
 non-critical or certificate-less claim can never cover a trigger, and a trigger
 detected at the final gate but not declared as covered blocks with

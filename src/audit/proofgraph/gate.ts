@@ -22,6 +22,7 @@ import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import {
   authorizedCriticalPlanClaimIds,
   type PlanClaimAuthority,
+  type AuthorizedClaimBinding,
 } from '../../state/proofgraph-approval.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
@@ -128,6 +129,8 @@ export function evaluateProofGraphGate(input: {
    * `coversRiskTriggers` entries.
    */
   readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+  /** Expected certificate binding per authorized critical claim. */
+  readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
@@ -154,6 +157,9 @@ export function evaluateProofGraphGate(input: {
       : {}),
     ...(input.authorizedRiskTriggerCoverage !== undefined
       ? { authorizedRiskTriggerCoverage: input.authorizedRiskTriggerCoverage }
+      : {}),
+    ...(input.authorizedClaimBindings !== undefined
+      ? { authorizedClaimBindings: input.authorizedClaimBindings }
       : {}),
     ...(input.certificateValid !== undefined ? { certificateValid: input.certificateValid } : {}),
     ...(input.implementationDigest !== undefined
@@ -188,6 +194,9 @@ export function evaluateProofGraphGateFromState(state: SessionState): ProofGraph
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     ...(authorization.kind === 'authorized'
       ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
       : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined

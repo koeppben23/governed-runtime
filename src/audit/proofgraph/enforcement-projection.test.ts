@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeProofGraphEnforcement } from './enforcement-projection.js';
 import type { ProofGraphSummary } from './summary.js';
+import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
 
 function summary(claims: unknown[] = []): {
   projection: ProofGraphSummary['projection'];
@@ -18,6 +19,25 @@ function summary(claims: unknown[] = []): {
     },
   };
 }
+
+/**
+ * The certificate the fixture claims are bound to. Kept in one place so every
+ * test that exercises authorization also supplies the matching expected
+ * binding.
+ */
+const AUTHORIZED_BINDING: AuthorizedClaimBinding = {
+  authorityId: 'auth-1',
+  authorityDigest: 'a'.repeat(64),
+  certificateId: '00000000-0000-4000-8000-000000000001',
+  claimDeclarationsDigest: 'a'.repeat(64),
+  decisionAttestationDigest: 'b'.repeat(64),
+  declarationId: '00000000-0000-4000-8000-000000000002',
+};
+
+const AUTHORIZED_BINDINGS = new Map([
+  ['c1', AUTHORIZED_BINDING],
+  ['c2', AUTHORIZED_BINDING],
+]);
 
 function provenClaim(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -43,11 +63,30 @@ function provenClaim(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+/** Claim whose provenance is built from AUTHORIZED_BINDING with one field overridden. */
+function claimWithBinding(overrides: Partial<AuthorizedClaimBinding>): Record<string, unknown> {
+  const binding = { ...AUTHORIZED_BINDING, ...overrides };
+  return provenClaim({
+    provenance: {
+      kind: 'canonical_authority',
+      authorityId: binding.authorityId,
+      digest: binding.authorityDigest,
+      approval: {
+        certificateId: binding.certificateId,
+        claimDeclarationsDigest: binding.claimDeclarationsDigest,
+        decisionAttestationDigest: binding.decisionAttestationDigest,
+        declarationId: binding.declarationId,
+      },
+    },
+  });
+}
+
 describe('computeProofGraphEnforcement', () => {
   it('satisfied when all eligible claims are PROVEN', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
     });
 
     expect(result.satisfied).toBe(true);
@@ -62,6 +101,7 @@ describe('computeProofGraphEnforcement', () => {
       projection: summary([provenClaim({ claimId: 'c1', verificationState: 'NOT_VERIFIED' })])
         .projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
     });
 
     expect(result.satisfied).toBe(false);
@@ -73,6 +113,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim({ verificationState: 'CONTRADICTED' })]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
     });
 
     expect(result.blockingClaims[0]!.reasonCode).toBe('counterexample_observed');
@@ -82,6 +123,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim({ verificationState: 'STALE' })]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
     });
 
     expect(result.blockingClaims[0]!.reasonCode).toBe('evidence_stale');
@@ -96,6 +138,65 @@ describe('computeProofGraphEnforcement', () => {
     expect(result.satisfied).toBe(false);
     expect(result.decisionKind).toBe('evaluation_unavailable');
     expect(result.blockingClaims[0]!.reasonCode).toBe('evaluation_unavailable');
+  });
+
+  it('evaluation_unavailable when the evaluated claim binds a different certificate', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([
+        provenClaim({
+          provenance: {
+            kind: 'canonical_authority',
+            authorityId: 'auth-1',
+            digest: 'a'.repeat(64),
+            approval: {
+              ...AUTHORIZED_BINDING,
+              certificateId: '00000000-0000-4000-8000-0000000000ff',
+            },
+          },
+        }),
+      ]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
+    });
+
+    expect(result.satisfied).toBe(false);
+    expect(result.decisionKind).toBe('evaluation_unavailable');
+  });
+
+  it.each([
+    ['authorityId', { authorityId: 'other-authority' }],
+    ['authorityDigest', { authorityDigest: 'f'.repeat(64) }],
+    ['certificateId', { certificateId: '00000000-0000-4000-8000-0000000000ff' }],
+    ['claimDeclarationsDigest', { claimDeclarationsDigest: 'f'.repeat(64) }],
+    ['decisionAttestationDigest', { decisionAttestationDigest: 'f'.repeat(64) }],
+    ['declarationId', { declarationId: '00000000-0000-4000-8000-0000000000ff' }],
+  ] as const)(
+    'evaluation_unavailable when the evaluated claim binding differs in %s',
+    (_field, override) => {
+      const result = computeProofGraphEnforcement({
+        projection: summary([claimWithBinding(override)]).projection,
+        authorizedCriticalClaimIds: ['c1'],
+        authorizedClaimBindings: AUTHORIZED_BINDINGS,
+      });
+      expect(result.decisionKind).toBe('evaluation_unavailable');
+    },
+  );
+
+  it('evaluation_unavailable when an authorized claim has no approval binding', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([
+        provenClaim({
+          provenance: {
+            kind: 'canonical_authority',
+            authorityId: 'auth-1',
+            digest: 'a'.repeat(64),
+          },
+        }),
+      ]).projection,
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
+    });
+    expect(result.decisionKind).toBe('evaluation_unavailable');
   });
 
   it('certificate_invalid reason when the approval certificate is invalid', () => {
@@ -125,6 +226,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       riskTriggers: ['state_integrity'],
     });
 
@@ -140,6 +242,7 @@ describe('computeProofGraphEnforcement', () => {
         provenClaim({ coversRiskTriggers: ['state_integrity', 'identity_boundary'] }),
       ]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       authorizedRiskTriggerCoverage: new Map([['c1', ['state_integrity', 'identity_boundary']]]),
       riskTriggers: ['state_integrity', 'identity_boundary'],
     });
@@ -153,6 +256,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim({ coversRiskTriggers: ['state_integrity'] })]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       authorizedRiskTriggerCoverage: new Map(),
       riskTriggers: ['state_integrity'],
     });
@@ -167,6 +271,7 @@ describe('computeProofGraphEnforcement', () => {
         provenClaim({ coversRiskTriggers: ['state_integrity', 'audit_authority'] }),
       ]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       authorizedRiskTriggerCoverage: new Map([['c1', ['state_integrity']]]),
       riskTriggers: ['state_integrity', 'audit_authority'],
     });
@@ -179,6 +284,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim({ claimId: 'c1' })]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       authorizedRiskTriggerCoverage: new Map([['c2', ['state_integrity']]]),
       riskTriggers: ['state_integrity'],
     });
@@ -191,6 +297,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim({ coversRiskTriggers: ['state_integrity'] })]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       authorizedRiskTriggerCoverage: new Map([['c1', ['state_integrity']]]),
       riskTriggers: ['state_integrity', 'audit_authority'],
     });
@@ -206,6 +313,7 @@ describe('computeProofGraphEnforcement', () => {
         provenClaim({ claimId: 'c2', coversRiskTriggers: ['audit_authority'] }),
       ]).projection,
       authorizedCriticalClaimIds: ['c1', 'c2'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       authorizedRiskTriggerCoverage: new Map([
         ['c1', ['state_integrity']],
         ['c2', ['audit_authority']],
@@ -255,6 +363,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
       riskAssessmentStale: true,
     });
 
@@ -275,6 +384,7 @@ describe('computeProofGraphEnforcement', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
     });
 
     expect(result.reasonCode).toBe('proven');

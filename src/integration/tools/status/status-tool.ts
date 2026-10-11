@@ -151,6 +151,9 @@ async function buildProofGraphProjectionResponse(
     ...(authorization.kind === 'authorized'
       ? { authorizedRiskTriggerCoverage: authorization.coverage }
       : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation ? { implementationDigest: state.implementation.digest } : {}),
     ...(riskAssessment !== null ? { riskAssessment } : {}),

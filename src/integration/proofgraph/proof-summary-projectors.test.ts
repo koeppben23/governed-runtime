@@ -70,9 +70,30 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
       },
     })),
   };
+  const claimDeclarationsDigest = hashText(canonicalJsonStringify(claimDeclarations));
+  // Bind every projected claim to the certificate built below: the gate only
+  // counts a PROVEN claim whose provenance matches the current certificate.
+  const boundClaims = claims.map((claim) => ({
+    ...claim,
+    provenance: {
+      kind: 'canonical_authority' as const,
+      authorityId: 'plan',
+      digest: PLAN_RECORD.current.digest,
+      approval: {
+        certificateId: '11111111-1111-4111-8111-111111111111',
+        claimDeclarationsDigest,
+        decisionAttestationDigest: 'd'.repeat(64),
+        declarationId: claim.claimId,
+      },
+    },
+  }));
   return {
     ...base,
-    proofGraph: { version: 'proofgraph.v2' as const, claims, evaluatedAt: '2025-01-01T00:00:00Z' },
+    proofGraph: {
+      version: 'proofgraph.v2' as const,
+      claims: boundClaims,
+      evaluatedAt: '2025-01-01T00:00:00Z',
+    },
     implementation: {
       digest: 'abc123',
       files: [{ path: 'src/foo.ts', status: 'modified' as const, contentHash: 'abc' }],
@@ -92,7 +113,7 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
       approvalCertificate: {
         flow: 'plan' as const,
         authorityDigest: PLAN_RECORD.current.digest,
-        claimDeclarationsDigest: hashText(canonicalJsonStringify(claimDeclarations)),
+        claimDeclarationsDigest,
         decisionAttestationDigest: 'd'.repeat(64),
         approvedAt: '2025-01-01T00:00:00.000Z',
         approvedBy: 'test-approver',

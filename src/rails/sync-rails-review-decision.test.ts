@@ -109,6 +109,34 @@ function withCertifiedCriticalPlan(
   };
 }
 
+/**
+ * Rebind a projection to the certificate carried by `state.plan`, so the
+ * evaluated claim's provenance matches the authorized certificate identity.
+ */
+function bindToCurrentCertificate(
+  state: ReturnType<typeof withCertifiedCriticalPlan>,
+  projection: ProofGraphProjection,
+): ProofGraphProjection {
+  const certificate = state.plan.approvalCertificate;
+  return {
+    ...projection,
+    claims: projection.claims.map((claim) => ({
+      ...claim,
+      provenance: {
+        kind: 'canonical_authority',
+        authorityId: 'plan',
+        digest: certificate.authorityDigest,
+        approval: {
+          certificateId: certificate.certificateId,
+          claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+          decisionAttestationDigest: certificate.decisionAttestationDigest,
+          declarationId: claim.claimId,
+        },
+      },
+    })),
+  };
+}
+
 describe('review-decision rail', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
@@ -284,13 +312,13 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         {
           ...certified,
-          proofGraph: {
+          proofGraph: bindToCurrentCertificate(certified, {
             ...projected,
             claims: projected.claims.map((claim) => ({
               ...claim,
               claimId: '00000000-0000-4000-8000-000000000763',
             })),
-          },
+          }),
           implementation: {
             implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
@@ -330,14 +358,14 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         {
           ...certified,
-          proofGraph: {
+          proofGraph: bindToCurrentCertificate(certified, {
             ...projected,
             claims: projected.claims.map((claim) => ({
               ...claim,
               claimId: '00000000-0000-4000-8000-000000000763',
               coversRiskTriggers: ['state_integrity'],
             })),
-          },
+          }),
           implementation: {
             implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
@@ -373,14 +401,14 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         {
           ...certified,
-          proofGraph: {
+          proofGraph: bindToCurrentCertificate(certified, {
             ...projected,
             claims: projected.claims.map((claim) => ({
               ...claim,
               claimId: '00000000-0000-4000-8000-000000000763',
               coversRiskTriggers: ['state_integrity', 'audit_authority'],
             })),
-          },
+          }),
           implementation: {
             implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],

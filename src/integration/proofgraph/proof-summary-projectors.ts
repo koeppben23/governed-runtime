@@ -373,6 +373,9 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
         ...(authorization.kind === 'authorized'
           ? { authorizedRiskTriggerCoverage: authorization.coverage }
           : {}),
+        ...(authorization.kind === 'authorized'
+          ? { authorizedClaimBindings: authorization.bindings }
+          : {}),
         certificateValid: authorization.kind === 'authorized',
         ...(implementationDigest !== undefined ? { implementationDigest } : {}),
         riskAssessment:

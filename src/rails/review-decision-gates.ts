@@ -204,6 +204,9 @@ function evaluateEvidenceProofGraphGate(
     ...(authorization.kind === 'authorized'
       ? { authorizedRiskTriggerCoverage: authorization.coverage }
       : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }
