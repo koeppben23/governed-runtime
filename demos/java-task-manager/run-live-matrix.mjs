@@ -269,6 +269,10 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   // Run 13: a plan revision submission omitted planText; the author corrected
   // the call in the same turn and the plan was accepted.
   'REVISED_PLAN_REQUIRED',
+  // Run 14: /start's model turn probed /continue while several flows were
+  // available. The admissibility denial happens before any state mutation and
+  // demands an explicit flow choice — exactly the runner's next step.
+  'CONTINUE_AMBIGUOUS',
 ]);
 
 /**

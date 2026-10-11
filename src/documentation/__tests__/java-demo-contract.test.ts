@@ -343,6 +343,8 @@ describe('Java Task Manager demo contract', () => {
       toolLine('EMPTY_ADR_TEXT'),
       // Run 13: a plan revision omitted planText and was corrected in-session.
       toolLine('REVISED_PLAN_REQUIRED'),
+      // Run 14: /continue cannot choose between flows; the explicit step does.
+      toolLine('CONTINUE_AMBIGUOUS'),
     ].join('\n');
     expect(unexpectedDenialCodes(recoverable)).toEqual([]);
     const mixed = `${recoverable}\n${toolLine('ARCHIVE_FAILED')}`;
