@@ -21,6 +21,7 @@ export type EnforcementReasonCode =
   | 'risk_assessment_stale'
   | 'certificate_invalid'
   | 'critical_fact_required'
+  | 'risk_trigger_uncovered'
   | 'aggregate_check_mismatch'
   | 'aggregate_candidate_mismatch'
   | 'aggregate_scope_unattested'
@@ -49,6 +50,7 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   risk_assessment_stale: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',
   certificate_invalid: 'PROOFGRAPH_CERTIFICATE_INVALID',
   critical_fact_required: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+  risk_trigger_uncovered: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
   aggregate_check_mismatch: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
   aggregate_candidate_mismatch: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
   aggregate_scope_unattested: 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED',

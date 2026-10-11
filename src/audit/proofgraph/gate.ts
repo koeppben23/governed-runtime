@@ -18,9 +18,11 @@
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { RiskTrigger, SessionState } from '../../state/schema.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import {
   authorizedCriticalPlanClaimIds,
   type PlanClaimAuthority,
+  type AuthorizedClaimBinding,
 } from '../../state/proofgraph-approval.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
@@ -69,7 +71,9 @@ export interface ProofGraphGateDecision {
   readonly reasonCode: EnforcementReasonCode;
   readonly reason: string;
   readonly kind: EnforcementDecisionKind;
-  readonly relevantTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
+  readonly relevantTriggers: readonly SpecificRiskTrigger[];
+  /** Detected specific triggers without eligible claim coverage. */
+  readonly uncoveredTriggers: readonly SpecificRiskTrigger[];
 }
 
 export interface ImplementationRiskAssessmentForGate {
@@ -110,15 +114,23 @@ export function isRiskAssessmentCurrent(
 
 function relevantTriggers(
   assessment: ImplementationRiskAssessmentForGate | undefined,
-): readonly Exclude<RiskTrigger, 'ceremony_only'>[] {
+): readonly SpecificRiskTrigger[] {
   return (assessment?.riskTriggers ?? []).filter(
-    (trigger): trigger is Exclude<RiskTrigger, 'ceremony_only'> => trigger !== 'ceremony_only',
+    (trigger): trigger is SpecificRiskTrigger => trigger !== 'ceremony_only',
   );
 }
 
 export function evaluateProofGraphGate(input: {
   readonly projection?: ProofGraphSummary['projection'];
   readonly authorizedCriticalClaimIds?: readonly string[];
+  /**
+   * Certificate-bound coverage relation from the current plan approval. The
+   * projector trusts this relation, never the persisted projection's own
+   * `coversRiskTriggers` entries.
+   */
+  readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+  /** Expected certificate binding per authorized critical claim. */
+  readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
@@ -143,12 +155,18 @@ export function evaluateProofGraphGate(input: {
     ...(input.authorizedCriticalClaimIds !== undefined
       ? { authorizedCriticalClaimIds: input.authorizedCriticalClaimIds }
       : {}),
+    ...(input.authorizedRiskTriggerCoverage !== undefined
+      ? { authorizedRiskTriggerCoverage: input.authorizedRiskTriggerCoverage }
+      : {}),
+    ...(input.authorizedClaimBindings !== undefined
+      ? { authorizedClaimBindings: input.authorizedClaimBindings }
+      : {}),
     ...(input.certificateValid !== undefined ? { certificateValid: input.certificateValid } : {}),
     ...(input.implementationDigest !== undefined
       ? { implementationDigest: input.implementationDigest }
       : {}),
     riskAssessmentStale: riskStale,
-    riskTriggersPresent: triggers.length > 0,
+    riskTriggers: triggers,
     ...(claimDiagnostics !== undefined ? { claimDiagnostics } : {}),
   });
 
@@ -160,6 +178,7 @@ export function evaluateProofGraphGate(input: {
     reason: enforcement.reason,
     kind: enforcement.decisionKind,
     relevantTriggers: triggers,
+    uncoveredTriggers: enforcement.uncoveredTriggers,
   };
 }
 
@@ -173,6 +192,12 @@ export function evaluateProofGraphGateFromState(state: SessionState): ProofGraph
   return evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }

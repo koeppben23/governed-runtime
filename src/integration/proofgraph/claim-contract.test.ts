@@ -465,6 +465,52 @@ describe('validateProofClaimContract — critical contract', () => {
       expect(result.detail).toContain('scope completeness attestation');
   });
 
+  it('accepts a critical claim that covers specific risk triggers', () => {
+    expect(
+      validateProofClaimContract({
+        ...BASE,
+        source: 'plan',
+        claims: [planClaim({ coversRiskTriggers: ['state_integrity', 'audit_authority'] })],
+      }),
+    ).toEqual({ kind: 'ok' });
+  });
+
+  it('rejects a non-critical claim that covers specific risk triggers', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim({
+          critical: false,
+          coversRiskTriggers: ['state_integrity'],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      failureKind: 'contract_incomplete',
+      field: 'coversRiskTriggers',
+    });
+    if (result.kind === 'invalid') expect(result.detail).toContain('critical claim');
+  });
+
+  it('rejects duplicated risk trigger coverage on one claim', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim({
+          coversRiskTriggers: ['state_integrity', 'state_integrity'],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      failureKind: 'contract_incomplete',
+      field: 'coversRiskTriggers',
+    });
+  });
+
   it('rejects a critical claim without a counterexample check', () => {
     const claim = planClaim({ counterexampleRequirement: undefined });
     const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });

@@ -100,6 +100,18 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+    category: 'precondition',
+    messageTemplate:
+      'Evidence approval is blocked because no certificate-authorized critical claim covers the detected risk trigger(s): {triggers}.',
+    recoverySteps: [
+      'Declare coversRiskTriggers on a critical plan claim for every detected trigger',
+      'Request changes to return to plan, add the coverage relation, and obtain plan approval for the new declaration set',
+      'Record fresh evidence that proves each covering claim before requesting approval again',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
     category: 'precondition',
     messageTemplate:

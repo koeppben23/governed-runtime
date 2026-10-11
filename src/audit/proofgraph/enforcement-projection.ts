@@ -17,6 +17,8 @@
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
+import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   mapBindingReasonToRegistryCode,
@@ -38,6 +40,7 @@ export type EnforcementDecisionKind =
   | 'risk_assessment_stale'
   | 'certificate_invalid'
   | 'critical_fact_required'
+  | 'risk_trigger_uncovered'
   | 'facts_unproven';
 
 /** Reason codes emitted by the enforcement projection. */
@@ -69,6 +72,8 @@ export interface ProofGraphEnforcement {
   readonly decisionKind: EnforcementDecisionKind;
   readonly reasonCode: EnforcementReasonCode;
   readonly reason: string;
+  /** Specific triggers detected for the current implementation but not covered. */
+  readonly uncoveredTriggers: readonly SpecificRiskTrigger[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -149,15 +154,87 @@ export interface ComputeEnforcementInput {
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessmentStale?: boolean;
-  readonly riskTriggersPresent?: boolean;
+  /** Specific triggers detected for the current implementation (`ceremony_only` excluded). */
+  readonly riskTriggers?: readonly SpecificRiskTrigger[];
+  /**
+   * Certificate-bound coverage relation (critical claim id -> approved
+   * triggers). Coverage is enforced from THIS relation, never from the
+   * persisted projection's `coversRiskTriggers`, so a tampered or stale
+   * projection cannot widen the approved contract.
+   */
+  readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+  /**
+   * Expected certificate binding per authorized critical claim. A projection
+   * claim whose provenance does not match is not an evaluation of the
+   * authorized claim and counts as missing (fail-closed).
+   */
+  readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
   /** Per-claim binding diagnostic codes from counterexample evaluation. */
   readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+}
+
+/** Whether the evaluated claim's provenance binds exactly the expected certificate. */
+function matchesAuthorizedBinding(claim: ProofClaim, expected: AuthorizedClaimBinding): boolean {
+  const provenance = claim.provenance;
+  if (provenance?.kind !== 'canonical_authority' || provenance.approval === undefined) return false;
+  return (
+    provenance.authorityId === expected.authorityId &&
+    provenance.digest === expected.authorityDigest &&
+    provenance.approval.certificateId === expected.certificateId &&
+    provenance.approval.claimDeclarationsDigest === expected.claimDeclarationsDigest &&
+    provenance.approval.decisionAttestationDigest === expected.decisionAttestationDigest &&
+    provenance.approval.declarationId === expected.declarationId
+  );
+}
+
+/**
+ * Specific triggers that no authorized and gate-eligible claim covers.
+ *
+ * A coverage entry counts only when its claim is present and eligible in the
+ * projection; the per-claim loop separately requires every eligible claim to be
+ * PROVEN.
+ */
+function uncoveredRiskTriggers(
+  input: ComputeEnforcementInput,
+  eligibleClaims: readonly ProofClaim[],
+): readonly SpecificRiskTrigger[] {
+  const eligibleIds = new Set(eligibleClaims.map((claim) => claim.claimId));
+  const covered = new Set<SpecificRiskTrigger>();
+  for (const [claimId, triggers] of input.authorizedRiskTriggerCoverage ?? []) {
+    if (!eligibleIds.has(claimId)) continue;
+    for (const trigger of triggers) covered.add(trigger);
+  }
+  return (input.riskTriggers ?? []).filter((trigger) => !covered.has(trigger));
+}
+
+/**
+ * Authorized claim ids without exactly one gate-eligible projection claim bound
+ * to the expected certificate. A duplicate id is an inconsistent projection and
+ * counts as missing (fail-closed), matching the coverage set-identity rule.
+ */
+function missingAuthorizedClaimIds(
+  input: ComputeEnforcementInput,
+  eligibleClaims: readonly ProofClaim[],
+): readonly string[] {
+  const occurrences = new Map<string, number>();
+  const eligibleById = new Map<string, ProofClaim>();
+  for (const claim of eligibleClaims) {
+    occurrences.set(claim.claimId, (occurrences.get(claim.claimId) ?? 0) + 1);
+    eligibleById.set(claim.claimId, claim);
+  }
+  return (input.authorizedCriticalClaimIds ?? []).filter((id) => {
+    const claim = eligibleById.get(id);
+    if (claim === undefined || occurrences.get(id) !== 1) return true;
+    const expected = input.authorizedClaimBindings?.get(id);
+    return expected === undefined || !matchesAuthorizedBinding(claim, expected);
+  });
 }
 
 function evaluatePreconditions(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
 ): ProofGraphEnforcement | null {
+  const triggers = input.riskTriggers ?? [];
   if (input.certificateValid === false) {
     return {
       claims: [],
@@ -166,10 +243,10 @@ function evaluatePreconditions(
       decisionKind: 'certificate_invalid',
       reasonCode: 'certificate_invalid',
       reason: 'The plan approval certificate is missing, stale, or does not bind the current plan.',
+      uncoveredTriggers: [],
     };
   }
-  const eligibleIds = new Set(eligibleClaims.map((c) => c.claimId));
-  const missingIds = (input.authorizedCriticalClaimIds ?? []).filter((id) => !eligibleIds.has(id));
+  const missingIds = missingAuthorizedClaimIds(input, eligibleClaims);
   if (missingIds.length > 0) {
     return {
       claims: [],
@@ -184,6 +261,7 @@ function evaluatePreconditions(
       reasonCode: 'evaluation_unavailable',
       reason:
         'Certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation.',
+      uncoveredTriggers: [],
     };
   }
 
@@ -196,15 +274,13 @@ function evaluatePreconditions(
       reasonCode: 'risk_assessment_stale',
       reason:
         'The implementation risk assessment is missing, stale, or predates trigger classification.',
+      uncoveredTriggers: [],
     };
   }
 
-  // Authority invariant: zero claims + riskTriggersPresent → critical_fact_required.
-  // Zero claims + no risk triggers → clear (satisfied). The enforcement outcome
-  // for zero claims depends solely on whether risk triggers were detected for
-  // the current implementation. This differs from the evaluation_unavailable path
-  // (authorized claims missing from projection), which always blocks.
-  if (eligibleClaims.length === 0 && input.riskTriggersPresent === true) {
+  // Authority invariant: zero eligible claims + specific triggers → a critical
+  // fact claim is required. Zero claims + no triggers → clear (satisfied).
+  if (eligibleClaims.length === 0 && triggers.length > 0) {
     return {
       claims: [],
       blockingClaims: [],
@@ -213,6 +289,22 @@ function evaluatePreconditions(
       reasonCode: 'critical_fact_required',
       reason:
         'A critical, certificate-authorized fact claim is required for the current risk triggers.',
+      uncoveredTriggers: [],
+    };
+  }
+
+  // Coverage invariant: every detected specific trigger must be explicitly
+  // covered by an eligible claim. Coverage is declared, never inferred.
+  const uncovered = uncoveredRiskTriggers(input, eligibleClaims);
+  if (uncovered.length > 0) {
+    return {
+      claims: [],
+      blockingClaims: [],
+      satisfied: false,
+      decisionKind: 'risk_trigger_uncovered',
+      reasonCode: 'risk_trigger_uncovered',
+      reason: `Risk trigger(s) have no certificate-authorized critical claim coverage: ${uncovered.join(', ')}.`,
+      uncoveredTriggers: uncovered,
     };
   }
 
@@ -271,5 +363,6 @@ export function computeProofGraphEnforcement(
     reason: satisfied
       ? 'All critical fact claims are PROVEN.'
       : `${blockingClaims.length} critical fact claim(s) are not PROVEN.`,
+    uncoveredTriggers: [],
   };
 }

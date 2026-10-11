@@ -201,6 +201,12 @@ function evaluateEvidenceProofGraphGate(
   return evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    ...(authorization.kind === 'authorized'
+      ? { authorizedRiskTriggerCoverage: authorization.coverage }
+      : {}),
+    ...(authorization.kind === 'authorized'
+      ? { authorizedClaimBindings: authorization.bindings }
+      : {}),
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }
@@ -225,6 +231,11 @@ function enforceProofGraphEvidenceApproval(
   if (decision.kind === 'critical_fact_required') {
     return blocked('PROOFGRAPH_CRITICAL_FACT_REQUIRED', {
       triggers: decision.relevantTriggers.join(', '),
+    });
+  }
+  if (decision.kind === 'risk_trigger_uncovered') {
+    return blocked('PROOFGRAPH_RISK_TRIGGER_UNCOVERED', {
+      triggers: decision.uncoveredTriggers.join(', '),
     });
   }
   if (decision.kind === 'facts_unproven') {

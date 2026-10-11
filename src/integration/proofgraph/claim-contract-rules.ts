@@ -25,6 +25,7 @@
 
 import type { CounterexampleRequirement } from '../../state/proofgraph-approval.js';
 import { normalizeClaimStatement } from '../../state/proofgraph-approval.js';
+import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
@@ -54,6 +55,11 @@ export interface NormalizedClaimDeclaration {
   readonly counterexampleRequirement?: CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
+  /**
+   * Specific risk triggers this claim explicitly covers. Only a critical claim
+   * can carry coverage; the relation is validated, never inferred.
+   */
+  readonly coversRiskTriggers?: readonly SpecificRiskTrigger[];
   /** Present only for plan declarations; architecture/contract flows omit it. */
   readonly authoritySectionId?: string;
 }
@@ -114,6 +120,7 @@ const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string,
     claimId: 'claimId',
     structuralSurface: 'structuralSurface',
     mutationProfile: 'mutationProfile',
+    coversRiskTriggers: 'coversRiskTriggers',
     authoritySectionId: 'authoritySectionId',
   },
   declare_contract: {
@@ -123,6 +130,7 @@ const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string,
     claimId: 'statement',
     structuralSurface: 'structuralSurface',
     mutationProfile: 'mutationProfile',
+    coversRiskTriggers: 'coversRiskTriggers',
     authoritySectionId: 'authoritySectionId',
   },
 };
@@ -199,6 +207,37 @@ function checkCriticalContract(
       claim,
       'counterexampleRequirement',
       'a critical claim requires a counterexample requirement; without it the claim can never become PROVEN.',
+    );
+  }
+  return null;
+}
+
+/**
+ * Rule 3b: only a critical claim can cover specific risk triggers, and each
+ * trigger may be declared at most once. A non-critical claim is never
+ * gate-eligible, so its declared coverage could never satisfy the final risk
+ * requirement.
+ */
+function checkRiskTriggerCoverage(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  const covered = claim.coversRiskTriggers;
+  if (covered === undefined) return null;
+  if (!claim.critical) {
+    return invalid(
+      input.source,
+      claim,
+      'coversRiskTriggers',
+      'only a critical claim can cover specific risk triggers; a non-critical claim is never gate-eligible, so its coverage could never satisfy the trigger requirement.',
+    );
+  }
+  if (new Set(covered).size !== covered.length) {
+    return invalid(
+      input.source,
+      claim,
+      'coversRiskTriggers',
+      'duplicate risk triggers are not allowed; declare each covered trigger at most once.',
     );
   }
   return null;
@@ -570,6 +609,7 @@ export function claimViolations(
 ): Extract<ClaimContractResult, { kind: 'invalid' }>[] {
   return [
     checkCriticalContract(input, claim),
+    checkRiskTriggerCoverage(input, claim),
     checkCheckReferences(input, claim),
     checkRegistries(input, claim),
     checkMutationSatisfiability(input, claim),

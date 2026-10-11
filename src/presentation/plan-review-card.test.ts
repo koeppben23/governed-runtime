@@ -143,6 +143,7 @@ describe('buildPlanReviewCard', () => {
             },
             structuralSurface: 'src/payments/validate.ts',
             mutationProfile: 'boundary',
+            coversRiskTriggers: ['state_integrity'],
           },
         ],
       },
@@ -153,6 +154,7 @@ describe('buildPlanReviewCard', () => {
     expect(card).toContain('providerId: vitest');
     expect(card).toContain('localId: rejects-invalid-payment');
     expect(card).toContain('Structural surface: src/payments/validate.ts');
+    expect(card).toContain('Risk triggers covered: state_integrity');
   });
 
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
