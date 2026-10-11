@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   certificate. The final gate enforces the certificate-bound relation, never the
   persisted projection, so a stale or tampered projection cannot widen the
   approved contract; a PROVEN claim only counts when its provenance binds the
-  current plan certificate. A detected trigger without coverage blocks final
+  current plan certificate and it appears exactly once in the projection. A
+  detected trigger without coverage blocks final
   evidence approval with `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`. `ceremony_only`
   neither requires nor accepts coverage.
 

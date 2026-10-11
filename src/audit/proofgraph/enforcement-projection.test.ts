@@ -199,6 +199,16 @@ describe('computeProofGraphEnforcement', () => {
     expect(result.decisionKind).toBe('evaluation_unavailable');
   });
 
+  it('evaluation_unavailable when an authorized claim appears more than once', () => {
+    const result = computeProofGraphEnforcement({
+      projection: summary([provenClaim(), provenClaim({ verificationState: 'UNPROVEN' })])
+        .projection,
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
+    });
+    expect(result.decisionKind).toBe('evaluation_unavailable');
+  });
+
   it('certificate_invalid reason when the approval certificate is invalid', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim()]).projection,

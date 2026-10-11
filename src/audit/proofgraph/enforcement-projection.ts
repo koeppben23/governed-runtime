@@ -207,6 +207,29 @@ function uncoveredRiskTriggers(
   return (input.riskTriggers ?? []).filter((trigger) => !covered.has(trigger));
 }
 
+/**
+ * Authorized claim ids without exactly one gate-eligible projection claim bound
+ * to the expected certificate. A duplicate id is an inconsistent projection and
+ * counts as missing (fail-closed), matching the coverage set-identity rule.
+ */
+function missingAuthorizedClaimIds(
+  input: ComputeEnforcementInput,
+  eligibleClaims: readonly ProofClaim[],
+): readonly string[] {
+  const occurrences = new Map<string, number>();
+  const eligibleById = new Map<string, ProofClaim>();
+  for (const claim of eligibleClaims) {
+    occurrences.set(claim.claimId, (occurrences.get(claim.claimId) ?? 0) + 1);
+    eligibleById.set(claim.claimId, claim);
+  }
+  return (input.authorizedCriticalClaimIds ?? []).filter((id) => {
+    const claim = eligibleById.get(id);
+    if (claim === undefined || occurrences.get(id) !== 1) return true;
+    const expected = input.authorizedClaimBindings?.get(id);
+    return expected === undefined || !matchesAuthorizedBinding(claim, expected);
+  });
+}
+
 function evaluatePreconditions(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
@@ -223,15 +246,7 @@ function evaluatePreconditions(
       uncoveredTriggers: [],
     };
   }
-  const eligibleById = new Map(eligibleClaims.map((c) => [c.claimId, c] as const));
-  // An authorized claim counts as evaluated only when the projection carries a
-  // gate-eligible claim whose provenance binds exactly the current certificate.
-  const missingIds = (input.authorizedCriticalClaimIds ?? []).filter((id) => {
-    const claim = eligibleById.get(id);
-    if (claim === undefined) return true;
-    const expected = input.authorizedClaimBindings?.get(id);
-    return expected === undefined || !matchesAuthorizedBinding(claim, expected);
-  });
+  const missingIds = missingAuthorizedClaimIds(input, eligibleClaims);
   if (missingIds.length > 0) {
     return {
       claims: [],
