@@ -20,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ProofGraph soundness hardening.** One execution or check can no longer
+  satisfy both the positive and the adversarial evidence obligation of a claim:
+  declarations that reuse a check are rejected
+  (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`), a materialized contract never binds
+  the same validation attempt to both evidence roles, and a persisted contract
+  that reuses a check (even from distinct attempts) or an execution can no
+  longer reach `PROVEN` (`PROOFGRAPH_EVIDENCE_ROLE_COLLISION`). Persisted
+  contract coverage also rejects undeclared claims with any governing provenance
+  (`approved_ticket`, `plan_adr_section`, `canonical_authority`). Final evidence approval now also fails
+  closed with `PROOFGRAPH_RISK_ASSESSMENT_STALE` when an implementation revision
+  has no current risk assessment, persisted contract coverage requires exact
+  claim-set identity, and failure evidence bound to a superseded revision is
+  historical (`STALE`) instead of blocking the current revision.
+
 - **Reviewer-capability smoke isolation.** The real-host probe uses private
   OpenCode directories and the installed locked dependency graph, retains startup
   failures and proves execution of the allowed observation-tool fixture. Tarball

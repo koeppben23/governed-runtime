@@ -32,6 +32,7 @@ import {
   AGGREGATE_FORMATS_BY_PROVIDER,
 } from '../../providers/registry.js';
 import { hasProvingMutationProvider } from './mutation-provider.js';
+import { declaredEvidenceRolesCollide } from '../../audit/proofgraph/evidence-role-independence.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
 export type ClaimContractSource = 'plan' | 'declare_contract';
@@ -227,6 +228,20 @@ function checkCheckReferences(
     );
   }
   return null;
+}
+
+/** Rule 4b: one check cannot serve as both the positive and the adversarial evidence. */
+function checkEvidenceRoleCollision(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (!declaredEvidenceRolesCollide(claim)) return null;
+  return invalid(
+    input.source,
+    claim,
+    'counterexampleRequirement',
+    `the positive check and the counterexample check must be different executions; '${claim.positiveCheckId}' cannot serve both evidence roles`,
+  );
 }
 
 /** Rule 5: an unregistered surface or profile yields permanently missing evidence. */
@@ -563,6 +578,9 @@ export function claimViolations(
     checkCounterexampleScope(input, claim),
     checkCounterexampleSatisfiability(input, claim),
     checkSpecificityBinding(input, claim),
+    // Last: a more specific rule above (inactive check, unsupported capability,
+    // scope mismatch) names the actionable defect when it already applies.
+    checkEvidenceRoleCollision(input, claim),
   ].filter(
     (violation): violation is Extract<ClaimContractResult, { kind: 'invalid' }> =>
       violation !== null,

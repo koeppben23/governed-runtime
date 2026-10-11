@@ -109,7 +109,18 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
         reviewEvidenceDigest: 'e'.repeat(64),
       },
     },
-    implementationRiskAssessment: null,
+    implementationRiskAssessment: {
+      computedMinimumTaskClass: 'STANDARD',
+      effectiveTaskClass: 'STANDARD',
+      declaredTaskClass: null,
+      declarationKind: 'absent' as const,
+      ticketDigest: null,
+      touchedSurfaces: ['src/foo.ts'],
+      assessedFrom: 'implementation_changed_files',
+      assessedFileCount: 1,
+      implementationDigest: 'abc123',
+      riskTriggers: ['ceremony_only'],
+    },
   } as unknown as SessionState;
 }
 

@@ -281,4 +281,14 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       'Stale evidence must be refreshed before it can satisfy a claim',
     ],
   },
+  {
+    code: 'PROOFGRAPH_EVIDENCE_ROLE_COLLISION',
+    category: 'precondition',
+    messageTemplate:
+      "Claim '{claimId}' cannot be proven because the same execution is bound as both its positive evidence and its counterexample; one execution cannot satisfy both evidence roles.",
+    recoverySteps: [
+      'Declare a distinct counterexample check that runs as its own execution',
+      'Re-run the counterexample check so it records an independent validation attempt',
+    ],
+  },
 ];

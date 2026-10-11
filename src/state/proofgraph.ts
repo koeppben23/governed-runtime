@@ -163,6 +163,7 @@ export const AssertionBindingReasonCodeSchema = z.enum([
   'check_only_evidence',
   'provider_mismatch',
   'assertion_mismatch',
+  'evidence_role_collision',
   'aggregate_check_mismatch',
   'aggregate_candidate_mismatch',
   'aggregate_scope_unattested',

@@ -115,7 +115,7 @@ function hasLocalVocabularyMap(content: string): boolean {
 // ─── Invariant B: binding diagnostic copy SSOT ────────────────────────────────
 
 /**
- * The ten AssertionBindingReasonCode literal values.
+ * The eleven AssertionBindingReasonCode literal values.
  * Any module that references one as a literal key in a copy/prose context
  * outside the authority is a parallel map.
  */
@@ -125,6 +125,7 @@ const BINDING_CODE_LITERALS = [
   'check_only_evidence',
   'provider_mismatch',
   'assertion_mismatch',
+  'evidence_role_collision',
   'aggregate_check_mismatch',
   'aggregate_candidate_mismatch',
   'aggregate_scope_unattested',

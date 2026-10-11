@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { executeReviewDecision } from './review-decision.js';
-import { makeState, IMPL_EVIDENCE, PLAN_RECORD, FIXED_TIME } from '../fixtures.js';
+import {
+  makeState,
+  CURRENT_IMPL_RISK_ASSESSMENT,
+  IMPL_EVIDENCE,
+  PLAN_RECORD,
+  FIXED_TIME,
+} from '../fixtures.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
 import { assuranceChain } from './review-decision-test-helpers.js';
@@ -153,6 +159,7 @@ describe('review-decision rail', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implementationRework: { rejectedDigest: IMPL_EVIDENCE.digest, exhausted: true },
       });
       const result = executeReviewDecision(
@@ -174,6 +181,7 @@ describe('review-decision rail', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implementationRework: { rejectedDigest: IMPL_EVIDENCE.digest, exhausted: true },
         implReview: {
           iteration: 1,

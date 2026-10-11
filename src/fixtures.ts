@@ -556,6 +556,28 @@ export const IMPL_EVIDENCE: ImplEvidence = {
   executedAt: FIXED_TIME,
 };
 
+/**
+ * Digest-bound risk assessment for the canonical IMPL_EVIDENCE revision.
+ *
+ * `/implement` always records an implementation risk assessment; final evidence
+ * approval requires one bound to the current implementation digest. Ceremony-only
+ * triggers keep the canonical fixture free of a specific critical-claim demand.
+ */
+export const CURRENT_IMPL_RISK_ASSESSMENT: NonNullable<
+  SessionState['implementationRiskAssessment']
+> = {
+  computedMinimumTaskClass: 'STANDARD',
+  effectiveTaskClass: 'STANDARD',
+  declaredTaskClass: null,
+  declarationKind: 'absent',
+  ticketDigest: null,
+  touchedSurfaces: [...IMPL_EVIDENCE.changedFiles],
+  riskTriggers: ['ceremony_only'],
+  assessedFrom: 'implementation_changed_files',
+  assessedFileCount: IMPL_EVIDENCE.changedFiles.length,
+  implementationDigest: IMPL_EVIDENCE.digest,
+};
+
 /** Converged implementation review bound to the current implementation digest. */
 export const APPROVED_IMPL_REVIEW: ImplReviewResult = {
   iteration: 1,
@@ -744,6 +766,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implValidation: VALIDATION_PASSED,
         verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,
@@ -758,6 +781,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implValidation: VALIDATION_PASSED,
         verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,
