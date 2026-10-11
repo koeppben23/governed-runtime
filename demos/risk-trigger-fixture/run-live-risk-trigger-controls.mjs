@@ -116,13 +116,17 @@ export function assertFullEvidence(state, covered) {
   ) {
     throw new Error('the critical fact lacks its current plan certificate binding');
   }
+  // Freshness is required, not merely "not stale": the projection must carry a
+  // bound digest equal to the current implementation revision.
   if (
     !projected ||
     projected.verificationState !== 'PROVEN' ||
-    projected.freshness?.stale === true
+    projected.freshness === undefined ||
+    projected.freshness.stale !== false ||
+    projected.freshness.boundDigest !== state.implementation?.digest
   ) {
     throw new Error(
-      `expected a fresh PROVEN claim, observed ${String(projected?.verificationState)}`,
+      `expected a fresh PROVEN claim bound to the current implementation, observed ${String(projected?.verificationState)}`,
     );
   }
   const attempts = (state.validationAttempts ?? []).filter((a) => a.scope === 'implementation');
@@ -139,11 +143,28 @@ export function assertFullEvidence(state, covered) {
   if (build.attemptId === test.attemptId) {
     throw new Error('positive and adversarial evidence must come from distinct attempts');
   }
-  const adversarial = build.result.assertionExtraction?.assertions?.find(
-    (a) => a.assertion?.providerId === 'junit' && a.assertion.localId === ADVERSARIAL_ASSERTION,
-  );
-  if (adversarial?.status !== 'passed') {
+  const assertionOf = (attempt, localId) =>
+    attempt.result.assertionExtraction?.assertions?.find(
+      (a) => a.assertion?.providerId === 'junit' && a.assertion.localId === localId,
+    );
+  // Both explicitly bound assertions must be observed as passed: the positive
+  // assertion and the distinct adversarial falsification probe.
+  if (assertionOf(test, POSITIVE_ASSERTION)?.status !== 'passed') {
+    throw new Error('the bound positive assertion must be passed and fresh');
+  }
+  if (assertionOf(build, ADVERSARIAL_ASSERTION)?.status !== 'passed') {
     throw new Error('the bound adversarial assertion must be passed and fresh');
+  }
+  // The checked attempts must actually be referenced by the claim evidence, so
+  // PROVEN is bound to these executions rather than merely asserted.
+  const boundAttemptIds = [
+    ...(projected.evidenceRefs ?? []),
+    ...(projected.counterexampleRefs ?? []),
+  ]
+    .filter((ref) => ref?.kind === 'validation_attempt')
+    .map((ref) => ref.attemptId);
+  if (!boundAttemptIds.includes(test.attemptId) || !boundAttemptIds.includes(build.attemptId)) {
+    throw new Error('the checked attempt ids are not referenced by the claim evidence');
   }
   return { claimId, buildAttemptId: build.attemptId, testAttemptId: test.attemptId };
 }

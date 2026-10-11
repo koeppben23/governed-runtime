@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ADVERSARIAL_ASSERTION,
+  POSITIVE_ASSERTION,
   assertFullEvidence,
   assertInstalledBuildIdentity,
   assertNoCompletionPackage,
@@ -38,6 +39,7 @@ function state(covered: boolean) {
   };
   return {
     phase: 'EVIDENCE_REVIEW',
+    implementation: { digest: 'impl-digest' },
     implementationRiskAssessment: { riskTriggers: ['state_integrity'] },
     plan: {
       current: { digest: 'plan-digest' },
@@ -46,7 +48,15 @@ function state(covered: boolean) {
     },
     proofContract: { claims: [fact] },
     proofGraph: {
-      claims: [{ ...fact, verificationState: 'PROVEN', freshness: { stale: false } }],
+      claims: [
+        {
+          ...fact,
+          verificationState: 'PROVEN',
+          freshness: { boundDigest: 'impl-digest', stale: false },
+          evidenceRefs: [{ kind: 'validation_attempt', attemptId: 'test-attempt' }],
+          counterexampleRefs: [{ kind: 'validation_attempt', attemptId: 'build-attempt' }],
+        },
+      ],
     },
     validationAttempts: [
       {
@@ -69,7 +79,19 @@ function state(covered: boolean) {
       {
         scope: 'implementation',
         attemptId: 'test-attempt',
-        result: { checkId: 'test', passed: true, exitCode: 0 },
+        result: {
+          checkId: 'test',
+          passed: true,
+          exitCode: 0,
+          assertionExtraction: {
+            assertions: [
+              {
+                assertion: { providerId: 'junit', localId: POSITIVE_ASSERTION },
+                status: 'passed',
+              },
+            ],
+          },
+        },
       },
     ],
   };
@@ -149,6 +171,37 @@ describe('risk-trigger control oracles', () => {
       'skipped';
     expect(() => assertFullEvidence(skippedAdversarial, false)).toThrow(
       /adversarial assertion must be passed/,
+    );
+
+    const skippedPositive = state(false);
+    skippedPositive.validationAttempts[1]!.result.assertionExtraction!.assertions[0]!.status =
+      'skipped';
+    expect(() => assertFullEvidence(skippedPositive, false)).toThrow(
+      /positive assertion must be passed/,
+    );
+
+    const noPositive = state(false);
+    noPositive.validationAttempts[1]!.result.assertionExtraction!.assertions = [];
+    expect(() => assertFullEvidence(noPositive, false)).toThrow(
+      /positive assertion must be passed/,
+    );
+
+    const noFreshness = state(false);
+    noFreshness.proofGraph.claims[0]!.freshness = undefined as never;
+    expect(() => assertFullEvidence(noFreshness, false)).toThrow(
+      /bound to the current implementation/,
+    );
+
+    const wrongDigest = state(false);
+    wrongDigest.proofGraph.claims[0]!.freshness!.boundDigest = 'other-digest';
+    expect(() => assertFullEvidence(wrongDigest, false)).toThrow(
+      /bound to the current implementation/,
+    );
+
+    const unboundAttempt = state(false);
+    unboundAttempt.proofGraph.claims[0]!.evidenceRefs = [];
+    expect(() => assertFullEvidence(unboundAttempt, false)).toThrow(
+      /not referenced by the claim evidence/,
     );
   });
 
