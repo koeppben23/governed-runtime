@@ -33,6 +33,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Live-demo transcript completeness.** Host exports are captured directly to
+  files and validated for JSON structure and session/worktree/parent identity
+  before their hashes are registered. Architecture negative-probe recovery now
+  creates a ticket-aligned ADR under full independent review and ordinary approval.
+
+- **Live-matrix flow classification.** The runner now treats corrected typed
+  denials (`REVISED_PLAN_REQUIRED`, and the pre-mutation `CONTINUE_AMBIGUOUS`
+  admissibility signal that demands the explicit flow choice the runner already
+  performs next) as recovered, records a transport-level block under
+  `terminalBlocks` when the session already reached the flow's persisted terminal
+  phase, and governs the architecture negative probe in its own pristine seed
+  copy so the development flow's fix cannot falsify the probe ADR's baseline.
+  Package verification remains mandatory, and any block before the terminal phase
+  still stops the flow.
+
 - **ProofGraph soundness hardening.** One execution or check can no longer
   satisfy both the positive and the adversarial evidence obligation of a claim:
   declarations that reuse a check are rejected

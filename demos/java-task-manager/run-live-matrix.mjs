@@ -15,7 +15,9 @@
  *   accepted;
  * - a flow stops at the first unexpected host failure, tool-level block,
  *   missing gate, or unexpected terminal phase; it never force-advances past a
- *   gate;
+ *   gate. A transport-level block observed after the session already reached the
+ *   flow's persisted terminal phase is recorded (`terminalBlocks`), not fatal:
+ *   the terminal phase plus package verification stay the outcome authority;
  * - the architecture negative probe uses a controlled denial step: the exact
  *   expected reason code must be observed and nothing may be persisted before
  *   the allowed recovery continues;
@@ -44,6 +46,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exportHostTranscript } from './live-host-export.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -56,6 +59,9 @@ export const DEFAULT_FLOWS = [
   'reduced-off',
   'architecture-negative',
 ];
+
+/** Dedicated, untouched seed copy the architecture negative probe governs. */
+export const NEGATIVE_PROBE_WORKSPACE = 'java-task-manager-architecture-negative';
 
 /**
  * Verifier flow identity per matrix scenario. The reduced-ceremony scenarios
@@ -87,7 +93,10 @@ export function parseArgs(argv) {
     if (flag === '--root') options.root = next();
     else if (flag === '--model') options.model = next();
     else if (flag === '--tarball') options.tarball = next();
-    else if (flag === '--flows') options.flows = next().split(',').map((flow) => flow.trim());
+    else if (flag === '--flows')
+      options.flows = next()
+        .split(',')
+        .map((flow) => flow.trim());
     else if (flag === '--check') options.check = true;
     else throw new Error(`unknown option: ${flag}`);
   }
@@ -195,11 +204,14 @@ function run(command, args, options = {}) {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
-    }, options.timeoutMs ?? 30 * 60_000);
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
+      },
+      options.timeoutMs ?? 30 * 60_000,
+    );
     child.stdout?.on('data', (chunk) => (stdout += chunk));
     child.stderr?.on('data', (chunk) => (stderr += chunk));
     child.on('close', (code) => {
@@ -257,6 +269,13 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   // EMPTY_ADR_TITLE, and the negative probe continued after EMPTY_ADR_TEXT).
   'EMPTY_ADR_TITLE',
   'EMPTY_ADR_TEXT',
+  // Run 13: a plan revision submission omitted planText; the author corrected
+  // the call in the same turn and the plan was accepted.
+  'REVISED_PLAN_REQUIRED',
+  // Run 14: /start's model turn probed /continue while several flows were
+  // available. The admissibility denial happens before any state mutation and
+  // demands an explicit flow choice — exactly the runner's next step.
+  'CONTINUE_AMBIGUOUS',
 ]);
 
 /**
@@ -336,7 +355,10 @@ export function assertSessionBinding(state, hostSessionId, workspace) {
     throw new Error(`persisted host binding '${String(boundHost)}' != observed '${hostSessionId}'`);
   }
   const boundWorktree = state.binding?.worktree;
-  if (typeof boundWorktree !== 'string' || canonicalPath(boundWorktree) !== canonicalPath(workspace)) {
+  if (
+    typeof boundWorktree !== 'string' ||
+    canonicalPath(boundWorktree) !== canonicalPath(workspace)
+  ) {
     throw new Error(
       `persisted worktree binding '${String(boundWorktree)}' != delivered workspace '${workspace}'`,
     );
@@ -423,22 +445,18 @@ export class Runner {
     fs.closeSync(stderrFd);
     const output = fs.readFileSync(stdoutPath, 'utf8');
     const sessionIds = [
-      ...new Set(eventsOf(output).map((event) => event.sessionID).filter(Boolean)),
+      ...new Set(
+        eventsOf(output)
+          .map((event) => event.sessionID)
+          .filter(Boolean),
+      ),
     ];
     this.log(`${label}: exit=${String(result.code)} time=${Math.round(result.durationMs / 1000)}s`);
     return { ...result, stdout: output, sessionIds };
   }
 
   async turn(session, label, prompt, options = {}) {
-    const args = [
-      'run',
-      '--dir',
-      session.workspace,
-      '-m',
-      this.options.model,
-      '--format',
-      'json',
-    ];
+    const args = ['run', '--dir', session.workspace, '-m', this.options.model, '--format', 'json'];
     if (session.sessionId) args.push('--session', session.sessionId);
     if (options.command) args.push('--command', options.command);
     if (prompt) args.push(prompt);
@@ -453,17 +471,9 @@ export class Runner {
     if (options.expectedDenial) {
       assertExpectedDenial(result.stdout, options.expectedDenial);
     } else {
-      const unexpected = unexpectedDenialCodes(result.stdout);
-      if (unexpected.length > 0) {
-        throw new Error(
-          `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
-        );
-      }
       const recovered = [
         ...new Set([
-          ...toolDenialCodes(result.stdout).filter((code) =>
-            RECOVERABLE_DENIAL_CODES.has(code),
-          ),
+          ...toolDenialCodes(result.stdout).filter((code) => RECOVERABLE_DENIAL_CODES.has(code)),
           ...captureRetryCodes(result.stdout),
         ]),
       ];
@@ -472,8 +482,41 @@ export class Runner {
         session.recoveredDenials.push({ step: label, codes: recovered });
         this.log(`${label}: recovered typed denial(s) [${recovered.join(', ')}]`);
       }
+      const unexpected = unexpectedDenialCodes(result.stdout);
+      if (unexpected.length > 0) {
+        // The persisted terminal phase is FlowGuard's outcome authority. When a
+        // flow already reached that phase (for example: a reviewer capture was
+        // blocked on one obligation and the continuation completed a fresh one),
+        // the transport-level block is recorded — never hidden — instead of
+        // discarding an already-completed flow. Package verification still runs
+        // and fails the flow if the required artifact is absent.
+        if (this.reachedFlowTerminal(session)) {
+          session.terminalBlocks = session.terminalBlocks ?? [];
+          session.terminalBlocks.push({ step: label, codes: unexpected });
+          this.log(
+            `${label}: terminal block(s) recorded after ${session.terminal} [${unexpected.join(', ')}]`,
+          );
+        } else {
+          throw new Error(
+            `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
+          );
+        }
+      }
     }
     return result;
+  }
+
+  /**
+   * Whether the session already reached its flow's persisted terminal phase.
+   * A missing or unreadable state is never treated as terminal.
+   */
+  reachedFlowTerminal(session) {
+    if (typeof session.terminal !== 'string') return false;
+    try {
+      return this.requireBoundState(session).state.phase === session.terminal;
+    } catch {
+      return false;
+    }
   }
 
   async approve(session, label, expectedPhase) {
@@ -511,18 +554,15 @@ export class Runner {
     return JSON.parse(fs.readFileSync(buildInfoPath, 'utf8'));
   }
 
-  async exportTranscript(label, sessionId, workspace) {
-    const result = await run('opencode', ['export', sessionId], {
-      cwd: workspace,
-      env: { OPENCODE_CONFIG_DIR: this.configDir, OPENCODE_DISABLE_AUTOUPDATE: '1' },
-      timeoutMs: 5 * 60_000,
+  async exportTranscript(label, sessionId, workspace, parentSessionId) {
+    const file = await exportHostTranscript({
+      label,
+      sessionId,
+      workspace,
+      parentSessionId,
+      evidenceDir: this.evidenceDir,
+      configDir: this.configDir,
     });
-    if (result.timedOut || result.code !== 0 || result.stdout.trim().length === 0) {
-      throw new Error(`${label}: host transcript export failed for ${sessionId}`);
-    }
-    const file = path.join(this.evidenceDir, `${label}-host-${sessionId}.json`);
-    if (fs.existsSync(file)) throw new Error(`transcript already exists: ${file}`);
-    fs.writeFileSync(file, result.stdout);
     return { sessionId, file: path.relative(this.evidenceDir, file), sha256: sha256(file) };
   }
 
@@ -532,10 +572,12 @@ export class Runner {
     if (targets.parent !== session.sessionId) {
       throw new Error(`${flow}: persisted host binding is not the observed session`);
     }
-    const parent = await this.exportTranscript(flow, targets.parent, session.workspace);
+    const parent = await this.exportTranscript(flow.name, targets.parent, session.workspace);
     const reviewers = [];
     for (const childSessionId of targets.reviewers) {
-      reviewers.push(await this.exportTranscript(flow, childSessionId, session.workspace));
+      reviewers.push(
+        await this.exportTranscript(flow.name, childSessionId, session.workspace, targets.parent),
+      );
     }
     flow.transcripts = { parent, reviewers };
     flow.installedBuild = this.installedBuild(session.workspace);
@@ -579,9 +621,21 @@ async function runDevelopment(runner, session) {
   await runner.approve(session, 'development-06-approve-impl', 'EVIDENCE_REVIEW');
   await runner.turn(session, 'development-07-finish', '/finish');
   await runner.turn(session, 'development-08-export', '/export');
-  const first = runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', 'development');
+  const first = runner.verifyPackage(
+    session,
+    'export',
+    'development',
+    'EXPORT_READY',
+    'development',
+  );
   await runner.turn(session, 'development-09-archive', '/archive');
-  const after = runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', 'development');
+  const after = runner.verifyPackage(
+    session,
+    'export',
+    'development',
+    'EXPORT_READY',
+    'development',
+  );
   if (first.sha256 !== after.sha256) throw new Error('development: export changed after /archive');
   session.packages = [after];
 }
@@ -602,6 +656,11 @@ export async function runFlows(runner) {
   const { workspaces, configDir } = runner;
   const mainWorkspace = path.join(workspaces, 'java-task-manager');
   const reducedRoot = path.join(workspaces, 'reduced-ceremony');
+  // The negative probe reviews against the untouched seed. The development flow
+  // modifies the main workspace, so the probe gets its own pristine copy: a
+  // reviewer comparing a post-fix ADR against the frozen base would otherwise
+  // reject a correct decision.
+  const negativeWorkspace = path.join(workspaces, NEGATIVE_PROBE_WORKSPACE);
 
   const flows = {
     architecture: {
@@ -614,7 +673,11 @@ export async function runFlows(runner) {
           '/architecture Read ADR_TICKET.md and TICKET.md, then create an ADR based on them. Record ProofGraph claims using the architecture claim fields (statement, critical, authoritySectionId, requiredReviewEvidence). If a claim submission is rejected, read the recovery guidance and resubmit corrected claims.',
         );
         await runner.approve(session, 'architecture-03-approve', 'ARCH_REVIEW');
-        await runner.turn(session, 'architecture-04-archive', '/archive redactionMode=none includeRaw=true');
+        await runner.turn(
+          session,
+          'architecture-04-archive',
+          '/archive redactionMode=none includeRaw=true',
+        );
         session.packages = [
           runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE', 'architecture'),
         ];
@@ -630,9 +693,19 @@ export async function runFlows(runner) {
       terminal: 'PEER_REVIEW_COMPLETE',
       run: async (session) => {
         await runner.turn(session, 'peer-review-02-review', '/review branch=feature/add-due-date');
-        await runner.turn(session, 'peer-review-03-archive', '/archive redactionMode=none includeRaw=true');
+        await runner.turn(
+          session,
+          'peer-review-03-archive',
+          '/archive redactionMode=none includeRaw=true',
+        );
         session.packages = [
-          runner.verifyPackage(session, 'archive', 'peer-review', 'PEER_REVIEW_COMPLETE', 'peer-review'),
+          runner.verifyPackage(
+            session,
+            'archive',
+            'peer-review',
+            'PEER_REVIEW_COMPLETE',
+            'peer-review',
+          ),
         ];
       },
     },
@@ -649,7 +722,7 @@ export async function runFlows(runner) {
       run: (session) => runReduced(runner, session, 'reduced-off', 'TICKET_DOCS.md'),
     },
     'architecture-negative': {
-      workspace: mainWorkspace,
+      workspace: negativeWorkspace,
       terminal: 'ARCH_COMPLETE',
       run: async (session) => {
         // Controlled negative step: the exact typed denial must be observed and
@@ -665,12 +738,22 @@ export async function runFlows(runner) {
         await runner.turn(
           session,
           'architecture-negative-03-recovery',
-          'Resubmit the ADR with one schema-valid architecture claim (statement: "the negative probe boundary is typed", critical: true, authoritySectionId: "decision", requiredReviewEvidence: ["architecture boundary probe"]) and complete the independent review normally.',
+          '/architecture Read ADR_TICKET.md and TICKET.md and create a complete ticket-aligned Service-Layer Null-Safety ADR, including the required options, trade-offs, consequences and falsifiable validation path. Submit schema-valid architecture claims about that ADR using statement, critical, authoritySectionId and requiredReviewEvidence. The preceding invalid-claim probe is separate runner evidence, not the ADR subject and not repository evidence for its claims. Complete the full fresh independent review normally; correct substantive blocking findings and stop at the ordinary approval gate. Do not use a governance override.',
         );
         await runner.approve(session, 'architecture-negative-04-approve', 'ARCH_REVIEW');
-        await runner.turn(session, 'architecture-negative-05-archive', '/archive redactionMode=none includeRaw=true');
+        await runner.turn(
+          session,
+          'architecture-negative-05-archive',
+          '/archive redactionMode=none includeRaw=true',
+        );
         session.packages = [
-          runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE', 'architecture-negative'),
+          runner.verifyPackage(
+            session,
+            'archive',
+            'architecture',
+            'ARCH_COMPLETE',
+            'architecture-negative',
+          ),
         ];
       },
     },
@@ -712,7 +795,10 @@ async function main() {
   fs.mkdirSync(evidenceDir, { recursive: true });
   fs.mkdirSync(configDir, { recursive: true });
 
-  const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim();
+  const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: REPO,
+    encoding: 'utf8',
+  }).trim();
   const { tarball, sidecar, builtFromCheckout } = tarballFor(options);
   fs.writeFileSync(
     path.join(evidenceDir, 'metadata.json'),
@@ -733,14 +819,27 @@ async function main() {
     ),
   );
 
-  execFileSync(path.join(REPO, 'run-demo-setup.sh'), ['--install', '--tarball', tarball, workspaces], {
-    cwd: REPO,
-    stdio: 'inherit',
-  });
+  execFileSync(
+    path.join(REPO, 'run-demo-setup.sh'),
+    ['--install', '--tarball', tarball, workspaces],
+    {
+      cwd: REPO,
+      stdio: 'inherit',
+    },
+  );
   // The installer writes allowRawExport=false into the repo config, which
   // restricts the effective policy; the documented raw-auditor flow needs the
   // repo opt-in as well as the isolated global grant.
   enableRawArchiveInRepoConfig(path.join(workspaces, 'java-task-manager'));
+  // Copy the pristine seed for the negative probe before any flow mutates the
+  // main workspace.
+  if (options.flows.includes('architecture-negative')) {
+    fs.cpSync(
+      path.join(workspaces, 'java-task-manager'),
+      path.join(workspaces, NEGATIVE_PROBE_WORKSPACE),
+      { recursive: true },
+    );
+  }
 
   const runner = new Runner(options.root, options, configDir);
   const exitCode = await withRawExportGrant(configDir, async () => {
@@ -751,7 +850,7 @@ async function main() {
       runner.flows.push(record);
       runner.log(`START ${name}`);
       try {
-        const session = { workspace: flow.workspace };
+        const session = { workspace: flow.workspace, terminal: flow.terminal };
         await runner.turn(session, `${name}-01-start`, '/start');
         const installed = runner.installedBuild(flow.workspace);
         record.installedBuild = installed;
@@ -761,11 +860,15 @@ async function main() {
           );
         }
         if (flow.preflight) {
-          execFileSync(path.join(SCRIPT_DIR, 'run-reduced-ceremony-demo-setup.sh'), flow.preflight, {
-            cwd: REPO,
-            stdio: 'inherit',
-            env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
-          });
+          execFileSync(
+            path.join(SCRIPT_DIR, 'run-reduced-ceremony-demo-setup.sh'),
+            flow.preflight,
+            {
+              cwd: REPO,
+              stdio: 'inherit',
+              env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
+            },
+          );
         }
         await flow.run(session);
         const snapshot = runner.requireBoundState(session);
@@ -778,6 +881,7 @@ async function main() {
         await runner.captureProvenance(record, session);
         record.packages = session.packages ?? [];
         record.recoveredDenials = session.recoveredDenials ?? [];
+        record.terminalBlocks = session.terminalBlocks ?? [];
         record.result = 'COMPLETE';
       } catch (error) {
         record.error = String(error);
@@ -788,7 +892,14 @@ async function main() {
         path.join(evidenceDir, 'host-sessions.json'),
         JSON.stringify(
           runner.flows.map(
-            ({ name, hostSessionId, flowguardSessionId, transcripts, packages, installedBuild }) => ({
+            ({
+              name,
+              hostSessionId,
+              flowguardSessionId,
+              transcripts,
+              packages,
+              installedBuild,
+            }) => ({
               flow: name,
               hostSessionId: hostSessionId ?? null,
               flowguardSessionId: flowguardSessionId ?? null,

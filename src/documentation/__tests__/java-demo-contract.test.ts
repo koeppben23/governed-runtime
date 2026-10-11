@@ -170,6 +170,11 @@ describe('Java Task Manager demo contract', () => {
       expect(flows['reduced-on'].workspace).toBe(
         path.join(root, 'workspaces', 'reduced-ceremony', 'reduced-on'),
       );
+      // The negative probe governs its own pristine seed copy, never the
+      // workspace the development flow already modified.
+      expect(flows['architecture-negative'].workspace).toBe(
+        path.join(root, 'workspaces', 'java-task-manager-architecture-negative'),
+      );
       expect(flows['architecture-negative']).toBeDefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
@@ -202,6 +207,108 @@ describe('Java Task Manager demo contract', () => {
       expect(() => verifyChecksumSidecar(tarball, sidecar)).toThrow(/malformed/);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers the negative probe with a ticket-aligned ADR while retaining the denial and gates', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-negative-recovery-'));
+    const calls: Array<{ label: string; prompt?: string; options?: { expectedDenial?: string } }> =
+      [];
+    try {
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.turn = async (_session, label, prompt, options = {}) => {
+        calls.push({ label, prompt, options });
+        return { code: 0, stdout: '', stderr: '', timedOut: false, durationMs: 0, sessionIds: [] };
+      };
+      runner.requireBoundState = () => ({ state: { architecture: null }, sessionDir: root });
+      runner.approve = async (_session, label, phase) => {
+        expect(phase).toBe('ARCH_REVIEW');
+        calls.push({ label });
+      };
+      runner.verifyPackage = () => ({
+        kind: 'archive',
+        file: 'archive.tar.gz',
+        sha256: 'a'.repeat(64),
+      });
+      const flow = (await runFlows(runner))['architecture-negative'];
+      await flow.run({ workspace: flow.workspace });
+      expect(calls.map((call) => call.label)).toEqual([
+        'architecture-negative-02-probe',
+        'architecture-negative-03-recovery',
+        'architecture-negative-04-approve',
+        'architecture-negative-05-archive',
+      ]);
+      expect(calls[0]!.options?.expectedDenial).toBe('ARCHITECTURE_CLAIM_INVALID');
+      expect(calls[0]!.prompt).toContain('"claimScope":"specific_behavior"');
+      expect(calls[1]!.prompt).toContain('ADR_TICKET.md and TICKET.md');
+      expect(calls[1]!.prompt).toContain('Service-Layer Null-Safety');
+      expect(calls[1]!.prompt).toContain(
+        'options, trade-offs, consequences and falsifiable validation path',
+      );
+      expect(calls[1]!.prompt).toContain('not the ADR subject and not repository evidence');
+      expect(calls[1]!.prompt).toContain('full fresh independent review');
+      expect(calls[1]!.prompt).toContain('Do not use a governance override');
+      calls.length = 0;
+      runner.requireBoundState = () => ({ state: { architecture: {} }, sessionDir: root });
+      await expect(flow.run({ workspace: flow.workspace })).rejects.toThrow(
+        /probe declaration was persisted/,
+      );
+      expect(calls.map((call) => call.label)).toEqual(['architecture-negative-02-probe']);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('records a terminal block without discarding a flow that already completed', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-terminal-block-'));
+    const terminalLine = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        state: {
+          output: JSON.stringify({ error: true, code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
+        },
+      },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${terminalLine}\n`,
+      });
+
+      // The session already reached its terminal phase: record, do not stop.
+      runner.requireBoundState = () => ({
+        state: { phase: 'PEER_REVIEW_COMPLETE' },
+        sessionDir: root,
+      });
+      const completed: {
+        workspace: string;
+        terminal: string;
+        terminalBlocks?: Array<{ step: string; codes: string[] }>;
+      } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
+      await expect(runner.turn(completed, 'peer-review-02-review', 'x')).resolves.toBeDefined();
+      expect(completed.terminalBlocks).toEqual([
+        { step: 'peer-review-02-review', codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'] },
+      ]);
+
+      // Any other phase keeps the fail-closed stop.
+      runner.requireBoundState = () => ({ state: { phase: 'PEER_REVIEW' }, sessionDir: root });
+      const unfinished: {
+        workspace: string;
+        terminal: string;
+        terminalBlocks?: Array<{ step: string; codes: string[] }>;
+      } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
+      await expect(runner.turn(unfinished, 'peer-review-02-review', 'x')).rejects.toThrow(
+        /unexpected tool-level block/,
+      );
+      expect(unfinished.terminalBlocks).toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
     }
   });
 
@@ -239,6 +346,10 @@ describe('Java Task Manager demo contract', () => {
       // Run 11: typed input validation recovered from in-session.
       toolLine('EMPTY_ADR_TITLE'),
       toolLine('EMPTY_ADR_TEXT'),
+      // Run 13: a plan revision omitted planText and was corrected in-session.
+      toolLine('REVISED_PLAN_REQUIRED'),
+      // Run 14: /continue cannot choose between flows; the explicit step does.
+      toolLine('CONTINUE_AMBIGUOUS'),
     ].join('\n');
     expect(unexpectedDenialCodes(recoverable)).toEqual([]);
     const mixed = `${recoverable}\n${toolLine('ARCHIVE_FAILED')}`;
