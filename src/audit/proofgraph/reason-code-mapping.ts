@@ -29,7 +29,8 @@ export type EnforcementReasonCode =
   | 'provider_mismatch'
   | 'assertion_mismatch'
   | 'check_mismatch'
-  | 'check_only_evidence';
+  | 'check_only_evidence'
+  | 'evidence_role_collision';
 
 /** Maps enforcement reason codes to registry BlockedReason codes. */
 export function mapEnforcementReasonToRegistryCode(reasonCode: EnforcementReasonCode): string {
@@ -57,8 +58,8 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   assertion_mismatch: 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH',
   check_mismatch: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
   check_only_evidence: 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE',
+  evidence_role_collision: 'PROOFGRAPH_EVIDENCE_ROLE_COLLISION',
 };
-
 /** Assertion binding reason codes emitted by the binding projection. */
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
 export type { AssertionBindingReasonCode };
@@ -71,6 +72,8 @@ export function mapBindingReasonToRegistryCode(reasonCode: AssertionBindingReaso
       return 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
     case 'check_only_evidence':
       return 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE';
+    case 'evidence_role_collision':
+      return 'PROOFGRAPH_EVIDENCE_ROLE_COLLISION';
     case 'provider_mismatch':
       return 'PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH';
     case 'assertion_mismatch':

@@ -3,6 +3,7 @@ import { executeReviewDecision } from './review-decision.js';
 import {
   makeState,
   ARCHITECTURE_DECISION,
+  CURRENT_IMPL_RISK_ASSESSMENT,
   IMPL_EVIDENCE,
   PLAN_RECORD,
   FIXED_TIME,
@@ -480,6 +481,7 @@ describe('review-decision lifecycle boundaries', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated blocks best_effort actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
@@ -508,6 +510,7 @@ describe('review-decision lifecycle boundaries', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified blocks claim_validated actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
@@ -536,6 +539,7 @@ describe('review-decision lifecycle boundaries', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated allows claim_validated actor (>= threshold)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
@@ -631,6 +635,10 @@ describe('review-decision lifecycle boundaries', () => {
     it('allows final approval after a fenced unknown-outcome resolution and fresh review evidence', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: { ...IMPL_EVIDENCE, executedAt: '2026-02-01T00:00:00.000Z' },
+        implementationRiskAssessment: {
+          ...CURRENT_IMPL_RISK_ASSESSMENT,
+          touchedSurfaces: [...IMPL_EVIDENCE.changedFiles],
+        },
         implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
@@ -678,6 +686,7 @@ describe('review-decision lifecycle boundaries', () => {
     it('does not block final approval for a historical episode bound stale by a later implementation', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
@@ -713,6 +722,7 @@ describe('review-decision lifecycle boundaries', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
@@ -738,6 +748,7 @@ describe('review-decision lifecycle boundaries', () => {
     it('P34: minimumActorAssuranceForApproval absent → no assurance check (else-if gate)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
@@ -1209,6 +1220,7 @@ describe('review-decision lifecycle boundaries', () => {
         plan: { ...PLAN_RECORD, reviewCompletion: 'pending' },
         selfReview: CONVERGED_SELF_REVIEW,
         implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
         implReview: {
           iteration: 1,
           reviewCycle: 1,

@@ -3,6 +3,7 @@ import { executeReviewDecision } from './review-decision.js';
 import {
   makeState,
   ARCHITECTURE_DECISION,
+  CURRENT_IMPL_RISK_ASSESSMENT,
   IMPL_EVIDENCE,
   PLAN_RECORD,
   FIXED_TIME,
@@ -823,6 +824,7 @@ describe('review-decision rail', () => {
       ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,

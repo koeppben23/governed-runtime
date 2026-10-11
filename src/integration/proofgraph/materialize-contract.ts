@@ -200,6 +200,16 @@ export async function materializeApprovedPlanContractResult(
       attempts,
     );
     if (cxGap) coverage.push(cxGap);
+    // Positive and adversarial evidence must be independent executions. An
+    // attempt that serves both roles is recorded as a gap and never bound as
+    // adversarial evidence; the evaluator fails the claim closed either way.
+    const positiveAttemptIds = new Set(expectedAttempts.map((attempt) => attempt.attemptId));
+    const adversarialAttempts = counterexampleAttempts.filter(
+      (attempt) => !positiveAttemptIds.has(attempt.attemptId),
+    );
+    if (adversarialAttempts.length !== counterexampleAttempts.length) {
+      coverage.push({ claimId: declaration.claimId, cause: 'evidence_role_collision' });
+    }
     return {
       claimId: declaration.claimId,
       statement: declaration.statement,
@@ -218,7 +228,7 @@ export async function materializeApprovedPlanContractResult(
         },
       },
       evidenceRefs: evidenceRefs(expectedAttempts, declaration, mutationAttempt),
-      counterexampleRefs: counterexampleAttempts.map((attempt) => ({
+      counterexampleRefs: adversarialAttempts.map((attempt) => ({
         kind: 'validation_attempt' as const,
         attemptId: attempt.attemptId,
       })),

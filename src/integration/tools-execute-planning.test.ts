@@ -300,7 +300,7 @@ describe('plan', () => {
       const state = await readState(sessionDir);
       await writeState(sessionDir, {
         ...state!,
-        activeChecks: ['test'],
+        activeChecks: ['test', 'security'],
         verificationCandidates: [
           {
             assertionCapability: 'structured',
@@ -310,6 +310,22 @@ describe('plan', () => {
             source: 'package.json:scripts.test',
             confidence: 'high',
             reason: 'repo test script',
+            assertionReport: {
+              collection: 'snapshot_diff',
+              transport: 'file',
+              format: 'junit_xml',
+              providerId: 'junit',
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+          },
+          {
+            assertionCapability: 'structured',
+            candidateId: 'vc_security_junit',
+            kind: 'security',
+            command: 'npm test -- --security',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'independent adversarial script',
             assertionReport: {
               collection: 'snapshot_diff',
               transport: 'file',
@@ -335,7 +351,7 @@ describe('plan', () => {
               authoritySectionId: 'step-1',
               counterexampleRequirement: {
                 kind: 'assertion',
-                checkId: 'test',
+                checkId: 'security',
                 assertion: {
                   providerId: 'junit',
                   localId: 'TaskControllerTest#update_taskNotFound_returns404',

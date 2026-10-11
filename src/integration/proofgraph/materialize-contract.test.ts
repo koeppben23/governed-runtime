@@ -208,6 +208,52 @@ describe('materializeApprovedPlanContract', () => {
     });
   });
 
+  it('records a role collision and keeps the shared attempt out of adversarial refs', async () => {
+    const state = stateWithClaims();
+    const declarations = state.plan!.claimDeclarations!;
+    const collidingDeclaration = {
+      ...declarations.claims[0]!,
+      expectedCheckId: 'security',
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'security',
+        assertion: { providerId: 'junit' as const, localId: 'some-id' },
+      },
+    };
+    const claimDeclarations = {
+      flow: 'plan' as const,
+      version: 'v2' as const,
+      claims: [collidingDeclaration],
+    };
+    const collidingState = {
+      ...state,
+      plan: {
+        ...state.plan!,
+        claimDeclarations,
+        approvalCertificate: {
+          ...state.plan!.approvalCertificate!,
+          claimDeclarationsDigest: hashText(canonicalJsonStringify(claimDeclarations)),
+        },
+      },
+      validationAttempts: state.validationAttempts.map((attempt) => ({
+        ...attempt,
+        result: { ...attempt.result, checkId: 'security' },
+      })),
+    };
+
+    const materialized = await materializeApprovedPlanContractResult(collidingState, process.cwd());
+
+    expect(materialized.coverage).toContainEqual({
+      claimId: CLAIM_ID,
+      cause: 'evidence_role_collision',
+    });
+    expect(materialized.contract.claims[0]!.evidenceRefs).toContainEqual({
+      kind: 'validation_attempt',
+      attemptId: ATTEMPT_ID,
+    });
+    expect(materialized.contract.claims[0]!.counterexampleRefs).toEqual([]);
+  });
+
   it('retains a claim with required executed-test coverage when its expected check is absent', async () => {
     const state = stateWithClaims();
     const contract = await materializeApprovedPlanContract(

@@ -3,9 +3,10 @@
  * @description End-to-end pure vertical: contract + validation ledger -> summary (#762).
  */
 import { describe, it, expect } from 'vitest';
-import { summarizeProofGraph } from './summary.js';
+import { summarizeProofGraph, summarizePersistedProofGraph } from './summary.js';
 import { makeState } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
+import type { ProofClaim } from '../../state/proofgraph.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -254,5 +255,291 @@ describe('summarizeProofGraph reviewer projection', () => {
       NOW,
     );
     expect(summary.unresolvedAssumptions[0]!.reason).toContain('superseded revision');
+  });
+
+  it('does not prove a claim when one attempt carries both evidence roles', () => {
+    const dualRoleClaim = {
+      ...claim(),
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+      counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId: ATT }],
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'test',
+        assertion: { providerId: 'junit' as const, localId: 'com.example.Test#case' },
+      },
+    };
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL,
+      proofContract: { version: 'contract.v2', claims: [dualRoleClaim] },
+      validationAttempts: [
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: {
+            ...attemptResult(true),
+            assertionExtraction: {
+              status: 'extracted' as const,
+              attemptId: ATT,
+              providerId: 'junit' as const,
+              format: 'junit_xml' as const,
+              bindingCapability: 'assertion' as const,
+              reportDigests: [SHA],
+              assertions: [
+                {
+                  assertion: {
+                    providerId: 'junit',
+                    localId: 'com.example.Test#case',
+                  },
+                  providerId: 'junit',
+                  status: 'passed' as const,
+                  testName: 'case',
+                  suiteName: 'com.example.Test',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 1,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const summary = summarizeProofGraph(state, NOW);
+
+    expect(summary.projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(summary.claimDiagnostics.get(CLAIM)).toBe('evidence_role_collision');
+  });
+
+  it('projects the persisted role-collision coverage cause when the shared ref was removed', () => {
+    // Materialization removes the shared counterexample ref and records the
+    // cause in `proofContractCoverage`; the diagnostic projection must carry
+    // that already-determined cause without re-detecting the collision.
+    const adversarialClaim = {
+      ...claim(),
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+    };
+    const summary = summarizeProofGraph(
+      makeState('IMPL_VALIDATION', {
+        implementation: IMPL,
+        proofContract: { version: 'contract.v2', claims: [adversarialClaim] },
+        proofContractCoverage: [{ claimId: CLAIM, cause: 'evidence_role_collision' }],
+        validationAttempts: [
+          {
+            attemptId: ATT,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
+            result: attemptResult(true),
+          },
+        ],
+      }),
+      NOW,
+    );
+
+    expect(summary.projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(summary.claimDiagnostics.get(CLAIM)).toBe('evidence_role_collision');
+  });
+
+  it('keeps the persisted role-collision cause over a co-existing binding diagnostic', () => {
+    // A materialized contract can keep a non-overlapping counterexample attempt
+    // while recording the collision gap for the shared one. The binding failure
+    // of the remaining attempt must not hide the primary collision cause.
+    const CX_ATT = '00000000-0000-4000-8000-0000000000cc';
+    const adversarialClaim = {
+      claimId: CLAIM,
+      statement: 'covered by a passing implementation test',
+      signalClass: 'fact' as const,
+      critical: true,
+      provenance: AUTHORITY_REF,
+      evidenceRefs: [{ kind: 'validation_attempt' as const, attemptId: ATT }],
+      counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId: CX_ATT }],
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'security',
+        assertion: { providerId: 'junit' as const, localId: 'com.example.Test#case' },
+      },
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+    };
+    const summary = summarizeProofGraph(
+      makeState('IMPL_VALIDATION', {
+        implementation: IMPL,
+        proofContract: { version: 'contract.v2', claims: [adversarialClaim] },
+        proofContractCoverage: [{ claimId: CLAIM, cause: 'evidence_role_collision' }],
+        validationAttempts: [
+          {
+            attemptId: ATT,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
+            result: attemptResult(true),
+          },
+          {
+            attemptId: CX_ATT,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
+            result: { ...attemptResult(true), checkId: 'security' },
+          },
+        ],
+      }),
+      NOW,
+    );
+
+    expect(summary.projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(summary.claimDiagnostics.get(CLAIM)).toBe('evidence_role_collision');
+  });
+});
+
+describe('summarizePersistedProofGraph contract coverage', () => {
+  const CONTRACT_CLAIM_A = '00000000-0000-4000-8000-0000000000a1';
+  const CONTRACT_CLAIM_B = '00000000-0000-4000-8000-0000000000b1';
+  const EXTRA_CLAIM = '00000000-0000-4000-8000-0000000000e1';
+
+  function declaredClaim(claimId: string) {
+    return {
+      claimId,
+      statement: 'declared contract claim',
+      signalClass: 'fact' as const,
+      critical: false,
+      provenance: AUTHORITY_REF,
+      evidenceRefs: [],
+      counterexampleRefs: [],
+    };
+  }
+
+  function projectedClaim(claimId: string, overrides: Partial<ProofClaim> = {}): ProofClaim {
+    return {
+      ...declaredClaim(claimId),
+      verificationState: 'PROVEN',
+      ...overrides,
+    };
+  }
+
+  function persistedState(
+    claims: ProofClaim[],
+    contractClaimIds: readonly string[] = [CONTRACT_CLAIM_A],
+  ): SessionState {
+    return makeState('EVIDENCE_REVIEW', {
+      proofContract: {
+        version: 'contract.v2',
+        claims: contractClaimIds.map(declaredClaim),
+      },
+      proofGraph: { version: 'proofgraph.v2', claims, evaluatedAt: NOW },
+    });
+  }
+
+  it('reports PROVEN coverage when every declared contract claim is present and proven', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([projectedClaim(CONTRACT_CLAIM_A)]),
+    );
+    expect(summary.coverage).toBe('PROVEN');
+  });
+
+  it('does not report PROVEN when a declared contract claim is missing from the projection', () => {
+    const summary = summarizePersistedProofGraph(persistedState([]));
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+    expect(summary.contractClaimCount).toBe(1);
+  });
+
+  it('does not report PROVEN when a declared contract claim appears twice', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([projectedClaim(CONTRACT_CLAIM_A), projectedClaim(CONTRACT_CLAIM_A)]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+  });
+
+  it('does not report PROVEN when an undeclared governing authority claim is projected', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([projectedClaim(CONTRACT_CLAIM_A), projectedClaim(EXTRA_CLAIM)]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+  });
+
+  it('does not report PROVEN when an undeclared approved_ticket claim is projected', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([
+        projectedClaim(CONTRACT_CLAIM_A),
+        projectedClaim(EXTRA_CLAIM, {
+          provenance: { kind: 'approved_ticket', ticketDigest: 'ticket-digest' },
+        }),
+      ]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+  });
+
+  it('does not report PROVEN when an undeclared plan_adr_section claim is projected', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([
+        projectedClaim(CONTRACT_CLAIM_A),
+        projectedClaim(EXTRA_CLAIM, {
+          provenance: {
+            kind: 'plan_adr_section',
+            artifactKind: 'plan',
+            artifactDigest: 'artifact-digest',
+            sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Section' }],
+            excerptDigest: 'excerpt-digest',
+          },
+        }),
+      ]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+  });
+
+  it('keeps PROVEN when an advisory hypothesis claim is additionally projected', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([
+        projectedClaim(CONTRACT_CLAIM_A),
+        projectedClaim(EXTRA_CLAIM, { signalClass: 'hypothesis', provenance: null }),
+      ]),
+    );
+    expect(summary.coverage).toBe('PROVEN');
+    expect(summary.hypothesisCount).toBe(1);
+  });
+
+  it('does not report PROVEN when a declared contract claim is not proven', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([projectedClaim(CONTRACT_CLAIM_A, { verificationState: 'UNPROVEN' })]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+  });
+
+  it('does not report PROVEN when a second declared contract claim is missing', () => {
+    const summary = summarizePersistedProofGraph(
+      persistedState([projectedClaim(CONTRACT_CLAIM_A)], [CONTRACT_CLAIM_A, CONTRACT_CLAIM_B]),
+    );
+    expect(summary.coverage).toBe('NOT_VERIFIED');
+    expect(summary.contractClaimCount).toBe(2);
+  });
+
+  it('reports NOT_DECLARED without a contract regardless of projected claims', () => {
+    const state = makeState('EVIDENCE_REVIEW', {
+      proofGraph: {
+        version: 'proofgraph.v2',
+        claims: [projectedClaim(CONTRACT_CLAIM_A)],
+        evaluatedAt: NOW,
+      },
+    });
+    expect(summarizePersistedProofGraph(state).coverage).toBe('NOT_DECLARED');
   });
 });

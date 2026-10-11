@@ -1093,6 +1093,20 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     };
   }
 
+  /** A current, digest-bound assessment: final approval requires one to exist. */
+  const currentRiskAssessment: NonNullable<SessionState['implementationRiskAssessment']> = {
+    computedMinimumTaskClass: 'STANDARD',
+    effectiveTaskClass: 'STANDARD',
+    declaredTaskClass: null,
+    declarationKind: 'absent',
+    ticketDigest: null,
+    touchedSurfaces: ['src/service.ts'],
+    assessedFrom: 'implementation_changed_files',
+    assessedFileCount: 1,
+    implementationDigest: IMPL_EVIDENCE.digest,
+    riskTriggers: ['ceremony_only'],
+  };
+
   it('materializes an approved declaration into a certificate-bound fact claim', async () => {
     const state = implReviewState(fullEvidence());
     const { contract, coverage } = await materializeApprovedPlanContractResult(state, '/tmp');
@@ -1191,6 +1205,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         phase: 'EVIDENCE_REVIEW',
         proofContract: contract,
         proofGraph: summary.projection,
+        implementationRiskAssessment: currentRiskAssessment,
         // A realistic EVIDENCE_REVIEW state carries a converged review bound to
         // the current implementation digest; this test isolates the ProofGraph gate.
         implReview: {
@@ -1215,6 +1230,67 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         },
       },
       // No policy configuration at all: enforcement is unconditional (#762).
+      realDigestContext(),
+    );
+
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(blocked.code).toBe('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(blocked.reason).toContain(CRITICAL_CLAIM_ID);
+  });
+
+  it('NEGATIVE gate: one execution cannot serve as positive and adversarial evidence', async () => {
+    const collidingClaim: V2PlanClaimDeclaration = {
+      ...CRITICAL_CLAIM,
+      expectedCheckId: 'security',
+    };
+    const state = implReviewState(fullEvidence(), collidingClaim);
+    const { contract, coverage } = await materializeApprovedPlanContractResult(state, '/tmp');
+
+    expect(coverage).toContainEqual({
+      claimId: CRITICAL_CLAIM_ID,
+      cause: 'evidence_role_collision',
+    });
+    expect(contract.claims[0]?.counterexampleRefs).toEqual([]);
+
+    const summary = summarizeProofGraph(
+      { ...state, proofContract: contract, proofContractCoverage: [...coverage] },
+      FIXED_TIME,
+    );
+    expect(summary.projection.claims[0]?.verificationState).toBe('NOT_VERIFIED');
+    // The removed shared ref still surfaces through its persisted coverage cause.
+    expect(summary.projection.claimDiagnostics?.[CRITICAL_CLAIM_ID]).toBe(
+      'evidence_role_collision',
+    );
+
+    const blocked = executeReviewDecision(
+      {
+        ...state,
+        phase: 'EVIDENCE_REVIEW',
+        proofContract: contract,
+        proofGraph: summary.projection,
+        implementationRiskAssessment: currentRiskAssessment,
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
+      },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
 

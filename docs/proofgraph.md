@@ -86,9 +86,11 @@ existing HIGH-RISK ceremony for broad sensitive surfaces but never creates this
 claim requirement.
 
 Assessments persisted before risk triggers existed are treated as superseded at
-the final gate. Request changes, record a fresh implementation assessment, and
-then request approval again; FlowGuard does not infer a trigger from an old path
-list at the approval boundary.
+the final gate. The same applies when no assessment exists at all: as soon as an
+implementation revision is present, final evidence approval requires a risk
+assessment bound to that exact revision. Request changes, record a fresh
+implementation assessment, and then request approval again; FlowGuard does not
+infer a trigger from an old path list at the approval boundary.
 
 Everything else remains owned by ReviewFindings, obligations, attestations, and
 validation. ProofGraph adds one blocking condition; it replaces no authority.
@@ -97,6 +99,14 @@ Because a critical claim requires executed adversarial evidence, a critical
 declaration without a counterexample check could never become `PROVEN`. Such a
 declaration is therefore rejected when it is authored
 (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`) rather than blocking the approval later.
+
+The positive check and the counterexample check must be **different checks**,
+and they must resolve to **different executions**. A declaration that reuses one
+check for both evidence roles is rejected at the write boundary for every
+criticality. An already-persisted contract that binds the same check (even from
+two distinct attempts) or the same validation attempt to both roles never
+becomes `PROVEN`; its diagnostic is `evidence_role_collision` /
+`PROOFGRAPH_EVIDENCE_ROLE_COLLISION`.
 
 If a current plan approval certificate authorizes a critical declaration but its
 claim is absent from the persisted ProofGraph projection, final evidence approval
@@ -119,7 +129,7 @@ flowguard_declare_contract({
       checkId: "test",              // evidence: a passing attempt PROVES the claim
       critical: true,               // required
       counterexampleRequirement: {  // required for critical claims; a distinct check whose FAILURE contradicts the claim
-        checkId: "security",
+        checkId: "security",         // must differ from checkId: one execution cannot satisfy both evidence roles
         assertion: {
           providerId: "junit",
           localId: "com.example.UserTest#createsUser"

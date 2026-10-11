@@ -303,6 +303,27 @@ describe('review-decision rail', () => {
       expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE' });
     });
 
+    it('blocks an implementation approval when no risk assessment was recorded', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
+          implementationRiskAssessment: null,
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE' });
+    });
+
     it('blocks with IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH before the ProofGraph gate can evaluate', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(

@@ -83,6 +83,25 @@ const RUN_SPECIFIC_CANDIDATE = {
   candidateId: deriveVerificationCandidateId(RUN_SPECIFIC_DEFINITION),
 };
 
+/**
+ * Independent adversarial check for the F1 claim. One execution may never serve
+ * as both positive and adversarial evidence, so the counterexample is a
+ * distinct check with its own seeded implementation attempt.
+ */
+const COVERAGE_DEFINITION = { ...RUN_SPECIFIC_DEFINITION, kind: 'coverage' as const };
+const COVERAGE_CANDIDATE = {
+  ...COVERAGE_DEFINITION,
+  candidateId: deriveVerificationCandidateId(COVERAGE_DEFINITION),
+};
+const RUN_COVERAGE = { kind: 'coverage' as const, candidateId: COVERAGE_CANDIDATE.candidateId };
+
+/** Execute the independent adversarial check before the positive check run. */
+async function runAdversarialCoverageCheck(se: SE): Promise<void> {
+  executorWritesReport();
+  const result = await run_check.execute(RUN_COVERAGE, se.tc);
+  expect(String(result)).not.toContain('"error":true');
+}
+
 interface SE {
   rootDir: string;
   worktree: string;
@@ -661,7 +680,7 @@ function f1ClaimDeclarations(): PlanClaimDeclarations {
         expectedCheckId: 'test',
         counterexampleRequirement: {
           kind: 'assertion',
-          checkId: 'test',
+          checkId: 'coverage',
           assertion: { providerId: 'jest', localId: 'tests/a.test.ts::passes' },
         },
       },
@@ -676,6 +695,12 @@ async function f1ClaimBearingState(se: SE, staleCertificate = false): Promise<vo
   const declarations = f1ClaimDeclarations();
   await writeStateWithArtifacts(se.sDir, {
     ...subject.state,
+    activeChecks: ['test', 'coverage'],
+    verificationCandidates: [RUN_SPECIFIC_CANDIDATE, COVERAGE_CANDIDATE],
+    executionSubjectInputsByCandidateId: {
+      [RUN_SPECIFIC_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
+      [COVERAGE_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
+    },
     plan: {
       current: planCurrent,
       history: [],
@@ -708,6 +733,7 @@ describe('reduced-ceremony contract materialization (Run-9 F1, real git)', () =>
     s = await boot({ allowReducedCeremony: true });
     const se = s;
     await f1ClaimBearingState(se);
+    await runAdversarialCoverageCheck(se);
     executorWritesReport();
 
     const result = await run_check.execute(RUN, se.tc);
@@ -729,6 +755,7 @@ describe('reduced-ceremony contract materialization (Run-9 F1, real git)', () =>
     s = await boot({ allowReducedCeremony: true });
     const se = s;
     await f1ClaimBearingState(se, true);
+    await runAdversarialCoverageCheck(se);
     executorWritesReport();
 
     const result = await run_check.execute(RUN, se.tc);
@@ -792,6 +819,7 @@ describe('reduced-ceremony contract materialization (Run-9 F1, real git)', () =>
     const withManual = await readState(se.sDir);
     const manualClaim = withManual!.proofContract!.claims.at(-1)!;
 
+    await runAdversarialCoverageCheck(se);
     executorWritesReport();
     const result = await run_check.execute(RUN, se.tc);
     expect(String(result)).not.toContain('"error":true');
