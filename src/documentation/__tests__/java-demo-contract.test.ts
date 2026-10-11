@@ -236,6 +236,9 @@ describe('Java Task Manager demo contract', () => {
     const recoverable = [
       toolLine('PROOFGRAPH_CLAIM_NOT_DECLARED'),
       toolLine('ADR_REVIEW_IN_PROGRESS'),
+      // Run 11: typed input validation recovered from in-session.
+      toolLine('EMPTY_ADR_TITLE'),
+      toolLine('EMPTY_ADR_TEXT'),
     ].join('\n');
     expect(unexpectedDenialCodes(recoverable)).toEqual([]);
     const mixed = `${recoverable}\n${toolLine('ARCHIVE_FAILED')}`;

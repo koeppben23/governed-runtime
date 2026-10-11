@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer-capability smoke isolation.** The real-host probe uses private
+  OpenCode directories and the installed locked dependency graph, retains startup
+  failures and proves execution of the allowed observation-tool fixture. Tarball
+  verification preserves subprocess failure diagnostics, including timeout signals.
+
 - **Architecture claims are validated at the tool boundary.** Schema-invalid or
   plan-shaped architecture claims previously crashed `flowguard_architecture`
   with an untyped `INTERNAL_ERROR` (spread over a missing
