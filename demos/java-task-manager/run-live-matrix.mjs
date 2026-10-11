@@ -125,7 +125,7 @@ export function readPins() {
   return { opencode: hostMatch[1], node: nodePin };
 }
 
-function assertToolchain(pins) {
+export function assertToolchain(pins) {
   const problems = [];
   const nodeVersion = process.versions.node;
   if (nodeVersion !== pins.node) {

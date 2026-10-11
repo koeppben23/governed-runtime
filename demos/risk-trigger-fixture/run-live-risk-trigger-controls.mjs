@@ -23,7 +23,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { Runner, parseArgs, readPins } from '../java-task-manager/run-live-matrix.mjs';
+import {
+  Runner,
+  assertToolchain,
+  parseArgs,
+  readPins,
+  sha256,
+  verifyChecksumSidecar,
+} from '../java-task-manager/run-live-matrix.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -63,38 +70,121 @@ export function assertStateIntegrityTrigger(state) {
 
 /** Reject withdrawal, weakening or a post-approval coverage declaration. */
 export function assertRetainedClaim(state, covered) {
+  const expected = claimDeclaration(covered);
   const claims = state.plan?.claimDeclarations?.claims;
   if (!Array.isArray(claims) || claims.length !== 1) {
     throw new Error('exactly one retained critical plan claim is required');
   }
-  const claim = claims[0];
-  const requirement = claim.counterexampleRequirement;
-  if (
-    claim.critical !== true ||
-    claim.claimScope !== 'specific_behavior' ||
-    claim.expectedCheckId !== 'test' ||
-    requirement?.kind !== 'assertion' ||
-    requirement.checkId !== 'build' ||
-    requirement.assertion?.localId !== ADVERSARIAL_ASSERTION
-  ) {
-    throw new Error('the retained critical claim was changed or weakened');
+  const { claimId, ...persisted } = claims[0];
+  if (typeof claimId !== 'string' || claimId.length === 0) {
+    throw new Error('the retained claim has no runtime-minted identity');
   }
-  const declared = claim.coversRiskTriggers ?? [];
-  if (covered && !declared.includes('state_integrity')) {
-    throw new Error('the approved claim set does not cover state_integrity');
+  // Exact contract comparison, except the host-minted claimId: statement,
+  // authority section, scope, positive check, adversarial check and the exact
+  // coverage set must all match. A weakened or substituted claim fails closed.
+  if (JSON.stringify(persisted) !== JSON.stringify(expected)) {
+    throw new Error(
+      `the retained critical claim no longer matches the control contract: ${JSON.stringify(persisted)}`,
+    );
   }
-  if (!covered && declared.includes('state_integrity')) {
-    throw new Error('the uncovered case must not declare coverage');
-  }
-  return claim.claimId;
+  return claimId;
 }
 
-async function runCase(runner, name, workspace, covered) {
+/**
+ * The full pre-approval evidence contract, identical for both cases. The claim
+ * must be a certificate-bound critical fact, fresh and PROVEN, with two DISTINCT
+ * real implementation attempts for `test` and `build`, both passed, and the
+ * adversarial assertion passed. Only after this holds may the cases differ by
+ * `coversRiskTriggers`, so a denial proves coverage is the sole blocker.
+ */
+export function assertFullEvidence(state, covered) {
+  const claimId = assertRetainedClaim(state, covered);
+  const contract = state.proofContract?.claims?.find((claim) => claim.claimId === claimId);
+  const projected = state.proofGraph?.claims?.find((claim) => claim.claimId === claimId);
+  if (!contract || contract.signalClass !== 'fact' || !contract.critical) {
+    throw new Error('the retained claim is not materialized as a governing critical fact');
+  }
+  const certificate = state.plan?.approvalCertificate;
+  const authority = contract.provenance;
+  if (
+    !certificate ||
+    authority?.kind !== 'canonical_authority' ||
+    authority.authorityId !== 'plan' ||
+    authority.digest !== state.plan.current.digest ||
+    authority.approval?.certificateId !== certificate.certificateId ||
+    authority.approval.declarationId !== claimId
+  ) {
+    throw new Error('the critical fact lacks its current plan certificate binding');
+  }
+  if (
+    !projected ||
+    projected.verificationState !== 'PROVEN' ||
+    projected.freshness?.stale === true
+  ) {
+    throw new Error(
+      `expected a fresh PROVEN claim, observed ${String(projected?.verificationState)}`,
+    );
+  }
+  const attempts = (state.validationAttempts ?? []).filter((a) => a.scope === 'implementation');
+  const build = attempts.filter((a) => a.result.checkId === 'build').at(-1);
+  const test = attempts.filter((a) => a.result.checkId === 'test').at(-1);
+  if (
+    !build?.result.passed ||
+    build.result.exitCode !== 0 ||
+    !test?.result.passed ||
+    test.result.exitCode !== 0
+  ) {
+    throw new Error('both real implementation checks must be green');
+  }
+  if (build.attemptId === test.attemptId) {
+    throw new Error('positive and adversarial evidence must come from distinct attempts');
+  }
+  const adversarial = build.result.assertionExtraction?.assertions?.find(
+    (a) => a.assertion?.providerId === 'junit' && a.assertion.localId === ADVERSARIAL_ASSERTION,
+  );
+  if (adversarial?.status !== 'passed') {
+    throw new Error('the bound adversarial assertion must be passed and fresh');
+  }
+  return { claimId, buildAttemptId: build.attemptId, testAttemptId: test.attemptId };
+}
+
+/** The installed build must be the checked-out revision when built from it. */
+export function assertInstalledBuildIdentity(installed, checkoutHead, builtFromCheckout) {
+  if (builtFromCheckout && installed?.gitSha !== checkoutHead) {
+    throw new Error(
+      `installed artifact gitSha ${String(installed?.gitSha)} != checkout ${checkoutHead}`,
+    );
+  }
+  return installed;
+}
+
+/** A denied approval must leave no completion package and no completion evidence. */
+export function assertNoCompletionPackage(runner, session) {
+  const snapshot = runner.requireBoundState(session);
+  const archiveDir = path.join(path.dirname(snapshot.sessionDir), 'archive');
+  const produced = fs.existsSync(archiveDir)
+    ? fs.readdirSync(archiveDir).filter((file) => file.includes(session.sessionId))
+    : [];
+  if (produced.length > 0) {
+    throw new Error(`a denied approval produced completion package(s): ${produced.join(', ')}`);
+  }
+  if (snapshot.state.exportCompletionEvidence != null) {
+    throw new Error('a denied approval persisted export completion evidence');
+  }
+  return { archiveDir, produced };
+}
+
+async function runCase(runner, name, workspace, covered, context) {
   const record = { name, covered, workspace, result: 'FAILED' };
   const session = { workspace, terminal: 'COMPLETE' };
   const savedSkip = process.env[SKIP_ASSERTION_ENV];
   try {
     await runner.turn(session, `${name}-01-start`, '/start');
+    assertInstalledBuildIdentity(
+      runner.installedBuild(workspace),
+      context.checkoutHead,
+      context.builtFromCheckout,
+    );
     const ticketText = fs.readFileSync(path.join(workspace, 'TICKET.md'), 'utf8');
     await runner.turn(session, `${name}-02-task`, ticketText, { command: 'task' });
     await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([claimDeclaration(covered)]), {
@@ -115,11 +205,15 @@ async function runCase(runner, name, workspace, covered) {
       { command: 'implement' },
     );
     const state = runner.requireBoundState(session).state;
-    assertRetainedClaim(state, covered);
     const assessment = assertStateIntegrityTrigger(state);
     if (state.phase !== 'EVIDENCE_REVIEW') {
       throw new Error(`expected EVIDENCE_REVIEW, observed ${state.phase}`);
     }
+    // Identical full evidence contract in BOTH cases: the claim is a
+    // certificate-bound, fresh, PROVEN critical fact with distinct passed
+    // test/build attempts and the passed adversarial assertion. Only coverage
+    // may differ, so a denial proves coverage is the sole blocker.
+    const evidence = assertFullEvidence(state, covered);
 
     if (!covered) {
       const before = state;
@@ -161,6 +255,8 @@ async function runCase(runner, name, workspace, covered) {
       }
       Object.assign(record, {
         expectedOutcome: 'completed',
+        buildAttemptId: evidence.buildAttemptId,
+        testAttemptId: evidence.testAttemptId,
         claimId: claimId.slice(0, 8),
         riskTriggers: assessment.riskTriggers,
         verificationState: projected.verificationState,
@@ -233,6 +329,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const pins = readPins();
   console.log(`Pins: opencode ${pins.opencode}, node ${pins.node}`);
+  assertToolchain(pins);
   if (options.check) {
     console.log('Toolchain check passed. No live run performed.');
     return;
@@ -249,16 +346,20 @@ async function main() {
     cwd: REPO,
     encoding: 'utf8',
   }).trim();
-  const tarball = options.tarball
-    ? path.resolve(options.tarball)
-    : (() => {
-        execFileSync('npm', ['run', 'build'], { cwd: REPO, stdio: 'inherit' });
-        execFileSync('npm', ['run', 'pack:checksums'], { cwd: REPO, stdio: 'inherit' });
-        const version = JSON.parse(
-          fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'),
-        ).version;
-        return path.join(REPO, `flowguard-core-${version}.tgz`);
-      })();
+  let tarball;
+  let builtFromCheckout;
+  if (options.tarball) {
+    tarball = path.resolve(options.tarball);
+    verifyChecksumSidecar(tarball, path.join(path.dirname(tarball), 'checksums.sha256'));
+    builtFromCheckout = false;
+  } else {
+    execFileSync('npm', ['run', 'build'], { cwd: REPO, stdio: 'inherit' });
+    execFileSync('npm', ['run', 'pack:checksums'], { cwd: REPO, stdio: 'inherit' });
+    const version = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8')).version;
+    tarball = path.join(REPO, `flowguard-core-${version}.tgz`);
+    verifyChecksumSidecar(tarball, path.join(REPO, 'checksums.sha256'));
+    builtFromCheckout = true;
+  }
   fs.writeFileSync(
     path.join(evidenceDir, 'metadata.json'),
     JSON.stringify(
@@ -295,7 +396,10 @@ async function main() {
   const records = [];
   for (const item of cases) {
     runner.log(`START ${item.name}`);
-    const record = await runCase(runner, item.name, item.workspace, item.covered);
+    const record = await runCase(runner, item.name, item.workspace, item.covered, {
+      checkoutHead,
+      builtFromCheckout,
+    });
     records.push(record);
     runner.log(`${record.result} ${item.name}${record.error ? `: ${record.error}` : ''}`);
     fs.writeFileSync(
