@@ -91,4 +91,20 @@ describe('native capture-failure block detail (Run-10 diagnostics)', () => {
 
     expect(detail).toEqual({ obligationId: OBLIGATION_ID, reason: 'terminal capture failure' });
   });
+
+  it('interpolates the obligation id in the terminal binding-failure path', () => {
+    const output = JSON.parse(
+      strictBlockedOutput(
+        'REVIEW_ATTEMPT_UNAVAILABLE',
+        captureFailureBlockDetail({
+          obligationId: OBLIGATION_ID,
+          reason: 'Native reviewer evidence binding returned lineage_unavailable.',
+        }),
+      ),
+    ) as { message: string };
+
+    expect(output.message).toContain(OBLIGATION_ID);
+    expect(output.message).not.toContain('{obligationId}');
+    expect(output.message).not.toContain('{reason}');
+  });
 });

@@ -388,7 +388,10 @@ async function writeBindingFailure(
       : result === 'lineage_unavailable'
         ? 'REVIEW_ATTEMPT_UNAVAILABLE'
         : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-    { reason: `Native reviewer evidence binding returned ${result}.` },
+    captureFailureBlockDetail({
+      obligationId: input.obligationId,
+      reason: `Native reviewer evidence binding returned ${result}.`,
+    }),
   );
 }
 

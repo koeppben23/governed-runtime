@@ -252,28 +252,31 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   'TICKET_SOURCE_CONFLICT',
   'CONTENT_ANALYSIS_REQUIRED',
   'REVISED_PLAN_CLAIMS_REQUIRED',
-  // Reviewer capture/binding codes classified `retryable` by the runtime
-  // (capture-retry.ts): the transport can re-arm or the agent can retry the
-  // capture, and Run 7/10 evidence shows flows converging after them. The
-  // terminal-phase check decides the flow outcome.
-  'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
-  'HOST_STRUCTURED_OUTPUT_REQUIRED',
-  'REVIEW_EVIDENCE_NOT_OBSERVED',
-  'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
-  'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
-  'REVIEW_EVIDENCE_LOCATION_INVALID',
-  'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
-  'SUBAGENT_CHALLENGE_CONTRADICTED',
-  'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',
-  'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-  'SUBAGENT_CHALLENGE_INSUBSTANTIAL',
-  'SUBAGENT_CHALLENGE_KIND_INCOHERENT',
-  'SUBAGENT_CHALLENGE_NOT_DISTINCT',
-  'SUBAGENT_RESOLUTION_VERDICT_DUPLICATE',
-  'SUBAGENT_RESOLUTION_VERDICT_INCOHERENT',
-  'SUBAGENT_RESOLUTION_VERDICT_UNEXPECTED',
-  'SUBAGENT_RESOLUTION_VERDICT_UNKNOWN',
 ]);
+
+/**
+ * Successful reviewer capture re-arms are NOT error blocks: the transport
+ * projects a structured `reviewRetry` outcome (reviewDispatch.completed=false,
+ * no `error:true`) for the SAME code that a terminal block carries as
+ * `error:true`. Only the structured re-arm counts as recovered; the terminal
+ * block stays flow-stopping.
+ */
+export function captureRetryCodes(output) {
+  const codes = new Set();
+  for (const event of eventsOf(output)) {
+    const part = event.part?.state?.output ?? '';
+    if (/"error":true/.test(part)) continue;
+    if (!/"reviewRetry"/.test(part)) continue;
+    try {
+      const parsed = JSON.parse(part);
+      const code = parsed?.reviewRetry?.code;
+      if (typeof code === 'string') codes.add(code);
+    } catch {
+      // Not the structured retry projection.
+    }
+  }
+  return [...codes];
+}
 
 /** Denials observed in a step that must stop the flow (never recovered in-session). */
 export function unexpectedDenialCodes(output) {
@@ -451,9 +454,14 @@ export class Runner {
           `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
         );
       }
-      const recovered = toolDenialCodes(result.stdout).filter((code) =>
-        RECOVERABLE_DENIAL_CODES.has(code),
-      );
+      const recovered = [
+        ...new Set([
+          ...toolDenialCodes(result.stdout).filter((code) =>
+            RECOVERABLE_DENIAL_CODES.has(code),
+          ),
+          ...captureRetryCodes(result.stdout),
+        ]),
+      ];
       if (recovered.length > 0) {
         session.recoveredDenials = session.recoveredDenials ?? [];
         session.recoveredDenials.push({ step: label, codes: recovered });

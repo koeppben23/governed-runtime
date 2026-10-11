@@ -16,6 +16,7 @@ import {
   assertArchitectureProbeNotPersisted,
   enableRawArchiveInRepoConfig,
   unexpectedDenialCodes,
+  captureRetryCodes,
   assertExpectedDenial,
   assertSessionBinding,
   matrixExitCode,
@@ -235,9 +236,6 @@ describe('Java Task Manager demo contract', () => {
     const recoverable = [
       toolLine('PROOFGRAPH_CLAIM_NOT_DECLARED'),
       toolLine('ADR_REVIEW_IN_PROGRESS'),
-      // Retryable reviewer capture codes (Run 7/10 evidence: flows converged).
-      toolLine('REVIEW_EVIDENCE_NOT_OBSERVED'),
-      toolLine('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'),
     ].join('\n');
     expect(unexpectedDenialCodes(recoverable)).toEqual([]);
     const mixed = `${recoverable}\n${toolLine('ARCHIVE_FAILED')}`;
@@ -250,6 +248,43 @@ describe('Java Task Manager demo contract', () => {
       'REVIEW_ATTEMPT_UNAVAILABLE',
       'SUBAGENT_MANDATE_MISMATCH',
     ]);
+  });
+
+  it('separates a successful reviewer re-arm from a terminal block of the same code', () => {
+    const rearm = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        state: {
+          output: JSON.stringify({
+            status:
+              'Reviewer capture failed its evidence contract; a fresh review attempt was re-armed on the same frozen obligation.',
+            reviewDispatch: { required: true, completed: false },
+            reviewRetry: {
+              code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+              obligationId: 'obl_1',
+              attemptId: 'attempt_2',
+            },
+          }),
+        },
+      },
+    });
+    const terminal = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        state: {
+          output: JSON.stringify({
+            error: true,
+            code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+            message: 'budget exhausted',
+          }),
+        },
+      },
+    });
+
+    expect(captureRetryCodes(rearm)).toEqual(['REVIEW_EVIDENCE_NOT_OBSERVED']);
+    expect(unexpectedDenialCodes(rearm)).toEqual([]);
+    expect(captureRetryCodes(terminal)).toEqual([]);
+    expect(unexpectedDenialCodes(terminal)).toEqual(['REVIEW_EVIDENCE_NOT_OBSERVED']);
   });
 
   it('opts the installed repository config into raw auditor archives', async () => {

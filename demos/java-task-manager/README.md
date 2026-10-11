@@ -151,8 +151,8 @@ config into raw auditor archives next to the isolated global grant, runs every
 step through real headless `opencode run` processes with an explicit `--dir`,
 verifies the persisted host/worktree binding and each package, exports the
 parent and reviewer-child host transcripts with hashes, records the installed
-build identity, records recovered typed denials while stopping on any
-non-recoverable block, removes the isolated raw-export grant on exit, and exits
+build identity, records recovered typed denials and successful reviewer re-arms while
+stopping on any non-recoverable block, removes the isolated raw-export grant on exit, and exits
 non-zero when any requested flow did not complete. It performs no governance
 work itself.
 
