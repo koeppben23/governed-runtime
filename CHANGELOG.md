@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live critical-claim controls.** `run-live-claim-controls.mjs` drives two real
+  cases through the reduced evidence gate: a retained critical claim proven by
+  independent positive (`test`) and adversarial (`build`) executions, and the same
+  claim with the genuinely skipped adversarial assertion at otherwise green checks.
+  It asserts `PROVEN` plus ordinary approval for the first and the exact
+  `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN` denial for the second, backed by canonical
+  state/audit and validated host transcripts. The fixtures — documentation ticket,
+  positive JUnit assertion and a distinct adversarial falsification probe — are
+  committed before governance starts; nothing is simulated.
+
 - **Risk-trigger coverage authority (ProofGraph).** Every specific risk trigger
   detected for the current implementation must be explicitly covered by a
   certificate-authorized critical fact claim. Coverage is declared with
