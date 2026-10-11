@@ -104,3 +104,35 @@ real host sessions and validated parent/reviewer transcripts:
 Full mutation admission remains a separate requirement with its own selectors and
 records. A correctly blocked negative case is a passed control, not a completed
 development workflow.
+
+## Risk-trigger coverage controls
+
+`demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs` runs #1074's
+coverage invariant on an isolated minimal Maven repository whose governed
+artifact lives under `src/state/` (canonical classification: HIGH-RISK +
+`state_integrity`). The fixture's Maven wrapper is copied from the Java seed; the
+fixture itself holds only the project files, the JUnit assertions and the ticket.
+
+```bash
+node demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs \
+  --root /tmp/flowguard-risk-trigger --model deepseek/deepseek-flash
+```
+
+Both cases carry the same critical, certificate-authorized fact claim; only the
+approved claim set differs:
+
+- **risk-uncovered:** the claim does **not** declare `coversRiskTriggers`. With the
+  trigger detected and a valid claim present, the real approval gate must deny with
+  exactly `PROOFGRAPH_RISK_TRIGGER_UNCOVERED` — never an earlier precondition
+  (`CERTIFICATE_INVALID`, `EVALUATION_UNAVAILABLE`, `RISK_ASSESSMENT_STALE`,
+  `CRITICAL_FACT_REQUIRED`).
+- **risk-covered:** the claim declares `coversRiskTriggers: ['state_integrity']` as
+  part of the approved plan claim set; the same trigger must reach `PROVEN` and
+  pass ordinary approval.
+
+Verified on the integrated head (DeepSeek V4.1 Flash, thinking disabled, 117 wire
+requests): **2/2 PASS**. `risk-uncovered` blocked at `EVIDENCE_REVIEW` with the
+exact denial and no package; `risk-covered` reached `PROVEN`, `COMPLETE` and a
+verified export (`0385c0edd52e…`). Both detected `state_integrity` from the real
+implementation change. No runtime or demo change was needed; the existing contract
+model already expresses both cases.
