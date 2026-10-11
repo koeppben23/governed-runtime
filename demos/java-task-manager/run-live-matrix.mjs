@@ -60,6 +60,9 @@ export const DEFAULT_FLOWS = [
   'architecture-negative',
 ];
 
+/** Dedicated, untouched seed copy the architecture negative probe governs. */
+export const NEGATIVE_PROBE_WORKSPACE = 'java-task-manager-architecture-negative';
+
 /**
  * Verifier flow identity per matrix scenario. The reduced-ceremony scenarios
  * are development flows; their scenario names are never verifier flow names.
@@ -653,6 +656,11 @@ export async function runFlows(runner) {
   const { workspaces, configDir } = runner;
   const mainWorkspace = path.join(workspaces, 'java-task-manager');
   const reducedRoot = path.join(workspaces, 'reduced-ceremony');
+  // The negative probe reviews against the untouched seed. The development flow
+  // modifies the main workspace, so the probe gets its own pristine copy: a
+  // reviewer comparing a post-fix ADR against the frozen base would otherwise
+  // reject a correct decision.
+  const negativeWorkspace = path.join(workspaces, NEGATIVE_PROBE_WORKSPACE);
 
   const flows = {
     architecture: {
@@ -714,7 +722,7 @@ export async function runFlows(runner) {
       run: (session) => runReduced(runner, session, 'reduced-off', 'TICKET_DOCS.md'),
     },
     'architecture-negative': {
-      workspace: mainWorkspace,
+      workspace: negativeWorkspace,
       terminal: 'ARCH_COMPLETE',
       run: async (session) => {
         // Controlled negative step: the exact typed denial must be observed and
@@ -823,6 +831,15 @@ async function main() {
   // restricts the effective policy; the documented raw-auditor flow needs the
   // repo opt-in as well as the isolated global grant.
   enableRawArchiveInRepoConfig(path.join(workspaces, 'java-task-manager'));
+  // Copy the pristine seed for the negative probe before any flow mutates the
+  // main workspace.
+  if (options.flows.includes('architecture-negative')) {
+    fs.cpSync(
+      path.join(workspaces, 'java-task-manager'),
+      path.join(workspaces, NEGATIVE_PROBE_WORKSPACE),
+      { recursive: true },
+    );
+  }
 
   const runner = new Runner(options.root, options, configDir);
   const exitCode = await withRawExportGrant(configDir, async () => {

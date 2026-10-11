@@ -41,10 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Live-matrix flow classification.** The runner now treats corrected typed
   denials (`REVISED_PLAN_REQUIRED`, and the pre-mutation `CONTINUE_AMBIGUOUS`
   admissibility signal that demands the explicit flow choice the runner already
-  performs next) as recovered, and records a transport-level block under
+  performs next) as recovered, records a transport-level block under
   `terminalBlocks` when the session already reached the flow's persisted terminal
-  phase instead of discarding an already-completed flow. Package verification
-  remains mandatory, and any block before the terminal phase still stops the flow.
+  phase, and governs the architecture negative probe in its own pristine seed
+  copy so the development flow's fix cannot falsify the probe ADR's baseline.
+  Package verification remains mandatory, and any block before the terminal phase
+  still stops the flow.
 
 - **ProofGraph soundness hardening.** One execution or check can no longer
   satisfy both the positive and the adversarial evidence obligation of a claim:

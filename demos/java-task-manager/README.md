@@ -174,6 +174,11 @@ separate runner evidence, not the ADR subject or repository evidence for its
 claims. Full independent review and ordinary approval still apply; an exhausted
 review is not bypassed with a governance override.
 
+The probe governs a dedicated pristine seed copy
+(`workspaces/java-task-manager-architecture-negative`). The development flow
+modifies the main workspace, and a reviewer comparing a post-fix ADR against the
+frozen base would correctly reject it; the copy keeps that comparison honest.
+
 Failed exports remain as diagnostic bytes and stop the flow. Hashes of truncated
 or structurally invalid JSON are never registered as accepted transcript evidence.
 Filenames use the actual scenario name; child exports must identify its parent.

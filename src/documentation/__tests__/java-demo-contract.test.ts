@@ -170,6 +170,11 @@ describe('Java Task Manager demo contract', () => {
       expect(flows['reduced-on'].workspace).toBe(
         path.join(root, 'workspaces', 'reduced-ceremony', 'reduced-on'),
       );
+      // The negative probe governs its own pristine seed copy, never the
+      // workspace the development flow already modified.
+      expect(flows['architecture-negative'].workspace).toBe(
+        path.join(root, 'workspaces', 'java-task-manager-architecture-negative'),
+      );
       expect(flows['architecture-negative']).toBeDefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
