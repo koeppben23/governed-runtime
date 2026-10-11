@@ -41,6 +41,11 @@ export const BINDING_DIAGNOSTIC_COPY: Readonly<
     headline: 'Assertion mismatch',
     explanation: 'The executed assertion does not match the required assertion for this claim.',
   },
+  evidence_role_collision: {
+    headline: 'Evidence role collision',
+    explanation:
+      'The same execution is bound as both the positive evidence and the counterexample; one execution cannot satisfy both evidence roles.',
+  },
   aggregate_check_mismatch: {
     headline: 'Check mismatch',
     explanation: 'The executed check does not match the aggregate check required by this claim.',

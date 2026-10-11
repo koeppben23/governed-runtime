@@ -17,12 +17,14 @@ import {
   type PeerReviewTask,
 } from '../../state/peer-review.js';
 import type {
+  DeclaredClaim,
   ProofGraphProjection,
   ProofProviderResult,
   ProofCounterexample,
   AssertionBindingReasonCode,
 } from '../../state/proofgraph.js';
 import { evaluateProofGraph } from './evaluate.js';
+import { assessEvidenceRoleIndependence } from './evidence-role-independence.js';
 
 /**
  * Derive the ProofGraph projection for a session.
@@ -57,6 +59,54 @@ function collectAuthoritativePeerReviewClaims(
   return claims;
 }
 
+/**
+ * Persist the diagnostic for a defective evidence-role binding, using the
+ * canonical independence assessment (never a second implementation).
+ */
+function roleIndependenceDiagnostics(
+  claims: readonly DeclaredClaim[],
+  providerResults: readonly ProofProviderResult[],
+  counterexamples: readonly ProofCounterexample[],
+): Readonly<Record<string, AssertionBindingReasonCode>> {
+  const record: Record<string, AssertionBindingReasonCode> = {};
+  for (const claim of claims) {
+    const assessment = assessEvidenceRoleIndependence({
+      ...(claim.counterexampleRequirement !== undefined
+        ? { counterexampleRequirement: claim.counterexampleRequirement }
+        : {}),
+      adversarialCounterexampleRequired: (claim.requiredEvidence?.adversarial ?? []).includes(
+        'counterexample',
+      ),
+      providerResults: providerResults.filter((r) => r.claimId === claim.claimId),
+      counterexamples: counterexamples.filter((c) => c.claimId === claim.claimId),
+    });
+    if (assessment.kind === 'role_collision') {
+      record[claim.claimId] = 'evidence_role_collision';
+    } else if (assessment.kind === 'not_verifiable') {
+      record[claim.claimId] = 'evidence_missing';
+    }
+  }
+  return record;
+}
+
+/**
+ * Merge role-independence diagnostics over the binder-provided record. A role
+ * collision is the claim's primary defect; a missing execution identity fills
+ * in only when no more specific binding code exists.
+ */
+function mergeRoleDiagnostics(
+  provided: Readonly<Record<string, AssertionBindingReasonCode>>,
+  computed: Readonly<Record<string, AssertionBindingReasonCode>>,
+): Record<string, AssertionBindingReasonCode> {
+  const merged: Record<string, AssertionBindingReasonCode> = { ...provided };
+  for (const [claimId, code] of Object.entries(computed)) {
+    if (code === 'evidence_role_collision' || merged[claimId] === undefined) {
+      merged[claimId] = code;
+    }
+  }
+  return merged;
+}
+
 export function deriveProofGraph(
   state: SessionState,
   providerResults: readonly ProofProviderResult[],
@@ -71,9 +121,10 @@ export function deriveProofGraph(
   // obligation (canonical lifecycle authority in state/peer-review.ts).
   const peerReviewClaims = collectAuthoritativePeerReviewClaims(state);
   const contractClaims = normalizeContractClaims(state);
+  const declaredClaims = [...contractClaims, ...peerReviewClaims.values()];
   const base = evaluateProofGraph(
     {
-      claims: [...contractClaims, ...peerReviewClaims.values()],
+      claims: declaredClaims,
       providerResults,
       counterexamples,
       currentImplementationDigest: state.implementation?.digest ?? null,
@@ -82,11 +133,11 @@ export function deriveProofGraph(
     },
     evaluatedAt,
   );
-  const diagnostics = opts?.claimDiagnostics;
-  if (diagnostics && Object.keys(diagnostics).length > 0) {
-    return { ...base, claimDiagnostics: diagnostics };
-  }
-  return base;
+  const diagnostics = mergeRoleDiagnostics(
+    opts?.claimDiagnostics ?? {},
+    roleIndependenceDiagnostics(declaredClaims, providerResults, counterexamples),
+  );
+  return Object.keys(diagnostics).length > 0 ? { ...base, claimDiagnostics: diagnostics } : base;
 }
 
 function normalizeContractClaims(state: SessionState) {

@@ -50,6 +50,7 @@ function isValidBindingCode(value: string): value is AssertionBindingReasonCode 
     value === 'check_only_evidence' ||
     value === 'provider_mismatch' ||
     value === 'assertion_mismatch' ||
+    value === 'evidence_role_collision' ||
     value === 'aggregate_check_mismatch' ||
     value === 'aggregate_candidate_mismatch' ||
     value === 'aggregate_scope_unattested' ||
@@ -126,8 +127,12 @@ export function evaluateProofGraphGate(input: {
 }): ProofGraphGateDecision {
   const triggers = relevantTriggers(input.riskAssessment);
 
+  // A current implementation requires a risk assessment bound to that exact
+  // revision. A missing assessment is as unusable as a superseded one: the
+  // enforcement projection owns the fail-closed decision for both. With no
+  // implementation digest there is no revision to bind to, so the assessment
+  // cannot be judged stale.
   const riskStale =
-    input.riskAssessment !== undefined &&
     input.implementationDigest !== undefined &&
     !isRiskAssessmentCurrent(input.riskAssessment, input.implementationDigest);
 

@@ -54,6 +54,7 @@ import {
   SELF_REVIEW_CONVERGED,
   REVIEW_APPROVE,
   VALIDATION_PASSED,
+  CURRENT_IMPL_RISK_ASSESSMENT,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
@@ -375,6 +376,7 @@ describe('P26: regulated archive completion', () => {
       },
       validation: VALIDATION_PASSED,
       implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
       implReview: IMPL_REVIEW_CONVERGED,
       initiatedBy: 'initiator',
       initiatedByIdentity: {

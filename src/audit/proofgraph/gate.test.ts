@@ -215,6 +215,14 @@ describe('evaluateProofGraphGate', () => {
     expect(decision).toMatchObject({ gated: false, kind: 'clear' });
   });
 
+  it('treats a missing assessment as stale when an implementation revision exists', () => {
+    const decision = evaluateProofGraphGate({
+      ...summary([]),
+      implementationDigest: 'implementation-digest',
+    });
+    expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
+
   it('does not demand another critical fact when an eligible claim already exists', () => {
     // triggers present AND an eligible claim present: the critical-fact
     // requirement is already satisfied, so the gate must judge that claim
@@ -384,6 +392,18 @@ describe('evaluateProofGraphGateFromState', () => {
           implementationDigest: 'other-digest',
           riskTriggers: ['state_integrity'],
         },
+      }),
+    );
+    expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
+
+  it('reports a missing risk assessment as stale when an implementation revision exists', () => {
+    const decls = declarations(true);
+    const decision = evaluateProofGraphGateFromState(
+      stateWith({
+        plan: planRecord(decls, certificate(decls)),
+        proofGraph: projection([claim(UUID(1), { state: 'PROVEN' })]),
+        implementation: { digest: 'impl-digest' } as SessionState['implementation'],
       }),
     );
     expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });

@@ -97,6 +97,62 @@ export interface PersistedProofGraphSummary {
 }
 
 /**
+ * Contract coverage requires set identity: every declared contract claim must be
+ * present EXACTLY once in the projection and PROVEN. Advisory hypotheses and
+ * other explicitly supported sources may be projected additionally, but an
+ * undeclared governing-authority claim means the projection and the contract
+ * disagree — never PROVEN. Missing, duplicated, or unauthorized claims are
+ * inconsistencies, not coverage.
+ */
+function declaredClaimIds(
+  contract: NonNullable<SessionState['proofContract']>,
+): ReadonlySet<string> | null {
+  const ids = new Set(contract.claims.map((c) => c.claimId));
+  return ids.size === contract.claims.length ? ids : null;
+}
+
+function claimsMatchDeclaredSet(
+  claims: ProofGraphProjection['claims'],
+  declaredIds: ReadonlySet<string>,
+): boolean {
+  const occurrences = new Map<string, number>();
+  for (const claim of claims) {
+    occurrences.set(claim.claimId, (occurrences.get(claim.claimId) ?? 0) + 1);
+  }
+  for (const claimId of declaredIds) {
+    if (occurrences.get(claimId) !== 1) return false;
+  }
+  return true;
+}
+
+function hasUndeclaredGoverningClaim(
+  claims: ProofGraphProjection['claims'],
+  declaredIds: ReadonlySet<string>,
+): boolean {
+  return claims.some(
+    (claim) => !declaredIds.has(claim.claimId) && claim.provenance?.kind === 'canonical_authority',
+  );
+}
+
+function contractCoverage(
+  state: SessionState,
+  claims: ProofGraphProjection['claims'],
+): PersistedProofGraphSummary['coverage'] {
+  const contract = state.proofContract;
+  if (contract === undefined) return 'NOT_DECLARED';
+  if (contract.claims.length === 0) return 'NOT_VERIFIED';
+  const declaredIds = declaredClaimIds(contract);
+  if (declaredIds === null) return 'NOT_VERIFIED';
+  if (!claimsMatchDeclaredSet(claims, declaredIds)) return 'NOT_VERIFIED';
+  if (hasUndeclaredGoverningClaim(claims, declaredIds)) return 'NOT_VERIFIED';
+  return claims
+    .filter((claim) => declaredIds.has(claim.claimId))
+    .every((claim) => claim.verificationState === 'PROVEN')
+    ? 'PROVEN'
+    : 'NOT_VERIFIED';
+}
+
+/**
  * Summarize the persisted projection without executing providers. An empty graph
  * is never reported as healthy: it means no structured claims were declared.
  *
@@ -116,19 +172,9 @@ export function summarizePersistedProofGraph(state: SessionState): PersistedProo
   const claims = state.proofGraph.claims;
   const provenCount = claims.filter((claim) => claim.verificationState === 'PROVEN').length;
   const unprovenCount = claims.length - provenCount;
-  const contractClaimIds = new Set((state.proofContract?.claims ?? []).map((c) => c.claimId));
-  const contractClaims = claims.filter((c) => contractClaimIds.has(c.claimId));
-  const contractProven = contractClaims.filter((c) => c.verificationState === 'PROVEN').length;
   const contractClaimCount = state.proofContract?.claims.length ?? 0;
   return {
-    coverage:
-      state.proofContract === undefined
-        ? 'NOT_DECLARED'
-        : contractClaimCount === 0
-          ? 'NOT_VERIFIED'
-          : contractProven === contractClaims.length && contractClaims.length > 0
-            ? 'PROVEN'
-            : 'NOT_VERIFIED',
+    coverage: contractCoverage(state, claims),
     claimCount: claims.length,
     provenCount,
     unprovenCount,
@@ -259,6 +305,10 @@ export function summarizeProofGraph(
     survivors: m.survivors,
   }));
 
+  const projectionDiagnostics = new Map<string, AssertionBindingReasonCode>(
+    Object.entries(projection.claimDiagnostics ?? {}),
+  );
+
   return {
     projection,
     counts,
@@ -267,6 +317,6 @@ export function summarizeProofGraph(
     counterexamples,
     mutation,
     unresolvedAssumptions,
-    claimDiagnostics: diagnostics,
+    claimDiagnostics: projectionDiagnostics,
   };
 }
