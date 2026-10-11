@@ -147,6 +147,13 @@ from the real implementation change in every run; no runtime or demo change.
   - A single combined 2/2 run on this HEAD stayed **NOT_VERIFIED**: the model
     intermittently submitted no plan or the plan review hit a terminal capture
     failure, which the runner reports fail-closed.
+- `68a26b74` (role-specific attempt refs): `risk-covered` PASS — run root
+  `flowguard-risk-trigger-7`, export `6c76e6b3dde1…`, with the positive attempt
+  bound only to `evidenceRefs` and the adversarial attempt only to
+  `counterexampleRefs`. In the same run `risk-uncovered` was rejected by the
+  strict claim-identity check because the model altered `authoritySectionId`;
+  that rejection is the harness failing closed on a deviating declaration, not a
+  gate defect.
 
 Each evidence root keeps canonical state/audit, validated parent/reviewer
 transcripts, the provider receipts and the recorded metadata (checkout head,
