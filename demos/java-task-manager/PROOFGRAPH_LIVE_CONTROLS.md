@@ -104,3 +104,57 @@ real host sessions and validated parent/reviewer transcripts:
 Full mutation admission remains a separate requirement with its own selectors and
 records. A correctly blocked negative case is a passed control, not a completed
 development workflow.
+
+## Risk-trigger coverage controls
+
+`demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs` runs #1074's
+coverage invariant on an isolated minimal Maven repository whose governed
+artifact lives under `src/state/` (canonical classification: HIGH-RISK +
+`state_integrity`). The fixture's Maven wrapper is copied from the Java seed; the
+fixture itself holds only the project files, the JUnit assertions and the ticket.
+
+```bash
+node demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs \
+  --root /tmp/flowguard-risk-trigger --model deepseek/deepseek-flash
+```
+
+Both cases carry the same critical, certificate-authorized fact claim; only the
+approved claim set differs:
+
+- **risk-uncovered:** the claim does **not** declare `coversRiskTriggers`. With the
+  trigger detected and a valid claim present, the real approval gate must deny with
+  exactly `PROOFGRAPH_RISK_TRIGGER_UNCOVERED` — never an earlier precondition
+  (`CERTIFICATE_INVALID`, `EVALUATION_UNAVAILABLE`, `RISK_ASSESSMENT_STALE`,
+  `CRITICAL_FACT_REQUIRED`).
+- **risk-covered:** the claim declares `coversRiskTriggers: ['state_integrity']` as
+  part of the approved plan claim set; the same trigger must reach `PROVEN` and
+  pass ordinary approval.
+
+### Recorded live evidence
+
+DeepSeek V4.1 Flash with thinking disabled throughout; `state_integrity` detected
+from the real implementation change in every run; no runtime or demo change.
+
+- `bc3cee7a` (initial runner): one combined run reported 2/2 PASS;
+  `risk-covered` export `0385c0edd52e…`.
+- `6aa154a5` (strict oracles: full evidence contract, role-specific attempt refs,
+  toolchain/tarball/build identity, package-absence):
+  - `risk-uncovered` PASS — run root `flowguard-risk-trigger-6`: PROVEN claim
+    verified before the attempt, denial exactly `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`
+    at `EVIDENCE_REVIEW`, `archiveDirContents: []`.
+  - `risk-covered` PASS — run root `flowguard-risk-trigger-5`: `PROVEN`,
+    `COMPLETE`, export `fb0f7d638b29…`.
+  - A single combined 2/2 run on this HEAD stayed **NOT_VERIFIED**: the model
+    intermittently submitted no plan or the plan review hit a terminal capture
+    failure, which the runner reports fail-closed.
+- `68a26b74` (role-specific attempt refs): `risk-covered` PASS — run root
+  `flowguard-risk-trigger-7`, export `6c76e6b3dde1…`, with the positive attempt
+  bound only to `evidenceRefs` and the adversarial attempt only to
+  `counterexampleRefs`. In the same run `risk-uncovered` was rejected by the
+  strict claim-identity check because the model altered `authoritySectionId`;
+  that rejection is the harness failing closed on a deviating declaration, not a
+  gate defect.
+
+Each evidence root keeps canonical state/audit, validated parent/reviewer
+transcripts, the provider receipts and the recorded metadata (checkout head,
+tarball SHA-256, installed build).

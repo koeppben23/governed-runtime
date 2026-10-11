@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live risk-trigger coverage controls.** `demos/risk-trigger-fixture/` is an
+  isolated minimal Maven repository whose governed artifact lives under
+  `src/state/` (HIGH-RISK + `state_integrity`),
+  driven by `run-live-risk-trigger-controls.mjs`. The uncovered case holds a valid
+  certificate-authorized critical claim that does not declare coverage and must be
+  denied with exactly `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`; the covered case declares
+  `coversRiskTriggers` inside the approved claim set, reaches `PROVEN` and passes
+  ordinary approval. No runtime or demo change was required.
+
 - **Live critical-claim controls.** `run-live-claim-controls.mjs` drives two real
   cases through the reduced evidence gate: a retained critical claim proven by
   independent positive (`test`) and adversarial (`build`) executions, and the same
