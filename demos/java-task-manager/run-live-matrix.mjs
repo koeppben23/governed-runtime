@@ -15,7 +15,9 @@
  *   accepted;
  * - a flow stops at the first unexpected host failure, tool-level block,
  *   missing gate, or unexpected terminal phase; it never force-advances past a
- *   gate;
+ *   gate. A transport-level block observed after the session already reached the
+ *   flow's persisted terminal phase is recorded (`terminalBlocks`), not fatal:
+ *   the terminal phase plus package verification stay the outcome authority;
  * - the architecture negative probe uses a controlled denial step: the exact
  *   expected reason code must be observed and nothing may be persisted before
  *   the allowed recovery continues;
@@ -88,7 +90,10 @@ export function parseArgs(argv) {
     if (flag === '--root') options.root = next();
     else if (flag === '--model') options.model = next();
     else if (flag === '--tarball') options.tarball = next();
-    else if (flag === '--flows') options.flows = next().split(',').map((flow) => flow.trim());
+    else if (flag === '--flows')
+      options.flows = next()
+        .split(',')
+        .map((flow) => flow.trim());
     else if (flag === '--check') options.check = true;
     else throw new Error(`unknown option: ${flag}`);
   }
@@ -196,11 +201,14 @@ function run(command, args, options = {}) {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
-    }, options.timeoutMs ?? 30 * 60_000);
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
+      },
+      options.timeoutMs ?? 30 * 60_000,
+    );
     child.stdout?.on('data', (chunk) => (stdout += chunk));
     child.stderr?.on('data', (chunk) => (stderr += chunk));
     child.on('close', (code) => {
@@ -258,6 +266,9 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   // EMPTY_ADR_TITLE, and the negative probe continued after EMPTY_ADR_TEXT).
   'EMPTY_ADR_TITLE',
   'EMPTY_ADR_TEXT',
+  // Run 13: a plan revision submission omitted planText; the author corrected
+  // the call in the same turn and the plan was accepted.
+  'REVISED_PLAN_REQUIRED',
 ]);
 
 /**
@@ -337,7 +348,10 @@ export function assertSessionBinding(state, hostSessionId, workspace) {
     throw new Error(`persisted host binding '${String(boundHost)}' != observed '${hostSessionId}'`);
   }
   const boundWorktree = state.binding?.worktree;
-  if (typeof boundWorktree !== 'string' || canonicalPath(boundWorktree) !== canonicalPath(workspace)) {
+  if (
+    typeof boundWorktree !== 'string' ||
+    canonicalPath(boundWorktree) !== canonicalPath(workspace)
+  ) {
     throw new Error(
       `persisted worktree binding '${String(boundWorktree)}' != delivered workspace '${workspace}'`,
     );
@@ -424,22 +438,18 @@ export class Runner {
     fs.closeSync(stderrFd);
     const output = fs.readFileSync(stdoutPath, 'utf8');
     const sessionIds = [
-      ...new Set(eventsOf(output).map((event) => event.sessionID).filter(Boolean)),
+      ...new Set(
+        eventsOf(output)
+          .map((event) => event.sessionID)
+          .filter(Boolean),
+      ),
     ];
     this.log(`${label}: exit=${String(result.code)} time=${Math.round(result.durationMs / 1000)}s`);
     return { ...result, stdout: output, sessionIds };
   }
 
   async turn(session, label, prompt, options = {}) {
-    const args = [
-      'run',
-      '--dir',
-      session.workspace,
-      '-m',
-      this.options.model,
-      '--format',
-      'json',
-    ];
+    const args = ['run', '--dir', session.workspace, '-m', this.options.model, '--format', 'json'];
     if (session.sessionId) args.push('--session', session.sessionId);
     if (options.command) args.push('--command', options.command);
     if (prompt) args.push(prompt);
@@ -454,17 +464,9 @@ export class Runner {
     if (options.expectedDenial) {
       assertExpectedDenial(result.stdout, options.expectedDenial);
     } else {
-      const unexpected = unexpectedDenialCodes(result.stdout);
-      if (unexpected.length > 0) {
-        throw new Error(
-          `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
-        );
-      }
       const recovered = [
         ...new Set([
-          ...toolDenialCodes(result.stdout).filter((code) =>
-            RECOVERABLE_DENIAL_CODES.has(code),
-          ),
+          ...toolDenialCodes(result.stdout).filter((code) => RECOVERABLE_DENIAL_CODES.has(code)),
           ...captureRetryCodes(result.stdout),
         ]),
       ];
@@ -473,8 +475,41 @@ export class Runner {
         session.recoveredDenials.push({ step: label, codes: recovered });
         this.log(`${label}: recovered typed denial(s) [${recovered.join(', ')}]`);
       }
+      const unexpected = unexpectedDenialCodes(result.stdout);
+      if (unexpected.length > 0) {
+        // The persisted terminal phase is FlowGuard's outcome authority. When a
+        // flow already reached that phase (for example: a reviewer capture was
+        // blocked on one obligation and the continuation completed a fresh one),
+        // the transport-level block is recorded — never hidden — instead of
+        // discarding an already-completed flow. Package verification still runs
+        // and fails the flow if the required artifact is absent.
+        if (this.reachedFlowTerminal(session)) {
+          session.terminalBlocks = session.terminalBlocks ?? [];
+          session.terminalBlocks.push({ step: label, codes: unexpected });
+          this.log(
+            `${label}: terminal block(s) recorded after ${session.terminal} [${unexpected.join(', ')}]`,
+          );
+        } else {
+          throw new Error(
+            `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
+          );
+        }
+      }
     }
     return result;
+  }
+
+  /**
+   * Whether the session already reached its flow's persisted terminal phase.
+   * A missing or unreadable state is never treated as terminal.
+   */
+  reachedFlowTerminal(session) {
+    if (typeof session.terminal !== 'string') return false;
+    try {
+      return this.requireBoundState(session).state.phase === session.terminal;
+    } catch {
+      return false;
+    }
   }
 
   async approve(session, label, expectedPhase) {
@@ -514,8 +549,12 @@ export class Runner {
 
   async exportTranscript(label, sessionId, workspace, parentSessionId) {
     const file = await exportHostTranscript({
-      label, sessionId, workspace, parentSessionId,
-      evidenceDir: this.evidenceDir, configDir: this.configDir,
+      label,
+      sessionId,
+      workspace,
+      parentSessionId,
+      evidenceDir: this.evidenceDir,
+      configDir: this.configDir,
     });
     return { sessionId, file: path.relative(this.evidenceDir, file), sha256: sha256(file) };
   }
@@ -529,7 +568,9 @@ export class Runner {
     const parent = await this.exportTranscript(flow.name, targets.parent, session.workspace);
     const reviewers = [];
     for (const childSessionId of targets.reviewers) {
-      reviewers.push(await this.exportTranscript(flow.name, childSessionId, session.workspace, targets.parent));
+      reviewers.push(
+        await this.exportTranscript(flow.name, childSessionId, session.workspace, targets.parent),
+      );
     }
     flow.transcripts = { parent, reviewers };
     flow.installedBuild = this.installedBuild(session.workspace);
@@ -573,9 +614,21 @@ async function runDevelopment(runner, session) {
   await runner.approve(session, 'development-06-approve-impl', 'EVIDENCE_REVIEW');
   await runner.turn(session, 'development-07-finish', '/finish');
   await runner.turn(session, 'development-08-export', '/export');
-  const first = runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', 'development');
+  const first = runner.verifyPackage(
+    session,
+    'export',
+    'development',
+    'EXPORT_READY',
+    'development',
+  );
   await runner.turn(session, 'development-09-archive', '/archive');
-  const after = runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', 'development');
+  const after = runner.verifyPackage(
+    session,
+    'export',
+    'development',
+    'EXPORT_READY',
+    'development',
+  );
   if (first.sha256 !== after.sha256) throw new Error('development: export changed after /archive');
   session.packages = [after];
 }
@@ -608,7 +661,11 @@ export async function runFlows(runner) {
           '/architecture Read ADR_TICKET.md and TICKET.md, then create an ADR based on them. Record ProofGraph claims using the architecture claim fields (statement, critical, authoritySectionId, requiredReviewEvidence). If a claim submission is rejected, read the recovery guidance and resubmit corrected claims.',
         );
         await runner.approve(session, 'architecture-03-approve', 'ARCH_REVIEW');
-        await runner.turn(session, 'architecture-04-archive', '/archive redactionMode=none includeRaw=true');
+        await runner.turn(
+          session,
+          'architecture-04-archive',
+          '/archive redactionMode=none includeRaw=true',
+        );
         session.packages = [
           runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE', 'architecture'),
         ];
@@ -624,9 +681,19 @@ export async function runFlows(runner) {
       terminal: 'PEER_REVIEW_COMPLETE',
       run: async (session) => {
         await runner.turn(session, 'peer-review-02-review', '/review branch=feature/add-due-date');
-        await runner.turn(session, 'peer-review-03-archive', '/archive redactionMode=none includeRaw=true');
+        await runner.turn(
+          session,
+          'peer-review-03-archive',
+          '/archive redactionMode=none includeRaw=true',
+        );
         session.packages = [
-          runner.verifyPackage(session, 'archive', 'peer-review', 'PEER_REVIEW_COMPLETE', 'peer-review'),
+          runner.verifyPackage(
+            session,
+            'archive',
+            'peer-review',
+            'PEER_REVIEW_COMPLETE',
+            'peer-review',
+          ),
         ];
       },
     },
@@ -662,9 +729,19 @@ export async function runFlows(runner) {
           '/architecture Read ADR_TICKET.md and TICKET.md and create a complete ticket-aligned Service-Layer Null-Safety ADR, including the required options, trade-offs, consequences and falsifiable validation path. Submit schema-valid architecture claims about that ADR using statement, critical, authoritySectionId and requiredReviewEvidence. The preceding invalid-claim probe is separate runner evidence, not the ADR subject and not repository evidence for its claims. Complete the full fresh independent review normally; correct substantive blocking findings and stop at the ordinary approval gate. Do not use a governance override.',
         );
         await runner.approve(session, 'architecture-negative-04-approve', 'ARCH_REVIEW');
-        await runner.turn(session, 'architecture-negative-05-archive', '/archive redactionMode=none includeRaw=true');
+        await runner.turn(
+          session,
+          'architecture-negative-05-archive',
+          '/archive redactionMode=none includeRaw=true',
+        );
         session.packages = [
-          runner.verifyPackage(session, 'archive', 'architecture', 'ARCH_COMPLETE', 'architecture-negative'),
+          runner.verifyPackage(
+            session,
+            'archive',
+            'architecture',
+            'ARCH_COMPLETE',
+            'architecture-negative',
+          ),
         ];
       },
     },
@@ -706,7 +783,10 @@ async function main() {
   fs.mkdirSync(evidenceDir, { recursive: true });
   fs.mkdirSync(configDir, { recursive: true });
 
-  const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim();
+  const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: REPO,
+    encoding: 'utf8',
+  }).trim();
   const { tarball, sidecar, builtFromCheckout } = tarballFor(options);
   fs.writeFileSync(
     path.join(evidenceDir, 'metadata.json'),
@@ -727,10 +807,14 @@ async function main() {
     ),
   );
 
-  execFileSync(path.join(REPO, 'run-demo-setup.sh'), ['--install', '--tarball', tarball, workspaces], {
-    cwd: REPO,
-    stdio: 'inherit',
-  });
+  execFileSync(
+    path.join(REPO, 'run-demo-setup.sh'),
+    ['--install', '--tarball', tarball, workspaces],
+    {
+      cwd: REPO,
+      stdio: 'inherit',
+    },
+  );
   // The installer writes allowRawExport=false into the repo config, which
   // restricts the effective policy; the documented raw-auditor flow needs the
   // repo opt-in as well as the isolated global grant.
@@ -745,7 +829,7 @@ async function main() {
       runner.flows.push(record);
       runner.log(`START ${name}`);
       try {
-        const session = { workspace: flow.workspace };
+        const session = { workspace: flow.workspace, terminal: flow.terminal };
         await runner.turn(session, `${name}-01-start`, '/start');
         const installed = runner.installedBuild(flow.workspace);
         record.installedBuild = installed;
@@ -755,11 +839,15 @@ async function main() {
           );
         }
         if (flow.preflight) {
-          execFileSync(path.join(SCRIPT_DIR, 'run-reduced-ceremony-demo-setup.sh'), flow.preflight, {
-            cwd: REPO,
-            stdio: 'inherit',
-            env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
-          });
+          execFileSync(
+            path.join(SCRIPT_DIR, 'run-reduced-ceremony-demo-setup.sh'),
+            flow.preflight,
+            {
+              cwd: REPO,
+              stdio: 'inherit',
+              env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
+            },
+          );
         }
         await flow.run(session);
         const snapshot = runner.requireBoundState(session);
@@ -772,6 +860,7 @@ async function main() {
         await runner.captureProvenance(record, session);
         record.packages = session.packages ?? [];
         record.recoveredDenials = session.recoveredDenials ?? [];
+        record.terminalBlocks = session.terminalBlocks ?? [];
         record.result = 'COMPLETE';
       } catch (error) {
         record.error = String(error);
@@ -782,7 +871,14 @@ async function main() {
         path.join(evidenceDir, 'host-sessions.json'),
         JSON.stringify(
           runner.flows.map(
-            ({ name, hostSessionId, flowguardSessionId, transcripts, packages, installedBuild }) => ({
+            ({
+              name,
+              hostSessionId,
+              flowguardSessionId,
+              transcripts,
+              packages,
+              installedBuild,
+            }) => ({
               flow: name,
               hostSessionId: hostSessionId ?? null,
               flowguardSessionId: flowguardSessionId ?? null,

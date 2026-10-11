@@ -254,6 +254,59 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('records a terminal block without discarding a flow that already completed', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-terminal-block-'));
+    const terminalLine = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        state: {
+          output: JSON.stringify({ error: true, code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
+        },
+      },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${terminalLine}\n`,
+      });
+
+      // The session already reached its terminal phase: record, do not stop.
+      runner.requireBoundState = () => ({
+        state: { phase: 'PEER_REVIEW_COMPLETE' },
+        sessionDir: root,
+      });
+      const completed: {
+        workspace: string;
+        terminal: string;
+        terminalBlocks?: Array<{ step: string; codes: string[] }>;
+      } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
+      await expect(runner.turn(completed, 'peer-review-02-review', 'x')).resolves.toBeDefined();
+      expect(completed.terminalBlocks).toEqual([
+        { step: 'peer-review-02-review', codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'] },
+      ]);
+
+      // Any other phase keeps the fail-closed stop.
+      runner.requireBoundState = () => ({ state: { phase: 'PEER_REVIEW' }, sessionDir: root });
+      const unfinished: {
+        workspace: string;
+        terminal: string;
+        terminalBlocks?: Array<{ step: string; codes: string[] }>;
+      } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
+      await expect(runner.turn(unfinished, 'peer-review-02-review', 'x')).rejects.toThrow(
+        /unexpected tool-level block/,
+      );
+      expect(unfinished.terminalBlocks).toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('removes the raw-export grant on success and on initialization failure', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-grant-'));
     const grant = path.join(dir, 'flowguard.json');
@@ -288,6 +341,8 @@ describe('Java Task Manager demo contract', () => {
       // Run 11: typed input validation recovered from in-session.
       toolLine('EMPTY_ADR_TITLE'),
       toolLine('EMPTY_ADR_TEXT'),
+      // Run 13: a plan revision omitted planText and was corrected in-session.
+      toolLine('REVISED_PLAN_REQUIRED'),
     ].join('\n');
     expect(unexpectedDenialCodes(recoverable)).toEqual([]);
     const mixed = `${recoverable}\n${toolLine('ARCHIVE_FAILED')}`;

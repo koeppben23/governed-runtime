@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before their hashes are registered. Architecture negative-probe recovery now
   creates a ticket-aligned ADR under full independent review and ordinary approval.
 
+- **Live-matrix flow classification.** The runner now treats a corrected
+  `REVISED_PLAN_REQUIRED` call shape as a recovered typed denial, and records a
+  transport-level block under `terminalBlocks` when the session already reached
+  the flow's persisted terminal phase instead of discarding an already-completed
+  flow. Package verification remains mandatory, and any block before the
+  terminal phase still stops the flow.
+
 - **ProofGraph soundness hardening.** One execution or check can no longer
   satisfy both the positive and the adversarial evidence obligation of a claim:
   declarations that reuse a check are rejected

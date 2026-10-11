@@ -158,6 +158,14 @@ stopping on any non-recoverable block, removes the isolated raw-export grant on 
 non-zero when any requested flow did not complete. It performs no governance
 work itself.
 
+The persisted terminal phase is the outcome authority: when a transport-level
+block appears after the session already reached that phase (for example a
+blocked reviewer-capture obligation that the continuation replaced with a
+completed review), the flow records it under `terminalBlocks` instead of
+discarding the completed flow. Package verification still runs and fails the
+flow if the required artifact is missing. Any block observed before the terminal
+phase still stops the flow.
+
 The architecture negative probe is a controlled denial step: the runner
 requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that the rejected
 ADR was not persisted, and only then creates a complete Service-Layer Null-Safety
