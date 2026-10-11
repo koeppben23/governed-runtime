@@ -252,6 +252,11 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   'TICKET_SOURCE_CONFLICT',
   'CONTENT_ANALYSIS_REQUIRED',
   'REVISED_PLAN_CLAIMS_REQUIRED',
+  // Typed command-input validation: the author corrects the call and resubmits
+  // in-session (Run 11: an architecture session reached ARCH_COMPLETE after
+  // EMPTY_ADR_TITLE, and the negative probe continued after EMPTY_ADR_TEXT).
+  'EMPTY_ADR_TITLE',
+  'EMPTY_ADR_TEXT',
 ]);
 
 /**
