@@ -12,7 +12,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -42,7 +42,8 @@ function sourceFiles(): string[] {
       }
       if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
       if (entry.name.endsWith('.test.ts')) continue;
-      out.push(full.slice(SRC_ROOT.length + 1));
+      // POSIX-normalized: the pinned sets are OS-independent.
+      out.push(full.slice(SRC_ROOT.length + 1).split(sep).join('/'));
     }
   };
   walk(SRC_ROOT);
