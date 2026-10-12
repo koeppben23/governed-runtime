@@ -43,7 +43,12 @@ function sourceFiles(): string[] {
       if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
       if (entry.name.endsWith('.test.ts')) continue;
       // POSIX-normalized: the pinned sets are OS-independent.
-      out.push(full.slice(SRC_ROOT.length + 1).split(sep).join('/'));
+      out.push(
+        full
+          .slice(SRC_ROOT.length + 1)
+          .split(sep)
+          .join('/'),
+      );
     }
   };
   walk(SRC_ROOT);
