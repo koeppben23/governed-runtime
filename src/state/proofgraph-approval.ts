@@ -338,7 +338,6 @@ const PlanApprovalAttestationSchema = z.discriminatedUnion('kind', [
     .strict()
     .readonly(),
 ]);
-/** Local inferred shape of the approval attestation discriminator. */
 type PlanApprovalAttestation = z.infer<typeof PlanApprovalAttestationSchema>;
 
 /**
