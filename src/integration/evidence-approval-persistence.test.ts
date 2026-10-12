@@ -10,12 +10,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readState, writeState } from '../adapters/persistence.js';
+import { readState, writeState, writeStateAlreadyLocked } from '../adapters/persistence.js';
+import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
-import { applyEvidenceApprovalTransition } from '../rails/types.js';
+import { applyEvidenceApprovalTransition, autoAdvance } from '../rails/types.js';
+import { evaluate } from '../machine/evaluate.js';
+import { TEAM_POLICY } from '../config/policy.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { getPolicyPreset } from '../config/policy.js';
+import { hashText } from '../shared/hashing.js';
 import { FIXED_TIME, makeProgressedState, makeState } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
@@ -124,6 +130,37 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
   });
 
+  it('refuses a mutated approval decision after the admission was issued, without burning the admission', async () => {
+    const previous = authorizedEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+
+    const tampered: SessionState = { ...application.state, reviewDecision: null };
+    await expect(
+      writeState(sessDir, tampered, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+
+    // The refused attempt did not consume the admission: the untampered commit
+    // still succeeds with the same handle.
+    await writeState(sessDir, application.state, undefined, application.admission);
+    expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
+  });
+
+  it('refuses mutated review evidence after the admission was issued', async () => {
+    const previous = authorizedEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+    expect(application.state.implReview).not.toBeNull();
+
+    const tampered: SessionState = {
+      ...application.state,
+      implReview: { ...application.state.implReview!, iteration: 99 },
+    };
+    await expect(
+      writeState(sessDir, tampered, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
   it('refuses approval-relevant evidence changes while already EXPORT_READY', async () => {
     const previous = authorizedEvidenceState();
     await writeState(sessDir, previous);
@@ -144,6 +181,22 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     });
   });
 
+  it('refuses review-evidence changes while already EXPORT_READY', async () => {
+    const previous = authorizedEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+    await writeState(sessDir, application.state, undefined, application.admission);
+
+    const persisted = (await readState(sessDir))!;
+    expect(persisted.implReview).not.toBeNull();
+    await expect(
+      writeState(sessDir, {
+        ...persisted,
+        implReview: { ...persisted.implReview!, iteration: 99 },
+      }),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
   it('still allows same-phase audit/metadata updates while already EXPORT_READY', async () => {
     const previous = authorizedEvidenceState();
     await writeState(sessDir, previous);
@@ -157,6 +210,31 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
   });
 
+  it('persists the autoAdvance approval only when its carried admission is passed', async () => {
+    const previous: SessionState = {
+      ...makeProgressedState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(getPolicyPreset('solo'), FIXED_TIME, hashText),
+      reviewDecision: null,
+    };
+    await writeState(sessDir, previous);
+    const autoPolicy = { ...TEAM_POLICY, requireHumanGates: false };
+    const advanced = autoAdvance(previous, (s) => evaluate(s, autoPolicy), {
+      now: () => FIXED_TIME,
+      digest: hashText,
+      policy: autoPolicy,
+    });
+    expect(advanced.kind).toBe('advanced');
+    if (advanced.kind !== 'advanced') return;
+    expect(advanced.state.phase).toBe('EXPORT_READY');
+    await expect(writeState(sessDir, advanced.state)).rejects.toMatchObject({
+      code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
+    });
+    // The carried admission is not consumed by the refused attempt: the very
+    // same commit succeeds when it is passed through.
+    await writeState(sessDir, advanced.state, undefined, advanced.approvalAdmission);
+    expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
+  });
+
   it('refuses the unapproved entry through the artifact/audit commit path', async () => {
     const previous = authorizedEvidenceState();
     await writeState(sessDir, previous);
@@ -165,6 +243,56 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
     expect((await readState(sessDir))?.phase).toBe('EVIDENCE_REVIEW');
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'consumes the admission before durability: a failed write needs a fresh canonical approval',
+    async () => {
+      const previous = authorizedEvidenceState();
+      await writeState(sessDir, previous);
+      const application = approveOrThrow(previous);
+
+      // Inject the fault under the already-held session lock: the guard reads
+      // the predecessor and consumes the admission, then the durable write
+      // fails on the read-only session directory.
+      await withSessionWriteLock(sessDir, async () => {
+        await chmod(sessDir, 0o500);
+        try {
+          await writeStateAlreadyLocked(sessDir, application.state, application.admission);
+          throw new Error('expected the durable write to fail');
+        } catch (error) {
+          expect(String(error)).not.toContain('expected the durable write to fail');
+        } finally {
+          await chmod(sessDir, 0o700);
+        }
+      });
+
+      // Nothing was committed and the burned admission cannot be replayed.
+      expect((await readState(sessDir))?.phase).toBe('EVIDENCE_REVIEW');
+      await expect(
+        writeState(sessDir, application.state, undefined, application.admission),
+      ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+
+      // Recovery: a fresh canonical approval commits exactly one operation.
+      const fresh = approveOrThrow(previous);
+      await writeStateWithArtifactsAndAuditOperations(
+        sessDir,
+        fresh.state,
+        undefined,
+        [],
+        fresh.admission,
+      );
+      const persisted = (await readState(sessDir))!;
+      expect(persisted.phase).toBe('EXPORT_READY');
+      expect(
+        persisted.pendingAuditOperations.filter(
+          (operation) =>
+            operation.kind === 'transition' &&
+            operation.transition.from === 'EVIDENCE_REVIEW' &&
+            operation.transition.to === 'EXPORT_READY',
+        ),
+      ).toHaveLength(1);
+    },
+  );
 
   it('refuses bootstrapping a session directly into EXPORT_READY', async () => {
     await expect(writeState(sessDir, makeState('EXPORT_READY'))).rejects.toMatchObject({

@@ -168,12 +168,15 @@ describe('protected evidence-approval transition', () => {
     expect('transitions' in result).toBe(false);
   });
 
-  it('auto-advance applies the protected edge for a clear evidence basis', () => {
+  it('auto-advance applies the protected edge for a clear evidence basis and carries the admission', () => {
     const result = autoAdvance(autoClearState(), (s) => evaluate(s, AUTO_POLICY), ctx);
     expect(result.kind).toBe('advanced');
     if (result.kind === 'advanced') {
       expect(result.state.phase).toBe('EXPORT_READY');
       expect(result.transitions.some((transition) => transition.to === 'EXPORT_READY')).toBe(true);
+      // The admission must survive autoAdvance: the persistence boundary
+      // refuses a new EXPORT_READY without it.
+      expect(result.approvalAdmission).toBeDefined();
     }
   });
 });

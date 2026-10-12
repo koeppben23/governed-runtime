@@ -278,6 +278,9 @@ export function autoAdvance(
       if (application.kind === 'blocked') {
         return { kind: 'blocked', phase: current.phase, block: application.block };
       }
+      // The admission MUST reach the caller's persistence commit: the lowest
+      // writer refuses a new EXPORT_READY without it.
+      approvalAdmission = application.admission;
       transitions.push({ from, to, event, at });
       current = application.state;
       result = evalFn(current);

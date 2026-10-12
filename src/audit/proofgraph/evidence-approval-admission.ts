@@ -63,10 +63,20 @@ function semanticProofGraph(
 }
 
 /**
- * Canonical digest over the approval-relevant state projection: plan authority,
- * certificate, claims, implementation revision, risk assessment, proof
- * contract, proof graph semantics, and the frozen policy. Any change invalidates
- * a previously issued admission and is refused for an already-approved session.
+ * Canonical digest over the immutable approval basis. The basis is split into:
+ *
+ * - **approval authority** — review decision, plan authority, certificate,
+ *   frozen policy hash, session binding;
+ * - **review/validation evidence** — implementation review result and
+ *   findings, review assurance (reviewer evidence ledger), validation
+ *   attempts, implementation validation, mutation episodes and resolutions,
+ *   implementation revision, risk assessment, proof contract and evaluated
+ *   proof graph semantics.
+ *
+ * Operative metadata that is deliberately NOT part of the basis: runtime
+ * lease, audit outbox, risk/discovery gates, error, review cycles, pending
+ * system work. Any basis change invalidates a previously issued admission and
+ * is refused for an already-approved session.
  */
 export function evidenceApprovalBasisDigest(state: SessionState): string {
   const plan = state.plan;
@@ -75,6 +85,7 @@ export function evidenceApprovalBasisDigest(state: SessionState): string {
       flowguardSessionId: state.flowguardSessionId,
       bindingDigest: evidenceApprovalBindingDigest(state),
       policyHash: state.policySnapshot.hash,
+      reviewDecision: state.reviewDecision,
       plan:
         plan === null
           ? null
@@ -84,6 +95,13 @@ export function evidenceApprovalBasisDigest(state: SessionState): string {
               reviewCompletion: plan.reviewCompletion,
               approvalCertificate: plan.approvalCertificate ?? null,
             },
+      implReview: state.implReview,
+      implReviewFindings: state.implReviewFindings ?? null,
+      reviewAssurance: state.reviewAssurance ?? null,
+      validationAttempts: state.validationAttempts,
+      implValidation: state.implValidation,
+      mutationEpisodes: state.mutationEpisodes,
+      mutationEpisodeResolutions: state.mutationEpisodeResolutions,
       implementationDigest: state.implementation?.digest ?? null,
       implementationChangedFiles: state.implementation?.changedFiles ?? null,
       implementationRiskAssessment: state.implementationRiskAssessment,
@@ -93,7 +111,15 @@ export function evidenceApprovalBasisDigest(state: SessionState): string {
   );
 }
 
-/** Issue an admission bound to the exact checked basis. */
+/**
+ * Issue an admission bound to the exact checked basis.
+ *
+ * TRUST BOUNDARY: only the canonical protected application
+ * (`rails/evidence-approval-application.ts`) may call this after it has checked
+ * the approval authority and the evidence preflight. The architecture guard
+ * `evidence-approval-admission-ssot.test.ts` pins the caller set; any new
+ * issuer caller outside that set is a review blocker.
+ */
 export function issueEvidenceApprovalAdmission(state: SessionState): EvidenceApprovalAdmission {
   const admission: EvidenceApprovalAdmission = Object.freeze({
     kind: 'evidence-approval-admission' as const,
@@ -114,6 +140,12 @@ export type AdmissionConsumption =
  * Consume an admission exactly once for the exact basis it was issued for.
  * Forged objects, foreign runtime instances, replays, and any evidence,
  * authority, policy, or binding drift are rejected.
+ *
+ * RECOVERY CONTRACT: consumption is fail-closed BEFORE durability, so a failed
+ * commit burns the handle. Recovery never replays it: re-read the persisted
+ * state, reconcile the audit outbox, and obtain a FRESH admission through the
+ * canonical protected application before committing again — the same basis
+ * cannot be approved twice.
  */
 export function consumeEvidenceApprovalAdmission(input: {
   readonly admission: unknown;
