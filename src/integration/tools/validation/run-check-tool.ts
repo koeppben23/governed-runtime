@@ -460,7 +460,24 @@ async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<Check
         're-run /implement and all active checks before any ceremony decision',
     });
   }
-  const advanced = autoAdvance(ceremony.state, (s) => evaluate(s, railCtx.policy), railCtx);
+  // #819/#1066/#1078: materialize the approved-plan contract BEFORE the final
+  // advance. An approval's evidence basis must already include the materialized
+  // contract: the admission is issued for exactly the basis that is committed,
+  // so post-advance materialization would invalidate it.
+  const contractEntry =
+    ceremony.kind === 'decided' && ceremony.decision.profile === 'reduced'
+      ? ('EVIDENCE_REVIEW' as const)
+      : ('IMPL_REVIEW' as const);
+  const stateWithMaterializedContract = await materializePostValidationContract(
+    ceremony.state,
+    input.worktree,
+    contractEntry,
+  );
+  const advanced = autoAdvance(
+    stateWithMaterializedContract,
+    (s) => evaluate(s, railCtx.policy),
+    railCtx,
+  );
   if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
   if (advanced.kind === 'blocked') return formatAutoAdvanceBlocked(advanced);
 
@@ -496,17 +513,10 @@ async function finalizeCheckUnderLock(input: {
     executionObservation,
     advanced,
   } = input.revalidated;
-  // #819/#1066: materialize the approved-plan contract for both review entries —
-  // the full IMPL_REVIEW path and the reduced EVIDENCE_REVIEW shortcut. Without
-  // the reduced entry a certificate-authorized critical claim had no persisted
-  // ProofGraph evaluation and the evidence gate blocked with
-  // PROOFGRAPH_EVALUATION_UNAVAILABLE.
-  const stateWithMaterializedContract = await materializePostValidationContract(
-    advanced.state,
-    freshState.binding.worktree,
-  );
+  // The contract was already materialized before the final advance (see
+  // revalidateCheckUnderLock): the approval basis and its admission include it.
   const activation = await activateReviewObligationAndPersist({
-    state: stateWithMaterializedContract,
+    state: advanced.state,
     preAdvanceState: nextState,
     iteration: nextImplementationReviewIteration(advanced.state),
     planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
@@ -528,6 +538,7 @@ async function finalizeCheckUnderLock(input: {
       input.revalidated.nextState.implementation,
       input.revalidated.ceremonyIsNew,
     ),
+    advanced.approvalAdmission,
   );
   const authorityResult = resolveRunCheckDispatchAuthority(activated, persisted);
   if (typeof authorityResult === 'string') return authorityResult;

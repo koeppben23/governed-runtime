@@ -32,6 +32,13 @@ interface AdmissionRecord {
   readonly flowguardSessionId: string;
   readonly bindingDigest: string;
   readonly basisDigest: string;
+  /**
+   * Basis of the PRE-APPROVAL predecessor state (everything except the
+   * approval decision). The persisted predecessor must match it, so an
+   * admission issued from state A cannot be committed on a predecessor that
+   * was changed to state B in between.
+   */
+  readonly sourceBasisDigest: string;
   consumed: boolean;
 }
 
@@ -78,37 +85,47 @@ function semanticProofGraph(
  * system work. Any basis change invalidates a previously issued admission and
  * is refused for an already-approved session.
  */
-export function evidenceApprovalBasisDigest(state: SessionState): string {
+function evidenceApprovalBasisProjection(
+  state: SessionState,
+  includeDecision: boolean,
+): Record<string, unknown> {
   const plan = state.plan;
-  return hashText(
-    canonicalJsonStringify({
-      flowguardSessionId: state.flowguardSessionId,
-      bindingDigest: evidenceApprovalBindingDigest(state),
-      policyHash: state.policySnapshot.hash,
-      reviewDecision: state.reviewDecision,
-      plan:
-        plan === null
-          ? null
-          : {
-              current: plan.current,
-              claimDeclarations: plan.claimDeclarations ?? null,
-              reviewCompletion: plan.reviewCompletion,
-              approvalCertificate: plan.approvalCertificate ?? null,
-            },
-      implReview: state.implReview,
-      implReviewFindings: state.implReviewFindings ?? null,
-      reviewAssurance: state.reviewAssurance ?? null,
-      validationAttempts: state.validationAttempts,
-      implValidation: state.implValidation,
-      mutationEpisodes: state.mutationEpisodes,
-      mutationEpisodeResolutions: state.mutationEpisodeResolutions,
-      implementationDigest: state.implementation?.digest ?? null,
-      implementationChangedFiles: state.implementation?.changedFiles ?? null,
-      implementationRiskAssessment: state.implementationRiskAssessment,
-      proofContract: state.proofContract ?? null,
-      proofGraph: semanticProofGraph(state.proofGraph),
-    }),
-  );
+  return {
+    flowguardSessionId: state.flowguardSessionId,
+    bindingDigest: evidenceApprovalBindingDigest(state),
+    policyHash: state.policySnapshot.hash,
+    ...(includeDecision ? { reviewDecision: state.reviewDecision } : {}),
+    plan:
+      plan === null
+        ? null
+        : {
+            current: plan.current,
+            claimDeclarations: plan.claimDeclarations ?? null,
+            reviewCompletion: plan.reviewCompletion,
+            approvalCertificate: plan.approvalCertificate ?? null,
+          },
+    implReview: state.implReview,
+    implReviewFindings: state.implReviewFindings ?? null,
+    reviewAssurance: state.reviewAssurance ?? null,
+    validationAttempts: state.validationAttempts,
+    implValidation: state.implValidation,
+    mutationEpisodes: state.mutationEpisodes,
+    mutationEpisodeResolutions: state.mutationEpisodeResolutions,
+    implementationDigest: state.implementation?.digest ?? null,
+    implementationChangedFiles: state.implementation?.changedFiles ?? null,
+    implementationRiskAssessment: state.implementationRiskAssessment,
+    proofContract: state.proofContract ?? null,
+    proofGraph: semanticProofGraph(state.proofGraph),
+  };
+}
+
+/** Basis of the persisted predecessor: everything except the approval decision. */
+function evidenceApprovalSourceBasisDigest(state: SessionState): string {
+  return hashText(canonicalJsonStringify(evidenceApprovalBasisProjection(state, false)));
+}
+
+export function evidenceApprovalBasisDigest(state: SessionState): string {
+  return hashText(canonicalJsonStringify(evidenceApprovalBasisProjection(state, true)));
 }
 
 /**
@@ -128,6 +145,7 @@ export function issueEvidenceApprovalAdmission(state: SessionState): EvidenceApp
     flowguardSessionId: state.flowguardSessionId,
     bindingDigest: evidenceApprovalBindingDigest(state),
     basisDigest: evidenceApprovalBasisDigest(state),
+    sourceBasisDigest: evidenceApprovalSourceBasisDigest(state),
     consumed: false,
   });
   return admission;
@@ -150,6 +168,8 @@ export type AdmissionConsumption =
 export function consumeEvidenceApprovalAdmission(input: {
   readonly admission: unknown;
   readonly state: SessionState;
+  /** The persisted predecessor the approval is committed on top of. */
+  readonly predecessor: SessionState | null;
 }): AdmissionConsumption {
   if (input.admission === null || typeof input.admission !== 'object') {
     return { kind: 'rejected', reason: 'no authentic approval admission was supplied' };
@@ -168,6 +188,15 @@ export function consumeEvidenceApprovalAdmission(input: {
     return {
       kind: 'rejected',
       reason: 'the approval admission belongs to another worktree binding',
+    };
+  }
+  if (
+    input.predecessor === null ||
+    record.sourceBasisDigest !== evidenceApprovalSourceBasisDigest(input.predecessor)
+  ) {
+    return {
+      kind: 'rejected',
+      reason: 'the persisted predecessor changed after the approval basis was admitted',
     };
   }
   const basisDigest = evidenceApprovalBasisDigest(input.state);

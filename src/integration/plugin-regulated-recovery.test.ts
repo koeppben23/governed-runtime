@@ -138,6 +138,9 @@ async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
     },
     policySnapshot: REGULATED_POLICY_SNAPSHOT,
   });
+  // The persisted predecessor must equal the approved candidate's basis: write
+  // the exact evidence position first, then approve it.
+  await writeStateWithArtifactsAndAuditOperations(sessDir, evidenceBase);
   const application = applyEvidenceApprovalTransition(evidenceBase, AT);
   if (application.kind !== 'applied') {
     throw new Error(`fixture approval denied: ${application.block.code}`);
@@ -286,6 +289,8 @@ describe('recoverRegulatedCompletion', () => {
       },
       policySnapshot: REGULATED_POLICY_SNAPSHOT,
     });
+    // The persisted predecessor must equal the approved candidate's basis.
+    await writeStateWithArtifactsAndAuditOperations(sessDir, evidenceBase);
     const application = applyEvidenceApprovalTransition(evidenceBase, AT);
     if (application.kind !== 'applied') {
       throw new Error(`fixture approval denied: ${application.block.code}`);
@@ -362,6 +367,8 @@ describe('recoverRegulatedCompletion', () => {
       },
       policySnapshot: REGULATED_POLICY_SNAPSHOT,
     });
+    // The persisted predecessor must equal the approved candidate's basis.
+    await writeStateWithArtifactsAndAuditOperations(sessDir, evidenceBase);
     const application = applyEvidenceApprovalTransition(evidenceBase, AT);
     if (application.kind !== 'applied') {
       throw new Error(`fixture approval denied: ${application.block.code}`);

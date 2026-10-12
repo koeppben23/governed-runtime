@@ -113,16 +113,7 @@ function evidenceApprovalAuthorityBlock(
 ): EvidenceApprovalPreflightBlocked | null {
   const verdict = state.reviewDecision?.verdict;
   if (state.policySnapshot.requireHumanGates === true) {
-    if (verdict !== 'approve' && verdict !== 'approve_with_governance_override') {
-      return {
-        kind: 'blocked',
-        code: 'HUMAN_DECISION_REQUIRED',
-        params: {
-          reason: 'a human-gated evidence approval requires a recorded approving decision',
-        },
-      };
-    }
-    return null;
+    return humanGateDecisionBlock(state);
   }
   // An automatic policy may approve a non-exhausted gate; an exhausted gate
   // additionally requires the explicit governance override decision.
@@ -131,6 +122,44 @@ function evidenceApprovalAuthorityBlock(
       kind: 'blocked',
       code: 'GOVERNANCE_OVERRIDE_REQUIRED',
       params: { intent: 'APPROVE' },
+    };
+  }
+  return null;
+}
+
+/**
+ * A human-gated approval requires a recorded approving decision that does not
+ * predate the current evidence revision: a decision recorded BEFORE the
+ * implementation review (or the recorded implementation under reduced
+ * ceremony) is a carried plan approval, not an evidence-gate approval.
+ */
+function humanGateDecisionBlock(state: SessionState): EvidenceApprovalPreflightBlocked | null {
+  const decision = state.reviewDecision;
+  if (
+    decision === null ||
+    (decision.verdict !== 'approve' && decision.verdict !== 'approve_with_governance_override')
+  ) {
+    return {
+      kind: 'blocked',
+      code: 'HUMAN_DECISION_REQUIRED',
+      params: { reason: 'a human-gated evidence approval requires a recorded approving decision' },
+    };
+  }
+  const evidenceRevisionAt = state.implReview?.executedAt ?? state.implementation?.executedAt;
+  // Without a recorded implementation there is no evidence revision to bind:
+  // the preflight still requires the recorded approving decision.
+  if (evidenceRevisionAt === undefined) return null;
+  const decidedAt = Date.parse(decision.decidedAt);
+  const revisionAt = Date.parse(evidenceRevisionAt);
+  if (Number.isNaN(decidedAt) || decidedAt < revisionAt) {
+    return {
+      kind: 'blocked',
+      code: 'HUMAN_DECISION_REQUIRED',
+      params: {
+        reason:
+          'the recorded decision predates the current evidence revision; a plan approval ' +
+          'does not authorize the final evidence gate',
+      },
     };
   }
   return null;

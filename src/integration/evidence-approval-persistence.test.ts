@@ -22,7 +22,7 @@ import { TEAM_POLICY } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { hashText } from '../shared/hashing.js';
-import { FIXED_TIME, makeProgressedState, makeState } from '../fixtures.js';
+import { FIXED_TIME, makeProgressedState, makeState, REVIEW_APPROVE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 
@@ -293,6 +293,39 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
       ).toHaveLength(1);
     },
   );
+
+  it('does not accept a carried plan approval as evidence authorization', async () => {
+    // The decision predates the current implementation review: it is the plan
+    // approval that survived the transition, not an evidence-gate approval.
+    const previous: SessionState = {
+      ...makeProgressedState('EVIDENCE_REVIEW'),
+      reviewDecision: { ...REVIEW_APPROVE, decidedAt: '2025-01-01T00:00:00.000Z' },
+    };
+    await writeState(sessDir, previous);
+    const application = applyEvidenceApprovalTransition(previous, FIXED_TIME);
+    expect(application.kind).toBe('blocked');
+    if (application.kind === 'blocked') {
+      expect(application.block.code).toBe('HUMAN_DECISION_REQUIRED');
+    }
+    await expect(writeState(sessDir, enteringExportReady(previous))).rejects.toMatchObject({
+      code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
+    });
+  });
+
+  it('refuses an approval committed on a predecessor that changed after admission', async () => {
+    const previous = authorizedEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+    // The persisted predecessor changes to a different authority-relevant state
+    // between admission issuance and commit.
+    await writeState(sessDir, {
+      ...previous,
+      implReview: { ...previous.implReview!, iteration: 42 },
+    });
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
 
   it('refuses bootstrapping a session directly into EXPORT_READY', async () => {
     await expect(writeState(sessDir, makeState('EXPORT_READY'))).rejects.toMatchObject({

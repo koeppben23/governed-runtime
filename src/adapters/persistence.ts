@@ -483,6 +483,7 @@ async function assertEvidenceApprovalWriteBoundary(
   const consumption = consumeEvidenceApprovalAdmission({
     admission: approvalAdmission,
     state: next,
+    predecessor: previous,
   });
   if (consumption.kind !== 'accepted') {
     throw new PersistenceError(
