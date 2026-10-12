@@ -146,6 +146,16 @@ async function buildCompleteExportPackage(
 /** The real `/export` snapshot point: archiving happens at EXPORT_READY. */
 async function buildExportReadyPackage(): Promise<string> {
   const { fingerprint, sessionDir } = await initSession(SESSION_A, FLOWGUARD_A);
+  // Seed the approved evidence position first: a final approval needs an
+  // existing session (no bootstrap directly into EXPORT_READY).
+  await writeState(
+    sessionDir,
+    makeState('EVIDENCE_REVIEW', {
+      id: FLOWGUARD_A,
+      flowguardSessionId: FLOWGUARD_A,
+      binding: bindingFor(SESSION_A, fingerprint),
+    }),
+  );
   await writeState(
     sessionDir,
     makeState('EXPORT_READY', {
@@ -176,6 +186,14 @@ async function buildExportReadyPackage(): Promise<string> {
  */
 async function buildReducedCeremonyPackage(): Promise<string> {
   const { fingerprint, sessionDir } = await initSession(SESSION_A, FLOWGUARD_A);
+  await writeState(
+    sessionDir,
+    makeState('EVIDENCE_REVIEW', {
+      id: FLOWGUARD_A,
+      flowguardSessionId: FLOWGUARD_A,
+      binding: bindingFor(SESSION_A, fingerprint),
+    }),
+  );
   await writeState(
     sessionDir,
     makeState('EXPORT_READY', {
