@@ -35,6 +35,7 @@ import {
 import { applyEvidenceApprovalTransition } from '../rails/types.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { writeState } from '../adapters/persistence.js';
+import { writeStateWithArtifactsAndAuditOperations } from '../integration/tools/helpers.js';
 import { buildDecisionAuditIntent } from '../integration/services/decision-audit-intent.js';
 import {
   archiveCompletionExport,
@@ -124,7 +125,34 @@ async function writeApprovedFixture(
   if (application.kind !== 'applied') {
     throw new Error(`fixture approval denied: ${application.block.code}`);
   }
-  await writeState(sessionDir, application.state, undefined, application.admission);
+  // The approval commits with its decision receipt: the writer requires
+  // exactly one receipt bound to the final evidence gate.
+  const transition = application.state.transition;
+  const decision = state.reviewDecision;
+  if (transition === null || decision === null) {
+    throw new Error('approved fixture requires a transition and a recorded decision');
+  }
+  const record = {
+    from: transition.from,
+    to: transition.to,
+    event: transition.event,
+    at: transition.at,
+  };
+  await writeStateWithArtifactsAndAuditOperations(
+    sessionDir,
+    application.state,
+    [record],
+    [
+      buildDecisionAuditIntent({
+        transition: record,
+        decision,
+        policyMode: state.policySnapshot.mode,
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+    ],
+    application.admission,
+  );
 }
 
 async function buildCompleteExportPackage(

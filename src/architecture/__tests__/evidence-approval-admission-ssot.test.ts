@@ -27,7 +27,7 @@ const ISSUER_FILES = new Set([
 ]);
 const CONSUMER_FILES = new Set([
   'audit/proofgraph/evidence-approval-admission.ts',
-  'adapters/persistence.ts',
+  'adapters/evidence-approval-write-guard.ts',
 ]);
 
 function sourceFiles(): string[] {

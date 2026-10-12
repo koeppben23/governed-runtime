@@ -149,7 +149,7 @@ async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
     sessDir,
     application.state,
     undefined,
-    [],
+    [terminalDecisionIntent()],
     application.admission,
   );
   const persisted = await readState(sessDir);
@@ -157,9 +157,7 @@ async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
     ...reviewState('COMPLETE'),
     pendingAuditOperations: persisted!.pendingAuditOperations,
   };
-  await writeStateWithArtifactsAndAuditOperations(sessDir, complete, undefined, [
-    terminalDecisionIntent(),
-  ]);
+  await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
 }
 
 function terminalDecisionIntent() {
@@ -299,7 +297,7 @@ describe('recoverRegulatedCompletion', () => {
       sessDir,
       application.state,
       undefined,
-      [],
+      [terminalDecisionIntent()],
       application.admission,
     );
     const persisted = await readState(sessDir);
@@ -307,7 +305,12 @@ describe('recoverRegulatedCompletion', () => {
       ...reviewState('COMPLETE'),
       pendingAuditOperations: persisted!.pendingAuditOperations,
     };
-    await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
+    // The terminal checkpoint carries its own decision intent, as committed by
+    // the interrupted completion: the competing append below must still fail
+    // closed.
+    await writeStateWithArtifactsAndAuditOperations(sessDir, complete, undefined, [
+      terminalDecisionIntent(),
+    ]);
 
     // A competing appender writes the export transition durably before
     // recovery reaches its audit-lock critical section.
@@ -342,7 +345,7 @@ describe('recoverRegulatedCompletion', () => {
     ).toHaveLength(0);
   });
 
-  it('recovers the outbox correlation from a durable receipt after a crash between append and state write', async () => {
+  it('acknowledges a durably appended decision receipt without duplicating it', async () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
     // COMPLETE checkpoint without the terminal decision intent.
     const evidenceBase = makeState('EVIDENCE_REVIEW', {
@@ -377,7 +380,7 @@ describe('recoverRegulatedCompletion', () => {
       sessDir,
       application.state,
       undefined,
-      [],
+      [terminalDecisionIntent()],
       application.admission,
     );
     const persisted = await readState(sessDir);
@@ -387,13 +390,11 @@ describe('recoverRegulatedCompletion', () => {
     };
     await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
 
-    // Fault injection: the exact committed decision event is appended
-    // durably, then the process dies before the state commit that would have
-    // persisted its outbox operation.
-    const withDecision = prepareAuditOperations(complete, complete, undefined, [
-      terminalDecisionIntent(),
-    ]);
-    const operation = withDecision.pendingAuditOperations.at(-1);
+    // The approved checkpoint already carries its committed decision receipt;
+    // the crash window under test is the not-yet-acknowledged audit append.
+    const operation = complete.pendingAuditOperations.find(
+      (candidate) => candidate.kind === 'semantic' && candidate.semantic.detail.kind === 'decision',
+    );
     if (!operation || operation.kind !== 'semantic') {
       throw new Error('expected a committed decision operation');
     }
@@ -419,7 +420,7 @@ describe('recoverRegulatedCompletion', () => {
       crashedState?.pendingAuditOperations.some(
         (candidate) => candidate.operationId === operation.operationId,
       ),
-    ).toBe(false);
+    ).toBe(true);
 
     await recoverRegulatedCompletion(
       recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),

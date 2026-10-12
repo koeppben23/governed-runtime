@@ -59,6 +59,15 @@ function authorizedEvidenceState(): SessionState {
   return makeProgressedState('EVIDENCE_REVIEW');
 }
 
+/** Policy-permitted (solo) evidence position: no human decision, no receipt. */
+function autoEvidenceState(): SessionState {
+  return {
+    ...makeProgressedState('EVIDENCE_REVIEW'),
+    policySnapshot: createPolicySnapshot(getPolicyPreset('solo'), FIXED_TIME, hashText),
+    reviewDecision: null,
+  };
+}
+
 function approveOrThrow(state: SessionState) {
   const application = applyEvidenceApprovalTransition(state, FIXED_TIME);
   if (application.kind !== 'applied') {
@@ -102,7 +111,7 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
   });
 
   it('persists only through the protected application and consumes the admission once', async () => {
-    const previous = authorizedEvidenceState();
+    const previous = autoEvidenceState();
     await writeState(sessDir, previous);
     const application = approveOrThrow(previous);
     await writeState(sessDir, application.state, undefined, application.admission);
@@ -131,12 +140,18 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
   });
 
-  it('refuses a mutated approval decision after the admission was issued, without burning the admission', async () => {
-    const previous = authorizedEvidenceState();
+  it('refuses mutated evidence after the admission was issued, without burning the admission', async () => {
+    const previous = autoEvidenceState();
     await writeState(sessDir, previous);
     const application = approveOrThrow(previous);
 
-    const tampered: SessionState = { ...application.state, reviewDecision: null };
+    const tampered: SessionState = {
+      ...application.state,
+      implementationRiskAssessment: {
+        ...application.state.implementationRiskAssessment!,
+        riskTriggers: ['state_integrity'],
+      },
+    };
     await expect(
       writeState(sessDir, tampered, undefined, application.admission),
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
@@ -163,7 +178,7 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
   });
 
   it('refuses approval-relevant evidence changes while already EXPORT_READY', async () => {
-    const previous = authorizedEvidenceState();
+    const previous = autoEvidenceState();
     await writeState(sessDir, previous);
     const application = approveOrThrow(previous);
     await writeState(sessDir, application.state, undefined, application.admission);
@@ -183,7 +198,7 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
   });
 
   it('refuses review-evidence changes while already EXPORT_READY', async () => {
-    const previous = authorizedEvidenceState();
+    const previous = autoEvidenceState();
     await writeState(sessDir, previous);
     const application = approveOrThrow(previous);
     await writeState(sessDir, application.state, undefined, application.admission);
@@ -199,7 +214,7 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
   });
 
   it('still allows same-phase audit/metadata updates while already EXPORT_READY', async () => {
-    const previous = authorizedEvidenceState();
+    const previous = autoEvidenceState();
     await writeState(sessDir, previous);
     const application = approveOrThrow(previous);
     await writeState(sessDir, application.state, undefined, application.admission);
@@ -248,7 +263,7 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
   it.skipIf(process.platform === 'win32')(
     'consumes the admission before durability: a failed write needs a fresh canonical approval',
     async () => {
-      const previous = authorizedEvidenceState();
+      const previous = autoEvidenceState();
       await writeState(sessDir, previous);
       const application = approveOrThrow(previous);
 
@@ -311,6 +326,18 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     await expect(writeState(sessDir, enteringExportReady(previous))).rejects.toMatchObject({
       code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
     });
+  });
+
+  it('refuses a human-gated approval with a valid timestamp but no decision receipt', async () => {
+    const previous = authorizedEvidenceState();
+    await writeState(sessDir, previous);
+    // The recorded decision is fresh (equal to the evidence revision), but no
+    // receipt binds it to the final evidence gate: there is no timestamp
+    // fallback on a v11 approval.
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
   });
 
   it('refuses a plan approval receipted at a different gate, even with a later timestamp', async () => {
@@ -380,6 +407,68 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
       ...previous,
       implReview: { ...previous.implReview!, iteration: 42 },
     });
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
+  it('requires the override verdict at an exhausted gate and forbids it elsewhere', async () => {
+    const exhausted: SessionState = {
+      ...authorizedEvidenceState(),
+      implementationRework: {
+        rejectedDigest: makeProgressedState('EVIDENCE_REVIEW').implementation!.digest,
+        exhausted: true,
+      },
+    };
+    await writeState(sessDir, exhausted);
+    const plain = applyEvidenceApprovalTransition(exhausted, FIXED_TIME);
+    expect(plain.kind).toBe('blocked');
+    if (plain.kind === 'blocked') {
+      expect(plain.block.code).toBe('GOVERNANCE_OVERRIDE_REQUIRED');
+    }
+
+    const notExhausted = authorizedEvidenceState();
+    await writeState(sessDir, {
+      ...notExhausted,
+      reviewDecision: { ...REVIEW_APPROVE, verdict: 'approve_with_governance_override' },
+    });
+    const override = applyEvidenceApprovalTransition(
+      {
+        ...notExhausted,
+        reviewDecision: { ...REVIEW_APPROVE, verdict: 'approve_with_governance_override' },
+      },
+      FIXED_TIME,
+    );
+    expect(override.kind).toBe('blocked');
+    if (override.kind === 'blocked') {
+      expect(override.block.code).toBe('GOVERNANCE_OVERRIDE_NOT_REQUIRED');
+    }
+  });
+
+  it('refuses a carried plan override on a later exhausted gate at the commit', async () => {
+    const later = '2027-01-01T00:00:00.000Z';
+    const decision = {
+      ...REVIEW_APPROVE,
+      verdict: 'approve_with_governance_override' as const,
+      decidedAt: later,
+    };
+    const base = makeProgressedState('EVIDENCE_REVIEW');
+    const previous: SessionState = {
+      ...base,
+      reviewDecision: decision,
+      implementationRework: { rejectedDigest: base.implementation!.digest, exhausted: true },
+    };
+    // The same decision is receipted at PLAN_REVIEW: a carried override.
+    await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
+      buildDecisionAuditIntent({
+        transition: { from: 'PLAN_REVIEW', to: 'VALIDATION', event: 'APPROVE', at: later },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+    ]);
+    const application = approveOrThrow(previous);
     await expect(
       writeState(sessDir, application.state, undefined, application.admission),
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
