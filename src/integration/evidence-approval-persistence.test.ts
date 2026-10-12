@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readState, writeState, writeStateAlreadyLocked } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { buildDecisionAuditIntent } from './services/decision-audit-intent.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { applyEvidenceApprovalTransition, autoAdvance } from '../rails/types.js';
 import { evaluate } from '../machine/evaluate.js';
@@ -310,6 +311,63 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     await expect(writeState(sessDir, enteringExportReady(previous))).rejects.toMatchObject({
       code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
     });
+  });
+
+  it('refuses a plan approval receipted at a different gate, even with a later timestamp', async () => {
+    const later = '2027-01-01T00:00:00.000Z';
+    const decision = { ...REVIEW_APPROVE, decidedAt: later };
+    const previous: SessionState = {
+      ...makeProgressedState('EVIDENCE_REVIEW'),
+      reviewDecision: decision,
+    };
+    // The persisted decision receipts bind the SAME decision to PLAN_REVIEW.
+    await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
+      buildDecisionAuditIntent({
+        transition: {
+          from: 'PLAN_REVIEW',
+          to: 'VALIDATION',
+          event: 'APPROVE',
+          at: later,
+        },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+    ]);
+    // The timestamp heuristic passes (the decision postdates the review).
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
+  it('accepts an approval whose decision receipt binds the final evidence gate', async () => {
+    const previous = authorizedEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+    const transition = application.state.transition!;
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      application.state,
+      [{ from: transition.from, to: transition.to, event: transition.event, at: transition.at }],
+      [
+        buildDecisionAuditIntent({
+          transition: {
+            from: transition.from,
+            to: transition.to,
+            event: transition.event,
+            at: transition.at,
+          },
+          decision: previous.reviewDecision!,
+          policyMode: previous.policySnapshot.mode,
+          decisionSequence: 2,
+          actor: 'human',
+        }),
+      ],
+      application.admission,
+    );
+    expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
   });
 
   it('refuses an approval committed on a predecessor that changed after admission', async () => {

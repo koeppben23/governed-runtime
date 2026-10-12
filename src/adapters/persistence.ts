@@ -439,15 +439,40 @@ export async function writeStateAlreadyLocked(
 }
 
 /**
+ * Gate disposition of the decision-receipt authority for the recorded decision.
+ * Durable decision receipts (semantic outbox operations, retained after
+ * reconciliation) bind the decision to its gate: receipted at a DIFFERENT gate
+ * (a carried plan approval) is refused even with an approving verdict; the
+ * absence of any receipt falls back to the revision check.
+ */
+function decisionReceiptGate(
+  previous: SessionState,
+  next: SessionState,
+  decision: NonNullable<SessionState['reviewDecision']>,
+): 'evidence_gate' | 'other_gate' | 'none' {
+  let disposition: 'evidence_gate' | 'other_gate' | 'none' = 'none';
+  const operations = [...previous.pendingAuditOperations, ...next.pendingAuditOperations];
+  for (const operation of operations) {
+    if (operation.kind !== 'semantic') continue;
+    const detail = operation.semantic.detail;
+    if (detail.kind !== 'decision') continue;
+    if (detail.decidedAt !== decision.decidedAt) continue;
+    const identity = detail.decisionIdentity as { actorId?: unknown } | undefined;
+    if (identity?.actorId !== decision.decisionIdentity.actorId) continue;
+    if (detail.gatePhase === 'EVIDENCE_REVIEW' && detail.toPhase === 'EXPORT_READY') {
+      return 'evidence_gate';
+    }
+    disposition = 'other_gate';
+  }
+  return disposition;
+}
+
+/**
  * Refuse a newly entered `EXPORT_READY` that is not authorized for exactly the
- * written basis. Evidence sufficiency alone is never an authorization: the
- * writer requires the ephemeral admission issued by the canonical protected
- * application (which checks the approval authority AND the evidence preflight),
- * the predecessor must be `EVIDENCE_REVIEW`, and a bootstrap directly into
- * `EXPORT_READY` is refused. Any approval-relevant evidence change while
- * already in `EXPORT_READY` is refused as well; benign audit/metadata updates
- * (runtime lease, mutation episodes, review assurance, gates, error, outbox)
- * stay possible because they are not part of the approval basis.
+ * written basis: the ephemeral admission from the canonical protected
+ * application, the `EVIDENCE_REVIEW` predecessor, a decision receipt for the
+ * final gate under a human-gated policy, and no bootstrap. Approval-relevant
+ * evidence is immutable while approved; audit/metadata updates stay possible.
  */
 async function assertEvidenceApprovalWriteBoundary(
   sessionDir: string,
@@ -479,6 +504,20 @@ async function assertEvidenceApprovalWriteBoundary(
       `Refusing an EXPORT_READY entry from phase '${previous.phase}': only an ` +
         'EVIDENCE_REVIEW approval can enter EXPORT_READY.',
     );
+  }
+  // A human-gated policy binds the approval to the existing decision-receipt
+  // authority: a decision receipted at a DIFFERENT gate (a carried plan
+  // approval) is refused even when its verdict is approving, whatever the
+  // timestamp says.
+  if (next.policySnapshot.requireHumanGates === true) {
+    const decision = next.reviewDecision;
+    if (decision === null || decisionReceiptGate(previous, next, decision) === 'other_gate') {
+      throw new PersistenceError(
+        'EXPORT_READY_APPROVAL_UNVERIFIED',
+        'Refusing a human-gated EXPORT_READY approval whose decision is missing or ' +
+          'receipted at a different gate than the final evidence gate.',
+      );
+    }
   }
   const consumption = consumeEvidenceApprovalAdmission({
     admission: approvalAdmission,

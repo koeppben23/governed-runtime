@@ -93,7 +93,10 @@ function evidenceApprovalBasisProjection(
   return {
     flowguardSessionId: state.flowguardSessionId,
     bindingDigest: evidenceApprovalBindingDigest(state),
-    policyHash: state.policySnapshot.hash,
+    // The FULL frozen policy snapshot, not only its stored hash: the reader
+    // does not recompute the hash from the fields, so a hash-only binding
+    // would not detect in-place policy tampering.
+    policySnapshot: state.policySnapshot,
     ...(includeDecision ? { reviewDecision: state.reviewDecision } : {}),
     plan:
       plan === null

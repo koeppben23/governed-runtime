@@ -464,20 +464,20 @@ async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<Check
   // advance. An approval's evidence basis must already include the materialized
   // contract: the admission is issued for exactly the basis that is committed,
   // so post-advance materialization would invalidate it.
-  const contractEntry =
-    ceremony.kind === 'decided' && ceremony.decision.profile === 'reduced'
-      ? ('EVIDENCE_REVIEW' as const)
-      : ('IMPL_REVIEW' as const);
-  const stateWithMaterializedContract = await materializePostValidationContract(
-    ceremony.state,
-    input.worktree,
-    contractEntry,
-  );
-  const advanced = autoAdvance(
-    stateWithMaterializedContract,
-    (s) => evaluate(s, railCtx.policy),
-    railCtx,
-  );
+  // Materialize only for an ACTUAL review entry: the machine's next transition
+  // must be the full review or the reduced evidence shortcut. Failed checks,
+  // intermediate states, and baseline validation never materialize.
+  const nextEvaluation = evaluate(ceremony.state, railCtx.policy);
+  const reviewEntry =
+    nextEvaluation.kind === 'transition' &&
+    (nextEvaluation.target === 'IMPL_REVIEW' || nextEvaluation.target === 'EVIDENCE_REVIEW')
+      ? nextEvaluation.target
+      : null;
+  const stateForAdvance =
+    reviewEntry === null
+      ? ceremony.state
+      : await materializePostValidationContract(ceremony.state, input.worktree, reviewEntry);
+  const advanced = autoAdvance(stateForAdvance, (s) => evaluate(s, railCtx.policy), railCtx);
   if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
   if (advanced.kind === 'blocked') return formatAutoAdvanceBlocked(advanced);
 
