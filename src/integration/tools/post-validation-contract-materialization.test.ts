@@ -139,7 +139,6 @@ function certificate(
     authorityDigest: PLAN_CURRENT.digest,
     claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
     approvedAt: '2026-01-02T00:00:00.000Z',
-    certificateId: randomUUID(),
     planVersion: PLAN_CURRENT.planVersion,
     planRecordDigest: PLAN_CURRENT.recordDigest,
     reviewBinding: {

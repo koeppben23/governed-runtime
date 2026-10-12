@@ -43,6 +43,8 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
+import { evaluateWithEvent } from '../machine/evaluate.js';
 import { appendReviewDispatch } from '../state/review-dispatch.js';
 import * as persistence from '../adapters/persistence.js';
 import {
@@ -1430,6 +1432,38 @@ describe('implement', () => {
       expect(result.implReviewIteration).toBeGreaterThanOrEqual(1);
       expect(result.latestImplementationReview).toBeTruthy();
       expect(implementationReview(result).reviewMode).toBe('subagent');
+    });
+
+    it('persists the evidence-gate progress and reports the true phase when the automatic approval is denied', async () => {
+      await reachImplementation();
+      await enterImplReview();
+      const sessDirForBlock = await currentSessionDir();
+      const preReviewState = await readState(sessDirForBlock);
+      // A specific risk trigger without any certificate-authorized critical
+      // claim: the protected final gate must deny the automatic approval.
+      await writeState(sessDirForBlock, {
+        ...preReviewState!,
+        implementationRiskAssessment: {
+          ...preReviewState!.implementationRiskAssessment!,
+          riskTriggers: ['state_integrity'],
+        },
+      });
+      await fulfillReview('implement', 1, 'accept');
+
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.phase).toBe('EVIDENCE_REVIEW');
+
+      // Truthful persisted position: the legitimate review progress is durable,
+      // the approval is not.
+      const after = await readState(sessDirForBlock);
+      expect(after?.phase).toBe('EVIDENCE_REVIEW');
+      expect(after?.phase).not.toBe('EXPORT_READY');
+
+      // A real recovery command exists at that persisted phase.
+      expect(isCommandAllowed('EVIDENCE_REVIEW', Command.REVIEW_DECISION)).toBe(true);
+      expect(evaluateWithEvent('EVIDENCE_REVIEW', 'CHANGES_REQUESTED')).toBe('IMPLEMENTATION');
     });
 
     it('persists implReviewFindings in state', async () => {

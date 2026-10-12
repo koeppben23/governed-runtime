@@ -113,7 +113,6 @@ function evidenceState(input: {
   });
   if (!decls || input.withCertificate !== true) return base;
   const certificate = makePlanApprovalCertificate(base, {
-    certificateId: CERT_ID,
     claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
   });
   return {

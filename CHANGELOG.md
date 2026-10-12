@@ -23,12 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   approval: the explicit decision rail, governance overrides, and policy
   automatic approval on reviewer acceptance all consume the same certificate,
   authorized-claim, coverage, risk-assessment, and proof-state decision. The
-  generic transition applier refuses the protected edge, the persistence
-  boundary re-evaluates exactly what is written, and a denied automatic
-  approval carries no state, no decision receipt, and no completion artifact.
-  Automatic plan approval mints a `policy_auto` certificate from the same bound
-  review evidence as the explicit path; an exhausted review can never be
-  certified automatically.
+  generic transition applier refuses the protected edge; the LOWEST persistence
+  boundary (`writeStateAlreadyLocked`, covering `writeState`, the
+  artifact/audit commit path, and any direct caller) re-evaluates exactly what
+  is written and refuses a bootstrap directly into `EXPORT_READY`; a denied
+  automatic approval carries no state, no decision receipt, and no completion
+  artifact. A denied automatic implementation approval persists the legitimate
+  review progress at the evidence gate first, so the reported phase always
+  matches the persisted phase. Explicit full-review approvals re-attest the
+  live governed worktree bytes before approval. Automatic plan approval mints
+  a `policy_auto` certificate from the same bound review evidence as the
+  explicit path; an exhausted or uncertifiable accepted review blocks at the
+  plan gate itself with the canonical review-evidence error. Certificate ids
+  are recomputed canonically at parse and authorization time, and the upgrade
+  preflight classifies the archived session state through the same boundary
+  authority as the live read (`v10` archives are `incompatible`, malformed
+  current archives `invalid`).
 
 - **Live critical-claim controls.** `run-live-claim-controls.mjs` drives two real
   cases through the reduced evidence gate: a retained critical claim proven by

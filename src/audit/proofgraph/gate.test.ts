@@ -371,7 +371,6 @@ describe('evaluateProofGraphGateFromState', () => {
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
       planVersion: PLAN_CURRENT.planVersion,
       planRecordDigest: PLAN_CURRENT.recordDigest,
-      certificateId: '00000000-0000-4000-8000-0000000000ce',
       reviewBinding: {
         kind: 'current_review',
         reviewObligationId: '00000000-0000-4000-8000-0000000000cf',
@@ -401,7 +400,7 @@ describe('evaluateProofGraphGateFromState', () => {
     decls: PlanClaimDeclarations,
     claimId: string = UUID(1),
     overrides: Partial<ProofClaim> = {},
-    certificateId = '00000000-0000-4000-8000-0000000000ce',
+    certificateId = certificate(decls).certificateId,
   ): ProofClaim {
     return {
       claimId,

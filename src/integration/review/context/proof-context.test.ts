@@ -117,12 +117,13 @@ describe('renderDeclarationPreview', () => {
         ...planState.plan!,
         approvalCertificate: makePlanApprovalCertificate(planState, {
           claimDeclarationsDigest: 'declarations-digest',
-          certificateId: '44444444-4444-4444-8444-444444444444',
         }),
       },
     };
     const text = renderDeclarationPreview(certified).join('\n');
-    expect(text).toContain('44444444-4444-4444-8444-444444444444');
+    const certificateId = certified.plan?.approvalCertificate?.certificateId;
+    expect(certificateId).toBeDefined();
+    expect(text).toContain(certificateId!);
     expect(text).toContain('claimDeclarationsDigest declarations-digest');
   });
 

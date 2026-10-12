@@ -308,7 +308,6 @@ describe('buildFinishDocument', () => {
       {
         authorityDigest: current.digest,
         claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-        certificateId: '00000000-0000-4000-8000-0000000000ce',
         planVersion: current.planVersion,
         planRecordDigest: current.recordDigest,
         reviewBinding: {

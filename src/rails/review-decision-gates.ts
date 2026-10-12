@@ -395,7 +395,7 @@ export function approvalCertificatePatch(
 ): Partial<Pick<SessionState, 'plan' | 'architecture'>> {
   if (!isApprovalVerdict(input.verdict)) return {};
   return {
-    ...planCertificatePatch(state, decision, ctx, bindings.planReviewEvidence),
+    ...planCertificatePatch(state, decision, bindings.planReviewEvidence),
     ...architectureCertificatePatch(state, decision, ctx, bindings.architectureReviewBinding),
   };
 }

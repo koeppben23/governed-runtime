@@ -65,6 +65,7 @@ import { ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
 import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
+import { evaluateEvidenceApprovalPreflight } from '../audit/proofgraph/evidence-approval-preflight.js';
 
 export {
   ensureDir,
@@ -315,10 +316,30 @@ function parseStateJson(raw: string, filePath: string): unknown {
   }
 }
 
-function assertCurrentStateContract(
-  contract: Record<string, unknown> | null,
-  filePath: string,
-): void {
+/** Canonical assessment of a persisted session-state document. */
+export type PersistedStateAssessment =
+  | { readonly kind: 'compatible'; readonly state: SessionState }
+  | { readonly kind: 'incompatible' }
+  | { readonly kind: 'invalid'; readonly message: string };
+
+function hasRemovedStateFields(contract: Record<string, unknown>): boolean {
+  const snapshot = contract.policySnapshot;
+  const snapshotHasRemovedField =
+    typeof snapshot === 'object' &&
+    snapshot !== null &&
+    ('selfReview' in snapshot || 'requireVerifiedActorsForApproval' in snapshot);
+  return 'archiveStatus' in contract || snapshotHasRemovedField;
+}
+
+/**
+ * Canonical persisted-state boundary: the SINGLE authority for both the
+ * executable read path and the upgrade preflight's archive classification.
+ * A missing current tuple component is `incompatible` (expected legacy shape),
+ * a malformed current document is `invalid`. No migration, defaulting, or
+ * authority carry-forward exists on this boundary.
+ */
+export function assessPersistedStateDocument(json: unknown): PersistedStateAssessment {
+  const contract = json as Record<string, unknown> | null;
   if (
     !contract ||
     typeof contract !== 'object' ||
@@ -327,38 +348,21 @@ function assertCurrentStateContract(
     contract.stateDigestFormat !== CURRENT_STATE_DIGEST_FORMAT ||
     contract.auditChainFormat !== CURRENT_AUDIT_CHAIN_FORMAT
   ) {
-    throw new PersistenceError(
-      'SESSION_STATE_INCOMPATIBLE',
-      `State file does not satisfy the current executable Assurance epoch contract: ${filePath}. ` +
-        'Start a new FlowGuard session in the current Assurance Epoch.',
-    );
+    return { kind: 'incompatible' };
   }
-}
-
-function assertNoRemovedStateFields(contract: Record<string, unknown> | null): void {
-  if (!contract) return;
-  const snapshot = contract.policySnapshot;
-  const snapshotHasRemovedField =
-    typeof snapshot === 'object' &&
-    snapshot !== null &&
-    ('selfReview' in snapshot || 'requireVerifiedActorsForApproval' in snapshot);
-  if ('archiveStatus' in contract || snapshotHasRemovedField) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      'State file contains a field removed by the current session-state contract.',
-    );
+  if (hasRemovedStateFields(contract)) {
+    return {
+      kind: 'invalid',
+      message: 'State file contains a field removed by the current session-state contract.',
+    };
   }
-}
-
-function validateStateJson(json: unknown): SessionState {
   const result = SessionState.safeParse(json);
-  if (!result.success) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `State file failed Zod validation: ${result.error.message}`,
-    );
-  }
-  return result.data;
+  return result.success
+    ? { kind: 'compatible', state: result.data }
+    : {
+        kind: 'invalid',
+        message: `State file failed Zod validation: ${result.error.message}`,
+      };
 }
 
 export async function readState(sessionDir: string): Promise<SessionState | null> {
@@ -368,12 +372,18 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   if (raw === null) return null;
 
   const json = parseStateJson(raw, filePath);
-  const contract = json as Record<string, unknown> | null;
-  assertCurrentStateContract(contract, filePath);
-  assertNoRemovedStateFields(contract);
-
-  // No read migration, partial parsing, defaulting, or authority carry-forward.
-  return validateStateJson(json);
+  const assessment = assessPersistedStateDocument(json);
+  if (assessment.kind === 'incompatible') {
+    throw new PersistenceError(
+      'SESSION_STATE_INCOMPATIBLE',
+      `State file does not satisfy the current executable Assurance epoch contract: ${filePath}. ` +
+        'Start a new FlowGuard session in the current Assurance Epoch.',
+    );
+  }
+  if (assessment.kind === 'invalid') {
+    throw new PersistenceError('SCHEMA_VALIDATION_FAILED', assessment.message);
+  }
+  return assessment.state;
 }
 
 /**
@@ -413,9 +423,50 @@ export async function writeStateAlreadyLocked(
   // fails closed here instead of persisting an unreviewable implementation.
   assertImplementationEntryFrozen(result.data);
 
+  // THE lowest evidence-approval boundary: a newly entered EXPORT_READY must
+  // clear the canonical preflight on exactly the state being written. This
+  // covers every writer — `writeState`, the artifact/audit commit path, and
+  // any future direct caller — not only the prepared full-prepare path.
+  await assertEvidenceApprovalWriteBoundary(sessionDir, result.data);
+
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';
   await durableAtomicWrite(statePath(sessionDir), json);
+}
+
+/**
+ * Refuse a newly entered `EXPORT_READY` whose written evidence does not clear
+ * the canonical preflight. A same-phase metadata update while already in
+ * `EXPORT_READY` is not a new approval and is exempt; a bootstrap directly
+ * into `EXPORT_READY` is refused outright (no prior approved state can exist).
+ */
+async function assertEvidenceApprovalWriteBoundary(
+  sessionDir: string,
+  next: SessionState,
+): Promise<void> {
+  if (next.phase !== 'EXPORT_READY') return;
+  const previous = await readState(sessionDir);
+  if (previous === null) {
+    throw new PersistenceError(
+      'EXPORT_READY_APPROVAL_UNVERIFIED',
+      'Refusing to bootstrap a session directly into EXPORT_READY: a final evidence ' +
+        'approval requires an existing session with an approved evidence basis.',
+    );
+  }
+  if (previous.phase === 'EXPORT_READY') return;
+  // The persisted state has already entered EXPORT_READY; the approval gate is
+  // evaluated on the evidence position the approval was decided at. The
+  // projection only changes the phase, never the evidence or authority.
+  const gateState: SessionState = { ...next, phase: 'EVIDENCE_REVIEW' };
+  const preflight = evaluateEvidenceApprovalPreflight(gateState);
+  if (preflight.kind === 'blocked') {
+    throw new PersistenceError(
+      'EXPORT_READY_APPROVAL_UNVERIFIED',
+      `Refusing to persist a new EXPORT_READY entry that does not clear the evidence ` +
+        `preflight (${preflight.code}). The approval must be applied through the ` +
+        `protected transition application against a current, admitted evidence basis.`,
+    );
+  }
 }
 
 /**

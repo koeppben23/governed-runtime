@@ -434,7 +434,6 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
       },
     };
     return makePlanApprovalCertificate(probe, {
-      certificateId: CERT_ID,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
       planVersion: PLAN_CURRENT.planVersion,
       planRecordDigest: PLAN_CURRENT.recordDigest,
@@ -489,7 +488,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
               authorityId: 'plan',
               digest: PLAN_CURRENT.digest,
               approval: {
-                certificateId: CERT_ID,
+                certificateId: approvedPlan().approvalCertificate!.certificateId,
                 claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),
                 decisionAttestationDigest: certificate().decisionAttestationDigest,
                 declarationId: CLAIM_ID,

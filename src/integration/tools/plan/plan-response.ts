@@ -39,7 +39,10 @@ import {
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
-import { mintAutomaticPlanApprovalCertificateIfPermitted } from './plan-auto-approval.js';
+import {
+  persistBlockedAutomaticPlanApproval,
+  prepareAutomaticPlanApproval,
+} from './plan-auto-approval.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
@@ -566,7 +569,15 @@ export async function persistPlanReview(
     effectiveFindings,
     consumedAssurance,
   );
-  const nextState = mintAutomaticPlanApprovalCertificateIfPermitted(reviewedState, scope);
+  const preparation = prepareAutomaticPlanApproval(reviewedState, scope);
+  if (preparation.kind === 'blocked') {
+    return persistBlockedAutomaticPlanApproval({
+      state: reviewedState,
+      scope,
+      block: preparation.block,
+    });
+  }
+  const nextState = preparation.state;
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.

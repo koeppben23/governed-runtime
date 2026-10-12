@@ -717,7 +717,6 @@ async function f1ClaimBearingState(se: SE, staleCertificate = false): Promise<vo
   const certificate = makePlanApprovalCertificate(baseState, {
     claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
     approvedAt: '2026-01-02T00:00:00.000Z',
-    certificateId: randomUUID(),
     planVersion: planCurrent.planVersion,
     planRecordDigest: staleCertificate ? 'd'.repeat(64) : planCurrent.recordDigest,
     reviewBinding: {

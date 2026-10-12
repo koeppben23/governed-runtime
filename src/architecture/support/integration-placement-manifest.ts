@@ -535,6 +535,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     owner: 'tools-implementation',
   },
   { file: 'integration/tools/implementation/implement-review.ts', owner: 'tools-implementation' },
+  {
+    file: 'integration/tools/implementation/implement-review-response.ts',
+    owner: 'tools-implementation',
+  },
   { file: 'integration/tools/implementation/implement-shared.ts', owner: 'tools-implementation' },
   { file: 'integration/tools/implementation-review-activation.ts', owner: 'tools-infrastructure' },
   {

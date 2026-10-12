@@ -1159,7 +1159,6 @@ describe('CORNER', () => {
               ],
             }),
           ),
-          certificateId: '00000000-0000-4000-8000-000000000001',
           // The certificate is bound to the CURRENT plan record: a hardcoded
           // version or record digest makes it stale, and materialization then
           // yields an empty contract instead of the claims under test.

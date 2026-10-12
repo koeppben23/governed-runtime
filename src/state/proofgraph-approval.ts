@@ -11,10 +11,18 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
-import { ReviewDecision } from './evidence-review-report.js';
+import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { CounterexampleRequirement } from './proofgraph.js';
+import {
+  isCanonicalPlanCertificateIdentity,
+  PlanApprovalCertificate,
+  refineReviewBinding,
+  ReviewBinding,
+  type PlanApprovalAttestation,
+} from './proofgraph-plan-certificate.js';
 import { SpecificRiskTrigger } from './risk-trigger.js';
+
+export { PlanApprovalCertificate, ReviewBinding } from './proofgraph-plan-certificate.js';
 export {
   AggregateCounterexampleRequirement,
   AssertionCounterexampleRequirement,
@@ -238,189 +246,6 @@ const approvalCertificateShape = {
 } as const;
 
 /**
- * Provenance edge of an approval certificate. The binding kind is decided by
- * the gate path that minted the certificate and is never normalized from
- * digest equality afterwards.
- */
-export const ReviewBinding = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('current_review'),
-      reviewObligationId: z.string().uuid(),
-      reviewEvidenceDigest: z.string().min(1),
-      reviewedSubjectDigest: z.string().min(1),
-    })
-    .strict()
-    .readonly(),
-  z
-    .object({
-      kind: z.literal('review_exhausted_override'),
-      lastReviewObligationId: z.string().uuid(),
-      lastReviewEvidenceDigest: z.string().min(1),
-      reviewedSubjectDigest: z.string().min(1),
-      approvedSubjectDigest: z.string().min(1),
-    })
-    .strict()
-    .readonly(),
-]);
-export type ReviewBinding = z.infer<typeof ReviewBinding>;
-
-function refineReviewBinding(
-  certificate: { readonly authorityDigest: string; readonly reviewBinding: ReviewBinding },
-  ctx: z.RefinementCtx,
-  flow: 'plan' | 'architecture',
-): void {
-  const binding = certificate.reviewBinding;
-  if (binding.kind === 'current_review') {
-    if (binding.reviewedSubjectDigest !== certificate.authorityDigest) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewBinding', 'reviewedSubjectDigest'],
-        message:
-          flow === 'plan'
-            ? 'A plan current_review binding must review exactly the certified plan digest (reviewedSubjectDigest === authorityDigest).'
-            : 'A current_review binding must review exactly the certified ADR digest (reviewedSubjectDigest === authorityDigest).',
-      });
-    }
-    return;
-  }
-  if (binding.approvedSubjectDigest !== certificate.authorityDigest) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['reviewBinding', 'approvedSubjectDigest'],
-      message:
-        flow === 'plan'
-          ? 'A plan review_exhausted_override binding must approve exactly the certified plan digest (approvedSubjectDigest === authorityDigest).'
-          : 'A review_exhausted_override binding must approve exactly the certified ADR digest (approvedSubjectDigest === authorityDigest).',
-    });
-  }
-  if (binding.reviewedSubjectDigest !== binding.approvedSubjectDigest) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['reviewBinding', 'reviewedSubjectDigest'],
-      message:
-        flow === 'plan'
-          ? 'A plan review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).'
-          : 'A review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).',
-    });
-  }
-}
-
-/**
- * How a plan approval was produced. `explicit_decision` carries the real
- * recorded decision (the frozen policy still classifies the actor). `policy_auto`
- * is runtime-owned and deliberately carries NO identity: the session/policy
- * binding is its provenance, never a fabricated person. The kinds are never
- * reinterpreted into each other, and only an accepted review is certified
- * automatically — an exhausted override stays an explicit decision.
- */
-const PlanApprovalAttestationSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('explicit_decision'),
-      decision: ReviewDecision,
-      flowguardSessionId: z.string().uuid(),
-      bindingDigest: z.string().regex(/^[a-f0-9]{64}$/),
-      policyHash: z.string().regex(POLICY_DIGEST_PATTERN),
-      policyHashVersion: z.literal(POLICY_DIGEST_VERSION),
-    })
-    .strict()
-    .readonly(),
-  z
-    .object({
-      kind: z.literal('policy_auto'),
-      decidedAt: z.string().datetime(),
-      flowguardSessionId: z.string().uuid(),
-      bindingDigest: z.string().regex(/^[a-f0-9]{64}$/),
-      policyHash: z.string().regex(POLICY_DIGEST_PATTERN),
-      policyHashVersion: z.literal(POLICY_DIGEST_VERSION),
-    })
-    .strict()
-    .readonly(),
-]);
-type PlanApprovalAttestation = z.infer<typeof PlanApprovalAttestationSchema>;
-
-/**
- * A plan approval certificate, versioned and attestation-discriminated.
- * `decisionAttestationDigest` is recomputed at parse time, so a relabeled kind
- * or swapped decision is rejected, not silently reinterpreted. `approvedBy`
- * deliberately does not exist for plan certificates — an automatic approval
- * has no person to name, and an explicit decision carries its identity inside
- * the attestation.
- */
-export const PlanApprovalCertificate = z
-  .object({
-    schemaVersion: z.literal('plan-approval-certificate.v1'),
-    flow: z.literal('plan'),
-    authorityDigest: z.string().min(1),
-    claimDeclarationsDigest: z.string().min(1),
-    decisionAttestationDigest: z.string().min(1),
-    approvedAt: z.string().datetime(),
-    certificateId: z.string().uuid(),
-    /** Immutable plan version this certificate was issued against. */
-    planVersion: z.number().int().positive(),
-    /** Record-digest of the plan this certificate binds (content + lineage). */
-    planRecordDigest: z.string().min(1),
-    /**
-     * Canonical review-evidence provenance edge. REQUIRED in the Hard
-     * Assurance Epoch: every certificate is minted with its binding, and a
-     * certificate without one is not a current-epoch artifact — it fails
-     * parsing instead of degrading to a readable-but-unauthoritative shape.
-     */
-    reviewBinding: ReviewBinding,
-    approvalAttestation: PlanApprovalAttestationSchema,
-  })
-  .strict()
-  .superRefine((certificate, ctx) => {
-    refineReviewBinding(certificate, ctx, 'plan');
-    const attestation = certificate.approvalAttestation;
-    if (certificate.decisionAttestationDigest !== hashText(canonicalJsonStringify(attestation))) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['decisionAttestationDigest'],
-        message: 'decisionAttestationDigest must equal the canonical approval attestation digest.',
-      });
-    }
-    if (attestation.kind === 'explicit_decision') {
-      if (certificate.approvedAt !== attestation.decision.decidedAt) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['approvedAt'],
-          message: 'approvedAt must equal the explicit decision time.',
-        });
-      }
-      if (
-        attestation.decision.verdict !== 'approve' &&
-        attestation.decision.verdict !== 'approve_with_governance_override'
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['approvalAttestation', 'decision', 'verdict'],
-          message: 'A plan approval certificate requires an approving verdict.',
-        });
-      }
-      return;
-    }
-    if (certificate.approvedAt !== attestation.decidedAt) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['approvedAt'],
-        message: 'approvedAt must equal the automatic decision time.',
-      });
-    }
-    if (certificate.reviewBinding.kind !== 'current_review') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewBinding', 'kind'],
-        message:
-          'A policy_auto certificate can only certify an accepted current review; an exhausted override must be an explicit decision.',
-      });
-    }
-  })
-  .readonly();
-export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
-
-/**
  * A common certificate constrained for architecture approval persistence.
  *
  * `reviewBinding` is REQUIRED: a certificate without a resolvable review
@@ -546,6 +371,9 @@ export function hasCurrentPlanApprovalCertificate(
   // Record-Digest-Bindung: Gleicher Plantext + gleiche Version, aber anderer
   // recordDigest (z.B. andere Lineage-Metadaten) invalidiert das Zertifikat.
   if (certificate.planRecordDigest !== plan.current.recordDigest) return false;
+  // The certificate id is bound to its full certified content: a tampered or
+  // relabeled id fails closed instead of surviving as an unbound identifier.
+  if (!isCanonicalPlanCertificateIdentity(certificate)) return false;
   // Runtime guard for malformed in-memory projections: a missing attestation is
   // never a current certificate.
   if (!certificate.approvalAttestation) return false;

@@ -46,6 +46,7 @@ import {
   type ReviewBinding,
 } from './state/proofgraph-approval.js';
 import { planApprovalContextOf } from './state/proofgraph-approval-context.js';
+import { planApprovalCertificateIdentity } from './state/proofgraph-plan-certificate.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
 
@@ -648,7 +649,6 @@ export interface PlanApprovalCertificateOverrides {
   readonly kind?: 'explicit_decision' | 'policy_auto';
   readonly decision?: ReviewDecision;
   readonly approvedAt?: string;
-  readonly certificateId?: string;
   readonly authorityDigest?: string;
   readonly claimDeclarationsDigest?: string;
   readonly planVersion?: number;
@@ -685,24 +685,38 @@ export function makePlanApprovalCertificate(
           decision: overrides.decision ?? { ...REVIEW_APPROVE, decidedAt: approvedAt },
           ...common,
         };
+  const authorityDigest = overrides.authorityDigest ?? plan.current.digest;
+  const claimDeclarationsDigest =
+    overrides.claimDeclarationsDigest ??
+    hashText(canonicalJsonStringify(plan.claimDeclarations ?? emptyClaimDeclarations('plan')));
+  const planVersion = overrides.planVersion ?? plan.current.planVersion;
+  const planRecordDigest = overrides.planRecordDigest ?? plan.current.recordDigest;
+  const reviewBinding: ReviewBinding = overrides.reviewBinding ?? {
+    kind: 'current_review',
+    reviewObligationId: '00000000-0000-4000-8000-000000000765',
+    reviewEvidenceDigest: 'review-evidence-digest',
+    reviewedSubjectDigest: plan.current.digest,
+  };
+  const decisionAttestationDigest = hashText(canonicalJsonStringify(approvalAttestation));
   return PlanApprovalCertificate.parse({
     schemaVersion: 'plan-approval-certificate.v1',
     flow: 'plan',
-    authorityDigest: overrides.authorityDigest ?? plan.current.digest,
-    claimDeclarationsDigest:
-      overrides.claimDeclarationsDigest ??
-      hashText(canonicalJsonStringify(plan.claimDeclarations ?? emptyClaimDeclarations('plan'))),
-    decisionAttestationDigest: hashText(canonicalJsonStringify(approvalAttestation)),
+    authorityDigest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
     approvedAt,
-    certificateId: overrides.certificateId ?? '00000000-0000-4000-8000-0000000000ce',
-    planVersion: overrides.planVersion ?? plan.current.planVersion,
-    planRecordDigest: overrides.planRecordDigest ?? plan.current.recordDigest,
-    reviewBinding: overrides.reviewBinding ?? {
-      kind: 'current_review',
-      reviewObligationId: '00000000-0000-4000-8000-000000000765',
-      reviewEvidenceDigest: 'review-evidence-digest',
-      reviewedSubjectDigest: plan.current.digest,
-    },
+    certificateId: planApprovalCertificateIdentity({
+      authorityDigest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      planVersion,
+      planRecordDigest,
+      reviewBinding,
+      approvedAt,
+    }),
+    planVersion,
+    planRecordDigest,
+    reviewBinding,
     approvalAttestation,
   });
 }

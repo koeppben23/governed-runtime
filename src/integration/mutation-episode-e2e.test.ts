@@ -22,6 +22,8 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { computeImplementationDigest } from '../verification/implementation-subject.js';
+import { hashText } from '../shared/hashing.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import {
   canonicalBinding,
@@ -63,6 +65,9 @@ vi.mock('../adapters/git.js', async (importOriginal) => {
   return {
     ...original,
     isGitRepoStrict: vi.fn().mockResolvedValue(true),
+    // Deterministic enumeration of the fixture subject, matching
+    // IMPL_EVIDENCE.changedFiles: final approvals re-attest the live bytes.
+    changedFiles: vi.fn().mockResolvedValue(['src/auth.ts', 'src/auth.test.ts']),
   };
 });
 
@@ -683,12 +688,32 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
       await fs.mkdir(sessDir, { recursive: true });
       const recoveredState = await boundProgressedState(ws, sessionID, 'EVIDENCE_REVIEW');
+      // Final approvals re-attest the live governed subject: write the frozen
+      // subject files and derive the canonical content digest.
+      const subjectFiles = [...recoveredState.implementation!.changedFiles];
+      for (const relative of subjectFiles) {
+        const absolute = path.join(ws.tmpDir, relative);
+        await fs.mkdir(path.dirname(absolute), { recursive: true });
+        await fs.writeFile(absolute, `content:${relative}\n`, 'utf8');
+      }
+      const implementationDigest = await computeImplementationDigest({
+        worktree: ws.tmpDir,
+        files: subjectFiles,
+        digest: hashText,
+      });
       await writeStateWithArtifacts(sessDir, {
         ...recoveredState,
         implementation: {
           ...recoveredState.implementation!,
+          digest: implementationDigest,
           executedAt: '2026-02-01T00:00:00.000Z',
         },
+        implementationRiskAssessment: recoveredState.implementationRiskAssessment
+          ? { ...recoveredState.implementationRiskAssessment, implementationDigest }
+          : recoveredState.implementationRiskAssessment,
+        implReview: recoveredState.implReview
+          ? { ...recoveredState.implReview, currDigest: implementationDigest }
+          : recoveredState.implReview,
         mutationEpisodes: [
           {
             episodeId: crypto.randomUUID(),

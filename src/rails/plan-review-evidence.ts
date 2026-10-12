@@ -24,11 +24,12 @@ import type { ReviewDecision } from '../state/evidence.js';
 import type { ReviewCompletion } from '../state/evidence-primitives.js';
 import type { PlanApprovalCertificate, ReviewBinding } from '../state/proofgraph-approval.js';
 import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
+import { planApprovalCertificateIdentity } from '../state/proofgraph-plan-certificate.js';
 import { planApprovalContextOf } from '../state/proofgraph-approval-context.js';
 import type { RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { digestToId, hashText } from '../shared/hashing.js';
+import { hashText } from '../shared/hashing.js';
 import type {
   PlanReviewSubjectAuthority,
   ResolvedPlanReviewEvidence,
@@ -164,33 +165,6 @@ export function planReviewSubjectAuthority(
   };
 }
 
-function planCertificateIdentity(input: {
-  readonly authorityDigest: string;
-  readonly claimDeclarationsDigest: string;
-  readonly decisionAttestationDigest: string;
-  readonly planVersion: number;
-  readonly planRecordDigest: string;
-  readonly reviewBinding: ReviewBinding;
-  readonly approvedAt: string;
-  readonly ctx: RailContext;
-}): string {
-  return digestToId(
-    input.ctx.digest(
-      canonicalJsonStringify({
-        schemaVersion: 'plan-approval-certificate.v1',
-        authorityDigest: input.authorityDigest,
-        claimDeclarationsDigest: input.claimDeclarationsDigest,
-        decisionAttestationDigest: input.decisionAttestationDigest,
-        planVersion: input.planVersion,
-        planRecordDigest: input.planRecordDigest,
-        reviewBinding: input.reviewBinding,
-        approvedAt: input.approvedAt,
-      }),
-    ),
-    4,
-  );
-}
-
 /**
  * Bind an explicit decision to the exact immutable plan version and its claims.
  * The certificate deliberately carries no `approvedBy`: the identity lives in
@@ -200,7 +174,6 @@ export function createPlanApprovalCertificate(
   state: SessionState,
   plan: NonNullable<SessionState['plan']>,
   decision: ReviewDecision,
-  ctx: RailContext,
   reviewBinding: ReviewBinding,
 ): PlanApprovalCertificate {
   const context = planApprovalContextOf(state);
@@ -214,7 +187,7 @@ export function createPlanApprovalCertificate(
     policyHash: context.policyHash,
     policyHashVersion: context.policyHashVersion,
   };
-  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(approvalAttestation));
+  const decisionAttestationDigest = hashText(canonicalJsonStringify(approvalAttestation));
   return {
     schemaVersion: 'plan-approval-certificate.v1',
     flow: 'plan',
@@ -222,7 +195,7 @@ export function createPlanApprovalCertificate(
     claimDeclarationsDigest,
     decisionAttestationDigest,
     approvedAt,
-    certificateId: planCertificateIdentity({
+    certificateId: planApprovalCertificateIdentity({
       authorityDigest: plan.current.digest,
       claimDeclarationsDigest,
       decisionAttestationDigest,
@@ -230,7 +203,6 @@ export function createPlanApprovalCertificate(
       planRecordDigest: plan.current.recordDigest,
       reviewBinding,
       approvedAt,
-      ctx,
     }),
     planVersion: plan.current.planVersion,
     planRecordDigest: plan.current.recordDigest,
@@ -264,7 +236,7 @@ export function createAutomaticPlanApprovalCertificate(
     policyHash: context.policyHash,
     policyHashVersion: context.policyHashVersion,
   };
-  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(approvalAttestation));
+  const decisionAttestationDigest = hashText(canonicalJsonStringify(approvalAttestation));
   return {
     schemaVersion: 'plan-approval-certificate.v1',
     flow: 'plan',
@@ -272,7 +244,7 @@ export function createAutomaticPlanApprovalCertificate(
     claimDeclarationsDigest,
     decisionAttestationDigest,
     approvedAt,
-    certificateId: planCertificateIdentity({
+    certificateId: planApprovalCertificateIdentity({
       authorityDigest: plan.current.digest,
       claimDeclarationsDigest,
       decisionAttestationDigest,
@@ -280,7 +252,6 @@ export function createAutomaticPlanApprovalCertificate(
       planRecordDigest: plan.current.recordDigest,
       reviewBinding,
       approvedAt,
-      ctx,
     }),
     planVersion: plan.current.planVersion,
     planRecordDigest: plan.current.recordDigest,
@@ -292,7 +263,6 @@ export function createAutomaticPlanApprovalCertificate(
 export function planCertificatePatch(
   state: SessionState,
   decision: ReviewDecision,
-  ctx: RailContext,
   planReviewEvidence: ResolvedPlanReviewEvidence | null,
 ): Partial<Pick<SessionState, 'plan'>> {
   if (state.phase !== 'PLAN_REVIEW' || !state.plan || state.plan.approvalCertificate) return {};
@@ -304,7 +274,7 @@ export function planCertificatePatch(
   return {
     plan: {
       ...state.plan,
-      approvalCertificate: createPlanApprovalCertificate(state, state.plan, decision, ctx, binding),
+      approvalCertificate: createPlanApprovalCertificate(state, state.plan, decision, binding),
     },
   };
 }

@@ -22,6 +22,7 @@ import { withMutableSession, withMutableSessionTransaction } from '../helpers.js
 import { persistAndFormat } from '../helpers-rail-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import type { ActorInfo, ReviewVerdict } from '../../../state/evidence.js';
+import type { SessionState } from '../../../state/schema.js';
 import type { RailResult } from '../../../rails/types.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { TOOL_FLOWGUARD_DECISION } from '../../tool-names.js';
@@ -38,7 +39,10 @@ import { finalizeDecision } from '../../services/decision-finalization.js';
 import { buildDecisionAuditIntent } from '../../services/decision-audit-intent.js';
 import { createSessionCompletionAuditDeps } from '../../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../../user-decision-intent.js';
-import { attestReducedCeremonySubject } from '../reduced-ceremony-attestation.js';
+import {
+  attestApprovalWorktreeSubject,
+  attestReducedCeremonySubject,
+} from '../reduced-ceremony-attestation.js';
 
 // Automatic validation on entry to VALIDATION
 import {
@@ -116,6 +120,48 @@ async function decisionReceiptIntents(input: {
   ];
 }
 
+/**
+ * Bind every final full-review approval to the live governed subject: an
+ * unchanged session state does not prove the worktree bytes still match the
+ * reviewed implementation. Reduced ceremony keeps its own binding path
+ * (implReview is null there); this check covers the full independent review.
+ */
+async function approvedFullReviewWorktreeBlock(input: {
+  readonly state: SessionState;
+  readonly verdict: ReviewVerdict;
+  readonly worktree: string;
+  readonly digest: (text: string) => string;
+}): Promise<PersistedDecision | null> {
+  if (
+    input.state.phase !== 'EVIDENCE_REVIEW' ||
+    input.state.implReview === null ||
+    (input.verdict !== 'approve' && input.verdict !== 'approve_with_governance_override')
+  ) {
+    return null;
+  }
+  const worktreeAttestation = await attestApprovalWorktreeSubject({
+    state: input.state,
+    worktree: input.worktree,
+    digest: input.digest,
+  });
+  if (worktreeAttestation?.kind !== 'subject_changed') return null;
+  return {
+    output: formatBlocked(
+      'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH',
+      {
+        reviewedDigest: worktreeAttestation.expected,
+        currentDigest: worktreeAttestation.actual,
+      },
+      { phase: input.state.phase },
+    ),
+    finalResult: {
+      kind: 'blocked',
+      code: 'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH',
+      reason: 'The governed worktree no longer matches the reviewed implementation.',
+    },
+  };
+}
+
 async function persistHumanDecision(
   context: WorkspaceToolContext,
   args: { readonly verdict: ReviewVerdict; readonly rationale: string },
@@ -124,6 +170,14 @@ async function persistHumanDecision(
   return withMutableSessionTransaction(
     context,
     async ({ fingerprint, sessDir, state, policy, ctx }) => {
+      const worktreeBlock = await approvedFullReviewWorktreeBlock({
+        state,
+        verdict: args.verdict,
+        worktree: context.worktree,
+        digest: ctx.digest,
+      });
+      if (worktreeBlock) return worktreeBlock;
+
       // P30/P34: Build structured decision identity directly from resolved actor info
       // actorAssurance comes from the canonical ActorInfo — not re-derived from source
       const decisionIdentity = {

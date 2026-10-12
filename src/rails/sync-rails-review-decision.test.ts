@@ -91,7 +91,6 @@ function withCertifiedCriticalPlan(
   };
   const certificate = makePlanApprovalCertificate(base, {
     claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-    certificateId: '00000000-0000-4000-8000-000000000764',
     planVersion: plan.current.planVersion,
     planRecordDigest: plan.current.recordDigest,
     reviewBinding: {

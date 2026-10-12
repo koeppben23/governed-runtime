@@ -23,6 +23,7 @@ import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
 import { makePlanRevision } from './evidence-test-constants.js';
 import { hashText } from '../shared/hashing.js';
+import { planApprovalCertificateIdentity } from './proofgraph-plan-certificate.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -51,24 +52,38 @@ const CERTIFICATE_ATTESTATION = {
   policyHash: TEST_CONTEXT.policyHash,
   policyHashVersion: TEST_CONTEXT.policyHashVersion,
 };
-const CERTIFICATE = {
-  schemaVersion: 'plan-approval-certificate.v1' as const,
-  flow: 'plan' as const,
-  authorityDigest: 'plan-digest',
-  claimDeclarationsDigest: 'claims-digest',
-  decisionAttestationDigest: hashText(canonicalJsonStringify(CERTIFICATE_ATTESTATION)),
-  approvedAt: NOW,
-  certificateId: '00000000-0000-4000-8000-000000000001',
-  planVersion: 1,
-  planRecordDigest: 'record-digest',
-  reviewBinding: {
-    kind: 'current_review' as const,
-    reviewObligationId: '00000000-0000-4000-8000-00000000000a',
-    reviewEvidenceDigest: 'review-evidence-digest',
-    reviewedSubjectDigest: 'plan-digest',
-  },
-  approvalAttestation: CERTIFICATE_ATTESTATION,
-};
+function certificateFixture() {
+  const base = {
+    schemaVersion: 'plan-approval-certificate.v1' as const,
+    flow: 'plan' as const,
+    authorityDigest: 'plan-digest',
+    claimDeclarationsDigest: 'claims-digest',
+    decisionAttestationDigest: hashText(canonicalJsonStringify(CERTIFICATE_ATTESTATION)),
+    approvedAt: NOW,
+    planVersion: 1,
+    planRecordDigest: 'record-digest',
+    reviewBinding: {
+      kind: 'current_review' as const,
+      reviewObligationId: '00000000-0000-4000-8000-00000000000a',
+      reviewEvidenceDigest: 'review-evidence-digest',
+      reviewedSubjectDigest: 'plan-digest',
+    },
+    approvalAttestation: CERTIFICATE_ATTESTATION,
+  };
+  return {
+    ...base,
+    certificateId: planApprovalCertificateIdentity({
+      authorityDigest: base.authorityDigest,
+      claimDeclarationsDigest: base.claimDeclarationsDigest,
+      decisionAttestationDigest: base.decisionAttestationDigest,
+      planVersion: base.planVersion,
+      planRecordDigest: base.planRecordDigest,
+      reviewBinding: base.reviewBinding,
+      approvedAt: base.approvedAt,
+    }),
+  };
+}
+const CERTIFICATE = certificateFixture();
 const PLAN_CLAIM = {
   claimId: '00000000-0000-4000-8000-000000000002',
   statement: 'The change preserves the intended behavior.',
@@ -195,6 +210,27 @@ describe('ProofGraph approval schemas', () => {
 
   it('persists plan declarations and certificates', () => {
     const current = makePlanRevision({ body: 'Plan', createdAt: NOW });
+    const rebound = {
+      ...CERTIFICATE,
+      authorityDigest: current.digest,
+      planRecordDigest: current.recordDigest,
+      reviewBinding: {
+        ...CERTIFICATE.reviewBinding,
+        reviewedSubjectDigest: current.digest,
+      },
+    };
+    const certificate = {
+      ...rebound,
+      certificateId: planApprovalCertificateIdentity({
+        authorityDigest: rebound.authorityDigest,
+        claimDeclarationsDigest: rebound.claimDeclarationsDigest,
+        decisionAttestationDigest: rebound.decisionAttestationDigest,
+        planVersion: rebound.planVersion,
+        planRecordDigest: rebound.planRecordDigest,
+        reviewBinding: rebound.reviewBinding,
+        approvedAt: rebound.approvedAt,
+      }),
+    };
     const state = SessionState.parse(
       makeState('PLAN_REVIEW', {
         plan: {
@@ -203,20 +239,12 @@ describe('ProofGraph approval schemas', () => {
           reviewFindings: [],
           reviewCompletion: 'pending',
           claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
-          approvalCertificate: {
-            ...CERTIFICATE,
-            authorityDigest: current.digest,
-            planRecordDigest: current.recordDigest,
-            reviewBinding: {
-              ...CERTIFICATE.reviewBinding,
-              reviewedSubjectDigest: current.digest,
-            },
-          },
+          approvalCertificate: certificate,
         },
       }),
     );
 
-    expect(state.plan?.approvalCertificate?.certificateId).toBe(CERTIFICATE.certificateId);
+    expect(state.plan?.approvalCertificate?.certificateId).toBe(certificate.certificateId);
   });
 
   describe('ArchitectureApprovalCertificate reviewBinding', () => {
@@ -525,7 +553,20 @@ describe('certificate integrity', () => {
       claimDeclarationsDigest: digest,
       decisionAttestationDigest: hashText(canonicalJsonStringify(attestation)),
       approvedAt: NOW,
-      certificateId: '00000000-0000-4000-8000-000000000003',
+      certificateId: planApprovalCertificateIdentity({
+        authorityDigest: 'plan-digest',
+        claimDeclarationsDigest: digest,
+        decisionAttestationDigest: hashText(canonicalJsonStringify(attestation)),
+        planVersion: 1,
+        planRecordDigest: 'rec-digest',
+        reviewBinding: {
+          kind: 'current_review',
+          reviewObligationId: '00000000-0000-4000-8000-00000000000b',
+          reviewEvidenceDigest: 'ev-digest',
+          reviewedSubjectDigest: 'plan-digest',
+        },
+        approvedAt: NOW,
+      }),
       reviewBinding: {
         kind: 'current_review',
         reviewObligationId: '00000000-0000-4000-8000-00000000000b',
@@ -574,6 +615,20 @@ describe('certificate integrity', () => {
   it('rejects when no certificate is present', () => {
     const plan = makePlan(declarations);
     expect(hasCurrentPlanApprovalCertificate(plan, TEST_CONTEXT)).toBe(false);
+  });
+
+  it('rejects a tampered certificateId at parse and authorization time', () => {
+    const digest = hashText(canonicalJsonStringify(declarations));
+    const plan = makePlan(declarations, makeCertificate(digest));
+    const tampered = {
+      ...plan,
+      approvalCertificate: {
+        ...plan.approvalCertificate!,
+        certificateId: '00000000-0000-4000-8000-0000000000ff',
+      },
+    };
+    expect(hasCurrentPlanApprovalCertificate(tampered, TEST_CONTEXT)).toBe(false);
+    expect(() => PlanApprovalCertificate.parse(tampered.approvalCertificate)).toThrow();
   });
 
   it('rejects when plan digest changed after approval', () => {

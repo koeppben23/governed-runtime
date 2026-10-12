@@ -342,7 +342,7 @@ describe('review-decision rail', () => {
       // part of what the certificate attests.
       const context = planApprovalContextOf(state);
       expect(planCertificate?.decisionAttestationDigest).toBe(
-        baseCtx.digest(
+        hashText(
           canonicalJsonStringify({
             kind: 'explicit_decision',
             decision: result.state.reviewDecision,

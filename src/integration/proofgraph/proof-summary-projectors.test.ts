@@ -77,9 +77,7 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
   };
   // A real, session/policy-bound certificate: the gate only counts a PROVEN
   // claim whose provenance matches the current certificate.
-  const certificate = makePlanApprovalCertificate(baseWithPlan, {
-    certificateId: '11111111-1111-4111-8111-111111111111',
-  });
+  const certificate = makePlanApprovalCertificate(baseWithPlan, {});
   const boundClaims = claims.map((claim) => ({
     ...claim,
     provenance: {
