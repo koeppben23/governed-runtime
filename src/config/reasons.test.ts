@@ -16,9 +16,9 @@ describe('config/reasons', () => {
       .recoverySteps.join('\n');
     expect(recovery).toContain('TICKET or PLAN');
     expect(recovery).toContain('At PLAN_REVIEW');
-    expect(recovery).toContain('At EVIDENCE_REVIEW');
+    expect(recovery).toContain('at EVIDENCE_REVIEW');
     expect(recovery).toContain('IMPLEMENTATION, not PLAN');
-    expect(recovery).toContain('start a new session');
+    expect(recovery).toContain('start a new host session with a different host-session id');
     expect(recovery).toContain('claims: []');
   });
   // ─── HAPPY ─────────────────────────────────────────────────

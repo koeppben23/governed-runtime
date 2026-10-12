@@ -418,6 +418,8 @@ export async function fulfillStrictReviewObligation(
     planVersion: number;
     overallVerdict?: ReviewFindings['overallVerdict'];
     childSessionId?: string;
+    /** Explicit falsification scenarios for tests exercising multi-challenge reviews. */
+    challengeScenarios?: readonly string[];
     /** Bind this exact attempt; defaults to the obligation's first attempt. */
     attemptId?: string;
     /**
@@ -449,13 +451,15 @@ export async function fulfillStrictReviewObligation(
   // host-observed identity must match exactly, including artifact section paths.
   const canonicalRefs = buildReviewChallengeContract(state, obligation)?.evidenceRefs as
     ReviewFindings['challenges'][number]['evidenceRefs'] | undefined;
-  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, () => {
+  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, (_, index) => {
     const challengeId = crypto.randomUUID();
     if (obligation.requiredChallengeKind === 'implementation_challenge') {
       return {
         challengeId,
         obligationId: obligation.obligationId,
-        scenario: 'Exercise the changed behavior against its implementation evidence.',
+        scenario:
+          input.challengeScenarios?.[index] ??
+          'Exercise the changed behavior against its implementation evidence.',
         claim: 'The implementation handles the reviewed scenario.',
         locations: ['implementation evidence'],
         kind: 'implementation_challenge' as const,
@@ -482,7 +486,9 @@ export async function fulfillStrictReviewObligation(
     return {
       challengeId,
       obligationId: obligation.obligationId,
-      scenario: 'Exercise the reviewed design against its canonical section.',
+      scenario:
+        input.challengeScenarios?.[index] ??
+        'Exercise the reviewed design against its canonical section.',
       claim: 'The design addresses the reviewed scenario.',
       locations: ['plan section'],
       kind: 'design_challenge' as const,

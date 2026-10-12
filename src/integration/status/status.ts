@@ -48,14 +48,17 @@ import { projectCeremonyEligibility } from '../phase-tool-gate.js';
 import { reducedCeremonyReady } from '../../machine/guards.js';
 import { getReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import { isConverged } from '../../machine/guards.js';
-import { projectStatusConclusion } from './status-conclusion.js';
+import { projectStatusConclusion, projectStatusActionFromCommand } from './status-conclusion.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
 import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
 import { projectOpenImplementationChallengeIds } from '../../state/implementation-review-findings.js';
 import { resolveReviewContinuation } from '../../state/review-continuation.js';
 import type { StatusProjection } from './status-types.js';
-import { proofGraphGateRegistryCode } from './status-detail-projections.js';
+import {
+  proofGraphGateRegistryCode,
+  projectEvidenceApprovalBlock,
+} from './status-detail-projections.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 
@@ -163,7 +166,10 @@ export function buildStatusProjection(
   );
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
 
-  const blocker = buildBlocker(evalResult, state);
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  const blocker = approvalBlock
+    ? { reasonCode: approvalBlock.code, reasonText: approvalBlock.reason }
+    : buildBlocker(evalResult, state);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
 
@@ -204,8 +210,16 @@ export function buildStatusProjection(
     reviewLoop: getReviewLoopProgress(state, isConverged),
     implementationRework: projectImplementationRework(state),
     remainingChecks: remainingValidationChecks(state),
-    conclusion: projectStatusConclusion(evalResult, directive),
-    readiness: deriveReadinessField(evalResult, completeness),
+    conclusion: approvalBlock
+      ? {
+          kind: 'decision_required',
+          question: approvalBlock.reason,
+          actions: directive.commands
+            .map((command) => projectStatusActionFromCommand(command, 'available'))
+            .filter((action) => action.intent !== 'approve'),
+        }
+      : projectStatusConclusion(evalResult, directive),
+    readiness: approvalBlock ? 'BLOCKED' : deriveReadinessField(evalResult, completeness),
   };
 }
 

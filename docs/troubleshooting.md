@@ -142,8 +142,13 @@ rejections permit partial acceptance.
 For already persisted rejection diagnostics at `PLAN_REVIEW`, request changes
 (`changes_requested`) to return to `PLAN` before submitting the corrected plan.
 At `EVIDENCE_REVIEW`, changes requested returns to `IMPLEMENTATION`; there is no
-admissible in-session path to plan revision. Start a new session with a corrected
-plan in that case. Existing reviewer continuations and transport recovery retain
+admissible in-session path to plan revision. Follow the explicit
+[new-session authority recovery](proofgraph.md#recovery-when-approved-claims-must-change):
+retain and explicitly abort the old session, prepare the trusted pre-change base,
+start a different host binding, obtain a new certificate, and reapply changes only
+in the newly authorized implementation step with fresh evidence. `/hydrate` in
+the old terminal binding is read-only; a dirty-worktree restart can exclude the
+old changes as baseline rather than certify them. Existing reviewer continuations and transport recovery retain
 their authority and do not create a new plan version through claim admission.
 
 All BLOCKED responses carry a `code`, a `reason`, and a `recovery` array. The

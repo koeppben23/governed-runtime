@@ -13,6 +13,18 @@
 
 import type { BlockedReason } from './reasons-types.js';
 
+/** Recovery for an authority change after plan approval; never a phase backedge. */
+const CERTIFIED_PLAN_RECOVERY: readonly string[] = [
+  'After plan approval, /plan is not admissible in IMPLEMENTATION or EVIDENCE_REVIEW; at EVIDENCE_REVIEW, /request-changes returns to IMPLEMENTATION, not PLAN',
+  'Preserve the old session id, plan/certificate digests, detected triggers and code changes; on explicit user instruction run /abort to retain the terminal audit trail',
+  'Operator action: prepare a separate worktree at the original trusted pre-change base, then start a new host session with a different host-session id; run /hydrate there and verify a distinct FlowGuard session id and READY phase',
+  'Re-running /hydrate in the old host session only reloads it, including after /abort; existing unchanged dirty files in a new session are baseline, not new implementation evidence',
+  'In the new session run /ticket, then /plan with complete corrected claims and coversRiskTriggers for every applicable specific trigger; complete independent review and obtain a new approval certificate under the active policy',
+  'Only in the new authorized IMPLEMENTATION step, reapply the preserved changes through the regular governed host-mutation contract, then run /implement to record their complete scope and a fresh risk assessment; an out-of-workflow git apply is not retroactively authorized',
+  'Run fresh positive and adversarial checks and complete the required implementation review before evidence approval; never copy old certificates, validation attempts or PROVEN projections, even for identical code bytes',
+  'If a new host binding or trustworthy pre-change base is unavailable, stop and report that recovery prerequisite as blocked; do not edit session authority files or reset the existing session',
+];
+
 /** Reason codes for recording and consuming ProofGraph mutation evidence. */
 export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   {
@@ -22,8 +34,9 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       "Claim '{claimRef}' cannot be declared: {field} — {detail}. A claim that cannot become PROVEN would block the final approval permanently, so it is rejected at declaration time.",
     recoverySteps: [
       'Correct the named field for that claim and resubmit the complete declaration set',
-      'A critical claim needs a counterexample check that would falsify it',
+      'A critical claim needs an assertion- or aggregate-capable counterexample check with a different check identity and its own validation attempt',
       'Reference only checks that are active in this session, and registered surfaces/profiles',
+      'For /plan correct and resubmit in TICKET or PLAN; for advisory /declare-contract correct and resubmit in IMPL_VALIDATION or IMPL_REVIEW',
     ],
   },
 
@@ -36,7 +49,9 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       'Correct the structural incompatibility identified in the claim detail',
       'For a suite claim, remove or narrow the claim, or select a provider with explicit aggregate full-check completeness authority',
       'For an assertion counterexample claim, ensure the selected provider, capability, and localId are valid',
-      'Re-submit the plan with corrected claim declarations',
+      'In TICKET or PLAN resubmit /plan with complete corrected declarations; at PLAN_REVIEW request changes to return to PLAN first',
+      'For advisory /declare-contract in IMPL_VALIDATION or IMPL_REVIEW, correct and resubmit the manual declaration; it cannot repair plan-certified coverage',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
 
@@ -48,9 +63,9 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'In TICKET or PLAN, correct the declarations and resubmit /plan; for a pending reviewer changes_requested verdict, resubmit the revision call with corrected claims',
       'At PLAN_REVIEW, request changes (`changes_requested`) to return to PLAN, then resubmit /plan with corrected declarations or explicit claims: [] to withdraw them',
-      'At EVIDENCE_REVIEW, changes_requested returns to IMPLEMENTATION, not PLAN; start a new session with a corrected plan because no in-session plan revision is admissible there',
       'Use explicit claims: [] to withdraw declarations when no ProofGraph authority is required',
       'Narrow the claim to a concrete behavior with assertion-capable evidence, or select a provider with explicit aggregate full-check completeness authority',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
 
@@ -60,8 +75,8 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked because the plan approval certificate is missing, stale, or does not bind the current plan.',
     recoverySteps: [
-      'Return to plan review and obtain approval for the current immutable plan version',
       'Do not approve evidence until the certificate binds the current plan record and declarations',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
   {
@@ -71,7 +86,9 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       "Claim '{claimId}' is contradicted by fresh adversarial evidence from its bound counterexample check.",
     recoverySteps: [
       'Inspect the failing assertion produced by the counterexample check',
-      'Correct the implementation or revise the approved claim, then re-run the required positive and adversarial evidence',
+      'At EVIDENCE_REVIEW request changes to return to IMPLEMENTATION; correct the implementation under the unchanged approved claim, record it with /implement and re-run the required checks and review',
+      'If the claim itself must change, follow the new-session authority recovery below',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
 
@@ -81,9 +98,9 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked because critical fact claim(s) are not PROVEN: {claimIds}.',
     recoverySteps: [
-      'Record fresh evidence that proves every listed critical fact claim',
-      'If the declared evidence route is no longer satisfiable, return to plan revision; re-running checks cannot repair a structurally incompatible claim binding',
-      'Return to EVIDENCE_REVIEW and approve after the persisted ProofGraph is PROVEN',
+      'At EVIDENCE_REVIEW request changes to return to IMPLEMENTATION; record the repaired implementation with /implement, execute the required checks and complete review for every listed critical fact claim',
+      'If the evidence route is structurally incompatible, follow the new-session authority recovery below; re-running checks cannot repair its binding',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
 
@@ -93,9 +110,8 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked because {triggers} requires at least one critical, certificate-authorized fact claim.',
     recoverySteps: [
-      'Request changes to return to implementation, then add a critical plan claim with expected and counterexample checks',
-      'Obtain plan approval so the declaration receives its certificate binding',
-      'Record fresh evidence that proves the critical fact claim before requesting approval again',
+      'The corrected plan needs a critical claim with distinct expected and counterexample checks; a manual /declare-contract claim cannot supply plan-certificate authority',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
 
@@ -105,9 +121,8 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked because no certificate-authorized critical claim covers the detected risk trigger(s): {triggers}.',
     recoverySteps: [
-      'Declare coversRiskTriggers on a critical plan claim for every detected trigger',
-      'Request changes to return to plan, add the coverage relation, and obtain plan approval for the new declaration set',
-      'Record fresh evidence that proves each covering claim before requesting approval again',
+      'The corrected plan needs coversRiskTriggers on critical claims for every detected trigger; never widen the already-approved declaration set in place',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
 
@@ -129,7 +144,7 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation: {claimIds}.',
     recoverySteps: [
-      'Request changes to return to implementation and restore the missing ProofGraph projection',
+      'At EVIDENCE_REVIEW request changes to return to IMPLEMENTATION; run /implement, fresh /check executions and the required review to rematerialize the unchanged approved claims through the regular product path',
       'Do not approve until every certificate-authorized critical plan claim is present and evaluated',
     ],
   },
@@ -140,7 +155,7 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Evidence approval is blocked because the implementation risk assessment is missing, stale, or predates trigger classification.',
     recoverySteps: [
-      'Request changes to return to implementation and record a fresh implementation assessment',
+      'At EVIDENCE_REVIEW request changes to return to IMPLEMENTATION; run /implement to record a fresh implementation assessment, then execute /check and the required review',
       'Do not approve until the assessment is bound to the current implementation digest and includes risk triggers',
     ],
   },
@@ -309,10 +324,11 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     code: 'PROOFGRAPH_EVIDENCE_ROLE_COLLISION',
     category: 'precondition',
     messageTemplate:
-      "Claim '{claimId}' cannot be proven because the same execution is bound as both its positive evidence and its counterexample; one execution cannot satisfy both evidence roles.",
+      "Claim '{claimId}' cannot be proven because the same check or validation attempt is bound as both its positive evidence and its counterexample; both check identities and executions must be distinct.",
     recoverySteps: [
-      'Declare a distinct counterexample check that runs as its own execution',
-      'Re-run the counterexample check so it records an independent validation attempt',
+      'If the approved check identities are already distinct, use the regular implementation repair/recheck loop to record independent validation attempts',
+      'If the declared check identities collide, a new approved authority is required; executing the same check twice cannot repair the declaration',
+      ...CERTIFIED_PLAN_RECOVERY,
     ],
   },
 ];

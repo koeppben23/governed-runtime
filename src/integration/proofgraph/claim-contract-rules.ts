@@ -279,7 +279,7 @@ function checkEvidenceRoleCollision(
     input.source,
     claim,
     'counterexampleRequirement',
-    `the positive check and the counterexample check must be different executions; '${claim.positiveCheckId}' cannot serve both evidence roles`,
+    `the positive check and the counterexample check require different check identities AND different validation attempts; '${claim.positiveCheckId}' cannot serve both evidence roles, even when executed twice`,
   );
 }
 
