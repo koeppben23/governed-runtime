@@ -24,6 +24,11 @@ import type { ReviewDecision } from './evidence.js';
  * recorded evidence revision the decision cannot be classified as carried and
  * is returned as-is; the authorization boundary still requires its fresh
  * gate-bound receipt.
+ *
+ * Classification is deliberately fail-closed under clock skew: an uncertain
+ * (later) timestamp is treated as a current decision, so it can never
+ * authorize without a fresh gate-bound receipt; at worst a policy-permitted
+ * automatic approval is deferred until the decision is re-recorded.
  */
 export function evidenceGateDecisionOf(state: SessionState): ReviewDecision | null {
   const decision = state.reviewDecision;

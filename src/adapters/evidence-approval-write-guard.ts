@@ -63,11 +63,17 @@ function decisionReceiptGate(
   let otherGate = false;
   const expectedIdentity = canonicalJsonStringify(decision.decisionIdentity);
   // Canonical operation identity first: the same operation carried unchanged
-  // from the predecessor into the successor is ONE receipt, not two.
-  const seen = new Set<string>();
+  // from the predecessor into the successor is ONE receipt, not two. The same
+  // id with DIFFERENT content is a contradictory record, never a silent
+  // overwrite: the correlation is ambiguous and the write is refused.
+  const seen = new Map<string, string>();
   for (const operation of [...previous.pendingAuditOperations, ...next.pendingAuditOperations]) {
-    if (seen.has(operation.operationId)) continue;
-    seen.add(operation.operationId);
+    const content = canonicalJsonStringify(operation);
+    if (seen.has(operation.operationId)) {
+      if (seen.get(operation.operationId) !== content) return 'ambiguous';
+      continue;
+    }
+    seen.set(operation.operationId, content);
     if (operation.kind !== 'semantic') continue;
     const detail = operation.semantic.detail;
     if (!decisionReceiptMatches(detail, decision, expectedIdentity)) continue;

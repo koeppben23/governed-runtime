@@ -551,6 +551,74 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
   });
 
+  it('classifies a later-timestamped decision as current: refused without a receipt, accepted with one', async () => {
+    const later = '2027-01-01T00:00:00.000Z';
+    const decision = { ...REVIEW_APPROVE, decidedAt: later };
+    const previous: SessionState = { ...authorizedEvidenceState(), reviewDecision: decision };
+    await writeState(sessDir, previous);
+
+    // Fail-closed under clock skew: an uncertain timestamp is treated as a
+    // current decision, so a carried-looking approval needs its own receipt.
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+
+    // With the decision's own evidence-gate receipt the same position commits.
+    await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
+      buildDecisionAuditIntent({
+        transition: { from: 'EVIDENCE_REVIEW', to: 'EXPORT_READY', event: 'APPROVE', at: later },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+    ]);
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      application.state,
+      undefined,
+      [],
+      application.admission,
+    );
+    expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
+  });
+
+  it('refuses a duplicate operationId whose content changed between states', async () => {
+    const previous = authorizedEvidenceState();
+    const decision = previous.reviewDecision!;
+    await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
+      buildDecisionAuditIntent({
+        transition: {
+          from: 'EVIDENCE_REVIEW',
+          to: 'EXPORT_READY',
+          event: 'APPROVE',
+          at: FIXED_TIME,
+        },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+    ]);
+    const seeded = (await readState(sessDir))!;
+    const receipt = seeded.pendingAuditOperations.find((op) => op.kind === 'semantic');
+    if (receipt?.kind !== 'semantic') throw new Error('expected a semantic receipt operation');
+    const conflicting = {
+      ...receipt,
+      semantic: { ...receipt.semantic, occurredAt: '2030-01-01T00:00:00.000Z' },
+    };
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(
+        sessDir,
+        { ...application.state, pendingAuditOperations: [conflicting] },
+        undefined,
+        application.admission,
+      ),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
   it('refuses bootstrapping a session directly into EXPORT_READY', async () => {
     await expect(writeState(sessDir, makeState('EXPORT_READY'))).rejects.toMatchObject({
       code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
