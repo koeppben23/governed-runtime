@@ -39,6 +39,12 @@ interface AdmissionRecord {
    * was changed to state B in between.
    */
   readonly sourceBasisDigest: string;
+  /**
+   * Canonical digest of the APPLIED approval transition (from/to/event/at).
+   * The candidate state must present exactly the transition the protected
+   * application applied; a tampered transition record invalidates the handle.
+   */
+  readonly transitionDigest: string;
   consumed: boolean;
 }
 
@@ -122,6 +128,11 @@ function evidenceApprovalBasisProjection(
   };
 }
 
+/** Canonical digest of the applied approval transition, including its time. */
+function appliedTransitionDigest(state: SessionState): string {
+  return hashText(canonicalJsonStringify(state.transition ?? null));
+}
+
 /** Basis of the persisted predecessor: everything except the approval decision. */
 function evidenceApprovalSourceBasisDigest(state: SessionState): string {
   return hashText(canonicalJsonStringify(evidenceApprovalBasisProjection(state, false)));
@@ -149,6 +160,7 @@ export function issueEvidenceApprovalAdmission(state: SessionState): EvidenceApp
     bindingDigest: evidenceApprovalBindingDigest(state),
     basisDigest: evidenceApprovalBasisDigest(state),
     sourceBasisDigest: evidenceApprovalSourceBasisDigest(state),
+    transitionDigest: appliedTransitionDigest(state),
     consumed: false,
   });
   return admission;
@@ -200,6 +212,12 @@ export function consumeEvidenceApprovalAdmission(input: {
     return {
       kind: 'rejected',
       reason: 'the persisted predecessor changed after the approval basis was admitted',
+    };
+  }
+  if (record.transitionDigest !== appliedTransitionDigest(input.state)) {
+    return {
+      kind: 'rejected',
+      reason: 'the applied approval transition changed after it was admitted',
     };
   }
   const basisDigest = evidenceApprovalBasisDigest(input.state);

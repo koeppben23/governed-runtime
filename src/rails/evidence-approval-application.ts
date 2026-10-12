@@ -97,10 +97,13 @@ export function applyEvidenceApprovalTransition(
   if (authorityBlock) return { kind: 'blocked', block: authorityBlock };
   const preflight = evaluateEvidenceApprovalPreflight(state);
   if (preflight.kind === 'blocked') return { kind: 'blocked', block: preflight };
+  const applied = applyTransitionUnchecked(state, 'EVIDENCE_REVIEW', 'EXPORT_READY', 'APPROVE', at);
   return {
     kind: 'applied',
-    state: applyTransitionUnchecked(state, 'EVIDENCE_REVIEW', 'EXPORT_READY', 'APPROVE', at),
-    admission: issueEvidenceApprovalAdmission(state),
+    state: applied,
+    // The admission binds the APPLIED candidate: the committed transition
+    // (including its time) is part of the admitted approval.
+    admission: issueEvidenceApprovalAdmission(applied),
   };
 }
 

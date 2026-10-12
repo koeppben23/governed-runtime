@@ -121,6 +121,29 @@ function decisionReceiptGate(
   return 'none';
 }
 
+/**
+ * Every EXPORT_READY write must present exactly the canonical approval
+ * transition. This is the shape half of the transition binding; the admission
+ * binds the applied transition INCLUDING its time, so an issued admission can
+ * never be replayed on a tampered transition record.
+ */
+function assertCanonicalApprovalTransition(next: SessionState): void {
+  const transition = next.transition;
+  if (
+    transition !== null &&
+    transition.from === 'EVIDENCE_REVIEW' &&
+    transition.to === 'EXPORT_READY' &&
+    transition.event === 'APPROVE'
+  ) {
+    return;
+  }
+  throw new PersistenceError(
+    'EXPORT_READY_APPROVAL_UNVERIFIED',
+    'Refusing an EXPORT_READY state without the canonical EVIDENCE_REVIEW -> EXPORT_READY ' +
+      'APPROVE transition that authorized the approval.',
+  );
+}
+
 /** Approval-relevant evidence is immutable while a session is already approved. */
 function assertApprovalBasisImmutable(previous: SessionState, next: SessionState): void {
   if (evidenceApprovalBasisDigest(previous) === evidenceApprovalBasisDigest(next)) return;
@@ -190,6 +213,7 @@ export async function assertEvidenceApprovalWriteBoundary(
         'EVIDENCE_REVIEW approval can enter EXPORT_READY.',
     );
   }
+  assertCanonicalApprovalTransition(next);
   // The approval is bound to the existing decision-receipt authority, but only
   // a decision that belongs to the CURRENT evidence revision counts: a carried
   // plan approval/override is historical evidence and neither authorizes the

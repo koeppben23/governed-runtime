@@ -763,6 +763,54 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     expect(persisted.reviewDecision?.verdict).toBe('approve_with_governance_override');
   });
 
+  it('refuses transition tampering after approval admission', async () => {
+    const previous = autoEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(
+        sessDir,
+        { ...application.state, transition: null },
+        undefined,
+        application.admission,
+      ),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
+  it('refuses an admission replayed on a different approval transition time', async () => {
+    const previous = autoEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(
+        sessDir,
+        {
+          ...application.state,
+          transition: { ...application.state.transition!, at: '2030-01-01T00:00:00.000Z' },
+        },
+        undefined,
+        application.admission,
+      ),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
+  it('refuses an EXPORT_READY entry without the canonical approval transition shape', async () => {
+    const previous = autoEvidenceState();
+    await writeState(sessDir, previous);
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(
+        sessDir,
+        {
+          ...application.state,
+          transition: { ...application.state.transition!, from: 'PLAN_REVIEW' },
+        },
+        undefined,
+        application.admission,
+      ),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
   it('refuses bootstrapping a session directly into EXPORT_READY', async () => {
     await expect(writeState(sessDir, makeState('EXPORT_READY'))).rejects.toMatchObject({
       code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
