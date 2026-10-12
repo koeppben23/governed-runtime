@@ -44,7 +44,12 @@ import { evaluateCompleteness } from '../audit/completeness.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { executeCheck } from '../verification/executor.js';
-import { makeProgressedState, POLICY_SNAPSHOT, VALIDATION_PASSED } from '../fixtures.js';
+import {
+  makePlanApprovalCertificate,
+  makeProgressedState,
+  POLICY_SNAPSHOT,
+  VALIDATION_PASSED,
+} from '../fixtures.js';
 import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 import type { SessionState } from '../state/schema.js';
@@ -693,7 +698,7 @@ async function f1ClaimBearingState(se: SE, staleCertificate = false): Promise<vo
   const subject = await subjectState(se, true);
   const planCurrent = makePlanRevision({ body: 'approved plan for the docs task' });
   const declarations = f1ClaimDeclarations();
-  await writeStateWithArtifacts(se.sDir, {
+  const baseState = {
     ...subject.state,
     activeChecks: ['test', 'coverage'],
     verificationCandidates: [RUN_SPECIFIC_CANDIDATE, COVERAGE_CANDIDATE],
@@ -707,23 +712,26 @@ async function f1ClaimBearingState(se: SE, staleCertificate = false): Promise<vo
       reviewFindings: [],
       reviewCompletion: 'reviewer_accepted' as const,
       claimDeclarations: declarations,
-      approvalCertificate: {
-        flow: 'plan' as const,
-        authorityDigest: planCurrent.digest,
-        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-        decisionAttestationDigest: 'a'.repeat(64),
-        approvedAt: '2026-01-02T00:00:00.000Z',
-        approvedBy: 'FlowGuard Demo',
-        certificateId: randomUUID(),
-        planVersion: planCurrent.planVersion,
-        planRecordDigest: staleCertificate ? 'd'.repeat(64) : planCurrent.recordDigest,
-        reviewBinding: {
-          kind: 'current_review' as const,
-          reviewObligationId: randomUUID(),
-          reviewEvidenceDigest: 'b'.repeat(64),
-          reviewedSubjectDigest: planCurrent.digest,
-        },
-      },
+    },
+  };
+  const certificate = makePlanApprovalCertificate(baseState, {
+    claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+    approvedAt: '2026-01-02T00:00:00.000Z',
+    certificateId: randomUUID(),
+    planVersion: planCurrent.planVersion,
+    planRecordDigest: staleCertificate ? 'd'.repeat(64) : planCurrent.recordDigest,
+    reviewBinding: {
+      kind: 'current_review',
+      reviewObligationId: randomUUID(),
+      reviewEvidenceDigest: 'b'.repeat(64),
+      reviewedSubjectDigest: planCurrent.digest,
+    },
+  });
+  await writeStateWithArtifacts(se.sDir, {
+    ...baseState,
+    plan: {
+      ...baseState.plan,
+      approvalCertificate: certificate,
     },
   });
 }

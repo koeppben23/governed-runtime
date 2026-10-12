@@ -14,7 +14,7 @@ import type { ProofClaim } from '../../state/proofgraph.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import type { ProofGraphGateDecision } from '../../audit/proofgraph/gate.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
-import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval-context.js';
 import { isFlowPhase } from '../../machine/topology.js';
 
 import type {
@@ -350,20 +350,7 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
   return (
     opts?.gate ??
     (() => {
-      const plan = state.plan;
-      const authorization = authorizedCriticalPlanClaimIds(
-        plan
-          ? {
-              current: plan.current,
-              ...(plan.claimDeclarations !== undefined
-                ? { claimDeclarations: plan.claimDeclarations }
-                : {}),
-              ...(plan.approvalCertificate !== undefined
-                ? { approvalCertificate: plan.approvalCertificate }
-                : {}),
-            }
-          : undefined,
-      );
+      const authorization = authorizedCriticalPlanClaimIds(state);
       const riskAssessment = state.implementationRiskAssessment;
       const implementationDigest = state.implementation?.digest;
       return evaluateProofGraphGate({

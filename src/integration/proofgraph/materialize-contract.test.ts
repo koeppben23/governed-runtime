@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { makeState } from '../../fixtures.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
 import {
   computeArtifactDigest,
   computeProjectionDigest,
@@ -35,6 +36,27 @@ const NOW = '2026-01-01T00:00:00.000Z';
  * the same canonical revision.
  */
 const PLAN_RECORD_DIGEST = PLAN_CURRENT.recordDigest;
+
+const CERT_CONTEXT = planApprovalContextOf(makeState('IMPL_REVIEW'));
+const CERT_ATTESTATION = {
+  kind: 'explicit_decision' as const,
+  decision: {
+    verdict: 'approve' as const,
+    rationale: 'approved',
+    decidedAt: NOW,
+    decisionIdentity: {
+      actorId: 'user',
+      actorEmail: null,
+      actorSource: 'unknown' as const,
+      actorAssurance: 'best_effort' as const,
+    },
+  },
+  flowguardSessionId: CERT_CONTEXT.flowguardSessionId,
+  bindingDigest: CERT_CONTEXT.bindingDigest,
+  policyHash: CERT_CONTEXT.policyHash,
+  policyHashVersion: CERT_CONTEXT.policyHashVersion,
+};
+const CERT_DIGEST = hashText(canonicalJsonStringify(CERT_ATTESTATION));
 
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
@@ -93,7 +115,8 @@ function stateWithClaims() {
         ],
       },
       approvalCertificate: {
-        flow: 'plan',
+        schemaVersion: 'plan-approval-certificate.v1' as const,
+        flow: 'plan' as const,
         authorityDigest: PLAN_DIGEST,
         claimDeclarationsDigest: hashText(
           canonicalJsonStringify({
@@ -119,9 +142,8 @@ function stateWithClaims() {
             ],
           }),
         ),
-        decisionAttestationDigest: 'a'.repeat(64),
+        decisionAttestationDigest: CERT_DIGEST,
         approvedAt: NOW,
-        approvedBy: 'user',
         certificateId: '00000000-0000-4000-8000-000000000001',
         planVersion: 1,
         planRecordDigest: PLAN_RECORD_DIGEST,
@@ -131,6 +153,7 @@ function stateWithClaims() {
           reviewEvidenceDigest: 'e'.repeat(64),
           reviewedSubjectDigest: PLAN_DIGEST,
         },
+        approvalAttestation: CERT_ATTESTATION,
       },
     },
     reviewDecision: {
@@ -205,7 +228,7 @@ describe('materializeApprovedPlanContract', () => {
         certificateId: '00000000-0000-4000-8000-000000000001',
         claimDeclarationsDigest:
           stateWithClaims().plan!.approvalCertificate!.claimDeclarationsDigest,
-        decisionAttestationDigest: 'a'.repeat(64),
+        decisionAttestationDigest: CERT_DIGEST,
         declarationId: CLAIM_ID,
       },
     });

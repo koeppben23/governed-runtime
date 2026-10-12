@@ -20,6 +20,7 @@ import {
   hasCurrentArchitectureApprovalCertificate,
   hasCurrentPlanApprovalCertificate,
 } from '../../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
 import type { ReviewBinding } from '../../state/proofgraph-approval.js';
 
 /** Digest binding of one human approval certificate. */
@@ -30,7 +31,8 @@ export interface ApprovalCertificateProjection {
   readonly claimDeclarationsDigest: string;
   readonly decisionAttestationDigest: string;
   readonly approvedAt: string;
-  readonly approvedBy: string;
+  /** Explicit-decision actor id; null for a policy-automatic approval (no person exists). */
+  readonly approvedBy: string | null;
   /** Number of declarations bound by this certificate. */
   readonly declaredClaimCount: number;
   readonly binding: 'current' | 'stale_or_unbound';
@@ -74,22 +76,31 @@ function bindingStatus(current: boolean): 'current' | 'stale_or_unbound' {
   return current ? 'current' : 'stale_or_unbound';
 }
 
-function planCertificateProjection(
-  plan: SessionState['plan'],
-): ApprovalCertificateProjection | null {
+function planCertificateProjection(state: SessionState): ApprovalCertificateProjection | null {
+  const plan = state.plan;
   const certificate = plan?.approvalCertificate;
   if (!certificate || !plan) return null;
+  const attestation = certificate.approvalAttestation;
   return {
     ...certificate,
+    // A malformed in-memory certificate never fabricates an approver; the
+    // binding status below still reports the certificate as unbound.
+    approvedBy:
+      attestation?.kind === 'explicit_decision'
+        ? attestation.decision.decisionIdentity.actorId
+        : null,
     declaredClaimCount: plan.claimDeclarations?.claims.length ?? 0,
     binding: bindingStatus(
-      hasCurrentPlanApprovalCertificate({
-        current: plan.current,
-        ...(plan.claimDeclarations !== undefined
-          ? { claimDeclarations: plan.claimDeclarations }
-          : {}),
-        approvalCertificate: certificate,
-      }),
+      hasCurrentPlanApprovalCertificate(
+        {
+          current: plan.current,
+          ...(plan.claimDeclarations !== undefined
+            ? { claimDeclarations: plan.claimDeclarations }
+            : {}),
+          approvalCertificate: certificate,
+        },
+        planApprovalContextOf(state),
+      ),
     ),
   };
 }
@@ -116,7 +127,7 @@ function architectureCertificateProjection(
 
 function certificateProjection(state: SessionState): ApprovalCertificateProjection[] {
   const certificates: ApprovalCertificateProjection[] = [];
-  const planProjection = planCertificateProjection(state.plan);
+  const planProjection = planCertificateProjection(state);
   if (planProjection) certificates.push(planProjection);
   const architectureProjection = architectureCertificateProjection(state.architecture);
   if (architectureProjection) certificates.push(architectureProjection);

@@ -26,7 +26,10 @@ import type {
   ConvergedPlanReviewInput,
 } from './plan-types.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 import {
   PHASE_LABELS,
@@ -36,6 +39,7 @@ import {
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
+import { mintAutomaticPlanApprovalCertificateIfPermitted } from './plan-auto-approval.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
@@ -556,12 +560,22 @@ export async function persistPlanReview(
     >,
   ) => SessionState,
 ): Promise<string> {
-  const nextState = buildReviewedPlanState(scope, revision, effectiveFindings, consumedAssurance);
+  const reviewedState = buildReviewedPlanState(
+    scope,
+    revision,
+    effectiveFindings,
+    consumedAssurance,
+  );
+  const nextState = mintAutomaticPlanApprovalCertificateIfPermitted(reviewedState, scope);
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
+  }
+  // The protected evidence-approval denial carries no state: nothing is persisted.
+  if (advanced.kind === 'blocked') {
+    return formatAutoAdvanceBlocked(advanced);
   }
   const { state: finalState, evalResult: ev, transitions } = advanced;
   const selfReview = scope.state.selfReview;

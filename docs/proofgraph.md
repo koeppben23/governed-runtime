@@ -65,15 +65,30 @@ evidence requirements, not objective absence of defects.
 Enforcement is unconditional and has no policy switch. A switch would mean that
 an author declares a claim critical, has it human-approved, and the system then
 ignores whether it was ever proven — which contradicts the meaning of
-`critical`. The blast radius is bounded by the eligibility rule instead:
+`critical`. Policy decides **who may approve**, never **whether the evidence is
+sufficient**: an automatic approval under `solo`/`team-ci` clears the same
+canonical preflight as an explicit human decision, and the generic transition
+applier refuses the `EVIDENCE_REVIEW -> EXPORT_READY` edge entirely. The blast
+radius is bounded by the eligibility rule instead:
 
-- only at the `EVIDENCE_REVIEW` human gate, on approval;
+- at every `EVIDENCE_REVIEW -> EXPORT_READY` approval — explicit decision,
+  governance override, or policy-automatic;
+- the persistence boundary refuses a newly entered `EXPORT_READY` whose
+  refreshed evaluation does not clear the preflight, so a stale, replayed, or
+  process-local decision cannot be committed;
 - only for `fact` claims materialized from a valid plan approval certificate;
 - only when the author declared them `critical`;
 - `derived_signal` (architecture) and `hypothesis` (peer review) claims are
   never gate-eligible and remain advisory;
 - a session whose implementation has only `ceremony_only` risk triggers is
   unaffected.
+
+Plan approval itself is attested: a plan certificate carries an
+`explicit_decision` or `policy_auto` attestation bound to the session binding
+and frozen policy. Automatic plan approval is minted only from the same bound,
+accepted review evidence the explicit rail resolves — an exhausted review is
+never certified automatically — and a `policy_auto` certificate carries no
+invented human identity.
 
 For an implementation with a specific persisted risk trigger, FlowGuard
 requires that **every** detected trigger is explicitly covered by at least one

@@ -30,7 +30,7 @@ import {
   DEFAULT_MAX_REVIEW_ITERATIONS,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { blockedFromEvidenceApproval, blockedFromOverflow } from './auto-advance-overflow.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -111,6 +111,11 @@ async function collectAndAdvance(
     // at IMPLEMENTATION; the caller re-evaluates and surfaces the stop.
     return { currentImpl, nextState, transitions: [] };
   }
+  if (advanced.kind === 'blocked') {
+    // A protected approval cannot be reached from the implementation-record
+    // advance; treat it as a fail-closed stop with the recorded evidence kept.
+    return { currentImpl, nextState, transitions: [] };
+  }
   return { currentImpl, nextState: advanced.state, transitions: [...advanced.transitions] };
 }
 
@@ -179,6 +184,7 @@ export async function executeImplement(
   };
   const advanced = autoAdvance(finalState, evalFn, ctx);
   if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
+  if (advanced.kind === 'blocked') return blockedFromEvidenceApproval(advanced);
   return {
     kind: 'ok',
     state: advanced.state,

@@ -34,6 +34,7 @@ import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import {
   IMPL_EVIDENCE,
+  makePlanApprovalCertificate,
   makeState,
   POLICY_SNAPSHOT,
   REDUCED_CEREMONY_DECISION,
@@ -421,14 +422,20 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
 
   function certificate(): PlanApprovalCertificate {
     const decls = declarations();
-    return {
-      flow: 'plan',
-      authorityDigest: PLAN_CURRENT.digest,
-      claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
-      decisionAttestationDigest: 'd',
-      approvedAt: '2026-01-01T00:00:00.000Z',
-      approvedBy: 'reviewer',
+    const probe: SessionState = {
+      ...makeMinimalState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
+      plan: {
+        current: PLAN_CURRENT,
+        history: [],
+        reviewFindings: [],
+        reviewCompletion: 'pending',
+        claimDeclarations: decls,
+      },
+    };
+    return makePlanApprovalCertificate(probe, {
       certificateId: CERT_ID,
+      claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
       planVersion: PLAN_CURRENT.planVersion,
       planRecordDigest: PLAN_CURRENT.recordDigest,
       reviewBinding: {
@@ -437,7 +444,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
         reviewEvidenceDigest: 'e'.repeat(64),
         reviewedSubjectDigest: PLAN_CURRENT.digest,
       },
-    };
+    });
   }
 
   function approvedPlan(): PlanRecord {
@@ -484,7 +491,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
               approval: {
                 certificateId: CERT_ID,
                 claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),
-                decisionAttestationDigest: 'd',
+                decisionAttestationDigest: certificate().decisionAttestationDigest,
                 declarationId: CLAIM_ID,
               },
             },

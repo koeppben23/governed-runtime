@@ -19,11 +19,8 @@ import type { ProofGraphSummary } from './summary.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { RiskTrigger, SessionState } from '../../state/schema.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  type PlanClaimAuthority,
-  type AuthorizedClaimBinding,
-} from '../../state/proofgraph-approval.js';
+import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval-context.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   computeProofGraphEnforcement,
@@ -84,21 +81,6 @@ export interface ImplementationRiskAssessmentForGate {
    * session schema rejects it before evaluation.
    */
   readonly riskTriggers: readonly RiskTrigger[];
-}
-
-export function planClaimAuthorityOf(plan: SessionState['plan']): PlanClaimAuthority | null {
-  if (plan === null) return null;
-  return {
-    current: {
-      digest: plan.current.digest,
-      planVersion: plan.current.planVersion,
-      recordDigest: plan.current.recordDigest,
-    },
-    ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),
-    ...(plan.approvalCertificate !== undefined
-      ? { approvalCertificate: plan.approvalCertificate }
-      : {}),
-  };
 }
 
 export function isRiskAssessmentCurrent(
@@ -188,7 +170,7 @@ export function evaluateProofGraphGate(input: {
  * status surface — never a second gating authority.
  */
 export function evaluateProofGraphGateFromState(state: SessionState): ProofGraphGateDecision {
-  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
+  const authorization = authorizedCriticalPlanClaimIds(state);
   return evaluateProofGraphGate({
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],

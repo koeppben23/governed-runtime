@@ -13,6 +13,7 @@ import {
   hasCurrentPlanApprovalCertificate,
   type PlanClaimDeclaration,
 } from '../../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   resolveVerifiedMutationAttempt,
@@ -277,11 +278,16 @@ function validateApprovedPlanCertificate(state: SessionState): CertificateValida
   // reduced-ceremony EVIDENCE_REVIEW). This authority owns only the binding:
   // the certificate must authorize the exact current plan declaration set.
   if (!certificate || !plan) return { kind: 'invalid', cause: 'missing_certificate' };
-  return hasCurrentPlanApprovalCertificate({
-    current: plan.current,
-    ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),
-    approvalCertificate: certificate,
-  })
+  return hasCurrentPlanApprovalCertificate(
+    {
+      current: plan.current,
+      ...(plan.claimDeclarations !== undefined
+        ? { claimDeclarations: plan.claimDeclarations }
+        : {}),
+      approvalCertificate: certificate,
+    },
+    planApprovalContextOf(state),
+  )
     ? { kind: 'valid', certificate }
     : { kind: 'invalid', cause: 'invalid_certificate' };
 }

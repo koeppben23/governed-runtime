@@ -28,7 +28,10 @@ import { z } from 'zod';
 import type { ToolDefinition, ToolResult, WorkspaceToolContext } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 import {
   withReadOnlySession,
   getWorktree,
@@ -50,6 +53,7 @@ import {
   type VerificationCandidateKind,
 } from '../../../state/discovery-schemas.js';
 import { autoAdvance } from '../../../rails/types.js';
+import type { AutoAdvanceAdvanced } from '../../../rails/types.js';
 import { executeCheck } from '../../../verification/executor.js';
 import { ceremonyAuditIntent, decidePostCheckCeremony } from './ceremony-decision.js';
 import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
@@ -389,7 +393,7 @@ interface RevalidatedCheck {
   readonly railCtx: ReturnType<typeof createPolicyContext>;
   readonly validationResult: ValidationResult;
   readonly executionObservation: ValidationExecutionObservation;
-  readonly advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+  readonly advanced: AutoAdvanceAdvanced;
   readonly ceremony: CeremonyProfileDecision | null;
   readonly ceremonyIsNew: boolean;
 }
@@ -458,6 +462,7 @@ async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<Check
   }
   const advanced = autoAdvance(ceremony.state, (s) => evaluate(s, railCtx.policy), railCtx);
   if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
+  if (advanced.kind === 'blocked') return formatAutoAdvanceBlocked(advanced);
 
   return {
     freshState,

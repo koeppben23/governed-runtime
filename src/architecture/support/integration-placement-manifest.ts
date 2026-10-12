@@ -547,6 +547,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/tools/mutation/reconcile-mutation-episode.ts', owner: 'tools-mutation' },
   { file: 'integration/tools/mutation/record-mutation-evidence.ts', owner: 'tools-mutation' },
   { file: 'integration/tools/observe/observe-repository.ts', owner: 'tools-observe' },
+  { file: 'integration/tools/plan/plan-auto-approval.ts', owner: 'tools-plan' },
   { file: 'integration/tools/plan/plan-claim-submission.ts', owner: 'tools-plan' },
   { file: 'integration/tools/plan/plan-response.ts', owner: 'tools-plan' },
   { file: 'integration/tools/plan/plan-review-state.ts', owner: 'tools-plan' },

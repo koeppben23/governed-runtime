@@ -22,6 +22,7 @@ import {
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../state/proofgraph-approval-context.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,
@@ -321,21 +322,37 @@ describe('review-decision rail', () => {
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(result.state.plan?.approvalCertificate).toMatchObject({
+      const planCertificate = result.state.plan?.approvalCertificate;
+      expect(planCertificate).toMatchObject({
+        schemaVersion: 'plan-approval-certificate.v1',
         flow: 'plan',
         authorityDigest: PLAN_RECORD.current.digest,
         claimDeclarationsDigest: hashText(
           '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","claimScope":"specific_behavior","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan","version":"v2"}',
         ),
-        decisionAttestationDigest: baseCtx.digest(
-          '{"decidedAt":"2026-01-01T00:00:00.000Z","decisionIdentity":{"actorAssurance":"claim_validated","actorDisplayName":"Reviewer","actorEmail":"review@example.com","actorId":"reviewer-1","actorSource":"claim"},"rationale":"approved","verdict":"approve"}',
-        ),
         approvedAt: FIXED_TIME,
-        approvedBy: 'reviewer-1',
         planVersion: expect.any(Number),
         planRecordDigest: expect.any(String),
         certificateId: expect.any(String),
+        reviewBinding: expect.objectContaining({ kind: 'current_review' }),
+        approvalAttestation: expect.objectContaining({ kind: 'explicit_decision' }),
       });
+      // The attestation digest is the canonical digest over the full attested
+      // decision, not the bare decision JSON: the session/policy binding is
+      // part of what the certificate attests.
+      const context = planApprovalContextOf(state);
+      expect(planCertificate?.decisionAttestationDigest).toBe(
+        baseCtx.digest(
+          canonicalJsonStringify({
+            kind: 'explicit_decision',
+            decision: result.state.reviewDecision,
+            flowguardSessionId: context.flowguardSessionId,
+            bindingDigest: context.bindingDigest,
+            policyHash: context.policyHash,
+            policyHashVersion: context.policyHashVersion,
+          }),
+        ),
+      );
       expect(result.state.plan?.history).toEqual(PLAN_RECORD.history);
       // approve is preserve-only: the recorded decision and the counters survive.
       expect(result.state.reviewDecision?.verdict).toBe('approve');

@@ -48,7 +48,7 @@ import {
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import { formatAutoAdvanceFailure } from '../../../rails/auto-advance-overflow.js';
 import type { SessionState } from '../../../state/schema.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';
@@ -220,9 +220,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
-  if (advanced.kind === 'overflow') {
-    return formatAutoAdvanceOverflow(advanced);
-  }
+  if (advanced.kind !== 'advanced') return formatAutoAdvanceFailure(advanced);
   const { state: finalState, transitions } = advanced;
 
   await writeStateWithArtifacts(scope.sessDir, finalState);

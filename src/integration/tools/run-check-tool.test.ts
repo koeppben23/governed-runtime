@@ -27,7 +27,7 @@ import {
 } from '../test-helpers.js';
 import { status, hydrate, ticket, plan, run_check } from '../tools/index.js';
 import { readState, writeState } from '../../adapters/persistence.js';
-import { FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
+import { FROZEN_IMPLEMENTATION_BASE, makePlanApprovalCertificate } from '../../fixtures.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -1142,9 +1142,7 @@ describe('CORNER', () => {
             },
           ],
         },
-        approvalCertificate: {
-          flow: 'plan',
-          authorityDigest: state!.plan!.current.digest,
+        approvalCertificate: makePlanApprovalCertificate(state!, {
           claimDeclarationsDigest: hashText(
             canonicalJsonStringify({
               flow: 'plan',
@@ -1161,9 +1159,6 @@ describe('CORNER', () => {
               ],
             }),
           ),
-          decisionAttestationDigest: hashText('decision'),
-          approvedAt: '2026-01-01T00:00:00.000Z',
-          approvedBy: 'approver',
           certificateId: '00000000-0000-4000-8000-000000000001',
           // The certificate is bound to the CURRENT plan record: a hardcoded
           // version or record digest makes it stale, and materialization then
@@ -1176,7 +1171,7 @@ describe('CORNER', () => {
             reviewEvidenceDigest: 'e'.repeat(64),
             reviewedSubjectDigest: state!.plan!.current.digest,
           },
-        },
+        }),
       },
     });
 

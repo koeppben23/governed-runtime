@@ -19,7 +19,7 @@ import { formatBlocked } from '../../blocked-result.js';
 import { withReadOnlySession, enrichWithWorkflowDirective } from '../helpers.js';
 
 import type { SessionState } from '../../../state/schema.js';
-import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approval-context.js';
 import { resolveRuntimeWithProfileIds } from './status-provider-projection.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
 import { readReport } from '../../../adapters/persistence.js';
@@ -51,7 +51,7 @@ import {
 import { bindMutationEvidence } from '../../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../../proofgraph/config-default-consistency.js';
-import { evaluateProofGraphGate, planClaimAuthorityOf } from '../../../audit/proofgraph/gate.js';
+import { evaluateProofGraphGate } from '../../../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from '../../proofgraph/approval-projection.js';
 import { buildStatusProjection } from '../../status/status.js';
 import {
@@ -143,7 +143,7 @@ async function buildProofGraphProjectionResponse(
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
   });
-  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
+  const authorization = authorizedCriticalPlanClaimIds(state);
   const riskAssessment = state.implementationRiskAssessment;
   const proofGraphGate = evaluateProofGraphGate({
     projection: proofGraph.projection,

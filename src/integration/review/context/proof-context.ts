@@ -16,11 +16,11 @@
 import type { RiskTrigger, SessionState } from '../../../state/schema.js';
 import type { SpecificRiskTrigger } from '../../../state/risk-trigger.js';
 import type { ProofGraphProjection } from '../../../state/proofgraph.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  type AuthorizedClaimBinding,
-  type PlanClaimDeclarations,
+import type {
+  AuthorizedClaimBinding,
+  PlanClaimDeclarations,
 } from '../../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approval-context.js';
 
 /**
  * Structural ProofGraph gate port. review/ must not import audit/; the host
@@ -242,20 +242,7 @@ function renderCriticalClaimRequirement(
   authorities: ReviewerProofGraphAuthorities,
 ): string[] {
   if (!state.implementation) return [];
-  const plan = state.plan;
-  const authorization = authorizedCriticalPlanClaimIds(
-    plan
-      ? {
-          current: plan.current,
-          ...(plan.claimDeclarations !== undefined
-            ? { claimDeclarations: plan.claimDeclarations }
-            : {}),
-          ...(plan.approvalCertificate !== undefined
-            ? { approvalCertificate: plan.approvalCertificate }
-            : {}),
-        }
-      : undefined,
-  );
+  const authorization = authorizedCriticalPlanClaimIds(state);
   const riskAssessment = state.implementationRiskAssessment;
   const decision = authorities.evaluateProofGraphGate({
     projection: state.proofGraph,

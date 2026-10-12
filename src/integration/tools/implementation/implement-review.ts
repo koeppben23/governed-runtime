@@ -56,7 +56,10 @@ import {
   type ReviewValidationFailure,
 } from '../../review/validation/review-validation-failure.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 import { toPresentationFindingRelation } from '../helpers-rail-presentation.js';
 import {
   addLatestImplementationReview,
@@ -89,6 +92,10 @@ import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import {
+  flowguardReportArtifacts,
+  reattestImplementationSubject,
+} from '../../../verification/implementation-subject.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
@@ -207,6 +214,33 @@ async function handleChangesRequestedReview(input: {
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
+/**
+ * Bind an automatic full-review approval to the live governed subject. An
+ * unchanged session state does not prove the worktree bytes still match the
+ * reviewed implementation, so the acceptance is refused before the protected
+ * approval edge when the re-attestation fails.
+ */
+async function attestApprovedReviewSubject(
+  runtime: ImplementRuntime,
+  reviewedState: SessionState,
+): Promise<string | null> {
+  const implementation = reviewedState.implementation;
+  if (!implementation) return null;
+  const result = await reattestImplementationSubject({
+    worktree: runtime.worktree,
+    frozenFiles: implementation.changedFiles,
+    expectedDigest: implementation.digest,
+    baseline: reviewedState.implementationBaseline,
+    digest: runtime.ctx.digest,
+    ignoredArtifacts: flowguardReportArtifacts(reviewedState),
+  });
+  if (result.kind === 'ok') return null;
+  return formatBlocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
+    reviewedDigest: result.expected,
+    currentDigest: result.actual,
+  });
+}
+
 async function handleApprovedReview(input: {
   runtime: ImplementRuntime;
   reviewedState: SessionState;
@@ -219,6 +253,8 @@ async function handleApprovedReview(input: {
   const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
     .glyphProfile;
 
+  const worktreeBlock = await attestApprovedReviewSubject(input.runtime, input.reviewedState);
+  if (worktreeBlock) return worktreeBlock;
   const advanced = autoAdvance(
     input.reviewedState,
     (s) => evaluate(s, input.runtime.policy),
@@ -227,6 +263,9 @@ async function handleApprovedReview(input: {
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
+  }
+  if (advanced.kind === 'blocked') {
+    return formatAutoAdvanceBlocked(advanced);
   }
   const { state: finalState, transitions } = advanced;
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);

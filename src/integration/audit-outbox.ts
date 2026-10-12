@@ -13,6 +13,7 @@ import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { PersistenceError, readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { refreshProofGraph } from './proofgraph/refresh.js';
+import { evaluateEvidenceApprovalPreflight } from '../audit/proofgraph/evidence-approval-preflight.js';
 
 export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semantic' }>['semantic'];
 
@@ -138,6 +139,31 @@ function unauthorizedDirectWriteChanges(previous: SessionState, next: SessionSta
  * documents. Transition writes retain their transition-specific event; every
  * other authority-changing write receives one state_write operation.
  */
+/**
+ * A newly entered `EXPORT_READY` is a final evidence approval. The state that
+ * is about to be persisted — including its freshly refreshed ProofGraph — must
+ * itself clear the canonical evidence-approval prerequisite. A caller cannot
+ * persist an unapproved approval transition, and a stale, replayed, or
+ * process-local decision cannot survive this fresh evaluation of exactly what
+ * is written. Same-phase metadata updates while already in `EXPORT_READY` are
+ * not a new approval and are deliberately exempt.
+ */
+function assertEvidenceApprovalEntry(previous: SessionState | null, next: SessionState): void {
+  if (next.phase !== 'EXPORT_READY' || previous?.phase === 'EXPORT_READY') return;
+  // The persisted state has already entered EXPORT_READY; the gate semantics
+  // are evaluated on the evidence position the approval was decided at. The
+  // projection only changes the phase, never the evidence or authority.
+  const gateState: SessionState = { ...next, phase: 'EVIDENCE_REVIEW' };
+  const preflight = evaluateEvidenceApprovalPreflight(gateState);
+  if (preflight.kind === 'clear') return;
+  throw new PersistenceError(
+    'EXPORT_READY_APPROVAL_UNVERIFIED',
+    `Refusing to persist a new EXPORT_READY entry that does not clear the evidence ` +
+      `preflight (${preflight.code}). The approval must be applied through the ` +
+      `protected transition application against a current, admitted evidence basis.`,
+  );
+}
+
 export async function prepareStateWithAuditOperations(
   previous: SessionState | null,
   nextState: SessionState,
@@ -145,6 +171,7 @@ export async function prepareStateWithAuditOperations(
   semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const prepared = await prepareState(nextState);
+  assertEvidenceApprovalEntry(previous, prepared);
   return prepareAuditOperations(previous, prepared, transitions, semanticIntents);
 }
 

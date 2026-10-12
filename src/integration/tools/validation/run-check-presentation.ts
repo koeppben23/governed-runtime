@@ -10,7 +10,7 @@ import { enrichWithWorkflowDirective } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
 import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
-import { autoAdvance } from '../../../rails/types.js';
+import type { AutoAdvanceAdvanced } from '../../../rails/types.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { reviewObligationResponseFields } from '../../review/dispatch/dispatch-authority.js';
@@ -92,7 +92,7 @@ export function formatRunCheckResponse(input: {
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
   executionObservation: ValidationExecutionObservation;
-  advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+  advanced: AutoAdvanceAdvanced;
   finalState: SessionState;
   authority: ReviewDispatchAuthority | null;
   policy: FlowGuardPolicy;

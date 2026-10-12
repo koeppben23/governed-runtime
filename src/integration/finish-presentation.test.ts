@@ -11,7 +11,7 @@ import { renderMarkdown } from '../presentation/markdown.js';
 import { buildFinishDocument } from './status/finish-presentation.js';
 import { buildFinishCard } from './status/status-finish.js';
 import { buildFinishPresentationProjection } from './status/status-why-finish.js';
-import { makeState, makeProgressedState } from '../fixtures.js';
+import { makePlanApprovalCertificate, makeState, makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { hashText } from '../shared/hashing.js';
@@ -296,25 +296,29 @@ describe('buildFinishDocument', () => {
       body: 'x',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
-    const certificate = {
-      flow: 'plan' as const,
-      authorityDigest: current.digest,
-      claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-      decisionAttestationDigest: 'd',
-      approvedAt: '2026-01-01T00:00:00.000Z',
-      approvedBy: 'reviewer',
-      certificateId: '00000000-0000-4000-8000-0000000000ce',
-      planVersion: 1,
-      planRecordDigest: current.recordDigest,
-      reviewBinding: {
-        kind: 'current_review' as const,
-        reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
-        reviewEvidenceDigest: 'e'.repeat(64),
-        reviewedSubjectDigest: current.digest,
+    const certificate = makePlanApprovalCertificate(
+      {
+        ...makeProgressedState('EVIDENCE_REVIEW'),
+        policySnapshot: createPolicySnapshot(
+          getPolicyPreset('team'),
+          '2026-01-01T00:00:00.000Z',
+          hashText,
+        ),
       },
-      reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
-      reviewEvidenceDigest: 'e'.repeat(64),
-    };
+      {
+        authorityDigest: current.digest,
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+        certificateId: '00000000-0000-4000-8000-0000000000ce',
+        planVersion: current.planVersion,
+        planRecordDigest: current.recordDigest,
+        reviewBinding: {
+          kind: 'current_review',
+          reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
+          reviewEvidenceDigest: 'e'.repeat(64),
+          reviewedSubjectDigest: current.digest,
+        },
+      },
+    );
     const state: SessionState = {
       ...makeProgressedState('EVIDENCE_REVIEW'),
       policySnapshot: createPolicySnapshot(

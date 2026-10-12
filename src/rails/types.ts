@@ -23,6 +23,11 @@ import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import { resolveTransition } from '../machine/topology.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import {
+  evaluateEvidenceApprovalPreflight,
+  type EvidenceApprovalPreflightResult,
+} from '../audit/proofgraph/evidence-approval-preflight.js';
+import { ProtectedTransitionError } from './protected-transition-error.js';
 
 // ─── Transition Record ────────────────────────────────────────────────────────
 
@@ -75,11 +80,37 @@ export interface AutoAdvanceOverflow {
 }
 
 /**
- * Return type for autoAdvance(): a discriminated union so the overflow case
- * cannot be silently ignored. `advanced` is the normal settle; `overflow` is
- * fail-closed and forces the caller to block before any persistence.
+ * autoAdvance() refused the protected `EVIDENCE_REVIEW -> EXPORT_READY`
+ * approval because the canonical evidence prerequisite did not clear. Carries
+ * NO state: the caller must block before any persistence, exactly like the
+ * overflow outcome. The substantive denial remains the canonical preflight
+ * result, never a locally re-derived code.
  */
-export type AutoAdvanceResult = AutoAdvanceAdvanced | AutoAdvanceOverflow;
+export interface AutoAdvanceBlocked {
+  readonly kind: 'blocked';
+  /** Phase the machine stopped at (the gate phase). */
+  readonly phase: Phase;
+  readonly block: EvidenceApprovalPreflightBlocked;
+}
+
+/** The blocked branch of the canonical evidence-approval preflight. */
+export type EvidenceApprovalPreflightBlocked = Extract<
+  EvidenceApprovalPreflightResult,
+  { kind: 'blocked' }
+>;
+
+/**
+ * Return type for autoAdvance(): a discriminated union so the overflow and
+ * protected-approval denial cases cannot be silently ignored. `advanced` is
+ * the normal settle; `overflow` and `blocked` are fail-closed and force the
+ * caller to stop before any persistence.
+ */
+export type AutoAdvanceResult = AutoAdvanceAdvanced | AutoAdvanceOverflow | AutoAdvanceBlocked;
+
+/** Outcome of the sanctioned protected evidence-approval application. */
+export type EvidenceApprovalApplication =
+  | { readonly kind: 'applied'; readonly state: SessionState }
+  | { readonly kind: 'blocked'; readonly block: EvidenceApprovalPreflightBlocked };
 
 // ─── Rail Result ──────────────────────────────────────────────────────────────
 
@@ -203,8 +234,54 @@ export function buildFlowSelectionTransition(
 /**
  * Apply a transition to state. Returns a new state object (no mutation).
  * Sets phase, records transition, clears error (successful transition = no error).
+ *
+ * The protected `EVIDENCE_REVIEW -> EXPORT_READY` approval edge is refused
+ * unconditionally here: it may only be applied through
+ * {@link applyEvidenceApprovalTransition}, which enforces the canonical
+ * evidence prerequisite. Rejecting every request with that destination also
+ * rejects a caller that lies about the source phase.
  */
 export function applyTransition(
+  state: SessionState,
+  from: Phase,
+  to: Phase,
+  event: Event,
+  at: string,
+): SessionState {
+  if (to === 'EXPORT_READY') {
+    throw new ProtectedTransitionError(
+      'The EVIDENCE_REVIEW -> EXPORT_READY approval must be applied through ' +
+        'applyEvidenceApprovalTransition, never the generic transition applier.',
+    );
+  }
+  return applyTransitionUnchecked(state, from, to, event, at);
+}
+
+/**
+ * Apply the protected evidence-approval transition. This is the ONLY
+ * sanctioned application of the approval edge: it re-runs the canonical,
+ * side-effect-free preflight on the exact state being transitioned and either
+ * applies the transition or returns the canonical block. It accepts no
+ * caller-supplied allowance and no alternate target.
+ */
+export function applyEvidenceApprovalTransition(
+  state: SessionState,
+  at: string,
+): EvidenceApprovalApplication {
+  if (state.phase !== 'EVIDENCE_REVIEW') {
+    throw new ProtectedTransitionError(
+      `Evidence approval can only be applied at EVIDENCE_REVIEW (observed '${state.phase}').`,
+    );
+  }
+  const preflight = evaluateEvidenceApprovalPreflight(state);
+  if (preflight.kind === 'blocked') return { kind: 'blocked', block: preflight };
+  return {
+    kind: 'applied',
+    state: applyTransitionUnchecked(state, 'EVIDENCE_REVIEW', 'EXPORT_READY', 'APPROVE', at),
+  };
+}
+
+function applyTransitionUnchecked(
   state: SessionState,
   from: Phase,
   to: Phase,
@@ -265,6 +342,21 @@ export function autoAdvance(
     const from = current.phase;
     const to = result.target;
     const event = result.event;
+
+    // The protected evidence-approval edge is gated by the canonical preflight
+    // BEFORE the transition is recorded or applied. A denial returns a
+    // fail-closed outcome with no state, so no caller can persist or audit an
+    // unapproved EXPORT_READY session.
+    if (to === 'EXPORT_READY') {
+      const application = applyEvidenceApprovalTransition(current, at);
+      if (application.kind === 'blocked') {
+        return { kind: 'blocked', phase: current.phase, block: application.block };
+      }
+      transitions.push({ from, to, event, at });
+      current = application.state;
+      result = evalFn(current);
+      continue;
+    }
 
     // Record transition for audit trail
     transitions.push({ from, to, event, at });

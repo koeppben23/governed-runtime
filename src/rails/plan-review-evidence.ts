@@ -24,11 +24,15 @@ import type { ReviewDecision } from '../state/evidence.js';
 import type { ReviewCompletion } from '../state/evidence-primitives.js';
 import type { PlanApprovalCertificate, ReviewBinding } from '../state/proofgraph-approval.js';
 import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
+import { planApprovalContextOf } from '../state/proofgraph-approval-context.js';
 import type { RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { digestToId, hashText } from '../shared/hashing.js';
-import type { ResolvedPlanReviewEvidence } from './review-evidence-resolution.js';
+import type {
+  PlanReviewSubjectAuthority,
+  ResolvedPlanReviewEvidence,
+} from './review-evidence-resolution.js';
 
 export function enforcePlanReviewEvidence(
   state: SessionState,
@@ -145,41 +149,143 @@ export function buildPlanReviewBinding(
  * The review binding block co-signs the certificate identity: relabeling the
  * kind or swapping the reviewed digest changes the certificateId.
  */
+/**
+ * The exact plan-review authority tuple for the current plan record. Reused by
+ * the explicit rail and the automatic plan-approval certificate minting, so
+ * both resolve against the same authority.
+ */
+export function planReviewSubjectAuthority(
+  plan: NonNullable<SessionState['plan']>,
+): PlanReviewSubjectAuthority {
+  return {
+    subjectDigest: plan.current.digest,
+    planVersion: plan.current.planVersion,
+    claimDeclarationsDigest: planClaimDeclarationsDigest(plan),
+  };
+}
+
+function planCertificateIdentity(input: {
+  readonly authorityDigest: string;
+  readonly claimDeclarationsDigest: string;
+  readonly decisionAttestationDigest: string;
+  readonly planVersion: number;
+  readonly planRecordDigest: string;
+  readonly reviewBinding: ReviewBinding;
+  readonly approvedAt: string;
+  readonly ctx: RailContext;
+}): string {
+  return digestToId(
+    input.ctx.digest(
+      canonicalJsonStringify({
+        schemaVersion: 'plan-approval-certificate.v1',
+        authorityDigest: input.authorityDigest,
+        claimDeclarationsDigest: input.claimDeclarationsDigest,
+        decisionAttestationDigest: input.decisionAttestationDigest,
+        planVersion: input.planVersion,
+        planRecordDigest: input.planRecordDigest,
+        reviewBinding: input.reviewBinding,
+        approvedAt: input.approvedAt,
+      }),
+    ),
+    4,
+  );
+}
+
+/**
+ * Bind an explicit decision to the exact immutable plan version and its claims.
+ * The certificate deliberately carries no `approvedBy`: the identity lives in
+ * the attested decision, and its digest is recomputed at parse time.
+ */
 export function createPlanApprovalCertificate(
+  state: SessionState,
   plan: NonNullable<SessionState['plan']>,
   decision: ReviewDecision,
   ctx: RailContext,
   reviewBinding: ReviewBinding,
 ): PlanApprovalCertificate {
+  const context = planApprovalContextOf(state);
   const claimDeclarationsDigest = planClaimDeclarationsDigest(plan);
-  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
-  const planVersion = plan.current.planVersion;
-  const planRecordDigest = plan.current.recordDigest;
-
-  const certificateIdDigest = ctx.digest(
-    canonicalJsonStringify({
-      authorityDigest: plan.current.digest,
-      claimDeclarationsDigest,
-      decisionAttestationDigest,
-      planVersion,
-      planRecordDigest,
-      reviewBinding,
-      approvedAt: decision.decidedAt,
-      approvedBy: decision.decisionIdentity.actorId,
-    }),
-  );
-  const certificateId = digestToId(certificateIdDigest, 4);
+  const approvedAt = decision.decidedAt;
+  const approvalAttestation = {
+    kind: 'explicit_decision' as const,
+    decision,
+    flowguardSessionId: context.flowguardSessionId,
+    bindingDigest: context.bindingDigest,
+    policyHash: context.policyHash,
+    policyHashVersion: context.policyHashVersion,
+  };
+  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(approvalAttestation));
   return {
+    schemaVersion: 'plan-approval-certificate.v1',
     flow: 'plan',
     authorityDigest: plan.current.digest,
     claimDeclarationsDigest,
     decisionAttestationDigest,
-    approvedAt: decision.decidedAt,
-    approvedBy: decision.decisionIdentity.actorId,
-    certificateId,
-    planVersion,
-    planRecordDigest,
+    approvedAt,
+    certificateId: planCertificateIdentity({
+      authorityDigest: plan.current.digest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      planVersion: plan.current.planVersion,
+      planRecordDigest: plan.current.recordDigest,
+      reviewBinding,
+      approvedAt,
+      ctx,
+    }),
+    planVersion: plan.current.planVersion,
+    planRecordDigest: plan.current.recordDigest,
     reviewBinding,
+    approvalAttestation,
+  };
+}
+
+/**
+ * Mint the policy-authorized automatic plan-approval certificate. This is the
+ * ONLY automatic certificate authority: it exists exclusively under a frozen
+ * policy that permits automatic gates (`requireHumanGates === false`), and it
+ * certifies an accepted review binding — never an exhausted override.
+ */
+export function createAutomaticPlanApprovalCertificate(
+  state: SessionState,
+  plan: NonNullable<SessionState['plan']>,
+  ctx: RailContext,
+  reviewBinding: ReviewBinding,
+): PlanApprovalCertificate | null {
+  if (plan.reviewCompletion !== 'reviewer_accepted') return null;
+  if (state.policySnapshot.requireHumanGates) return null;
+  const context = planApprovalContextOf(state);
+  const claimDeclarationsDigest = planClaimDeclarationsDigest(plan);
+  const approvedAt = ctx.now();
+  const approvalAttestation = {
+    kind: 'policy_auto' as const,
+    decidedAt: approvedAt,
+    flowguardSessionId: context.flowguardSessionId,
+    bindingDigest: context.bindingDigest,
+    policyHash: context.policyHash,
+    policyHashVersion: context.policyHashVersion,
+  };
+  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(approvalAttestation));
+  return {
+    schemaVersion: 'plan-approval-certificate.v1',
+    flow: 'plan',
+    authorityDigest: plan.current.digest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
+    approvedAt,
+    certificateId: planCertificateIdentity({
+      authorityDigest: plan.current.digest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      planVersion: plan.current.planVersion,
+      planRecordDigest: plan.current.recordDigest,
+      reviewBinding,
+      approvedAt,
+      ctx,
+    }),
+    planVersion: plan.current.planVersion,
+    planRecordDigest: plan.current.recordDigest,
+    reviewBinding,
+    approvalAttestation,
   };
 }
 
@@ -198,7 +304,7 @@ export function planCertificatePatch(
   return {
     plan: {
       ...state.plan,
-      approvalCertificate: createPlanApprovalCertificate(state.plan, decision, ctx, binding),
+      approvalCertificate: createPlanApprovalCertificate(state, state.plan, decision, ctx, binding),
     },
   };
 }

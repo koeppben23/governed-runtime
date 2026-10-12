@@ -25,7 +25,7 @@ import type {
 } from '../../state/proofgraph-approval.js';
 import type { PlanRecord } from '../../state/evidence-plan.js';
 import { makePlanRevision } from '../../state/evidence-test-constants.js';
-import { makeState } from '../../fixtures.js';
+import { makePlanApprovalCertificate, makeState } from '../../fixtures.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 
@@ -363,23 +363,22 @@ describe('evaluateProofGraphGateFromState', () => {
   const PLAN_CURRENT = makePlanRevision({ body: 'x', createdAt: NOW });
 
   function certificate(decls: PlanClaimDeclarations): PlanApprovalCertificate {
-    return {
-      flow: 'plan',
+    const state = makeState('EVIDENCE_REVIEW', {
+      plan: planRecord(decls),
+    });
+    return makePlanApprovalCertificate(state, {
       authorityDigest: PLAN_CURRENT.digest,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
-      decisionAttestationDigest: 'd',
-      approvedAt: NOW,
-      approvedBy: 'reviewer',
-      certificateId: '00000000-0000-4000-8000-0000000000ce',
       planVersion: PLAN_CURRENT.planVersion,
       planRecordDigest: PLAN_CURRENT.recordDigest,
+      certificateId: '00000000-0000-4000-8000-0000000000ce',
       reviewBinding: {
         kind: 'current_review',
         reviewObligationId: '00000000-0000-4000-8000-0000000000cf',
         reviewEvidenceDigest: 'review-evidence-digest',
         reviewedSubjectDigest: PLAN_CURRENT.digest,
       },
-    };
+    });
   }
 
   function planRecord(decls: PlanClaimDeclarations, cert?: PlanApprovalCertificate): PlanRecord {
@@ -416,7 +415,7 @@ describe('evaluateProofGraphGateFromState', () => {
         approval: {
           certificateId,
           claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
-          decisionAttestationDigest: 'd',
+          decisionAttestationDigest: certificate(decls).decisionAttestationDigest,
           declarationId: claimId,
         },
       },

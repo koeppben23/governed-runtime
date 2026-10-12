@@ -112,6 +112,18 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
+    category: 'state',
+    messageTemplate:
+      'The EXPORT_READY approval was not persisted because the persisted evidence does not clear the canonical evidence-approval preflight.',
+    recoverySteps: [
+      'Recompute the evidence for the current implementation revision and retry the evidence approval',
+      'Apply the approval through the protected transition application, never a direct state write',
+      'Do not retry a persisted approval that no longer clears the preflight; fix the evidence first',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
     category: 'precondition',
     messageTemplate:

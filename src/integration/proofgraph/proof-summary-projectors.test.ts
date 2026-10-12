@@ -10,9 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { makeState, PLAN_RECORD } from '../../fixtures.js';
-import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import { hashText } from '../../shared/hashing.js';
+import { makePlanApprovalCertificate, makeState, PLAN_RECORD } from '../../fixtures.js';
 import {
   projectImplementationProofStatus,
   projectCompletionProofStatus,
@@ -70,9 +68,18 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
       },
     })),
   };
-  const claimDeclarationsDigest = hashText(canonicalJsonStringify(claimDeclarations));
-  // Bind every projected claim to the certificate built below: the gate only
-  // counts a PROVEN claim whose provenance matches the current certificate.
+  const baseWithPlan: SessionState = {
+    ...base,
+    plan: {
+      ...PLAN_RECORD,
+      claimDeclarations,
+    },
+  };
+  // A real, session/policy-bound certificate: the gate only counts a PROVEN
+  // claim whose provenance matches the current certificate.
+  const certificate = makePlanApprovalCertificate(baseWithPlan, {
+    certificateId: '11111111-1111-4111-8111-111111111111',
+  });
   const boundClaims = claims.map((claim) => ({
     ...claim,
     provenance: {
@@ -80,15 +87,15 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
       authorityId: 'plan',
       digest: PLAN_RECORD.current.digest,
       approval: {
-        certificateId: '11111111-1111-4111-8111-111111111111',
-        claimDeclarationsDigest,
-        decisionAttestationDigest: 'd'.repeat(64),
+        certificateId: certificate.certificateId,
+        claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+        decisionAttestationDigest: certificate.decisionAttestationDigest,
         declarationId: claim.claimId,
       },
     },
   }));
   return {
-    ...base,
+    ...baseWithPlan,
     proofGraph: {
       version: 'proofgraph.v2' as const,
       claims: boundClaims,
@@ -110,25 +117,7 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
     plan: {
       ...PLAN_RECORD,
       claimDeclarations,
-      approvalCertificate: {
-        flow: 'plan' as const,
-        authorityDigest: PLAN_RECORD.current.digest,
-        claimDeclarationsDigest,
-        decisionAttestationDigest: 'd'.repeat(64),
-        approvedAt: '2025-01-01T00:00:00.000Z',
-        approvedBy: 'test-approver',
-        certificateId: '11111111-1111-4111-8111-111111111111',
-        planVersion: PLAN_RECORD.current.planVersion,
-        planRecordDigest: PLAN_RECORD.current.recordDigest,
-        reviewBinding: {
-          kind: 'current_review' as const,
-          reviewObligationId: '11111111-1111-4111-8111-111111111112',
-          reviewEvidenceDigest: 'e'.repeat(64),
-          reviewedSubjectDigest: PLAN_RECORD.current.digest,
-        },
-        reviewObligationId: '11111111-1111-4111-8111-111111111112',
-        reviewEvidenceDigest: 'e'.repeat(64),
-      },
+      approvalCertificate: certificate,
     },
     implementationRiskAssessment: {
       computedMinimumTaskClass: 'STANDARD',

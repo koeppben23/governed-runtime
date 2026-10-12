@@ -8,7 +8,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { makeState, PLAN_RECORD, ARCHITECTURE_DECISION } from '../../../fixtures.js';
+import {
+  makePlanApprovalCertificate,
+  makeState,
+  PLAN_RECORD,
+  ARCHITECTURE_DECISION,
+} from '../../../fixtures.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { ProofGraphProjection } from '../../../state/proofgraph.js';
 import { evaluateProofGraphGate } from '../../../audit/proofgraph/gate.js';
@@ -110,23 +115,10 @@ describe('renderDeclarationPreview', () => {
       ...planState,
       plan: {
         ...planState.plan!,
-        approvalCertificate: {
-          flow: 'plan',
-          authorityDigest: 'authority-digest',
+        approvalCertificate: makePlanApprovalCertificate(planState, {
           claimDeclarationsDigest: 'declarations-digest',
-          decisionAttestationDigest: 'decision-digest',
-          approvedAt: '2026-01-01T00:00:00.000Z',
-          approvedBy: 'approver',
           certificateId: '44444444-4444-4444-8444-444444444444',
-          planVersion: 1,
-          planRecordDigest: 'record-digest',
-          reviewBinding: {
-            kind: 'current_review',
-            reviewObligationId: '55555555-5555-4555-8555-555555555555',
-            reviewEvidenceDigest: 'review-evidence-digest',
-            reviewedSubjectDigest: 'authority-digest',
-          },
-        },
+        }),
       },
     };
     const text = renderDeclarationPreview(certified).join('\n');

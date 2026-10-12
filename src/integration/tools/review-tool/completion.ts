@@ -22,7 +22,7 @@ import type { ReviewExecutors } from '../../../rails/review.js';
 import { ReviewReport } from '../../../state/evidence.js';
 import { resolveAuthoritativePeerReviewTask } from '../../../state/peer-review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
-import type { AutoAdvanceOverflow } from '../../../rails/types.js';
+import type { AutoAdvanceBlocked, AutoAdvanceOverflow } from '../../../rails/types.js';
 import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
@@ -151,6 +151,7 @@ export async function persistReviewCompletion(
   validatedReviewObligation: ReviewObligation | null,
 ): Promise<
   | { kind: 'overflow'; overflow: AutoAdvanceOverflow }
+  | { kind: 'blocked'; blocked: AutoAdvanceBlocked }
   | {
       kind: 'ok';
       finalState: SessionState;
@@ -162,6 +163,9 @@ export async function persistReviewCompletion(
   const advanced = autoAdvance(stateWithReportPath, createPolicyEvalFn(ctx), ctx);
   if (advanced.kind === 'overflow') {
     return { kind: 'overflow', overflow: advanced };
+  }
+  if (advanced.kind === 'blocked') {
+    return { kind: 'blocked', blocked: advanced };
   }
   const { state: finalState, transitions: advanceTransitions } = advanced;
   const finalReport = ReviewReport.parse({

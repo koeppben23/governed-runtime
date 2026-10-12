@@ -13,7 +13,10 @@ import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
 import { withMutableSessionTransaction } from '../helpers.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 import {
   executeReview,
   type PreparedReviewContent,
@@ -383,6 +386,9 @@ async function persistCompletedReview(
     );
     if (completion.kind === 'overflow') {
       return formatAutoAdvanceOverflow(completion.overflow);
+    }
+    if (completion.kind === 'blocked') {
+      return formatAutoAdvanceBlocked(completion.blocked);
     }
     return buildReviewCompletionResponse({
       sessDir,

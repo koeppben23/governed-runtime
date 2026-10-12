@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `coversRiskTriggers` inside the approved claim set, reaches `PROVEN` and passes
   ordinary approval. No runtime or demo change was required.
 
+- **Unified evidence-approval preconditions (#1078).** A single canonical,
+  side-effect-free preflight now gates every `EVIDENCE_REVIEW -> EXPORT_READY`
+  approval: the explicit decision rail, governance overrides, and policy
+  automatic approval on reviewer acceptance all consume the same certificate,
+  authorized-claim, coverage, risk-assessment, and proof-state decision. The
+  generic transition applier refuses the protected edge, the persistence
+  boundary re-evaluates exactly what is written, and a denied automatic
+  approval carries no state, no decision receipt, and no completion artifact.
+  Automatic plan approval mints a `policy_auto` certificate from the same bound
+  review evidence as the explicit path; an exhausted review can never be
+  certified automatically.
+
 - **Live critical-claim controls.** `run-live-claim-controls.mjs` drives two real
   cases through the reduced evidence gate: a retained critical claim proven by
   independent positive (`test`) and adversarial (`build`) executions, and the same
@@ -262,6 +274,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the derived outcome (`applied`, `skipped`, or `failed`).
 
 ### Changed
+
+- **BREAKING — session state v11 and the versioned plan approval certificate.**
+  The plan approval certificate is replaced by `plan-approval-certificate.v1`
+  with an explicit `explicit_decision` / `policy_auto` attestation bound to the
+  session binding and frozen policy; `approvedBy` no longer exists for plan
+  certificates, and a `policy_auto` certificate can only certify an accepted
+  review. Every `EVIDENCE_REVIEW -> EXPORT_READY` approval — automatic exactly
+  like explicit — must clear the canonical evidence preflight. Existing session
+  state (`v10`/earlier), including previously compatible active sessions, is
+  rejected with `SESSION_STATE_INCOMPATIBLE`; there is no migration path, and
+  historical exports require the matching previous runtime for re-verification.
 
 - **Single canonical session authority (#957).** Plugin hooks, tool execution,
   MCP projection, and hook session resolution now resolve sessions through
