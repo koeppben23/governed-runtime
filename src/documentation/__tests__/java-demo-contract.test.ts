@@ -19,6 +19,7 @@ import {
   captureRetryCodes,
   planReviewSameTurnCorrection,
   planReviewCorrectionProven,
+  structuredRearmSupersedesTerminal,
   assertExpectedDenial,
   assertSessionBinding,
   matrixExitCode,
@@ -640,6 +641,114 @@ describe('Java Task Manager demo contract', () => {
           step: 'plan-2',
           codes: ['PLAN_REVIEW_IN_PROGRESS'],
           evidence: 'same_turn_correction_and_reviewer_accepted',
+        },
+      ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('supersedes a terminal reviewer block only with a later re-arm and a converged gate', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-review-supersede-'));
+    try {
+      const errorLine = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'task',
+          state: {
+            output: JSON.stringify({ error: true, code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
+          },
+        },
+      });
+      const rearmLine = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'task',
+          state: {
+            output: JSON.stringify({ reviewRetry: { code: 'REVIEW_EVIDENCE_NOT_OBSERVED' } }),
+          },
+        },
+      });
+      expect(
+        structuredRearmSupersedesTerminal(
+          `${errorLine}\n${rearmLine}\n`,
+          'REVIEW_EVIDENCE_NOT_OBSERVED',
+        ),
+      ).toBe(true);
+      expect(
+        structuredRearmSupersedesTerminal(
+          `${rearmLine}\n${errorLine}\n`,
+          'REVIEW_EVIDENCE_NOT_OBSERVED',
+        ),
+      ).toBe(false);
+      expect(
+        structuredRearmSupersedesTerminal(`${rearmLine}\n`, 'REVIEW_EVIDENCE_NOT_OBSERVED'),
+      ).toBe(false);
+      expect(
+        structuredRearmSupersedesTerminal(`${errorLine}\n`, 'REVIEW_EVIDENCE_NOT_OBSERVED'),
+      ).toBe(false);
+
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${errorLine}\n${rearmLine}\n`,
+      });
+      const session: {
+        workspace: string;
+        recoveredDenials: Array<Record<string, unknown>>;
+        pendingReviewRecovery?: { steps: string[]; codes: string[] } | null;
+      } = { workspace: root, recoveredDenials: [] };
+      await runner.turn(session, 'plan', 'x');
+      expect(session.pendingReviewRecovery).toEqual({
+        steps: ['plan'],
+        codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
+      });
+
+      runner.turn = async () => ({
+        code: 0,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: [],
+      });
+      runner.requireBoundState = () => ({
+        state: {
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'review_exhausted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'changes_requested' },
+        },
+        sessionDir: root,
+      });
+      await expect(runner.approve(session, 'approve-plan', 'PLAN_REVIEW')).rejects.toThrow(
+        /were not proven by a converged review/,
+      );
+
+      runner.requireBoundState = () => ({
+        state: {
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'reviewer_accepted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'accept' },
+        },
+        sessionDir: root,
+      });
+      await runner.approve(session, 'approve-plan', 'PLAN_REVIEW');
+      expect(session.pendingReviewRecovery).toBeNull();
+      expect(session.recoveredDenials).toEqual([
+        {
+          step: 'plan',
+          codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
+          evidence: 'structured_rearm',
+        },
+        {
+          step: 'plan',
+          codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
+          evidence: 'structured_rearm_after_terminal_failure',
         },
       ]);
     } finally {

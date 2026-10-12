@@ -318,6 +318,28 @@ export function captureRetryCodes(output) {
  */
 export const PLAN_REVIEW_CORRECTION_CODE = 'PLAN_REVIEW_IN_PROGRESS';
 
+/**
+ * A terminal reviewer-capture block is superseded when the transport itself
+ * re-armed a fresh attempt on the same frozen review chain LATER in the same
+ * turn. The re-arm alone is not the proof: the gate step still has to confirm
+ * the persisted review outcome ({@link planReviewCorrectionProven} or the
+ * architecture completion).
+ */
+export function structuredRearmSupersedesTerminal(output, code) {
+  let errorIndex = -1;
+  let rearmIndex = -1;
+  let index = 0;
+  for (const event of eventsOf(output)) {
+    index += 1;
+    if (event.type !== 'tool_use') continue;
+    const raw = event.part?.state?.output ?? '';
+    if (typeof raw !== 'string' || !raw.includes(`"code":"${code}"`)) continue;
+    if (/"error":true/.test(raw)) errorIndex = index;
+    if (/"reviewRetry"/.test(raw)) rearmIndex = index;
+  }
+  return errorIndex !== -1 && rearmIndex > errorIndex;
+}
+
 /** Same-turn proof: the planner was denied and then succeeded later in the turn. */
 export function planReviewSameTurnCorrection(output) {
   return (
@@ -635,6 +657,19 @@ export class Runner {
       );
     }
 
+    const supersededTerminals = unexpectedDenialCodes(result.stdout).filter((code) =>
+      structuredRearmSupersedesTerminal(result.stdout, code),
+    );
+    if (supersededTerminals.length > 0) {
+      session.pendingReviewRecovery = {
+        steps: [...(session.pendingReviewRecovery?.steps ?? []), label],
+        codes: supersededTerminals,
+      };
+      this.log(
+        `${label}: terminal block(s) [${supersededTerminals.join(', ')}] superseded by a later structured re-arm; the persisted review outcome is proven at the gate`,
+      );
+    }
+
     const planReviewDenied = toolDenialCodes(result.stdout).includes(PLAN_REVIEW_CORRECTION_CODE);
     if (planReviewDenied && !planReviewSameTurnCorrection(result.stdout)) {
       throw new Error(
@@ -651,7 +686,9 @@ export class Runner {
     }
 
     const unexpected = unexpectedDenialCodes(result.stdout).filter(
-      (code) => !(planReviewDenied && code === PLAN_REVIEW_CORRECTION_CODE),
+      (code) =>
+        !(planReviewDenied && code === PLAN_REVIEW_CORRECTION_CODE) &&
+        !supersededTerminals.includes(code),
     );
     if (unexpected.length > 0) {
       // The persisted terminal phase is FlowGuard's outcome authority: when the
@@ -708,6 +745,28 @@ export class Runner {
       throw new Error(
         `${label}: expected gate ${expectedPhase}, observed ${String(snapshot.state.phase)}`,
       );
+    }
+    if (session.pendingReviewRecovery) {
+      const proven =
+        expectedPhase === 'PLAN_REVIEW'
+          ? planReviewCorrectionProven(snapshot.state)
+          : expectedPhase === 'ARCH_REVIEW' &&
+            snapshot.state.architecture?.reviewCompletion === 'reviewer_accepted';
+      if (!proven) {
+        throw new Error(
+          `${label}: superseded reviewer block(s) [${session.pendingReviewRecovery.codes.join(', ')}] were not proven by a converged review; stopping the flow`,
+        );
+      }
+      session.recoveredDenials = session.recoveredDenials ?? [];
+      session.recoveredDenials.push({
+        step: session.pendingReviewRecovery.steps.join(', '),
+        codes: session.pendingReviewRecovery.codes,
+        evidence: 'structured_rearm_after_terminal_failure',
+      });
+      this.log(
+        `${label}: superseded reviewer block(s) [${session.pendingReviewRecovery.codes.join(', ')}] proven by the converged review`,
+      );
+      session.pendingReviewRecovery = null;
     }
     if (expectedPhase === 'PLAN_REVIEW' && session.pendingPlanReviewCorrection) {
       if (!planReviewCorrectionProven(snapshot.state)) {
@@ -1102,6 +1161,11 @@ async function main() {
         if (session.pendingPlanReviewCorrection) {
           throw new Error(
             `unproven ${PLAN_REVIEW_CORRECTION_CODE} correction at [${session.pendingPlanReviewCorrection.steps.join(', ')}]`,
+          );
+        }
+        if (session.pendingReviewRecovery) {
+          throw new Error(
+            `unproven reviewer recovery [${session.pendingReviewRecovery.codes.join(', ')}] at [${session.pendingReviewRecovery.steps.join(', ')}]`,
           );
         }
         const snapshot = runner.requireBoundState(session);
