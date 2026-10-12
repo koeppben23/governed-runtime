@@ -474,6 +474,83 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
   });
 
+  it('lets a carried plan override coexist with a legitimate automatic approval', async () => {
+    const carriedOverride = {
+      ...REVIEW_APPROVE,
+      verdict: 'approve_with_governance_override' as const,
+      decidedAt: '2025-01-01T00:00:00.000Z',
+    };
+    const previous: SessionState = { ...autoEvidenceState(), reviewDecision: carriedOverride };
+    await writeState(sessDir, previous);
+
+    // The historical plan override neither authorization nor blocker: the
+    // automatic approval proceeds on its own evidence and policy authority.
+    const application = approveOrThrow(previous);
+    await writeState(sessDir, application.state, undefined, application.admission);
+    const persisted = (await readState(sessDir))!;
+    expect(persisted.phase).toBe('EXPORT_READY');
+    // The historical decision remains untouched as evidence.
+    expect(persisted.reviewDecision?.verdict).toBe('approve_with_governance_override');
+  });
+
+  it('refuses contradictory receipts for the same decision at two gates', async () => {
+    const previous = authorizedEvidenceState();
+    const decision = previous.reviewDecision!;
+    await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
+      buildDecisionAuditIntent({
+        transition: { from: 'PLAN_REVIEW', to: 'VALIDATION', event: 'APPROVE', at: FIXED_TIME },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+      buildDecisionAuditIntent({
+        transition: {
+          from: 'EVIDENCE_REVIEW',
+          to: 'EXPORT_READY',
+          event: 'APPROVE',
+          at: FIXED_TIME,
+        },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 2,
+        actor: 'human',
+      }),
+    ]);
+    const application = approveOrThrow(previous);
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
+  it('counts a carried receipt operation once by canonical operation identity', async () => {
+    const previous = authorizedEvidenceState();
+    const decision = previous.reviewDecision!;
+    await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
+      buildDecisionAuditIntent({
+        transition: {
+          from: 'EVIDENCE_REVIEW',
+          to: 'EXPORT_READY',
+          event: 'APPROVE',
+          at: FIXED_TIME,
+        },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+    ]);
+    const application = approveOrThrow(previous);
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      application.state,
+      undefined,
+      [],
+      application.admission,
+    );
+    expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
+  });
+
   it('refuses bootstrapping a session directly into EXPORT_READY', async () => {
     await expect(writeState(sessDir, makeState('EXPORT_READY'))).rejects.toMatchObject({
       code: 'EXPORT_READY_APPROVAL_UNVERIFIED',

@@ -15,6 +15,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { evidenceGateDecisionOf } from '../state/evidence-gate-decision.js';
 import { PersistenceError } from './persistence-core.js';
 import {
   consumeEvidenceApprovalAdmission,
@@ -61,8 +62,12 @@ function decisionReceiptGate(
   let evidenceMatches = 0;
   let otherGate = false;
   const expectedIdentity = canonicalJsonStringify(decision.decisionIdentity);
-  const operations = [...previous.pendingAuditOperations, ...next.pendingAuditOperations];
-  for (const operation of operations) {
+  // Canonical operation identity first: the same operation carried unchanged
+  // from the predecessor into the successor is ONE receipt, not two.
+  const seen = new Set<string>();
+  for (const operation of [...previous.pendingAuditOperations, ...next.pendingAuditOperations]) {
+    if (seen.has(operation.operationId)) continue;
+    seen.add(operation.operationId);
     if (operation.kind !== 'semantic') continue;
     const detail = operation.semantic.detail;
     if (!decisionReceiptMatches(detail, decision, expectedIdentity)) continue;
@@ -72,7 +77,9 @@ function decisionReceiptGate(
       otherGate = true;
     }
   }
-  if (evidenceMatches > 1) return 'ambiguous';
+  // One evidence-gate receipt plus any receipt of the same decision at another
+  // gate is a contradiction, not a preference.
+  if (evidenceMatches > 1 || (evidenceMatches === 1 && otherGate)) return 'ambiguous';
   if (evidenceMatches === 1) return 'evidence_gate';
   if (otherGate) return 'other_gate';
   return 'none';
@@ -115,19 +122,22 @@ export async function assertEvidenceApprovalWriteBoundary(
         'EVIDENCE_REVIEW approval can enter EXPORT_READY.',
     );
   }
-  // The approval is bound to the existing decision-receipt authority. A
-  // human-gated policy always needs the recorded decision; an explicit decision
-  // under an automatic policy (an override) needs its receipt too. Exactly one
-  // full-content evidence-gate receipt must be present: no receipt, a receipt
-  // for another gate, or ambiguous duplicates are all refused.
-  if (next.policySnapshot.requireHumanGates === true && next.reviewDecision === null) {
+  // The approval is bound to the existing decision-receipt authority, but only
+  // a decision that belongs to the CURRENT evidence revision counts: a carried
+  // plan approval/override is historical evidence and neither authorizes the
+  // gate nor blocks a policy-permitted automatic approval. A current-gate
+  // decision (human-gated approval or an explicit override) requires exactly
+  // one fresh full-content evidence-gate receipt: no receipt, a receipt for
+  // another gate, or ambiguous duplicates are refused.
+  const currentDecision = evidenceGateDecisionOf(next);
+  if (next.policySnapshot.requireHumanGates === true && currentDecision === null) {
     throw new PersistenceError(
       'EXPORT_READY_APPROVAL_UNVERIFIED',
-      'Refusing a human-gated EXPORT_READY approval without a recorded decision.',
+      'Refusing a human-gated EXPORT_READY approval without a current-gate recorded decision.',
     );
   }
-  if (next.reviewDecision !== null) {
-    const receiptGate = decisionReceiptGate(previous, next, next.reviewDecision);
+  if (currentDecision !== null) {
+    const receiptGate = decisionReceiptGate(previous, next, currentDecision);
     if (receiptGate !== 'evidence_gate') {
       throw new PersistenceError(
         'EXPORT_READY_APPROVAL_UNVERIFIED',

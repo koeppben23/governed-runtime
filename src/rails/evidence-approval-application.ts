@@ -23,6 +23,7 @@ import {
   type EvidenceApprovalAdmission,
 } from '../audit/proofgraph/evidence-approval-admission.js';
 import { requiresGovernanceOverride } from '../machine/workflow-directive.js';
+import { evidenceGateDecisionOf } from '../state/evidence-gate-decision.js';
 import { ProtectedTransitionError } from './protected-transition-error.js';
 
 /** The blocked branch of the canonical evidence-approval preflight. */
@@ -112,13 +113,16 @@ function evidenceApprovalAuthorityBlock(
   state: SessionState,
 ): EvidenceApprovalPreflightBlocked | null {
   const overrideRequired = requiresGovernanceOverride(state);
-  const decision = state.reviewDecision;
-  const verdict = decision?.verdict;
+  // Only a decision bound to the CURRENT evidence revision counts here: a
+  // carried plan approval/override must neither authorize the gate nor block a
+  // policy-permitted automatic approval.
+  const currentDecision = evidenceGateDecisionOf(state);
+  const verdict = currentDecision?.verdict;
   if (state.policySnapshot.requireHumanGates === true) {
-    return humanGateDecisionBlock(state, overrideRequired);
+    return humanGateDecisionBlock(overrideRequired, currentDecision);
   }
   // Automatic policy: an exhausted gate requires the explicit override; a
-  // non-exhausted gate must not carry an override decision.
+  // non-exhausted gate must not carry a current-gate override decision.
   if (overrideRequired) {
     return verdict === 'approve_with_governance_override'
       ? null
@@ -139,22 +143,22 @@ function evidenceApprovalAuthorityBlock(
 }
 
 /**
- * A human-gated approval requires a recorded decision that matches the gate:
- * an exhausted gate demands the explicit governance override, a non-exhausted
- * gate demands a plain approval, and the decision must not predate the current
- * evidence revision (a carried plan approval is not an evidence-gate
- * approval).
+ * A human-gated approval requires a CURRENT-gate recorded decision: an
+ * exhausted gate demands the explicit governance override, a non-exhausted
+ * gate demands a plain approval. A carried historical decision is not a
+ * current-gate decision and is refused as missing.
  */
 function humanGateDecisionBlock(
-  state: SessionState,
   overrideRequired: boolean,
+  decision: SessionState['reviewDecision'],
 ): EvidenceApprovalPreflightBlocked | null {
-  const decision = state.reviewDecision;
   if (decision === null) {
     return {
       kind: 'blocked',
       code: 'HUMAN_DECISION_REQUIRED',
-      params: { reason: 'a human-gated evidence approval requires a recorded approving decision' },
+      params: {
+        reason: 'a human-gated evidence approval requires a recorded decision for this gate',
+      },
     };
   }
   if (overrideRequired && decision.verdict !== 'approve_with_governance_override') {
@@ -169,23 +173,6 @@ function humanGateDecisionBlock(
       kind: 'blocked',
       code: 'GOVERNANCE_OVERRIDE_NOT_REQUIRED',
       params: { intent: 'APPROVE_WITH_GOVERNANCE_OVERRIDE' },
-    };
-  }
-  const evidenceRevisionAt = state.implReview?.executedAt ?? state.implementation?.executedAt;
-  // Without a recorded implementation there is no evidence revision to bind:
-  // the writer still requires the fresh evidence-gate decision receipt.
-  if (evidenceRevisionAt === undefined) return null;
-  const decidedAt = Date.parse(decision.decidedAt);
-  const revisionAt = Date.parse(evidenceRevisionAt);
-  if (Number.isNaN(decidedAt) || decidedAt < revisionAt) {
-    return {
-      kind: 'blocked',
-      code: 'HUMAN_DECISION_REQUIRED',
-      params: {
-        reason:
-          'the recorded decision predates the current evidence revision; a plan approval ' +
-          'does not authorize the final evidence gate',
-      },
     };
   }
   return null;
