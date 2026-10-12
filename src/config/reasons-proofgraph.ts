@@ -28,6 +28,18 @@ const CERTIFIED_PLAN_RECOVERY: readonly string[] = [
 /** Reason codes for recording and consuming ProofGraph mutation evidence. */
 export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   {
+    code: 'PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS',
+    category: 'precondition',
+    messageTemplate:
+      "Claim '{claimId}' references assertion evidence with duplicate provider-scoped identities; no first or last result is authoritative.",
+    recoverySteps: [
+      'Inspect the producing reports and reporter configuration; emit each canonical providerId/localId exactly once per assertion-capable attempt',
+      'Preserve historical observations; never deduplicate, reorder or edit persisted evidence to make it pass',
+      'At EVIDENCE_REVIEW request changes to return to IMPLEMENTATION; repair through governed mutation, record the new implementation and execute fresh checks and required review',
+      'Same-revision positive failures are not silently superseded; follow the existing implementation repair policy, and use new-session authority recovery if approved declarations must change',
+    ],
+  },
+  {
     code: 'PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE',
     category: 'precondition',
     messageTemplate:
@@ -142,7 +154,7 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     code: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
     category: 'precondition',
     messageTemplate:
-      'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation: {claimIds}.',
+      'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no unique, correctly bound source and usable ProofGraph evaluation: {claimIds}.',
     recoverySteps: [
       'At EVIDENCE_REVIEW request changes to return to IMPLEMENTATION; run /implement, fresh /check executions and the required review to rematerialize the unchanged approved claims through the regular product path',
       'Do not approve until every certificate-authorized critical plan claim is present and evaluated',

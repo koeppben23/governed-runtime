@@ -146,6 +146,8 @@ async function buildProofGraphProjectionResponse(
   const authorization = authorizedCriticalPlanClaimIds(state);
   const riskAssessment = state.implementationRiskAssessment;
   const proofGraphGate = evaluateProofGraphGate({
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
     projection: proofGraph.projection,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     ...(authorization.kind === 'authorized'
@@ -155,7 +157,7 @@ async function buildProofGraphProjectionResponse(
       ? { authorizedClaimBindings: authorization.bindings }
       : {}),
     certificateValid: authorization.kind === 'authorized',
-    ...(state.implementation ? { implementationDigest: state.implementation.digest } : {}),
+    implementationDigest: state.implementation?.digest,
     ...(riskAssessment !== null ? { riskAssessment } : {}),
     claimDiagnostics: proofGraph.claimDiagnostics,
   });

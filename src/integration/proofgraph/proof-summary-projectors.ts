@@ -16,6 +16,7 @@ import type { ProofGraphGateDecision } from '../../audit/proofgraph/gate.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval-context.js';
 import { isFlowPhase } from '../../machine/topology.js';
+import { assessProofGraphEvidence } from '../../audit/proofgraph/evidence-integrity.js';
 
 import type {
   CompactProofClaim,
@@ -354,6 +355,8 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
       const riskAssessment = state.implementationRiskAssessment;
       const implementationDigest = state.implementation?.digest;
       return evaluateProofGraphGate({
+        contract: state.proofContract,
+        validationAttempts: state.validationAttempts,
         projection: state.proofGraph,
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
@@ -364,7 +367,7 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
           ? { authorizedClaimBindings: authorization.bindings }
           : {}),
         certificateValid: authorization.kind === 'authorized',
-        ...(implementationDigest !== undefined ? { implementationDigest } : {}),
+        implementationDigest,
         riskAssessment:
           riskAssessment !== null
             ? {
@@ -382,7 +385,11 @@ function buildEvaluationResult(
   gateResult: ProofGraphGateDecision,
   decisionContext: ProofDecisionContext,
 ): CompactProofPresentation {
-  const claims = state.proofGraph.claims;
+  const claims = assessProofGraphEvidence(state.proofGraph, {
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
+  }).projection.claims;
   const summary = summarizePersistedProofGraph(state);
   if (claims.length === 0) {
     return {

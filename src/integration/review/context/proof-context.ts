@@ -27,6 +27,8 @@ import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approv
  * composition injects the canonical gate authority.
  */
 export interface ReviewProofGraphGateInput {
+  readonly contract: SessionState['proofContract'];
+  readonly validationAttempts: SessionState['validationAttempts'];
   readonly projection?: ProofGraphProjection;
   readonly authorizedCriticalClaimIds?: readonly string[];
   /** Certificate-bound coverage relation; mirrors the canonical gate input. */
@@ -34,7 +36,7 @@ export interface ReviewProofGraphGateInput {
   /** Expected certificate binding per authorized critical claim. */
   readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
   readonly certificateValid?: boolean;
-  readonly implementationDigest?: string;
+  readonly implementationDigest: string | undefined;
   readonly riskAssessment?: {
     readonly implementationDigest: string;
     /** Required trigger taxonomy of the v8 assessment; mirrors the canonical gate input. */
@@ -245,6 +247,8 @@ function renderCriticalClaimRequirement(
   const authorization = authorizedCriticalPlanClaimIds(state);
   const riskAssessment = state.implementationRiskAssessment;
   const decision = authorities.evaluateProofGraphGate({
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     ...(authorization.kind === 'authorized'

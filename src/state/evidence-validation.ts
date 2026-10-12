@@ -158,6 +158,8 @@ export const AssertionExtractionReasonCode = z.enum([
   'binding_format_unsupported',
   'identity_codec_missing',
   'invalid_local_id',
+  'assertion_identity_ambiguous',
+  'assertion_provider_mismatch',
 ]);
 export type AssertionExtractionReasonCode = z.infer<typeof AssertionExtractionReasonCode>;
 

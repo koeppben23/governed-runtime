@@ -345,11 +345,11 @@ describe('buildFinishDocument', () => {
     );
     // The human-authored explanation and the verbatim canonical message are preserved.
     expect(output).toContain(
-      '**Why:** Certificate-authorized critical plan claims have no persisted ProofGraph evaluation',
+      '**Why:** Certificate-authorized critical plan claims have no unique, correctly bound source and usable ProofGraph evaluation. Missing, duplicated or mismatched identities cannot authorize approval.',
     );
     expect(output).toContain('**Details:**');
     expect(output).toContain(
-      'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation: {claimIds}.',
+      'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no unique, correctly bound source and usable ProofGraph evaluation: {claimIds}.',
     );
   });
 

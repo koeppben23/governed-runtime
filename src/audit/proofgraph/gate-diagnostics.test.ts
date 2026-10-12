@@ -48,6 +48,7 @@ describe('gate claimDiagnostics passthrough', () => {
     'check_only_evidence',
     'provider_mismatch',
     'assertion_mismatch',
+    'assertion_identity_ambiguous',
     'evidence_role_collision',
     'aggregate_check_mismatch',
     'aggregate_candidate_mismatch',
@@ -59,6 +60,9 @@ describe('gate claimDiagnostics passthrough', () => {
   for (const code of VALID_CODES) {
     it(`passes the ${code} binding diagnostic through to the blocking reason`, () => {
       const decision = evaluateProofGraphGate({
+        contract: undefined,
+        validationAttempts: [],
+        implementationDigest: undefined,
         projection: projectionWithDiagnostics(UUID(1), code),
       });
       expect(decision.gated).toBe(true);
@@ -68,6 +72,9 @@ describe('gate claimDiagnostics passthrough', () => {
 
   it('drops invalid binding codes and falls back to evidence_missing', () => {
     const decision = evaluateProofGraphGate({
+      contract: undefined,
+      validationAttempts: [],
+      implementationDigest: undefined,
       projection: projectionWithDiagnostics(UUID(1), 'garbage-code'),
     });
     expect(decision.gated).toBe(true);
@@ -85,7 +92,12 @@ describe('gate claimDiagnostics passthrough', () => {
         [UUID(9)]: 'garbage-code',
       } as Record<string, AssertionBindingReasonCode>,
     };
-    const decision = evaluateProofGraphGate({ projection });
+    const decision = evaluateProofGraphGate({
+      contract: undefined,
+      validationAttempts: [],
+      implementationDigest: undefined,
+      projection,
+    });
     expect(decision.blockingClaims[0]?.reasonCode).toBe('provider_mismatch');
   });
 });

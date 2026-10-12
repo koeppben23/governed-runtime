@@ -136,11 +136,28 @@ two distinct attempts) or the same validation attempt to both roles never
 becomes `PROVEN`; its diagnostic is `evidence_role_collision` /
 `PROOFGRAPH_EVIDENCE_ROLE_COLLISION`.
 
-If a current plan approval certificate authorizes a critical declaration but its
-claim is absent from the persisted ProofGraph projection, final evidence approval
-blocks with `PROOFGRAPH_EVALUATION_UNAVAILABLE`. A missing projection is never
-interpreted as an empty declaration set; request changes and restore the
-evaluation before approval.
+If a current plan approval certificate authorizes a critical declaration but the
+claim has no unique, correctly bound source and persisted ProofGraph evaluation
+(absent, duplicated, or bound to a different certificate), final evidence
+approval blocks with `PROOFGRAPH_EVALUATION_UNAVAILABLE`. A missing projection
+is never interpreted as an empty declaration set; request changes and restore
+the evaluation before approval. The same exactly-once rule applies to claim
+ids: an authorized critical claim must occur exactly once in the declared
+contract and exactly once in the projection with a matching certificate
+binding. Duplicate occurrences are never resolved by first/last match.
+
+Structured assertion evidence follows the same fail-closed identity rule. A
+provider-scoped assertion identity (provider, local id) that occurs more than
+once inside one extraction cannot select a result by order: the attempt's
+evidence is invalid for both the positive and the adversarial role, binding
+reports `assertion_identity_ambiguous` /
+`PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS`, and a cached `PROVEN` projection that
+references it is re-evaluated to a blocked, non-proven state. A provider
+mismatch inside one extraction keeps precedence
+(`assertion_provider_mismatch` / `PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH`).
+`exitCode: 0`, `passed: true`, or a valid cryptographic binding never upgrade
+ambiguous structured evidence into usable proof; the raw observations remain
+auditable and only their qualifying force is removed.
 
 ## Declaring claims
 

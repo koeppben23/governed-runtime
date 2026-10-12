@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Assertion-identity integrity and exactly-once claims (#1080).** Structured
+  assertion evidence whose provider-scoped identity occurs more than once in one
+  extraction, or contradicts its extraction provider, no longer qualifies as
+  proof for either evidence role — regardless of `exitCode: 0`, `passed: true` or
+  a valid cryptographic binding. Binding reports
+  `PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS` /
+  `PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH`; a cached `PROVEN` projection that
+  references such an attempt is re-evaluated fail-closed. Certificate-authorized
+  critical claims must occur exactly once in the declared contract and once in
+  the projection with matching certificate binding before the gate counts them.
+  The claim-specific assertion binding now resolves provider-scoped identities
+  instead of first-match, and live demo controls only record `PASS` after their
+  parent and reviewer transcripts were captured and validated. Raw observations
+  remain auditable and the persisted formats are unchanged.
+
 - **Truthful ProofGraph planning and recovery (#1079).** OpenCode, Claude Code,
   Codex and the plan tool share claim guidance requiring distinct check identities
   and attempts, structurally bindable assertion/aggregate evidence and explicit

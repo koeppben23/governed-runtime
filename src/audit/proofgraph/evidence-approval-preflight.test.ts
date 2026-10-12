@@ -115,9 +115,18 @@ function evidenceState(input: {
   const certificate = makePlanApprovalCertificate(base, {
     claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
   });
-  return {
+  const certified: SessionState = {
     ...base,
     plan: { ...base.plan!, approvalCertificate: certificate },
+  };
+  // Materialized contract the gate requires alongside the certificate: the
+  // same declared critical fact without its evaluated verification state.
+  const materialized = certifiedClaim(certified, 'PROVEN').claims[0];
+  if (!materialized) throw new Error('fixture requires a certified claim');
+  const { verificationState: _state, freshness: _freshness, ...sourceClaim } = materialized;
+  return {
+    ...certified,
+    proofContract: { version: 'contract.v2', claims: [sourceClaim] },
   };
 }
 

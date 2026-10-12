@@ -21,6 +21,7 @@ import {
   type PlanApprovalAttestation,
 } from './proofgraph-plan-certificate.js';
 import { SpecificRiskTrigger } from './risk-trigger.js';
+import { uniqueClaimIds } from './proofgraph-claim-set.js';
 
 export { PlanApprovalCertificate, ReviewBinding } from './proofgraph-plan-certificate.js';
 export {
@@ -359,11 +360,19 @@ function reviewBindingMatchesPlan(binding: ReviewBinding, plan: PlanClaimAuthori
   );
 }
 
+/** Certificate present and declared claim ids exactly-once; duplicated ids fail closed. */
+function approvalCertificateOf(
+  plan: PlanClaimAuthority | null | undefined,
+): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
+  if (!plan?.approvalCertificate) return false;
+  return uniqueClaimIds(plan.claimDeclarations?.claims ?? []) !== null;
+}
+
 export function hasCurrentPlanApprovalCertificate(
   plan: PlanClaimAuthority | null | undefined,
   context: PlanApprovalContext,
 ): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
-  if (!plan?.approvalCertificate) return false;
+  if (!approvalCertificateOf(plan)) return false;
   const certificate = plan.approvalCertificate;
   if (certificate.authorityDigest !== plan.current.digest) return false;
   // Versionsbindung: Ein Zertifikat für v1 autorisiert nicht v2.

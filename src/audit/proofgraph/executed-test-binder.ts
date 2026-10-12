@@ -17,6 +17,7 @@
 import type { SessionState } from '../../state/schema.js';
 import type { ProofProviderResult } from '../../state/proofgraph.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
+import { assessAssertionEvidenceIntegrity } from '../../state/assertion-evidence-integrity.js';
 
 /** Stable provider identity, distinct from its version. */
 export const EXECUTED_TEST_PROVIDER_ID = 'executed-test';
@@ -35,6 +36,19 @@ function lacksRequiredSuiteScope(
   result: { readonly fullCheckScopeAttestation?: 'full_check' | undefined },
 ): boolean {
   return claim.claimScope === 'suite' && result.fullCheckScopeAttestation !== 'full_check';
+}
+
+/** Identity-integrity detail, otherwise the suite-scope detail, otherwise none. */
+function unavailableAttemptDetail(
+  claim: { readonly claimScope?: 'specific_behavior' | 'suite' | undefined },
+  result: SessionState['validationAttempts'][number]['result'],
+  attemptId: string,
+): string | undefined {
+  const integrity = assessAssertionEvidenceIntegrity(result.assertionExtraction);
+  if (integrity.kind === 'invalid') return integrity.detail;
+  return lacksRequiredSuiteScope(claim, result)
+    ? `suite claim requires a full-check attested attempt for ${attemptId}`
+    : undefined;
 }
 
 /**
@@ -69,7 +83,8 @@ export function bindExecutedTestEvidence(
         continue;
       }
       const r = attempt.result;
-      if (lacksRequiredSuiteScope(claim, r)) {
+      const unavailableDetail = unavailableAttemptDetail(claim, r, ref.attemptId);
+      if (unavailableDetail !== undefined) {
         results.push({
           claimId: claim.claimId,
           providerKind: 'executed_test',
@@ -78,7 +93,7 @@ export function bindExecutedTestEvidence(
           input: {},
           status: 'unavailable',
           executedAt: evaluatedAt,
-          detail: `suite claim requires a full-check attested attempt for ${ref.attemptId}`,
+          detail: unavailableDetail,
           attestation: 'flowguard_executed',
         });
         continue;

@@ -18,13 +18,19 @@ import type { ProofClaim } from '../../state/proofgraph.js';
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
 import type { ClaimResolutionFacts } from '../../presentation/claim-resolution.js';
 import { projectClaimResolutionFacts } from '../../presentation/claim-resolution.js';
+import { assessProofGraphEvidence } from '../../audit/proofgraph/evidence-integrity.js';
 
 export function projectClaimResolutionFactsFromState(state: SessionState): ClaimResolutionFacts[] {
-  const claims: readonly ProofClaim[] = state.proofGraph.claims;
+  const projection = assessProofGraphEvidence(state.proofGraph, {
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
+  }).projection;
+  const claims: readonly ProofClaim[] = projection.claims;
   if (claims.length === 0) return [];
 
   const diagnostics: Readonly<Record<string, AssertionBindingReasonCode>> =
-    state.proofGraph.claimDiagnostics ?? {};
+    projection.claimDiagnostics ?? {};
 
   return claims.map((claim) => {
     const bindingDiagnostic = diagnostics[claim.claimId];
