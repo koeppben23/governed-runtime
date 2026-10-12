@@ -114,6 +114,7 @@ function decisionReceipt(
       fromPhase: 'PLAN_REVIEW',
       toPhase: 'VALIDATION',
       transitionEvent: 'APPROVE',
+      transitionAt: NOW,
       policyMode: 'strict',
     },
     occurredAt: NOW,

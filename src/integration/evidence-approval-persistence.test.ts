@@ -18,12 +18,22 @@ import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { buildDecisionAuditIntent } from './services/decision-audit-intent.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { applyEvidenceApprovalTransition, autoAdvance } from '../rails/types.js';
+import { executeReviewDecision } from '../rails/review-decision.js';
+import { assuranceChain } from '../rails/review-decision-test-helpers.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
 import { evaluate } from '../machine/evaluate.js';
-import { TEAM_POLICY } from '../config/policy.js';
+import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { hashText } from '../shared/hashing.js';
-import { FIXED_TIME, makeProgressedState, makeState, REVIEW_APPROVE } from '../fixtures.js';
+import {
+  FIXED_TIME,
+  IMPL_REVIEW_CONVERGED,
+  makeProgressedState,
+  makeState,
+  REVIEW_APPROVE,
+} from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 
@@ -551,20 +561,20 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
   });
 
-  it('classifies a later-timestamped decision as current: refused without a receipt, accepted with one', async () => {
+  it('refuses a decision that postdates its approval transition', async () => {
     const later = '2027-01-01T00:00:00.000Z';
     const decision = { ...REVIEW_APPROVE, decidedAt: later };
     const previous: SessionState = { ...authorizedEvidenceState(), reviewDecision: decision };
     await writeState(sessDir, previous);
+    const application = approveOrThrow(previous); // transition at FIXED_TIME
 
-    // Fail-closed under clock skew: an uncertain timestamp is treated as a
-    // current decision, so a carried-looking approval needs its own receipt.
-    const application = approveOrThrow(previous);
+    // 1. No receipt at all.
     await expect(
       writeState(sessDir, application.state, undefined, application.admission),
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
 
-    // With the decision's own evidence-gate receipt the same position commits.
+    // 2. A receipt attesting a DIFFERENT transition instance (at 2027) is not
+    // the approved transition.
     await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
       buildDecisionAuditIntent({
         transition: { from: 'EVIDENCE_REVIEW', to: 'EXPORT_READY', event: 'APPROVE', at: later },
@@ -574,11 +584,59 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
         actor: 'human',
       }),
     ]);
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+
+    // 3. A receipt bound to the ACTUAL transition still fails the chronology:
+    // the decision postdates the approval it claims to authorize.
+    await writeStateWithArtifactsAndAuditOperations(sessDir, previous, undefined, [
+      buildDecisionAuditIntent({
+        transition: {
+          from: 'EVIDENCE_REVIEW',
+          to: 'EXPORT_READY',
+          event: 'APPROVE',
+          at: FIXED_TIME,
+        },
+        decision,
+        policyMode: 'team',
+        decisionSequence: 1,
+        actor: 'human',
+      }),
+    ]);
+    await expect(
+      writeState(sessDir, application.state, undefined, application.admission),
+    ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
+  it('accepts a late decision whose approval transition is equally late', async () => {
+    const later = '2027-01-01T00:00:00.000Z';
+    const decision = { ...REVIEW_APPROVE, decidedAt: later };
+    const previous: SessionState = { ...authorizedEvidenceState(), reviewDecision: decision };
+    await writeState(sessDir, previous);
+
+    const application = applyEvidenceApprovalTransition(previous, later);
+    expect(application.kind).toBe('applied');
+    if (application.kind !== 'applied') return;
+    const transition = application.state.transition!;
     await writeStateWithArtifactsAndAuditOperations(
       sessDir,
       application.state,
-      undefined,
-      [],
+      [{ from: transition.from, to: transition.to, event: transition.event, at: transition.at }],
+      [
+        buildDecisionAuditIntent({
+          transition: {
+            from: transition.from,
+            to: transition.to,
+            event: transition.event,
+            at: transition.at,
+          },
+          decision,
+          policyMode: 'team',
+          decisionSequence: 1,
+          actor: 'human',
+        }),
+      ],
       application.admission,
     );
     expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
@@ -617,6 +675,92 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
         application.admission,
       ),
     ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+  });
+
+  it('carries a real plan override and its durable receipt into an automatic evidence approval', async () => {
+    const soloSnapshot = createPolicySnapshot(getPolicyPreset('solo'), FIXED_TIME, hashText);
+    const planBase = makeProgressedState('PLAN_REVIEW');
+    const planState: SessionState = {
+      ...planBase,
+      policySnapshot: soloSnapshot,
+      plan: { ...planBase.plan!, reviewCompletion: 'review_exhausted' },
+      reviewAssurance: assuranceChain([
+        {
+          obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          obligationType: 'plan',
+          subjectDigest: planBase.plan!.current.digest,
+          planVersion: planBase.plan!.current.planVersion,
+          status: 'consumed',
+          invocationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          findingsHash: 'a'.repeat(64),
+          capturedVerdict: 'changes_requested',
+          claimDeclarationsDigest: hashText(canonicalJsonStringify(emptyClaimDeclarations('plan'))),
+        },
+      ]),
+    };
+    await writeState(sessDir, planState);
+
+    // The REAL decision application produces the plan override and the real
+    // receipt intent binds it to the exact plan-gate transition.
+    const decision = executeReviewDecision(
+      planState,
+      {
+        verdict: 'approve_with_governance_override',
+        rationale: 'Exhausted review accepted by the operator',
+        decisionIdentity: REVIEW_APPROVE.decisionIdentity,
+      },
+      { now: () => FIXED_TIME, digest: (text) => `sha256:${text.length}`, policy: SOLO_POLICY },
+    );
+    expect(decision.kind).toBe('ok');
+    if (decision.kind !== 'ok') return;
+    const transition = decision.transitions[0]!;
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      decision.state,
+      [{ from: transition.from, to: transition.to, event: transition.event, at: transition.at }],
+      [
+        buildDecisionAuditIntent({
+          transition: {
+            from: transition.from,
+            to: transition.to,
+            event: transition.event,
+            at: transition.at,
+          },
+          decision: decision.decisionEvidence!,
+          policyMode: soloSnapshot.mode,
+          decisionSequence: 1,
+          actor: 'human',
+        }),
+      ],
+    );
+    const afterPlan = (await readState(sessDir))!;
+    expect(afterPlan.phase).toBe('VALIDATION');
+    expect(
+      afterPlan.pendingAuditOperations.some(
+        (op) =>
+          op.kind === 'semantic' &&
+          op.semantic.detail.kind === 'decision' &&
+          op.semantic.detail.gatePhase === 'PLAN_REVIEW',
+      ),
+    ).toBe(true);
+
+    // A later evidence revision carries the historical plan override: the
+    // automatic evidence approval must neither be authorized nor blocked by it.
+    const later = '2026-06-01T00:00:00.000Z';
+    const evidencePosition: SessionState = {
+      ...makeProgressedState('EVIDENCE_REVIEW'),
+      policySnapshot: soloSnapshot,
+      reviewDecision: decision.decisionEvidence!,
+      implReview: { ...IMPL_REVIEW_CONVERGED, executedAt: later },
+    };
+    await writeState(sessDir, evidencePosition);
+    const application = applyEvidenceApprovalTransition(evidencePosition, later);
+    expect(application.kind).toBe('applied');
+    if (application.kind !== 'applied') return;
+    await writeState(sessDir, application.state, undefined, application.admission);
+    const persisted = (await readState(sessDir))!;
+    expect(persisted.phase).toBe('EXPORT_READY');
+    expect(persisted.reviewDecision?.verdict).toBe('approve_with_governance_override');
   });
 
   it('refuses bootstrapping a session directly into EXPORT_READY', async () => {

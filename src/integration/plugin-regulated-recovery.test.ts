@@ -177,6 +177,7 @@ function terminalDecisionIntent() {
       fromPhase: 'EVIDENCE_REVIEW',
       toPhase: 'EXPORT_READY',
       transitionEvent: 'APPROVE',
+      transitionAt: AT,
       policyMode: 'regulated',
     },
   };
