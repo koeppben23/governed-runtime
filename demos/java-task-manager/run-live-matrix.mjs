@@ -21,6 +21,10 @@
  * - the architecture negative probe uses a controlled denial step: the exact
  *   expected reason code must be observed and nothing may be persisted before
  *   the allowed recovery continues;
+ * - an implementation review the author left at IMPL_REVIEW is resumed with a
+ *   BOUNDED number of canonical /implement turns; every resume must prove
+ *   persisted state progress and the evidence gate must be reached within the
+ *   bound, otherwise the flow stays blocked;
  * - parent and reviewer-child host transcripts are exported and hashed; the
  *   installed build identity is recorded from the installed package;
  * - evidence files are written once per step; a failed run is preserved and a
@@ -317,6 +321,14 @@ export function captureRetryCodes(output) {
  * plan approval step.
  */
 export const PLAN_REVIEW_CORRECTION_CODE = 'PLAN_REVIEW_IN_PROGRESS';
+
+/**
+ * Bounded resume budget for an author that ends the /implement turn at
+ * IMPL_REVIEW without the reviewer dispatch. Each resume is a canonical
+ * /implement command turn and must prove state progress; the evidence gate is
+ * never bypassed and the independent review is never weakened.
+ */
+export const MAX_IMPLEMENT_REVIEW_RESUMES = 2;
 
 /**
  * A terminal reviewer-capture block is superseded when the transport itself
@@ -790,6 +802,47 @@ export class Runner {
     });
   }
 
+  /**
+   * Drive an outstanding implementation review to EVIDENCE_REVIEW with a
+   * BOUNDED number of canonical /implement resumes. The author may end the
+   * /implement turn at IMPL_REVIEW without dispatching the reviewer task
+   * (observed live); this helper re-enters the real command boundary instead
+   * of failing the flow outright. Fail-closed: only IMPL_REVIEW may be
+   * resumed, every resume must prove persisted state progress, and the gate
+   * must be reached within the bound.
+   */
+  async completeImplementationReview(session, label, maxResumes = MAX_IMPLEMENT_REVIEW_RESUMES) {
+    for (let attempt = 1; attempt <= maxResumes; attempt += 1) {
+      const phase = this.currentPhase(session);
+      if (phase === 'EVIDENCE_REVIEW') return;
+      if (phase !== 'IMPL_REVIEW') {
+        throw new Error(
+          `${label}: expected IMPL_REVIEW or EVIDENCE_REVIEW, observed ${String(phase)}`,
+        );
+      }
+      const stepLabel = `${label}-resume-${attempt}`;
+      const digestBefore = this.currentStateDigest(session);
+      await this.turn(session, stepLabel, '/implement');
+      const digestAfter = this.currentStateDigest(session);
+      if (digestAfter === null || digestAfter === digestBefore) {
+        throw new Error(
+          `${stepLabel}: bounded implementation review resume produced no state progress; stopping the flow`,
+        );
+      }
+      session.resumedSteps = session.resumedSteps ?? [];
+      session.resumedSteps.push({ step: label, attempt, evidence: 'bounded_resume' });
+      this.log(
+        `${stepLabel}: implementation review resumed (bounded attempt ${attempt}; state progressed)`,
+      );
+    }
+    const phase = this.currentPhase(session);
+    if (phase !== 'EVIDENCE_REVIEW') {
+      throw new Error(
+        `${label}: implementation review did not reach EVIDENCE_REVIEW within ${maxResumes} bounded resume(s); stopping the flow`,
+      );
+    }
+  }
+
   requireBoundState(session) {
     const snapshot = readState(this.configDir, session.sessionId);
     if (!snapshot) throw new Error(`no persisted state for ${session.sessionId}`);
@@ -877,6 +930,7 @@ async function runDevelopment(runner, session) {
   await runner.turn(session, 'development-03-plan', '/plan');
   await runner.approve(session, 'development-04-approve-plan', 'PLAN_REVIEW');
   await runner.turn(session, 'development-05-implement', '/implement');
+  await runner.completeImplementationReview(session, 'development-05-implement');
   await runner.approve(session, 'development-06-approve-impl', 'EVIDENCE_REVIEW');
   await runner.turn(session, 'development-07-finish', '/finish');
   await runner.turn(session, 'development-08-export', '/export');
@@ -904,6 +958,7 @@ async function runReduced(runner, session, label, ticket) {
   await runner.turn(session, `${label}-03-plan`, '/plan');
   await runner.approve(session, `${label}-04-approve-plan`, 'PLAN_REVIEW');
   await runner.turn(session, `${label}-05-implement`, '/implement');
+  await runner.completeImplementationReview(session, `${label}-05-implement`);
   await runner.approve(session, `${label}-06-approve-impl`, 'EVIDENCE_REVIEW');
   await runner.turn(session, `${label}-07-export`, '/export');
   session.packages = [
@@ -1186,6 +1241,7 @@ async function main() {
         record.packages = session.packages ?? [];
         record.recoveredDenials = session.recoveredDenials ?? [];
         record.terminalBlocks = session.terminalBlocks ?? [];
+        record.resumedSteps = session.resumedSteps ?? [];
         record.result = 'COMPLETE';
       } catch (error) {
         record.error = String(error);

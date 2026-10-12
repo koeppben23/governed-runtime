@@ -756,6 +756,85 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('resumes an outstanding implementation review with a bounded, progress-proven retry', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-impl-resume-'));
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      const calls: string[] = [];
+      const hostResult = () => ({
+        code: 0,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: [],
+      });
+
+      // Already at the evidence gate: no resume at all.
+      runner.currentPhase = () => 'EVIDENCE_REVIEW';
+      runner.turn = async (_session, label) => {
+        calls.push(label);
+        return hostResult();
+      };
+      const atGate: { workspace: string; resumedSteps?: Array<Record<string, unknown>> } = {
+        workspace: root,
+      };
+      await runner.completeImplementationReview(atGate, 'development-05-implement');
+      expect(calls).toEqual([]);
+      expect(atGate.resumedSteps).toBeUndefined();
+
+      // IMPL_REVIEW with one progressing resume: the gate is reached.
+      let phase = 'IMPL_REVIEW';
+      let digest = 'd1';
+      runner.currentPhase = () => phase;
+      runner.currentStateDigest = () => digest;
+      runner.turn = async (_session, label) => {
+        calls.push(label);
+        digest = 'd2';
+        phase = 'EVIDENCE_REVIEW';
+        return hostResult();
+      };
+      const resumed: {
+        workspace: string;
+        resumedSteps?: Array<Record<string, unknown>>;
+      } = { workspace: root };
+      await runner.completeImplementationReview(resumed, 'development-05-implement');
+      expect(calls).toEqual(['development-05-implement-resume-1']);
+      expect(resumed.resumedSteps).toEqual([
+        { step: 'development-05-implement', attempt: 1, evidence: 'bounded_resume' },
+      ]);
+
+      // A resume without persisted state progress stays fail-closed.
+      phase = 'IMPL_REVIEW';
+      digest = 'd3';
+      runner.currentPhase = () => phase;
+      runner.currentStateDigest = () => digest;
+      runner.turn = async () => hostResult();
+      await expect(
+        runner.completeImplementationReview({ workspace: root }, 'development-05-implement'),
+      ).rejects.toThrow(/no state progress/);
+
+      // Progress on every attempt but never reaching the gate exhausts the bound.
+      phase = 'IMPL_REVIEW';
+      let digestSequence = 0;
+      runner.currentPhase = () => phase;
+      runner.currentStateDigest = () => `d${(digestSequence += 1)}`;
+      runner.turn = async () => hostResult();
+      await expect(
+        runner.completeImplementationReview({ workspace: root }, 'development-05-implement'),
+      ).rejects.toThrow(/within 2 bounded resume/);
+
+      // A phase that is neither the outstanding review nor the gate is fatal.
+      phase = 'PLAN_REVIEW';
+      await expect(
+        runner.completeImplementationReview({ workspace: root }, 'development-05-implement'),
+      ).rejects.toThrow(/expected IMPL_REVIEW or EVIDENCE_REVIEW/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('confirms the exhausted negative contract by refusing a plain architecture approval', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-negative-exhausted-'));
     const calls: Array<{ label: string; options?: { expectedDenial?: string } }> = [];
