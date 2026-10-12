@@ -10,6 +10,7 @@
 
 /** Reason codes emitted by the enforcement projection. */
 export type EnforcementReasonCode =
+  | import('../../state/proofgraph.js').AssertionBindingReasonCode
   | 'proven'
   | 'counterexample_observed'
   | 'evidence_missing'
@@ -21,17 +22,7 @@ export type EnforcementReasonCode =
   | 'risk_assessment_stale'
   | 'certificate_invalid'
   | 'critical_fact_required'
-  | 'risk_trigger_uncovered'
-  | 'aggregate_check_mismatch'
-  | 'aggregate_candidate_mismatch'
-  | 'aggregate_scope_unattested'
-  | 'aggregate_extraction_missing'
-  | 'aggregate_capability_missing'
-  | 'provider_mismatch'
-  | 'assertion_mismatch'
-  | 'check_mismatch'
-  | 'check_only_evidence'
-  | 'evidence_role_collision';
+  | 'risk_trigger_uncovered';
 
 /** Maps enforcement reason codes to registry BlockedReason codes. */
 export function mapEnforcementReasonToRegistryCode(reasonCode: EnforcementReasonCode): string {
@@ -58,6 +49,7 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   aggregate_capability_missing: 'PROOFGRAPH_AGGREGATE_CAPABILITY_MISSING',
   provider_mismatch: 'PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH',
   assertion_mismatch: 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH',
+  assertion_identity_ambiguous: 'PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS',
   check_mismatch: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
   check_only_evidence: 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE',
   evidence_role_collision: 'PROOFGRAPH_EVIDENCE_ROLE_COLLISION',
@@ -67,28 +59,5 @@ import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
 export type { AssertionBindingReasonCode };
 
 export function mapBindingReasonToRegistryCode(reasonCode: AssertionBindingReasonCode): string {
-  switch (reasonCode) {
-    case 'check_mismatch':
-      return 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
-    case 'evidence_missing':
-      return 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
-    case 'check_only_evidence':
-      return 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE';
-    case 'evidence_role_collision':
-      return 'PROOFGRAPH_EVIDENCE_ROLE_COLLISION';
-    case 'provider_mismatch':
-      return 'PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH';
-    case 'assertion_mismatch':
-      return 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH';
-    case 'aggregate_check_mismatch':
-      return 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH';
-    case 'aggregate_candidate_mismatch':
-      return 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH';
-    case 'aggregate_scope_unattested':
-      return 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED';
-    case 'aggregate_extraction_missing':
-      return 'PROOFGRAPH_AGGREGATE_EXTRACTION_MISSING';
-    case 'aggregate_capability_missing':
-      return 'PROOFGRAPH_AGGREGATE_CAPABILITY_MISSING';
-  }
+  return mapEnforcementReasonToRegistryCode(reasonCode);
 }

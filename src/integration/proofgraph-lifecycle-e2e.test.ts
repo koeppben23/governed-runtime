@@ -1144,7 +1144,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
 
     expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
 
-    const decision = evaluateProofGraphGate(summary);
+    const decision = evaluateProofGraphGate({
+      ...summary,
+      contract,
+      validationAttempts: state.validationAttempts,
+      implementationDigest: state.implementation?.digest,
+      riskAssessment: currentRiskAssessment,
+    });
     expect(decision.gated).toBe(false);
   });
 

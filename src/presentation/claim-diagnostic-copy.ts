@@ -41,6 +41,11 @@ export const BINDING_DIAGNOSTIC_COPY: Readonly<
     headline: 'Assertion mismatch',
     explanation: 'The executed assertion does not match the required assertion for this claim.',
   },
+  assertion_identity_ambiguous: {
+    headline: 'Ambiguous assertion identity',
+    explanation:
+      'Multiple results use the same provider-scoped assertion identity. Neither their order nor a successful process exit establishes trustworthy evidence.',
+  },
   evidence_role_collision: {
     headline: 'Evidence role collision',
     explanation:

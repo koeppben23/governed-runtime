@@ -100,8 +100,35 @@ function withCertifiedCriticalPlan(
       reviewedSubjectDigest: plan.current.digest,
     },
   });
+  const declaration = declarations.claims[0]!;
   return {
     ...base,
+    // Materialized source contract the gate requires alongside the certificate:
+    // the declared critical fact bound to the certificate provenance.
+    proofContract: {
+      version: 'contract.v2' as const,
+      claims: [
+        {
+          claimId: declaration.claimId,
+          statement: declaration.statement,
+          signalClass: 'fact' as const,
+          critical: true,
+          provenance: {
+            kind: 'canonical_authority' as const,
+            authorityId: 'plan',
+            digest: certificate.authorityDigest,
+            approval: {
+              certificateId: certificate.certificateId,
+              claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+              decisionAttestationDigest: certificate.decisionAttestationDigest,
+              declarationId: declaration.claimId,
+            },
+          },
+          evidenceRefs: [],
+          counterexampleRefs: [],
+        },
+      ],
+    },
     plan: {
       ...base.plan,
       approvalCertificate: certificate,

@@ -22,6 +22,8 @@ import {
 } from '../../state/proofgraph-approval.js';
 import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
 import type { ReviewBinding } from '../../state/proofgraph-approval.js';
+import { claimOccurrences } from '../../state/proofgraph-claim-set.js';
+import { assessProofGraphEvidence } from '../../audit/proofgraph/evidence-integrity.js';
 
 /** Digest binding of one human approval certificate. */
 export interface ApprovalCertificateProjection {
@@ -142,15 +144,23 @@ function certificateProjection(state: SessionState): ApprovalCertificateProjecti
  * defaulting to a proven-looking value.
  */
 export function buildProofApprovalProjection(state: SessionState): ProofApprovalProjection {
-  const evaluated = new Map(
-    state.proofGraph.claims.map((claim) => [claim.claimId, claim] as const),
-  );
+  const projection = assessProofGraphEvidence(state.proofGraph, {
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
+  }).projection;
+  const occurrences = claimOccurrences(projection.claims);
+  const sourceOccurrences = claimOccurrences(state.proofContract?.claims ?? []);
+  const evaluated = new Map(projection.claims.map((claim) => [claim.claimId, claim] as const));
   const claims = (state.proofContract?.claims ?? []).map((claim) => ({
     claimId: claim.claimId,
     statement: claim.statement,
     signalClass: claim.signalClass,
     critical: claim.critical,
-    verificationState: evaluated.get(claim.claimId)?.verificationState ?? null,
+    verificationState:
+      occurrences.get(claim.claimId) === 1 && sourceOccurrences.get(claim.claimId) === 1
+        ? (evaluated.get(claim.claimId)?.verificationState ?? null)
+        : null,
     certificateId:
       claim.provenance?.kind === 'canonical_authority'
         ? (claim.provenance.approval?.certificateId ?? null)

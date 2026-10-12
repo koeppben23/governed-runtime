@@ -492,6 +492,21 @@ export function assertSessionBinding(state, hostSessionId, workspace) {
   }
 }
 
+/**
+ * A live control record may become PASS ONLY after provenance capture has
+ * validated every required parent/reviewer transcript, and the payload can
+ * never supply `result` itself. Any failure keeps the record FAILED so the
+ * aggregate cannot count a falsely passing case.
+ */
+export async function finalizeControlRecord(record, session, runner, payload = {}) {
+  record.result = 'FAILED';
+  record.hostSessionId = session.sessionId;
+  await runner.captureProvenance(record, session);
+  const { result: _rejected, ...safePayload } = payload;
+  Object.assign(record, safePayload, { result: 'PASS' });
+  return record;
+}
+
 /** Sessions whose transcripts belong to one flow's evidence: parent + reviewers. */
 export function transcriptTargets(state) {
   const reviewers = [

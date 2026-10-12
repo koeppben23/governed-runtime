@@ -111,9 +111,17 @@ function blockedState(): SessionState {
       },
     ],
   };
+  const {
+    verificationState: _state,
+    freshness: _freshness,
+    ...sourceClaim
+  } = projection.claims[0]!;
   return {
     ...base,
     plan: { ...base.plan!, approvalCertificate: certificate },
+    // Materialized source contract the gate requires alongside the certificate;
+    // the declared fact without its evaluated verification state.
+    proofContract: { version: 'contract.v2', claims: [sourceClaim] },
     proofGraph: projection,
   };
 }

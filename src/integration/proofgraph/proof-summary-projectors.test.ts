@@ -99,6 +99,12 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
       claims: boundClaims,
       evaluatedAt: '2025-01-01T00:00:00Z',
     },
+    proofContract: {
+      version: 'contract.v2' as const,
+      claims: boundClaims.map(
+        ({ verificationState: _state, freshness: _freshness, ...declared }) => declared,
+      ),
+    },
     implementation: {
       digest: 'abc123',
       files: [{ path: 'src/foo.ts', status: 'modified' as const, contentHash: 'abc' }],

@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import {
   Runner,
   assertToolchain,
+  finalizeControlRecord,
   parseArgs,
   readPins,
   sha256,
@@ -278,7 +279,6 @@ async function runCase(runner, name, workspace, covered, context) {
         archiveDirContents: absence.produced,
         phase: after.phase,
         packages: [],
-        result: 'PASS',
       });
     } else {
       await runner.approve(session, `${name}-06-approve`, 'EVIDENCE_REVIEW');
@@ -299,12 +299,13 @@ async function runCase(runner, name, workspace, covered, context) {
         verificationState: projected.verificationState,
         phase: final.phase,
         packages: [runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', name)],
-        result: 'PASS',
       });
     }
-    record.hostSessionId = session.sessionId;
-    await runner.captureProvenance(record, session);
+    // PASS only after the parent and every required reviewer transcript were
+    // exported and validated; a capture failure keeps the record FAILED.
+    await finalizeControlRecord(record, session, runner);
   } catch (error) {
+    record.result = 'FAILED';
     record.error = String(error);
   } finally {
     if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
