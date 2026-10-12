@@ -32,6 +32,7 @@ import {
   REGULATED_POLICY_SNAPSHOT,
   REVIEW_APPROVE,
 } from '../fixtures.js';
+import { applyEvidenceApprovalTransition } from '../rails/types.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { writeState } from '../adapters/persistence.js';
 import { buildDecisionAuditIntent } from '../integration/services/decision-audit-intent.js';
@@ -109,6 +110,23 @@ async function appendEvent(
   });
 }
 
+/**
+ * Persist a fixture approval through the protected application: the canonical
+ * authority and evidence checks issue the ephemeral admission, and the writer
+ * consumes it for exactly this basis. Direct EXPORT_READY writes are refused.
+ */
+async function writeApprovedFixture(
+  sessionDir: string,
+  state: ReturnType<typeof makeState>,
+): Promise<void> {
+  await writeState(sessionDir, state);
+  const application = applyEvidenceApprovalTransition(state, FIXED_TIME);
+  if (application.kind !== 'applied') {
+    throw new Error(`fixture approval denied: ${application.block.code}`);
+  }
+  await writeState(sessionDir, application.state, undefined, application.admission);
+}
+
 async function buildCompleteExportPackage(
   sessionId = SESSION_A,
   flowguardSessionId = FLOWGUARD_A,
@@ -146,28 +164,16 @@ async function buildCompleteExportPackage(
 /** The real `/export` snapshot point: archiving happens at EXPORT_READY. */
 async function buildExportReadyPackage(): Promise<string> {
   const { fingerprint, sessionDir } = await initSession(SESSION_A, FLOWGUARD_A);
-  // Seed the approved evidence position first: a final approval needs an
-  // existing session (no bootstrap directly into EXPORT_READY).
-  await writeState(
+  // Seed the approved evidence position first and approve it through the
+  // protected application: a final approval needs an existing session, an
+  // authorized decision, and the ephemeral admission (no direct write).
+  await writeApprovedFixture(
     sessionDir,
     makeState('EVIDENCE_REVIEW', {
       id: FLOWGUARD_A,
       flowguardSessionId: FLOWGUARD_A,
       binding: bindingFor(SESSION_A, fingerprint),
-    }),
-  );
-  await writeState(
-    sessionDir,
-    makeState('EXPORT_READY', {
-      id: FLOWGUARD_A,
-      flowguardSessionId: FLOWGUARD_A,
-      binding: bindingFor(SESSION_A, fingerprint),
-      transition: {
-        from: 'EVIDENCE_REVIEW',
-        to: 'EXPORT_READY',
-        event: 'APPROVE',
-        at: FIXED_TIME,
-      },
+      reviewDecision: REVIEW_APPROVE,
     }),
   );
   await appendEvent(sessionDir, FLOWGUARD_A, SESSION_A, 'EVIDENCE_REVIEW', 'transition:APPROVE', {
@@ -186,20 +192,13 @@ async function buildExportReadyPackage(): Promise<string> {
  */
 async function buildReducedCeremonyPackage(): Promise<string> {
   const { fingerprint, sessionDir } = await initSession(SESSION_A, FLOWGUARD_A);
-  await writeState(
+  await writeApprovedFixture(
     sessionDir,
     makeState('EVIDENCE_REVIEW', {
       id: FLOWGUARD_A,
       flowguardSessionId: FLOWGUARD_A,
       binding: bindingFor(SESSION_A, fingerprint),
-    }),
-  );
-  await writeState(
-    sessionDir,
-    makeState('EXPORT_READY', {
-      id: FLOWGUARD_A,
-      flowguardSessionId: FLOWGUARD_A,
-      binding: bindingFor(SESSION_A, fingerprint),
+      reviewDecision: REVIEW_APPROVE,
       implReview: null,
       reducedCeremony: {
         profile: 'reduced',
@@ -224,12 +223,6 @@ async function buildReducedCeremonyPackage(): Promise<string> {
           ],
         },
         decidedAt: FIXED_TIME,
-      },
-      transition: {
-        from: 'EVIDENCE_REVIEW',
-        to: 'EXPORT_READY',
-        event: 'APPROVE',
-        at: FIXED_TIME,
       },
     }),
   );

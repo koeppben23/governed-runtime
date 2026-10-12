@@ -23,11 +23,17 @@ import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import { resolveTransition } from '../machine/topology.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import type { EvidenceApprovalAdmission } from '../audit/proofgraph/evidence-approval-admission.js';
 import {
-  evaluateEvidenceApprovalPreflight,
-  type EvidenceApprovalPreflightResult,
-} from '../audit/proofgraph/evidence-approval-preflight.js';
-import { ProtectedTransitionError } from './protected-transition-error.js';
+  applyEvidenceApprovalTransition,
+  applyTransition,
+  type EvidenceApprovalPreflightBlocked,
+} from './evidence-approval-application.js';
+
+export {
+  applyEvidenceApprovalTransition,
+  applyTransition,
+} from './evidence-approval-application.js';
 
 // ─── Transition Record ────────────────────────────────────────────────────────
 
@@ -60,6 +66,11 @@ export interface AutoAdvanceAdvanced {
    * For audit: one audit event per entry.
    */
   readonly transitions: readonly TransitionRecord[];
+  /**
+   * Present when the protected approval edge was applied: the ephemeral
+   * admission the persistence boundary consumes for exactly this commit.
+   */
+  readonly approvalAdmission?: EvidenceApprovalAdmission;
 }
 
 /**
@@ -80,6 +91,12 @@ export interface AutoAdvanceOverflow {
 }
 
 /**
+ * Return type for autoAdvance(): a discriminated union so the overflow and
+ * protected-approval denial cases cannot be silently ignored.
+ */
+export type AutoAdvanceResult = AutoAdvanceAdvanced | AutoAdvanceOverflow | AutoAdvanceBlocked;
+
+/**
  * autoAdvance() refused the protected `EVIDENCE_REVIEW -> EXPORT_READY`
  * approval because the canonical evidence prerequisite did not clear. Carries
  * NO state: the caller must block before any persistence, exactly like the
@@ -92,25 +109,6 @@ export interface AutoAdvanceBlocked {
   readonly phase: Phase;
   readonly block: EvidenceApprovalPreflightBlocked;
 }
-
-/** The blocked branch of the canonical evidence-approval preflight. */
-export type EvidenceApprovalPreflightBlocked = Extract<
-  EvidenceApprovalPreflightResult,
-  { kind: 'blocked' }
->;
-
-/**
- * Return type for autoAdvance(): a discriminated union so the overflow and
- * protected-approval denial cases cannot be silently ignored. `advanced` is
- * the normal settle; `overflow` and `blocked` are fail-closed and force the
- * caller to stop before any persistence.
- */
-export type AutoAdvanceResult = AutoAdvanceAdvanced | AutoAdvanceOverflow | AutoAdvanceBlocked;
-
-/** Outcome of the sanctioned protected evidence-approval application. */
-export type EvidenceApprovalApplication =
-  | { readonly kind: 'applied'; readonly state: SessionState }
-  | { readonly kind: 'blocked'; readonly block: EvidenceApprovalPreflightBlocked };
 
 // ─── Rail Result ──────────────────────────────────────────────────────────────
 
@@ -133,6 +131,12 @@ export interface RailOk {
    * receipt; never persisted as state and never serialized into tool output.
    */
   readonly decisionEvidence?: ReviewDecision;
+  /**
+   * Ephemeral approval admission for a protected EXPORT_READY approval. The
+   * caller MUST pass it to the persistence helper for that same commit; it is
+   * never persisted as state and never serialized into tool output.
+   */
+  readonly approvalAdmission?: EvidenceApprovalAdmission;
 }
 
 /** Rail was blocked — precondition failed, state is UNCHANGED. */
@@ -232,85 +236,6 @@ export function buildFlowSelectionTransition(
 }
 
 /**
- * Apply a transition to state. Returns a new state object (no mutation).
- * Sets phase, records transition, clears error (successful transition = no error).
- *
- * The protected `EVIDENCE_REVIEW -> EXPORT_READY` approval edge is refused
- * unconditionally here: it may only be applied through
- * {@link applyEvidenceApprovalTransition}, which enforces the canonical
- * evidence prerequisite. Rejecting every request with that destination also
- * rejects a caller that lies about the source phase.
- */
-export function applyTransition(
-  state: SessionState,
-  from: Phase,
-  to: Phase,
-  event: Event,
-  at: string,
-): SessionState {
-  if (to === 'EXPORT_READY') {
-    throw new ProtectedTransitionError(
-      'The EVIDENCE_REVIEW -> EXPORT_READY approval must be applied through ' +
-        'applyEvidenceApprovalTransition, never the generic transition applier.',
-    );
-  }
-  return applyTransitionUnchecked(state, from, to, event, at);
-}
-
-/**
- * Apply the protected evidence-approval transition. This is the ONLY
- * sanctioned application of the approval edge: it re-runs the canonical,
- * side-effect-free preflight on the exact state being transitioned and either
- * applies the transition or returns the canonical block. It accepts no
- * caller-supplied allowance and no alternate target.
- */
-export function applyEvidenceApprovalTransition(
-  state: SessionState,
-  at: string,
-): EvidenceApprovalApplication {
-  if (state.phase !== 'EVIDENCE_REVIEW') {
-    throw new ProtectedTransitionError(
-      `Evidence approval can only be applied at EVIDENCE_REVIEW (observed '${state.phase}').`,
-    );
-  }
-  const preflight = evaluateEvidenceApprovalPreflight(state);
-  if (preflight.kind === 'blocked') return { kind: 'blocked', block: preflight };
-  return {
-    kind: 'applied',
-    state: applyTransitionUnchecked(state, 'EVIDENCE_REVIEW', 'EXPORT_READY', 'APPROVE', at),
-  };
-}
-
-function applyTransitionUnchecked(
-  state: SessionState,
-  from: Phase,
-  to: Phase,
-  event: Event,
-  at: string,
-): SessionState {
-  return {
-    ...state,
-    phase: to,
-    transition: { from, to, event, at },
-    error: null,
-    // System work is durable: entering a validation phase records the pending
-    // operation in the SAME atomic state write as the transition, and leaving
-    // it clears the marker. A crash between the human decision and the check
-    // execution is therefore recoverable instead of a dead state.
-    pendingSystemWork:
-      to === 'VALIDATION' || to === 'IMPL_VALIDATION'
-        ? { kind: 'validation', requestedAt: at, attempt: 0, retryAfter: null }
-        : null,
-    // Entering IMPL_REVIEW is possible only from IMPL_VALIDATION with a FULLY
-    // passing fresh validation of the current record. That is the exact point
-    // where the repair loop converges, so the rework marker closes here: after
-    // this, repository mutations are forbidden and only the reviewed revision
-    // can be presented to a fresh independent reviewer.
-    ...(from === 'IMPL_VALIDATION' && to === 'IMPL_REVIEW' ? { implementationRework: null } : {}),
-  };
-}
-
-/**
  * Auto-advance loop: keeps evaluating and transitioning until the machine stops.
  * Stops when: terminal, waiting (user gate), pending (needs work), or max steps reached.
  *
@@ -331,6 +256,7 @@ export function autoAdvance(
   const transitions: TransitionRecord[] = [];
   let current = state;
   let result = evalFn(current);
+  let approvalAdmission: EvidenceApprovalAdmission | undefined;
 
   for (let step = 0; step < MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition'; step++) {
     // Self-loop guard: if the transition targets the same phase, the state
@@ -377,7 +303,13 @@ export function autoAdvance(
     };
   }
 
-  return { kind: 'advanced', state: current, evalResult: result, transitions };
+  return {
+    kind: 'advanced',
+    state: current,
+    evalResult: result,
+    transitions,
+    ...(approvalAdmission !== undefined ? { approvalAdmission } : {}),
+  };
 }
 
 // ─── Convergence Loop ─────────────────────────────────────────────────────────

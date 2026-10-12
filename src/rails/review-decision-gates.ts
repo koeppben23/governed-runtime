@@ -203,13 +203,20 @@ function enforceMutationEpisodeEvidenceApproval(
   input: ReviewDecisionInput,
 ): RailBlocked | null {
   if (state.phase !== 'EVIDENCE_REVIEW' || !isApprovalVerdict(input.verdict)) return null;
-  const unboundCount = countUnboundMutationEpisodes(
-    state.mutationEpisodes,
-    state.mutationEpisodeResolutions,
-  );
+  const unboundCount = unboundMutationEpisodeCount(state);
   return unboundCount > 0
     ? blocked('MUTATION_EPISODE_BINDING_REQUIRED', { count: String(unboundCount) })
     : null;
+}
+
+/**
+ * Canonical count of mutation episodes that block a final evidence approval:
+ * a dispatched-but-unfinished host mutation, or a completed mutation whose
+ * implementation evidence was never bound. Shared by the explicit decision
+ * rail and the automatic approval path so both respect the same fence.
+ */
+export function unboundMutationEpisodeCount(state: SessionState): number {
+  return countUnboundMutationEpisodes(state.mutationEpisodes, state.mutationEpisodeResolutions);
 }
 
 /**

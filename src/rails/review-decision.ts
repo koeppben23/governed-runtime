@@ -46,6 +46,7 @@ import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './t
 import { applyEvidenceApprovalTransition, applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromEvidenceApproval } from './auto-advance-overflow.js';
+import type { EvidenceApprovalAdmission } from '../audit/proofgraph/evidence-approval-admission.js';
 import {
   approvalCertificatePatch,
   enforceApprovalPreconditions,
@@ -158,7 +159,11 @@ function applyDecisionTransition(
   at: string,
 ):
   | { readonly kind: 'blocked'; readonly block: RailBlocked }
-  | { readonly kind: 'applied'; readonly state: SessionState } {
+  | {
+      readonly kind: 'applied';
+      readonly state: SessionState;
+      readonly approvalAdmission?: EvidenceApprovalAdmission;
+    } {
   if (from !== 'EVIDENCE_REVIEW' || target !== 'EXPORT_READY') {
     return { kind: 'applied', state: applyTransition(clearedState, from, target, event, at) };
   }
@@ -173,7 +178,7 @@ function applyDecisionTransition(
       }),
     };
   }
-  return { kind: 'applied', state: application.state };
+  return { kind: 'applied', state: application.state, approvalAdmission: application.admission };
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -255,6 +260,7 @@ export function executeReviewDecision(
   const applied = applyDecisionTransition(clearedState, state.phase, target, event, at);
   if (applied.kind === 'blocked') return applied.block;
   const finalState = applied.state;
+  const approvalAdmission = applied.approvalAdmission;
 
   // Record the single transition for audit
   const transition: TransitionRecord = {
@@ -273,5 +279,6 @@ export function executeReviewDecision(
     evalResult,
     transitions: [transition],
     decisionEvidence: decision,
+    ...(approvalAdmission !== undefined ? { approvalAdmission } : {}),
   };
 }

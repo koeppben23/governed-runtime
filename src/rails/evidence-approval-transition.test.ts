@@ -17,7 +17,15 @@ import {
 import { ProtectedTransitionError } from './protected-transition-error.js';
 import { evaluate } from '../machine/evaluate.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { IMPL_EVIDENCE, makePlanApprovalCertificate, makeState, PLAN_RECORD } from '../fixtures.js';
+import {
+  IMPL_EVIDENCE,
+  makePlanApprovalCertificate,
+  makeState,
+  PLAN_RECORD,
+  REVIEW_APPROVE,
+} from '../fixtures.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { getPolicyPreset } from '../config/policy.js';
 import type { SessionState } from '../state/schema.js';
 import type { ProofGraphProjection } from '../state/proofgraph.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
@@ -29,6 +37,13 @@ const CLAIM_ID = '00000000-0000-4000-8000-0000000000d1';
 
 const AUTO_POLICY = { ...TEAM_POLICY, requireHumanGates: false };
 const ctx = { now: () => NOW, digest: hashText, policy: AUTO_POLICY };
+
+/** A clear evidence basis under an automatic (solo) session policy. */
+function autoClearState(): SessionState {
+  return makeState('EVIDENCE_REVIEW', {
+    policySnapshot: createPolicySnapshot(getPolicyPreset('solo'), NOW, hashText),
+  });
+}
 
 function declarations(): PlanClaimDeclarations {
   return {
@@ -51,6 +66,7 @@ function declarations(): PlanClaimDeclarations {
 function blockedState(): SessionState {
   const decls = declarations();
   const base = makeState('EVIDENCE_REVIEW', {
+    reviewDecision: REVIEW_APPROVE,
     implementation: IMPL_EVIDENCE,
     implementationRiskAssessment: {
       computedMinimumTaskClass: 'HIGH-RISK',
@@ -104,7 +120,7 @@ function blockedState(): SessionState {
 
 describe('protected evidence-approval transition', () => {
   it('refuses the approval edge through the generic applier', () => {
-    const state = makeState('EVIDENCE_REVIEW');
+    const state = autoClearState();
     expect(() => applyTransition(state, 'EVIDENCE_REVIEW', 'EXPORT_READY', 'APPROVE', NOW)).toThrow(
       ProtectedTransitionError,
     );
@@ -122,7 +138,7 @@ describe('protected evidence-approval transition', () => {
   });
 
   it('applies the sanctioned transition for a clear evidence basis', () => {
-    const state = makeState('EVIDENCE_REVIEW');
+    const state = autoClearState();
     const result = applyEvidenceApprovalTransition(state, NOW);
     expect(result.kind).toBe('applied');
     if (result.kind === 'applied') {
@@ -153,7 +169,7 @@ describe('protected evidence-approval transition', () => {
   });
 
   it('auto-advance applies the protected edge for a clear evidence basis', () => {
-    const result = autoAdvance(makeState('EVIDENCE_REVIEW'), (s) => evaluate(s, AUTO_POLICY), ctx);
+    const result = autoAdvance(autoClearState(), (s) => evaluate(s, AUTO_POLICY), ctx);
     expect(result.kind).toBe('advanced');
     if (result.kind === 'advanced') {
       expect(result.state.phase).toBe('EXPORT_READY');

@@ -43,6 +43,7 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import type { SessionState } from '../state/schema.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateWithEvent } from '../machine/evaluate.js';
 import { appendReviewDispatch } from '../state/review-dispatch.js';
@@ -1464,6 +1465,111 @@ describe('implement', () => {
       // A real recovery command exists at that persisted phase.
       expect(isCommandAllowed('EVIDENCE_REVIEW', Command.REVIEW_DECISION)).toBe(true);
       expect(evaluateWithEvent('EVIDENCE_REVIEW', 'CHANGES_REQUESTED')).toBe('IMPLEMENTATION');
+    });
+
+    it('automatic and explicit approvals share the mutation-episode fence', async () => {
+      await reachImplementation();
+      await enterImplReview();
+      const sessDirForFence = await currentSessionDir();
+      const preFence = await readState(sessDirForFence);
+      await writeState(sessDirForFence, {
+        ...preFence!,
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'unbound-host-edit',
+            toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [],
+      });
+      await fulfillReview('implement', 1, 'accept');
+
+      const automatic = parseToolResult(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(automatic.error).toBe(true);
+      expect(automatic.code).toBe('MUTATION_EPISODE_BINDING_REQUIRED');
+      expect(automatic.phase).toBe('EVIDENCE_REVIEW');
+      expect((await readState(sessDirForFence))?.phase).toBe('EVIDENCE_REVIEW');
+
+      const explicit = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'still fenced' }, ctx),
+      );
+      expect(explicit.error).toBe(true);
+      expect(explicit.code).toBe('MUTATION_EPISODE_BINDING_REQUIRED');
+    });
+
+    it('recovers the interrupted two-step commit with exactly one approval transition', async () => {
+      await reachImplementation();
+      await enterImplReview();
+      const sessDirForRecovery = await currentSessionDir();
+      const preRecovery = await readState(sessDirForRecovery);
+      await writeState(sessDirForRecovery, {
+        ...preRecovery!,
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'crash-window-edit',
+            toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [],
+      });
+      await fulfillReview('implement', 1, 'accept');
+      const blocked = parseToolResult(
+        await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+      );
+      expect(blocked.code).toBe('MUTATION_EPISODE_BINDING_REQUIRED');
+
+      // The gate entry is durable; recover by clearing the fenced episode and
+      // approving once through the explicit decision.
+      const mid = await readState(sessDirForRecovery);
+      await writeState(sessDirForRecovery, {
+        ...mid!,
+        mutationEpisodes: [],
+        mutationEpisodeResolutions: [],
+      });
+      const approved = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'recovered' }, ctx),
+      );
+      expect(approved.error).toBeUndefined();
+      expect((await readState(sessDirForRecovery))?.phase).toBe('EXPORT_READY');
+
+      const approvalOperations = (state: SessionState) =>
+        state.pendingAuditOperations.filter(
+          (operation) =>
+            operation.kind === 'transition' &&
+            operation.transition.from === 'EVIDENCE_REVIEW' &&
+            operation.transition.to === 'EXPORT_READY' &&
+            operation.transition.event === 'APPROVE',
+        );
+      const firstCommit = await readState(sessDirForRecovery);
+      expect(approvalOperations(firstCommit!)).toHaveLength(1);
+
+      // No second approval can duplicate the transition or the audit record.
+      const again = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'again' }, ctx),
+      );
+      expect(again.error).toBe(true);
+      expect(again.code).toBe('COMMAND_NOT_ALLOWED');
+      expect(approvalOperations((await readState(sessDirForRecovery))!)).toHaveLength(1);
     });
 
     it('persists implReviewFindings in state', async () => {

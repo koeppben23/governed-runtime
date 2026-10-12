@@ -65,7 +65,10 @@ import { ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
 import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
-import { evaluateEvidenceApprovalPreflight } from '../audit/proofgraph/evidence-approval-preflight.js';
+import {
+  consumeEvidenceApprovalAdmission,
+  evidenceApprovalBasisDigest,
+} from '../audit/proofgraph/evidence-approval-admission.js';
 
 export {
   ensureDir,
@@ -407,6 +410,7 @@ export async function readState(sessionDir: string): Promise<SessionState | null
 export async function writeStateAlreadyLocked(
   sessionDir: string,
   state: SessionState,
+  approvalAdmission?: unknown,
 ): Promise<void> {
   const result = SessionState.safeParse(state);
   if (!result.success) {
@@ -424,10 +428,10 @@ export async function writeStateAlreadyLocked(
   assertImplementationEntryFrozen(result.data);
 
   // THE lowest evidence-approval boundary: a newly entered EXPORT_READY must
-  // clear the canonical preflight on exactly the state being written. This
-  // covers every writer — `writeState`, the artifact/audit commit path, and
-  // any future direct caller — not only the prepared full-prepare path.
-  await assertEvidenceApprovalWriteBoundary(sessionDir, result.data);
+  // be authorized by the canonical protected application for EXACTLY this
+  // evidence basis. This covers every writer — `writeState`, the artifact/audit
+  // commit path, and any future direct caller.
+  await assertEvidenceApprovalWriteBoundary(sessionDir, result.data, approvalAdmission);
 
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';
@@ -435,17 +439,33 @@ export async function writeStateAlreadyLocked(
 }
 
 /**
- * Refuse a newly entered `EXPORT_READY` whose written evidence does not clear
- * the canonical preflight. A same-phase metadata update while already in
- * `EXPORT_READY` is not a new approval and is exempt; a bootstrap directly
- * into `EXPORT_READY` is refused outright (no prior approved state can exist).
+ * Refuse a newly entered `EXPORT_READY` that is not authorized for exactly the
+ * written basis. Evidence sufficiency alone is never an authorization: the
+ * writer requires the ephemeral admission issued by the canonical protected
+ * application (which checks the approval authority AND the evidence preflight),
+ * the predecessor must be `EVIDENCE_REVIEW`, and a bootstrap directly into
+ * `EXPORT_READY` is refused. Any approval-relevant evidence change while
+ * already in `EXPORT_READY` is refused as well; benign audit/metadata updates
+ * (runtime lease, mutation episodes, review assurance, gates, error, outbox)
+ * stay possible because they are not part of the approval basis.
  */
 async function assertEvidenceApprovalWriteBoundary(
   sessionDir: string,
   next: SessionState,
+  approvalAdmission: unknown,
 ): Promise<void> {
   if (next.phase !== 'EXPORT_READY') return;
   const previous = await readState(sessionDir);
+  if (previous?.phase === 'EXPORT_READY') {
+    if (evidenceApprovalBasisDigest(previous) !== evidenceApprovalBasisDigest(next)) {
+      throw new PersistenceError(
+        'EXPORT_READY_APPROVAL_UNVERIFIED',
+        'Refusing to change approval-relevant evidence while already in EXPORT_READY; ' +
+          'only audit/metadata updates are admissible after the approval.',
+      );
+    }
+    return;
+  }
   if (previous === null) {
     throw new PersistenceError(
       'EXPORT_READY_APPROVAL_UNVERIFIED',
@@ -453,18 +473,23 @@ async function assertEvidenceApprovalWriteBoundary(
         'approval requires an existing session with an approved evidence basis.',
     );
   }
-  if (previous.phase === 'EXPORT_READY') return;
-  // The persisted state has already entered EXPORT_READY; the approval gate is
-  // evaluated on the evidence position the approval was decided at. The
-  // projection only changes the phase, never the evidence or authority.
-  const gateState: SessionState = { ...next, phase: 'EVIDENCE_REVIEW' };
-  const preflight = evaluateEvidenceApprovalPreflight(gateState);
-  if (preflight.kind === 'blocked') {
+  if (previous.phase !== 'EVIDENCE_REVIEW') {
     throw new PersistenceError(
       'EXPORT_READY_APPROVAL_UNVERIFIED',
-      `Refusing to persist a new EXPORT_READY entry that does not clear the evidence ` +
-        `preflight (${preflight.code}). The approval must be applied through the ` +
-        `protected transition application against a current, admitted evidence basis.`,
+      `Refusing an EXPORT_READY entry from phase '${previous.phase}': only an ` +
+        'EVIDENCE_REVIEW approval can enter EXPORT_READY.',
+    );
+  }
+  const consumption = consumeEvidenceApprovalAdmission({
+    admission: approvalAdmission,
+    state: next,
+  });
+  if (consumption.kind !== 'accepted') {
+    throw new PersistenceError(
+      'EXPORT_READY_APPROVAL_UNVERIFIED',
+      `Refusing to persist an EXPORT_READY approval without an authentic admission ` +
+        `(${consumption.reason}). The approval must be applied through the protected ` +
+        'transition application against a current, admitted evidence basis.',
     );
   }
 }
@@ -483,10 +508,11 @@ export async function writeState(
   sessionDir: string,
   state: SessionState,
   timeoutMs?: number,
+  approvalAdmission?: unknown,
 ): Promise<void> {
   return withSessionWriteLock(
     sessionDir,
-    () => writeStateAlreadyLocked(sessionDir, state),
+    () => writeStateAlreadyLocked(sessionDir, state, approvalAdmission),
     timeoutMs,
   );
 }

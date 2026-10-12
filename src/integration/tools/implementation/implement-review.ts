@@ -78,6 +78,7 @@ import {
 
 // Rail helpers
 import { applyEvidenceApprovalTransition, applyTransition } from '../../../rails/types.js';
+import { unboundMutationEpisodeCount } from '../../../rails/review-decision-gates.js';
 import type { TransitionRecord } from '../../../rails/types.js';
 
 // Adapters
@@ -272,11 +273,23 @@ async function handleApprovedReview(input: {
       : [{ from: input.reviewedState.phase, to: 'EVIDENCE_REVIEW', event: 'REVIEW_MET', at }];
   await writeStateWithArtifacts(input.runtime.sessDir, gateState);
 
-  // 2. Bind the approval to the live governed subject.
+  // 2. The automatic path respects the same mutation-episode fence as the
+  // explicit approval: an outstanding or unbound host mutation blocks the
+  // approval even when the current worktree bytes happen to match.
+  const unboundMutations = unboundMutationEpisodeCount(gateState);
+  if (unboundMutations > 0) {
+    return formatBlocked(
+      'MUTATION_EPISODE_BINDING_REQUIRED',
+      { count: String(unboundMutations) },
+      { phase: gateState.phase },
+    );
+  }
+
+  // 3. Bind the approval to the live governed subject.
   const worktreeBlock = await attestApprovedReviewSubject(input.runtime, gateState);
   if (worktreeBlock) return withPersistedPhase(worktreeBlock, gateState.phase);
 
-  // 3. Automatic approval only under a policy that permits it; otherwise the
+  // 4. Automatic approval only under a policy that permits it; otherwise the
   // machine stops at the human gate.
   let finalState = gateState;
   let transitions: readonly TransitionRecord[] = gateTransitions;
@@ -295,7 +308,7 @@ async function handleApprovedReview(input: {
       ...gateTransitions,
       { from: 'EVIDENCE_REVIEW', to: 'EXPORT_READY', event: 'APPROVE', at: approvalAt },
     ];
-    await writeStateWithArtifacts(input.runtime.sessDir, finalState);
+    await writeStateWithArtifacts(input.runtime.sessDir, finalState, application.admission);
   }
 
   return formatApprovedReviewOutcome(input, finalState, transitions, glyphProfile);

@@ -34,6 +34,7 @@ import { createTestWorkspace, withTestEnv, type TestWorkspace } from './test-hel
 import { prepareAuditOperations } from './audit-outbox.js';
 import { reconcilePendingAuditOperations } from './plugin-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
+import { applyEvidenceApprovalTransition } from '../rails/types.js';
 import { createSessionCompletionAuditDeps } from './services/regulated-completion.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { recoverRegulatedCompletion } from './plugin-regulated-recovery.js';
@@ -115,7 +116,7 @@ function approvalTransition() {
  * committed as durable operations with real state-binding digests.
  */
 async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
-  const exportReady = makeState('EXPORT_READY', {
+  const evidenceBase = makeState('EVIDENCE_REVIEW', {
     ticket: TICKET,
     plan: PLAN_RECORD,
     selfReview: SELF_REVIEW_CONVERGED,
@@ -136,9 +137,18 @@ async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
       implementationDigest: IMPL_EVIDENCE.digest,
     },
     policySnapshot: REGULATED_POLICY_SNAPSHOT,
-    transition: approvalTransition(),
   });
-  await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+  const application = applyEvidenceApprovalTransition(evidenceBase, AT);
+  if (application.kind !== 'applied') {
+    throw new Error(`fixture approval denied: ${application.block.code}`);
+  }
+  await writeStateWithArtifactsAndAuditOperations(
+    sessDir,
+    application.state,
+    undefined,
+    [],
+    application.admission,
+  );
   const persisted = await readState(sessDir);
   const complete = {
     ...reviewState('COMPLETE'),
@@ -254,7 +264,7 @@ describe('recoverRegulatedCompletion', () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
     // COMPLETE checkpoint without the terminal decision intent: the approval
     // and export transitions are durable outbox operations, no receipt exists.
-    const exportReady = makeState('EXPORT_READY', {
+    const evidenceBase = makeState('EVIDENCE_REVIEW', {
       ticket: TICKET,
       plan: PLAN_RECORD,
       selfReview: SELF_REVIEW_CONVERGED,
@@ -275,9 +285,18 @@ describe('recoverRegulatedCompletion', () => {
         implementationDigest: IMPL_EVIDENCE.digest,
       },
       policySnapshot: REGULATED_POLICY_SNAPSHOT,
-      transition: approvalTransition(),
     });
-    await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+    const application = applyEvidenceApprovalTransition(evidenceBase, AT);
+    if (application.kind !== 'applied') {
+      throw new Error(`fixture approval denied: ${application.block.code}`);
+    }
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      application.state,
+      undefined,
+      [],
+      application.admission,
+    );
     const persisted = await readState(sessDir);
     const complete = {
       ...reviewState('COMPLETE'),
@@ -321,7 +340,7 @@ describe('recoverRegulatedCompletion', () => {
   it('recovers the outbox correlation from a durable receipt after a crash between append and state write', async () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
     // COMPLETE checkpoint without the terminal decision intent.
-    const exportReady = makeState('EXPORT_READY', {
+    const evidenceBase = makeState('EVIDENCE_REVIEW', {
       ticket: TICKET,
       plan: PLAN_RECORD,
       selfReview: SELF_REVIEW_CONVERGED,
@@ -342,9 +361,18 @@ describe('recoverRegulatedCompletion', () => {
         implementationDigest: IMPL_EVIDENCE.digest,
       },
       policySnapshot: REGULATED_POLICY_SNAPSHOT,
-      transition: approvalTransition(),
     });
-    await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+    const application = applyEvidenceApprovalTransition(evidenceBase, AT);
+    if (application.kind !== 'applied') {
+      throw new Error(`fixture approval denied: ${application.block.code}`);
+    }
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      application.state,
+      undefined,
+      [],
+      application.admission,
+    );
     const persisted = await readState(sessDir);
     const complete = {
       ...reviewState('COMPLETE'),
