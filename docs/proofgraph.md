@@ -256,6 +256,15 @@ a new certificate, identical code was reapplied under governed mutation and new
 attempts satisfied final approval. `--check` verifies the toolchain only and is
 not live recovery evidence.
 
+The corrected guidance may cause the reviewer to reject the deliberately
+uncovered **old** control plan before evidence approval. Only for that negative
+control, the operator can explicitly pass `--allow-old-plan-override` to use the
+installed canonical override command when its directive requires it. Without
+that flag the runner stops; it never silently escalates approval. The recorded
+old certificate binding exposes the override. This grants no evidence-approval
+bypass, and the new corrected plan must still pass ordinary independent review
+and approval.
+
 ## Falsification (counterexamples)
 
 Counterexamples are evidence-bound, never asserted. A claim's

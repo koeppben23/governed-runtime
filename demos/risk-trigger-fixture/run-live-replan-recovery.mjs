@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   Runner,
   assertToolchain,
@@ -41,7 +41,16 @@ function snapshot(runner, session, label) {
   return { ...current, file, sha256: sha256(file) };
 }
 
-async function planAndApprove(runner, session, prefix, covered) {
+/** A deliberate old negative control may override exhausted review only by explicit runner intent. */
+export function oldControlApprovalCommand(directive, allowOverride) {
+  if (directive.commands.includes('/approve')) return 'approve';
+  if (allowOverride && directive.commands.includes('/override-approve')) return 'override-approve';
+  throw new Error(
+    'old control requires explicit --allow-old-plan-override; no implicit approval escalation',
+  );
+}
+
+async function planAndApprove(runner, session, prefix, covered, allowOverride) {
   await runner.turn(session, `${prefix}-01-start`, undefined, { command: 'start' });
   await runner.turn(
     session,
@@ -57,7 +66,25 @@ async function planAndApprove(runner, session, prefix, covered) {
       'Execute every active check for baseline and implementation and complete independent review.',
     { command: 'plan' },
   );
-  await runner.approve(session, `${prefix}-04-approve-plan`, 'PLAN_REVIEW');
+  const state = runner.requireBoundState(session).state;
+  if (state.phase !== 'PLAN_REVIEW') throw new Error('old control did not reach PLAN_REVIEW');
+  const { resolveWorkflowDirective } = await import(
+    pathToFileURL(
+      path.join(
+        session.workspace,
+        '.opencode/node_modules/@flowguard/core/dist/machine/workflow-directive.js',
+      ),
+    ).href
+  );
+  const command = oldControlApprovalCommand(resolveWorkflowDirective(state), allowOverride);
+  runner.log(`old control plan approval: ${command}; explicitOverride=${allowOverride}`);
+  await runner.turn(
+    session,
+    `${prefix}-04-approve-plan`,
+    'Explicit operator decision for the deliberately uncovered OLD negative control only. ' +
+      'This does not authorize evidence approval or override missing risk coverage.',
+    { command },
+  );
 }
 
 export function assertRecoveryIdentities(oldState, newState) {
@@ -82,7 +109,10 @@ export function assertRecoveryIdentities(oldState, newState) {
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const allowOldPlanOverride = process.argv.includes('--allow-old-plan-override');
+  const options = parseArgs(
+    process.argv.slice(2).filter((flag) => flag !== '--allow-old-plan-override'),
+  );
   assertToolchain(readPins());
   if (options.check) return;
   const evidenceDir = path.join(options.root, 'evidence');
@@ -114,7 +144,9 @@ async function main() {
     const base = git(oldWorkspace, 'rev-parse', 'HEAD');
     const original = fs.readFileSync(path.join(oldWorkspace, SUBJECT), 'utf8');
     const oldSession = { workspace: oldWorkspace, terminal: 'ABORTED' };
-    await planAndApprove(runner, oldSession, 'old', false);
+    await planAndApprove(runner, oldSession, 'old', false, allowOldPlanOverride);
+    record.oldPlanApproval =
+      runner.requireBoundState(oldSession).state.plan.approvalCertificate.reviewBinding.kind;
     assertInstalledBuildIdentity(
       runner.installedBuild(oldWorkspace),
       checkoutHead,

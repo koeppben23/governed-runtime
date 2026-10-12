@@ -7,8 +7,12 @@ const runnerUrl = new URL(
   '../../../demos/risk-trigger-fixture/run-live-replan-recovery.mjs',
   import.meta.url,
 );
-const { assertRecoveryIdentities } = (await import(runnerUrl.href)) as {
+const { assertRecoveryIdentities, oldControlApprovalCommand } = (await import(runnerUrl.href)) as {
   assertRecoveryIdentities(oldState: SessionState, newState: SessionState): void;
+  oldControlApprovalCommand(
+    directive: { commands: readonly string[] },
+    allowOverride: boolean,
+  ): string;
 };
 const oldState = makeState('ABORTED');
 const newState = makeState('READY', {
@@ -23,6 +27,16 @@ const newState = makeState('READY', {
 });
 
 describe('live two-session recovery evidence contract', () => {
+  it('never escalates ordinary approval to override implicitly, even for the old control', () => {
+    expect(oldControlApprovalCommand({ commands: ['/approve'] }, false)).toBe('approve');
+    expect(() => oldControlApprovalCommand({ commands: ['/override-approve'] }, false)).toThrow(
+      'no implicit approval',
+    );
+    expect(oldControlApprovalCommand({ commands: ['/override-approve'] }, true)).toBe(
+      'override-approve',
+    );
+    expect(() => oldControlApprovalCommand({ commands: [] }, true)).toThrow('no implicit approval');
+  });
   it('accepts only the terminal-to-fresh identity handoff', () => {
     expect(() => assertRecoveryIdentities(oldState, newState)).not.toThrow();
   });
