@@ -17,6 +17,8 @@ import {
   enableRawArchiveInRepoConfig,
   unexpectedDenialCodes,
   captureRetryCodes,
+  planReviewSameTurnCorrection,
+  planReviewCorrectionProven,
   assertExpectedDenial,
   assertSessionBinding,
   matrixExitCode,
@@ -533,6 +535,159 @@ describe('Java Task Manager demo contract', () => {
       'REVIEW_ATTEMPT_UNAVAILABLE',
       'SUBAGENT_MANDATE_MISMATCH',
     ]);
+  });
+
+  it('accepts a plan-review correction only with same-turn and persisted proof', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-plan-correction-'));
+    try {
+      const denied = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ error: true, code: 'PLAN_REVIEW_IN_PROGRESS' }) },
+        },
+      });
+      const corrected = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ phase: 'PLAN', status: 'review' }) },
+        },
+      });
+      expect(planReviewSameTurnCorrection(`${denied}\n${corrected}\n`)).toBe(true);
+      expect(planReviewSameTurnCorrection(`${corrected}\n${denied}\n`)).toBe(false);
+
+      expect(
+        planReviewCorrectionProven({
+          plan: { reviewCompletion: 'reviewer_accepted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'accept' },
+        }),
+      ).toBe(true);
+      expect(
+        planReviewCorrectionProven({
+          plan: { reviewCompletion: 'review_exhausted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'accept' },
+        }),
+      ).toBe(false);
+      expect(
+        planReviewCorrectionProven({
+          plan: { reviewCompletion: 'reviewer_accepted' },
+          selfReview: { iteration: 4, maxIterations: 3, verdict: 'accept' },
+        }),
+      ).toBe(false);
+
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      const hostResult = (stdout: string) => async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout,
+      });
+      const session: {
+        workspace: string;
+        recoveredDenials: Array<Record<string, unknown>>;
+        pendingPlanReviewCorrection?: { steps: string[] } | null;
+      } = { workspace: root, recoveredDenials: [] };
+
+      // Without a same-turn successful planner call the denial stays fatal.
+      runner.hostStep = hostResult(`${denied}\n`);
+      await expect(runner.turn(session, 'plan', 'x')).rejects.toThrow(
+        /same-turn flowguard_plan correction/,
+      );
+
+      // With the same-turn proof the correction is pending the persisted gate proof.
+      runner.hostStep = hostResult(`${denied}\n${corrected}\n`);
+      await runner.turn(session, 'plan-2', 'x');
+      expect(session.pendingPlanReviewCorrection).toEqual({ steps: ['plan-2'] });
+
+      // The plan gate refuses an unproven (non-converged) correction...
+      runner.turn = async () => ({
+        code: 0,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: [],
+      });
+      runner.requireBoundState = () => ({
+        state: {
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'review_exhausted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'changes_requested' },
+        },
+        sessionDir: root,
+      });
+      await expect(runner.approve(session, 'approve-plan', 'PLAN_REVIEW')).rejects.toThrow(
+        /did not persist a consistent reviewer_accepted/,
+      );
+
+      // ...and admits it only after reviewer_accepted with a consistent iteration.
+      runner.requireBoundState = () => ({
+        state: {
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'reviewer_accepted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'accept' },
+        },
+        sessionDir: root,
+      });
+      await runner.approve(session, 'approve-plan', 'PLAN_REVIEW');
+      expect(session.pendingPlanReviewCorrection).toBeNull();
+      expect(session.recoveredDenials).toEqual([
+        {
+          step: 'plan-2',
+          codes: ['PLAN_REVIEW_IN_PROGRESS'],
+          evidence: 'same_turn_correction_and_reviewer_accepted',
+        },
+      ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('confirms the exhausted negative contract by refusing a plain architecture approval', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-negative-exhausted-'));
+    const calls: Array<{ label: string; options?: { expectedDenial?: string } }> = [];
+    try {
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.turn = async (_session, label, _prompt, options = {}) => {
+        calls.push({ label, options });
+        return { code: 0, stdout: '', stderr: '', timedOut: false, durationMs: 0, sessionIds: [] };
+      };
+      runner.approve = async () => {
+        throw new Error('a plain approval must never run on the exhausted branch');
+      };
+      const recoveryDone = () =>
+        calls.some((call) => call.label === 'architecture-negative-03-recovery');
+      runner.requireBoundState = () => ({
+        state: {
+          phase: 'ARCH_REVIEW',
+          architecture: recoveryDone()
+            ? { reviewCompletion: 'review_exhausted', status: 'proposed' }
+            : null,
+        },
+        sessionDir: root,
+      });
+      const flow = (await runFlows(runner))['architecture-negative'];
+      const session: {
+        workspace: string;
+        negativeOutcome?: string;
+        packages?: unknown[];
+      } = { workspace: flow.workspace };
+      await flow.run(session);
+      expect(calls.map((call) => call.label)).toEqual([
+        'architecture-negative-02-probe',
+        'architecture-negative-03-recovery',
+        'architecture-negative-04-approve',
+      ]);
+      expect(calls[2]!.options?.expectedDenial).toBe('GOVERNANCE_OVERRIDE_REQUIRED');
+      expect(session.negativeOutcome).toBe('exhausted_plain_approve_refused');
+      expect(session.packages).toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it('separates a successful reviewer re-arm from a terminal block of the same code', () => {

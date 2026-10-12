@@ -309,6 +309,43 @@ export function captureRetryCodes(output) {
   return [...codes];
 }
 
+/**
+ * A plan submission during an ACTIVE review loop is corrected by resuming the
+ * bound review in the same turn. The correction is never accepted as a bare
+ * retry: the same-turn proof here is paired with the persisted gate proof
+ * ({@link planReviewCorrectionProven}) before the flow may continue to the
+ * plan approval step.
+ */
+export const PLAN_REVIEW_CORRECTION_CODE = 'PLAN_REVIEW_IN_PROGRESS';
+
+/** Same-turn proof: the planner was denied and then succeeded later in the turn. */
+export function planReviewSameTurnCorrection(output) {
+  return (
+    deniedToolForCode(output, PLAN_REVIEW_CORRECTION_CODE) === 'flowguard_plan' &&
+    sameTurnCorrectedTools(output).has('flowguard_plan')
+  );
+}
+
+/**
+ * Persisted proof required before the plan gate: the correction actually
+ * resumed the SAME bound review loop (consistent iteration) to a recorded
+ * reviewer acceptance. An unproven correction keeps the flow blocked.
+ */
+export function planReviewCorrectionProven(state) {
+  const plan = state.plan;
+  const selfReview = state.selfReview;
+  if (!plan || !selfReview) return false;
+  const iterationConsistent =
+    Number.isInteger(selfReview.iteration) &&
+    Number.isInteger(selfReview.maxIterations) &&
+    selfReview.iteration <= selfReview.maxIterations;
+  return (
+    plan.reviewCompletion === 'reviewer_accepted' &&
+    selfReview.verdict === 'accept' &&
+    iterationConsistent
+  );
+}
+
 /** Recoverable-family denial: corrected in-session or by the required next step. */
 export function isRecoverableFamily(code) {
   return RECOVERABLE_DENIAL_CODES.has(code) || NEXT_STEP_RECOVERY_CODES.has(code);
@@ -598,7 +635,24 @@ export class Runner {
       );
     }
 
-    const unexpected = unexpectedDenialCodes(result.stdout);
+    const planReviewDenied = toolDenialCodes(result.stdout).includes(PLAN_REVIEW_CORRECTION_CODE);
+    if (planReviewDenied && !planReviewSameTurnCorrection(result.stdout)) {
+      throw new Error(
+        `${label}: ${PLAN_REVIEW_CORRECTION_CODE} without a same-turn flowguard_plan correction; stopping the flow`,
+      );
+    }
+    if (planReviewDenied) {
+      session.pendingPlanReviewCorrection = {
+        steps: [...(session.pendingPlanReviewCorrection?.steps ?? []), label],
+      };
+      this.log(
+        `${label}: ${PLAN_REVIEW_CORRECTION_CODE} corrected in-session; reviewer_accepted and iteration consistency are proven at the plan gate`,
+      );
+    }
+
+    const unexpected = unexpectedDenialCodes(result.stdout).filter(
+      (code) => !(planReviewDenied && code === PLAN_REVIEW_CORRECTION_CODE),
+    );
     if (unexpected.length > 0) {
       // The persisted terminal phase is FlowGuard's outcome authority: when the
       // session already reached it, the transport-level block is recorded — never
@@ -654,6 +708,23 @@ export class Runner {
       throw new Error(
         `${label}: expected gate ${expectedPhase}, observed ${String(snapshot.state.phase)}`,
       );
+    }
+    if (expectedPhase === 'PLAN_REVIEW' && session.pendingPlanReviewCorrection) {
+      if (!planReviewCorrectionProven(snapshot.state)) {
+        throw new Error(
+          `${label}: ${PLAN_REVIEW_CORRECTION_CODE} correction did not persist a consistent reviewer_accepted plan; stopping the flow`,
+        );
+      }
+      session.recoveredDenials = session.recoveredDenials ?? [];
+      session.recoveredDenials.push({
+        step: session.pendingPlanReviewCorrection.steps.join(', '),
+        codes: [PLAN_REVIEW_CORRECTION_CODE],
+        evidence: 'same_turn_correction_and_reviewer_accepted',
+      });
+      this.log(
+        `${label}: ${PLAN_REVIEW_CORRECTION_CODE} correction proven by reviewer_accepted at the plan gate`,
+      );
+      session.pendingPlanReviewCorrection = null;
     }
     await this.turn(session, label, 'Demo approval through the real command boundary.', {
       command: 'approve',
@@ -869,6 +940,28 @@ export async function runFlows(runner) {
           'architecture-negative-03-recovery',
           '/architecture Read ADR_TICKET.md and TICKET.md and create a complete ticket-aligned Service-Layer Null-Safety ADR, including the required options, trade-offs, consequences and falsifiable validation path. Submit schema-valid architecture claims about that ADR using statement, critical, authoritySectionId and requiredReviewEvidence. The preceding invalid-claim probe is separate runner evidence, not the ADR subject and not repository evidence for its claims. Complete the full fresh independent review normally; correct substantive blocking findings and stop at the ordinary approval gate. Do not use a governance override.',
         );
+        const afterRecovery = runner.requireBoundState(session);
+        if (afterRecovery.state.architecture?.reviewCompletion === 'review_exhausted') {
+          // Negative contract: an exhausted independent review must NOT be
+          // approvable by a plain /approve, and the refusal must not mutate
+          // the gate. A successful recovery to ARCH_COMPLETE is a different
+          // proof and stays on the converged branch below.
+          await runner.turn(
+            session,
+            'architecture-negative-04-approve',
+            'Demo approval through the real command boundary.',
+            { command: 'approve', expectedDenial: 'GOVERNANCE_OVERRIDE_REQUIRED' },
+          );
+          const refused = runner.requireBoundState(session);
+          if (
+            refused.state.phase !== 'ARCH_REVIEW' ||
+            refused.state.architecture?.status === 'accepted'
+          ) {
+            throw new Error('the refused plain approve mutated the exhausted architecture gate');
+          }
+          session.negativeOutcome = 'exhausted_plain_approve_refused';
+          return;
+        }
         await runner.approve(session, 'architecture-negative-04-approve', 'ARCH_REVIEW');
         await runner.turn(
           session,
@@ -885,6 +978,7 @@ export async function runFlows(runner) {
           ),
         ];
       },
+      negativeOutcomes: ['exhausted_plain_approve_refused'],
     },
   };
   return flows;
@@ -1005,11 +1099,23 @@ async function main() {
             `pending recovery [${session.awaitingRecovery.codes.join(', ')}] was not demonstrated by a following step`,
           );
         }
+        if (session.pendingPlanReviewCorrection) {
+          throw new Error(
+            `unproven ${PLAN_REVIEW_CORRECTION_CODE} correction at [${session.pendingPlanReviewCorrection.steps.join(', ')}]`,
+          );
+        }
         const snapshot = runner.requireBoundState(session);
         record.phase = snapshot.state.phase;
         record.hostSessionId = session.sessionId;
         record.flowguardSessionId = snapshot.state.flowguardSessionId;
-        if (snapshot.state.phase !== flow.terminal) {
+        if (session.negativeOutcome) {
+          if (!(flow.negativeOutcomes ?? []).includes(session.negativeOutcome)) {
+            throw new Error(
+              `unexpected negative outcome '${session.negativeOutcome}' for flow ${name}`,
+            );
+          }
+          record.negativeOutcome = session.negativeOutcome;
+        } else if (snapshot.state.phase !== flow.terminal) {
           throw new Error(`expected terminal ${flow.terminal}, observed ${snapshot.state.phase}`);
         }
         await runner.captureProvenance(record, session);
