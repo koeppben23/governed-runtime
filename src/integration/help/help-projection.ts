@@ -11,7 +11,10 @@ import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
 import { buildStatusProjection } from '../status/status.js';
-import { buildEvidenceDetailProjection } from '../status/status-detail-projections.js';
+import {
+  buildEvidenceDetailProjection,
+  projectEvidenceApprovalBlock,
+} from '../status/status-detail-projections.js';
 import type { FinishOverallStatus } from '../status/status-types.js';
 import { buildFinishCard } from '../status/status-finish.js';
 import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
@@ -256,7 +259,28 @@ function preflight(
       recovery: 'Follow the recommended next action.',
     };
   }
-  return { status: 'available', guarantee: 'eligible_to_attempt' };
+  return (
+    approvalPreflight(definition, state) ?? {
+      status: 'available',
+      guarantee: 'eligible_to_attempt',
+    }
+  );
+}
+
+function approvalPreflight(
+  definition: InstalledCommandDefinition,
+  state: SessionState,
+): CommandPreflight | null {
+  if (definition.intent !== 'approve') return null;
+  const block = projectEvidenceApprovalBlock(state);
+  if (!block) return null;
+  return {
+    status: 'blocked',
+    guarantee: 'eligible_to_attempt',
+    reasonCode: block.code,
+    message: block.reason,
+    recovery: block.recovery.join('\n'),
+  };
 }
 
 function projectCommand(
@@ -533,7 +557,7 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
     readiness,
     recommendationQuality,
     reviewReportStatus: reportResolution?.status ?? 'not_available',
-    nextActionSummary: directiveLabel(status.directive.code),
+    nextActionSummary: status.blocker?.reasonText ?? directiveLabel(status.directive.code),
     evidenceCompleteness: buildEvidenceCompleteness(state),
     archiveVerification: buildArchiveVerification(state),
     directive,

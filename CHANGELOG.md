@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Truthful ProofGraph planning and recovery (#1079).** OpenCode, Claude Code,
+  Codex and the plan tool share claim guidance requiring distinct check identities
+  and attempts, structurally bindable assertion/aggregate evidence and explicit
+  critical risk-trigger coverage. Diagnostics now distinguish evidence repair
+  from a required new authority. Post-approval authority recovery explicitly
+  preserves and aborts the old session, prepares a trusted pre-change worktree,
+  creates a different host/FlowGuard binding and obtains a new certificate before
+  governed reapplication and fresh verification. Hydrate is not a session reset.
+  Status/help consume the existing approval preflight and no longer advertise a
+  ready approval after an automatic-policy denial. Deterministic two-session
+  recovery and negative tests cover identical bytes, old authority, dirty-baseline
+  exclusion, unauthorized early mutation and in-place coverage widening.
+
 - **Live risk-trigger coverage controls.** `demos/risk-trigger-fixture/` is an
   isolated minimal Maven repository whose governed artifact lives under
   `src/state/` (HIGH-RISK + `state_integrity`),

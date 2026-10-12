@@ -20,7 +20,10 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
     label: 'Start session',
     description: 'Prepare or restore a governed session.',
     does: ['Creates or refreshes the session context.'],
-    doesNot: ['Select a workflow.'],
+    doesNot: [
+      'Select a workflow.',
+      'Reset an existing session; a terminal session reload is read-only.',
+    ],
     examples: ['/hydrate'],
     presentationGroup: 'start',
     displayOrder: 10,
@@ -38,7 +41,10 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
     label: 'Plan work',
     description: 'Create or revise the implementation plan.',
     does: ['Records a plan for independent review.'],
-    doesNot: ['Modify implementation files.'],
+    doesNot: [
+      'Modify implementation files.',
+      'Revise certified claims after leaving TICKET or PLAN.',
+    ],
     examples: ['/plan'],
     presentationGroup: 'work',
     displayOrder: 30,

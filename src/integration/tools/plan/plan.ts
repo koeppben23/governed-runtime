@@ -54,6 +54,7 @@ import { evaluate } from '../../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../../state/proofgraph-approval.js';
+import { PLAN_CLAIM_GUIDANCE } from '../../../templates/plan-claim-guidance.js';
 import { findLatestObligation } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
@@ -346,12 +347,7 @@ export const plan: ToolDefinition = {
         'Plan body text (markdown). Required for Mode A (initial submission) ' +
           "and when reviewVerdict is 'changes_requested' (revised plan).",
       ),
-    claims: z
-      .array(PlanClaimDeclarationSchema)
-      .optional()
-      .describe(
-        'Pre-evidence claims made by this plan version. Each names its governing plan section and expected implementation check.',
-      ),
+    claims: z.array(PlanClaimDeclarationSchema).optional().describe(PLAN_CLAIM_GUIDANCE),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
       .optional()

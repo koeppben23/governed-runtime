@@ -325,7 +325,9 @@ export function prepareWorkspace(workspace, tarball) {
   fs.cpSync(FIXTURE, workspace, {
     recursive: true,
     filter: (source) =>
-      !source.includes(`${path.sep}.git`) && !source.endsWith('run-live-risk-trigger-controls.mjs'),
+      !source.includes(`${path.sep}.git`) &&
+      !source.endsWith('run-live-risk-trigger-controls.mjs') &&
+      !source.endsWith('run-live-replan-recovery.mjs'),
   });
   for (const item of ['mvnw', 'mvnw.cmd', '.mvn', '.gitignore']) {
     fs.cpSync(path.join(SEED, item), path.join(workspace, item), { recursive: true });

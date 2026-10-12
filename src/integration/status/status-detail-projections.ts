@@ -17,13 +17,15 @@ import type {
 import { evaluate } from '../../machine/evaluate.js';
 import {
   resolveWorkflowDirective,
+  resolveExecutionDisposition,
   type WorkflowDirective,
 } from '../../machine/workflow-directive.js';
 import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
-import { evaluateProofGraphGateFromState } from '../../audit/proofgraph/gate.js';
-import { mapEnforcementReasonToRegistryCode } from '../../audit/proofgraph/reason-code-mapping.js';
+import { evaluateEvidenceApprovalPreflight } from '../../audit/proofgraph/evidence-approval-preflight.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
+import type { FormattedBlock } from '../../config/reasons-types.js';
 import { hashFindings } from '../review/findings-hash.js';
 import {
   findAcceptedInvocationForFindings,
@@ -113,7 +115,8 @@ export function buildBlockedProjection(
   const completeness = evaluateCompleteness(state);
 
   const incompleteReview = directive.code === 'WORKFLOW_BLOCKED';
-  const blocked = evalResult.kind === 'waiting' || incompleteReview;
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  const blocked = evalResult.kind === 'waiting' || incompleteReview || approvalBlock !== null;
   const missingEvidence = completeness.slots
     .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
     .map((slot) => ({
@@ -142,11 +145,29 @@ export function buildBlockedProjection(
   return {
     blocked,
     reasonCode: reason.reasonCode,
-    reasonText: evalResult.kind === 'waiting' ? evalResult.reason : reason.reasonText,
-    recoveryHint: directive.context?.recovery ?? null,
     missingEvidence,
-    nextResolvableCommand: directive.commands[0] ?? null,
+    ...blockedRecoveryFields(approvalBlock, evalResult, reason.reasonText, directive),
     humanActionRequired: resolveHumanActionRequired(evalResult, incompleteReview),
+  };
+}
+
+function blockedRecoveryFields(
+  approvalBlock: FormattedBlock | null,
+  evaluation: ReturnType<typeof evaluate>,
+  reasonText: string | null,
+  directive: WorkflowDirective,
+): Pick<BlockedProjection, 'reasonText' | 'recoveryHint' | 'nextResolvableCommand'> {
+  if (approvalBlock) {
+    return {
+      reasonText: approvalBlock.reason,
+      recoveryHint: approvalBlock.recovery.join('\n'),
+      nextResolvableCommand: null,
+    };
+  }
+  return {
+    reasonText: evaluation.kind === 'waiting' ? evaluation.reason : reasonText,
+    recoveryHint: directive.context?.recovery ?? null,
+    nextResolvableCommand: directive.commands[0] ?? null,
   };
 }
 
@@ -182,7 +203,7 @@ export function buildReadinessProjection(
 ): ReadinessProjection {
   const completeness = evaluateCompleteness(state);
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
-  const blocked = evalResult.kind === 'waiting';
+  const blocked = evalResult.kind === 'waiting' || projectEvidenceApprovalBlock(state) !== null;
   const snapshot = state.policySnapshot;
   const warnings: string[] = [];
 
@@ -360,8 +381,19 @@ export function buildReviewFeedbackProjection(
  * — no independent gating authority.
  */
 export function proofGraphGateRegistryCode(state: SessionState): string | null {
+  return projectEvidenceApprovalBlock(state)?.code ?? null;
+}
+
+/** Read-only projection of the SAME preflight enforced by explicit and automatic approval. */
+export function projectEvidenceApprovalBlock(state: SessionState): FormattedBlock | null {
   if (state.phase !== 'EVIDENCE_REVIEW') return null;
-  const decision = evaluateProofGraphGateFromState(state);
-  if (!decision.gated) return null;
-  return mapEnforcementReasonToRegistryCode(decision.reasonCode);
+  if (resolveExecutionDisposition(state) === 'blocked') return null;
+  const preflight = evaluateEvidenceApprovalPreflight(state);
+  if (preflight.kind === 'clear') return null;
+  const formatted = defaultReasonRegistry.format(preflight.code, preflight.params);
+  return {
+    ...formatted,
+    reason: preflight.reason ?? formatted.reason,
+    recovery: preflight.recovery ?? formatted.recovery,
+  };
 }

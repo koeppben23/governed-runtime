@@ -19,7 +19,7 @@
  * - state.error !== null (code: "ABORTED")
  * - state.transition.event === "ABORT"
  * - The session is terminal: flow commands and /continue are blocked by the
- *   command policy, while /hydrate (start a new session) and /abort (this
+ *   command policy, while /hydrate (read-only reload) and /abort (this
  *   idempotent no-op) remain available. /review is not admissible at terminal.
  *
  * Distinguishing aborted from completed:
@@ -74,7 +74,8 @@ export function executeAbort(state: SessionState, input: AbortInput, ctx: RailCo
   const error: ErrorInfo = {
     code: 'ABORTED',
     message: input.reason || 'Session aborted',
-    recoveryHint: 'Start a new session with /hydrate',
+    recoveryHint:
+      'Start a new host session with a different host-session id, then run /hydrate; /hydrate in this terminal session only reloads it read-only.',
     occurredAt: now,
   };
 
