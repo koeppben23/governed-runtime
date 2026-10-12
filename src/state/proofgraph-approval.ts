@@ -314,7 +314,7 @@ function refineReviewBinding(
  * reinterpreted into each other, and only an accepted review is certified
  * automatically — an exhausted override stays an explicit decision.
  */
-export const PlanApprovalAttestation = z.discriminatedUnion('kind', [
+const PlanApprovalAttestationSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('explicit_decision'),
@@ -338,7 +338,8 @@ export const PlanApprovalAttestation = z.discriminatedUnion('kind', [
     .strict()
     .readonly(),
 ]);
-export type PlanApprovalAttestation = z.infer<typeof PlanApprovalAttestation>;
+/** Local inferred shape of the approval attestation discriminator. */
+type PlanApprovalAttestation = z.infer<typeof PlanApprovalAttestationSchema>;
 
 /**
  * A plan approval certificate, versioned and attestation-discriminated.
@@ -368,7 +369,7 @@ export const PlanApprovalCertificate = z
      * parsing instead of degrading to a readable-but-unauthoritative shape.
      */
     reviewBinding: ReviewBinding,
-    approvalAttestation: PlanApprovalAttestation,
+    approvalAttestation: PlanApprovalAttestationSchema,
   })
   .strict()
   .superRefine((certificate, ctx) => {

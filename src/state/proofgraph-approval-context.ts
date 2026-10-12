@@ -32,7 +32,7 @@ export function planApprovalContextOf(state: SessionState): PlanApprovalContext 
 }
 
 /** Project the current plan record onto the certificate validity authority. */
-export function planClaimAuthorityOfState(state: SessionState): PlanClaimAuthority | null {
+function planClaimAuthorityOfState(state: SessionState): PlanClaimAuthority | null {
   const plan = state.plan;
   if (plan === null) return null;
   return {
