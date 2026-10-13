@@ -78,6 +78,8 @@ describe('demo result taxonomy', () => {
           'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
         ]),
       ).toBe('not_verified');
+      expect(classifyUnexpectedBlock(['SUBAGENT_UNABLE_TO_REVIEW'])).toBe('not_verified');
+      expect(classifyUnexpectedBlock(['SUBAGENT_FINDINGS_VERDICT_MISMATCH'])).toBe('not_verified');
       expect(classifyUnexpectedBlock(['ARCHIVE_FAILED'])).toBe('failed');
       expect(classifyUnexpectedBlock(['ARCHIVE_FAILED', 'REVIEW_EVIDENCE_NOT_OBSERVED'])).toBe(
         'failed',

@@ -402,6 +402,34 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('classifies a reviewer unable-to-review block as NOT_VERIFIED, not a contract violation', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-unable-review-'));
+    const block = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'task',
+        state: { output: JSON.stringify({ error: true, code: 'SUBAGENT_UNABLE_TO_REVIEW' }) },
+      },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${block}\n`,
+      });
+      runner.requireBoundState = () => ({ state: { phase: 'PLAN' }, sessionDir: root });
+      const session = { workspace: root, terminal: 'COMPLETE' };
+      await expect(runner.turn(session, 'reduced-on-03-plan', 'x')).rejects.toThrow(/NOT_VERIFIED/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('requires a proven in-session retry before a recoverable denial counts as recovered', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-same-turn-'));
     try {

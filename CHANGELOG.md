@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   occurrence-bound recovery proofs (a denial after the last successful call is
   never `recovered`), and unreadable governed output can no longer ground a
   success claim. Killed negative controls are reported as `CONTROL_PASSED`
-  instead of being counted as completed workflows, `review_exhausted` is
+  instead of being counted as completed workflows, `review_exhausted` and
+  review-stage subagent blocks (`SUBAGENT_UNABLE_TO_REVIEW`,
+  `SUBAGENT_FINDINGS_VERDICT_MISMATCH`, capture/consistency codes) are
   classified as `NOT_VERIFIED` for positive proofs, and the specialized runners
   drive the persisted plan gate with bounded state-driven continuations instead
   of a single `/plan` turn. Claim and risk controls share one full proof oracle

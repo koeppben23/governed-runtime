@@ -83,6 +83,10 @@ controlled A/B run with the SAME fixed harness.
   control (`set -m`), tracks `ACTIVE_CHILD_PGID` and runs each demo in the
   background with `wait` so traps execute promptly. Bootstrap, build, preflight
   and the variants script use the same lifecycle helper.
+- **Review-stage classification:** reviewer capture/consistency blocks —
+  including `SUBAGENT_UNABLE_TO_REVIEW` and `SUBAGENT_FINDINGS_VERDICT_MISMATCH`
+  — classify a positive proof as `NOT_VERIFIED`, never as a demo contract
+  violation; the evidence is preserved either way.
 - **Administrative removal is fail-closed:** `forceRemoveLease` refuses a lease
   whose owner is alive or whose expected owner identity does not match, and
   asks for manual removal when the lease file is unreadable; only a provably
