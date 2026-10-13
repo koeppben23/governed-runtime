@@ -90,6 +90,10 @@ How FlowGuard capabilities map to DORA ICT risk management requirements.
 
 How FlowGuard capabilities map to GoBD traceability and unalterability principles.
 
+### [ISO/IEC 27001:2022 Evidence-to-Control Mapping](./iso27001-evidence-mapping.md)
+
+How verified FlowGuard session evidence maps to organization-owned ISO/IEC 27001:2022 Annex A control mappings.
+
 ## Support
 
 ### [Support Model](./support-model.md)

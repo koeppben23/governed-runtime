@@ -102,6 +102,11 @@ const EXCLUDED_CODES: ReadonlySet<string> = new Set([
   // blockingStateFor('PROVEN') is null, so this code can never surface as a
   // blocked recovery path. Excluded from the registration guard deliberately.
   'PROOFGRAPH_EVIDENCE_PROVEN',
+  // ISO/IEC 27001:2022 report finding code (`Iso27001FindingCode` vocabulary in
+  // `src/audit/iso27001/selectors.ts`). Report findings are read-only projection
+  // diagnostics, never runtime blocked-reason codes and never formatted through
+  // the reason registry; they are deliberately kept out of SEED_REASONS.
+  'APPLICABILITY_ASSERTION_UNVERIFIED',
 ]);
 
 /**
