@@ -37,7 +37,9 @@ Options: `--root <dir>` (must not exist; default: fresh temp dir),
 | Tampered | positive mapping             | Exit 2, no report, `PACKAGE_UNVERIFIABLE`. Only the tamper copy is modified; the original package is restored byte-for-byte and re-verifies.                                                                                                                              |
 
 Additional checks in every run: the canonical verifier accepts the published
-package, the report package digest matches the verified package digest, no
+package, the verified-snapshot reader returns the package contents, the
+A.8.29 evidence member digest matches the archive manifest, the report package
+digest matches the verified package digest, no
 `ISO_COMPLIANT`/`CONTROL_SATISFIED`/`CERTIFIED`/`AUDIT_PASSED` conclusion
 appears, and session state and package bytes are unchanged by the projection.
 

@@ -88,7 +88,7 @@ function parseArgs(argv) {
 async function loadProduct() {
   const load = (relative) => import(pathToFileURL(path.join(DIST, relative)).href);
   if (!(await fs.stat(CLI_ENTRY).catch(() => null))) {
-    fail('dist/cli/install.js not found; run `npm run build` first');
+    throw new Error('dist/cli/install.js not found; run `npm run build` first');
   }
   const [
     hashing,
@@ -101,6 +101,7 @@ async function loadProduct() {
     audit,
     archive,
     verify,
+    readVerified,
   ] = await Promise.all([
     load('shared/hashing.js'),
     load('shared/canonical-json.js'),
@@ -112,6 +113,7 @@ async function loadProduct() {
     load('adapters/persistence-audit.js'),
     load('adapters/workspace/archive.js'),
     load('adapters/workspace/archive-verify-chain.js'),
+    load('adapters/workspace/archive-read-verified.js'),
   ]);
   return {
     hashText: hashing.hashText,
@@ -126,6 +128,7 @@ async function loadProduct() {
     appendAuditEvent: audit.appendAuditEvent,
     archiveCompletionExport: archive.archiveCompletionExport,
     verifyCompletionExport: verify.verifyCompletionExport,
+    readVerifiedCompletionExport: readVerified.readVerifiedCompletionExport,
   };
 }
 
@@ -214,8 +217,10 @@ async function setupSession(product, root) {
 
   const git = (args) =>
     spawnSync('git', args, { cwd: worktree, encoding: 'utf8', stdio: 'pipe', windowsHide: true });
-  if (git(['init', '--quiet']).status !== 0) fail('git init failed');
-  if (git(['remote', 'add', 'origin', DEMO_REMOTE]).status !== 0) fail('git remote add failed');
+  if (git(['init', '--quiet']).status !== 0) throw new Error('git init failed');
+  if (git(['remote', 'add', 'origin', DEMO_REMOTE]).status !== 0) {
+    throw new Error('git remote add failed');
+  }
 
   const template = JSON.parse(
     await fs.readFile(path.join(SEED_DIR, 'session-state.template.json'), 'utf8'),
@@ -350,6 +355,20 @@ async function positiveScenario(product, fixture, root) {
     assertionSelector?.evidence?.[0]?.attemptId === '00000000-0000-4000-8000-000000000766',
     'A.8.29 assertion evidence binds the seeded attempt id',
   );
+  const verifiedRead = await product.readVerifiedCompletionExport(
+    fixture.fingerprint,
+    DEMO_SESSION_ID,
+  );
+  check(verifiedRead.kind === 'verified', 'verified-snapshot reader returns the package contents');
+  if (verifiedRead.kind === 'verified') {
+    const ref = assertionSelector?.evidence?.[0];
+    const manifestDigest =
+      typeof ref?.member === 'string' ? verifiedRead.manifest.fileDigests[ref.member] : undefined;
+    check(
+      typeof manifestDigest === 'string' && manifestDigest === ref?.memberSha256,
+      'A.8.29 evidence member digest matches the archive manifest',
+    );
+  }
 
   const changeControl = ruleById(report, 'change-control');
   check(
@@ -469,39 +488,43 @@ async function main() {
   }
 
   console.log(`[demo] run root: ${root}`);
-  const product = await loadProduct();
-  const fixture = await setupSession(product, root);
-  const originals = {
-    state: await fs.readFile(path.join(fixture.sessionDir, 'session-state.json'), 'utf8'),
-    package: await product.hashFile(fixture.exportPath),
-  };
+  try {
+    const product = await loadProduct();
+    const fixture = await setupSession(product, root);
+    const originals = {
+      state: await fs.readFile(path.join(fixture.sessionDir, 'session-state.json'), 'utf8'),
+      package: await product.hashFile(fixture.exportPath),
+    };
 
-  await positiveScenario(product, fixture, root);
-  await negativeScenario(product, fixture);
-  await tamperScenario(product, fixture, root);
+    await positiveScenario(product, fixture, root);
+    await negativeScenario(product, fixture);
+    await tamperScenario(product, fixture, root);
 
-  check(
-    (await fs.readFile(path.join(fixture.sessionDir, 'session-state.json'), 'utf8')) ===
-      originals.state,
-    'all scenarios leave the session state unchanged',
-  );
-  check(
-    (await product.hashFile(fixture.exportPath)) === originals.package,
-    'all scenarios leave the original package unchanged (only the tamper copy was altered and restored)',
-  );
+    check(
+      (await fs.readFile(path.join(fixture.sessionDir, 'session-state.json'), 'utf8')) ===
+        originals.state,
+      'all scenarios leave the session state unchanged',
+    );
+    check(
+      (await product.hashFile(fixture.exportPath)) === originals.package,
+      'the working package was temporarily tampered and restored byte-for-byte',
+    );
 
-  for (const line of summary) console.log(`[demo] ${line}`);
-  if (!keep) await fs.rm(root, { recursive: true, force: true });
-  else console.log(`[demo] kept run root: ${root}`);
-
-  if (failures.length > 0) {
-    console.error(`[demo] ${failures.length} expectation(s) failed:`);
-    for (const failure of failures) console.error(`[demo]   ${failure}`);
-    process.exit(1);
+    for (const line of summary) console.log(`[demo] ${line}`);
+    if (failures.length > 0) {
+      console.error(`[demo] ${failures.length} expectation(s) failed:`);
+      for (const failure of failures) console.error(`[demo]   ${failure}`);
+      return 1;
+    }
+    console.log('[demo] all scenarios passed');
+    return 0;
+  } finally {
+    if (keep) console.log(`[demo] kept run root: ${root}`);
+    else await fs.rm(root, { recursive: true, force: true });
   }
-  console.log('[demo] all scenarios passed');
 }
 
-await main().catch((error) => {
+process.exitCode = await main().catch((error) => {
   fail(error instanceof Error ? error.message : String(error));
+  return 2;
 });
