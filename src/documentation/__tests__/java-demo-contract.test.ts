@@ -432,7 +432,9 @@ describe('Java Task Manager demo contract', () => {
         /without a later proven correction/,
       );
 
-      // Later success of the same tool proves the in-session correction.
+      // Later success of the same tool WITHOUT an operation binding is only an
+      // observation; resolving it requires an independent persisted proof from
+      // the next required step.
       runner.hostStep = async () => ({
         code: 0,
         stderr: '',
@@ -444,11 +446,81 @@ describe('Java Task Manager demo contract', () => {
       const session: {
         workspace: string;
         recoveredDenials?: Array<Record<string, unknown>>;
+        awaitingRecovery?: { step: string; codes: string[] };
       } = { workspace: root };
       await runner.turn(session, 'plan-b', 'x');
       expect(session.recoveredDenials).toEqual([
         { step: 'plan-b', codes: ['REVISED_PLAN_REQUIRED'], evidence: 'later_tool_success' },
       ]);
+      expect(session.awaitingRecovery).toMatchObject({
+        step: 'plan-b',
+        codes: ['REVISED_PLAN_REQUIRED'],
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves a later_tool_success only through an independent persisted transition', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-later-success-'));
+    const statePath = path.join(root, 'session-state.json');
+    const denial = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'flowguard_plan',
+        state: { output: JSON.stringify({ error: true, code: 'REVISED_PLAN_REQUIRED' }) },
+      },
+    });
+    const success = JSON.stringify({
+      type: 'tool_use',
+      part: { tool: 'flowguard_plan', state: { output: JSON.stringify({ reviewDispatch: {} }) } },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      await fs.writeFile(statePath, JSON.stringify({ phase: 'PLAN' }));
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      let phase = 'PLAN';
+      runner.requireBoundState = () => ({ state: { phase }, sessionDir: root });
+
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${denial}\n${success}\n`,
+      });
+      const session: {
+        workspace: string;
+        recoveredDenials?: Array<Record<string, unknown>>;
+        awaitingRecovery?: { step: string; codes: string[] };
+      } = { workspace: root };
+      await runner.turn(session, 'plan-c', 'x');
+      expect(session.awaitingRecovery).toBeDefined();
+
+      // The next required step WITHOUT a persisted transition stays unproven.
+      await expect(runner.turn(session, 'plan-c-next', 'x')).rejects.toThrow(
+        /was not demonstrated by a state transition/,
+      );
+
+      // With a real state change the independent proof resolves it.
+      await fs.writeFile(statePath, JSON.stringify({ phase: 'PLAN_REVIEW' }));
+      phase = 'PLAN_REVIEW';
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${success}\n`,
+      });
+      await runner.turn(session, 'plan-c-retry', 'x');
+      expect(session.recoveredDenials).toContainEqual({
+        step: 'plan-c',
+        codes: ['REVISED_PLAN_REQUIRED'],
+        evidence: 'next_step_state_transition:plan-c-retry',
+      });
+      expect(session.awaitingRecovery).toBeNull();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

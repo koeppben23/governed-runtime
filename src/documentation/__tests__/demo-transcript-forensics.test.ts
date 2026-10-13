@@ -187,5 +187,41 @@ describe('demo transcript forensics', () => {
         structuredRearmSupersedesTerminal(backward, 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'),
       ).toBe(false);
     });
+
+    it('requires the same obligation when both envelopes expose one', () => {
+      const terminal = (obligationId: string) => ({
+        error: true,
+        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        detail: { obligationId },
+      });
+      const rearm = (obligationId: string) => ({
+        reviewDispatch: { required: true, completed: false },
+        reviewRetry: {
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          obligationId,
+          retryable: true,
+        },
+      });
+      const sameObligation = transcript(
+        toolUse('task', pretty(terminal('ob-1'))),
+        toolUse('task', pretty(rearm('ob-1'))),
+      );
+      const foreignObligation = transcript(
+        toolUse('task', pretty(terminal('ob-1'))),
+        toolUse('task', pretty(rearm('ob-2'))),
+      );
+      expect(
+        structuredRearmSupersedesTerminal(
+          sameObligation,
+          'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        ),
+      ).toBe(true);
+      expect(
+        structuredRearmSupersedesTerminal(
+          foreignObligation,
+          'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        ),
+      ).toBe(false);
+    });
   });
 });

@@ -1,11 +1,11 @@
 /**
  * @module documentation/demo-signal-exit.test
- * @description SIGTERM/SIGINT must terminate the wrapper (not merely run a
- * handler): in-flight children are signalled first and the EXIT trap performs
- * the cleanup exactly once.
+ * @description SIGTERM/SIGINT must terminate the ENTIRE process tree (including
+ * grandchildren) before the EXIT trap performs cleanup, and must never continue
+ * executing after the signal.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
- * @version v1
+ * @version v2
  */
 
 import { spawn } from 'node:child_process';
@@ -23,11 +23,20 @@ function fixture(label: string): string {
   return root;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs = 8000): Promise<void> {
   const started = Date.now();
   while (!predicate()) {
     if (Date.now() - started > timeoutMs) throw new Error('signal test wait timed out');
     await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -36,57 +45,51 @@ afterEach(() => {
 });
 
 describe('demo signal/exit contract', () => {
-  describe('HAPPY — SIGTERM terminates and cleans up once', () => {
-    it('signals children, releases once, and exits 143', async () => {
+  describe('HAPPY — SIGTERM terminates the process tree and cleans up once', () => {
+    it('kills the grandchild, releases once, and exits 143', async () => {
       const root = fixture('happy');
       const script = join(root, 'wrapper.sh');
       const mark = join(root, 'mark.txt');
-      const childFile = join(root, 'child.pid');
+      const grandchildFile = join(root, 'grandchild.pid');
       const started = join(root, 'started');
       writeFileSync(
         script,
         [
           '#!/usr/bin/env bash',
           'set -u',
+          'set -m',
           `source "${HELPER}"`,
           `cleanup() { echo cleanup >> "${mark}"; }`,
           'install_exit_traps cleanup',
-          'sleep 30 &',
-          `echo $! > "${childFile}"`,
+          `bash -c 'sleep 30 & echo $! > "${grandchildFile}"; wait $!' &`,
+          'ACTIVE_CHILD_PGID=$!',
           `echo started > "${started}"`,
-          'sleep 30 &',
-          'wait $!',
+          'wait "$ACTIVE_CHILD_PGID"',
           `echo CONTINUED >> "${mark}"`,
         ].join('\n'),
       );
       const wrapper = spawn('bash', [script], { stdio: 'ignore' });
       try {
         await waitFor(() => existsSync(started));
-        const childPid = Number(readFileSync(childFile, 'utf8').trim());
+        await waitFor(() => existsSync(grandchildFile));
+        const grandchildPid = Number(readFileSync(grandchildFile, 'utf8').trim());
+        expect(processAlive(grandchildPid)).toBe(true);
         wrapper.kill('SIGTERM');
         const exitCode = await new Promise<number | null>((resolve) =>
           wrapper.once('exit', (code, signal) => resolve(signal ? null : code)),
         );
         expect(exitCode).toBe(143);
         await waitFor(() => existsSync(mark));
-        const marks = readFileSync(mark, 'utf8').trim().split('\n');
-        expect(marks).toEqual(['cleanup']);
-        await waitFor(() => {
-          try {
-            process.kill(childPid, 0);
-            return false;
-          } catch {
-            return true;
-          }
-        });
+        expect(readFileSync(mark, 'utf8').trim().split('\n')).toEqual(['cleanup']);
+        await waitFor(() => !processAlive(grandchildPid));
       } finally {
         wrapper.kill('SIGKILL');
       }
     });
   });
 
-  describe('BAD — no cleanup without a signal', () => {
-    it('does not leave a CONTINUED marker after termination', async () => {
+  describe('BAD — no code runs after the signal', () => {
+    it('does not reach the post-wait line', async () => {
       const root = fixture('bad');
       const script = join(root, 'wrapper.sh');
       const mark = join(root, 'mark.txt');
@@ -95,11 +98,14 @@ describe('demo signal/exit contract', () => {
         [
           '#!/usr/bin/env bash',
           'set -u',
+          'set -m',
           `source "${HELPER}"`,
           `cleanup() { echo cleanup >> "${mark}"; }`,
           'install_exit_traps cleanup',
           'sleep 30 &',
-          'wait $!',
+          'ACTIVE_CHILD_PGID=$!',
+          'wait "$ACTIVE_CHILD_PGID"',
+          `echo CONTINUED >> "${mark}"`,
         ].join('\n'),
       );
       const wrapper = spawn('bash', [script], { stdio: 'ignore' });
@@ -137,9 +143,12 @@ describe('demo signal/exit contract', () => {
   });
 
   describe('EDGE — the helper is wired into the wrapper', () => {
-    it('uses install_exit_traps instead of a bare combined trap', () => {
+    it('uses the process-group termination contract', () => {
       const wrapper = readFileSync(join(process.cwd(), 'demos', 'run-all-demos.sh'), 'utf8');
       expect(wrapper).toContain('install_exit_traps release_lease');
+      expect(wrapper).toContain('set -m');
+      expect(wrapper).toContain('ACTIVE_CHILD_PGID');
+      expect(readFileSync(HELPER, 'utf8')).toContain('kill -TERM -- "-${ACTIVE_CHILD_PGID}"');
       expect(wrapper).not.toContain('trap release_lease EXIT INT TERM');
     });
   });

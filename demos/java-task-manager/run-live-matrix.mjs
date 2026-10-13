@@ -605,7 +605,10 @@ export class Runner {
         recoverableProofs.filter((proof) => proof.binding === 'tool').map((proof) => proof.code),
       ),
     ];
-    const sameTurnRecovered = [...new Set([...operationRecovered, ...laterSuccessOnly])];
+    // Only an OPERATION-bound correction resolves the denial in-turn. A later
+    // success without an operation binding is an observation; resolving it
+    // requires an independent persisted proof from the next required step.
+    const sameTurnRecovered = operationRecovered;
     const unprovenOccurrences = [...new Set(proofs.unproven.map((proof) => proof.code))];
     const retryRecovered = captureRetryCodes(result.stdout);
     session.recoveredDenials = session.recoveredDenials ?? [];
@@ -627,7 +630,7 @@ export class Runner {
       });
       this.log(
         `${label}: later success of the same tool recorded without an operation binding ` +
-          `[${laterSuccessOnly.join(', ')}]`,
+          `[${laterSuccessOnly.join(', ')}]; the next required step must prove a persisted transition`,
       );
     }
     if (retryRecovered.length > 0) {
@@ -638,9 +641,14 @@ export class Runner {
       });
       this.log(`${label}: recovered via structured re-arm [${retryRecovered.join(', ')}]`);
     }
-    const pendingCodes = recoverable.filter(
-      (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
-    );
+    const pendingCodes = [
+      ...new Set([
+        ...recoverable.filter(
+          (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
+        ),
+        ...laterSuccessOnly,
+      ]),
+    ];
     const unproven = unprovenOccurrences.filter(
       (code) => isRecoverableFamily(code) && !pendingCodes.includes(code),
     );

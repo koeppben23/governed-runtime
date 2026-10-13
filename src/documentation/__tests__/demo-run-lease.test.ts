@@ -40,7 +40,11 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
 afterEach(() => {
   while (roots.length > 0) {
     const root = roots.pop()!;
-    forceRemoveLease(root);
+    try {
+      forceRemoveLease(root);
+    } catch {
+      rmSync(demoLeasePath(root), { force: true });
+    }
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -91,6 +95,29 @@ describe('demo run lease', () => {
   });
 
   describe('CORNER — stale leases require explicit removal', () => {
+    it('refuses to remove an ACTIVE lease administratively', () => {
+      const repo = fakeRepo('active-admin');
+      const lease = acquireLease(repo);
+      try {
+        expect(() => forceRemoveLease(repo)).toThrow(/refusing to remove an active/);
+        expect(existsSync(lease.leaseFile)).toBe(true);
+        const cli = spawnSync(process.execPath, [CLI, 'force-remove', '--repo', repo], {
+          encoding: 'utf8',
+        });
+        expect(cli.status).not.toBe(0);
+        expect(existsSync(lease.leaseFile)).toBe(true);
+      } finally {
+        lease.release();
+      }
+    });
+
+    it('refuses when the expected owner identity does not match', () => {
+      const repo = fakeRepo('identity-admin');
+      acquireLease(repo, { pid: 999_999 });
+      expect(() => forceRemoveLease(repo, { expectPid: 12345 })).toThrow(/owner changed/);
+      expect(forceRemoveLease(repo, { expectPid: 999_999 })).toBe(true);
+    });
+
     it('reports a stale lease instead of racing to reclaim it', () => {
       const repo = fakeRepo('stale');
       acquireLease(repo, { pid: 999_999 });

@@ -73,11 +73,17 @@ controlled A/B run with the SAME fixed harness.
   tokenless/foreign release, and concurrent stale-reclaim blocking are covered
   through the CLI boundary.
 - **Signal/exit contract:** `demos/lib/signal-exit.sh` converts INT/TERM into a
-  defined termination (in-flight children are signalled, then `exit 130/143`);
-  the EXIT trap performs the lease cleanup exactly once. The wrapper runs each
-  demo in the background and `wait`s for it so bash processes the signal traps
-  promptly. Covered by a real subprocess test (child killed, cleanup once,
-  no continued execution).
+  defined termination: the ENTIRE active process group is signalled
+  (`kill -TERM -- -PGID`, escalating to KILL) and awaited before the EXIT trap
+  releases the lease — a grandchild that would otherwise keep running (npx →
+  node runner → opencode host) is terminated first. The wrapper enables job
+  control (`set -m`), tracks `ACTIVE_CHILD_PGID` and runs each demo in the
+  background with `wait` so traps execute promptly. Covered by a real
+  subprocess test including a grandchild process.
+- **Administrative removal is fail-closed:** `forceRemoveLease` refuses a lease
+  whose owner is alive or whose expected owner identity does not match, and
+  asks for manual removal when the lease file is unreadable; only a provably
+  stale lease can be removed.
 - **Replan installer runs from an isolated npm prefix:** an extracted tarball
   has no `node_modules`; `demos/lib/product-cli.mjs` installs the bound tarball
   into `<root>/.tooling/product-prefix` and executes the CLI from there, with a
@@ -87,11 +93,13 @@ controlled A/B run with the SAME fixed harness.
 - **Attempt identity in the progress key:** `reviewAssurance.attempts` (latest
   attempt id/status + count per obligation) are part of the fingerprint, so an
   authorized re-arm alone counts as progress instead of a false `STALLED`.
-- **Operation-bound recovery labels:** a same-turn recovery is recorded as
-  `same_turn_operation_recovery` only when denial and later success share an
-  operation key (obligation/claim/subject identity); otherwise the honest label
-  is `later_tool_success` — a later success of the same tool, never a claimed
-  correction of the same operation.
+- **Operation-bound recovery control flow:** only a same-turn recovery with a
+  shared operation key (`same_turn_operation_recovery`) resolves the denial
+  in-turn. A later success without an operation binding is recorded as
+  `later_tool_success` and moved into `awaitingRecovery`: an independent
+  persisted state transition from the next required step is needed to resolve
+  it, otherwise the flow stops. Structured reviewer re-arms supersede a
+  terminal block only for the SAME obligation when both envelopes expose one.
 - **Exit-code aggregation:** `demos/lib/aggregate-status.mjs` maps 0 to success,
   2 to `NOT_VERIFIED` and any other code (127, 137, signals) to `FAILED`, with
   FAILED outranking NOT_VERIFIED; the mapping is unit-tested and used by the

@@ -224,15 +224,24 @@ export function captureRetryCodes(output) {
 
 /**
  * A terminal capture block is superseded only by a structured re-arm on the
- * SAME code that occurs LATER in the transcript.
+ * SAME code that occurs LATER in the transcript AND, when both envelopes expose
+ * operation keys, refers to the SAME obligation.
  */
 export function structuredRearmSupersedesTerminal(output, code) {
+  const events = toolUseEvents(output);
   const terminals = toolDenialEvents(output).filter((denial) => denial.code === code);
   const rearms = captureRetryEvents(output).filter((event) => event.code === code);
   if (terminals.length === 0 || rearms.length === 0) return false;
-  const lastTerminal = Math.max(...terminals.map((denial) => denial.index));
-  const lastRearm = Math.max(...rearms.map((event) => event.index));
-  return lastRearm > lastTerminal;
+  const lastTerminal = terminals.at(-1);
+  const terminalKeys = operationKeys(
+    events.find((event) => event.index === lastTerminal?.index)?.payload,
+  );
+  return rearms.some((rearm) => {
+    if (lastTerminal === undefined || rearm.index <= lastTerminal.index) return false;
+    const rearmKeys = operationKeys(events.find((event) => event.index === rearm.index)?.payload);
+    if (terminalKeys.length === 0 || rearmKeys.length === 0) return true;
+    return rearmKeys.some((key) => terminalKeys.includes(key));
+  });
 }
 
 /** The controlled negative probe: exactly the expected denial, provably nothing else. */

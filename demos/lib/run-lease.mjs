@@ -16,7 +16,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -101,18 +101,31 @@ export function releaseLease(repo, token) {
 }
 
 /**
- * Explicit administrative removal of a lease that is provably stale. Separate
- * from the owner path on purpose; never used by the wrapper.
+ * Explicit administrative removal of a PROVABLY stale lease. Refuses when the
+ * owner process is still alive or when the expected owner identity does not
+ * match; an unreadable lease file must be removed manually after verification.
  */
-export function forceRemoveLease(repo) {
+export function forceRemoveLease(repo, { expectPid } = {}) {
   const leaseFile = demoLeasePath(repo);
-  try {
-    unlinkSync(leaseFile);
-    return true;
-  } catch (error) {
-    if (error?.code === 'ENOENT') return false;
-    throw error;
+  if (!existsSync(leaseFile)) return false;
+  const owner = readOwner(leaseFile);
+  if (owner === null) {
+    throw new Error(
+      `lease ${leaseFile} is unreadable; verify manually that no run is active, then remove the file`,
+    );
   }
+  if (ownerAlive(owner.pid)) {
+    throw new Error(
+      `refusing to remove an active demo run lease (pid ${String(owner.pid)}); stop the run first`,
+    );
+  }
+  if (expectPid !== undefined && owner.pid !== expectPid) {
+    throw new Error(
+      `lease owner changed (expected pid ${String(expectPid)}, observed ${String(owner.pid)}); refusing`,
+    );
+  }
+  unlinkSync(leaseFile);
+  return true;
 }
 
 async function main() {
@@ -136,7 +149,8 @@ async function main() {
     return;
   }
   if (command === 'force-remove') {
-    const removed = forceRemoveLease(repo);
+    const expectPid = rest.includes('--expect-pid') ? Number(value('--expect-pid')) : undefined;
+    const removed = forceRemoveLease(repo, { expectPid });
     console.log(JSON.stringify({ removed }));
     return;
   }

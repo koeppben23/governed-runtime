@@ -7,6 +7,10 @@
 # Exit codes: 0 all scenarios COMPLETE/CONTROL_PASSED; 1 any FAILED;
 #             2 no FAILED but at least one NOT_VERIFIED.
 set -u
+# Job control: every demo runs in its own process group, so a signal can
+# terminate the whole tree (npx -> node runner -> opencode host) before the
+# lease is released.
+set -m
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -80,11 +84,13 @@ run_demo() {
   local name="$1"; shift
   echo "=== demo: $name"
   # Background + wait so INT/TERM traps run promptly (bash defers traps while a
-  # foreground child is running).
+  # foreground child is running). ACTIVE_CHILD_PGID lets the signal contract
+  # terminate the whole tree before the EXIT trap releases the lease.
   "${RUN[@]}" "$@" --tarball "$GATE_TARBALL" --product-sha "$GATE_SHA" &
-  local child=$!
+  ACTIVE_CHILD_PGID=$!
   local code=0
-  wait "$child" || code=$?
+  wait "$ACTIVE_CHILD_PGID" || code=$?
+  ACTIVE_CHILD_PGID=""
   echo "=== demo: $name exit=$code"
   collect "$code"
 }
