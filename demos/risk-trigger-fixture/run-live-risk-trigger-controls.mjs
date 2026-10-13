@@ -32,6 +32,11 @@ import {
   sha256,
   verifyChecksumSidecar,
 } from '../java-task-manager/run-live-matrix.mjs';
+import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
+import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
+import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
+
+export { assertNoCompletionPackage };
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -100,115 +105,35 @@ export function assertRetainedClaim(state, covered) {
  */
 export function assertFullEvidence(state, covered) {
   const claimId = assertRetainedClaim(state, covered);
-  const contract = state.proofContract?.claims?.find((claim) => claim.claimId === claimId);
-  const projected = state.proofGraph?.claims?.find((claim) => claim.claimId === claimId);
-  if (!contract || contract.signalClass !== 'fact' || !contract.critical) {
-    throw new Error('the retained claim is not materialized as a governing critical fact');
-  }
-  const certificate = state.plan?.approvalCertificate;
-  const authority = contract.provenance;
-  if (
-    !certificate ||
-    authority?.kind !== 'canonical_authority' ||
-    authority.authorityId !== 'plan' ||
-    authority.digest !== state.plan.current.digest ||
-    authority.approval?.certificateId !== certificate.certificateId ||
-    authority.approval.declarationId !== claimId
-  ) {
-    throw new Error('the critical fact lacks its current plan certificate binding');
-  }
-  // Freshness is required, not merely "not stale": the projection must carry a
-  // bound digest equal to the current implementation revision.
-  if (
-    !projected ||
-    projected.verificationState !== 'PROVEN' ||
-    projected.freshness === undefined ||
-    projected.freshness.stale !== false ||
-    projected.freshness.boundDigest !== state.implementation?.digest
-  ) {
-    throw new Error(
-      `expected a fresh PROVEN claim bound to the current implementation, observed ${String(projected?.verificationState)}`,
-    );
-  }
-  const attempts = (state.validationAttempts ?? []).filter((a) => a.scope === 'implementation');
-  const build = attempts.filter((a) => a.result.checkId === 'build').at(-1);
-  const test = attempts.filter((a) => a.result.checkId === 'test').at(-1);
-  if (
-    !build?.result.passed ||
-    build.result.exitCode !== 0 ||
-    !test?.result.passed ||
-    test.result.exitCode !== 0
-  ) {
-    throw new Error('both real implementation checks must be green');
-  }
-  if (build.attemptId === test.attemptId) {
-    throw new Error('positive and adversarial evidence must come from distinct attempts');
-  }
-  const assertionOf = (attempt, localId) =>
-    attempt.result.assertionExtraction?.assertions?.find(
-      (a) => a.assertion?.providerId === 'junit' && a.assertion.localId === localId,
-    );
-  // Both explicitly bound assertions must be observed as passed: the positive
-  // assertion and the distinct adversarial falsification probe.
-  if (assertionOf(test, POSITIVE_ASSERTION)?.status !== 'passed') {
-    throw new Error('the bound positive assertion must be passed and fresh');
-  }
-  if (assertionOf(build, ADVERSARIAL_ASSERTION)?.status !== 'passed') {
-    throw new Error('the bound adversarial assertion must be passed and fresh');
-  }
-  // Role-specific binding: the positive evidence refs must reference exactly the
-  // `test` attempt and the counterexample refs exactly the `build` attempt. A
-  // swapped, shared or missing binding fails closed instead of being accepted via
-  // a union of both roles.
-  const attemptIdsOf = (refs) =>
-    (refs ?? []).filter((ref) => ref?.kind === 'validation_attempt').map((ref) => ref.attemptId);
-  const evidenceAttemptIds = attemptIdsOf(projected.evidenceRefs);
-  const counterexampleAttemptIds = attemptIdsOf(projected.counterexampleRefs);
-  if (!evidenceAttemptIds.includes(test.attemptId)) {
-    throw new Error('the positive evidence does not reference the checked test attempt');
-  }
-  if (!counterexampleAttemptIds.includes(build.attemptId)) {
-    throw new Error('the counterexample evidence does not reference the checked build attempt');
-  }
-  if (
-    evidenceAttemptIds.includes(build.attemptId) ||
-    counterexampleAttemptIds.includes(test.attemptId)
-  ) {
-    throw new Error(
-      'the evidence roles are not independent: a checked attempt is cross-referenced',
-    );
-  }
-  return { claimId, buildAttemptId: build.attemptId, testAttemptId: test.attemptId };
+  return assertProofEvidence(state, {
+    claimId,
+    positiveAssertion: { providerId: 'junit', localId: POSITIVE_ASSERTION },
+    adversarialAssertion: { providerId: 'junit', localId: ADVERSARIAL_ASSERTION },
+    mode: 'positive',
+  });
 }
 
 /** The installed build must be the checked-out revision when built from it. */
-export function assertInstalledBuildIdentity(installed, checkoutHead, builtFromCheckout) {
-  if (builtFromCheckout && installed?.gitSha !== checkoutHead) {
+export function assertInstalledBuildIdentity(
+  installed,
+  checkoutHead,
+  builtFromCheckout,
+  expectedSha,
+) {
+  const observed = installed?.gitSha;
+  if (expectedSha !== undefined && observed !== expectedSha) {
     throw new Error(
-      `installed artifact gitSha ${String(installed?.gitSha)} != checkout ${checkoutHead}`,
+      `installed artifact gitSha ${String(observed)} != declared product ${expectedSha}`,
     );
+  }
+  if (builtFromCheckout && observed !== checkoutHead) {
+    throw new Error(`installed artifact gitSha ${String(observed)} != checkout ${checkoutHead}`);
   }
   return installed;
 }
 
-/** A denied approval must leave no completion package and no completion evidence. */
-export function assertNoCompletionPackage(runner, session) {
-  const snapshot = runner.requireBoundState(session);
-  const archiveDir = path.join(path.dirname(snapshot.sessionDir), 'archive');
-  const produced = fs.existsSync(archiveDir)
-    ? fs.readdirSync(archiveDir).filter((file) => file.includes(session.sessionId))
-    : [];
-  if (produced.length > 0) {
-    throw new Error(`a denied approval produced completion package(s): ${produced.join(', ')}`);
-  }
-  if (snapshot.state.exportCompletionEvidence != null) {
-    throw new Error('a denied approval persisted export completion evidence');
-  }
-  return { archiveDir, produced };
-}
-
 async function runCase(runner, name, workspace, covered, context) {
-  const record = { name, covered, workspace, result: 'FAILED' };
+  const record = { name, covered, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
   const savedSkip = process.env[SKIP_ASSERTION_ENV];
   try {
@@ -217,12 +142,21 @@ async function runCase(runner, name, workspace, covered, context) {
       runner.installedBuild(workspace),
       context.checkoutHead,
       context.builtFromCheckout,
+      context.expectedProductSha,
     );
     const ticketText = fs.readFileSync(path.join(workspace, 'TICKET.md'), 'utf8');
     await runner.turn(session, `${name}-02-task`, ticketText, { command: 'task' });
     await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([claimDeclaration(covered)]), {
       command: 'plan',
     });
+    const gate = await convergePlanGate({ runner, session, label: `${name}-03-plan` });
+    if (gate.outcome !== PLAN_GATE.ACCEPTED) {
+      const reason =
+        gate.outcome === PLAN_GATE.REVIEW_EXHAUSTED
+          ? 'the independent plan review exhausted its budget without acceptance'
+          : `the plan gate did not converge to a persisted reviewer_accepted plan (${gate.outcome})`;
+      throw new DemoNotVerifiedError(`${name}: ${reason}; the control proof is NOT_VERIFIED`);
+    }
     assertRetainedClaim(runner.requireBoundState(session).state, covered);
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
     assertRetainedClaim(runner.requireBoundState(session).state, covered);
@@ -301,12 +235,24 @@ async function runCase(runner, name, workspace, covered, context) {
         packages: [runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', name)],
       });
     }
-    // PASS only after the parent and every required reviewer transcript were
-    // exported and validated; a capture failure keeps the record FAILED.
-    await finalizeControlRecord(record, session, runner);
+    // Evidence kinds are assigned only after the parent and every required
+    // reviewer transcript were exported and validated; a capture failure keeps
+    // the record FAILED.
+    await finalizeControlRecord(
+      record,
+      session,
+      runner,
+      {},
+      covered ? RESULT.COMPLETE : RESULT.CONTROL_PASSED,
+    );
   } catch (error) {
-    record.result = 'FAILED';
-    record.error = String(error);
+    if (error instanceof DemoNotVerifiedError || error?.code === 'DEMO_NOT_VERIFIED') {
+      record.result = RESULT.NOT_VERIFIED;
+      record.error = String(error);
+    } else {
+      record.result = RESULT.FAILED;
+      record.error = String(error);
+    }
   } finally {
     if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
     else process.env[SKIP_ASSERTION_ENV] = savedSkip;
@@ -441,6 +387,7 @@ async function main() {
     const record = await runCase(runner, item.name, item.workspace, item.covered, {
       checkoutHead,
       builtFromCheckout,
+      expectedProductSha: options.productSha,
     });
     records.push(record);
     runner.log(`${record.result} ${item.name}${record.error ? `: ${record.error}` : ''}`);
@@ -449,9 +396,8 @@ async function main() {
       JSON.stringify(records, null, 2),
     );
   }
-  const passed = records.filter((r) => r.result === 'PASS').length;
-  runner.log(`RISK TRIGGER CONTROLS: ${passed}/${records.length} PASS`);
-  process.exitCode = passed === records.length ? 0 : 1;
+  runner.log(resultLine(records, 'RISK TRIGGER CONTROLS'));
+  process.exitCode = exitCodeForResults(records);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

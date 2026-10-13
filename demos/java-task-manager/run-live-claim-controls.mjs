@@ -28,11 +28,17 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   Runner,
+  assertToolchain,
   enableRawArchiveInRepoConfig,
   finalizeControlRecord,
   parseArgs,
   readPins,
+  sha256,
+  verifyChecksumSidecar,
 } from './run-live-matrix.mjs';
+import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
+import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
+import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -199,57 +205,22 @@ export function assertRetainedCriticalClaim(state) {
 /**
  * Case oracle. Positive: the adversarial assertion passed and the claim is PROVEN.
  * Negative: the adversarial assertion was genuinely skipped while both checks are
- * green and the claim is not PROVEN. Both require the certificate-bound fact.
+ * green and the claim is not PROVEN. Both require the certificate-bound fact and
+ * delegate to the shared proof-evidence contract.
  */
 export function assertClaimEvidence(state, { negative }) {
   const claimId = assertRetainedCriticalClaim(state);
-  const contract = state.proofContract?.claims?.find((claim) => claim.claimId === claimId);
-  const projected = state.proofGraph?.claims?.find((claim) => claim.claimId === claimId);
-  if (!contract || contract.signalClass !== 'fact' || !contract.critical) {
-    throw new Error('the retained claim is not materialized as a governing critical fact');
-  }
-  const certificate = state.plan?.approvalCertificate;
-  const authority = contract.provenance;
-  if (
-    !certificate ||
-    authority?.kind !== 'canonical_authority' ||
-    authority.authorityId !== 'plan' ||
-    authority.digest !== state.plan.current.digest ||
-    authority.approval?.certificateId !== certificate.certificateId ||
-    authority.approval.declarationId !== claimId
-  ) {
-    throw new Error('the critical fact lacks its current plan certificate binding');
-  }
-  const attempts = (state.validationAttempts ?? []).filter((a) => a.scope === 'implementation');
-  const checks = ['build', 'test'].map((id) =>
-    attempts.filter((a) => a.result.checkId === id).at(-1),
-  );
-  if (checks.some((a) => !a?.result.passed || a.result.exitCode !== 0)) {
-    throw new Error('both real implementation checks must be green');
-  }
-  const adversarial = checks[0].result.assertionExtraction?.assertions?.find(
-    (a) => a.assertion?.providerId === 'junit' && a.assertion.localId === ADVERSARIAL_ASSERTION,
-  );
-  const expectedStatus = negative ? 'skipped' : 'passed';
-  if (!adversarial || adversarial.status !== expectedStatus) {
-    throw new Error(`expected the adversarial assertion to be ${expectedStatus}`);
-  }
-  if (!projected) throw new Error('the retained claim is missing from the ProofGraph projection');
-  const proven = projected.verificationState === 'PROVEN';
-  if (negative ? proven : !proven) {
-    throw new Error(`unexpected claim verification state: ${projected.verificationState}`);
-  }
-  if (state.phase !== 'EVIDENCE_REVIEW')
-    throw new Error(`expected EVIDENCE_REVIEW, observed ${state.phase}`);
-  return {
+  const proof = assertProofEvidence(state, {
     claimId,
-    verificationState: projected.verificationState,
-    adversarialStatus: adversarial.status,
-    checks: checks.map((a) => ({
-      checkId: a.result.checkId,
-      attemptId: a.attemptId,
-      passed: a.result.passed,
-    })),
+    positiveAssertion: { providerId: 'junit', localId: POSITIVE_ASSERTION },
+    adversarialAssertion: { providerId: 'junit', localId: ADVERSARIAL_ASSERTION },
+    mode: negative ? 'negative' : 'positive',
+  });
+  return {
+    ...proof,
+    verificationState: state.proofGraph?.claims?.find((claim) => claim.claimId === claimId)
+      ?.verificationState,
+    adversarialStatus: negative ? 'skipped' : 'passed',
   };
 }
 
@@ -262,11 +233,18 @@ const PLAN_PROMPT = (claims) =>
   `reclassify, replace or weaken it. Complete the full independent plan review.`;
 
 async function runCase(runner, name, workspace, negative) {
-  const record = { name, negative, workspace, result: 'FAILED' };
+  const record = { name, negative, workspace, result: RESULT.FAILED };
   const session = { workspace, terminal: 'COMPLETE' };
   const savedSkip = process.env[SKIP_ASSERTION_ENV];
   try {
     await runner.turn(session, `${name}-01-start`, '/start');
+    const installed = runner.installedBuild(workspace);
+    record.installedBuild = installed;
+    if (runner.options.productSha !== undefined && installed.gitSha !== runner.options.productSha) {
+      throw new Error(
+        `installed artifact gitSha ${String(installed.gitSha)} != declared product ${runner.options.productSha}`,
+      );
+    }
     // Use the host command boundary with the ticket text as the message. This
     // keeps /task from spilling into planning; a leading `--file` argument would
     // be parsed as an opencode option, so the ticket content is passed directly.
@@ -282,6 +260,14 @@ async function runCase(runner, name, workspace, negative) {
       await runner.turn(session, `${name}-03-plan`, PLAN_PROMPT([criticalClaimDeclaration()]), {
         command: 'plan',
       });
+      const gate = await convergePlanGate({ runner, session, label: `${name}-03-plan` });
+      if (gate.outcome !== PLAN_GATE.ACCEPTED) {
+        const reason =
+          gate.outcome === PLAN_GATE.REVIEW_EXHAUSTED
+            ? 'the independent plan review exhausted its budget without acceptance'
+            : `the plan gate did not converge to a persisted reviewer_accepted plan (${gate.outcome})`;
+        throw new DemoNotVerifiedError(`${name}: ${reason}; the control proof is NOT_VERIFIED`);
+      }
     }
     assertRetainedCriticalClaim(runner.requireBoundState(session).state);
     await runner.approve(session, `${name}-04-approve-plan`, 'PLAN_REVIEW');
@@ -319,11 +305,13 @@ async function runCase(runner, name, workspace, negative) {
       ) {
         throw new Error('the blocked approval changed the persisted review decision');
       }
+      const absence = assertNoCompletionPackage(runner, session);
       Object.assign(record, evidence, {
         expectedOutcome: 'blocked_at_evidence_gate',
         denial: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
         phase: after.phase,
         packages: [],
+        archiveDirContents: absence.produced,
       });
     } else {
       await runner.approve(session, `${name}-06-approve`, 'EVIDENCE_REVIEW');
@@ -337,12 +325,24 @@ async function runCase(runner, name, workspace, negative) {
         packages: [runner.verifyPackage(session, 'export', 'development', 'EXPORT_READY', name)],
       });
     }
-    // PASS only after the parent and every required reviewer transcript were
-    // exported and validated; a capture failure keeps the record FAILED.
-    await finalizeControlRecord(record, session, runner);
+    // Evidence kinds are assigned only after the parent and every required
+    // reviewer transcript were exported and validated; a capture failure keeps
+    // the record FAILED.
+    await finalizeControlRecord(
+      record,
+      session,
+      runner,
+      {},
+      negative ? RESULT.CONTROL_PASSED : RESULT.COMPLETE,
+    );
   } catch (error) {
-    record.result = 'FAILED';
-    record.error = String(error);
+    if (error instanceof DemoNotVerifiedError || error?.code === 'DEMO_NOT_VERIFIED') {
+      record.result = RESULT.NOT_VERIFIED;
+      record.error = String(error);
+    } else {
+      record.result = RESULT.FAILED;
+      record.error = String(error);
+    }
   } finally {
     if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
     else process.env[SKIP_ASSERTION_ENV] = savedSkip;
@@ -354,6 +354,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const pins = readPins();
   console.log(`Pins: opencode ${pins.opencode}, node ${pins.node}`);
+  assertToolchain(pins);
   if (options.check) {
     console.log('Toolchain check passed. No live run performed.');
     return;
@@ -380,6 +381,7 @@ async function main() {
         ).version;
         return path.join(REPO, `flowguard-core-${version}.tgz`);
       })();
+  verifyChecksumSidecar(tarball, path.join(path.dirname(tarball), 'checksums.sha256'));
   fs.writeFileSync(
     path.join(evidenceDir, 'metadata.json'),
     JSON.stringify(
@@ -389,6 +391,8 @@ async function main() {
         pins,
         checkoutHead,
         tarball,
+        tarballSha256: sha256(tarball),
+        productSha: options.productSha ?? null,
         flows: ['claim-positive', 'claim-negative'],
         claim: criticalClaimDeclaration(),
         positiveAssertion: POSITIVE_ASSERTION,
@@ -439,9 +443,9 @@ async function main() {
       JSON.stringify(records, null, 2),
     );
   }
-  const passed = records.filter((r) => r.result === 'PASS').length;
-  runner.log(`CLAIM CONTROLS: ${passed}/${records.length} PASS`);
-  process.exitCode = passed === records.length ? 0 : 1;
+  const code = exitCodeForResults(records);
+  runner.log(resultLine(records, 'CLAIM CONTROLS'));
+  process.exitCode = code;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

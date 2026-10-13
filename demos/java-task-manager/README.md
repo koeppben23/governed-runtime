@@ -41,6 +41,26 @@ for already-terminal sessions and defaults to a redacted sharing archive.
   from the governed-runtime repo root; the script writes the tarball and the
   `checksums.sha256` file the installer requires next to it)
 
+## Run all demos (one command)
+
+`demos/run-all-demos.sh` is the supported entry point for a full live run. It
+performs a mandatory dry-run environment gate (toolchain pins, npm 10 canary
+install under `engine-strict`, run isolation, artifact checksum, provider ping)
+and then runs the matrix, claim controls, risk-trigger controls and the replan
+recovery sequentially with fresh roots:
+
+```bash
+demos/run-all-demos.sh /tmp/flowguard-demos-run
+```
+
+The wrapper requires Node from `.node-version`, OpenCode
+`TESTED_OPENCODE_HOST_VERSION`, JDK 21+ and npm 10 (installed into the run root
+when the ambient npm major differs). Runs are intentionally sequential: the
+host installer uses a lock that the wrapper scopes per run root. Exit code `0`
+means every scenario produced accepted evidence, `2` marks unreached proofs and
+`1` a contract violation. See `demos/DEMO_ASSURANCE.md` for the result taxonomy
+and the forensic findings this harness enforces.
+
 ## Quick Start
 
 `run-demo-setup.sh` prepares fresh workspaces and optionally installs the
@@ -168,13 +188,24 @@ flow if the required artifact is missing. Any block observed before the terminal
 phase still stops the flow.
 
 Recoverable typed denials are evidence-bound, never allow-listed blank. A denial
-counts as recovered only when the same tool succeeded later in the same turn
-(`same_turn_retry_success`) or a structured reviewer re-arm was observed
-(`structured_rearm`). `CONTINUE_AMBIGUOUS` is different: it mutates nothing and
-demands an explicit flow choice, so it is recorded as `pending_recovery` and only
-becomes `recovered` when the next required step completes with a demonstrable
-state transition (`next_step_state_transition:<step>`). A recoverable denial
-without such proof stops the flow.
+counts as resolved in-turn only when a later call of the same tool matches the
+typed operation identities without contradiction (`same_turn_operation_recovery`). A later success without that
+binding is recorded as `later_tool_success` — an observation that does NOT
+resolve the denial: the next required step must prove the authorized persistence
+of the bound operation (`next_step_operation_transition:<step>`), otherwise the
+flow stops. A plan/ADR proof binds the exact subject/revision, accepting review
+and newly minted approval certificate; a generic state-file digest change never
+counts. A
+structured reviewer re-arm is recorded as `structured_rearm` and supersedes a
+terminal capture block only with `retryable: true`, the same explicit obligation
+and a fresh attempt. `CONTINUE_AMBIGUOUS` is
+different: it mutates nothing and demands an explicit flow choice, so it is
+recorded as `pending_recovery` and becomes `recovered` only through the selected
+flow's expected operation and its actual persisted artifact/obligation. An
+unresolved recoverable denial — including plan/implement call-shape guards such
+as `INVALID_PLAN_TOOL_SEQUENCE` — is reported as `NOT_VERIFIED` with its
+occurrence evidence preserved; only a proven wrong denial code, contradictory
+evidence or an unexpected unknown block remains `FAILED`.
 
 The architecture negative probe is a controlled denial step: the runner
 requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that the rejected

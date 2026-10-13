@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Forensic demo assurance (#1080 follow-up).** The live-demo harness now
+  classifies denials and recoveries from structured host transcripts with
+  occurrence-bound recovery proofs (a denial after the last successful call is
+  never `recovered`), and unreadable governed output can no longer ground a
+  success claim. Killed negative controls are reported as `CONTROL_PASSED`
+  instead of being counted as completed workflows, `review_exhausted` and
+  review-stage subagent blocks (`SUBAGENT_UNABLE_TO_REVIEW`,
+  `SUBAGENT_FINDINGS_VERDICT_MISMATCH`, capture/consistency codes) are
+  classified as `NOT_VERIFIED` for positive proofs, an unresolved recoverable
+  denial (including plan/implement call-shape guards and admissibility guards)
+  is `NOT_VERIFIED` rather
+  than a contract violation, `flowguard_help` text output is recognized as
+  by-design, and the specialized runners
+  drive the persisted plan gate with bounded state-driven continuations instead
+  of a single `/plan` turn. Claim and risk controls share one full proof oracle
+  (positive and adversarial assertion, distinct attempts, role-specific
+  bindings, freshness, real package absence). `demos/run-all-demos.sh` adds a
+  mandatory dry-run environment gate (pins, npm-10 canary install, isolation,
+  checksum, provider ping) and a per-run install lock. See
+  `demos/DEMO_ASSURANCE.md`. Plan-gate classification now derives from the
+  persisted review obligation and its bound invocation (not findings counters),
+  JSONL framing losses abort a proof with `NOT_VERIFIED`, one immutable
+  digest-recorded product tarball is bound to every runner (replan included,
+  installed into an isolated npm prefix), the wrapper-owned lease is
+  token-checked with a fail-closed administrative force-remove, INT/TERM
+  terminate and confirm absence of the controlled demo process group (including
+  TERM-resistant grandchildren) before cleanup,
+  both replan sessions run through the state-driven continuation, attempt
+  identity is part of the plan-gate progress proof, typed identity conflicts
+  cannot be overridden by a matching claim, only operation-bound
+  recoveries resolve in-turn (a later tool success needs an independent
+  operation-scoped persistence witness, not any state-file change), structured
+  re-arms require explicit retry authorization and complete obligation/attempt
+  binding (anonymous retryable hints are observations only),
+  unexpected runner exit codes aggregate to FAILED, and
+  a failed product build aborts the wrapper.
+
 - **Assertion-identity integrity and exactly-once claims (#1080).** Structured
   assertion evidence whose provider-scoped identity occurs more than once in one
   extraction, or contradicts its extraction provider, no longer qualifies as
