@@ -26,6 +26,13 @@ const cliEvidence = (over: Partial<OpenCodeRuntimeEvidence> = {}): OpenCodeRunti
   ...over,
 });
 
+const withHostVersionBump = (bump: 'minor' | 'patch'): string => {
+  const [major = 0, minor = 0, patch = 0] = TESTED_OPENCODE_HOST_VERSION.split('.').map((part) =>
+    Number.parseInt(part, 10),
+  );
+  return bump === 'minor' ? `${major}.${minor + 1}.0` : `${major}.${minor}.${patch + 1}`;
+};
+
 describe('opencode-runtime-compat', () => {
   describe('HAPPY — honest "not-classified" posture (never "compatible/supported")', () => {
     it('ships an empty deny-list (no runtime known incompatible)', () => {
@@ -130,7 +137,7 @@ describe('opencode-runtime-compat', () => {
     });
 
     it('BAD: a newer patch in the same minor line is compatible-unverified', () => {
-      const result = classifyOpenCodeHostContract('1.18.42');
+      const result = classifyOpenCodeHostContract(withHostVersionBump('patch'));
       expect(result.status).toBe('compatible-unverified');
       expect(result.reason).toContain('does not exactly match');
     });
@@ -142,7 +149,9 @@ describe('opencode-runtime-compat', () => {
     });
 
     it('BAD: a newer minor is compatible-unverified, never verified', () => {
-      expect(classifyOpenCodeHostContract('1.19.0').status).toBe('compatible-unverified');
+      expect(classifyOpenCodeHostContract(withHostVersionBump('minor')).status).toBe(
+        'compatible-unverified',
+      );
     });
 
     it('BAD: a positively known incompatible version is blocked', () => {
@@ -177,9 +186,9 @@ describe('opencode-runtime-compat', () => {
     });
 
     it('EDGE: prerelease/nightly builds do not inherit verified status', () => {
-      expect(classifyOpenCodeHostContract('1.18.29-nightly.20260901').status).toBe(
-        'compatible-unverified',
-      );
+      expect(
+        classifyOpenCodeHostContract(`${TESTED_OPENCODE_HOST_VERSION}-nightly.20260901`).status,
+      ).toBe('compatible-unverified');
     });
   });
 });
