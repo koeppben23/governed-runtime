@@ -193,9 +193,8 @@ describe('demo control oracles', () => {
   describe('EDGE — freshness and real package absence', () => {
     it('rejects a stale projection binding', () => {
       const broken = state({}, (value) => {
-        const projection = (
-          value.proofGraph as { claims: { freshness: { stale: boolean } }[] }
-        ).claims[0]!;
+        const projection = (value.proofGraph as { claims: { freshness: { stale: boolean } }[] })
+          .claims[0]!;
         projection.freshness.stale = true;
       });
       expect(() => assertProofEvidence(broken, { ...oracle, mode: 'positive' })).toThrow(/fresh/i);
