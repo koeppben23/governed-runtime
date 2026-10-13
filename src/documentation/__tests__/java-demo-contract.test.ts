@@ -305,7 +305,8 @@ describe('Java Task Manager demo contract', () => {
         },
       ]);
 
-      // Any other phase keeps the fail-closed stop.
+      // Any other phase keeps the fail-closed stop; a review-stage capture or
+      // consistency block is an unreached proof, not a contract violation.
       runner.requireBoundState = () => ({ state: { phase: 'PEER_REVIEW' }, sessionDir: root });
       const unfinished: {
         workspace: string;
@@ -313,7 +314,7 @@ describe('Java Task Manager demo contract', () => {
         terminalBlocks?: Array<Record<string, unknown>>;
       } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
       await expect(runner.turn(unfinished, 'peer-review-02-review', 'x')).rejects.toThrow(
-        /unexpected tool-level block/,
+        /NOT_VERIFIED/,
       );
       expect(unfinished.terminalBlocks).toBeUndefined();
     } finally {

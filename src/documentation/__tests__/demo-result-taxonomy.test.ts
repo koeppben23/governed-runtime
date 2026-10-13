@@ -9,7 +9,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { RESULT, exitCodeForResults, summarizeResults } from '../../../demos/lib/results.mjs';
-import { matrixExitCode } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import {
+  classifyUnexpectedBlock,
+  matrixExitCode,
+} from '../../../demos/java-task-manager/run-live-matrix.mjs';
 
 const records = (...results: string[]) => results.map((result) => ({ result }));
 
@@ -63,6 +66,22 @@ describe('demo result taxonomy', () => {
 
     it('treats an unknown result string as FAILED', () => {
       expect(exitCodeForResults(records('COMPLETE_ISH'))).toBe(1);
+    });
+
+    it('classifies review-stage capture/consistency blocks as NOT_VERIFIED', () => {
+      expect(classifyUnexpectedBlock(['REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'])).toBe(
+        'not_verified',
+      );
+      expect(
+        classifyUnexpectedBlock([
+          'REVIEW_EVIDENCE_NOT_OBSERVED',
+          'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        ]),
+      ).toBe('not_verified');
+      expect(classifyUnexpectedBlock(['ARCHIVE_FAILED'])).toBe('failed');
+      expect(classifyUnexpectedBlock(['ARCHIVE_FAILED', 'REVIEW_EVIDENCE_NOT_OBSERVED'])).toBe(
+        'failed',
+      );
     });
   });
 });

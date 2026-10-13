@@ -116,6 +116,26 @@ export function matrixExitCode(flows) {
   return exitCodeForResults(flows);
 }
 
+/**
+ * Reviewer capture/consistency blocks. The product fail-closed is correct, but
+ * a positive proof that never reaches its gate is NOT_VERIFIED, not a demo
+ * contract violation. The evidence is preserved either way.
+ */
+export const REVIEW_STAGE_INCOMPLETE_CODES = new Set([
+  'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+  'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+  'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+  'REVIEW_EVIDENCE_NOT_OBSERVED',
+  'REVIEW_ATTEMPT_UNAVAILABLE',
+]);
+
+export function classifyUnexpectedBlock(codes) {
+  if (codes.length > 0 && codes.every((code) => REVIEW_STAGE_INCOMPLETE_CODES.has(code))) {
+    return 'not_verified';
+  }
+  return 'failed';
+}
+
 /** The persisted review loop ended without reviewer acceptance. */
 export function persistedReviewExhausted(state) {
   return (
@@ -680,6 +700,12 @@ export class Runner {
           throw new DemoNotVerifiedError(
             `${label}: independent review exhausted its budget without acceptance ` +
               `(${unexpected.join(', ')}); the positive proof is NOT_VERIFIED`,
+          );
+        }
+        if (classifyUnexpectedBlock(unexpected) === 'not_verified') {
+          throw new DemoNotVerifiedError(
+            `${label}: review-stage evidence is incomplete (${unexpected.join(', ')}); ` +
+              'the positive proof is NOT_VERIFIED',
           );
         }
         throw new Error(
