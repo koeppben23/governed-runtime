@@ -549,8 +549,14 @@ function resolveExportCompletion(
 ): SelectorResolution {
   const { snapshot, liveBinding } = context;
   if (!liveBinding.stateAvailable) return notVerified(selector, 'LIVE_STATE_UNAVAILABLE');
-  if (liveBinding.exportCompletionPackageDigest === null || !liveBinding.exportMaterializedEvent) {
+  if (liveBinding.exportCompletionPackageDigest === null) {
     return missing(selector, 'EXPORT_COMPLETION_EVIDENCE_MISSING');
+  }
+  // The materialization must be proven by a canonical, session-bound, intact
+  // live chain that extends the verified archive anchor. Anything less is an
+  // unverifiable binding, never positive evidence.
+  if (!liveBinding.liveChainVerified || liveBinding.materializedTransitionAt === null) {
+    return notVerified(selector, 'EXPORT_LIVE_CHAIN_NOT_VERIFIED');
   }
   if (liveBinding.exportCompletionPackageDigest !== snapshot.packageSha256) {
     return notVerified(
@@ -566,6 +572,7 @@ function resolveExportCompletion(
     source: 'live_audit',
     member: AUDIT_MEMBER,
     memberSha256: null,
+    occurredAt: liveBinding.materializedTransitionAt,
   };
   return verified(selector, [liveRef, liveAuditRef]);
 }

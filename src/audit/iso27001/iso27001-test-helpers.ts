@@ -34,7 +34,7 @@ import {
 } from './evidence.js';
 import type { SelectorContext } from './selectors.js';
 
-const TEST_PACKAGE_SHA256 = 'a'.repeat(64);
+export const TEST_PACKAGE_SHA256 = 'a'.repeat(64);
 const TEST_SIDECAR_SHA256 = 'a'.repeat(64);
 const TEST_CONTENT_DIGEST = 'b'.repeat(64);
 const TEST_OBLIGATION_ID = '00000000-0000-4000-8000-000000000765';
@@ -273,7 +273,8 @@ export function makeVerifiedSnapshot(
 export const MATCHING_LIVE_BINDING: LiveExportBinding = {
   stateAvailable: true,
   exportCompletionPackageDigest: TEST_PACKAGE_SHA256,
-  exportMaterializedEvent: true,
+  liveChainVerified: true,
+  materializedTransitionAt: FIXED_TIME,
 };
 
 /** Selector context with canonical receipts derived from the snapshot events. */

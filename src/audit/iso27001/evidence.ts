@@ -59,13 +59,25 @@ export interface VerifiedEvidenceSnapshot {
  * Minimal live-workspace binding for the `export.completion` selector.
  *
  * `exportCompletionPackageDigest` comes from live
- * `SessionState.exportCompletionEvidence.packageDigest`;
- * `exportMaterializedEvent` states whether the live audit trail contains the
- * `EXPORT_MATERIALIZED` transition. Both are mutable and therefore reported as
- * `live_binding` evidence only.
+ * `SessionState.exportCompletionEvidence.packageDigest`. Both are mutable and
+ * therefore reported as `live_binding` evidence only.
+ *
+ * `liveChainVerified` and `materializedTransitionAt` are NOT raw facts: the
+ * reader only sets them after the canonical chain verification
+ * (`verifyChain` with the expected FlowGuard session) passed AND the live
+ * trail extends the verified archive anchor (prefix head equals the manifest
+ * anchor). A live materialization event on a foreign session, a broken chain,
+ * or a forked trail that does not extend the verified prefix can therefore
+ * never produce positive evidence.
  */
 export interface LiveExportBinding {
   readonly stateAvailable: boolean;
   readonly exportCompletionPackageDigest: string | null;
-  readonly exportMaterializedEvent: boolean;
+  /** Canonical session-bound chain validity plus archive-anchor extension. */
+  readonly liveChainVerified: boolean;
+  /**
+   * Occurrence time of the canonical `EXPORT_READY → COMPLETE` materialization
+   * event inside the verified live extension; `null` without one.
+   */
+  readonly materializedTransitionAt: string | null;
 }

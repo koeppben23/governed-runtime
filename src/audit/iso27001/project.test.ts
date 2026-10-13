@@ -290,7 +290,8 @@ describe('audit/iso27001/project', () => {
         liveBinding: {
           stateAvailable: false,
           exportCompletionPackageDigest: null,
-          exportMaterializedEvent: false,
+          liveChainVerified: false,
+          materializedTransitionAt: null,
         },
         generatedAt: '2026-02-01T00:00:00.000Z',
       });

@@ -17,6 +17,7 @@ import {
   makeSelectorContext,
   makeVerifiedSnapshot,
   TEST_ATTEMPT_ID,
+  TEST_PACKAGE_SHA256,
   withPlanCertificate,
 } from './iso27001-test-helpers.js';
 import { resolveSelector } from './selector-resolve.js';
@@ -734,7 +735,8 @@ describe('audit/iso27001/selectors', () => {
         contextFor(state, [], {
           stateAvailable: false,
           exportCompletionPackageDigest: null,
-          exportMaterializedEvent: false,
+          liveChainVerified: false,
+          materializedTransitionAt: null,
         }),
       );
       expect(unavailable.findings[0]?.code).toBe('LIVE_STATE_UNAVAILABLE');
@@ -745,10 +747,39 @@ describe('audit/iso27001/selectors', () => {
         contextFor(state, [], {
           stateAvailable: true,
           exportCompletionPackageDigest: null,
-          exportMaterializedEvent: true,
+          liveChainVerified: true,
+          materializedTransitionAt: '2026-01-01T00:01:00.000Z',
         }),
       );
       expect(missing.findings[0]?.code).toBe('EXPORT_COMPLETION_EVIDENCE_MISSING');
+
+      // A matching digest is not enough: without a canonical, archive-anchored
+      // live chain and the materialization event, the binding is unverifiable.
+      const unverifiedChain = resolve(
+        { kind: 'export.completion' },
+        state,
+        contextFor(state, [], {
+          stateAvailable: true,
+          exportCompletionPackageDigest: TEST_PACKAGE_SHA256,
+          liveChainVerified: false,
+          materializedTransitionAt: null,
+        }),
+      );
+      expect(unverifiedChain.status).toBe('NOT_VERIFIED');
+      expect(unverifiedChain.findings[0]?.code).toBe('EXPORT_LIVE_CHAIN_NOT_VERIFIED');
+
+      const missingMaterialization = resolve(
+        { kind: 'export.completion' },
+        state,
+        contextFor(state, [], {
+          stateAvailable: true,
+          exportCompletionPackageDigest: TEST_PACKAGE_SHA256,
+          liveChainVerified: true,
+          materializedTransitionAt: null,
+        }),
+      );
+      expect(missingMaterialization.status).toBe('NOT_VERIFIED');
+      expect(missingMaterialization.findings[0]?.code).toBe('EXPORT_LIVE_CHAIN_NOT_VERIFIED');
 
       const mismatch = resolve(
         { kind: 'export.completion' },
@@ -756,7 +787,8 @@ describe('audit/iso27001/selectors', () => {
         contextFor(state, [], {
           stateAvailable: true,
           exportCompletionPackageDigest: 'b'.repeat(64),
-          exportMaterializedEvent: true,
+          liveChainVerified: true,
+          materializedTransitionAt: '2026-01-01T00:01:00.000Z',
         }),
       );
       expect(mismatch.findings[0]?.code).toBe('EXPORT_PACKAGE_DIGEST_MISMATCH');

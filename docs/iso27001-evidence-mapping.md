@@ -194,6 +194,12 @@ synthetic fixture demonstrates the tool chain, not production state security.
   the same private snapshot the archive verifier checked. Live workspace files
   contribute only the explicitly labeled `export.completion` live binding and
   can never make another selector verified.
+- The `export.completion` binding is only verified when the live audit chain
+  passes the canonical session-bound chain verification AND extends the
+  verified archive anchor (prefix head equals the manifest head) AND contains
+  the canonical `EXPORT_READY → COMPLETE` materialization event. A foreign
+  event, a broken chain, or a forked trail yields `NOT_VERIFIED`
+  (`EXPORT_LIVE_CHAIN_NOT_VERIFIED`) or blocks the package entirely.
 - A broken audit chain, tampered archive or sidecar, modified artifact, wrong
   session, redacted sharing archive, missing sidecar, or unverifiable export
   blocks the run (exit 2); no valid-looking report is produced.

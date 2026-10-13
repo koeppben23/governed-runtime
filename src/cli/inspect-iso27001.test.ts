@@ -100,7 +100,9 @@ interface Fixture {
   readonly outputPath: string;
 }
 
-async function createFixture(options: { readonly localId?: string } = {}): Promise<Fixture> {
+async function createFixture(
+  options: { readonly localId?: string; readonly liveMaterializedEvent?: boolean } = {},
+): Promise<Fixture> {
   const configDir = await isolatedConfigDir();
   const sessDir = sessionDir(FINGERPRINT, SESSION_ID);
   await fs.mkdir(sessDir, { recursive: true });
@@ -155,23 +157,25 @@ async function createFixture(options: { readonly localId?: string } = {}): Promi
       createdAt: FIXED_TIME,
     },
   });
-  await appendAuditEvent(sessDir, {
-    id: randomUUID(),
-    flowguardSessionId: state.flowguardSessionId,
-    hostSessionId: SESSION_ID,
-    phase: 'COMPLETE',
-    event: 'transition:EXPORT_MATERIALIZED',
-    occurredAt: '2026-01-01T00:01:00.000Z',
-    actor: 'machine',
-    detail: {
-      kind: 'transition',
-      from: 'EXPORT_READY',
-      to: 'COMPLETE',
-      event: 'EXPORT_MATERIALIZED',
-      autoAdvanced: false,
-      chainIndex: -1,
-    },
-  });
+  if (options.liveMaterializedEvent ?? true) {
+    await appendAuditEvent(sessDir, {
+      id: randomUUID(),
+      flowguardSessionId: state.flowguardSessionId,
+      hostSessionId: SESSION_ID,
+      phase: 'COMPLETE',
+      event: 'transition:EXPORT_MATERIALIZED',
+      occurredAt: '2026-01-01T00:01:00.000Z',
+      actor: 'machine',
+      detail: {
+        kind: 'transition',
+        from: 'EXPORT_READY',
+        to: 'COMPLETE',
+        event: 'EXPORT_MATERIALIZED',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    });
+  }
 
   const mappingPath = path.join(configDir, 'mapping.json');
   await fs.writeFile(mappingPath, mappingOf(a829Rules(options.localId ?? LOCAL_ID)), 'utf8');
@@ -407,5 +411,85 @@ describe('runIso27001Inspect', () => {
     expect(
       report.controls.find((control) => control.controlRef.controlId === 'A.8.29')?.status,
     ).toBe('EVIDENCE_LINKED_VERIFIED');
+  });
+
+  it('never verifies export.completion on a foreign or forked live audit trail', async () => {
+    const exportRuleStatus = (stdout: string): { status?: string; codes: string[] } => {
+      const report = JSON.parse(stdout) as {
+        controls: Array<{
+          controlRef: { controlId: string };
+          status: string;
+          rules: Array<{
+            findings: Array<{ code: string }>;
+            selectors: Array<{ findings: Array<{ code: string }> }>;
+          }>;
+        }>;
+      };
+      const control = report.controls.find((entry) => entry.controlRef.controlId === 'EXP-1');
+      return {
+        ...(control !== undefined ? { status: control.status } : {}),
+        codes: (control?.rules ?? []).flatMap((rule) => [
+          ...rule.findings.map((finding) => finding.code),
+          ...rule.selectors.flatMap((selector) => selector.findings.map((finding) => finding.code)),
+        ]),
+      };
+    };
+    const materializedEvent = (flowguardSessionId: string, occurredAt: string) => ({
+      id: randomUUID(),
+      flowguardSessionId,
+      hostSessionId: SESSION_ID,
+      phase: 'COMPLETE',
+      event: 'transition:EXPORT_MATERIALIZED',
+      occurredAt,
+      actor: 'machine',
+      detail: {
+        kind: 'transition',
+        from: 'EXPORT_READY',
+        to: 'COMPLETE',
+        event: 'EXPORT_MATERIALIZED',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    });
+
+    // Matching package digest and an intact archive, but the live trail has no
+    // canonical materialization event: the binding is unverifiable, not linked.
+    const unmaterialized = await createFixture({ liveMaterializedEvent: false });
+    const unmaterializedResult = await runCli({ mappingPath: unmaterialized.mappingPath });
+    expect(unmaterializedResult.exit).toBe(0);
+    const unmaterializedRule = exportRuleStatus(unmaterializedResult.stdout);
+    expect(unmaterializedRule.status).toBe('NOT_VERIFIED');
+    expect(unmaterializedRule.codes).toContain('EXPORT_LIVE_CHAIN_NOT_VERIFIED');
+
+    // Matching package digest, but the live trail carries a materialization
+    // event from a foreign session: the canonical verifier already blocks the
+    // package (the live chain no longer proves the publication binding), so no
+    // report with a positive status can exist.
+    const foreign = await createFixture();
+    await appendAuditEvent(
+      foreign.sessDir,
+      materializedEvent('00000000-0000-4000-8000-0000000000ff', '2026-01-01T00:02:00.000Z'),
+    );
+    const foreignResult = await runCli({ mappingPath: foreign.mappingPath });
+    expect(foreignResult.exit).toBe(2);
+    expect(foreignResult.stdout).toBe('');
+    expect(foreignResult.stderr).toContain('PACKAGE_UNVERIFIABLE');
+
+    // Matching package digest, but the live trail was replaced by an intact
+    // chain that does NOT extend the verified archive anchor (forked history):
+    // the publication binding is missing, so the package is blocked.
+    const forked = await createFixture();
+    const forkedState = JSON.parse(
+      await fs.readFile(path.join(forked.sessDir, 'session-state.json'), 'utf-8'),
+    ) as { flowguardSessionId: string };
+    await fs.rm(path.join(forked.sessDir, 'audit.jsonl'));
+    await appendAuditEvent(
+      forked.sessDir,
+      materializedEvent(forkedState.flowguardSessionId, '2026-01-01T00:03:00.000Z'),
+    );
+    const forkedResult = await runCli({ mappingPath: forked.mappingPath });
+    expect(forkedResult.exit).toBe(2);
+    expect(forkedResult.stdout).toBe('');
+    expect(forkedResult.stderr).toContain('PACKAGE_UNVERIFIABLE');
   });
 });

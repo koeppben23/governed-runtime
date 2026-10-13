@@ -25,6 +25,7 @@ import path from 'node:path';
 
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { readState } from '../adapters/persistence.js';
+import { evaluateLiveExportBinding } from '../audit/iso27001/live-binding.js';
 import { workspacesHome } from '../adapters/workspace/init.js';
 import {
   describeBlockedExport,
@@ -83,12 +84,30 @@ async function readMappingFile(
   }
 }
 
-/** Build the minimal live-workspace binding for `export.completion`. */
-async function readLiveBinding(sessDir: string): Promise<LiveExportBinding> {
+export interface VerifiedLiveBindingInput {
+  readonly sessDir: string;
+  /** FlowGuard session identity taken from the VERIFIED archive state. */
+  readonly flowguardSessionId: string;
+  /** Audit event count anchored in the verified archive manifest. */
+  readonly archiveAuditEventCount: number;
+  /** Audit chain head anchored in the verified archive manifest. */
+  readonly archiveAuditChainHead: string;
+}
+
+/**
+ * Read the live (mutable) session facts and evaluate the export binding
+ * through the pure audit authority. This function performs I/O only; the
+ * binding policy (canonical session-bound chain verification, archive-anchor
+ * extension, canonical materialization event) lives in
+ * `audit/iso27001/live-binding`.
+ */
+async function readVerifiedLiveBinding(
+  input: VerifiedLiveBindingInput,
+): Promise<LiveExportBinding> {
   let stateAvailable = false;
   let packageDigest: string | null = null;
   try {
-    const state = await readState(sessDir);
+    const state = await readState(input.sessDir);
     if (state !== null) {
       stateAvailable = true;
       packageDigest = state.exportCompletionEvidence?.packageDigest ?? null;
@@ -97,21 +116,23 @@ async function readLiveBinding(sessDir: string): Promise<LiveExportBinding> {
     stateAvailable = false;
   }
 
-  let exportMaterializedEvent = false;
+  let auditReadable = true;
+  let liveEvents: Awaited<ReturnType<typeof readAuditTrail>> = [];
   try {
-    const events = await readAuditTrail(sessDir);
-    exportMaterializedEvent = events.some(
-      (event) => event.event === 'transition:EXPORT_MATERIALIZED',
-    );
+    liveEvents = await readAuditTrail(input.sessDir);
   } catch {
-    exportMaterializedEvent = false;
+    auditReadable = false;
   }
 
-  return {
+  return evaluateLiveExportBinding({
     stateAvailable,
     exportCompletionPackageDigest: packageDigest,
-    exportMaterializedEvent,
-  };
+    auditReadable,
+    liveEvents,
+    flowguardSessionId: input.flowguardSessionId,
+    archiveAuditEventCount: input.archiveAuditEventCount,
+    archiveAuditChainHead: input.archiveAuditChainHead,
+  });
 }
 
 /**
@@ -197,7 +218,12 @@ export async function runIso27001Inspect(input: Iso27001InspectInput): Promise<n
     events: read.events,
   };
 
-  const liveBinding = await readLiveBinding(input.sessDir);
+  const liveBinding = await readVerifiedLiveBinding({
+    sessDir: input.sessDir,
+    flowguardSessionId: read.state.flowguardSessionId,
+    archiveAuditEventCount: read.manifest.auditEventCount,
+    archiveAuditChainHead: read.manifest.auditChainHead,
+  });
   const report = projectIso27001Report({
     mapping,
     mappingDigest: mappingDigestOf(mapping),
