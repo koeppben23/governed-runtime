@@ -39,14 +39,19 @@ collect() {
   if [[ "$code" -eq 1 ]]; then STATUS=1; elif [[ "$code" -eq 2 && "$STATUS" -eq 0 ]]; then STATUS=2; fi
 }
 
-# 3. Mandatory dry-run gate (npm canary install + provider ping).
+# 3. Mandatory dry-run gate: build the product tarball once for the canary
+#    install, then verify pins, npm compatibility, isolation and the provider.
+(cd "$REPO" && npm run build >/dev/null && npm run pack:checksums >/dev/null)
+VERSION="$(node -e "process.stdout.write(require('$REPO/package.json').version)")"
+GATE_TARBALL="$REPO/flowguard-core-$VERSION.tgz"
+GATE_SHA="$(cd "$REPO" && git rev-parse HEAD)"
 "${RUN[@]}" "$REPO/demos/lib/environment-gate.mjs" --root "$ROOT/gate" --repo "$REPO" \
-  --model "$MODEL" --canary-install || exit 1
+  --model "$MODEL" --tarball "$GATE_TARBALL" --canary-install || exit 1
 
 run_demo() {
   local name="$1"; shift
   echo "=== demo: $name"
-  "${RUN[@]}" "$@" ; local code=$?
+  "${RUN[@]}" "$@" --product-sha "$GATE_SHA"; local code=$?
   echo "=== demo: $name exit=$code"
   collect "$code"
 }

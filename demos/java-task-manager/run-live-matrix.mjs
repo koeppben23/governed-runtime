@@ -137,6 +137,7 @@ export function parseArgs(argv) {
     if (flag === '--root') options.root = next();
     else if (flag === '--model') options.model = next();
     else if (flag === '--tarball') options.tarball = next();
+    else if (flag === '--product-sha') options.productSha = next();
     else if (flag === '--flows')
       options.flows = next()
         .split(',')
@@ -1148,6 +1149,11 @@ async function main() {
         await runner.turn(session, `${name}-01-start`, '/start');
         const installed = runner.installedBuild(flow.workspace);
         record.installedBuild = installed;
+        if (options.productSha !== undefined && installed.gitSha !== options.productSha) {
+          throw new Error(
+            `installed artifact gitSha ${String(installed.gitSha)} != declared product ${options.productSha}`,
+          );
+        }
         if (builtFromCheckout && installed.gitSha !== checkoutHead) {
           throw new Error(
             `installed artifact gitSha ${String(installed.gitSha)} != checkout ${checkoutHead}`,
