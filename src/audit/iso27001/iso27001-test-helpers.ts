@@ -24,6 +24,8 @@ import type {
   ValidationAttempt,
 } from '../../state/evidence-validation.js';
 import type { ReviewVerdict } from '../../state/evidence-primitives.js';
+import type { DecisionIdentity } from '../../state/evidence-identity.js';
+import type { Event, Phase } from '../../state/schema.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   VERIFIED_ARCHIVE_SNAPSHOT,
@@ -115,6 +117,7 @@ export function makeImplementationAttempt(input: {
   readonly passed?: boolean;
   readonly outcome?: 'supported' | 'inconclusive' | 'blocked';
   readonly timedOut?: boolean;
+  readonly implementationId?: string;
   readonly implementationDigest?: string;
 }): ValidationAttempt {
   const attemptId = input.attemptId ?? TEST_ATTEMPT_ID;
@@ -122,7 +125,7 @@ export function makeImplementationAttempt(input: {
   return {
     attemptId,
     scope: 'implementation',
-    implementationId: IMPL_EVIDENCE.implementationId,
+    implementationId: input.implementationId ?? IMPL_EVIDENCE.implementationId,
     implementationDigest: input.implementationDigest ?? IMPL_EVIDENCE.digest,
     executionObservation: {
       executionObservedStateDigest: 'f'.repeat(64),
@@ -204,6 +207,13 @@ export function makeDecisionTrail(input: {
   readonly decidedAt?: string;
   readonly decisionId?: string;
   readonly actorId?: string;
+  /** Defaults to the canonical {@link REVIEW_APPROVE} rationale (`LGTM`). */
+  readonly rationale?: string;
+  /** Partial structured-identity override for full-binding negative tests. */
+  readonly identity?: Partial<DecisionIdentity>;
+  readonly fromPhase?: Phase;
+  readonly toPhase?: Phase;
+  readonly transitionEvent?: Event;
 }): AuditEvent[] {
   const decidedAt = input.decidedAt ?? FIXED_TIME;
   const event = createDecisionEvent({
@@ -216,15 +226,18 @@ export function makeDecisionTrail(input: {
       decisionId: input.decisionId ?? 'decision-1',
       decisionSequence: 1,
       verdict: input.verdict,
-      rationale: 'fixture rationale',
+      rationale: input.rationale ?? REVIEW_APPROVE.rationale,
       decidedAt,
       decisionIdentity: {
         ...REVIEW_APPROVE.decisionIdentity,
         actorId: input.actorId ?? REVIEW_APPROVE.decisionIdentity.actorId,
+        ...input.identity,
       },
-      fromPhase: 'EVIDENCE_REVIEW',
-      toPhase: 'COMPLETE',
-      transitionEvent: 'APPROVE',
+      fromPhase: input.fromPhase ?? 'EVIDENCE_REVIEW',
+      // Canonical approval transition of the EVIDENCE_REVIEW gate: the export
+      // rail first moves to EXPORT_READY; EXPORT_MATERIALIZED completes later.
+      toPhase: input.toPhase ?? 'EXPORT_READY',
+      transitionEvent: input.transitionEvent ?? 'APPROVE',
       transitionAt: decidedAt,
       policyMode: 'team',
     },

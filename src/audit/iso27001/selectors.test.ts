@@ -294,6 +294,49 @@ describe('audit/iso27001/selectors', () => {
       ).toBe('CHECK_FAILED');
     });
 
+    it('re-recorded identical implementation content never reuses old check evidence', () => {
+      const reRecordedId = '00000000-0000-4000-8000-000000000777';
+      const extraction = makeAssertionExtraction({
+        attemptId: TEST_ATTEMPT_ID,
+        localId: 'auth.spec.ts::re-recorded',
+        status: 'passed',
+      });
+      const assertion = { providerId: 'vitest', localId: 'auth.spec.ts::re-recorded' };
+
+      // Same digest, new implementationId: the old attempt belongs to the
+      // previous recording and must not back the current one.
+      const reRecorded = baseState({
+        implementation: { ...IMPL_EVIDENCE, implementationId: reRecordedId },
+        validationAttempts: [makeImplementationAttempt({ checkId: 'test', extraction })],
+      });
+      expect(
+        resolve({ kind: 'validation.check_supported', checkId: 'test' }, reRecorded).findings[0]
+          ?.code,
+      ).toBe('CHECK_ATTEMPT_MISSING');
+      expect(
+        resolve({ kind: 'validation.assertion_passed', checkId: 'test', assertion }, reRecorded)
+          .findings[0]?.code,
+      ).toBe('CHECK_ATTEMPT_MISSING');
+
+      // A fresh attempt bound to the new recording verifies.
+      const fresh = baseState({
+        implementation: { ...IMPL_EVIDENCE, implementationId: reRecordedId },
+        validationAttempts: [
+          makeImplementationAttempt({
+            checkId: 'test',
+            extraction,
+            implementationId: reRecordedId,
+          }),
+        ],
+      });
+      expect(resolve({ kind: 'validation.check_supported', checkId: 'test' }, fresh).status).toBe(
+        'EVIDENCE_LINKED_VERIFIED',
+      );
+      expect(
+        resolve({ kind: 'validation.assertion_passed', checkId: 'test', assertion }, fresh).status,
+      ).toBe('EVIDENCE_LINKED_VERIFIED');
+    });
+
     it('validation.assertion_passed rejects skipped, failed, unreported and unbound assertions', () => {
       const assertion = { providerId: 'vitest', localId: 'auth.spec.ts::x' };
       const withStatus = (status: 'passed' | 'failed' | 'errored' | 'skipped') =>
@@ -453,9 +496,9 @@ describe('audit/iso27001/selectors', () => {
         verdict: 'approve',
         actorId: 'someone-else',
       });
-      expect(resolve(selector, state, contextFor(state, wrongActor)).findings[0]?.code).toBe(
-        'DECISION_RECEIPT_MISSING',
-      );
+      const wrongActorResult = resolve(selector, state, contextFor(state, wrongActor));
+      expect(wrongActorResult.status).toBe('NOT_VERIFIED');
+      expect(wrongActorResult.findings[0]?.code).toBe('DECISION_RECEIPT_MISMATCH');
 
       const belowAssurance = resolve(
         { ...selector, minActorAssurance: 'idp_verified' },
@@ -470,6 +513,79 @@ describe('audit/iso27001/selectors', () => {
         ),
       );
       expect(belowAssurance.findings[0]?.code).toBe('APPROVAL_ASSURANCE_BELOW_MINIMUM');
+    });
+
+    it('review.human_approval_decision requires the complete recorded decision binding', () => {
+      const state = baseState();
+      const selector: EvidenceSelector = {
+        kind: 'review.human_approval_decision',
+        gatePhase: 'EVIDENCE_REVIEW',
+        acceptedVerdicts: ['approve'],
+        minActorAssurance: 'best_effort',
+      };
+      const resolveTrail = (events: ReturnType<typeof makeDecisionTrail>) =>
+        resolve(selector, state, contextFor(state, events));
+
+      // Same actor, same verdict, same time — but a different rationale is a
+      // different decision, not a confirmation of the recorded one.
+      const wrongRationale = resolveTrail(
+        makeDecisionTrail({
+          flowguardSessionId: state.flowguardSessionId,
+          gatePhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          rationale: 'a different rationale',
+        }),
+      );
+      expect(wrongRationale.status).toBe('NOT_VERIFIED');
+      expect(wrongRationale.findings[0]?.code).toBe('DECISION_RECEIPT_MISMATCH');
+
+      // A partial identity match (same actor id/source, different email) is not
+      // the full structured identity of the recorded decision.
+      const wrongEmail = resolveTrail(
+        makeDecisionTrail({
+          flowguardSessionId: state.flowguardSessionId,
+          gatePhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          identity: { actorEmail: 'other@example.test' },
+        }),
+      );
+      expect(wrongEmail.status).toBe('NOT_VERIFIED');
+      expect(wrongEmail.findings[0]?.code).toBe('DECISION_RECEIPT_MISMATCH');
+
+      // The receipt must leave exactly the requested gate.
+      const wrongFromPhase = resolveTrail(
+        makeDecisionTrail({
+          flowguardSessionId: state.flowguardSessionId,
+          gatePhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          fromPhase: 'PLAN_REVIEW',
+        }),
+      );
+      expect(wrongFromPhase.status).toBe('NOT_VERIFIED');
+      expect(wrongFromPhase.findings[0]?.code).toBe('DECISION_RECEIPT_MISMATCH');
+
+      // The recorded transition event must resolve to the receipt's target
+      // phase through the canonical machine topology.
+      const wrongTarget = resolveTrail(
+        makeDecisionTrail({
+          flowguardSessionId: state.flowguardSessionId,
+          gatePhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+          toPhase: 'REJECTED',
+        }),
+      );
+      expect(wrongTarget.status).toBe('NOT_VERIFIED');
+      expect(wrongTarget.findings[0]?.code).toBe('DECISION_RECEIPT_MISMATCH');
+
+      // A completely matching receipt still verifies.
+      const matching = resolveTrail(
+        makeDecisionTrail({
+          flowguardSessionId: state.flowguardSessionId,
+          gatePhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve',
+        }),
+      );
+      expect(matching.status).toBe('EVIDENCE_LINKED_VERIFIED');
     });
 
     it('risk.triggers_covered reports uncovered triggers and unbound assessments', () => {

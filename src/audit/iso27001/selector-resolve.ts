@@ -16,15 +16,18 @@
 
 import { isAssuranceAtLeast } from '../../shared/actor-assurance.js';
 import { hashText } from '../../shared/hashing.js';
+import { evaluateWithEvent } from '../../machine/evaluate.js';
 import { getLastChainHash, verifyChain } from '../integrity.js';
 import type { DecisionReceipt } from '../query.js';
 import type { LoopVerdict } from '../../state/evidence-primitives.js';
+import type { DecisionIdentity } from '../../state/evidence-identity.js';
 import {
   authorizedCriticalPlanClaimIds,
   hasCurrentPlanApprovalCertificateForState,
 } from '../../state/proofgraph-approval-context.js';
 import type { PlanApprovalCertificate } from '../../state/proofgraph-plan-certificate.js';
 import type { ReviewFindings } from '../../state/evidence-review-attestation.js';
+import { Event } from '../../state/schema.js';
 import type { SessionState } from '../../state/schema.js';
 import {
   AUDIT_MEMBER,
@@ -313,6 +316,42 @@ function resolveImplementationVerdict(
   return verified(selector, [{ ...ref, occurredAt: latest?.reviewedAt ?? null }]);
 }
 
+/**
+ * Full structured decision-identity equality. Every persisted field must agree;
+ * a partial match on actor id/source alone is not the recorded decision.
+ */
+function decisionIdentitiesEqual(a: DecisionIdentity, b: DecisionIdentity): boolean {
+  return (
+    a.actorId === b.actorId &&
+    a.actorEmail === b.actorEmail &&
+    (a.actorDisplayName ?? null) === (b.actorDisplayName ?? null) &&
+    a.actorSource === b.actorSource &&
+    a.actorAssurance === b.actorAssurance
+  );
+}
+
+/**
+ * Whether the receipt's gate transition is the canonical transition for the
+ * requested gate: the receipt must leave exactly that gate, name a valid
+ * machine event, and that event must resolve (canonical topology) to the
+ * receipt's recorded target phase.
+ */
+function receiptTransitionBindsGate(
+  selector: SelectorOf<'review.human_approval_decision'>,
+  receipt: DecisionReceipt,
+): boolean {
+  if (receipt.fromPhase !== selector.gatePhase) return false;
+  const event = Event.safeParse(receipt.transitionEvent);
+  if (!event.success) return false;
+  return evaluateWithEvent(selector.gatePhase, event.data) === receipt.toPhase;
+}
+
+/**
+ * Receipts that bind the recorded decision COMPLETELY: gate, verdict, exact
+ * decision time, session, full structured identity, rationale, and the
+ * canonical gate transition. A receipt that merely looks similar is not a
+ * confirmation of this decision.
+ */
 function matchingDecisionReceipts(
   context: SelectorContext,
   selector: SelectorOf<'review.human_approval_decision'>,
@@ -326,9 +365,9 @@ function matchingDecisionReceipts(
       receipt.verdict === decision.verdict &&
       receipt.decidedAt === decision.decidedAt &&
       receipt.flowguardSessionId === state.flowguardSessionId &&
-      receipt.decisionIdentity.actorId === decision.decisionIdentity.actorId &&
-      receipt.decisionIdentity.actorSource === decision.decisionIdentity.actorSource &&
-      receipt.decisionIdentity.actorAssurance === decision.decisionIdentity.actorAssurance,
+      receipt.rationale === decision.rationale &&
+      decisionIdentitiesEqual(receipt.decisionIdentity, decision.decisionIdentity) &&
+      receiptTransitionBindsGate(selector, receipt),
   );
 }
 
@@ -345,9 +384,18 @@ function resolveHumanApprovalDecision(
   if (!context.receiptsReadable) {
     return notVerified(selector, 'DECISION_RECEIPT_UNREADABLE');
   }
+  const gateReceipts = context.receipts.filter(
+    (receipt) => receipt.gatePhase === selector.gatePhase,
+  );
   const matches = matchingDecisionReceipts(context, selector, snapshot.state);
-  if (matches.length === 0) return missing(selector, 'DECISION_RECEIPT_MISSING');
   if (matches.length > 1) return notVerified(selector, 'DECISION_RECEIPT_AMBIGUOUS');
+  if (matches.length === 0) {
+    // No receipt at this gate at all is missing evidence; receipts that exist
+    // but contradict the recorded decision are an unverifiable binding.
+    return gateReceipts.length === 0
+      ? missing(selector, 'DECISION_RECEIPT_MISSING')
+      : notVerified(selector, 'DECISION_RECEIPT_MISMATCH');
+  }
   const receipt = matches[0];
   if (receipt === undefined) return missing(selector, 'DECISION_RECEIPT_MISSING');
   if (decision.decisionIdentity.actorSource === 'unknown') {

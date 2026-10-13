@@ -133,8 +133,17 @@ export type ImplementationAttempt = Extract<ValidationAttempt, { scope: 'impleme
 
 /**
  * Latest post-implementation attempt for `checkId` bound to the current
- * implementation digest. "Latest" is fail-closed: a later failing or blocked
- * attempt of the same check can never be shadowed by an earlier pass.
+ * implementation RECORDING. Both identity fields are required:
+ *
+ * - `implementationId` (execution identity): a re-recorded identical revision
+ *   has the same digest but a fresh id and requires fresh checks
+ *   (`evidence-impl.ts`), so digest equality alone would let a stale attempt
+ *   masquerade as evidence for the new recording.
+ * - `implementationDigest` (content identity): the attempt must have run
+ *   against exactly this revision content.
+ *
+ * "Latest" is fail-closed: a later failing or blocked attempt of the same check
+ * can never be shadowed by an earlier pass.
  */
 function latestImplementationAttempt(
   snapshot: VerifiedEvidenceSnapshot,
@@ -145,6 +154,7 @@ function latestImplementationAttempt(
   const matching = snapshot.state.validationAttempts.filter(
     (attempt): attempt is ImplementationAttempt =>
       attempt.scope === 'implementation' &&
+      attempt.implementationId === implementation.implementationId &&
       attempt.implementationDigest === implementation.digest &&
       attempt.result.checkId === checkId,
   );
