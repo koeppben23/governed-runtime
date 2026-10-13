@@ -3,7 +3,14 @@
  * Real OpenCode two-session recovery (#1079). No state injection, simulated
  * reviewer evidence or automatic session reset. Every turn is a real host
  * command; the runner records an explicit operator abort and governed reapply.
- * Usage: node demos/risk-trigger-fixture/run-live-replan-recovery.mjs --root <fresh-dir>
+ *
+ * Usage: node demos/risk-trigger-fixture/run-live-replan-recovery.mjs --root <fresh-dir> [--allow-old-plan-override]
+ *
+ * The deliberately uncovered OLD negative control may end in an exhausted plan
+ * review. Only with the explicit `--allow-old-plan-override` flag does the
+ * runner use the canonical `/override-approve` command for that old control
+ * alone; the new corrected plan must still pass ordinary independent review
+ * and approval. Without the flag the runner stops.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,6 +32,8 @@ import {
   assertInstalledBuildIdentity,
   assertNoCompletionPackage,
 } from './run-live-risk-trigger-controls.mjs';
+import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
+import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const SUBJECT = 'src/state/module-state.md';
@@ -66,7 +75,21 @@ async function planAndApprove(runner, session, prefix, covered, allowOverride) {
       'Execute every active check for baseline and implementation and complete independent review.',
     { command: 'plan' },
   );
-  const state = runner.requireBoundState(session).state;
+  const gate = await convergePlanGate({ runner, session, label: `${prefix}-03-plan` });
+  const state = gate.state;
+  if (gate.outcome !== PLAN_GATE.ACCEPTED) {
+    // Only the deliberately uncovered OLD negative control may proceed on an
+    // exhausted review, and only when the operator explicitly allowed it.
+    const overridePath =
+      allowOverride && gate.outcome === PLAN_GATE.REVIEW_EXHAUSTED && state.phase === 'PLAN_REVIEW';
+    if (!overridePath) {
+      const reason =
+        gate.outcome === PLAN_GATE.REVIEW_EXHAUSTED
+          ? 'the independent plan review exhausted its budget without acceptance'
+          : `the plan gate did not converge to a persisted reviewer_accepted plan (${gate.outcome})`;
+      throw new DemoNotVerifiedError(`${prefix}: ${reason}; the recovery proof is NOT_VERIFIED`);
+    }
+  }
   if (state.phase !== 'PLAN_REVIEW') throw new Error('old control did not reach PLAN_REVIEW');
   const { resolveWorkflowDirective } = await import(
     pathToFileURL(
@@ -135,7 +158,7 @@ async function main() {
     name: 'replan-recovery',
     checkoutHead,
     tarballSha256: sha256(tarball),
-    result: 'FAILED',
+    result: RESULT.FAILED,
     snapshots: {},
   };
   try {
@@ -282,18 +305,23 @@ async function main() {
     await runner.captureProvenance(oldProvenance, oldSession);
     await runner.captureProvenance(newProvenance, newSession);
     Object.assign(record, {
-      result: 'PASS',
+      result: RESULT.COMPLETE,
       base,
       oldProvenance,
       newProvenance,
       hostSessionIds: [oldSession.sessionId, newSession.sessionId],
     });
   } catch (error) {
+    if (error instanceof DemoNotVerifiedError || error?.code === 'DEMO_NOT_VERIFIED') {
+      record.result = RESULT.NOT_VERIFIED;
+    } else {
+      record.result = RESULT.FAILED;
+    }
     record.error = String(error);
   }
   fs.writeFileSync(path.join(evidenceDir, 'replan-recovery.json'), JSON.stringify(record, null, 2));
   runner.log(`${record.result} replan-recovery${record.error ? `: ${record.error}` : ''}`);
-  process.exitCode = record.result === 'PASS' ? 0 : 1;
+  process.exitCode = exitCodeForResults([record]);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

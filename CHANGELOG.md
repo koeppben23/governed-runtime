@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Forensic demo assurance (#1080 follow-up).** The live-demo harness now
+  classifies denials and recoveries from structured host transcripts with
+  occurrence-bound recovery proofs (a denial after the last successful call is
+  never `recovered`), and unreadable governed output can no longer ground a
+  success claim. Killed negative controls are reported as `CONTROL_PASSED`
+  instead of being counted as completed workflows, `review_exhausted` is
+  classified as `NOT_VERIFIED` for positive proofs, and the specialized runners
+  drive the persisted plan gate with bounded state-driven continuations instead
+  of a single `/plan` turn. Claim and risk controls share one full proof oracle
+  (positive and adversarial assertion, distinct attempts, role-specific
+  bindings, freshness, real package absence). `demos/run-all-demos.sh` adds a
+  mandatory dry-run environment gate (pins, npm-10 canary install, isolation,
+  checksum, provider ping) and a per-run install lock. See
+  `demos/DEMO_ASSURANCE.md`.
+
 - **Assertion-identity integrity and exactly-once claims (#1080).** Structured
   assertion evidence whose provider-scoped identity occurs more than once in one
   extraction, or contradicts its extraction provider, no longer qualifies as

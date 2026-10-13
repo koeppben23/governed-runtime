@@ -51,6 +51,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportHostTranscript } from './live-host-export.mjs';
+import {
+  assertExpectedDenial,
+  captureRetryCodes,
+  captureRetryEvents,
+  deniedToolForCode,
+  eventsOf,
+  governedToolEvents,
+  parseHostPayload,
+  sameTurnCorrectedTools,
+  sameTurnRecoveryProofs,
+  structuredRearmSupersedesTerminal,
+  toolDenialCodes,
+  toolDenialEvents,
+  transcriptTrust,
+} from '../lib/transcript.mjs';
+import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
+
+export {
+  assertExpectedDenial,
+  captureRetryCodes,
+  captureRetryEvents,
+  deniedToolForCode,
+  eventsOf,
+  governedToolEvents,
+  parseHostPayload,
+  sameTurnCorrectedTools,
+  sameTurnRecoveryProofs,
+  structuredRearmSupersedesTerminal,
+  toolDenialCodes,
+  toolDenialEvents,
+  transcriptTrust,
+};
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -79,9 +111,17 @@ export function verificationFlowFor(flowName) {
   throw new Error(`no verifier flow for scenario: ${flowName}`);
 }
 
-/** Non-zero when any requested flow did not complete. */
+/** Non-zero when any requested flow did not produce accepted evidence. */
 export function matrixExitCode(flows) {
-  return flows.every((flow) => flow.result === 'COMPLETE') ? 0 : 1;
+  return exitCodeForResults(flows);
+}
+
+/** The persisted review loop ended without reviewer acceptance. */
+export function persistedReviewExhausted(state) {
+  return (
+    state?.plan?.reviewCompletion === 'review_exhausted' ||
+    state?.architecture?.reviewCompletion === 'review_exhausted'
+  );
 }
 
 export function parseArgs(argv) {
@@ -225,32 +265,6 @@ function run(command, args, options = {}) {
   });
 }
 
-export function eventsOf(output) {
-  return output
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
-
-/** Reason codes of every blocked/denied tool output in a host transcript. */
-export function toolDenialCodes(output) {
-  const codes = new Set();
-  for (const event of eventsOf(output)) {
-    const part = event.part?.state?.output ?? '';
-    if (!/"error":true/.test(part)) continue;
-    const match = /"code":"([A-Z0-9_]+)"/.exec(part);
-    if (match) codes.add(match[1]);
-  }
-  return [...codes];
-}
-
 /**
  * Typed, recoverable denials the governed agent is expected to recover from
  * in-session (fail-fast admission, call-shape corrections). Run 8/9 evidence
@@ -290,30 +304,6 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
 export const NEXT_STEP_RECOVERY_CODES = new Set(['CONTINUE_AMBIGUOUS']);
 
 /**
- * Successful reviewer capture re-arms are NOT error blocks: the transport
- * projects a structured `reviewRetry` outcome (reviewDispatch.completed=false,
- * no `error:true`) for the SAME code that a terminal block carries as
- * `error:true`. Only the structured re-arm counts as recovered; the terminal
- * block stays flow-stopping.
- */
-export function captureRetryCodes(output) {
-  const codes = new Set();
-  for (const event of eventsOf(output)) {
-    const part = event.part?.state?.output ?? '';
-    if (/"error":true/.test(part)) continue;
-    if (!/"reviewRetry"/.test(part)) continue;
-    try {
-      const parsed = JSON.parse(part);
-      const code = parsed?.reviewRetry?.code;
-      if (typeof code === 'string') codes.add(code);
-    } catch {
-      // Not the structured retry projection.
-    }
-  }
-  return [...codes];
-}
-
-/**
  * A plan submission during an ACTIVE review loop is corrected by resuming the
  * bound review in the same turn. The correction is never accepted as a bare
  * retry: the same-turn proof here is paired with the persisted gate proof
@@ -330,34 +320,12 @@ export const PLAN_REVIEW_CORRECTION_CODE = 'PLAN_REVIEW_IN_PROGRESS';
  */
 export const MAX_IMPLEMENT_REVIEW_RESUMES = 2;
 
-/**
- * A terminal reviewer-capture block is superseded when the transport itself
- * re-armed a fresh attempt on the same frozen review chain LATER in the same
- * turn. The re-arm alone is not the proof: the gate step still has to confirm
- * the persisted review outcome ({@link planReviewCorrectionProven} or the
- * architecture completion).
- */
-export function structuredRearmSupersedesTerminal(output, code) {
-  let errorIndex = -1;
-  let rearmIndex = -1;
-  let index = 0;
-  for (const event of eventsOf(output)) {
-    index += 1;
-    if (event.type !== 'tool_use') continue;
-    const raw = event.part?.state?.output ?? '';
-    if (typeof raw !== 'string' || !raw.includes(`"code":"${code}"`)) continue;
-    if (/"error":true/.test(raw)) errorIndex = index;
-    if (/"reviewRetry"/.test(raw)) rearmIndex = index;
-  }
-  return errorIndex !== -1 && rearmIndex > errorIndex;
-}
-
 /** Same-turn proof: the planner was denied and then succeeded later in the turn. */
 export function planReviewSameTurnCorrection(output) {
-  return (
-    deniedToolForCode(output, PLAN_REVIEW_CORRECTION_CODE) === 'flowguard_plan' &&
-    sameTurnCorrectedTools(output).has('flowguard_plan')
+  const proof = sameTurnRecoveryProofs(output).recovered.find(
+    (candidate) => candidate.code === PLAN_REVIEW_CORRECTION_CODE,
   );
+  return proof?.tool === 'flowguard_plan';
 }
 
 /**
@@ -385,65 +353,9 @@ export function isRecoverableFamily(code) {
   return RECOVERABLE_DENIAL_CODES.has(code) || NEXT_STEP_RECOVERY_CODES.has(code);
 }
 
-/**
- * The tool whose call produced `code` as a typed error, in transcript order.
- * Identity pairing backs the same-turn correction proof below.
- */
-export function deniedToolForCode(output, code) {
-  for (const event of eventsOf(output)) {
-    if (event.type !== 'tool_use') continue;
-    const raw = event.part?.state?.output ?? '';
-    if (!/"error":true/.test(raw) || !raw.includes(`"code":"${code}"`)) continue;
-    if (typeof event.part?.tool === 'string') return event.part.tool;
-  }
-  return undefined;
-}
-
-/**
- * Tools that were denied and then invoked successfully LATER in the same turn.
- * This is the only proof accepted for a same-turn recovery: the author retried
- * the very call that was rejected and it succeeded.
- */
-export function sameTurnCorrectedTools(output) {
-  const denied = new Set();
-  const corrected = new Set();
-  for (const event of eventsOf(output)) {
-    if (event.type !== 'tool_use') continue;
-    const tool = event.part?.tool;
-    const raw = event.part?.state?.output ?? '';
-    let errored = /"error":true/.test(raw);
-    if (!errored) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.error === true) errored = true;
-      } catch {
-        // Non-JSON output is not an error envelope.
-      }
-    }
-    if (errored) {
-      if (typeof tool === 'string') denied.add(tool);
-      continue;
-    }
-    if (typeof tool === 'string' && denied.has(tool)) corrected.add(tool);
-  }
-  return corrected;
-}
-
 /** Denials observed in a step that must stop the flow (never recovered in-session). */
 export function unexpectedDenialCodes(output) {
   return toolDenialCodes(output).filter((code) => !isRecoverableFamily(code));
-}
-
-/** The controlled negative probe: exactly the expected denial, nothing else. */
-export function assertExpectedDenial(output, expectedCode) {
-  const codes = toolDenialCodes(output);
-  if (!codes.includes(expectedCode)) {
-    throw new Error(`expected denial ${expectedCode}, observed [${codes.join(', ') || 'none'}]`);
-  }
-  const unexpected = codes.filter((code) => code !== expectedCode);
-  if (unexpected.length > 0) {
-    throw new Error(`unexpected denial(s) alongside ${expectedCode}: ${unexpected.join(', ')}`);
-  }
 }
 
 /**
@@ -498,12 +410,18 @@ export function assertSessionBinding(state, hostSessionId, workspace) {
  * never supply `result` itself. Any failure keeps the record FAILED so the
  * aggregate cannot count a falsely passing case.
  */
-export async function finalizeControlRecord(record, session, runner, payload = {}) {
-  record.result = 'FAILED';
+export async function finalizeControlRecord(
+  record,
+  session,
+  runner,
+  payload = {},
+  result = RESULT.CONTROL_PASSED,
+) {
+  record.result = RESULT.FAILED;
   record.hostSessionId = session.sessionId;
   await runner.captureProvenance(record, session);
   const { result: _rejected, ...safePayload } = payload;
-  Object.assign(record, safePayload, { result: 'PASS' });
+  Object.assign(record, safePayload, { result });
   return record;
 }
 
@@ -638,13 +556,25 @@ export class Runner {
       session.awaitingRecovery = null;
     }
 
+    const trust = transcriptTrust(result.stdout);
+    if (!trust.readable) {
+      session.transcriptWarnings = session.transcriptWarnings ?? [];
+      session.transcriptWarnings.push({ step: label, unreadable: trust.unreadable });
+      this.log(
+        `${label}: ${trust.unreadable.length} unreadable governed tool output(s); no recovery or denial proof is credited for this turn`,
+      );
+    }
     const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
-    const correctedTools = sameTurnCorrectedTools(result.stdout);
-    const sameTurnRecovered = recoverable.filter((code) => {
-      const tool = deniedToolForCode(result.stdout, code);
-      return tool !== undefined && correctedTools.has(tool);
-    });
-    const retryRecovered = captureRetryCodes(result.stdout);
+    const proofs = trust.readable
+      ? sameTurnRecoveryProofs(result.stdout)
+      : { recovered: [], unproven: [] };
+    const sameTurnRecovered = [...new Set(proofs.recovered.map((proof) => proof.code))].filter(
+      isRecoverableFamily,
+    );
+    const unprovenOccurrences = trust.readable
+      ? [...new Set(proofs.unproven.map((proof) => proof.code))]
+      : recoverable;
+    const retryRecovered = trust.readable ? captureRetryCodes(result.stdout) : [];
     session.recoveredDenials = session.recoveredDenials ?? [];
     if (sameTurnRecovered.length > 0) {
       session.recoveredDenials.push({
@@ -665,12 +595,12 @@ export class Runner {
     const pendingCodes = recoverable.filter(
       (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
     );
-    const unproven = recoverable.filter(
-      (code) => !sameTurnRecovered.includes(code) && !pendingCodes.includes(code),
+    const unproven = unprovenOccurrences.filter(
+      (code) => isRecoverableFamily(code) && !pendingCodes.includes(code),
     );
     if (unproven.length > 0) {
       throw new Error(
-        `${label}: recoverable denial(s) without a proven in-session correction (${unproven.join(', ')}); stopping the flow`,
+        `${label}: recoverable denial occurrence(s) without a later proven correction (${unproven.join(', ')}); stopping the flow`,
       );
     }
     if (pendingCodes.length > 0) {
@@ -739,6 +669,18 @@ export class Runner {
           `${label}: terminal block(s) recorded (phaseBefore=${String(phaseBefore)}, phaseAfter=${String(phaseAfter)}) [${unexpected.join(', ')}]`,
         );
       } else {
+        let reviewExhausted = false;
+        try {
+          reviewExhausted = persistedReviewExhausted(this.requireBoundState(session).state);
+        } catch {
+          reviewExhausted = false;
+        }
+        if (reviewExhausted && unexpected.includes('GOVERNANCE_OVERRIDE_REQUIRED')) {
+          throw new DemoNotVerifiedError(
+            `${label}: independent review exhausted its budget without acceptance ` +
+              `(${unexpected.join(', ')}); the positive proof is NOT_VERIFIED`,
+          );
+        }
         throw new Error(
           `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
         );
@@ -1198,7 +1140,7 @@ async function main() {
     const flows = await runFlows(runner);
     for (const name of options.flows) {
       const flow = flows[name];
-      const record = { name, workspace: flow.workspace, result: 'BLOCKED' };
+      const record = { name, workspace: flow.workspace, result: RESULT.FAILED };
       runner.flows.push(record);
       runner.log(`START ${name}`);
       try {
@@ -1249,18 +1191,27 @@ async function main() {
             );
           }
           record.negativeOutcome = session.negativeOutcome;
+          record.result = RESULT.CONTROL_PASSED;
         } else if (snapshot.state.phase !== flow.terminal) {
           throw new Error(`expected terminal ${flow.terminal}, observed ${snapshot.state.phase}`);
+        } else {
+          record.result = RESULT.COMPLETE;
         }
         await runner.captureProvenance(record, session);
         record.packages = session.packages ?? [];
         record.recoveredDenials = session.recoveredDenials ?? [];
         record.terminalBlocks = session.terminalBlocks ?? [];
         record.resumedSteps = session.resumedSteps ?? [];
-        record.result = 'COMPLETE';
       } catch (error) {
-        record.error = String(error);
-        runner.log(`BLOCKED ${name}: ${error}`);
+        if (error instanceof DemoNotVerifiedError || error?.code === 'DEMO_NOT_VERIFIED') {
+          record.result = RESULT.NOT_VERIFIED;
+          record.error = String(error);
+          runner.log(`NOT_VERIFIED ${name}: ${error}`);
+        } else {
+          record.result = RESULT.FAILED;
+          record.error = String(error);
+          runner.log(`BLOCKED ${name}: ${error}`);
+        }
       }
       fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2));
       fs.writeFileSync(
@@ -1292,10 +1243,9 @@ async function main() {
   });
 
   runner.log('raw-export grant removed from the isolated config dir');
-  const completed = runner.flows.filter((flow) => flow.result === 'COMPLETE').length;
-  runner.log(`MATRIX RESULT: ${completed}/${runner.flows.length} flows COMPLETE`);
+  runner.log(resultLine(runner.flows, 'MATRIX RESULT'));
   if (exitCode !== 0) {
-    runner.log('MATRIX FAILED: at least one flow did not complete');
+    runner.log('MATRIX INCOMPLETE: at least one scenario did not produce accepted evidence');
   }
   process.exitCode = exitCode;
 }

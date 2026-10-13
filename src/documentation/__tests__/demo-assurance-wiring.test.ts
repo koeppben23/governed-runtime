@@ -1,0 +1,73 @@
+/**
+ * @module documentation/demo-assurance-wiring.test
+ * @description Contract wiring for the demo-assurance fixes: every runner must
+ * use the shared forensic primitives, and the wrapper must isolate the installer.
+ *
+ * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
+ * @version v1
+ */
+
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const DEMOS = join(process.cwd(), 'demos');
+const readDemo = (relative: string): string => readFileSync(join(DEMOS, relative), 'utf8');
+
+describe('demo assurance wiring', () => {
+  describe('HAPPY — shared forensic primitives are used', () => {
+    it('matrix recovery is occurrence-bound and fails closed on unreadable transcripts', () => {
+      const matrix = readDemo('java-task-manager/run-live-matrix.mjs');
+      expect(matrix).toContain('sameTurnRecoveryProofs');
+      expect(matrix).toContain('transcriptTrust');
+    });
+
+    it('risk and replan drive the plan gate through the shared continuation', () => {
+      expect(readDemo('risk-trigger-fixture/run-live-risk-trigger-controls.mjs')).toContain(
+        'convergePlanGate',
+      );
+      expect(readDemo('risk-trigger-fixture/run-live-replan-recovery.mjs')).toContain(
+        'convergePlanGate',
+      );
+    });
+  });
+
+  describe('BAD — the previously no-op gates are real', () => {
+    it('claim controls enforce the pinned toolchain', () => {
+      expect(readDemo('java-task-manager/run-live-claim-controls.mjs')).toContain(
+        'assertToolchain(pins)',
+      );
+    });
+
+    it('claim negative proof checks real completion-package absence', () => {
+      expect(readDemo('java-task-manager/run-live-claim-controls.mjs')).toContain(
+        'assertNoCompletionPackage',
+      );
+    });
+  });
+
+  describe('CORNER — operator intent is documented where it is needed', () => {
+    it('replan usage header names the explicit old-control override', () => {
+      const replan = readDemo('risk-trigger-fixture/run-live-replan-recovery.mjs');
+      expect(replan).toContain('--allow-old-plan-override');
+    });
+
+    it('runner-local install lock isolation is wired through the wrapper', () => {
+      expect(existsSync(join(DEMOS, 'run-all-demos.sh'))).toBe(true);
+      expect(readDemo('run-all-demos.sh')).toContain('FLOWGUARD_INSTALL_LOCK_PATH');
+    });
+  });
+
+  describe('EDGE — result taxonomy is shared, not re-invented', () => {
+    it('runners import the shared result kinds', () => {
+      for (const runner of [
+        'java-task-manager/run-live-matrix.mjs',
+        'java-task-manager/run-live-claim-controls.mjs',
+        'risk-trigger-fixture/run-live-risk-trigger-controls.mjs',
+        'risk-trigger-fixture/run-live-replan-recovery.mjs',
+      ]) {
+        expect(readDemo(runner), runner).toContain("'../lib/results.mjs'");
+      }
+    });
+  });
+});

@@ -391,7 +391,7 @@ describe('Java Task Manager demo contract', () => {
         stdout: `${denial}\n`,
       });
       await expect(runner.turn({ workspace: root }, 'plan-a', 'x')).rejects.toThrow(
-        /without a proven in-session correction/,
+        /without a later proven correction/,
       );
 
       // Later success of the same tool proves the in-session correction.

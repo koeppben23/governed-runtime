@@ -18,6 +18,7 @@ import {
   claimDeclaration,
 } from '../../../demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs';
 import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import { RESULT } from '../../../demos/lib/results.mjs';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -289,7 +290,7 @@ describe('risk-trigger control oracles', () => {
       };
       await finalizeControlRecord(record, session, runner, { verificationState: 'PROVEN' });
       expect(order).toEqual(['capture']);
-      expect(record.result).toBe('PASS');
+      expect(record.result).toBe(RESULT.CONTROL_PASSED);
       expect(record.verificationState).toBe('PROVEN');
     });
 
@@ -306,7 +307,7 @@ describe('risk-trigger control oracles', () => {
       ).rejects.toThrow('parent transcript export failed');
       record.result = 'FAILED';
       record.error = 'Error: parent transcript export failed for ses_risk_02 (exit=2)';
-      const passed = [record].filter((entry) => entry.result === 'PASS').length;
+      const passed = [record].filter((entry) => entry.result === RESULT.CONTROL_PASSED).length;
       expect(passed).toBe(0);
       expect(record.error).toContain('parent transcript export failed');
     });

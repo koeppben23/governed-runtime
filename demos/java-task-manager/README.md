@@ -41,6 +41,26 @@ for already-terminal sessions and defaults to a redacted sharing archive.
   from the governed-runtime repo root; the script writes the tarball and the
   `checksums.sha256` file the installer requires next to it)
 
+## Run all demos (one command)
+
+`demos/run-all-demos.sh` is the supported entry point for a full live run. It
+performs a mandatory dry-run environment gate (toolchain pins, npm 10 canary
+install under `engine-strict`, run isolation, artifact checksum, provider ping)
+and then runs the matrix, claim controls, risk-trigger controls and the replan
+recovery sequentially with fresh roots:
+
+```bash
+demos/run-all-demos.sh /tmp/flowguard-demos-run
+```
+
+The wrapper requires Node from `.node-version`, OpenCode
+`TESTED_OPENCODE_HOST_VERSION`, JDK 21+ and npm 10 (installed into the run root
+when the ambient npm major differs). Runs are intentionally sequential: the
+host installer uses a lock that the wrapper scopes per run root. Exit code `0`
+means every scenario produced accepted evidence, `2` marks unreached proofs and
+`1` a contract violation. See `demos/DEMO_ASSURANCE.md` for the result taxonomy
+and the forensic findings this harness enforces.
+
 ## Quick Start
 
 `run-demo-setup.sh` prepares fresh workspaces and optionally installs the
