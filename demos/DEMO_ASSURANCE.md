@@ -97,7 +97,7 @@ controlled A/B run with the SAME fixed harness.
   attempt id/status + count per obligation) are part of the fingerprint, so an
   authorized re-arm alone counts as progress instead of a false `STALLED`.
 - **Operation-bound recovery control flow:** only a same-turn recovery with a
-  shared operation key (`same_turn_operation_recovery`) resolves the denial
+  coherent typed identity (`same_turn_operation_recovery`) resolves the denial
   in-turn. A later success without an operation binding is recorded as
   `later_tool_success` and moved into `awaitingRecovery`: an independent
   operation-scoped persistence witness from the next required step is needed to
@@ -108,6 +108,11 @@ controlled A/B run with the SAME fixed harness.
   certificate or unrelated audit update cannot. Unavailable witnesses stay
   unproven. Structured re-arms require `retryable: true`; terminal supersession
   additionally requires the same explicit obligation and a fresh attempt.
+  Claim, subject and obligation identities are compared by type: a matching
+  claim cannot hide a conflicting plan digest. The matching invocation is
+  searched across later successes; an earlier foreign success cannot preempt it.
+  Retryable hints without complete obligation/attempt identities are retained
+  as `retryHints` observations, never credited as `structured_rearm`.
 - **Exit-code aggregation:** `demos/lib/aggregate-status.mjs` maps 0 to success,
   2 to `NOT_VERIFIED` and any other code (127, 137, signals) to `FAILED`, with
   FAILED outranking NOT_VERIFIED; the mapping is unit-tested and used by the

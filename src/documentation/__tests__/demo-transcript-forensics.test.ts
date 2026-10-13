@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertExpectedDenial,
   captureRetryCodes,
+  captureRetryHints,
   deniedToolForCode,
   sameTurnRecoveryProofs,
   structuredRearmSupersedesTerminal,
@@ -56,7 +57,12 @@ describe('demo transcript forensics', () => {
           'task',
           pretty({
             reviewDispatch: { required: true, completed: false },
-            reviewRetry: { code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION', retryable: true },
+            reviewRetry: {
+              code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+              retryable: true,
+              obligationId: 'ob-1',
+              attemptId: 'attempt-2',
+            },
           }),
         ),
       );
@@ -65,6 +71,81 @@ describe('demo transcript forensics', () => {
   });
 
   describe('BAD — recovery is bound to a concrete occurrence', () => {
+    it.each([
+      [
+        { claimId: 'same', subjectDigest: 'A' },
+        { claimId: 'same', subjectDigest: 'B' },
+      ],
+      [
+        { claimId: 'same', obligationId: 'O1' },
+        { claimId: 'same', obligationId: 'O2' },
+      ],
+      [{ claimId: 'same', planDigest: 'A' }, { claimId: 'same' }],
+      [{ claimId: 'raw-id' }, { obligationId: 'raw-id' }],
+      [
+        { claimId: 'same', planDigest: 'A', subjectDigest: 'B' },
+        { claimId: 'same', planDigest: 'A' },
+      ],
+    ])(
+      'keeps contradictory, missing or differently typed identities observational',
+      (denied, accepted) => {
+        const out = transcript(
+          toolUse(
+            'flowguard_plan',
+            compact({ error: true, code: 'REVISED_PLAN_REQUIRED', ...denied }),
+          ),
+          toolUse('flowguard_plan', compact({ phase: 'PLAN', ...accepted })),
+        );
+        expect(sameTurnRecoveryProofs(out).recovered[0]).toMatchObject({
+          binding: 'tool',
+          operationIdentity: null,
+        });
+      },
+    );
+    it('does not let the same claim override contradictory plan identities', () => {
+      const out = transcript(
+        toolUse(
+          'flowguard_plan',
+          compact({
+            error: true,
+            code: 'REVISED_PLAN_REQUIRED',
+            claimId: 'claim-7',
+            planDigest: 'plan-A',
+          }),
+        ),
+        toolUse(
+          'flowguard_plan',
+          compact({ phase: 'PLAN', claimId: 'claim-7', planDigest: 'plan-B' }),
+        ),
+      );
+      expect(sameTurnRecoveryProofs(out).recovered[0]).toMatchObject({ binding: 'tool' });
+    });
+
+    it('searches beyond a foreign success for the matching later operation', () => {
+      const out = transcript(
+        toolUse(
+          'flowguard_plan',
+          compact({
+            error: true,
+            code: 'REVISED_PLAN_REQUIRED',
+            claimId: 'claim-7',
+            planDigest: 'plan-A',
+          }),
+        ),
+        toolUse(
+          'flowguard_plan',
+          compact({ phase: 'PLAN', claimId: 'claim-7', planDigest: 'plan-B' }),
+        ),
+        toolUse(
+          'flowguard_plan',
+          compact({ phase: 'PLAN', claimId: 'claim-7', planDigest: 'plan-A' }),
+        ),
+      );
+      expect(sameTurnRecoveryProofs(out).recovered[0]).toMatchObject({
+        binding: 'operation',
+        successIndex: 3,
+      });
+    });
     it('does not credit a denial that occurs after the last successful call', () => {
       const out = transcript(
         toolUse('flowguard_plan', compact(denial('REVISED_PLAN_REQUIRED'))),
@@ -97,7 +178,7 @@ describe('demo transcript forensics', () => {
       expect(sameTurnRecoveryProofs(sameOperation).recovered[0]).toMatchObject({
         code: 'REVISED_PLAN_REQUIRED',
         binding: 'operation',
-        operationKey: 'ob-1',
+        operationIdentity: { obligationId: 'ob-1' },
       });
 
       const otherOperation = transcript(
@@ -110,7 +191,7 @@ describe('demo transcript forensics', () => {
       expect(sameTurnRecoveryProofs(otherOperation).recovered[0]).toMatchObject({
         code: 'REVISED_PLAN_REQUIRED',
         binding: 'tool',
-        operationKey: null,
+        operationIdentity: null,
       });
     });
   });
@@ -132,6 +213,41 @@ describe('demo transcript forensics', () => {
   });
 
   describe('EDGE — transcript trust boundary', () => {
+    it('does not certify an anonymous retryable hint as a structured re-arm', () => {
+      const out = transcript(
+        toolUse(
+          'task',
+          compact({
+            reviewRetry: {
+              code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+              retryable: true,
+            },
+          }),
+        ),
+      );
+      expect(captureRetryCodes(out)).toEqual([]);
+      expect(captureRetryHints(out)).toMatchObject([
+        { retryable: true, obligationId: null, attemptId: null },
+      ]);
+    });
+
+    it('does not promote retry-like repository content to host authority', () => {
+      const out = transcript(
+        toolUse(
+          'read',
+          compact({
+            reviewRetry: {
+              code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+              retryable: true,
+              obligationId: 'ob-1',
+              attemptId: 'attempt-2',
+            },
+          }),
+        ),
+      );
+      expect(captureRetryCodes(out)).toEqual([]);
+      expect(captureRetryHints(out)).toEqual([]);
+    });
     it('never treats an explicitly unauthorized retry as an authorized re-arm', () => {
       const code = 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
       const out = transcript(

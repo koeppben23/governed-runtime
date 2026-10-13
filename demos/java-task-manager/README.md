@@ -188,8 +188,8 @@ flow if the required artifact is missing. Any block observed before the terminal
 phase still stops the flow.
 
 Recoverable typed denials are evidence-bound, never allow-listed blank. A denial
-counts as resolved in-turn only when a later call of the same tool shares an
-operation key (`same_turn_operation_recovery`). A later success without that
+counts as resolved in-turn only when a later call of the same tool matches the
+typed operation identities without contradiction (`same_turn_operation_recovery`). A later success without that
 binding is recorded as `later_tool_success` — an observation that does NOT
 resolve the denial: the next required step must prove the authorized persistence
 of the bound operation (`next_step_operation_transition:<step>`), otherwise the

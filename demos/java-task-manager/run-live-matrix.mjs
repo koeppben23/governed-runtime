@@ -55,6 +55,7 @@ import {
   assertExpectedDenial,
   captureRetryCodes,
   captureRetryEvents,
+  captureRetryHints,
   deniedToolForCode,
   eventsOf,
   governedToolEvents,
@@ -72,6 +73,7 @@ export {
   assertExpectedDenial,
   captureRetryCodes,
   captureRetryEvents,
+  captureRetryHints,
   deniedToolForCode,
   eventsOf,
   governedToolEvents,
@@ -610,6 +612,13 @@ export class Runner {
     const sameTurnRecovered = operationRecovered;
     const unprovenOccurrences = [...new Set(proofs.unproven.map((proof) => proof.code))];
     const retryRecovered = captureRetryCodes(result.stdout);
+    const retryHints = captureRetryHints(result.stdout);
+    if (retryHints.length > 0) {
+      session.retryHints = [...(session.retryHints ?? []), { step: label, events: retryHints }];
+      this.log(
+        `${label}: retryable host hint observed without complete review identities; no re-arm proof credited`,
+      );
+    }
     session.recoveredDenials = session.recoveredDenials ?? [];
     if (operationRecovered.length > 0) {
       session.recoveredDenials.push({
@@ -672,7 +681,7 @@ export class Runner {
           session.terminal,
           recoverableProofs
             .filter((proof) => proof.binding === 'tool')
-            .map((proof) => proof.denialKeys),
+            .map((proof) => proof.denialIdentity),
         ),
       };
       this.log(
@@ -908,6 +917,7 @@ export class Runner {
   }
 
   async captureProvenance(flow, session) {
+    flow.retryHints = session.retryHints ?? [];
     const snapshot = this.requireBoundState(session);
     const targets = transcriptTargets(snapshot.state);
     if (targets.parent !== session.sessionId) {

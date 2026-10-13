@@ -31,10 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   terminate and confirm absence of the controlled demo process group (including
   TERM-resistant grandchildren) before cleanup,
   both replan sessions run through the state-driven continuation, attempt
-  identity is part of the plan-gate progress proof, only operation-bound
+  identity is part of the plan-gate progress proof, typed identity conflicts
+  cannot be overridden by a matching claim, only operation-bound
   recoveries resolve in-turn (a later tool success needs an independent
   operation-scoped persistence witness, not any state-file change), structured
-  re-arms require explicit retry authorization and same-obligation binding,
+  re-arms require explicit retry authorization and complete obligation/attempt
+  binding (anonymous retryable hints are observations only),
   unexpected runner exit codes aggregate to FAILED, and
   a failed product build aborts the wrapper.
 

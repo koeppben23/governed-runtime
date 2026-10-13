@@ -1039,6 +1039,7 @@ describe('Java Task Manager demo contract', () => {
     const rearm = JSON.stringify({
       type: 'tool_use',
       part: {
+        tool: 'task',
         state: {
           output: JSON.stringify({
             status:

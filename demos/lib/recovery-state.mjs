@@ -42,7 +42,7 @@ function acceptingReview(state, type, digest) {
 }
 
 /** Freeze the affected subject and the exact authorized NEXT operation. */
-export function expectRecovery(state, tools, terminal, deniedKeys = []) {
+export function expectRecovery(state, tools, terminal, deniedIdentities = []) {
   const actor = identity(state);
   if (tools.length === 1 && tools[0] === 'flowguard_continue' && state?.phase === 'READY') {
     const command =
@@ -68,9 +68,21 @@ export function expectRecovery(state, tools, terminal, deniedKeys = []) {
     return { kind: 'unproven', ...actor };
   }
   // A host-supplied identity of Plan A may not be silently rebound to Plan B.
-  const subjectKeys = [subject.digest, subject.recordDigest, review.obligationId];
+  const claimIds = new Set((record.claimDeclarations?.claims ?? []).map((claim) => claim.claimId));
   if (
-    deniedKeys.some((keys) => keys.length > 0 && !keys.some((key) => subjectKeys.includes(key)))
+    deniedIdentities.some(
+      (identity) =>
+        identity.conflicts.length > 0 ||
+        Object.entries(identity.bindings).some(([type, value]) =>
+          type === 'subjectDigest'
+            ? value !== subject.digest
+            : type === 'obligationId'
+              ? value !== review.obligationId
+              : type === 'claimId'
+                ? !claimIds.has(value)
+                : true,
+        ),
+    )
   ) {
     return { kind: 'unproven', ...actor };
   }

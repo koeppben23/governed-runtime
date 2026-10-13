@@ -129,33 +129,65 @@ export function governedSuccessEvents(output) {
 }
 
 /**
- * Operation-binding keys exposed by a governed envelope when the host provides
- * them. Recovery can only be claimed as an OPERATION correction when a denial
- * and a later success share such a key; otherwise the honest record is merely
- * "a later call of the same tool succeeded".
+ * Typed operation identities exposed by governed envelopes. A claim identity
+ * cannot override a contradictory subject or obligation. Multiple exposed
+ * locations of the same identity must also be coherent within one envelope.
  */
-export function operationKeys(payload) {
-  if (payload?.kind !== 'json' || !payload.value || typeof payload.value !== 'object') return [];
+export function operationIdentity(payload) {
+  if (payload?.kind !== 'json' || !payload.value || typeof payload.value !== 'object') {
+    return { bindings: {}, conflicts: [] };
+  }
   const value = payload.value;
-  const candidates = [
-    value.obligationId,
-    value.claimId,
-    value.planDigest,
-    value.subjectDigest,
-    value.reviewObligation?.obligationId,
-    value.reviewRetry?.obligationId,
-    value.reviewFeedback?.obligation?.id,
-    value.detail?.obligationId,
-  ];
-  return [...new Set(candidates.filter((candidate) => typeof candidate === 'string' && candidate))];
+  const bindings = {};
+  const conflicts = [];
+  for (const [type, candidates] of [
+    ['claimId', [value.claimId, value.detail?.claimId]],
+    [
+      'subjectDigest',
+      [
+        value.planDigest,
+        value.subjectDigest,
+        value.detail?.planDigest,
+        value.detail?.subjectDigest,
+        value.reviewFeedback?.obligation?.subjectDigest,
+      ],
+    ],
+    [
+      'obligationId',
+      [
+        value.obligationId,
+        value.reviewObligation?.obligationId,
+        value.reviewRetry?.obligationId,
+        value.reviewFeedback?.obligation?.id,
+        value.detail?.obligationId,
+      ],
+    ],
+  ]) {
+    const present = candidates.filter((candidate) => candidate !== undefined && candidate !== null);
+    if (
+      present.some((candidate) => typeof candidate !== 'string' || candidate.length === 0) ||
+      new Set(present).size > 1
+    ) {
+      conflicts.push(type);
+    } else if (present.length > 0) {
+      bindings[type] = present[0];
+    }
+  }
+  return { bindings, conflicts };
+}
+
+function sameOperation(denial, success) {
+  if (denial.conflicts.length > 0 || success.conflicts.length > 0) return false;
+  const required = Object.entries(denial.bindings);
+  return required.length > 0 && required.every(([type, value]) => success.bindings[type] === value);
 }
 
 /**
  * Occurrence-bound recovery proofs. A denial is recovered iff a later
  * invocation of the same governed tool succeeded. The proof records WHICH
- * binding was available: `operation` when both envelopes share an operation
- * key, otherwise `tool` (documented later success, never a same-operation
- * correction claim). A denial after the last success stays open.
+ * binding was available: `operation` only when all denial identities match
+ * by type with no explicit contradiction, otherwise `tool` (observation only).
+ * A denial after the last success stays open.
  */
 export function sameTurnRecoveryProofs(output) {
   const events = toolUseEvents(output);
@@ -165,26 +197,30 @@ export function sameTurnRecoveryProofs(output) {
   const unproven = [];
   for (const denial of denials) {
     const denialEvent = events.find((event) => event.index === denial.index);
-    const denialKeys = operationKeys(denialEvent?.payload);
-    const success = successes.find(
+    const denialIdentity = operationIdentity(denialEvent?.payload);
+    const candidates = successes.filter(
       (candidate) =>
         denial.tool !== undefined &&
         candidate.index > denial.index &&
         candidate.tool === denial.tool,
     );
+    // Prefer the matching operation over an earlier, unrelated tool success.
+    const matched = candidates.find((candidate) =>
+      sameOperation(denialIdentity, operationIdentity(candidate.payload)),
+    );
+    const success = matched ?? candidates[0];
     if (success === undefined) {
       unproven.push({ code: denial.code, tool: denial.tool, index: denial.index });
     } else {
-      const successKeys = operationKeys(success.payload);
-      const sharedKey = denialKeys.find((key) => successKeys.includes(key));
       recovered.push({
         code: denial.code,
         tool: denial.tool,
         denialIndex: denial.index,
         successIndex: success.index,
-        binding: sharedKey !== undefined ? 'operation' : 'tool',
-        operationKey: sharedKey ?? null,
-        denialKeys,
+        binding: matched !== undefined ? 'operation' : 'tool',
+        operationIdentity:
+          matched !== undefined ? operationIdentity(matched.payload).bindings : null,
+        denialIdentity,
       });
     }
   }
@@ -194,7 +230,7 @@ export function sameTurnRecoveryProofs(output) {
 /** Structured reviewer capture re-arms (`reviewDispatch.completed === false`). */
 export function captureRetryEvents(output) {
   const events = [];
-  for (const event of toolUseEvents(output)) {
+  for (const event of governedToolEvents(output)) {
     if (event.payload.kind !== 'json') continue;
     if (event.payload.value?.error === true) continue;
     const retry = event.payload.value?.reviewRetry;
@@ -222,14 +258,17 @@ export function captureRetryCodes(output) {
 
 function authorizedRearm(event) {
   if (event.retryable !== true) return false;
-  // Both identities must be supplied together; a partial binding is unusable.
   return (
-    (event.obligationId === null && event.attemptId === null) ||
-    (typeof event.obligationId === 'string' &&
-      event.obligationId.length > 0 &&
-      typeof event.attemptId === 'string' &&
-      event.attemptId.length > 0)
+    typeof event.obligationId === 'string' &&
+    event.obligationId.length > 0 &&
+    typeof event.attemptId === 'string' &&
+    event.attemptId.length > 0
   );
+}
+
+/** Observations only: no anonymous or partially identified hint authorizes re-arm. */
+export function captureRetryHints(output) {
+  return captureRetryEvents(output).filter((event) => event.retryable && !authorizedRearm(event));
 }
 
 /**

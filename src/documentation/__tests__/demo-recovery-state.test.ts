@@ -47,7 +47,9 @@ describe('operation-scoped recovery witnesses', () => {
   });
 
   it('does not bind a denial naming Plan A to the successful persistence of Plan B', () => {
-    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE', [['plan-B']]);
+    const expected = expectRecovery(reviewedPlan(), ['flowguard_plan'], 'COMPLETE', [
+      { bindings: { subjectDigest: 'plan-B' }, conflicts: [] },
+    ]);
     expect(expected.kind).toBe('unproven');
     expect(recoveryPersisted(expected, approvedPlan(), 'approve')).toBe(false);
   });
