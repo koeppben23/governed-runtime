@@ -314,6 +314,13 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   // Run 13: a plan revision submission omitted planText; the author corrected
   // the call in the same turn and the plan was accepted.
   'REVISED_PLAN_REQUIRED',
+  // Call-shape guards: plan/implement submissions must not mix verdict or
+  // review inputs, and approval text belongs to its own input. The author
+  // corrects the call and resubmits in-session.
+  'INVALID_PLAN_TOOL_SEQUENCE',
+  'INVALID_IMPLEMENT_TOOL_SEQUENCE',
+  'PLAN_APPROVE_WITH_TEXT',
+  'PLAN_SUBMISSION_REQUIRED',
 ]);
 
 /**
@@ -663,8 +670,8 @@ export class Runner {
       (code) => isRecoverableFamily(code) && !NEXT_STEP_RECOVERY_CODES.has(code),
     );
     if (unproven.length > 0) {
-      throw new Error(
-        `${label}: recoverable denial occurrence(s) without a later proven correction (${unproven.join(', ')}); stopping the flow`,
+      throw new DemoNotVerifiedError(
+        `${label}: recoverable denial occurrence(s) without a later proven correction (${unproven.join(', ')}); stopping the flow (the proof is NOT_VERIFIED)`,
       );
     }
     if (pendingCodes.length > 0) {
@@ -706,8 +713,8 @@ export class Runner {
 
     const planReviewDenied = toolDenialCodes(result.stdout).includes(PLAN_REVIEW_CORRECTION_CODE);
     if (planReviewDenied && !planReviewSameTurnCorrection(result.stdout)) {
-      throw new Error(
-        `${label}: ${PLAN_REVIEW_CORRECTION_CODE} without a same-turn flowguard_plan correction; stopping the flow`,
+      throw new DemoNotVerifiedError(
+        `${label}: ${PLAN_REVIEW_CORRECTION_CODE} without a same-turn flowguard_plan correction; stopping the flow (the proof is NOT_VERIFIED)`,
       );
     }
     if (planReviewDenied) {

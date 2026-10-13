@@ -135,6 +135,11 @@ controlled A/B run with the SAME fixed harness.
   `changes_requested` are distinct; progress is proven by obligation, findings,
   iteration, completion or plan version — not by any state digest change.
 - A correctly refused negative control is `CONTROL_PASSED`, never `COMPLETE`.
+- An unresolved recoverable denial — including plan/implement call-shape guards
+  such as `INVALID_PLAN_TOOL_SEQUENCE`, `INVALID_IMPLEMENT_TOOL_SEQUENCE`,
+  `PLAN_APPROVE_WITH_TEXT` and `PLAN_SUBMISSION_REQUIRED` — is `NOT_VERIFIED`
+  with its occurrence evidence preserved. `FAILED` is reserved for a proven
+  wrong denial code, contradictory evidence or an unexpected unknown block.
 
 ## Running everything
 

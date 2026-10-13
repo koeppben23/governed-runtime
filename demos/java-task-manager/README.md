@@ -201,8 +201,11 @@ terminal capture block only with `retryable: true`, the same explicit obligation
 and a fresh attempt. `CONTINUE_AMBIGUOUS` is
 different: it mutates nothing and demands an explicit flow choice, so it is
 recorded as `pending_recovery` and becomes `recovered` only through the selected
-flow's expected operation and its actual persisted artifact/obligation. A recoverable denial without such proof stops the
-flow.
+flow's expected operation and its actual persisted artifact/obligation. An
+unresolved recoverable denial — including plan/implement call-shape guards such
+as `INVALID_PLAN_TOOL_SEQUENCE` — is reported as `NOT_VERIFIED` with its
+occurrence evidence preserved; only a proven wrong denial code, contradictory
+evidence or an unexpected unknown block remains `FAILED`.
 
 The architecture negative probe is a controlled denial step: the runner
 requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that the rejected

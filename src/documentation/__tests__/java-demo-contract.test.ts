@@ -430,6 +430,36 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('reports an unresolved plan call-shape guard as NOT_VERIFIED, not a contract violation', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-plan-guard-'));
+    const guard = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'flowguard_plan',
+        state: { output: JSON.stringify({ error: true, code: 'INVALID_PLAN_TOOL_SEQUENCE' }) },
+      },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${guard}\n`,
+      });
+      runner.requireBoundState = () => ({ state: { phase: 'PLAN' }, sessionDir: root });
+      const session = { workspace: root, terminal: 'COMPLETE' };
+      await expect(runner.turn(session, 'development-03-plan', 'x')).rejects.toThrow(
+        /INVALID_PLAN_TOOL_SEQUENCE.*NOT_VERIFIED/,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('requires a proven in-session retry before a recoverable denial counts as recovered', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-same-turn-'));
     try {
@@ -458,7 +488,7 @@ describe('Java Task Manager demo contract', () => {
         stdout: `${denial}\n`,
       });
       await expect(runner.turn({ workspace: root }, 'plan-a', 'x')).rejects.toThrow(
-        /without a later proven correction/,
+        /without a later proven correction.*NOT_VERIFIED/,
       );
 
       // Later success of the same tool WITHOUT an operation binding is only an
@@ -494,7 +524,7 @@ describe('Java Task Manager demo contract', () => {
         stdout: `${denial}\n${success}\n${denial}\n`,
       });
       await expect(runner.turn({ workspace: root }, 'repeated-open-denial', 'x')).rejects.toThrow(
-        /without a later proven correction/,
+        /without a later proven correction.*NOT_VERIFIED/,
       );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
