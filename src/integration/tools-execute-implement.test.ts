@@ -37,6 +37,7 @@ import {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   abort_session,
@@ -1602,6 +1603,167 @@ describe('implement', () => {
       expect(result.latestImplementationReview).toBeDefined();
       expect(implementationReview(result).reviewMode).toBe('subagent');
       expect(implementationReview(result).iteration).toBe(1);
+    });
+
+    // ─── #1081 quality/repair flow fixtures ──────────────────────────────
+    //
+    // ASSURANCE BOUNDARY: these fixtures drive the real tool layer, state
+    // machine, digest/attempt bindings, and ordinary evidence gate with a
+    // SCRIPTED reviewer output. They prove that the existing review/repair flow
+    // processes concrete findings, requires fresh evidence for repairs, and
+    // converges without invented findings. They do NOT prove that a language
+    // model discovers the defect in free execution — that remains NOT_VERIFIED
+    // without a real-host run (see the live smoke harness).
+    describe('#1081 quality-repair flow fixtures', () => {
+      async function allowMultipleIterations(): Promise<string> {
+        const sessDir = await currentSessionDir();
+        const state = await readState(sessDir);
+        await writeState(sessDir, {
+          ...state!,
+          policySnapshot: {
+            ...state!.policySnapshot,
+            reviewBudget: { ...state!.policySnapshot.reviewBudget, implementation: 3 },
+          },
+        });
+        return sessDir;
+      }
+
+      async function resetChangedFiles(): Promise<void> {
+        const gitMockForDigest = await import('../adapters/git.js');
+        vi.mocked(gitMockForDigest.changedFiles).mockResolvedValue([
+          ...GIT_MOCK_DEFAULTS.changedFiles,
+        ]);
+      }
+
+      async function repairWithFreshRevision(addedFile: string): Promise<void> {
+        const gitMockForDigest = await import('../adapters/git.js');
+        vi.mocked(gitMockForDigest.changedFiles).mockResolvedValue([
+          ...GIT_MOCK_DEFAULTS.changedFiles,
+          addedFile,
+        ]);
+        expect(parseToolResult(await implement.execute({}, ctx)).error).toBeUndefined();
+        const sessDir = await currentSessionDir();
+        const state = await readState(sessDir);
+        if (state?.phase === 'IMPL_VALIDATION') await passImplValidation();
+        expect((await readState(sessDir))?.phase).toBe('IMPL_REVIEW');
+      }
+
+      it('fixture A: a correct minimal implementation converges without invented findings or rework', async () => {
+        await reachImplementation();
+        await resetChangedFiles();
+        await implement.execute({}, ctx);
+        await passImplValidation();
+
+        await fulfillReview('implement', 1, 'accept');
+        const accepted = parseToolResult(
+          await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+        );
+        expect(accepted.error).toBeUndefined();
+        expect(accepted.phase).toBe('EXPORT_READY');
+        const state = await readState(await currentSessionDir());
+        expect(state?.implementationRework).toBeNull();
+      });
+
+      it('fixture B: a failing challenge is repaired, author-resolved, and independently closed on a fresh digest', async () => {
+        await reachImplementation();
+        await resetChangedFiles();
+        await implement.execute({}, ctx);
+        await passImplValidation();
+        const sessDir = await allowMultipleIterations();
+
+        const round1 = await fulfillStrictReviewObligation(sessDir, {
+          obligationType: 'implement',
+          iteration: 1,
+          planVersion: 1,
+          overallVerdict: 'changes_requested',
+          challengeScenarios: [
+            'Counterexample: the parser accepts the empty input instead of rejecting it.',
+          ],
+          challengeOutcomes: ['fail'],
+        });
+        const priorChallengeId = round1.challenges[0]!.challengeId;
+        const negative = parseToolResult(
+          await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx),
+        );
+        expect(negative.error).toBeUndefined();
+        expect(negative.phase).toBe('IMPLEMENTATION');
+        const rejectedDigest = (await readState(sessDir))?.implementationRework?.rejectedDigest;
+        expect(rejectedDigest).toBeDefined();
+
+        await repairWithFreshRevision('src/parser-empty-input-fix.ts');
+
+        const repaired = await readState(sessDir);
+        const digest = repaired!.implementation!.digest;
+        expect(digest).not.toBe(rejectedDigest);
+        const attemptId = repaired!.validationAttempts.find(
+          (attempt) =>
+            attempt.scope === 'implementation' &&
+            attempt.result.passed &&
+            attempt.implementationDigest === digest,
+        )?.attemptId;
+        expect(attemptId).toBeDefined();
+        const resolution = parseToolResult(
+          await resolve_implementation_challenge.execute(
+            { challengeId: priorChallengeId, validationAttemptIds: [attemptId!] },
+            ctx,
+          ),
+        );
+        expect(resolution.error).toBeUndefined();
+
+        const round2 = await fulfillStrictReviewObligation(sessDir, {
+          obligationType: 'implement',
+          iteration: 2,
+          planVersion: 1,
+          overallVerdict: 'accept',
+          resolutionVerdicts: [{ challengeId: priorChallengeId, verdict: 'resolved' }],
+        });
+        expect(round2.challenges[0]!.challengeId).not.toBe(priorChallengeId);
+        const converged = parseToolResult(
+          await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+        );
+        expect(converged.error).toBeUndefined();
+        expect(['EVIDENCE_REVIEW', 'EXPORT_READY']).toContain(converged.phase);
+        const finalState = await readState(sessDir);
+        expect(finalState?.implementationRework).toBeNull();
+        expect(finalState?.phase).not.toBe('IMPLEMENTATION');
+      });
+
+      it('fixture C: a concrete test-fitting finding blocks acceptance until the repair is verified', async () => {
+        await reachImplementation();
+        await resetChangedFiles();
+        await implement.execute({}, ctx);
+        await passImplValidation();
+        const sessDir = await allowMultipleIterations();
+
+        const findingMessage =
+          'Violated approved obligation (smallest correct mechanics): src/auth.ts hardcodes the test input instead of parsing it; reproduce with the second documented input from the plan and replace the hardcoded branch with the parsed value.';
+        await fulfillStrictReviewObligation(sessDir, {
+          obligationType: 'implement',
+          iteration: 1,
+          planVersion: 1,
+          overallVerdict: 'changes_requested',
+          blockingIssueCount: 1,
+          blockingIssueMessages: [findingMessage],
+        });
+        const negative = parseToolResult(
+          await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx),
+        );
+        expect(negative.error).toBeUndefined();
+        expect(negative.phase).toBe('IMPLEMENTATION');
+        const blockedState = await readState(sessDir);
+        expect(blockedState?.implReviewFindings.at(-1)?.blockingIssues[0]?.message).toBe(
+          findingMessage,
+        );
+
+        await repairWithFreshRevision('src/auth-parse-fix.ts');
+        await fulfillReview('implement', 2, 'accept');
+        const converged = parseToolResult(
+          await review_implementation.execute({ reviewVerdict: 'accept' }, ctx),
+        );
+        expect(converged.error).toBeUndefined();
+        expect(['EVIDENCE_REVIEW', 'EXPORT_READY']).toContain(converged.phase);
+        expect((await readState(sessDir))?.implementationRework).toBeNull();
+      });
     });
 
     // ─── P1.3 slice 8: third-verdict end-to-end through tool layer ──────

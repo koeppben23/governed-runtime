@@ -24,6 +24,19 @@ describe('review generation authority', () => {
     ).toBe(false);
   });
 
+  it('rejects the immediately prior criteria generation after the #1081 criteria expansion', () => {
+    // Guards that a semantic criteria change actually advanced the generation:
+    // an obligation minted under the previous text must not keep dispatching
+    // with the new reviewer semantics.
+    expect(REVIEW_CRITERIA_VERSION).not.toBe('p42-v1');
+    expect(
+      isCurrentReviewGeneration({
+        criteriaVersion: 'p42-v1',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+      }),
+    ).toBe(false);
+  });
+
   it('rejects a stale mandate digest', () => {
     expect(
       isCurrentReviewGeneration({

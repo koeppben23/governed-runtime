@@ -39,7 +39,11 @@ import type { RepositoryEvidenceFreeze } from '../../../state/evidence-review-fr
 import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../../templates/mandates.js';
-export const REVIEW_CRITERIA_VERSION = 'p42-v1';
+// #1081: the implementation criteria were expanded to the risk-adaptive
+// quality checklist and blocking-finding contract. Any semantic criteria change
+// advances this generation; stale obligations fail closed instead of silently
+// reviewing under unstated semantics.
+export const REVIEW_CRITERIA_VERSION = 'p42-v2';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
 

@@ -17,15 +17,17 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Shape: prefer deep modules and vertical tracer-bullet slices over shallow pass-throughs and horizontal layer-by-layer builds.
 - Root cause: for a bug fix, the plan targets the shared cause (all affected callers), not just the symptom path named by the ticket.`,
   implementation: `### For Implementations
-- Plan conformance: every approved obligation is satisfied or explicitly marked NOT_VERIFIED; local mechanics may differ when contracts remain unchanged.
-- Correctness: no logic, null-safety, fail-open, or state/policy bugs.
-- Edge coverage: negative paths from the plan are tested.
-- Quality: follows repo conventions without duplicate authority.
-- Verification evidence: executed checks are recorded; missing checks are NOT_VERIFIED.
+Scale the depth of each check below to the frozen risk class, recorded risk triggers, and declared claims. Do not demand heavier machinery than the reviewed change's risk justifies, and do not invent requirements the approved plan does not carry.
+
+- Acceptance and correctness: every approved obligation, contract, authority decision, and acceptance criterion is satisfied or explicitly marked NOT_VERIFIED; local mechanics may differ when contracts remain unchanged. Check relevant edge cases, unhappy paths, null-safety, fail-open behavior, and state/policy coherence.
+- Architecture fit: follows repo conventions and layering without duplicate authority. Check coupling, affected callers/entrypoints, and duplicated behavior; prefer the smallest adequate design.
+- Safety and error boundaries: flag concretely exploitable injection, authn/authz bypass, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, or sensitive-data/PII exposure introduced by the change; require a clear attack path, not theoretical hardening. Verify error handling fails closed instead of swallowing failures.
+- Behavior-specific verification: executed checks are recorded; missing checks are NOT_VERIFIED. Tests must assert observable behavior through public interfaces and cover the approved negative paths; flag internal-coupling and non-boundary mocks only when they hide a real defect or weaken evidence. Where a critical fact claim or risk trigger requires it, confirm the falsification/mutation evidence exercises the changed behavior rather than a proxy.
+- Maintainability and minimal complexity: prefer the smallest adequate design. Flag unnecessary indirection, speculative flexibility, duplicated behavior, misplaced responsibilities, and avoidable complexity when they cause a concrete correctness, evidence, or maintenance risk. Do not block on naming or style preference alone, and do not demand unrelated refactoring.
 - ProofGraph evidence fit: PROVEN means the declared evidence contract is satisfied, not that an arbitrarily broad free-text claim is semantically entailed. Challenge any claim whose statement exceeds what its bound assertion/check actually observes.
-- Test integrity: tests assert observable behavior through public interfaces; flag internal-coupling and non-boundary mocks only when they hide a real defect or weaken evidence.
-- Security (as risk): flag concretely exploitable injection, authn/authz bypass, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, or sensitive-data/PII exposure introduced by the change; require a clear attack path, not theoretical hardening.
-- Root cause: a fix editing a shared function addresses the shared cause for every caller, not only the ticket's path.`,
+- Root cause: a fix addresses the shared cause for every affected caller and duplicated path, not only the ticket's path.
+
+Every blocking issue must let the author act: name the violated approved obligation or the observable defect, the exact changed code location, the evidence or reproduction that demonstrates it, and a feasible minimal repair. Keep optional style suggestions non-blocking (majorRisks/unknowns). Never fabricate findings: a correct minimal implementation that satisfies its obligations is accepted without extra review rounds, invented assertions, or scope creep.`,
   adr: `### For Architecture Decisions (ADRs)
 - Problem framing: constraints and forces are explicit.
 - Alternatives: at least two realistic options with trade-offs.
