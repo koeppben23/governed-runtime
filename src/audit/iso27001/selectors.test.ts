@@ -413,6 +413,77 @@ describe('audit/iso27001/selectors', () => {
       ).toBe('ASSERTION_ATTEMPT_MISMATCH');
     });
 
+    it('validation.assertion_passed refuses non-assertion-level bindings', () => {
+      const assertion = { providerId: 'vitest', localId: 'auth.spec.ts::aggregated' };
+      const extraction = makeAssertionExtraction({
+        attemptId: TEST_ATTEMPT_ID,
+        localId: assertion.localId,
+        status: 'passed',
+      });
+
+      // An aggregate report carries parsed entries but attests only aggregated
+      // results; the canonical binding authority refuses to bind one assertion.
+      const aggregate = baseState({
+        validationAttempts: [
+          makeImplementationAttempt({
+            extraction: { ...extraction, bindingCapability: 'aggregate' },
+          }),
+        ],
+      });
+      const aggregateResult = resolve(
+        { kind: 'validation.assertion_passed', checkId: 'test', assertion },
+        aggregate,
+      );
+      expect(aggregateResult.status).toBe('NOT_VERIFIED');
+      expect(aggregateResult.findings[0]?.code).toBe('ASSERTION_BINDING_NOT_ATTESTED');
+
+      // Duplicate provider-scoped identities make selection by order invalid.
+      const first = extraction.assertions[0]!;
+      const ambiguous = baseState({
+        validationAttempts: [
+          makeImplementationAttempt({
+            extraction: {
+              ...extraction,
+              assertions: [first, { ...first }],
+              summary: { ...extraction.summary, assertionCount: 2, passedCount: 2 },
+            },
+          }),
+        ],
+      });
+      const ambiguousResult = resolve(
+        { kind: 'validation.assertion_passed', checkId: 'test', assertion },
+        ambiguous,
+      );
+      expect(ambiguousResult.status).toBe('NOT_VERIFIED');
+      expect(ambiguousResult.findings[0]?.code).toBe('ASSERTION_IDENTITY_AMBIGUOUS');
+
+      // A report whose extraction provider is a different provider than the
+      // referenced assertion can never confirm that assertion.
+      const foreignProvider = baseState({
+        validationAttempts: [
+          makeImplementationAttempt({
+            extraction: {
+              ...extraction,
+              providerId: 'pytest',
+              assertions: [
+                {
+                  ...first,
+                  providerId: 'pytest',
+                  assertion: { providerId: 'pytest', localId: assertion.localId },
+                },
+              ],
+            },
+          }),
+        ],
+      });
+      const foreignResult = resolve(
+        { kind: 'validation.assertion_passed', checkId: 'test', assertion },
+        foreignProvider,
+      );
+      expect(foreignResult.status).toBe('NOT_VERIFIED');
+      expect(foreignResult.findings[0]?.code).toBe('ASSERTION_PROVIDER_MISMATCH');
+    });
+
     it('review.implementation_verdict requires digest-bound accepted findings', () => {
       const selector: EvidenceSelector = {
         kind: 'review.implementation_verdict',

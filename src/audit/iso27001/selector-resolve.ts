@@ -18,6 +18,10 @@ import { isAssuranceAtLeast } from '../../shared/actor-assurance.js';
 import { hashText } from '../../shared/hashing.js';
 import { evaluateWithEvent } from '../../machine/evaluate.js';
 import { getLastChainHash, verifyChain } from '../integrity.js';
+import {
+  bindAssertionEvidence,
+  type AssertionBindingDecision,
+} from '../proofgraph/assertion-evidence-binding.js';
 import type { DecisionReceipt } from '../query.js';
 import type { LoopVerdict } from '../../state/evidence-primitives.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
@@ -209,6 +213,47 @@ function resolveAssertionPassed(
   return resolveAssertionEvidence(selector, attempt, ref);
 }
 
+/** Bound the canonical rejection detail to the finding field budget. */
+function boundedDetail(detail: string): string {
+  return detail.length > 300 ? `${detail.slice(0, 297)}...` : detail;
+}
+
+/**
+ * Map a canonical assertion-binding rejection onto the selector's fail-closed
+ * state. The canonical authority (not a local lookup) decides capability,
+ * provider envelope, and identity ambiguity; only a definitively unreported
+ * assertion is EVIDENCE_MISSING, everything contradictory is NOT_VERIFIED.
+ */
+function assertionBindingRejection(
+  selector: SelectorOf<'validation.assertion_passed'>,
+  rejection: Extract<AssertionBindingDecision, { status: 'rejected' }>,
+  ref: EvidenceRef,
+): SelectorResolution {
+  if (rejection.reasonCode === 'assertion_mismatch') {
+    return missing(
+      selector,
+      'ASSERTION_NOT_REPORTED',
+      `${selector.assertion.providerId}:${selector.assertion.localId}`,
+      [ref],
+    );
+  }
+  if (rejection.reasonCode === 'provider_mismatch') {
+    return notVerified(selector, 'ASSERTION_PROVIDER_MISMATCH', boundedDetail(rejection.detail), [
+      ref,
+    ]);
+  }
+  if (rejection.reasonCode === 'assertion_identity_ambiguous') {
+    return notVerified(selector, 'ASSERTION_IDENTITY_AMBIGUOUS', boundedDetail(rejection.detail), [
+      ref,
+    ]);
+  }
+  // check_only_evidence, check_mismatch, evidence_missing, and any future
+  // canonical rejection: the provider does not attest this assertion binding.
+  return notVerified(selector, 'ASSERTION_BINDING_NOT_ATTESTED', boundedDetail(rejection.detail), [
+    ref,
+  ]);
+}
+
 function resolveAssertionEvidence(
   selector: SelectorOf<'validation.assertion_passed'>,
   attempt: ImplementationAttempt,
@@ -230,19 +275,24 @@ function resolveAssertionEvidence(
   if (extraction.attemptId !== attempt.attemptId) {
     return notVerified(selector, 'ASSERTION_ATTEMPT_MISMATCH', extraction.attemptId, [ref]);
   }
-  const found = extraction.assertions.find(
-    (assertion) =>
-      assertion.assertion.providerId === selector.assertion.providerId &&
-      assertion.assertion.localId === selector.assertion.localId,
-  );
-  if (found === undefined) {
-    return missing(
-      selector,
-      'ASSERTION_NOT_REPORTED',
-      `${selector.assertion.providerId}:${selector.assertion.localId}`,
-      [ref],
-    );
+
+  // Single assertion-binding authority: enforces assertion-level capability
+  // (aggregate/check-only reports never bind a single assertion), provider
+  // envelope identity, and unambiguous assertion identities.
+  const decision = bindAssertionEvidence({
+    requirement: {
+      kind: 'assertion',
+      checkId: selector.checkId,
+      assertion: selector.assertion,
+    },
+    checkId: selector.checkId,
+    extraction,
+  });
+  if (decision.status === 'rejected') {
+    return assertionBindingRejection(selector, decision, ref);
   }
+
+  const found = decision.assertion;
   if (found.status === 'passed') return verified(selector, [ref]);
   if (found.status === 'skipped') {
     return missing(selector, 'ASSERTION_SKIPPED', `${selector.assertion.localId}=skipped`, [ref]);
