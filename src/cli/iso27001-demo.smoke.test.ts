@@ -50,6 +50,9 @@ describeSmoke('iso27001 offline demo smoke', () => {
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain('all scenarios passed');
       expect(result.stdout).toContain('PASS A.8.32 change-control is EVIDENCE_LINKED_VERIFIED');
+      expect(result.stdout).toContain(
+        'PASS A.8.29 evidence member digest matches the archive manifest',
+      );
       expect(result.stdout).toContain('PASS aggregate report binding is NOT_VERIFIED');
       expect(result.stdout).toContain('PASS tampered package exits 2');
       expect(result.stderr).toBe('');
