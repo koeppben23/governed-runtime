@@ -3,6 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { makeState } from '../../fixtures.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
+import { planApprovalCertificateIdentity } from '../../state/proofgraph-plan-certificate.js';
 import {
   computeArtifactDigest,
   computeProjectionDigest,
@@ -20,6 +22,7 @@ import {
   materializeApprovedPlanContractResult,
 } from './materialize-contract.js';
 import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
+import type { SessionState } from '../../state/schema.js';
 
 const PLAN_CURRENT = makePlanRevision({ body: 'approved plan' });
 const PLAN_DIGEST = PLAN_CURRENT.digest;
@@ -35,7 +38,96 @@ const NOW = '2026-01-01T00:00:00.000Z';
  * the same canonical revision.
  */
 const PLAN_RECORD_DIGEST = PLAN_CURRENT.recordDigest;
+const CLAIM_DECLARATIONS: PlanClaimDeclarations = {
+  flow: 'plan',
+  version: 'v2',
+  claims: [
+    {
+      claimId: CLAIM_ID,
+      statement: 'the approved plan behavior is implemented',
+      critical: true,
+      authoritySectionId: 'implementation',
+      claimScope: 'specific_behavior',
+      expectedCheckId: 'test',
+      counterexampleRequirement: {
+        kind: 'assertion',
+        checkId: 'security',
+        assertion: { providerId: 'junit', localId: 'some-id' },
+      },
+      structuralSurface: 'command-registration',
+      mutationProfile: 'semantic',
+      coversRiskTriggers: ['state_integrity'],
+    },
+  ],
+};
 
+const CERT_CONTEXT = planApprovalContextOf(makeState('IMPL_REVIEW'));
+const CERT_ATTESTATION = {
+  kind: 'explicit_decision' as const,
+  decision: {
+    verdict: 'approve' as const,
+    rationale: 'approved',
+    decidedAt: NOW,
+    decisionIdentity: {
+      actorId: 'user',
+      actorEmail: null,
+      actorSource: 'unknown' as const,
+      actorAssurance: 'best_effort' as const,
+    },
+  },
+  flowguardSessionId: CERT_CONTEXT.flowguardSessionId,
+  bindingDigest: CERT_CONTEXT.bindingDigest,
+  policyHash: CERT_CONTEXT.policyHash,
+  policyHashVersion: CERT_CONTEXT.policyHashVersion,
+};
+const CERT_DIGEST = hashText(canonicalJsonStringify(CERT_ATTESTATION));
+const CERT_ID = planApprovalCertificateIdentity({
+  authorityDigest: PLAN_DIGEST,
+  claimDeclarationsDigest: hashText(canonicalJsonStringify(CLAIM_DECLARATIONS)),
+  decisionAttestationDigest: CERT_DIGEST,
+  planVersion: 1,
+  planRecordDigest: PLAN_RECORD_DIGEST,
+  reviewBinding: {
+    kind: 'current_review',
+    reviewObligationId: '00000000-0000-4000-8000-0000000000ab',
+    reviewEvidenceDigest: 'e'.repeat(64),
+    reviewedSubjectDigest: PLAN_DIGEST,
+  },
+  approvedAt: NOW,
+});
+
+/**
+ * Rebind an existing certificate to a changed declaration set: the canonical
+ * certificate identity is recomputed, so the certificate stays a valid
+ * certificate for the new declarations.
+ */
+function rebindDeclarationCertificate(
+  state: SessionState,
+  declarations: PlanClaimDeclarations,
+): SessionState {
+  const certificate = state.plan!.approvalCertificate!;
+  const claimDeclarationsDigest = hashText(canonicalJsonStringify(declarations));
+  return {
+    ...state,
+    plan: {
+      ...state.plan!,
+      claimDeclarations: declarations,
+      approvalCertificate: {
+        ...certificate,
+        claimDeclarationsDigest,
+        certificateId: planApprovalCertificateIdentity({
+          authorityDigest: certificate.authorityDigest,
+          claimDeclarationsDigest,
+          decisionAttestationDigest: certificate.decisionAttestationDigest,
+          planVersion: certificate.planVersion,
+          planRecordDigest: certificate.planRecordDigest,
+          reviewBinding: certificate.reviewBinding,
+          approvedAt: certificate.approvedAt,
+        }),
+      },
+    },
+  };
+}
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
     verificationCandidates: [
@@ -70,59 +162,15 @@ function stateWithClaims() {
       history: [],
       reviewFindings: [],
       reviewCompletion: 'pending',
-      claimDeclarations: {
-        flow: 'plan',
-        version: 'v2',
-        claims: [
-          {
-            claimId: CLAIM_ID,
-            statement: 'the approved plan behavior is implemented',
-            critical: true,
-            authoritySectionId: 'implementation',
-            claimScope: 'specific_behavior',
-            expectedCheckId: 'test',
-            counterexampleRequirement: {
-              kind: 'assertion',
-              checkId: 'security',
-              assertion: { providerId: 'junit', localId: 'some-id' },
-            },
-            structuralSurface: 'command-registration',
-            mutationProfile: 'semantic',
-            coversRiskTriggers: ['state_integrity'],
-          },
-        ],
-      },
+      claimDeclarations: CLAIM_DECLARATIONS,
       approvalCertificate: {
-        flow: 'plan',
+        schemaVersion: 'plan-approval-certificate.v1' as const,
+        flow: 'plan' as const,
         authorityDigest: PLAN_DIGEST,
-        claimDeclarationsDigest: hashText(
-          canonicalJsonStringify({
-            flow: 'plan',
-            version: 'v2',
-            claims: [
-              {
-                claimId: CLAIM_ID,
-                statement: 'the approved plan behavior is implemented',
-                critical: true,
-                authoritySectionId: 'implementation',
-                claimScope: 'specific_behavior',
-                expectedCheckId: 'test',
-                counterexampleRequirement: {
-                  kind: 'assertion',
-                  checkId: 'security',
-                  assertion: { providerId: 'junit', localId: 'some-id' },
-                },
-                structuralSurface: 'command-registration',
-                mutationProfile: 'semantic',
-                coversRiskTriggers: ['state_integrity'],
-              },
-            ],
-          }),
-        ),
-        decisionAttestationDigest: 'a'.repeat(64),
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(CLAIM_DECLARATIONS)),
+        decisionAttestationDigest: CERT_DIGEST,
         approvedAt: NOW,
-        approvedBy: 'user',
-        certificateId: '00000000-0000-4000-8000-000000000001',
+        certificateId: CERT_ID,
         planVersion: 1,
         planRecordDigest: PLAN_RECORD_DIGEST,
         reviewBinding: {
@@ -131,6 +179,7 @@ function stateWithClaims() {
           reviewEvidenceDigest: 'e'.repeat(64),
           reviewedSubjectDigest: PLAN_DIGEST,
         },
+        approvalAttestation: CERT_ATTESTATION,
       },
     },
     reviewDecision: {
@@ -202,10 +251,10 @@ describe('materializeApprovedPlanContract', () => {
       authorityId: 'plan',
       digest: PLAN_DIGEST,
       approval: {
-        certificateId: '00000000-0000-4000-8000-000000000001',
+        certificateId: CERT_ID,
         claimDeclarationsDigest:
           stateWithClaims().plan!.approvalCertificate!.claimDeclarationsDigest,
-        decisionAttestationDigest: 'a'.repeat(64),
+        decisionAttestationDigest: CERT_DIGEST,
         declarationId: CLAIM_ID,
       },
     });
@@ -229,15 +278,7 @@ describe('materializeApprovedPlanContract', () => {
       claims: [collidingDeclaration],
     };
     const collidingState = {
-      ...state,
-      plan: {
-        ...state.plan!,
-        claimDeclarations,
-        approvalCertificate: {
-          ...state.plan!.approvalCertificate!,
-          claimDeclarationsDigest: hashText(canonicalJsonStringify(claimDeclarations)),
-        },
-      },
+      ...rebindDeclarationCertificate(state, claimDeclarations),
       validationAttempts: state.validationAttempts.map((attempt) => ({
         ...attempt,
         result: { ...attempt.result, checkId: 'security' },
@@ -309,18 +350,8 @@ describe('materializeApprovedPlanContract', () => {
             mutationProfile: 'proofgraph-evaluator',
           },
         ],
-      } as NonNullable<typeof initial.plan>['claimDeclarations'];
-      const state = {
-        ...initial,
-        plan: {
-          ...initial.plan!,
-          claimDeclarations: declarations,
-          approvalCertificate: {
-            ...initial.plan!.approvalCertificate!,
-            claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-          },
-        },
-      };
+      } as PlanClaimDeclarations;
+      const state = rebindDeclarationCertificate(initial, declarations);
       const materialized = await materializeApprovedPlanContractResult(
         {
           ...state,
@@ -427,17 +458,7 @@ describe('materializeApprovedPlanContract', () => {
       ...base.plan!.claimDeclarations!,
       claims: [{ ...base.plan!.claimDeclarations!.claims[0]!, critical: false }],
     };
-    const state = {
-      ...base,
-      plan: {
-        ...base.plan!,
-        claimDeclarations: declarations,
-        approvalCertificate: {
-          ...base.plan!.approvalCertificate!,
-          claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-        },
-      },
-    };
+    const state = rebindDeclarationCertificate(base, declarations);
 
     const contract = await materializeApprovedPlanContract(state, process.cwd());
 
@@ -567,17 +588,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     // Test fixtures build v2 declaration bodies inline; the runtime contract
     // is `'version' in declarations` + `claimScope` presence, not a schema parse.
     const declarations = v2Declarations(claims) as PlanClaimDeclarations;
-    return {
-      ...state,
-      plan: {
-        ...state.plan!,
-        claimDeclarations: declarations,
-        approvalCertificate: {
-          ...state.plan!.approvalCertificate!,
-          claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-        },
-      },
-    };
+    return rebindDeclarationCertificate(state, declarations);
   }
 
   it('versioned declarations materialize with claimScope', async () => {
@@ -624,15 +635,11 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
         },
       ],
     };
-    const plan = {
-      ...state.plan!,
-      claimDeclarations: declarations,
-      approvalCertificate: {
-        ...state.plan!.approvalCertificate!,
-        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-      },
-    };
-    const result = await materializeApprovedPlanContractResult({ ...state, plan }, process.cwd());
+    const stateWithDeclarations = rebindDeclarationCertificate(state, declarations);
+    const result = await materializeApprovedPlanContractResult(
+      stateWithDeclarations,
+      process.cwd(),
+    );
     const claims = result.contract.claims as readonly {
       requiredEvidence: { positive: string[]; adversarial: string[] };
     }[];

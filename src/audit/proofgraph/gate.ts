@@ -17,13 +17,15 @@
 
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import { AssertionBindingReasonCodeSchema } from '../../state/proofgraph.js';
+import {
+  assessProofGraphEvidence,
+  type ProofEvidenceIntegrityInput,
+} from './evidence-integrity.js';
 import type { RiskTrigger, SessionState } from '../../state/schema.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  type PlanClaimAuthority,
-  type AuthorizedClaimBinding,
-} from '../../state/proofgraph-approval.js';
+import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval-context.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   computeProofGraphEnforcement,
@@ -46,19 +48,7 @@ function readDiagnosticsFromProjection(
 }
 
 function isValidBindingCode(value: string): value is AssertionBindingReasonCode {
-  return (
-    value === 'check_mismatch' ||
-    value === 'evidence_missing' ||
-    value === 'check_only_evidence' ||
-    value === 'provider_mismatch' ||
-    value === 'assertion_mismatch' ||
-    value === 'evidence_role_collision' ||
-    value === 'aggregate_check_mismatch' ||
-    value === 'aggregate_candidate_mismatch' ||
-    value === 'aggregate_scope_unattested' ||
-    value === 'aggregate_extraction_missing' ||
-    value === 'aggregate_capability_missing'
-  );
+  return AssertionBindingReasonCodeSchema.safeParse(value).success;
 }
 
 /** The evaluated ProofGraph gate decision. */
@@ -86,21 +76,6 @@ export interface ImplementationRiskAssessmentForGate {
   readonly riskTriggers: readonly RiskTrigger[];
 }
 
-export function planClaimAuthorityOf(plan: SessionState['plan']): PlanClaimAuthority | null {
-  if (plan === null) return null;
-  return {
-    current: {
-      digest: plan.current.digest,
-      planVersion: plan.current.planVersion,
-      recordDigest: plan.current.recordDigest,
-    },
-    ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),
-    ...(plan.approvalCertificate !== undefined
-      ? { approvalCertificate: plan.approvalCertificate }
-      : {}),
-  };
-}
-
 export function isRiskAssessmentCurrent(
   assessment: ImplementationRiskAssessmentForGate | undefined,
   implementationDigest: string | undefined,
@@ -120,24 +95,57 @@ function relevantTriggers(
   );
 }
 
-export function evaluateProofGraphGate(input: {
-  readonly projection?: ProofGraphSummary['projection'];
-  readonly authorizedCriticalClaimIds?: readonly string[];
-  /**
-   * Certificate-bound coverage relation from the current plan approval. The
-   * projector trusts this relation, never the persisted projection's own
-   * `coversRiskTriggers` entries.
-   */
-  readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
-  /** Expected certificate binding per authorized critical claim. */
-  readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
-  readonly certificateValid?: boolean;
-  readonly implementationDigest?: string;
-  readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
-  /** Per-claim binding diagnostics for enforcement surface. */
-  readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
-}): ProofGraphGateDecision {
+type ProofEvidenceAssessment = ReturnType<typeof assessProofGraphEvidence>;
+
+function assessProjection(
+  input: ProofEvidenceIntegrityInput & { readonly projection?: ProofGraphProjection },
+): ProofEvidenceAssessment | undefined {
+  return input.projection === undefined
+    ? undefined
+    : assessProofGraphEvidence(input.projection, input);
+}
+
+/** Projection diagnostics first, explicit input next, identity failures last. */
+function mergeClaimDiagnostics(
+  input: {
+    readonly projection?: ProofGraphProjection;
+    readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+  },
+  assessment: ProofEvidenceAssessment | undefined,
+): Map<string, AssertionBindingReasonCode> {
+  const merged = new Map<string, AssertionBindingReasonCode>();
+  for (const source of [
+    readDiagnosticsFromProjection(input.projection),
+    input.claimDiagnostics,
+    assessment?.identityDiagnostics,
+  ]) {
+    if (source === undefined) continue;
+    for (const [claimId, code] of source) merged.set(claimId, code);
+  }
+  return merged;
+}
+
+export function evaluateProofGraphGate(
+  input: ProofEvidenceIntegrityInput & {
+    readonly projection?: ProofGraphSummary['projection'];
+    readonly authorizedCriticalClaimIds?: readonly string[];
+    /**
+     * Certificate-bound coverage relation from the current plan approval. The
+     * projector trusts this relation, never the persisted projection's own
+     * `coversRiskTriggers` entries.
+     */
+    readonly authorizedRiskTriggerCoverage?: ReadonlyMap<string, readonly SpecificRiskTrigger[]>;
+    /** Expected certificate binding per authorized critical claim. */
+    readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
+    readonly certificateValid?: boolean;
+    readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
+    /** Per-claim binding diagnostics for enforcement surface. */
+    readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
+  },
+): ProofGraphGateDecision {
   const triggers = relevantTriggers(input.riskAssessment);
+  const assessment = assessProjection(input);
+  const projection = assessment?.projection;
 
   // A current implementation requires a risk assessment bound to that exact
   // revision. A missing assessment is as unusable as a superseded one: the
@@ -148,10 +156,10 @@ export function evaluateProofGraphGate(input: {
     input.implementationDigest !== undefined &&
     !isRiskAssessmentCurrent(input.riskAssessment, input.implementationDigest);
 
-  const claimDiagnostics =
-    input.claimDiagnostics ?? readDiagnosticsFromProjection(input.projection);
+  const claimDiagnostics = mergeClaimDiagnostics(input, assessment);
   const enforcement = computeProofGraphEnforcement({
-    ...(input.projection !== undefined ? { projection: input.projection } : {}),
+    contract: input.contract,
+    ...(projection !== undefined ? { projection } : {}),
     ...(input.authorizedCriticalClaimIds !== undefined
       ? { authorizedCriticalClaimIds: input.authorizedCriticalClaimIds }
       : {}),
@@ -188,8 +196,11 @@ export function evaluateProofGraphGate(input: {
  * status surface — never a second gating authority.
  */
 export function evaluateProofGraphGateFromState(state: SessionState): ProofGraphGateDecision {
-  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
+  const authorization = authorizedCriticalPlanClaimIds(state);
   return evaluateProofGraphGate({
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     ...(authorization.kind === 'authorized'
@@ -199,9 +210,6 @@ export function evaluateProofGraphGateFromState(state: SessionState): ProofGraph
       ? { authorizedClaimBindings: authorization.bindings }
       : {}),
     certificateValid: authorization.kind === 'authorized',
-    ...(state.implementation?.digest !== undefined
-      ? { implementationDigest: state.implementation.digest }
-      : {}),
     ...(state.implementationRiskAssessment !== null
       ? { riskAssessment: state.implementationRiskAssessment }
       : {}),

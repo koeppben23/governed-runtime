@@ -11,8 +11,19 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
+import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { CounterexampleRequirement } from './proofgraph.js';
+import {
+  isCanonicalPlanCertificateIdentity,
+  PlanApprovalCertificate,
+  refineReviewBinding,
+  ReviewBinding,
+  type PlanApprovalAttestation,
+} from './proofgraph-plan-certificate.js';
 import { SpecificRiskTrigger } from './risk-trigger.js';
+import { uniqueClaimIds } from './proofgraph-claim-set.js';
+
+export { PlanApprovalCertificate, ReviewBinding } from './proofgraph-plan-certificate.js';
 export {
   AggregateCounterexampleRequirement,
   AssertionCounterexampleRequirement,
@@ -236,96 +247,6 @@ const approvalCertificateShape = {
 } as const;
 
 /**
- * Provenance edge of an approval certificate. The binding kind is decided by
- * the gate path that minted the certificate and is never normalized from
- * digest equality afterwards.
- */
-export const ReviewBinding = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('current_review'),
-      reviewObligationId: z.string().uuid(),
-      reviewEvidenceDigest: z.string().min(1),
-      reviewedSubjectDigest: z.string().min(1),
-    })
-    .strict()
-    .readonly(),
-  z
-    .object({
-      kind: z.literal('review_exhausted_override'),
-      lastReviewObligationId: z.string().uuid(),
-      lastReviewEvidenceDigest: z.string().min(1),
-      reviewedSubjectDigest: z.string().min(1),
-      approvedSubjectDigest: z.string().min(1),
-    })
-    .strict()
-    .readonly(),
-]);
-export type ReviewBinding = z.infer<typeof ReviewBinding>;
-
-function refineReviewBinding(
-  certificate: { readonly authorityDigest: string; readonly reviewBinding: ReviewBinding },
-  ctx: z.RefinementCtx,
-  flow: 'plan' | 'architecture',
-): void {
-  const binding = certificate.reviewBinding;
-  if (binding.kind === 'current_review') {
-    if (binding.reviewedSubjectDigest !== certificate.authorityDigest) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewBinding', 'reviewedSubjectDigest'],
-        message:
-          flow === 'plan'
-            ? 'A plan current_review binding must review exactly the certified plan digest (reviewedSubjectDigest === authorityDigest).'
-            : 'A current_review binding must review exactly the certified ADR digest (reviewedSubjectDigest === authorityDigest).',
-      });
-    }
-    return;
-  }
-  if (binding.approvedSubjectDigest !== certificate.authorityDigest) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['reviewBinding', 'approvedSubjectDigest'],
-      message:
-        flow === 'plan'
-          ? 'A plan review_exhausted_override binding must approve exactly the certified plan digest (approvedSubjectDigest === authorityDigest).'
-          : 'A review_exhausted_override binding must approve exactly the certified ADR digest (approvedSubjectDigest === authorityDigest).',
-    });
-  }
-  if (binding.reviewedSubjectDigest !== binding.approvedSubjectDigest) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['reviewBinding', 'reviewedSubjectDigest'],
-      message:
-        flow === 'plan'
-          ? 'A plan review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).'
-          : 'A review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).',
-    });
-  }
-}
-
-/** A common certificate constrained for plan approval persistence. */
-export const PlanApprovalCertificate = z
-  .object({
-    flow: z.literal('plan'),
-    ...approvalCertificateShape,
-    /** Immutable plan version this certificate was issued against. */
-    planVersion: z.number().int().positive(),
-    /** Record-digest of the plan this certificate binds (content + lineage). */
-    planRecordDigest: z.string().min(1),
-    /**
-     * Canonical review-evidence provenance edge. REQUIRED in the Hard
-     * Assurance Epoch: every certificate is minted with its binding, and a
-     * certificate without one is not a current-epoch artifact — it fails
-     * parsing instead of degrading to a readable-but-unauthoritative shape.
-     */
-    reviewBinding: ReviewBinding,
-  })
-  .superRefine((certificate, ctx) => refineReviewBinding(certificate, ctx, 'plan'))
-  .readonly();
-export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
-
-/**
  * A common certificate constrained for architecture approval persistence.
  *
  * `reviewBinding` is REQUIRED: a certificate without a resolvable review
@@ -375,6 +296,19 @@ export const FlowClaimDeclarations = z.union([
 ]);
 export type FlowClaimDeclarations = z.infer<typeof FlowClaimDeclarations>;
 
+/**
+ * Session- and policy-context binding of a plan approval: valid only in the
+ * exact session binding and frozen policy it was minted in, verified against
+ * the owning session state and never reconstructed from the certificate.
+ */
+export interface PlanApprovalContext {
+  readonly flowguardSessionId: string;
+  readonly bindingDigest: string;
+  readonly policyHash: string;
+  readonly policyHashVersion: typeof POLICY_DIGEST_VERSION;
+  readonly requireHumanGates: boolean;
+}
+
 /** Minimal plan authority shape needed to verify its approval certificate. */
 export interface PlanClaimAuthority {
   readonly current: {
@@ -397,34 +331,65 @@ export function emptyClaimDeclarations(
     : { flow: 'architecture', claims: [] };
 }
 
-/** Whether the certificate binds the plan's current declaration set exactly. */
-export function hasCurrentPlanApprovalCertificate(
+/**
+ * Whether the certificate binds the plan's current declaration set exactly AND
+ * belongs to this session's binding and frozen policy. `context` is mandatory —
+ * no plan-only validation path silently omits the binding — and a
+ * `policy_auto` certificate is only valid where the frozen policy permits
+ * automatic gates.
+ */
+function approvalAttestationMatchesContext(
+  attestation: PlanApprovalAttestation,
+  context: PlanApprovalContext,
+): boolean {
+  if (attestation.flowguardSessionId !== context.flowguardSessionId) return false;
+  if (attestation.bindingDigest !== context.bindingDigest) return false;
+  if (attestation.policyHash !== context.policyHash) return false;
+  if (attestation.policyHashVersion !== context.policyHashVersion) return false;
+  return !(attestation.kind === 'policy_auto' && context.requireHumanGates);
+}
+
+/** The review-evidence binding must match the current subject exactly. */
+function reviewBindingMatchesPlan(binding: ReviewBinding, plan: PlanClaimAuthority): boolean {
+  if (binding.kind === 'current_review') {
+    return binding.reviewedSubjectDigest === plan.current.digest;
+  }
+  return (
+    binding.approvedSubjectDigest === plan.current.digest &&
+    binding.reviewedSubjectDigest === binding.approvedSubjectDigest
+  );
+}
+
+/** Certificate present and declared claim ids exactly-once; duplicated ids fail closed. */
+function approvalCertificateOf(
   plan: PlanClaimAuthority | null | undefined,
 ): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
   if (!plan?.approvalCertificate) return false;
-  if (plan.approvalCertificate.authorityDigest !== plan.current.digest) return false;
+  return uniqueClaimIds(plan.claimDeclarations?.claims ?? []) !== null;
+}
+
+export function hasCurrentPlanApprovalCertificate(
+  plan: PlanClaimAuthority | null | undefined,
+  context: PlanApprovalContext,
+): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
+  if (!approvalCertificateOf(plan)) return false;
+  const certificate = plan.approvalCertificate;
+  if (certificate.authorityDigest !== plan.current.digest) return false;
   // Versionsbindung: Ein Zertifikat für v1 autorisiert nicht v2.
-  if (plan.approvalCertificate.planVersion !== plan.current.planVersion) return false;
+  if (certificate.planVersion !== plan.current.planVersion) return false;
   // Record-Digest-Bindung: Gleicher Plantext + gleiche Version, aber anderer
   // recordDigest (z.B. andere Lineage-Metadaten) invalidiert das Zertifikat.
-  if (plan.approvalCertificate.planRecordDigest !== plan.current.recordDigest) return false;
-  // CE5: The review-evidence binding is part of the certificate's authority.
-  // The v8 certificate schema requires it, so only a binding that matches the
-  // current subject authorizes critical claims — anything else fails closed.
-  const binding = plan.approvalCertificate.reviewBinding;
-  if (binding.kind === 'current_review') {
-    if (binding.reviewedSubjectDigest !== plan.current.digest) return false;
-  } else if (
-    binding.approvedSubjectDigest !== plan.current.digest ||
-    binding.reviewedSubjectDigest !== binding.approvedSubjectDigest
-  ) {
-    return false;
-  }
+  if (certificate.planRecordDigest !== plan.current.recordDigest) return false;
+  // The certificate id is bound to its full certified content: a tampered or
+  // relabeled id fails closed instead of surviving as an unbound identifier.
+  if (!isCanonicalPlanCertificateIdentity(certificate)) return false;
+  // Runtime guard for malformed in-memory projections: a missing attestation is
+  // never a current certificate.
+  if (!certificate.approvalAttestation) return false;
+  if (!approvalAttestationMatchesContext(certificate.approvalAttestation, context)) return false;
+  if (!reviewBindingMatchesPlan(certificate.reviewBinding, plan)) return false;
   const declarations = plan.claimDeclarations ?? emptyClaimDeclarations('plan');
-  return (
-    plan.approvalCertificate.claimDeclarationsDigest ===
-    hashText(canonicalJsonStringify(declarations))
-  );
+  return certificate.claimDeclarationsDigest === hashText(canonicalJsonStringify(declarations));
 }
 
 /** Minimal architecture authority shape needed to verify its approval certificate. */
@@ -486,6 +451,7 @@ export type AuthorizedCriticalPlanClaimIds =
 
 export function authorizedCriticalPlanClaimIds(
   plan: PlanClaimAuthority | null | undefined,
+  context: PlanApprovalContext,
 ): AuthorizedCriticalPlanClaimIds {
   if (!plan?.approvalCertificate) {
     const hasCriticalDeclarations = (plan?.claimDeclarations?.claims ?? []).some(
@@ -495,7 +461,7 @@ export function authorizedCriticalPlanClaimIds(
       ? { kind: 'certificate_missing' }
       : { kind: 'authorized', claimIds: [], coverage: new Map(), bindings: new Map() };
   }
-  if (!hasCurrentPlanApprovalCertificate(plan)) return { kind: 'certificate_invalid' };
+  if (!hasCurrentPlanApprovalCertificate(plan, context)) return { kind: 'certificate_invalid' };
   const certificate = plan.approvalCertificate;
   const criticalClaims = (plan.claimDeclarations?.claims ?? []).filter((claim) => claim.critical);
   const coverage = new Map<string, readonly SpecificRiskTrigger[]>();

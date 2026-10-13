@@ -18,17 +18,51 @@ import type {
   ReviewObligationType,
 } from '../../../state/evidence.js';
 import { verifyFrozenMaterialForObligation } from '../../../state/review-continuation.js';
-import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
+import {
+  renderReviewerTaskPrompt,
+  type AdvisoryChallengeResolution,
+} from '../prompting/prompt-builders.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
 import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
-import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
+import {
+  buildReviewChallengeContract,
+  type ReviewerChallengePromptContract,
+} from '../obligations/challenge-contract.js';
 import {
   buildReviewerProofContext,
   type ReviewerProofGraphAuthorities,
 } from '../context/proof-context.js';
 import type { PersistedState } from './native-task-review-types.js';
+
+function resolutionTargetIdsOf(
+  contract: ReviewerChallengePromptContract | undefined,
+): ReadonlySet<string> {
+  return new Set(contract?.resolutionTargets?.map((target) => target.challengeId) ?? []);
+}
+
+/**
+ * The author's advisory resolution bindings are rendered only for the exact
+ * targets the challenge contract requires verdicts for. They are provenance
+ * hints, not acceptance evidence (the previous reviewer output is untrusted
+ * data).
+ */
+function advisoryResolutionBindings(
+  state: PersistedState,
+  obligation: ReviewObligation,
+  resolutionTargetIds: ReadonlySet<string>,
+): readonly AdvisoryChallengeResolution[] {
+  if (obligation.obligationType !== 'implement') return [];
+  return state.challengeResolutions
+    .filter((resolution) => resolutionTargetIds.has(resolution.challengeId))
+    .map((resolution) => ({
+      challengeId: resolution.challengeId,
+      implementationDigest: resolution.implementationDigest,
+      validationAttemptIds: [...resolution.validationAttemptIds],
+      resolvedAt: resolution.resolvedAt,
+    }));
+}
 
 function subjectLabel(type: ReviewObligationType): string {
   switch (type) {
@@ -60,6 +94,12 @@ export function canonicalTaskPrompt(
   const artifactScope =
     obligation.reviewSubjectScope?.kind === 'artifact' ? obligation.reviewSubjectScope : undefined;
   const observationRevisions = resolveObservationRevisions(obligation);
+  const challengeContract = buildReviewChallengeContract(state, obligation);
+  const advisoryResolutions = advisoryResolutionBindings(
+    state,
+    obligation,
+    resolutionTargetIdsOf(challengeContract),
+  );
   return renderReviewerTaskPrompt({
     iteration: obligation.iteration,
     planVersion: obligation.planVersion,
@@ -69,8 +109,9 @@ export function canonicalTaskPrompt(
     subjectLabel: subjectLabel(obligation.obligationType),
     reviewType: reviewerPromptTypeForTask(obligation.obligationType),
     repositoryReview: observationRevisions.length > 0,
-    challengeContract: buildReviewChallengeContract(state, obligation) ?? undefined,
+    challengeContract: challengeContract ?? undefined,
     proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
+    ...(advisoryResolutions.length > 0 ? { challengeResolutions: advisoryResolutions } : {}),
     ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0 ? { retryDiagnostics } : {}),
     frozenReviewerContext,
     artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,

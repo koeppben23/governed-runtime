@@ -3,6 +3,7 @@ import { executeReviewDecision } from '../rails/review-decision.js';
 import type { ReviewDecisionInput } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
 import {
+  makePlanApprovalCertificate,
   makeState,
   makeProgressedState,
   REGULATED_POLICY_SNAPSHOT,
@@ -81,30 +82,56 @@ function withCertifiedCriticalPlan(
     ],
   };
   const plan = state.plan!;
-  return {
+  const base = {
     ...state,
     plan: {
       ...plan,
       claimDeclarations: declarations,
-      approvalCertificate: {
-        flow: 'plan' as const,
-        authorityDigest: plan.current.digest,
-        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
-        decisionAttestationDigest: 'decision-digest',
-        approvedAt: '2026-01-01T00:00:00.000Z',
-        approvedBy: 'reviewer-1',
-        certificateId: '00000000-0000-4000-8000-000000000764',
-        planVersion: plan.current.planVersion,
-        planRecordDigest: plan.current.recordDigest,
-        reviewBinding: {
-          kind: 'current_review' as const,
-          reviewObligationId: '00000000-0000-4000-8000-000000000765',
-          reviewEvidenceDigest: 'review-evidence-digest',
-          reviewedSubjectDigest: plan.current.digest,
+    },
+  };
+  const certificate = makePlanApprovalCertificate(base, {
+    claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+    planVersion: plan.current.planVersion,
+    planRecordDigest: plan.current.recordDigest,
+    reviewBinding: {
+      kind: 'current_review',
+      reviewObligationId: '00000000-0000-4000-8000-000000000765',
+      reviewEvidenceDigest: 'review-evidence-digest',
+      reviewedSubjectDigest: plan.current.digest,
+    },
+  });
+  const declaration = declarations.claims[0]!;
+  return {
+    ...base,
+    // Materialized source contract the gate requires alongside the certificate:
+    // the declared critical fact bound to the certificate provenance.
+    proofContract: {
+      version: 'contract.v2' as const,
+      claims: [
+        {
+          claimId: declaration.claimId,
+          statement: declaration.statement,
+          signalClass: 'fact' as const,
+          critical: true,
+          provenance: {
+            kind: 'canonical_authority' as const,
+            authorityId: 'plan',
+            digest: certificate.authorityDigest,
+            approval: {
+              certificateId: certificate.certificateId,
+              claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+              decisionAttestationDigest: certificate.decisionAttestationDigest,
+              declarationId: declaration.claimId,
+            },
+          },
+          evidenceRefs: [],
+          counterexampleRefs: [],
         },
-        reviewObligationId: '00000000-0000-4000-8000-000000000765',
-        reviewEvidenceDigest: 'review-evidence-digest',
-      },
+      ],
+    },
+    plan: {
+      ...base.plan,
+      approvalCertificate: certificate,
     },
   };
 }

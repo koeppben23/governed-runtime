@@ -9,6 +9,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import { assessAssertionEvidenceIntegrity } from '../../state/assertion-evidence-integrity.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ReviewVerificationEvidenceItem } from './types.js';
@@ -106,7 +107,12 @@ function projectClaimAssertionEvidence(
   requirementKeys: ReadonlySet<string>,
 ): ReviewVerificationEvidenceItem['claimAssertionEvidence'] {
   const extraction = attempt.result.assertionExtraction;
-  if (extraction?.status !== 'extracted' || requirementKeys.size === 0) return undefined;
+  if (
+    extraction?.status !== 'extracted' ||
+    requirementKeys.size === 0 ||
+    assessAssertionEvidenceIntegrity(extraction).kind === 'invalid'
+  )
+    return undefined;
   const assertions = extraction.assertions
     .filter((assertion) =>
       requirementKeys.has(
@@ -149,6 +155,7 @@ export function stateVerificationEvidence(
     )
     .map((attempt) => {
       const claimAssertionEvidence = projectClaimAssertionEvidence(attempt, requirementKeys);
+      const integrity = assessAssertionEvidenceIntegrity(attempt.result.assertionExtraction);
       return {
         attemptId: attempt.attemptId,
         kind: attempt.result.kind,
@@ -158,7 +165,10 @@ export function stateVerificationEvidence(
         timedOut: attempt.result.timedOut,
         executionMs: attempt.result.executionMs,
         outputDigest: attempt.result.outputDigest,
-        detail: attempt.result.detail,
+        detail:
+          integrity.kind === 'invalid'
+            ? `${attempt.result.detail}; NOT_VERIFIED: ${integrity.code} — ${integrity.detail}; the process passed flag is not usable assertion proof`
+            : attempt.result.detail,
         executedAt: attempt.result.executedAt,
         executionObservedStateDigest: attempt.executionObservation.executionObservedStateDigest,
         preCommitStateDigest: attempt.executionObservation.preCommitStateDigest,

@@ -240,6 +240,7 @@ export async function requireBoundStateForMutation(
 async function commitPreparedStateWithArtifactsAlreadyLocked(
   sessDir: string,
   preparedState: SessionState,
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
   // 1. Validate BEFORE any I/O — fail-closed
   const result = SessionState.safeParse(preparedState);
@@ -257,7 +258,7 @@ async function commitPreparedStateWithArtifactsAlreadyLocked(
   const preComputedStateHash = hashText(serialized);
 
   await materializeEvidenceArtifacts(sessDir, result.data, preComputedStateHash);
-  await writeStateAlreadyLocked(sessDir, result.data);
+  await writeStateAlreadyLocked(sessDir, result.data, approvalAdmission);
   // Return the persisted state so callers render the prepared ProofGraph.
   return result.data;
 }
@@ -265,8 +266,15 @@ async function commitPreparedStateWithArtifactsAlreadyLocked(
 export async function writeStateWithArtifacts(
   sessDir: string,
   nextState: SessionState,
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
-  return writeStateWithArtifactsAndAuditOperations(sessDir, nextState);
+  return writeStateWithArtifactsAndAuditOperations(
+    sessDir,
+    nextState,
+    undefined,
+    [],
+    approvalAdmission,
+  );
 }
 
 export async function writeStateWithArtifactsAndAuditOperations(
@@ -274,6 +282,7 @@ export async function writeStateWithArtifactsAndAuditOperations(
   nextState: SessionState,
   transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
   semanticIntents: readonly SemanticAuditIntent[] = [],
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
   const persist = (): Promise<SessionState> =>
     writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
@@ -281,6 +290,7 @@ export async function writeStateWithArtifactsAndAuditOperations(
       nextState,
       transitions,
       semanticIntents,
+      approvalAdmission,
     );
 
   if (lockedSessionDir.getStore() === sessDir) {
@@ -431,6 +441,7 @@ export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
   nextState: SessionState,
   transitions?: ReadonlyArray<{ from: string; to: string; event: string; at: string }>,
   semanticIntents: readonly SemanticAuditIntent[] = [],
+  approvalAdmission?: unknown,
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
   const preparedNext =
@@ -441,7 +452,11 @@ export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
     transitions,
     semanticIntents,
   );
-  return commitPreparedStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
+  return commitPreparedStateWithArtifactsAlreadyLocked(
+    sessDir,
+    stateWithOperations,
+    approvalAdmission,
+  );
 }
 
 export interface SessionWriteTransaction {

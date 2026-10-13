@@ -53,6 +53,7 @@ export function buildDecisionAuditIntent(
       fromPhase: transition.from,
       toPhase: transition.to,
       transitionEvent: transition.event,
+      transitionAt: transition.at,
       policyMode,
     },
     actor: input.actor,

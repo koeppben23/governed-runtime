@@ -22,7 +22,7 @@ import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import { autoAdvance, createPolicyEvalFn, buildFlowSelectionTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { blockedFromEvidenceApproval, blockedFromOverflow } from './auto-advance-overflow.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -101,6 +101,9 @@ export function executeTicket(
   const advanced = autoAdvance(nextState, evalFn, ctx);
   if (advanced.kind === 'overflow') {
     return blockedFromOverflow(advanced);
+  }
+  if (advanced.kind === 'blocked') {
+    return blockedFromEvidenceApproval(advanced);
   }
   const { state: finalState, evalResult: result, transitions: advanceTransitions } = advanced;
   const transitions = [...preTransitions, ...advanceTransitions];

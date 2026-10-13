@@ -15,7 +15,7 @@
  * @version v1
  */
 
-import type { AutoAdvanceOverflow, RailBlocked } from './types.js';
+import type { AutoAdvanceBlocked, AutoAdvanceOverflow, RailBlocked } from './types.js';
 import { blocked, defaultReasonRegistry } from '../config/reasons.js';
 
 /** Canonical block code for an auto-advance step-limit overflow. */
@@ -36,6 +36,20 @@ export function blockedFromOverflow(overflow: AutoAdvanceOverflow): RailBlocked 
     ...formatted,
     overflow: { phase: overflow.phase, limit: overflow.limit },
   };
+}
+
+/**
+ * Map either fail-closed auto-advance outcome (step-limit overflow or a
+ * protected-approval denial) to a {@link RailBlocked}. The substantive denial
+ * code comes from the canonical preflight; only the overflow receives the
+ * overflow context.
+ */
+export function blockedFromAutoAdvanceFailure(
+  advanced: AutoAdvanceOverflow | AutoAdvanceBlocked,
+): RailBlocked {
+  return advanced.kind === 'overflow'
+    ? blockedFromOverflow(advanced)
+    : blockedFromEvidenceApproval(advanced);
 }
 
 /**
@@ -60,5 +74,49 @@ export function formatAutoAdvanceOverflow(overflow: AutoAdvanceOverflow): string
     recovery: info.recovery,
     quickFix: info.quickFix,
     autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
+  });
+}
+
+/**
+ * Map a protected-approval denial to its canonical {@link RailBlocked}. The
+ * substantive code, registry text, and recovery come from the preflight; a
+ * persisted forensic reason (rejected plan claim) overrides the registry text
+ * but never the code.
+ */
+export function blockedFromEvidenceApproval(blockedEvent: AutoAdvanceBlocked): RailBlocked {
+  const formatted = blocked(blockedEvent.block.code, blockedEvent.block.params);
+  return {
+    ...formatted,
+    ...(blockedEvent.block.reason !== undefined ? { reason: blockedEvent.block.reason } : {}),
+    ...(blockedEvent.block.recovery !== undefined ? { recovery: blockedEvent.block.recovery } : {}),
+  };
+}
+
+/**
+ * Format either fail-closed auto-advance outcome as a blocked tool result.
+ * Used by boundary tools that only need the serialized denial.
+ */
+export function formatAutoAdvanceFailure(
+  advanced: AutoAdvanceOverflow | AutoAdvanceBlocked,
+): string {
+  return advanced.kind === 'overflow'
+    ? formatAutoAdvanceOverflow(advanced)
+    : formatAutoAdvanceBlocked(advanced);
+}
+
+/**
+ * Format a protected-approval denial as a fail-closed blocked tool result.
+ * Used by boundary tools that call autoAdvance directly; MUST be returned
+ * before any state persistence, exactly like the overflow formatter.
+ */
+export function formatAutoAdvanceBlocked(blockedEvent: AutoAdvanceBlocked): string {
+  const info = defaultReasonRegistry.format(blockedEvent.block.code, blockedEvent.block.params);
+  return JSON.stringify({
+    error: true,
+    code: blockedEvent.block.code,
+    message: blockedEvent.block.reason ?? info.reason,
+    recovery: blockedEvent.block.recovery ?? info.recovery,
+    quickFix: info.quickFix,
+    phase: blockedEvent.phase,
   });
 }

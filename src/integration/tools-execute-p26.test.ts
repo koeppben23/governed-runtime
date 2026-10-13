@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
@@ -58,6 +59,8 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { computeImplementationDigest } from '../verification/implementation-subject.js';
+import { hashText } from '../shared/hashing.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import type { ToolDefinition, ToolResult } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -359,6 +362,20 @@ describe('P26: regulated archive completion', () => {
     // 3. Write EVIDENCE_REVIEW state with regulated policy + fixture evidence.
     //    Uses writeStateWithArtifacts to materialize ticket/plan artifacts
     //    (required by requireStateForMutation's verifyEvidenceArtifacts).
+    //    The governed implementation subject must match the live worktree:
+    //    final approvals re-attest the actual bytes, so the fixture writes the
+    //    mocked changed files and derives the canonical content digest.
+    const subjectFiles = [...GIT_MOCK_DEFAULTS.changedFiles];
+    for (const relative of subjectFiles) {
+      const absolute = path.join(ws.tmpDir, relative);
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      await fs.writeFile(absolute, `content:${relative}\n`, 'utf8');
+    }
+    const implementationDigest = await computeImplementationDigest({
+      worktree: ws.tmpDir,
+      files: subjectFiles,
+      digest: hashText,
+    });
     const regulatedState = {
       ...baseState!,
       phase: 'EVIDENCE_REVIEW' as const,
@@ -375,9 +392,19 @@ describe('P26: regulated archive completion', () => {
         },
       },
       validation: VALIDATION_PASSED,
-      implementation: IMPL_EVIDENCE,
-      implementationRiskAssessment: CURRENT_IMPL_RISK_ASSESSMENT,
-      implReview: IMPL_REVIEW_CONVERGED,
+      implementation: {
+        ...IMPL_EVIDENCE,
+        changedFiles: subjectFiles,
+        domainFiles: [...subjectFiles],
+        digest: implementationDigest,
+      },
+      implementationRiskAssessment: {
+        ...CURRENT_IMPL_RISK_ASSESSMENT,
+        touchedSurfaces: [...subjectFiles],
+        assessedFileCount: subjectFiles.length,
+        implementationDigest,
+      },
+      implReview: { ...IMPL_REVIEW_CONVERGED, currDigest: implementationDigest },
       initiatedBy: 'initiator',
       initiatedByIdentity: {
         actorId: 'initiator',
@@ -825,6 +852,21 @@ describe('P26: regulated archive completion', () => {
 
       appendSpy.mockRestore();
     });
+  });
+
+  it('blocks an approval whose worktree bytes changed after the recorded review, and reports the persisted phase', async () => {
+    const sessDir = await reachRegulatedEvidenceReview();
+    await fs.writeFile(path.join(ws.tmpDir, 'src/foo.ts'), 'tampered-after-review\n', 'utf8');
+
+    const result = parseToolResult(
+      await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH');
+    expect(result.phase).toBe('EVIDENCE_REVIEW');
+
+    const persisted = await readState(sessDir);
+    expect(persisted?.phase).toBe('EVIDENCE_REVIEW');
   });
 });
 

@@ -24,10 +24,16 @@ import { verifyChain } from '../../audit/integrity.js';
 import { ARCHIVE_MANIFEST_SCHEMA_VERSION, ArchiveManifestSchema } from '../../archive/types.js';
 import { TERMINAL } from '../../machine/topology.js';
 import type { SessionState } from '../../state/schema.js';
-import { auditPath, readState, repoConfigPath } from '../persistence.js';
+import {
+  assessPersistedStateDocument,
+  auditPath,
+  readState,
+  repoConfigPath,
+} from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { inspectArchiveTar, readArchiveTextMember } from './archive-tar.js';
 import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
+const ARCHIVE_STATE_MEMBER = 'state/session-state.json';
 import { sessionDir, workspaceDir } from './init.js';
 import { scanWorktreeWorkspaces, type WorkspaceEvidence } from './upgrade-preflight-identity.js';
 import { validateSessionId } from './types.js';
@@ -98,19 +104,37 @@ export type UpgradePreflightResult =
 // ─── Pure classification ─────────────────────────────────────────────────────
 
 /**
- * Combine manifest and audit-admissibility into one archive contract status.
- * Integrity under the current contract (`invalid`) outranks expected legacy
- * incompatibility (`incompatible`); anything not fully assessed is `unknown`.
+ * Combine the archive member classifications (manifest, audit, session state)
+ * into one archive contract status. Integrity under the current contract
+ * (`invalid`) outranks expected legacy incompatibility (`incompatible`);
+ * anything not fully assessed is `unknown`.
  */
 export function combineArchiveContract(
-  manifest: ArchiveContractStatus,
-  audit: ArchiveContractStatus,
+  ...statuses: readonly ArchiveContractStatus[]
 ): ArchiveContractStatus {
-  const statuses = [manifest, audit];
   if (statuses.includes('invalid')) return 'invalid';
   if (statuses.includes('incompatible')) return 'incompatible';
   if (statuses.every((status) => status === 'compatible')) return 'compatible';
   return 'unknown';
+}
+
+/**
+ * Classify the archived state member through the canonical boundary authority
+ * the live read uses; a pre-cut payload must not be reported compatible.
+ */
+export function classifyStateMember(
+  member: { readonly kind: 'ok'; readonly content: string } | { readonly kind: 'blocked' },
+): ArchiveContractStatus {
+  if (member.kind !== 'ok') return 'unknown';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(member.content);
+  } catch {
+    return 'invalid';
+  }
+  const assessment = assessPersistedStateDocument(parsed);
+  if (assessment.kind === 'incompatible') return 'incompatible';
+  return assessment.kind === 'invalid' ? 'invalid' : 'compatible';
 }
 
 /** Classify a manifest member read against the current archive contract. */
@@ -361,7 +385,10 @@ async function classifyArchiveContractMembers(
   const audit = classifyAuditMember(
     await readArchiveTextMember(archivePath, sessionId, `${sessionId}/audit/audit.jsonl`),
   );
-  return combineArchiveContract(manifest, audit);
+  const state = classifyStateMember(
+    await readArchiveTextMember(archivePath, sessionId, `${sessionId}/${ARCHIVE_STATE_MEMBER}`),
+  );
+  return combineArchiveContract(manifest, audit, state);
 }
 
 const ARCHIVE_CONTRACT_FINDING_CODES: Readonly<

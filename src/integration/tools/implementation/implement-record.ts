@@ -51,7 +51,10 @@
 
 import { formatBlocked } from '../../blocked-result.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 // State & Machine
@@ -465,6 +468,9 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
+  }
+  if (advanced.kind === 'blocked') {
+    return formatAutoAdvanceBlocked(advanced);
   }
   const { state: finalState, transitions } = advanced;
   const stateWithMaterializedContract = await materializePostValidationContract(

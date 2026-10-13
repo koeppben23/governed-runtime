@@ -299,6 +299,18 @@ async function hasTerminalTransitionEvidence(
   );
 }
 
+/**
+ * A pending decision receipt is only safe to drain while the export transition
+ * is not yet durably audited: once a competing append made it durable, a later
+ * decision receipt would falsify the required order, so recovery fails closed.
+ */
+async function assertPendingReceiptOrder(sessDir: string, authority: SessionState): Promise<void> {
+  if (!(await hasTerminalTransitionEvidence(sessDir, authority))) return;
+  if ((await resolveDurableDecisionReceipt(sessDir, authority)).kind === 'no-receipt') {
+    throw lateReceiptError();
+  }
+}
+
 /** Atomic check-and-commit: exactly one terminal decision intent, even under concurrent recovery. */
 export async function commitTerminalDecision(
   sessDir: string,
@@ -317,7 +329,14 @@ export async function commitTerminalDecision(
     if (receipt.kind === 'correlated') return;
     // A committed intent whose event is not durable yet is drained by the
     // outbox in array order — ahead of the export transition it precedes.
-    if (hasPendingTerminalDecision(authority)) return;
+    // That is only safe while the export transition is not yet durably
+    // audited: once a competing appender made it durable, draining the
+    // decision receipt afterwards would falsify the required decision-before-
+    // transition order, so recovery fails closed instead.
+    if (hasPendingTerminalDecision(authority)) {
+      await assertPendingReceiptOrder(sessDir, authority);
+      return;
+    }
     const transition = findApprovalTransition(authority);
     const decision = authority.reviewDecision;
     if (!transition || !decision) {

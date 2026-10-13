@@ -28,7 +28,10 @@ import { z } from 'zod';
 import type { ToolDefinition, ToolResult, WorkspaceToolContext } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 import {
   withReadOnlySession,
   getWorktree,
@@ -50,6 +53,7 @@ import {
   type VerificationCandidateKind,
 } from '../../../state/discovery-schemas.js';
 import { autoAdvance } from '../../../rails/types.js';
+import type { AutoAdvanceAdvanced } from '../../../rails/types.js';
 import { executeCheck } from '../../../verification/executor.js';
 import { ceremonyAuditIntent, decidePostCheckCeremony } from './ceremony-decision.js';
 import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
@@ -389,7 +393,7 @@ interface RevalidatedCheck {
   readonly railCtx: ReturnType<typeof createPolicyContext>;
   readonly validationResult: ValidationResult;
   readonly executionObservation: ValidationExecutionObservation;
-  readonly advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+  readonly advanced: AutoAdvanceAdvanced;
   readonly ceremony: CeremonyProfileDecision | null;
   readonly ceremonyIsNew: boolean;
 }
@@ -456,8 +460,26 @@ async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<Check
         're-run /implement and all active checks before any ceremony decision',
     });
   }
-  const advanced = autoAdvance(ceremony.state, (s) => evaluate(s, railCtx.policy), railCtx);
+  // #819/#1066/#1078: materialize the approved-plan contract BEFORE the final
+  // advance. An approval's evidence basis must already include the materialized
+  // contract: the admission is issued for exactly the basis that is committed,
+  // so post-advance materialization would invalidate it.
+  // Materialize only for an ACTUAL review entry: the machine's next transition
+  // must be the full review or the reduced evidence shortcut. Failed checks,
+  // intermediate states, and baseline validation never materialize.
+  const nextEvaluation = evaluate(ceremony.state, railCtx.policy);
+  const reviewEntry =
+    nextEvaluation.kind === 'transition' &&
+    (nextEvaluation.target === 'IMPL_REVIEW' || nextEvaluation.target === 'EVIDENCE_REVIEW')
+      ? nextEvaluation.target
+      : null;
+  const stateForAdvance =
+    reviewEntry === null
+      ? ceremony.state
+      : await materializePostValidationContract(ceremony.state, input.worktree, reviewEntry);
+  const advanced = autoAdvance(stateForAdvance, (s) => evaluate(s, railCtx.policy), railCtx);
   if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
+  if (advanced.kind === 'blocked') return formatAutoAdvanceBlocked(advanced);
 
   return {
     freshState,
@@ -491,17 +513,10 @@ async function finalizeCheckUnderLock(input: {
     executionObservation,
     advanced,
   } = input.revalidated;
-  // #819/#1066: materialize the approved-plan contract for both review entries —
-  // the full IMPL_REVIEW path and the reduced EVIDENCE_REVIEW shortcut. Without
-  // the reduced entry a certificate-authorized critical claim had no persisted
-  // ProofGraph evaluation and the evidence gate blocked with
-  // PROOFGRAPH_EVALUATION_UNAVAILABLE.
-  const stateWithMaterializedContract = await materializePostValidationContract(
-    advanced.state,
-    freshState.binding.worktree,
-  );
+  // The contract was already materialized before the final advance (see
+  // revalidateCheckUnderLock): the approval basis and its admission include it.
   const activation = await activateReviewObligationAndPersist({
-    state: stateWithMaterializedContract,
+    state: advanced.state,
     preAdvanceState: nextState,
     iteration: nextImplementationReviewIteration(advanced.state),
     planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
@@ -523,6 +538,7 @@ async function finalizeCheckUnderLock(input: {
       input.revalidated.nextState.implementation,
       input.revalidated.ceremonyIsNew,
     ),
+    advanced.approvalAdmission,
   );
   const authorityResult = resolveRunCheckDispatchAuthority(activated, persisted);
   if (typeof authorityResult === 'string') return authorityResult;

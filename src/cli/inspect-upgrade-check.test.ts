@@ -16,12 +16,19 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { ARCHIVE_LAYOUT_VERSION, ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../archive/types.js';
 import { makeState } from '../fixtures.js';
+import {
+  CURRENT_ASSURANCE_EPOCH,
+  CURRENT_AUDIT_CHAIN_FORMAT,
+  CURRENT_SESSION_STATE_SCHEMA_VERSION,
+  CURRENT_STATE_DIGEST_FORMAT,
+} from '../state/schema.js';
 import { writeState } from '../adapters/persistence.js';
 import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { isTarAvailable, withTestEnv } from '../integration/test-helpers.js';
 import {
   classifyAuditMember,
   classifyManifestMember,
+  classifyStateMember,
   combineArchiveContract,
   type UpgradeCheckReport,
 } from '../adapters/workspace/upgrade-preflight.js';
@@ -133,6 +140,31 @@ describe('inspect --upgrade-check classification helpers', () => {
     expect(combineArchiveContract('incompatible', 'compatible')).toBe('incompatible');
     expect(combineArchiveContract('incompatible', 'invalid')).toBe('invalid');
     expect(combineArchiveContract('unknown', 'unknown')).toBe('unknown');
+  });
+
+  it('classifies archived session-state members against the current contract', () => {
+    expect(classifyStateMember({ kind: 'blocked' })).toBe('unknown');
+    expect(classifyStateMember({ kind: 'ok', content: 'not json' })).toBe('invalid');
+    expect(
+      classifyStateMember({
+        kind: 'ok',
+        content: JSON.stringify({ schemaVersion: 'v10' }),
+      }),
+    ).toBe('incompatible');
+    expect(classifyStateMember({ kind: 'ok', content: JSON.stringify(makeState('READY')) })).toBe(
+      'compatible',
+    );
+    expect(
+      classifyStateMember({
+        kind: 'ok',
+        content: JSON.stringify({
+          schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
+          assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+          stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+          auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
+        }),
+      }),
+    ).toBe('invalid');
   });
 
   it('classifies manifest members against the current contract', () => {
@@ -338,6 +370,32 @@ describe.skipIf(!tarOk)('inspect --upgrade-check archive classification', () => 
     ]);
   }
 
+  async function createArchiveWithState(
+    sessionsRoot: string,
+    fileName: string,
+    rootSessionId: string,
+    stateContent: string,
+  ): Promise<void> {
+    const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'upgrade-archive-'));
+    cleanups.push(() => fs.rm(staging, { recursive: true, force: true }));
+    const auditDir = path.join(staging, rootSessionId, 'audit');
+    const stateDir = path.join(staging, rootSessionId, 'state');
+    await fs.mkdir(auditDir, { recursive: true });
+    await fs.mkdir(stateDir, { recursive: true });
+    await fs.writeFile(path.join(auditDir, 'audit.jsonl'), '', 'utf8');
+    await fs.writeFile(path.join(stateDir, 'session-state.json'), stateContent, 'utf8');
+    const archiveDir = path.join(sessionsRoot, 'archive');
+    await fs.mkdir(archiveDir, { recursive: true });
+    await execFileAsync('tar', [
+      '-czf',
+      path.join(archiveDir, fileName),
+      '-C',
+      staging,
+      `${rootSessionId}/audit/audit.jsonl`,
+      `${rootSessionId}/state/session-state.json`,
+    ]);
+  }
+
   it('confirms the session root from the tar contents, not the file name', async () => {
     const { sessionsRoot } = await createWorkspaceRoot();
     await createArchive(sessionsRoot, 'regulated-foo.tar.gz', 'foo');
@@ -352,6 +410,52 @@ describe.skipIf(!tarOk)('inspect --upgrade-check archive classification', () => 
     });
     // Missing manifest/article contract evidence stays a warning for archives.
     expect(findingCodes(report)).toContain('ARCHIVE_CONTRACT_UNKNOWN');
+  });
+
+  it('classifies a pre-cut archived session state as incompatible', async () => {
+    const { sessionsRoot } = await createWorkspaceRoot();
+    await createArchiveWithState(
+      sessionsRoot,
+      'legacy.tar.gz',
+      'legacy',
+      JSON.stringify({
+        schemaVersion: 'v10',
+        assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+        stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+        auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
+      }),
+    );
+
+    const { exit, report } = await runCheck();
+    expect(exit).toBe(0);
+    expect(report.archives[0]).toMatchObject({
+      file: 'legacy.tar.gz',
+      currentContract: 'incompatible',
+    });
+    expect(findingCodes(report)).toContain('ARCHIVE_CONTRACT_INCOMPATIBLE');
+  });
+
+  it('classifies a malformed current archived session state as invalid', async () => {
+    const { sessionsRoot } = await createWorkspaceRoot();
+    await createArchiveWithState(
+      sessionsRoot,
+      'broken.tar.gz',
+      'broken',
+      JSON.stringify({
+        schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
+        assuranceEpoch: CURRENT_ASSURANCE_EPOCH,
+        stateDigestFormat: CURRENT_STATE_DIGEST_FORMAT,
+        auditChainFormat: CURRENT_AUDIT_CHAIN_FORMAT,
+      }),
+    );
+
+    const { exit, report } = await runCheck();
+    expect(exit).toBe(0);
+    expect(report.archives[0]).toMatchObject({
+      file: 'broken.tar.gz',
+      currentContract: 'invalid',
+    });
+    expect(findingCodes(report)).toContain('ARCHIVE_CONTRACT_INVALID');
   });
 
   it('warns (never blocks) for an unreadable archive container', async () => {

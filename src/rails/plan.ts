@@ -41,7 +41,7 @@ import {
   buildSelfReviewState,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { blockedFromAutoAdvanceFailure } from './auto-advance-overflow.js';
 import { projectMarkdownHeadings } from '../shared/markdown-sections.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
@@ -216,9 +216,7 @@ export async function executePlan(
   // 8. Auto-advance (TICKET → PLAN → PLAN_REVIEW if converged) — policy-aware
   const evalFn = createPolicyEvalFn(ctx);
   const advanced = autoAdvance(nextState, evalFn, ctx);
-  if (advanced.kind === 'overflow') {
-    return blockedFromOverflow(advanced);
-  }
+  if (advanced.kind !== 'advanced') return blockedFromAutoAdvanceFailure(advanced);
   const { state: finalState, evalResult: result, transitions } = advanced;
 
   return { kind: 'ok', state: finalState, evalResult: result, transitions };

@@ -48,12 +48,13 @@ import {
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import { formatAutoAdvanceFailure } from '../../../rails/auto-advance-overflow.js';
 import type { SessionState } from '../../../state/schema.js';
 import { evaluate } from '../../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../../state/proofgraph-approval.js';
+import { PLAN_CLAIM_GUIDANCE } from '../../../templates/plan-claim-guidance.js';
 import { findLatestObligation } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
@@ -220,9 +221,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
-  if (advanced.kind === 'overflow') {
-    return formatAutoAdvanceOverflow(advanced);
-  }
+  if (advanced.kind !== 'advanced') return formatAutoAdvanceFailure(advanced);
   const { state: finalState, transitions } = advanced;
 
   await writeStateWithArtifacts(scope.sessDir, finalState);
@@ -348,12 +347,7 @@ export const plan: ToolDefinition = {
         'Plan body text (markdown). Required for Mode A (initial submission) ' +
           "and when reviewVerdict is 'changes_requested' (revised plan).",
       ),
-    claims: z
-      .array(PlanClaimDeclarationSchema)
-      .optional()
-      .describe(
-        'Pre-evidence claims made by this plan version. Each names its governing plan section and expected implementation check.',
-      ),
+    claims: z.array(PlanClaimDeclarationSchema).optional().describe(PLAN_CLAIM_GUIDANCE),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
       .optional()

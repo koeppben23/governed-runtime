@@ -20,6 +20,7 @@ import type { CollectedAssertionReport } from './assertion-report-collector.js';
 import { collectAssertionReports } from './assertion-report-collector.js';
 import { VerificationError } from './errors.js';
 import type { ExecutionEvidence } from './executor.js';
+import { assessAssertionEvidenceIntegrity } from '../state/assertion-evidence-integrity.js';
 
 import {
   PARSER_BY_FORMAT,
@@ -132,6 +133,17 @@ function validateExtractedIdentities(
 
   // Aggregate reports attest suite totals; their parsed test IDs are not assertion bindings.
   if (result.bindingCapability === 'aggregate') return result;
+
+  const integrity = assessAssertionEvidenceIntegrity(result);
+  if (integrity.kind === 'invalid') {
+    return {
+      status: 'inconclusive',
+      attemptId: result.attemptId,
+      reasonCode:
+        integrity.code === 'provider_mismatch' ? 'assertion_provider_mismatch' : integrity.code,
+      reason: integrity.detail,
+    };
+  }
 
   const codec = ASSERTION_CODEC_BY_PROVIDER.get(spec.providerId);
   if (!codec) {

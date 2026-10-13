@@ -76,7 +76,7 @@ describe('implementation-entry invariant (persistence boundary + single finalize
     expect(preparation).toContain('prepareAuditOperations(previous, prepared,');
     expect(helpers).toContain('prepareStateWithAuditOperations(\n');
     const commitCall =
-      /commitPreparedStateWithArtifactsAlreadyLocked\(sessDir,\s*stateWithOperations\)/;
+      /commitPreparedStateWithArtifactsAlreadyLocked\(\s*sessDir,\s*stateWithOperations/;
     expect(helpers).toMatch(commitCall);
     expect(preparation.indexOf('finalizeImplementationEntry(result.data)')).toBeLessThan(
       preparation.indexOf('refreshProofGraph(finalized,'),

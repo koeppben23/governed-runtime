@@ -34,6 +34,7 @@ import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import {
   IMPL_EVIDENCE,
+  makePlanApprovalCertificate,
   makeState,
   POLICY_SNAPSHOT,
   REDUCED_CEREMONY_DECISION,
@@ -421,14 +422,19 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
 
   function certificate(): PlanApprovalCertificate {
     const decls = declarations();
-    return {
-      flow: 'plan',
-      authorityDigest: PLAN_CURRENT.digest,
+    const probe: SessionState = {
+      ...makeMinimalState('EVIDENCE_REVIEW'),
+      policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
+      plan: {
+        current: PLAN_CURRENT,
+        history: [],
+        reviewFindings: [],
+        reviewCompletion: 'pending',
+        claimDeclarations: decls,
+      },
+    };
+    return makePlanApprovalCertificate(probe, {
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
-      decisionAttestationDigest: 'd',
-      approvedAt: '2026-01-01T00:00:00.000Z',
-      approvedBy: 'reviewer',
-      certificateId: CERT_ID,
       planVersion: PLAN_CURRENT.planVersion,
       planRecordDigest: PLAN_CURRENT.recordDigest,
       reviewBinding: {
@@ -437,7 +443,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
         reviewEvidenceDigest: 'e'.repeat(64),
         reviewedSubjectDigest: PLAN_CURRENT.digest,
       },
-    };
+    });
   }
 
   function approvedPlan(): PlanRecord {
@@ -464,35 +470,38 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
   });
 
   it('does not invent a gate code when the Evidence gate is satisfied', () => {
+    const plan = approvedPlan();
+    const approvalCertificate = plan.approvalCertificate!;
+    const declaredClaim = {
+      claimId: CLAIM_ID,
+      statement: 'x',
+      signalClass: 'fact' as const,
+      critical: true,
+      provenance: {
+        kind: 'canonical_authority' as const,
+        authorityId: 'plan',
+        digest: PLAN_CURRENT.digest,
+        approval: {
+          certificateId: approvalCertificate.certificateId,
+          claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),
+          decisionAttestationDigest: approvalCertificate.decisionAttestationDigest,
+          declarationId: CLAIM_ID,
+        },
+      },
+      evidenceRefs: [],
+      counterexampleRefs: [],
+    };
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
       policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
-      plan: approvedPlan(),
+      plan,
+      // The declared source and the evaluated projection must both carry the
+      // claim exactly once; only then can the gate count it as satisfied.
+      proofContract: { version: 'contract.v2', claims: [declaredClaim] },
       proofGraph: {
         version: 'proofgraph.v2',
         evaluatedAt: '2026-01-01T00:00:00.000Z',
-        claims: [
-          {
-            claimId: CLAIM_ID,
-            statement: 'x',
-            signalClass: 'fact',
-            critical: true,
-            provenance: {
-              kind: 'canonical_authority',
-              authorityId: 'plan',
-              digest: PLAN_CURRENT.digest,
-              approval: {
-                certificateId: CERT_ID,
-                claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),
-                decisionAttestationDigest: 'd',
-                declarationId: CLAIM_ID,
-              },
-            },
-            evidenceRefs: [],
-            counterexampleRefs: [],
-            verificationState: 'PROVEN',
-          },
-        ],
+        claims: [{ ...declaredClaim, verificationState: 'PROVEN' }],
       },
     };
     const blocker = buildBlockedProjection(state, team);

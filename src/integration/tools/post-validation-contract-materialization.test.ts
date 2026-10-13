@@ -12,10 +12,12 @@ import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
   IMPL_EVIDENCE,
+  makePlanApprovalCertificate,
   makeState,
   POLICY_SNAPSHOT,
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
+  type PlanApprovalCertificateOverrides,
 } from '../../fixtures.js';
 import {
   TEST_EXECUTION_OBSERVATION,
@@ -120,26 +122,33 @@ const EMPTY_DECLARATIONS: PlanClaimDeclarations = { flow: 'plan', version: 'v2',
 
 function certificate(
   decls: PlanClaimDeclarations = declarations(),
-  overrides: Record<string, unknown> = {},
+  overrides: PlanApprovalCertificateOverrides = {},
 ) {
-  return {
-    flow: 'plan' as const,
+  const probe: SessionState = {
+    ...makeState('EVIDENCE_REVIEW'),
+    policySnapshot: POLICY,
+    plan: {
+      current: PLAN_CURRENT,
+      history: [],
+      reviewFindings: [],
+      reviewCompletion: 'reviewer_accepted',
+      claimDeclarations: decls,
+    },
+  };
+  return makePlanApprovalCertificate(probe, {
     authorityDigest: PLAN_CURRENT.digest,
     claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
-    decisionAttestationDigest: 'a'.repeat(64),
     approvedAt: '2026-01-02T00:00:00.000Z',
-    approvedBy: 'FlowGuard Demo',
-    certificateId: randomUUID(),
     planVersion: PLAN_CURRENT.planVersion,
     planRecordDigest: PLAN_CURRENT.recordDigest,
     reviewBinding: {
-      kind: 'current_review' as const,
+      kind: 'current_review',
       reviewObligationId: randomUUID(),
       reviewEvidenceDigest: 'b'.repeat(64),
       reviewedSubjectDigest: PLAN_CURRENT.digest,
     },
     ...overrides,
-  };
+  });
 }
 
 function planBlock(overrides: Partial<NonNullable<SessionState['plan']>> = {}) {

@@ -1,4 +1,5 @@
 import { renderCommandGovernanceRules } from '../mandates.js';
+import { PLAN_CLAIM_GUIDANCE } from '../plan-claim-guidance.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
@@ -96,31 +97,10 @@ ${DISCOVERY_REVIEW_CAPTURE}
    \`## Verification\` — Numbered list citing the command AND its Source
    (e.g., \`Source: package.json#scripts.test\`). State \`NOT_VERIFIED\` with
    recovery steps if no repo-native candidate is available.
-4. Derive the structured claim declarations for this plan version. Each claim names
-   ONE falsifiable behavioral statement, the plan section that governs it, and the
-   check expected to establish it after implementation:
-   - Do NOT provide \`claimId\`. Claim identity is host-owned and deterministically minted by FlowGuard from the declaration authority.
-   - \`statement\`: the behavior or forbidden state asserted. Keep it no broader than the observable evidence named below; if the claim asserts an internal side effect, call ordering, or forbidden invocation, the selected evidence must directly observe that property rather than only an external outcome.
-    - \`critical\`: true when the change is unsafe to approve without this claim.
-    - \`claimScope\`: \`specific_behavior\` for one behavior, or \`suite\` only when
-      the claim concerns a whole verification suite.
-   - \`authoritySectionId\`: the governing \`## Implementation\` step or section.
-   - \`expectedCheckId\`: the check kind that must pass (from \`activeChecks\` /
-     \`verificationCandidates\`, e.g. \`build\`).
-    - \`counterexampleRequirement\`: required for critical claims.
-       A \`specific_behavior\` claim requires \`{ kind: "assertion", checkId: "test",
-       assertion: { providerId: "junit", localId: "com.example.SecurityTest#verifyNoXss" } }\`.
-       A \`suite\` claim requires \`{ kind: "aggregate_check", checkId: "test" }\` and
-       is accepted only when that provider registers aggregate coverage; structured assertion
-       reports are not aggregate coverage.
-      REQUIRED whenever \`critical\` is true — a critical claim without it can never
-      become PROVEN and is rejected at submission. \`checkId\` MAY match
-      \`expectedCheckId\`. Choose a counterexample check whose current verification
-      candidate is structurally capable of producing and binding the required
-       AssertionIdentity or aggregate capability. Check-ID diversity is not an independence requirement.
-      \`assertion.providerId\` and \`assertion.localId\` identify the specific test assertion
-   Declare at least one claim per critical behavioral change. Do NOT invent claims
-   that the plan does not actually assert.
+4. Derive at least one structured claim per critical behavioral change. Do NOT
+   invent claims that the plan does not actually assert. Follow this contract:
+
+${PLAN_CLAIM_GUIDANCE}
 5. Call \`flowguard_plan({ planText, claims })\` with the full plan markdown and the
    declarations from step 4.
 6. Read the response. The \`reviewDispatch\` field carries the review state, \`reviewInvocation\` carries the exact reviewer dispatch instructions, and \`directive\` carries the canonical next action.

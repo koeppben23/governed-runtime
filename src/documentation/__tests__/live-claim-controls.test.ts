@@ -9,12 +9,15 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ADVERSARIAL_ASSERTION,
+  POSITIVE_ASSERTION,
   TICKET_FILE,
   assertClaimEvidence,
   assertRetainedCriticalClaim,
   criticalClaimDeclaration,
   prepareClaimWorkspace,
 } from '../../../demos/java-task-manager/run-live-claim-controls.mjs';
+import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import { RESULT } from '../../../demos/lib/results.mjs';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -42,13 +45,16 @@ function caseState(negative = false) {
       approvalCertificate: certificate,
       claimDeclarations: { claims: [{ ...criticalClaimDeclaration(), claimId: CLAIM_ID }] },
     },
+    implementation: { digest: 'impl-digest' },
     proofContract: { claims: [fact] },
     proofGraph: {
       claims: [
         {
           ...fact,
           verificationState: negative ? 'NOT_VERIFIED' : 'PROVEN',
-          freshness: { stale: false },
+          freshness: { stale: false, boundDigest: 'impl-digest' },
+          evidenceRefs: [{ kind: 'validation_attempt', attemptId: 'test-attempt' }],
+          counterexampleRefs: [{ kind: 'validation_attempt', attemptId: 'build-attempt' }],
         },
       ],
     },
@@ -73,7 +79,19 @@ function caseState(negative = false) {
       {
         scope: 'implementation',
         attemptId: 'test-attempt',
-        result: { checkId: 'test', passed: true, exitCode: 0 },
+        result: {
+          checkId: 'test',
+          passed: true,
+          exitCode: 0,
+          assertionExtraction: {
+            assertions: [
+              {
+                assertion: { providerId: 'junit', localId: POSITIVE_ASSERTION },
+                status: 'passed',
+              },
+            ],
+          },
+        },
       },
     ],
   };
@@ -113,9 +131,9 @@ describe('critical claim live-control oracles', () => {
       adversarialStatus: 'skipped',
     });
     const passedInstead = caseState(true);
-    passedInstead.validationAttempts[0]!.result.assertionExtraction!.assertions[0]!.status =
+    passedInstead.validationAttempts[0]!.result.assertionExtraction.assertions[0]!.status =
       'passed';
-    expect(() => assertClaimEvidence(passedInstead, { negative: true })).toThrow(/to be skipped/);
+    expect(() => assertClaimEvidence(passedInstead, { negative: true })).toThrow(/must be skipped/);
     const proven = caseState(true);
     proven.proofGraph.claims[0]!.verificationState = 'PROVEN';
     expect(() => assertClaimEvidence(proven, { negative: true })).toThrow(
@@ -125,7 +143,7 @@ describe('critical claim live-control oracles', () => {
 
   it('rejects a green check without the scoped adversarial evidence', () => {
     const missing = caseState(false);
-    missing.validationAttempts[0]!.result.assertionExtraction!.assertions = [];
+    missing.validationAttempts[0]!.result.assertionExtraction.assertions = [];
     expect(() => assertClaimEvidence(missing, { negative: false })).toThrow(
       /adversarial assertion/,
     );
@@ -202,5 +220,73 @@ describe('critical claim live-control oracles', () => {
       );
       expect(status.trim()).toBe('');
     });
+  });
+});
+
+describe('live claim control PASS contract', () => {
+  const session = { sessionId: 'ses_live_claim_01', workspace: '/tmp/live-claim' };
+
+  it('HAPPY: records PASS only after captureProvenance validated the transcripts', async () => {
+    const events: string[] = [];
+    const record: Record<string, unknown> = { name: 'case-a', result: 'FAILED' };
+    const runner = {
+      captureProvenance: async (target: Record<string, unknown>) => {
+        expect(target.result).toBe('FAILED');
+        expect(target.hostSessionId).toBe(session.sessionId);
+        events.push('capture');
+      },
+    };
+    const result = await finalizeControlRecord(record, session, runner, {
+      expectedOutcome: 'completed',
+      phase: 'COMPLETE',
+    });
+    expect(events).toEqual(['capture']);
+    expect(result.result).toBe(RESULT.CONTROL_PASSED);
+    expect(result.phase).toBe('COMPLETE');
+  });
+
+  it('BAD: a failing transcript capture keeps the record FAILED and cannot be counted', async () => {
+    const record: Record<string, unknown> = { name: 'case-b', result: 'FAILED' };
+    const runner = {
+      captureProvenance: async () => {
+        throw new Error('host transcript export failed for ses_live_claim_01 (exit=1)');
+      },
+    };
+    await expect(
+      finalizeControlRecord(record, session, runner, { expectedOutcome: 'completed' }),
+    ).rejects.toThrow('host transcript export failed');
+    record.result = 'FAILED';
+    record.error = 'Error: host transcript export failed for ses_live_claim_01 (exit=1)';
+    expect(record.result).toBe('FAILED');
+    expect(JSON.stringify(record)).not.toContain('"PASS"');
+    const records = [record];
+    const passed = records.filter((entry) => entry.result === RESULT.CONTROL_PASSED).length;
+    expect(passed).toBe(0);
+    expect(passed === records.length ? 0 : 1).toBe(1);
+  });
+
+  it('EDGE: a payload-supplied PASS cannot bypass capture validation', async () => {
+    const record: Record<string, unknown> = { name: 'case-c', result: 'FAILED' };
+    const runner = {
+      captureProvenance: async () => {
+        throw new Error('reviewer transcript missing');
+      },
+    };
+    await expect(
+      finalizeControlRecord(record, session, runner, { result: 'PASS' }),
+    ).rejects.toThrow('reviewer transcript missing');
+    expect(record.result).toBe('FAILED');
+    expect(record).not.toHaveProperty('transcripts');
+  });
+
+  it('CORNER: finalize clears a stale PASS before capture runs', async () => {
+    const record: Record<string, unknown> = { name: 'case-d', result: RESULT.CONTROL_PASSED };
+    const runner = {
+      captureProvenance: async (target: Record<string, unknown>) => {
+        expect(target.result).toBe('FAILED');
+      },
+    };
+    await finalizeControlRecord(record, session, runner);
+    expect(record.result).toBe(RESULT.CONTROL_PASSED);
   });
 });

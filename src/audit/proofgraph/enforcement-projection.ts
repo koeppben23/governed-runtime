@@ -16,6 +16,8 @@
 
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
+import type { ProofContract } from '../../state/proofgraph-contract.js';
+import { claimOccurrences } from '../../state/proofgraph-claim-set.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
@@ -78,7 +80,9 @@ export interface ProofGraphEnforcement {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function isGateEligible(claim: ProofClaim): boolean {
+function isGateEligible(
+  claim: Pick<ProofClaim, 'critical' | 'signalClass' | 'provenance'>,
+): boolean {
   if (!claim.critical || claim.signalClass !== 'fact') return false;
   return (
     claim.provenance?.kind === 'canonical_authority' && claim.provenance.approval !== undefined
@@ -148,6 +152,8 @@ function primaryReason(reasons: EnforcementReasonCode[]): EnforcementReasonCode 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export interface ComputeEnforcementInput {
+  /** Source is explicit even when absent: an authorized claim cannot be reconstructed from the projection. */
+  readonly contract: ProofContract | undefined;
   readonly projection?: ProofGraphSummary['projection'];
   readonly authorizedCriticalClaimIds?: readonly string[];
   /** A current certificate is required before any final-evidence approval. */
@@ -174,7 +180,10 @@ export interface ComputeEnforcementInput {
 }
 
 /** Whether the evaluated claim's provenance binds exactly the expected certificate. */
-function matchesAuthorizedBinding(claim: ProofClaim, expected: AuthorizedClaimBinding): boolean {
+function matchesAuthorizedBinding(
+  claim: Pick<ProofClaim, 'provenance'>,
+  expected: AuthorizedClaimBinding,
+): boolean {
   const provenance = claim.provenance;
   if (provenance?.kind !== 'canonical_authority' || provenance.approval === undefined) return false;
   return (
@@ -216,17 +225,27 @@ function missingAuthorizedClaimIds(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
 ): readonly string[] {
-  const occurrences = new Map<string, number>();
+  const occurrences = claimOccurrences(input.projection?.claims ?? []);
+  const sourceClaims = input.contract?.claims ?? [];
+  const sourceOccurrences = claimOccurrences(sourceClaims);
+  const sourceById = new Map(sourceClaims.map((claim) => [claim.claimId, claim]));
   const eligibleById = new Map<string, ProofClaim>();
   for (const claim of eligibleClaims) {
-    occurrences.set(claim.claimId, (occurrences.get(claim.claimId) ?? 0) + 1);
     eligibleById.set(claim.claimId, claim);
   }
   return (input.authorizedCriticalClaimIds ?? []).filter((id) => {
     const claim = eligibleById.get(id);
     if (claim === undefined || occurrences.get(id) !== 1) return true;
     const expected = input.authorizedClaimBindings?.get(id);
-    return expected === undefined || !matchesAuthorizedBinding(claim, expected);
+    const source = sourceById.get(id);
+    return (
+      expected === undefined ||
+      !matchesAuthorizedBinding(claim, expected) ||
+      sourceOccurrences.get(id) !== 1 ||
+      source === undefined ||
+      !isGateEligible(source) ||
+      !matchesAuthorizedBinding(source, expected)
+    );
   });
 }
 
@@ -260,7 +279,7 @@ function evaluatePreconditions(
       decisionKind: 'evaluation_unavailable',
       reasonCode: 'evaluation_unavailable',
       reason:
-        'Certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation.',
+        'Certificate-authorized critical plan claim(s) have no unique, correctly bound source and ProofGraph evaluation.',
       uncoveredTriggers: [],
     };
   }

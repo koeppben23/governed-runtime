@@ -91,6 +91,37 @@ re-review handling, measured with `performance.now()`.
 The labels and results do not establish reviewer/model quality or real-world
 false-positive and false-negative rates.
 
+### Risk-Adaptive Implementation Review (#1081)
+
+The canonical implementation criteria
+(`src/templates/mandates-reviewer-criteria.ts`) carry a bounded five-point
+quality checklist — acceptance/correctness with edge cases, architecture fit,
+safety/error boundaries, behavior-specific verification, and minimal complexity —
+scaled to the frozen risk class and recorded risk triggers. The reviewer prompt
+also carries a persisted, digest-bound implementation risk focus (effective
+class, triggers, touched surfaces) as advisory prioritization context; it never
+reclassifies risk and never gates approval. Every blocking finding must name the
+violated approved obligation or observable defect, the exact changed code, the
+evidence or reproduction, and a feasible minimal repair; optional style
+suggestions stay non-blocking (`majorRisks`/`unknowns`), and a correct minimal
+implementation is accepted without invented findings or extra review rounds.
+Any semantic criteria change advances `REVIEW_CRITERIA_VERSION`
+(`src/integration/review/obligations/assurance.ts`); obligations minted under a
+stale generation fail closed as `REVIEW_GENERATION_MISMATCH` and are recovered
+through the documented fresh-review-cycle route.
+
+Implementation-challenge repair (`changes_requested` with a failing
+`implementation_challenge`) converges through one shared authority
+(`src/state/implementation-review-findings.ts`): the native reviewer prompt
+supplies the exact prior challenge identities the author addressed plus the
+author's advisory resolution bindings, and the native capture boundary
+(`validateCapturedFindings`) enforces the same requirements as the tool
+consumption boundary. An author resolution never closes a challenge — only the
+next independent reviewer verdict (`resolved` / `still_failing` /
+`not_verified`) can. A resolution recorded after reviewer dispatch is not part
+of the reviewer contract and fails closed with a typed reason and a bounded
+re-arm rather than being counted as reviewed.
+
 ### Multi-Platform Reviewer Transport
 
 FlowGuard projects one of three reviewer transport modes in tool output:
@@ -189,8 +220,10 @@ to the current implementation digest.` line rather than being dropped — "no
   bound evidence" is itself a review signal.
 - **Read-only reviewer preserved.** FlowGuard executes the checks; the reviewer
   model does not. The reviewer stays strictly read-only (`bash: deny`), and the
-  reviewer criteria (`REVIEWER_CRITERIA`) are unchanged — the behavior lives in
-  the prompt builder, not in a new review authority.
+  reviewer criteria are owned by the canonical
+  `src/templates/mandates-reviewer-criteria.ts` (see Risk-Adaptive
+  Implementation Review) — the evidence injection itself lives in the prompt
+  builder, not in a new review authority.
 - **Enforcement-safe.** The evidence section is emitted after the
   attestation/context block and uses neutral field labels (`durationMs`,
   `digest`) so it can never introduce `iteration`/`version`-adjacent digits into

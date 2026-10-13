@@ -24,6 +24,7 @@ Bootstrap the FlowGuard session for this project.
 
 - Call \`flowguard_hydrate\` as the first and only FlowGuard tool in this command.
 - Do not modify files or call other FlowGuard tools during /hydrate.
+- Hydrate creates a session only for an absent host binding. In an existing terminal session it is a read-only reload, not a restart. New-session recovery requires a new host-session id and an independently prepared pre-change worktree before hydration; verify the returned FlowGuard identity and READY phase.
 ${renderCommandGovernanceRules()}
 ## Done-when
 

@@ -33,6 +33,7 @@ export function classifyDiscoveryHealthUnavailable(
       case 'WRITE_FAILED':
       case 'DIRECT_WRITE_REQUIRES_PREPARE':
       case 'OUTBOX_ORDER_CONFLICT':
+      case 'EXPORT_READY_APPROVAL_UNVERIFIED':
       case 'LOCK_TIMEOUT':
       case 'LOCK_TIMEOUT_EXHAUSTED':
         return 'read_failed';

@@ -56,8 +56,7 @@ import {
   type ReviewValidationFailure,
 } from '../../review/validation/review-validation-failure.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
-import { toPresentationFindingRelation } from '../helpers-rail-presentation.js';
+import { formatAutoAdvanceBlocked } from '../../../rails/auto-advance-overflow.js';
 import {
   addLatestImplementationReview,
   appendImplReviewState,
@@ -70,25 +69,33 @@ import {
 
 // State & Machine
 import type { SessionState } from '../../../state/schema.js';
-import { evaluate, evaluateWithEvent } from '../../../machine/evaluate.js';
+import { evaluateWithEvent } from '../../../machine/evaluate.js';
 import { implValidationPassed } from '../../../machine/guards.js';
-import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
+import {
+  requiresGovernanceOverride,
+  resolveWorkflowDirective,
+} from '../../../machine/workflow-directive.js';
 
 // Rail helpers
-import { applyTransition, autoAdvance } from '../../../rails/types.js';
+import { applyEvidenceApprovalTransition, applyTransition } from '../../../rails/types.js';
+import { unboundMutationEpisodeCount } from '../../../rails/review-decision-gates.js';
+import type { TransitionRecord } from '../../../rails/types.js';
 
 // Adapters
 import { readConfig } from '../../../adapters/persistence-config.js';
 
 // Presentation
-import { buildEvidenceReviewCard, PHASE_LABELS } from '../../../presentation/index.js';
-import type { EvidenceReviewCardInput } from '../../../presentation/evidence-review-card.js';
+import { formatApprovedReviewOutcome, withPersistedPhase } from './implement-review-response.js';
 
 // Evidence types
 import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import {
+  flowguardReportArtifacts,
+  reattestImplementationSubject,
+} from '../../../verification/implementation-subject.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
@@ -207,6 +214,33 @@ async function handleChangesRequestedReview(input: {
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
+/**
+ * Bind an automatic full-review approval to the live governed subject. An
+ * unchanged session state does not prove the worktree bytes still match the
+ * reviewed implementation, so the acceptance is refused before the protected
+ * approval edge when the re-attestation fails.
+ */
+async function attestApprovedReviewSubject(
+  runtime: ImplementRuntime,
+  reviewedState: SessionState,
+): Promise<string | null> {
+  const implementation = reviewedState.implementation;
+  if (!implementation) return null;
+  const result = await reattestImplementationSubject({
+    worktree: runtime.worktree,
+    frozenFiles: implementation.changedFiles,
+    expectedDigest: implementation.digest,
+    baseline: reviewedState.implementationBaseline,
+    digest: runtime.ctx.digest,
+    ignoredArtifacts: flowguardReportArtifacts(reviewedState),
+  });
+  if (result.kind === 'ok') return null;
+  return formatBlocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
+    reviewedDigest: result.expected,
+    currentDigest: result.actual,
+  });
+}
+
 async function handleApprovedReview(input: {
   runtime: ImplementRuntime;
   reviewedState: SessionState;
@@ -219,69 +253,65 @@ async function handleApprovedReview(input: {
   const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
     .glyphProfile;
 
-  const advanced = autoAdvance(
-    input.reviewedState,
-    (s) => evaluate(s, input.runtime.policy),
-    input.runtime.ctx,
-  );
-  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
-  if (advanced.kind === 'overflow') {
-    return formatAutoAdvanceOverflow(advanced);
+  // 1. Persist the legitimate review progress at the evidence gate FIRST: the
+  // reviewer acceptance is durable and the persisted phase is truthful, even
+  // when the protected approval is subsequently denied.
+  const at = input.runtime.ctx.now();
+  const gateState: SessionState =
+    input.reviewedState.phase === 'EVIDENCE_REVIEW'
+      ? input.reviewedState
+      : applyTransition(
+          input.reviewedState,
+          input.reviewedState.phase,
+          'EVIDENCE_REVIEW',
+          'REVIEW_MET',
+          at,
+        );
+  const gateTransitions: TransitionRecord[] =
+    input.reviewedState.phase === 'EVIDENCE_REVIEW'
+      ? []
+      : [{ from: input.reviewedState.phase, to: 'EVIDENCE_REVIEW', event: 'REVIEW_MET', at }];
+  await writeStateWithArtifacts(input.runtime.sessDir, gateState);
+
+  // 2. The automatic path respects the same mutation-episode fence as the
+  // explicit approval: an outstanding or unbound host mutation blocks the
+  // approval even when the current worktree bytes happen to match.
+  const unboundMutations = unboundMutationEpisodeCount(gateState);
+  if (unboundMutations > 0) {
+    return formatBlocked(
+      'MUTATION_EPISODE_BINDING_REQUIRED',
+      { count: String(unboundMutations) },
+      { phase: gateState.phase },
+    );
   }
-  const { state: finalState, transitions } = advanced;
-  await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
-  const response: Record<string, unknown> = {
-    phase: finalState.phase,
-    implReviewIteration: input.iteration,
-    _audit: { transitions },
-  };
-  addLatestImplementationReview(response, input.reviewFindings);
+  // 3. Bind the approval to the live governed subject.
+  const worktreeBlock = await attestApprovedReviewSubject(input.runtime, gateState);
+  if (worktreeBlock) return withPersistedPhase(worktreeBlock, gateState.phase);
 
-  response.proofSummary = input.proofSummary;
-  const statusLine =
-    input.runtime.args.reviewVerdict === 'accept'
-      ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
-      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
-  const directive = resolveWorkflowDirective(finalState);
-  const latestFindings = input.reviewFindings.at(-1);
-  const cardInput: EvidenceReviewCardInput = {
-    phaseLabel: PHASE_LABELS[finalState.phase],
-    directive,
-    proofSummary: input.proofSummary,
-    statusLine,
-    forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
-    ...(latestFindings
-      ? {
-          blockingIssues: latestFindings.blockingIssues.map((finding) => ({
-            severity: finding.severity,
-            category: finding.category,
-            message: finding.message,
-            relation: toPresentationFindingRelation(finding.relation),
-            ...(finding.findingId !== undefined ? { findingId: finding.findingId } : {}),
-          })),
-          majorRisks: latestFindings.majorRisks.map((finding) => ({
-            severity: finding.severity,
-            category: finding.category,
-            message: finding.message,
-            relation: toPresentationFindingRelation(finding.relation),
-          })),
-          missingVerification: [...latestFindings.missingVerification],
-          scopeCreep: [...latestFindings.scopeCreep],
-          unknowns: [...latestFindings.unknowns],
-        }
-      : {}),
-  };
-  response.presentation = {
-    markdown: buildEvidenceReviewCard(cardInput, { glyphProfile }),
-  };
-
-  if (input.runtime.args.reviewVerdict === 'accept') {
-    response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
-  } else {
-    response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
+  // 4. Automatic approval only under a policy that permits it; otherwise the
+  // machine stops at the human gate.
+  let finalState = gateState;
+  let transitions: readonly TransitionRecord[] = gateTransitions;
+  if (input.runtime.policy.requireHumanGates === false && !requiresGovernanceOverride(gateState)) {
+    const approvalAt = input.runtime.ctx.now();
+    const application = applyEvidenceApprovalTransition(gateState, approvalAt);
+    if (application.kind === 'blocked') {
+      return formatAutoAdvanceBlocked({
+        kind: 'blocked',
+        phase: gateState.phase,
+        block: application.block,
+      });
+    }
+    finalState = application.state;
+    transitions = [
+      ...gateTransitions,
+      { from: 'EVIDENCE_REVIEW', to: 'EXPORT_READY', event: 'APPROVE', at: approvalAt },
+    ];
+    await writeStateWithArtifacts(input.runtime.sessDir, finalState, application.admission);
   }
-  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
+
+  return formatApprovedReviewOutcome(input, finalState, transitions, glyphProfile);
 }
 
 function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {

@@ -25,8 +25,8 @@ import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import { normalizeHostFindings, type ImplementRuntime } from './implement-shared.js';
 import {
+  projectImplementationChallengeResolutionRequirements,
   projectOpenImplementationChallengeIds,
-  projectUnaddressedImplementationChallengeIds,
 } from '../../../state/implementation-review-findings.js';
 
 export function findOpenImplObligation(state: SessionState) {
@@ -35,15 +35,6 @@ export function findOpenImplObligation(state: SessionState) {
     [...assuranceBase.obligations]
       .reverse()
       .find((item) => item.obligationType === 'implement' && isOpenReviewObligation(item)) ?? null
-  );
-}
-
-/** Challenge ids the author has recorded a resolution for against the CURRENT digest. */
-function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
-  return new Set(
-    state.challengeResolutions
-      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
-      .map((resolution) => resolution.challengeId),
   );
 }
 
@@ -58,9 +49,7 @@ function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
  * therefore the ones that require an independent verdict, NOT ids to drop.
  */
 export function computeTargetedResolutionChallengeIds(state: SessionState): readonly string[] {
-  const open = projectOpenImplementationChallengeIds(state.implReviewFindings);
-  const resolvedIds = resolvedForCurrentDigestIds(state);
-  return open.filter((id) => resolvedIds.has(id));
+  return resolutionRequirements(state).targetedResolutionIds;
 }
 
 /**
@@ -71,11 +60,15 @@ export function computeTargetedResolutionChallengeIds(state: SessionState): read
  * findings-consistency gate fails acceptance closed while this set is non-empty.
  */
 export function computeUnaddressedPriorFailIds(state: SessionState): readonly string[] {
-  return projectUnaddressedImplementationChallengeIds(
-    state.implReviewFindings,
-    state.challengeResolutions,
-    state.implementation?.digest,
-  );
+  return resolutionRequirements(state).unaddressedPriorFailIds;
+}
+
+function resolutionRequirements(state: SessionState) {
+  return projectImplementationChallengeResolutionRequirements({
+    findingsHistory: state.implReviewFindings,
+    challengeResolutions: state.challengeResolutions,
+    implementationDigest: state.implementation?.digest,
+  });
 }
 
 /**

@@ -9,12 +9,36 @@
 
 import { describe, expect, it } from 'vitest';
 import { makeState, PLAN_RECORD, IMPL_EVIDENCE } from '../../fixtures.js';
+import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
+import { hashText } from '../../shared/hashing.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import type { SessionState } from '../../state/schema.js';
 import { buildProofApprovalProjection } from './approval-projection.js';
 
 const CLAIM_ID = '88888888-8888-4888-8888-888888888888';
 const CERTIFICATE_ID = '99999999-9999-4999-8999-999999999999';
 const ATTEMPT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+const CERT_CONTEXT = planApprovalContextOf(makeState('IMPL_REVIEW'));
+const CERT_ATTESTATION = {
+  kind: 'explicit_decision' as const,
+  decision: {
+    verdict: 'approve' as const,
+    rationale: 'LGTM',
+    decidedAt: '2026-01-01T00:00:00.000Z',
+    decisionIdentity: {
+      actorId: 'approver',
+      actorEmail: null,
+      actorSource: 'unknown' as const,
+      actorAssurance: 'best_effort' as const,
+    },
+  },
+  flowguardSessionId: CERT_CONTEXT.flowguardSessionId,
+  bindingDigest: CERT_CONTEXT.bindingDigest,
+  policyHash: CERT_CONTEXT.policyHash,
+  policyHashVersion: CERT_CONTEXT.policyHashVersion,
+};
+const CERT_DIGEST = hashText(canonicalJsonStringify(CERT_ATTESTATION));
 
 function contractState(overrides: Partial<SessionState> = {}): SessionState {
   return makeState('IMPL_REVIEW', {
@@ -36,12 +60,12 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
         ],
       },
       approvalCertificate: {
-        flow: 'plan',
+        schemaVersion: 'plan-approval-certificate.v1' as const,
+        flow: 'plan' as const,
         authorityDigest: PLAN_RECORD.current.digest,
         claimDeclarationsDigest: 'b'.repeat(64),
-        decisionAttestationDigest: 'c'.repeat(64),
+        decisionAttestationDigest: CERT_DIGEST,
         approvedAt: '2026-01-01T00:00:00.000Z',
-        approvedBy: 'approver',
         certificateId: CERTIFICATE_ID,
         planVersion: 1,
         planRecordDigest: 'record-digest',
@@ -51,6 +75,7 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
           reviewEvidenceDigest: 'd'.repeat(64),
           reviewedSubjectDigest: PLAN_RECORD.current.digest,
         },
+        approvalAttestation: CERT_ATTESTATION,
       },
     },
     proofContract: {
@@ -68,7 +93,7 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
             approval: {
               certificateId: CERTIFICATE_ID,
               claimDeclarationsDigest: 'b'.repeat(64),
-              decisionAttestationDigest: 'c'.repeat(64),
+              decisionAttestationDigest: CERT_DIGEST,
               declarationId: CLAIM_ID,
             },
           },
@@ -91,7 +116,7 @@ describe('buildProofApprovalProjection', () => {
       certificateId: CERTIFICATE_ID,
       authorityDigest: PLAN_RECORD.current.digest,
       claimDeclarationsDigest: 'b'.repeat(64),
-      decisionAttestationDigest: 'c'.repeat(64),
+      decisionAttestationDigest: CERT_DIGEST,
       declaredClaimCount: 1,
     });
   });

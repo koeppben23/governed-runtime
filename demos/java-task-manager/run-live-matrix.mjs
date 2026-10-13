@@ -21,6 +21,10 @@
  * - the architecture negative probe uses a controlled denial step: the exact
  *   expected reason code must be observed and nothing may be persisted before
  *   the allowed recovery continues;
+ * - an implementation review the author left at IMPL_REVIEW is resumed with a
+ *   BOUNDED number of canonical /implement turns; every resume must prove
+ *   persisted state progress and the evidence gate must be reached within the
+ *   bound, otherwise the flow stays blocked;
  * - parent and reviewer-child host transcripts are exported and hashed; the
  *   installed build identity is recorded from the installed package;
  * - evidence files are written once per step; a failed run is preserved and a
@@ -47,6 +51,39 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportHostTranscript } from './live-host-export.mjs';
+import {
+  assertExpectedDenial,
+  captureRetryCodes,
+  captureRetryEvents,
+  captureRetryHints,
+  deniedToolForCode,
+  eventsOf,
+  governedToolEvents,
+  parseHostPayload,
+  sameTurnRecoveryProofs,
+  structuredRearmSupersedesTerminal,
+  toolDenialCodes,
+  toolDenialEvents,
+  transcriptTrust,
+} from '../lib/transcript.mjs';
+import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
+import { expectRecovery, recoveryPersisted } from '../lib/recovery-state.mjs';
+
+export {
+  assertExpectedDenial,
+  captureRetryCodes,
+  captureRetryEvents,
+  captureRetryHints,
+  deniedToolForCode,
+  eventsOf,
+  governedToolEvents,
+  parseHostPayload,
+  sameTurnRecoveryProofs,
+  structuredRearmSupersedesTerminal,
+  toolDenialCodes,
+  toolDenialEvents,
+  transcriptTrust,
+};
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -75,9 +112,39 @@ export function verificationFlowFor(flowName) {
   throw new Error(`no verifier flow for scenario: ${flowName}`);
 }
 
-/** Non-zero when any requested flow did not complete. */
+/** Non-zero when any requested flow did not produce accepted evidence. */
 export function matrixExitCode(flows) {
-  return flows.every((flow) => flow.result === 'COMPLETE') ? 0 : 1;
+  return exitCodeForResults(flows);
+}
+
+/**
+ * Reviewer capture/consistency blocks. The product fail-closed is correct, but
+ * a positive proof that never reaches its gate is NOT_VERIFIED, not a demo
+ * contract violation. The evidence is preserved either way.
+ */
+export const REVIEW_STAGE_INCOMPLETE_CODES = new Set([
+  'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+  'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+  'SUBAGENT_UNABLE_TO_REVIEW',
+  'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
+  'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+  'REVIEW_EVIDENCE_NOT_OBSERVED',
+  'REVIEW_ATTEMPT_UNAVAILABLE',
+]);
+
+export function classifyUnexpectedBlock(codes) {
+  if (codes.length > 0 && codes.every((code) => REVIEW_STAGE_INCOMPLETE_CODES.has(code))) {
+    return 'not_verified';
+  }
+  return 'failed';
+}
+
+/** The persisted review loop ended without reviewer acceptance. */
+export function persistedReviewExhausted(state) {
+  return (
+    state?.plan?.reviewCompletion === 'review_exhausted' ||
+    state?.architecture?.reviewCompletion === 'review_exhausted'
+  );
 }
 
 export function parseArgs(argv) {
@@ -93,6 +160,7 @@ export function parseArgs(argv) {
     if (flag === '--root') options.root = next();
     else if (flag === '--model') options.model = next();
     else if (flag === '--tarball') options.tarball = next();
+    else if (flag === '--product-sha') options.productSha = next();
     else if (flag === '--flows')
       options.flows = next()
         .split(',')
@@ -221,32 +289,6 @@ function run(command, args, options = {}) {
   });
 }
 
-export function eventsOf(output) {
-  return output
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
-
-/** Reason codes of every blocked/denied tool output in a host transcript. */
-export function toolDenialCodes(output) {
-  const codes = new Set();
-  for (const event of eventsOf(output)) {
-    const part = event.part?.state?.output ?? '';
-    if (!/"error":true/.test(part)) continue;
-    const match = /"code":"([A-Z0-9_]+)"/.exec(part);
-    if (match) codes.add(match[1]);
-  }
-  return [...codes];
-}
-
 /**
  * Typed, recoverable denials the governed agent is expected to recover from
  * in-session (fail-fast admission, call-shape corrections). Run 8/9 evidence
@@ -272,6 +314,17 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   // Run 13: a plan revision submission omitted planText; the author corrected
   // the call in the same turn and the plan was accepted.
   'REVISED_PLAN_REQUIRED',
+  // Call-shape guards: plan/implement submissions must not mix verdict or
+  // review inputs, and approval text belongs to its own input. The author
+  // corrects the call and resubmits in-session.
+  'INVALID_PLAN_TOOL_SEQUENCE',
+  'INVALID_IMPLEMENT_TOOL_SEQUENCE',
+  'PLAN_APPROVE_WITH_TEXT',
+  'PLAN_SUBMISSION_REQUIRED',
+  // Admissibility guards: a command outside the current phase is corrected by
+  // using an allowed command for the persisted phase.
+  'COMMAND_NOT_ALLOWED',
+  'WRONG_PHASE',
 ]);
 
 /**
@@ -286,30 +339,6 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
 export const NEXT_STEP_RECOVERY_CODES = new Set(['CONTINUE_AMBIGUOUS']);
 
 /**
- * Successful reviewer capture re-arms are NOT error blocks: the transport
- * projects a structured `reviewRetry` outcome (reviewDispatch.completed=false,
- * no `error:true`) for the SAME code that a terminal block carries as
- * `error:true`. Only the structured re-arm counts as recovered; the terminal
- * block stays flow-stopping.
- */
-export function captureRetryCodes(output) {
-  const codes = new Set();
-  for (const event of eventsOf(output)) {
-    const part = event.part?.state?.output ?? '';
-    if (/"error":true/.test(part)) continue;
-    if (!/"reviewRetry"/.test(part)) continue;
-    try {
-      const parsed = JSON.parse(part);
-      const code = parsed?.reviewRetry?.code;
-      if (typeof code === 'string') codes.add(code);
-    } catch {
-      // Not the structured retry projection.
-    }
-  }
-  return [...codes];
-}
-
-/**
  * A plan submission during an ACTIVE review loop is corrected by resuming the
  * bound review in the same turn. The correction is never accepted as a bare
  * retry: the same-turn proof here is paired with the persisted gate proof
@@ -319,33 +348,19 @@ export function captureRetryCodes(output) {
 export const PLAN_REVIEW_CORRECTION_CODE = 'PLAN_REVIEW_IN_PROGRESS';
 
 /**
- * A terminal reviewer-capture block is superseded when the transport itself
- * re-armed a fresh attempt on the same frozen review chain LATER in the same
- * turn. The re-arm alone is not the proof: the gate step still has to confirm
- * the persisted review outcome ({@link planReviewCorrectionProven} or the
- * architecture completion).
+ * Bounded resume budget for an author that ends the /implement turn at
+ * IMPL_REVIEW without the reviewer dispatch. Each resume is a canonical
+ * /implement command turn and must prove state progress; the evidence gate is
+ * never bypassed and the independent review is never weakened.
  */
-export function structuredRearmSupersedesTerminal(output, code) {
-  let errorIndex = -1;
-  let rearmIndex = -1;
-  let index = 0;
-  for (const event of eventsOf(output)) {
-    index += 1;
-    if (event.type !== 'tool_use') continue;
-    const raw = event.part?.state?.output ?? '';
-    if (typeof raw !== 'string' || !raw.includes(`"code":"${code}"`)) continue;
-    if (/"error":true/.test(raw)) errorIndex = index;
-    if (/"reviewRetry"/.test(raw)) rearmIndex = index;
-  }
-  return errorIndex !== -1 && rearmIndex > errorIndex;
-}
+export const MAX_IMPLEMENT_REVIEW_RESUMES = 2;
 
 /** Same-turn proof: the planner was denied and then succeeded later in the turn. */
 export function planReviewSameTurnCorrection(output) {
-  return (
-    deniedToolForCode(output, PLAN_REVIEW_CORRECTION_CODE) === 'flowguard_plan' &&
-    sameTurnCorrectedTools(output).has('flowguard_plan')
+  const proof = sameTurnRecoveryProofs(output).recovered.find(
+    (candidate) => candidate.code === PLAN_REVIEW_CORRECTION_CODE,
   );
+  return proof?.tool === 'flowguard_plan';
 }
 
 /**
@@ -373,65 +388,9 @@ export function isRecoverableFamily(code) {
   return RECOVERABLE_DENIAL_CODES.has(code) || NEXT_STEP_RECOVERY_CODES.has(code);
 }
 
-/**
- * The tool whose call produced `code` as a typed error, in transcript order.
- * Identity pairing backs the same-turn correction proof below.
- */
-export function deniedToolForCode(output, code) {
-  for (const event of eventsOf(output)) {
-    if (event.type !== 'tool_use') continue;
-    const raw = event.part?.state?.output ?? '';
-    if (!/"error":true/.test(raw) || !raw.includes(`"code":"${code}"`)) continue;
-    if (typeof event.part?.tool === 'string') return event.part.tool;
-  }
-  return undefined;
-}
-
-/**
- * Tools that were denied and then invoked successfully LATER in the same turn.
- * This is the only proof accepted for a same-turn recovery: the author retried
- * the very call that was rejected and it succeeded.
- */
-export function sameTurnCorrectedTools(output) {
-  const denied = new Set();
-  const corrected = new Set();
-  for (const event of eventsOf(output)) {
-    if (event.type !== 'tool_use') continue;
-    const tool = event.part?.tool;
-    const raw = event.part?.state?.output ?? '';
-    let errored = /"error":true/.test(raw);
-    if (!errored) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.error === true) errored = true;
-      } catch {
-        // Non-JSON output is not an error envelope.
-      }
-    }
-    if (errored) {
-      if (typeof tool === 'string') denied.add(tool);
-      continue;
-    }
-    if (typeof tool === 'string' && denied.has(tool)) corrected.add(tool);
-  }
-  return corrected;
-}
-
 /** Denials observed in a step that must stop the flow (never recovered in-session). */
 export function unexpectedDenialCodes(output) {
   return toolDenialCodes(output).filter((code) => !isRecoverableFamily(code));
-}
-
-/** The controlled negative probe: exactly the expected denial, nothing else. */
-export function assertExpectedDenial(output, expectedCode) {
-  const codes = toolDenialCodes(output);
-  if (!codes.includes(expectedCode)) {
-    throw new Error(`expected denial ${expectedCode}, observed [${codes.join(', ') || 'none'}]`);
-  }
-  const unexpected = codes.filter((code) => code !== expectedCode);
-  if (unexpected.length > 0) {
-    throw new Error(`unexpected denial(s) alongside ${expectedCode}: ${unexpected.join(', ')}`);
-  }
 }
 
 /**
@@ -478,6 +437,27 @@ export function assertSessionBinding(state, hostSessionId, workspace) {
       `persisted worktree binding '${String(boundWorktree)}' != delivered workspace '${workspace}'`,
     );
   }
+}
+
+/**
+ * A live control record may become PASS ONLY after provenance capture has
+ * validated every required parent/reviewer transcript, and the payload can
+ * never supply `result` itself. Any failure keeps the record FAILED so the
+ * aggregate cannot count a falsely passing case.
+ */
+export async function finalizeControlRecord(
+  record,
+  session,
+  runner,
+  payload = {},
+  result = RESULT.CONTROL_PASSED,
+) {
+  record.result = RESULT.FAILED;
+  record.hostSessionId = session.sessionId;
+  await runner.captureProvenance(record, session);
+  const { result: _rejected, ...safePayload } = payload;
+  Object.assign(record, safePayload, { result });
+  return record;
 }
 
 /** Sessions whose transcripts belong to one flow's evidence: parent + reviewers. */
@@ -589,43 +569,90 @@ export class Runner {
       return result;
     }
 
-    // A pending next-step recovery recorded by the previous turn becomes
-    // `recovered` only when this required step completed with a demonstrable
-    // state transition. Without that proof the flow is blocked.
+    const trust = transcriptTrust(result.stdout);
+    if (!trust.readable) {
+      session.transcriptWarnings = session.transcriptWarnings ?? [];
+      session.transcriptWarnings.push({ step: label, ...trust });
+      this.log(
+        `${label}: untrustworthy transcript (${trust.framingLosses.length} framing loss(es), ` +
+          `${trust.unreadable.length} unreadable governed tool output(s)); no proof can be credited`,
+      );
+      throw new DemoNotVerifiedError(
+        `${label}: transcript is not trustworthy (${trust.framingLosses.length} framing loss(es), ` +
+          `${trust.unreadable.length} unreadable governed tool output(s)); the proof is NOT_VERIFIED`,
+      );
+    }
     if (session.awaitingRecovery) {
-      const digestAfter = this.currentStateDigest(session);
-      if (digestAfter === null || digestAfter === session.awaitingRecovery.digestBefore) {
-        throw new Error(
-          `${label}: pending recovery [${session.awaitingRecovery.codes.join(', ')}] was not demonstrated by a state transition; stopping the flow`,
+      const pending = session.awaitingRecovery;
+      const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
+      const after = this.requireBoundState(session).state;
+      if (!recoveryPersisted(pending.expected, after, command)) {
+        throw new DemoNotVerifiedError(
+          `${label}: pending recovery [${pending.codes.join(', ')}] was not demonstrated ` +
+            'by the authorized affected-operation transition; stopping the flow',
         );
       }
       session.recoveredDenials = session.recoveredDenials ?? [];
       session.recoveredDenials.push({
-        step: session.awaitingRecovery.step,
-        codes: session.awaitingRecovery.codes,
-        evidence: `next_step_state_transition:${label}`,
+        step: pending.step,
+        codes: pending.codes,
+        evidence: `next_step_operation_transition:${label}`,
+        expected: pending.expected,
       });
       this.log(
-        `${session.awaitingRecovery.step}: recovered via ${label} state transition [${session.awaitingRecovery.codes.join(', ')}]`,
+        `${pending.step}: recovered by the authorized ${command} operation on its bound subject`,
       );
       session.awaitingRecovery = null;
     }
-
     const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
-    const correctedTools = sameTurnCorrectedTools(result.stdout);
-    const sameTurnRecovered = recoverable.filter((code) => {
-      const tool = deniedToolForCode(result.stdout, code);
-      return tool !== undefined && correctedTools.has(tool);
-    });
+    const proofs = sameTurnRecoveryProofs(result.stdout);
+    const recoverableProofs = proofs.recovered.filter((proof) => isRecoverableFamily(proof.code));
+    const operationRecovered = [
+      ...new Set(
+        recoverableProofs
+          .filter((proof) => proof.binding === 'operation')
+          .map((proof) => proof.code),
+      ),
+    ];
+    const laterSuccessOnly = [
+      ...new Set(
+        recoverableProofs.filter((proof) => proof.binding === 'tool').map((proof) => proof.code),
+      ),
+    ];
+    // Only an OPERATION-bound correction resolves the denial in-turn. A later
+    // success without an operation binding is an observation; resolving it
+    // requires an independent persisted proof from the next required step.
+    const sameTurnRecovered = operationRecovered;
+    const unprovenOccurrences = [...new Set(proofs.unproven.map((proof) => proof.code))];
     const retryRecovered = captureRetryCodes(result.stdout);
+    const retryHints = captureRetryHints(result.stdout);
+    if (retryHints.length > 0) {
+      session.retryHints = [...(session.retryHints ?? []), { step: label, events: retryHints }];
+      this.log(
+        `${label}: retryable host hint observed without complete review identities; no re-arm proof credited`,
+      );
+    }
     session.recoveredDenials = session.recoveredDenials ?? [];
-    if (sameTurnRecovered.length > 0) {
+    if (operationRecovered.length > 0) {
       session.recoveredDenials.push({
         step: label,
-        codes: sameTurnRecovered,
-        evidence: 'same_turn_retry_success',
+        codes: operationRecovered,
+        evidence: 'same_turn_operation_recovery',
       });
-      this.log(`${label}: recovered via same-turn retry [${sameTurnRecovered.join(', ')}]`);
+      this.log(
+        `${label}: recovered via same-turn operation recovery [${operationRecovered.join(', ')}]`,
+      );
+    }
+    if (laterSuccessOnly.length > 0) {
+      session.recoveredDenials.push({
+        step: label,
+        codes: laterSuccessOnly,
+        evidence: 'later_tool_success',
+      });
+      this.log(
+        `${label}: later success of the same tool recorded without an operation binding ` +
+          `[${laterSuccessOnly.join(', ')}]; the next required step must prove a persisted transition`,
+      );
     }
     if (retryRecovered.length > 0) {
       session.recoveredDenials.push({
@@ -635,25 +662,43 @@ export class Runner {
       });
       this.log(`${label}: recovered via structured re-arm [${retryRecovered.join(', ')}]`);
     }
-    const pendingCodes = recoverable.filter(
-      (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
-    );
-    const unproven = recoverable.filter(
-      (code) => !sameTurnRecovered.includes(code) && !pendingCodes.includes(code),
+    const pendingCodes = [
+      ...new Set([
+        ...recoverable.filter(
+          (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
+        ),
+        ...laterSuccessOnly,
+      ]),
+    ];
+    const unproven = unprovenOccurrences.filter(
+      (code) => isRecoverableFamily(code) && !NEXT_STEP_RECOVERY_CODES.has(code),
     );
     if (unproven.length > 0) {
-      throw new Error(
-        `${label}: recoverable denial(s) without a proven in-session correction (${unproven.join(', ')}); stopping the flow`,
+      throw new DemoNotVerifiedError(
+        `${label}: recoverable denial occurrence(s) without a later proven correction (${unproven.join(', ')}); stopping the flow (the proof is NOT_VERIFIED)`,
       );
     }
     if (pendingCodes.length > 0) {
       session.awaitingRecovery = {
         step: label,
         codes: pendingCodes,
-        digestBefore: this.currentStateDigest(session),
+        expected: expectRecovery(
+          this.requireBoundState(session).state,
+          [
+            ...new Set(
+              toolDenialEvents(result.stdout)
+                .filter((event) => pendingCodes.includes(event.code))
+                .map((event) => event.tool),
+            ),
+          ],
+          session.terminal,
+          recoverableProofs
+            .filter((proof) => proof.binding === 'tool')
+            .map((proof) => proof.denialIdentity),
+        ),
       };
       this.log(
-        `${label}: pending recovery [${pendingCodes.join(', ')}]; the next required step must demonstrate a state transition`,
+        `${label}: pending recovery [${pendingCodes.join(', ')}]; the next required step must prove the bound operation`,
       );
     }
 
@@ -672,8 +717,8 @@ export class Runner {
 
     const planReviewDenied = toolDenialCodes(result.stdout).includes(PLAN_REVIEW_CORRECTION_CODE);
     if (planReviewDenied && !planReviewSameTurnCorrection(result.stdout)) {
-      throw new Error(
-        `${label}: ${PLAN_REVIEW_CORRECTION_CODE} without a same-turn flowguard_plan correction; stopping the flow`,
+      throw new DemoNotVerifiedError(
+        `${label}: ${PLAN_REVIEW_CORRECTION_CODE} without a same-turn flowguard_plan correction; stopping the flow (the proof is NOT_VERIFIED)`,
       );
     }
     if (planReviewDenied) {
@@ -712,6 +757,24 @@ export class Runner {
           `${label}: terminal block(s) recorded (phaseBefore=${String(phaseBefore)}, phaseAfter=${String(phaseAfter)}) [${unexpected.join(', ')}]`,
         );
       } else {
+        let reviewExhausted = false;
+        try {
+          reviewExhausted = persistedReviewExhausted(this.requireBoundState(session).state);
+        } catch {
+          reviewExhausted = false;
+        }
+        if (reviewExhausted && unexpected.includes('GOVERNANCE_OVERRIDE_REQUIRED')) {
+          throw new DemoNotVerifiedError(
+            `${label}: independent review exhausted its budget without acceptance ` +
+              `(${unexpected.join(', ')}); the positive proof is NOT_VERIFIED`,
+          );
+        }
+        if (classifyUnexpectedBlock(unexpected) === 'not_verified') {
+          throw new DemoNotVerifiedError(
+            `${label}: review-stage evidence is incomplete (${unexpected.join(', ')}); ` +
+              'the positive proof is NOT_VERIFIED',
+          );
+        }
         throw new Error(
           `${label}: unexpected tool-level block observed (${unexpected.join(', ')}); stopping the flow`,
         );
@@ -790,6 +853,47 @@ export class Runner {
     });
   }
 
+  /**
+   * Drive an outstanding implementation review to EVIDENCE_REVIEW with a
+   * BOUNDED number of canonical /implement resumes. The author may end the
+   * /implement turn at IMPL_REVIEW without dispatching the reviewer task
+   * (observed live); this helper re-enters the real command boundary instead
+   * of failing the flow outright. Fail-closed: only IMPL_REVIEW may be
+   * resumed, every resume must prove persisted state progress, and the gate
+   * must be reached within the bound.
+   */
+  async completeImplementationReview(session, label, maxResumes = MAX_IMPLEMENT_REVIEW_RESUMES) {
+    for (let attempt = 1; attempt <= maxResumes; attempt += 1) {
+      const phase = this.currentPhase(session);
+      if (phase === 'EVIDENCE_REVIEW') return;
+      if (phase !== 'IMPL_REVIEW') {
+        throw new Error(
+          `${label}: expected IMPL_REVIEW or EVIDENCE_REVIEW, observed ${String(phase)}`,
+        );
+      }
+      const stepLabel = `${label}-resume-${attempt}`;
+      const digestBefore = this.currentStateDigest(session);
+      await this.turn(session, stepLabel, '/implement');
+      const digestAfter = this.currentStateDigest(session);
+      if (digestAfter === null || digestAfter === digestBefore) {
+        throw new Error(
+          `${stepLabel}: bounded implementation review resume produced no state progress; stopping the flow`,
+        );
+      }
+      session.resumedSteps = session.resumedSteps ?? [];
+      session.resumedSteps.push({ step: label, attempt, evidence: 'bounded_resume' });
+      this.log(
+        `${stepLabel}: implementation review resumed (bounded attempt ${attempt}; state progressed)`,
+      );
+    }
+    const phase = this.currentPhase(session);
+    if (phase !== 'EVIDENCE_REVIEW') {
+      throw new Error(
+        `${label}: implementation review did not reach EVIDENCE_REVIEW within ${maxResumes} bounded resume(s); stopping the flow`,
+      );
+    }
+  }
+
   requireBoundState(session) {
     const snapshot = readState(this.configDir, session.sessionId);
     if (!snapshot) throw new Error(`no persisted state for ${session.sessionId}`);
@@ -826,6 +930,7 @@ export class Runner {
   }
 
   async captureProvenance(flow, session) {
+    flow.retryHints = session.retryHints ?? [];
     const snapshot = this.requireBoundState(session);
     const targets = transcriptTargets(snapshot.state);
     if (targets.parent !== session.sessionId) {
@@ -877,6 +982,7 @@ async function runDevelopment(runner, session) {
   await runner.turn(session, 'development-03-plan', '/plan');
   await runner.approve(session, 'development-04-approve-plan', 'PLAN_REVIEW');
   await runner.turn(session, 'development-05-implement', '/implement');
+  await runner.completeImplementationReview(session, 'development-05-implement');
   await runner.approve(session, 'development-06-approve-impl', 'EVIDENCE_REVIEW');
   await runner.turn(session, 'development-07-finish', '/finish');
   await runner.turn(session, 'development-08-export', '/export');
@@ -904,6 +1010,7 @@ async function runReduced(runner, session, label, ticket) {
   await runner.turn(session, `${label}-03-plan`, '/plan');
   await runner.approve(session, `${label}-04-approve-plan`, 'PLAN_REVIEW');
   await runner.turn(session, `${label}-05-implement`, '/implement');
+  await runner.completeImplementationReview(session, `${label}-05-implement`);
   await runner.approve(session, `${label}-06-approve-impl`, 'EVIDENCE_REVIEW');
   await runner.turn(session, `${label}-07-export`, '/export');
   session.packages = [
@@ -1128,7 +1235,7 @@ async function main() {
     const flows = await runFlows(runner);
     for (const name of options.flows) {
       const flow = flows[name];
-      const record = { name, workspace: flow.workspace, result: 'BLOCKED' };
+      const record = { name, workspace: flow.workspace, result: RESULT.FAILED };
       runner.flows.push(record);
       runner.log(`START ${name}`);
       try {
@@ -1136,6 +1243,11 @@ async function main() {
         await runner.turn(session, `${name}-01-start`, '/start');
         const installed = runner.installedBuild(flow.workspace);
         record.installedBuild = installed;
+        if (options.productSha !== undefined && installed.gitSha !== options.productSha) {
+          throw new Error(
+            `installed artifact gitSha ${String(installed.gitSha)} != declared product ${options.productSha}`,
+          );
+        }
         if (builtFromCheckout && installed.gitSha !== checkoutHead) {
           throw new Error(
             `installed artifact gitSha ${String(installed.gitSha)} != checkout ${checkoutHead}`,
@@ -1179,17 +1291,27 @@ async function main() {
             );
           }
           record.negativeOutcome = session.negativeOutcome;
+          record.result = RESULT.CONTROL_PASSED;
         } else if (snapshot.state.phase !== flow.terminal) {
           throw new Error(`expected terminal ${flow.terminal}, observed ${snapshot.state.phase}`);
+        } else {
+          record.result = RESULT.COMPLETE;
         }
         await runner.captureProvenance(record, session);
         record.packages = session.packages ?? [];
         record.recoveredDenials = session.recoveredDenials ?? [];
         record.terminalBlocks = session.terminalBlocks ?? [];
-        record.result = 'COMPLETE';
+        record.resumedSteps = session.resumedSteps ?? [];
       } catch (error) {
-        record.error = String(error);
-        runner.log(`BLOCKED ${name}: ${error}`);
+        if (error instanceof DemoNotVerifiedError || error?.code === 'DEMO_NOT_VERIFIED') {
+          record.result = RESULT.NOT_VERIFIED;
+          record.error = String(error);
+          runner.log(`NOT_VERIFIED ${name}: ${error}`);
+        } else {
+          record.result = RESULT.FAILED;
+          record.error = String(error);
+          runner.log(`BLOCKED ${name}: ${error}`);
+        }
       }
       fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2));
       fs.writeFileSync(
@@ -1221,10 +1343,9 @@ async function main() {
   });
 
   runner.log('raw-export grant removed from the isolated config dir');
-  const completed = runner.flows.filter((flow) => flow.result === 'COMPLETE').length;
-  runner.log(`MATRIX RESULT: ${completed}/${runner.flows.length} flows COMPLETE`);
+  runner.log(resultLine(runner.flows, 'MATRIX RESULT'));
   if (exitCode !== 0) {
-    runner.log('MATRIX FAILED: at least one flow did not complete');
+    runner.log('MATRIX INCOMPLETE: at least one scenario did not produce accepted evidence');
   }
   process.exitCode = exitCode;
 }

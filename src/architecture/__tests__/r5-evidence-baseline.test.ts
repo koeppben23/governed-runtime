@@ -184,7 +184,7 @@ describe('R5 evidence baseline', () => {
 
   it('pins every production SessionState.safeParse call site by enclosing function', () => {
     const expected: Record<string, Record<string, number>> = {
-      [WRITER_FILES.persistence]: { validateStateJson: 1, writeStateAlreadyLocked: 1 },
+      [WRITER_FILES.persistence]: { assessPersistedStateDocument: 1, writeStateAlreadyLocked: 1 },
       [WRITER_FILES.auditOutbox]: { prepareState: 2, prepareAuditOperations: 1 },
       [WRITER_FILES.toolHelpers]: { commitPreparedStateWithArtifactsAlreadyLocked: 1 },
     };

@@ -40,6 +40,13 @@ import { IMPL_REVIEW_CONVERGED, SELF_REVIEW_CONVERGED } from './state/evidence-t
 import { deriveVerificationCandidateId } from './state/candidate-identity.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './state/evidence-identifiers.js';
+import {
+  emptyClaimDeclarations,
+  PlanApprovalCertificate,
+  type ReviewBinding,
+} from './state/proofgraph-approval.js';
+import { planApprovalContextOf } from './state/proofgraph-approval-context.js';
+import { planApprovalCertificateIdentity } from './state/proofgraph-plan-certificate.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
 
@@ -635,6 +642,84 @@ export const FROZEN_IMPLEMENTATION_BASE = {
   },
   objectSha: 'd'.repeat(40),
 };
+
+// ─── Plan Approval Certificate ────────────────────────────────────────────────
+
+export interface PlanApprovalCertificateOverrides {
+  readonly kind?: 'explicit_decision' | 'policy_auto';
+  readonly decision?: ReviewDecision;
+  readonly approvedAt?: string;
+  readonly authorityDigest?: string;
+  readonly claimDeclarationsDigest?: string;
+  readonly planVersion?: number;
+  readonly planRecordDigest?: string;
+  readonly reviewBinding?: ReviewBinding;
+}
+
+/**
+ * Build a schema-valid plan approval certificate for the given state: the
+ * attestation digest is recomputed canonically, the session/policy context is
+ * taken from the state, and the explicit decision time equals `approvedAt`.
+ * Tests that need a deliberately invalid certificate build it raw.
+ */
+export function makePlanApprovalCertificate(
+  state: SessionState,
+  overrides: PlanApprovalCertificateOverrides = {},
+): PlanApprovalCertificate {
+  const plan = state.plan;
+  if (!plan) throw new Error('makePlanApprovalCertificate requires a plan in state');
+  const context = planApprovalContextOf(state);
+  const approvedAt = overrides.approvedAt ?? FIXED_TIME;
+  const kind = overrides.kind ?? 'explicit_decision';
+  const common = {
+    flowguardSessionId: context.flowguardSessionId,
+    bindingDigest: context.bindingDigest,
+    policyHash: context.policyHash,
+    policyHashVersion: context.policyHashVersion,
+  };
+  const approvalAttestation =
+    kind === 'policy_auto'
+      ? { kind: 'policy_auto' as const, decidedAt: approvedAt, ...common }
+      : {
+          kind: 'explicit_decision' as const,
+          decision: overrides.decision ?? { ...REVIEW_APPROVE, decidedAt: approvedAt },
+          ...common,
+        };
+  const authorityDigest = overrides.authorityDigest ?? plan.current.digest;
+  const claimDeclarationsDigest =
+    overrides.claimDeclarationsDigest ??
+    hashText(canonicalJsonStringify(plan.claimDeclarations ?? emptyClaimDeclarations('plan')));
+  const planVersion = overrides.planVersion ?? plan.current.planVersion;
+  const planRecordDigest = overrides.planRecordDigest ?? plan.current.recordDigest;
+  const reviewBinding: ReviewBinding = overrides.reviewBinding ?? {
+    kind: 'current_review',
+    reviewObligationId: '00000000-0000-4000-8000-000000000765',
+    reviewEvidenceDigest: 'review-evidence-digest',
+    reviewedSubjectDigest: plan.current.digest,
+  };
+  const decisionAttestationDigest = hashText(canonicalJsonStringify(approvalAttestation));
+  return PlanApprovalCertificate.parse({
+    schemaVersion: 'plan-approval-certificate.v1',
+    flow: 'plan',
+    authorityDigest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
+    approvedAt,
+    certificateId: planApprovalCertificateIdentity({
+      authorityDigest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      planVersion,
+      planRecordDigest,
+      reviewBinding,
+      approvedAt,
+    }),
+    planVersion,
+    planRecordDigest,
+    reviewBinding,
+    approvalAttestation,
+  });
+}
 
 // ─── State Factory ────────────────────────────────────────────────────────────
 

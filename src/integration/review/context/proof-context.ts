@@ -16,17 +16,19 @@
 import type { RiskTrigger, SessionState } from '../../../state/schema.js';
 import type { SpecificRiskTrigger } from '../../../state/risk-trigger.js';
 import type { ProofGraphProjection } from '../../../state/proofgraph.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  type AuthorizedClaimBinding,
-  type PlanClaimDeclarations,
+import type {
+  AuthorizedClaimBinding,
+  PlanClaimDeclarations,
 } from '../../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../../state/proofgraph-approval-context.js';
 
 /**
  * Structural ProofGraph gate port. review/ must not import audit/; the host
  * composition injects the canonical gate authority.
  */
 export interface ReviewProofGraphGateInput {
+  readonly contract: SessionState['proofContract'];
+  readonly validationAttempts: SessionState['validationAttempts'];
   readonly projection?: ProofGraphProjection;
   readonly authorizedCriticalClaimIds?: readonly string[];
   /** Certificate-bound coverage relation; mirrors the canonical gate input. */
@@ -34,7 +36,7 @@ export interface ReviewProofGraphGateInput {
   /** Expected certificate binding per authorized critical claim. */
   readonly authorizedClaimBindings?: ReadonlyMap<string, AuthorizedClaimBinding>;
   readonly certificateValid?: boolean;
-  readonly implementationDigest?: string;
+  readonly implementationDigest: string | undefined;
   readonly riskAssessment?: {
     readonly implementationDigest: string;
     /** Required trigger taxonomy of the v8 assessment; mirrors the canonical gate input. */
@@ -214,8 +216,43 @@ export function renderCoverageGaps(state: SessionState): string[] {
   ];
 }
 
-/** Render the trigger requirement section from an evaluated gate decision. */
-function renderTriggerRequirement(decision: ReviewProofGraphGateDecision): string[] {
+/**
+ * Render the persisted, digest-bound implementation risk assessment as reviewer
+ * focus. This is advisory prioritization context: it reclassifies nothing,
+ * evaluates no evidence, and never gates approval. Scale the verification depth
+ * of the review to these triggers instead of applying a uniform heavy check.
+ */
+export function renderImplementationRiskFocus(state: SessionState): string[] {
+  if (!state.implementation) return [];
+  const assessment = state.implementationRiskAssessment;
+  if (!assessment || assessment.implementationDigest !== state.implementation.digest) {
+    return [
+      '## Implementation Risk Focus (persisted, advisory)',
+      '',
+      '- Status: NOT_VERIFIED. The implementation risk assessment is missing or stale for the current implementation revision.',
+      '',
+    ];
+  }
+  const declared = assessment.declaredTaskClass
+    ? `, ticket-declared floor ${assessment.declaredTaskClass}`
+    : '';
+  const escalated = assessment.escalatedTaskClass
+    ? `, escalated ${assessment.escalatedTaskClass}`
+    : '';
+  return [
+    '## Implementation Risk Focus (persisted, advisory)',
+    '',
+    `- Effective risk class: ${assessment.effectiveTaskClass} (computed ${assessment.computedMinimumTaskClass}${declared}${escalated}).`,
+    `- Risk triggers: ${assessment.riskTriggers.length > 0 ? assessment.riskTriggers.join(', ') : 'none detected'}.`,
+    `- Touched surfaces: ${assessment.touchedSurfaces.length > 0 ? assessment.touchedSurfaces.join(', ') : 'none recorded'}.`,
+    '- This persisted context does not lower or raise any approval requirement; it only prioritizes where independent falsification matters most.',
+    '',
+  ];
+}
+
+/** Render the trigger requirement section from an evaluated gate decision. */ function renderTriggerRequirement(
+  decision: ReviewProofGraphGateDecision,
+): string[] {
   if (decision.relevantTriggers.length === 0) return [];
   const header = ['## Critical Fact Claim Requirement (persisted)', ''];
   if (decision.kind === 'risk_trigger_uncovered') {
@@ -242,22 +279,11 @@ function renderCriticalClaimRequirement(
   authorities: ReviewerProofGraphAuthorities,
 ): string[] {
   if (!state.implementation) return [];
-  const plan = state.plan;
-  const authorization = authorizedCriticalPlanClaimIds(
-    plan
-      ? {
-          current: plan.current,
-          ...(plan.claimDeclarations !== undefined
-            ? { claimDeclarations: plan.claimDeclarations }
-            : {}),
-          ...(plan.approvalCertificate !== undefined
-            ? { approvalCertificate: plan.approvalCertificate }
-            : {}),
-        }
-      : undefined,
-  );
+  const authorization = authorizedCriticalPlanClaimIds(state);
   const riskAssessment = state.implementationRiskAssessment;
   const decision = authorities.evaluateProofGraphGate({
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
     projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     ...(authorization.kind === 'authorized'
@@ -300,6 +326,7 @@ export function buildReviewerProofContext(
 ): string[] {
   return [
     ...renderPersistedProofGraphContext(state.proofGraph),
+    ...renderImplementationRiskFocus(state),
     ...renderDeclarationPreview(state, authorities),
     ...renderCoverageGaps(state),
     ...renderCriticalClaimRequirement(state, authorities),

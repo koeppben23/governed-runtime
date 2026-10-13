@@ -9,7 +9,10 @@ import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { ToolContext } from '../helpers.js';
 import { formatBlocked, unableReviewDiagnostics } from '../../blocked-result.js';
 import { normalizeReviewArtifactText } from '../../../shared/review-artifact-text.js';
-import { formatAutoAdvanceOverflow } from '../../../rails/auto-advance-overflow.js';
+import {
+  formatAutoAdvanceBlocked,
+  formatAutoAdvanceOverflow,
+} from '../../../rails/auto-advance-overflow.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import { evaluate } from '../../../machine/evaluate.js';
@@ -328,6 +331,9 @@ export async function handleAdrReview(
   // #428: fail closed on overflow BEFORE persistence — no partially-advanced write.
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
+  }
+  if (advanced.kind === 'blocked') {
+    return formatAutoAdvanceBlocked(advanced);
   }
   return persistAndFormatReviewResult({ args, session, review, revision, advanced, iteration: 0 });
 }

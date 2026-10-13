@@ -25,7 +25,7 @@ import { isTechnicalValidationBlock } from '../state/evidence-validation.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import { autoAdvance, createPolicyEvalFn } from './types.js';
-import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { blockedFromEvidenceApproval, blockedFromOverflow } from './auto-advance-overflow.js';
 import { blocked } from '../config/reasons.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
@@ -67,6 +67,9 @@ export async function executeValidate(
     if (advanced.kind === 'overflow') {
       return blockedFromOverflow(advanced);
     }
+    if (advanced.kind === 'blocked') {
+      return blockedFromEvidenceApproval(advanced);
+    }
     const { state: finalState, evalResult, transitions } = advanced;
     return { kind: 'ok', state: finalState, evalResult, transitions };
   }
@@ -91,6 +94,9 @@ export async function executeValidate(
   const advanced = autoAdvance(nextState, evalFn, ctx);
   if (advanced.kind === 'overflow') {
     return blockedFromOverflow(advanced);
+  }
+  if (advanced.kind === 'blocked') {
+    return blockedFromEvidenceApproval(advanced);
   }
   const { state: finalState, evalResult, transitions } = advanced;
 

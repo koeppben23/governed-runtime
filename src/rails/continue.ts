@@ -47,7 +47,7 @@ import {
   buildImplReviewState,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { blockedFromEvidenceApproval, blockedFromOverflow } from './auto-advance-overflow.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -143,6 +143,7 @@ export async function executeContinue(
   const evalFn = createPolicyEvalFn(ctx);
   const advanced = autoAdvance(workState, evalFn, ctx);
   if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
+  if (advanced.kind === 'blocked') return blockedFromEvidenceApproval(advanced);
 
   // The IMPLEMENTATION-entry invariant (frozen pre-mutation base) is enforced
   // at the single persistence boundary by the adapter-layer transition

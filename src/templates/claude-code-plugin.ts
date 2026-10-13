@@ -1,5 +1,6 @@
 import { CLAUDE_REVIEWER_AGENT } from './mandates.js';
 import { REVIEWER_CRITERIA } from './mandates-reviewer-criteria.js';
+import { PLAN_CLAIM_GUIDANCE } from './plan-claim-guidance.js';
 
 export const CLAUDE_CODE_PLUGIN_DIR = 'flowguard-plugin';
 
@@ -180,7 +181,7 @@ const CLAUDE_DISCOVERY_CAPTURE = `Capture the compact Discovery context from the
 // OpenCode /implement template): the negative verdict is recorded FIRST, then
 // the loop continues automatically (repair -> re-record -> validation ->
 // challenge resolution -> fresh independent review) with no intermediate card.
-const CLAUDE_IMPLEMENT_CONTINUATION = `make the code changes based on the blocking issues, call \`mcp__flowguard__flowguard_implement\` again to re-record (advances to IMPL_VALIDATION), then call \`mcp__flowguard__flowguard_status\` and run EVERY active check from the responses' \`activeChecks\` via \`mcp__flowguard__flowguard_run_check\` until the recorded validation is terminal (do not skip any active check and do not rely on assumed auto-chaining), record resolutions for any open implementation challenges, then invoke a fresh independent review and loop until convergence or the budget is exhausted. FlowGuard returns no intermediate presentation card while the loop is active — never render an intermediate result as final and never stop for user input between iterations; only the loop's terminal responses (converged acceptance, exhausted budget, or a BLOCKED code) end the loop and carry a card to display verbatim.`;
+const CLAUDE_IMPLEMENT_CONTINUATION = `make the code changes based on the blocking issues, call \`mcp__flowguard__flowguard_implement\` again to re-record and dispatch on the returned phase (run the recorded checks only while the machine is still in IMPL_VALIDATION), then call \`mcp__flowguard__flowguard_status\` and run EVERY active check from the responses' \`activeChecks\` via \`mcp__flowguard__flowguard_run_check\` until the recorded validation is terminal (do not skip any active check and do not rely on assumed auto-chaining), record resolutions for any open implementation challenges, then invoke a fresh independent review and loop until convergence or the budget is exhausted. FlowGuard returns no intermediate presentation card while the loop is active — never render an intermediate result as final and never stop for user input between iterations; only the loop's terminal responses (converged acceptance, exhausted budget, or a BLOCKED code) end the loop and carry a card to display verbatim.`;
 
 interface ClaudeReviewLoopOptions {
   /**
@@ -257,7 +258,9 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 ## Phase 2 — Submit the plan
 3. Write the plan in markdown with these required sections: \`## Objective\`, \`## Approach\`, \`## Steps\` (each step names a specific file path and a concrete change; prefer vertical tracer-bullet slices over horizontal layer-by-layer builds, and favor deep modules over shallow pass-throughs), \`## Files to Modify\`, \`## Edge Cases\`, \`## Validation Criteria\`, \`## Verification Plan\` (cite the command AND its Source, e.g. \`Source: package.json:scripts.test\`, or state \`NOT_VERIFIED\` with recovery steps).
    - Resolve open questions the repository can answer by exploring the codebase instead of asking the user; cross-check stated behavior against the actual code and surface contradictions in the plan.
-4. Derive structured claim declarations for the plan: each names a falsifiable statement (\`statement\`), its governing section (\`authoritySectionId\`), whether it is \`critical\`, its \`claimScope\` (\`specific_behavior\` or \`suite\`), and the \`expectedCheckId\` that must pass after implementation. Do NOT provide \`claimId\`: claim identity is host-owned and deterministically minted by FlowGuard. Keep each statement no broader than the observable evidence it names; internal side effects, ordering, or forbidden calls require direct evidence of that property. Critical \`specific_behavior\` claims require \`counterexampleRequirement\`: \`{ kind: "assertion", checkId: "...", assertion: { providerId: "...", localId: "..." } }\`. \`suite\` claims require \`{ kind: "aggregate_check", checkId: "..." }\`; structured assertion reports never establish aggregate coverage.
+4. Derive the complete structured claim declarations following this contract:
+
+${PLAN_CLAIM_GUIDANCE}
 5. Submit the plan only through \`mcp__flowguard__flowguard_plan({ planText, claims })\` with the full plan markdown and those declarations. When revising, include the COMPLETE plan text and claims, never a diff.
 6. Read the response; the \`reviewDispatch\` and \`reviewInvocation\` fields carry the review workflow.
 

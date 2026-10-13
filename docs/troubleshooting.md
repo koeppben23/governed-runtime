@@ -142,8 +142,13 @@ rejections permit partial acceptance.
 For already persisted rejection diagnostics at `PLAN_REVIEW`, request changes
 (`changes_requested`) to return to `PLAN` before submitting the corrected plan.
 At `EVIDENCE_REVIEW`, changes requested returns to `IMPLEMENTATION`; there is no
-admissible in-session path to plan revision. Start a new session with a corrected
-plan in that case. Existing reviewer continuations and transport recovery retain
+admissible in-session path to plan revision. Follow the explicit
+[new-session authority recovery](proofgraph.md#recovery-when-approved-claims-must-change):
+retain and explicitly abort the old session, prepare the trusted pre-change base,
+start a different host binding, obtain a new certificate, and reapply changes only
+in the newly authorized implementation step with fresh evidence. `/hydrate` in
+the old terminal binding is read-only; a dirty-worktree restart can exclude the
+old changes as baseline rather than certify them. Existing reviewer continuations and transport recovery retain
 their authority and do not create a new plan version through claim admission.
 
 All BLOCKED responses carry a `code`, a `reason`, and a `recovery` array. The
@@ -192,15 +197,16 @@ real, registered reason.
 
 ### Evidence Integrity
 
-| Code                                | Description                                                     | Solution                                                                                       |
-| ----------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `EVIDENCE_ARTIFACT_MISSING`         | Required derived ticket/plan artifact missing                   | Restore session directory from trusted archive before continuing                               |
-| `EVIDENCE_ARTIFACT_MISMATCH`        | Derived artifact hash inconsistent with current ticket/plan     | Restore artifacts from trusted archive or regenerate from trusted state                        |
-| `EVIDENCE_ARTIFACT_IMMUTABLE`       | Attempt to overwrite an already-versioned append-only artifact  | Do not retry the same submission with different content; re-run the tool                       |
-| `REVIEW_CARD_ARTIFACT_WRITE_FAILED` | Review card materialization failed (presentation artifact only) | Check filesystem permissions/disk space; runtime transition not affected                       |
-| `REVIEW_CARD_ARTIFACT_IMMUTABLE`    | Review card artifact already exists with different content      | Expected — cards are immutable per content digest; a revised card uses a new digest-based path |
-| `EMPTY_TICKET`                      | `/ticket` text is empty after trim                              | Provide a substantive ticket description                                                       |
-| `EMPTY_PLAN`                        | `/plan` text is empty after trim                                | Provide a substantive plan                                                                     |
+| Code                                | Description                                                                  | Solution                                                                                            |
+| ----------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `EVIDENCE_ARTIFACT_MISSING`         | Required derived ticket/plan artifact missing                                | Restore session directory from trusted archive before continuing                                    |
+| `EVIDENCE_ARTIFACT_MISMATCH`        | Derived artifact hash inconsistent with current ticket/plan                  | Restore artifacts from trusted archive or regenerate from trusted state                             |
+| `EVIDENCE_ARTIFACT_IMMUTABLE`       | Attempt to overwrite an already-versioned append-only artifact               | Do not retry the same submission with different content; re-run the tool                            |
+| `EXPORT_READY_APPROVAL_UNVERIFIED`  | A newly persisted `EXPORT_READY` state does not clear the evidence preflight | Recompute evidence for the current revision and apply the approval through the protected transition |
+| `REVIEW_CARD_ARTIFACT_WRITE_FAILED` | Review card materialization failed (presentation artifact only)              | Check filesystem permissions/disk space; runtime transition not affected                            |
+| `REVIEW_CARD_ARTIFACT_IMMUTABLE`    | Review card artifact already exists with different content                   | Expected — cards are immutable per content digest; a revised card uses a new digest-based path      |
+| `EMPTY_TICKET`                      | `/ticket` text is empty after trim                                           | Provide a substantive ticket description                                                            |
+| `EMPTY_PLAN`                        | `/plan` text is empty after trim                                             | Provide a substantive plan                                                                          |
 
 ### Independent Review (subagent)
 
@@ -400,6 +406,7 @@ EVIDENCE_ARTIFACT_MISMATCH
 EVIDENCE_ARTIFACT_MISSING
 EXISTING_POLICY_WEAKER_THAN_CENTRAL
 EXPLICIT_WEAKER_THAN_CENTRAL
+EXPORT_READY_APPROVAL_UNVERIFIED
 FINGERPRINT_FAILED
 FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
@@ -496,6 +503,7 @@ PROOFGRAPH_AGGREGATE_EXTRACTION_MISSING
 PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED
 PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE
 PROOFGRAPH_ASSERTION_EVIDENCE_MISSING
+PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS
 PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH
 PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH
 PROOFGRAPH_CERTIFICATE_INVALID
@@ -664,23 +672,23 @@ canonical and additive: `message` is the interpolated registry message and
 `headline` is carried as an additive field. Keep this table in sync with
 `REASON_COPY` — the drift test enforces it.
 
-| Code                                    | Headline                                                                        | Explanation                                                                                                                                                                                 |
-| --------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VALIDATION_EVIDENCE_REQUIRED`          | Validation evidence is required before VALIDATION can pass                      | Policy requires Discovery-derived verification commands to be active and executed. VALIDATION must not pass vacuously under this policy.                                                    |
-| `VALIDATION_EVIDENCE_UNVERIFIED`        | Validation evidence is unverified, so VALIDATION stays blocked                  | Discovery is not trustworthy enough to confirm whether verification commands exist. VALIDATION is blocked fail-closed instead of asserting false certainty.                                 |
-| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | A detected stack produced no verification commands, so VALIDATION stays blocked | Discovery found a technology stack but derived no verification commands from it. A stack with zero active checks is treated as a mis-detection hazard, not a verified no-commands property. |
-| `PROOFGRAPH_CERTIFICATE_INVALID`        | Evidence approval is blocked by a missing or stale plan certificate             | The plan approval certificate is missing, stale, or does not bind the current plan version.                                                                                                 |
-| `PROOFGRAPH_EVALUATION_UNAVAILABLE`     | Evidence approval is blocked because critical claims have no proof evaluation   | Certificate-authorized critical plan claims have no persisted ProofGraph evaluation. Evidence approval cannot proceed on un-evaluated claims.                                               |
-| `PROOFGRAPH_RISK_ASSESSMENT_STALE`      | Evidence approval is blocked by a stale implementation risk assessment          | The implementation risk assessment is missing, stale, or predates trigger classification. Record a fresh assessment before approving.                                                       |
-| `PROOFGRAPH_CRITICAL_FACT_REQUIRED`     | Evidence approval requires a critical, certificate-authorized fact claim        | The declared risk triggers require at least one critical, certificate-authorized fact claim to be recorded and proven before approval.                                                      |
-| `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`    | Evidence approval is blocked because critical fact claims are not proven        | One or more critical, certificate-authorized fact claims are not yet PROVEN in the persisted ProofGraph.                                                                                    |
-| `VALIDATION_SUBJECT_CHANGED`            | The validation subject changed while checks were running                        | The plan or implementation under validation changed during the check run, so the results cannot be bound to a stable subject digest. Re-run the check against the current subject.          |
-| `VERIFICATION_SUBJECT_CHANGED`          | The execution subject changed during verification                               | The execution subject changed during the verification phase, so evidence cannot be bound to a stable subject. Re-capture discovery and re-execute verification.                             |
-| `FOUR_EYES_ACTOR_MATCH`                 | Four-eyes review required: a different reviewer must approve                    | The session initiator cannot approve their own work. A different person with reviewer permissions must provide the review decision.                                                         |
-| `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`      | The review scope is not verifiable for this obligation                          | The review obligation has no frozen reviewed-file scope, so scope verification is unavailable. Re-run the review to create an obligation with a verifiable frozen scope.                    |
-| `DISCOVERY_DRIFT_BLOCKED`               | Discovery drift blocks mutating tools                                           | The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.                                                   |
-| `DISCOVERY_HEALTH_UNAVAILABLE`          | Discovery evidence is unavailable; mutating tools are blocked                   | Policy requires healthy Discovery before mutating tools may run. Restore Discovery evidence and run hydration to re-establish health.                                                       |
-| `DISCOVERY_HEALTH_DEGRADED`             | Discovery is degraded; mutating tools are blocked                               | Discovery is available but degraded, and the onDegraded policy blocks mutating tools. Resolve the degraded collectors and re-run hydration.                                                 |
+| Code                                    | Headline                                                                        | Explanation                                                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALIDATION_EVIDENCE_REQUIRED`          | Validation evidence is required before VALIDATION can pass                      | Policy requires Discovery-derived verification commands to be active and executed. VALIDATION must not pass vacuously under this policy.                                                     |
+| `VALIDATION_EVIDENCE_UNVERIFIED`        | Validation evidence is unverified, so VALIDATION stays blocked                  | Discovery is not trustworthy enough to confirm whether verification commands exist. VALIDATION is blocked fail-closed instead of asserting false certainty.                                  |
+| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | A detected stack produced no verification commands, so VALIDATION stays blocked | Discovery found a technology stack but derived no verification commands from it. A stack with zero active checks is treated as a mis-detection hazard, not a verified no-commands property.  |
+| `PROOFGRAPH_CERTIFICATE_INVALID`        | Evidence approval is blocked by a missing or stale plan certificate             | The plan approval certificate is missing, stale, or does not bind the current plan version.                                                                                                  |
+| `PROOFGRAPH_EVALUATION_UNAVAILABLE`     | Evidence approval is blocked because critical claims have no proof evaluation   | Certificate-authorized critical plan claims have no unique, correctly bound source and usable ProofGraph evaluation. Missing, duplicated or mismatched identities cannot authorize approval. |
+| `PROOFGRAPH_RISK_ASSESSMENT_STALE`      | Evidence approval is blocked by a stale implementation risk assessment          | The implementation risk assessment is missing, stale, or predates trigger classification. Record a fresh assessment before approving.                                                        |
+| `PROOFGRAPH_CRITICAL_FACT_REQUIRED`     | Evidence approval requires a critical, certificate-authorized fact claim        | The declared risk triggers require at least one critical, certificate-authorized fact claim to be recorded and proven before approval.                                                       |
+| `PROOFGRAPH_CRITICAL_FACTS_UNPROVEN`    | Evidence approval is blocked because critical fact claims are not proven        | One or more critical, certificate-authorized fact claims are not yet PROVEN in the persisted ProofGraph.                                                                                     |
+| `VALIDATION_SUBJECT_CHANGED`            | The validation subject changed while checks were running                        | The plan or implementation under validation changed during the check run, so the results cannot be bound to a stable subject digest. Re-run the check against the current subject.           |
+| `VERIFICATION_SUBJECT_CHANGED`          | The execution subject changed during verification                               | The execution subject changed during the verification phase, so evidence cannot be bound to a stable subject. Re-capture discovery and re-execute verification.                              |
+| `FOUR_EYES_ACTOR_MATCH`                 | Four-eyes review required: a different reviewer must approve                    | The session initiator cannot approve their own work. A different person with reviewer permissions must provide the review decision.                                                          |
+| `REVIEW_SUBJECT_SCOPE_UNAVAILABLE`      | The review scope is not verifiable for this obligation                          | The review obligation has no frozen reviewed-file scope, so scope verification is unavailable. Re-run the review to create an obligation with a verifiable frozen scope.                     |
+| `DISCOVERY_DRIFT_BLOCKED`               | Discovery drift blocks mutating tools                                           | The discovery surface drifted from the persisted binding and the onDrift policy blocks mutating tools. Reconcile drift before continuing.                                                    |
+| `DISCOVERY_HEALTH_UNAVAILABLE`          | Discovery evidence is unavailable; mutating tools are blocked                   | Policy requires healthy Discovery before mutating tools may run. Restore Discovery evidence and run hydration to re-establish health.                                                        |
+| `DISCOVERY_HEALTH_DEGRADED`             | Discovery is degraded; mutating tools are blocked                               | Discovery is available but degraded, and the onDegraded policy blocks mutating tools. Resolve the degraded collectors and re-run hydration.                                                  |
 
 ## Debug Mode
 

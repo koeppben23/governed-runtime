@@ -33,7 +33,7 @@ below is navigation; the named source constants are authority.
 
 | Contract             | Current                         | Authority                                            |
 | -------------------- | ------------------------------- | ---------------------------------------------------- |
-| Session state        | `v10`                           | `src/state/schema.ts`                                |
+| Session state        | `v11`                           | `src/state/schema.ts`                                |
 | Assurance epoch      | `assurance-epoch.v3`            | `src/state/schema.ts`                                |
 | State digest         | `state-digest.v2`               | `src/state/schema.ts`                                |
 | Audit chain          | `audit-chain.v3`                | `src/state/schema.ts`, `src/state/evidence-audit.ts` |

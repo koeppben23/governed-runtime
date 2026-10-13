@@ -17,6 +17,8 @@ import {
   assertStateIntegrityTrigger,
   claimDeclaration,
 } from '../../../demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs';
+import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import { RESULT } from '../../../demos/lib/results.mjs';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -268,6 +270,46 @@ describe('risk-trigger control oracles', () => {
       expect(() => assertNoCompletionPackage(runner, session)).toThrow(
         /persisted export completion evidence/,
       );
+    });
+  });
+
+  describe('PASS contract', () => {
+    it('HAPPY: a record turns PASS only after captureProvenance succeeded', async () => {
+      const record: Record<string, unknown> = {
+        name: 'risk-case',
+        result: 'FAILED',
+        phase: 'EVIDENCE_REVIEW',
+      };
+      const session = { sessionId: 'ses_risk_01', workspace: '/tmp/risk' };
+      const order: string[] = [];
+      const runner = {
+        captureProvenance: async (target: Record<string, unknown>) => {
+          expect(target.result).toBe('FAILED');
+          order.push('capture');
+        },
+      };
+      await finalizeControlRecord(record, session, runner, { verificationState: 'PROVEN' });
+      expect(order).toEqual(['capture']);
+      expect(record.result).toBe(RESULT.CONTROL_PASSED);
+      expect(record.verificationState).toBe('PROVEN');
+    });
+
+    it('BAD/EDGE: injected capture failure and payload PASS both stay FAILED', async () => {
+      const session = { sessionId: 'ses_risk_02', workspace: '/tmp/risk' };
+      const record: Record<string, unknown> = { name: 'risk-case-fault', result: 'FAILED' };
+      const runner = {
+        captureProvenance: async () => {
+          throw new Error('parent transcript export failed for ses_risk_02 (exit=2)');
+        },
+      };
+      await expect(
+        finalizeControlRecord(record, session, runner, { result: 'PASS' }),
+      ).rejects.toThrow('parent transcript export failed');
+      record.result = 'FAILED';
+      record.error = 'Error: parent transcript export failed for ses_risk_02 (exit=2)';
+      const passed = [record].filter((entry) => entry.result === RESULT.CONTROL_PASSED).length;
+      expect(passed).toBe(0);
+      expect(record.error).toContain('parent transcript export failed');
     });
   });
 });

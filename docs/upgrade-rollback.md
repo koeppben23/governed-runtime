@@ -100,8 +100,8 @@ upgrade before managed artifacts are written.
 ### State Schema Compatibility
 
 FlowGuard is a prerelease product. The persisted session-state schema is
-`schemaVersion: 'v10'`, `assurance-epoch.v3`, `state-digest.v2`,
-`policy-digest.v4`, and audit records are strictly `audit-chain.v3`. Pre-v10
+`schemaVersion: 'v11'`, `assurance-epoch.v3`, `state-digest.v2`,
+`policy-digest.v4`, and audit records are strictly `audit-chain.v3`. Pre-v11
 state is **hard-rejected** with `SESSION_STATE_INCOMPATIBLE` at the `readState`
 preflight, and audit records that violate the canonical audit-chain.v3
 envelope are rejected with `AUDIT_ENVELOPE_INVALID` at every audit persistence
@@ -115,7 +115,7 @@ for the superseded migration proposal.
 | From Version                                                     | To Version                                | Compatibility                                                                                                                                                                                                      |
 | ---------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Any prerelease                                                   | Later prerelease                          | No forward-compatibility guarantee. Complete active sessions (or archive terminal ones) with the release that wrote them before upgrading; see the operator recovery tree below.                                   |
-| State `schemaVersion: v9`/earlier                                | Current state contract (`v10`)            | Incompatible by design. State is rejected with `SESSION_STATE_INCOMPATIBLE`; no migration path exists. Recover with the release that wrote the session per the operator recovery tree, then start a fresh session. |
+| State `schemaVersion: v10`/earlier                               | Current state contract (`v11`)            | Incompatible by design. State is rejected with `SESSION_STATE_INCOMPATIBLE`; no migration path exists. Recover with the release that wrote the session per the operator recovery tree, then start a fresh session. |
 | Audit trail `audit-chain.v2`/earlier, regardless of state schema | Current audit contract (`audit-chain.v3`) | Incompatible by design. Records are rejected with `AUDIT_ENVELOPE_INVALID`; no migration or re-seal path exists.                                                                                                   |
 | `v1.2.0-tp.2` and earlier policy digests                         | A release requiring `policy-digest.v4`    | Incompatible by design. The current digest excludes removed policy authorities; recover with the release that wrote the session per the operator recovery tree, then start a new session.                          |
 

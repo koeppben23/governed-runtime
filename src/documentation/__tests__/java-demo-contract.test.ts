@@ -31,6 +31,7 @@ import {
   verifyChecksumSidecar,
   withRawExportGrant,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
 
 const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -305,7 +306,8 @@ describe('Java Task Manager demo contract', () => {
         },
       ]);
 
-      // Any other phase keeps the fail-closed stop.
+      // Any other phase keeps the fail-closed stop; a review-stage capture or
+      // consistency block is an unreached proof, not a contract violation.
       runner.requireBoundState = () => ({ state: { phase: 'PEER_REVIEW' }, sessionDir: root });
       const unfinished: {
         workspace: string;
@@ -313,7 +315,7 @@ describe('Java Task Manager demo contract', () => {
         terminalBlocks?: Array<Record<string, unknown>>;
       } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
       await expect(runner.turn(unfinished, 'peer-review-02-review', 'x')).rejects.toThrow(
-        /unexpected tool-level block/,
+        /NOT_VERIFIED/,
       );
       expect(unfinished.terminalBlocks).toBeUndefined();
     } finally {
@@ -363,6 +365,104 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('never accepts a terminal state when the transcript is untrustworthy', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-trust-boundary-'));
+    const unreadableGoverned = JSON.stringify({
+      type: 'tool_use',
+      part: { tool: 'flowguard_plan', state: { output: '{"error":tru' } },
+    });
+    const damagedFrame = '{"type":"tool_use","part":{';
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${unreadableGoverned}\n${damagedFrame}\n`,
+      });
+      // Even a persisted terminal phase must not launder the untrustworthy turn.
+      runner.requireBoundState = () => ({
+        state: { phase: 'PEER_REVIEW_COMPLETE' },
+        sessionDir: root,
+      });
+      const session: {
+        workspace: string;
+        terminal: string;
+        terminalBlocks?: Array<Record<string, unknown>>;
+        transcriptWarnings?: Array<Record<string, unknown>>;
+      } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
+      await expect(runner.turn(session, 'peer-review-09', 'x')).rejects.toThrow(/NOT_VERIFIED/);
+      expect(session.terminalBlocks ?? []).toEqual([]);
+      expect(session.transcriptWarnings?.[0]).toMatchObject({ step: 'peer-review-09' });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('classifies a reviewer unable-to-review block as NOT_VERIFIED, not a contract violation', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-unable-review-'));
+    const block = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'task',
+        state: { output: JSON.stringify({ error: true, code: 'SUBAGENT_UNABLE_TO_REVIEW' }) },
+      },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${block}\n`,
+      });
+      runner.requireBoundState = () => ({ state: { phase: 'PLAN' }, sessionDir: root });
+      const session = { workspace: root, terminal: 'COMPLETE' };
+      await expect(runner.turn(session, 'reduced-on-03-plan', 'x')).rejects.toThrow(/NOT_VERIFIED/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['INVALID_PLAN_TOOL_SEQUENCE', 'COMMAND_NOT_ALLOWED', 'WRONG_PHASE'])(
+    'reports an unresolved %s guard as NOT_VERIFIED, not a contract violation',
+    async (code) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-plan-guard-'));
+      const guard = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ error: true, code }) },
+        },
+      });
+      try {
+        await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+        const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+        runner.hostStep = async () => ({
+          code: 0,
+          stderr: '',
+          timedOut: false,
+          durationMs: 0,
+          sessionIds: ['ses_parent'],
+          stdout: `${guard}\n`,
+        });
+        runner.requireBoundState = () => ({ state: { phase: 'PLAN' }, sessionDir: root });
+        const session = { workspace: root, terminal: 'COMPLETE' };
+        await expect(runner.turn(session, 'development-03-plan', 'x')).rejects.toThrow(
+          new RegExp(`${code}.*NOT_VERIFIED`),
+        );
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('requires a proven in-session retry before a recoverable denial counts as recovered', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-same-turn-'));
     try {
@@ -391,10 +491,12 @@ describe('Java Task Manager demo contract', () => {
         stdout: `${denial}\n`,
       });
       await expect(runner.turn({ workspace: root }, 'plan-a', 'x')).rejects.toThrow(
-        /without a proven in-session correction/,
+        /without a later proven correction.*NOT_VERIFIED/,
       );
 
-      // Later success of the same tool proves the in-session correction.
+      // Later success of the same tool WITHOUT an operation binding is only an
+      // observation; resolving it requires an independent persisted proof from
+      // the next required step.
       runner.hostStep = async () => ({
         code: 0,
         stderr: '',
@@ -406,11 +508,109 @@ describe('Java Task Manager demo contract', () => {
       const session: {
         workspace: string;
         recoveredDenials?: Array<Record<string, unknown>>;
+        awaitingRecovery?: { step: string; codes: string[] };
       } = { workspace: root };
       await runner.turn(session, 'plan-b', 'x');
       expect(session.recoveredDenials).toEqual([
-        { step: 'plan-b', codes: ['REVISED_PLAN_REQUIRED'], evidence: 'same_turn_retry_success' },
+        { step: 'plan-b', codes: ['REVISED_PLAN_REQUIRED'], evidence: 'later_tool_success' },
       ]);
+      expect(session.awaitingRecovery).toMatchObject({
+        step: 'plan-b',
+        codes: ['REVISED_PLAN_REQUIRED'],
+      });
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${denial}\n${success}\n${denial}\n`,
+      });
+      await expect(runner.turn({ workspace: root }, 'repeated-open-denial', 'x')).rejects.toThrow(
+        /without a later proven correction.*NOT_VERIFIED/,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves a later_tool_success only through an independent persisted transition', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-later-success-'));
+    const statePath = path.join(root, 'session-state.json');
+    const denial = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'flowguard_plan',
+        state: { output: JSON.stringify({ error: true, code: 'REVISED_PLAN_REQUIRED' }) },
+      },
+    });
+    const success = JSON.stringify({
+      type: 'tool_use',
+      part: { tool: 'flowguard_plan', state: { output: JSON.stringify({ reviewDispatch: {} }) } },
+    });
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      await fs.writeFile(statePath, JSON.stringify({ phase: 'PLAN' }));
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      let persisted: Record<string, unknown> = reviewedPlan();
+      runner.requireBoundState = () => ({ state: persisted, sessionDir: root });
+
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${denial}\n${success}\n`,
+      });
+      const session: {
+        workspace: string;
+        recoveredDenials?: Array<Record<string, unknown>>;
+        awaitingRecovery?: { step: string; codes: string[] };
+      } = { workspace: root };
+      await runner.turn(session, 'plan-c', 'x');
+      expect(session.awaitingRecovery).toBeDefined();
+
+      // An unrelated persisted update must not resolve the rejected plan.
+      await fs.writeFile(statePath, JSON.stringify({ phase: 'PLAN', logging: { level: 'debug' } }));
+      persisted = { ...persisted, logging: { level: 'debug' } };
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${success}\n`,
+      });
+      await expect(runner.turn(session, 'unrelated-update', 'x')).rejects.toThrow(
+        /authorized affected-operation transition/,
+      );
+
+      // The next required step WITHOUT a persisted transition stays unproven.
+      await expect(runner.turn(session, 'plan-c-next', 'x')).rejects.toThrow(
+        /authorized affected-operation transition/,
+      );
+
+      // With a real state change the independent proof resolves it.
+      persisted = approvedPlan();
+      await fs.writeFile(statePath, JSON.stringify(persisted));
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${success}\n`,
+      });
+      await runner.turn(session, 'plan-c-retry', 'x', { command: 'approve' });
+      expect(session.recoveredDenials).toContainEqual(
+        expect.objectContaining({
+          step: 'plan-c',
+          codes: ['REVISED_PLAN_REQUIRED'],
+          evidence: 'next_step_operation_transition:plan-c-retry',
+        }),
+      );
+      expect(session.awaitingRecovery).toBeNull();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -434,7 +634,12 @@ describe('Java Task Manager demo contract', () => {
       await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
       await fs.writeFile(statePath, JSON.stringify({ phase: 'READY' }));
       const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
-      runner.requireBoundState = () => ({ state: { phase: 'READY' }, sessionDir: root });
+      let persisted: Record<string, unknown> = {
+        phase: 'READY',
+        flowguardSessionId: 'fg-1',
+        binding: { hostSessionId: 'ses_parent' },
+      };
+      runner.requireBoundState = () => ({ state: persisted, sessionDir: root });
 
       // Turn 1: the denial is pending, not yet recovered.
       runner.hostStep = async () => ({
@@ -449,7 +654,8 @@ describe('Java Task Manager demo contract', () => {
         workspace: string;
         recoveredDenials?: Array<Record<string, unknown>>;
         awaitingRecovery?: { step: string; codes: string[] };
-      } = { workspace: root };
+        terminal: string;
+      } = { workspace: root, terminal: 'COMPLETE' };
       await runner.turn(session, 'start', 'x');
       expect(session.recoveredDenials ?? []).toEqual([]);
       expect(session.awaitingRecovery).toMatchObject({
@@ -466,19 +672,20 @@ describe('Java Task Manager demo contract', () => {
         sessionIds: ['ses_parent'],
         stdout: `${clean}\n`,
       });
-      await expect(runner.turn(session, 'task', 'x')).rejects.toThrow(
-        /was not demonstrated by a state transition/,
+      await expect(runner.turn(session, 'task', 'x', { command: 'task' })).rejects.toThrow(
+        /authorized affected-operation transition/,
       );
 
       // Turn 3 with a real state change: recovered, evidence-bound.
-      await fs.writeFile(statePath, JSON.stringify({ phase: 'TICKET' }));
-      await runner.turn(session, 'task-2', 'x');
+      persisted = { ...persisted, phase: 'TICKET', ticket: { digest: 'ticket-A' } };
+      await fs.writeFile(statePath, JSON.stringify(persisted));
+      await runner.turn(session, 'task-2', 'x', { command: 'task' });
       expect(session.recoveredDenials).toEqual([
-        {
+        expect.objectContaining({
           step: 'start',
           codes: ['CONTINUE_AMBIGUOUS'],
-          evidence: 'next_step_state_transition:task-2',
-        },
+          evidence: 'next_step_operation_transition:task-2',
+        }),
       ]);
       expect(session.awaitingRecovery).toBeNull();
     } finally {
@@ -656,7 +863,11 @@ describe('Java Task Manager demo contract', () => {
         part: {
           tool: 'task',
           state: {
-            output: JSON.stringify({ error: true, code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
+            output: JSON.stringify({
+              error: true,
+              code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+              detail: { obligationId: 'ob-1', attemptId: 'attempt-1' },
+            }),
           },
         },
       });
@@ -665,7 +876,14 @@ describe('Java Task Manager demo contract', () => {
         part: {
           tool: 'task',
           state: {
-            output: JSON.stringify({ reviewRetry: { code: 'REVIEW_EVIDENCE_NOT_OBSERVED' } }),
+            output: JSON.stringify({
+              reviewRetry: {
+                code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
+                retryable: true,
+                obligationId: 'ob-1',
+                attemptId: 'attempt-2',
+              },
+            }),
           },
         },
       });
@@ -756,6 +974,85 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('resumes an outstanding implementation review with a bounded, progress-proven retry', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-impl-resume-'));
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      const calls: string[] = [];
+      const hostResult = () => ({
+        code: 0,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: [],
+      });
+
+      // Already at the evidence gate: no resume at all.
+      runner.currentPhase = () => 'EVIDENCE_REVIEW';
+      runner.turn = async (_session, label) => {
+        calls.push(label);
+        return hostResult();
+      };
+      const atGate: { workspace: string; resumedSteps?: Array<Record<string, unknown>> } = {
+        workspace: root,
+      };
+      await runner.completeImplementationReview(atGate, 'development-05-implement');
+      expect(calls).toEqual([]);
+      expect(atGate.resumedSteps).toBeUndefined();
+
+      // IMPL_REVIEW with one progressing resume: the gate is reached.
+      let phase = 'IMPL_REVIEW';
+      let digest = 'd1';
+      runner.currentPhase = () => phase;
+      runner.currentStateDigest = () => digest;
+      runner.turn = async (_session, label) => {
+        calls.push(label);
+        digest = 'd2';
+        phase = 'EVIDENCE_REVIEW';
+        return hostResult();
+      };
+      const resumed: {
+        workspace: string;
+        resumedSteps?: Array<Record<string, unknown>>;
+      } = { workspace: root };
+      await runner.completeImplementationReview(resumed, 'development-05-implement');
+      expect(calls).toEqual(['development-05-implement-resume-1']);
+      expect(resumed.resumedSteps).toEqual([
+        { step: 'development-05-implement', attempt: 1, evidence: 'bounded_resume' },
+      ]);
+
+      // A resume without persisted state progress stays fail-closed.
+      phase = 'IMPL_REVIEW';
+      digest = 'd3';
+      runner.currentPhase = () => phase;
+      runner.currentStateDigest = () => digest;
+      runner.turn = async () => hostResult();
+      await expect(
+        runner.completeImplementationReview({ workspace: root }, 'development-05-implement'),
+      ).rejects.toThrow(/no state progress/);
+
+      // Progress on every attempt but never reaching the gate exhausts the bound.
+      phase = 'IMPL_REVIEW';
+      let digestSequence = 0;
+      runner.currentPhase = () => phase;
+      runner.currentStateDigest = () => `d${(digestSequence += 1)}`;
+      runner.turn = async () => hostResult();
+      await expect(
+        runner.completeImplementationReview({ workspace: root }, 'development-05-implement'),
+      ).rejects.toThrow(/within 2 bounded resume/);
+
+      // A phase that is neither the outstanding review nor the gate is fatal.
+      phase = 'PLAN_REVIEW';
+      await expect(
+        runner.completeImplementationReview({ workspace: root }, 'development-05-implement'),
+      ).rejects.toThrow(/expected IMPL_REVIEW or EVIDENCE_REVIEW/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('confirms the exhausted negative contract by refusing a plain architecture approval', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-negative-exhausted-'));
     const calls: Array<{ label: string; options?: { expectedDenial?: string } }> = [];
@@ -803,6 +1100,7 @@ describe('Java Task Manager demo contract', () => {
     const rearm = JSON.stringify({
       type: 'tool_use',
       part: {
+        tool: 'task',
         state: {
           output: JSON.stringify({
             status:
@@ -812,6 +1110,7 @@ describe('Java Task Manager demo contract', () => {
               code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
               obligationId: 'obl_1',
               attemptId: 'attempt_2',
+              retryable: true,
             },
           }),
         },

@@ -37,14 +37,16 @@
  * @version v1
  */
 
-import type { SessionState, Event } from '../state/schema.js';
+import type { SessionState, Event, Phase } from '../state/schema.js';
 import type { ReviewDecision, ReviewVerdict } from '../state/evidence.js';
 import { isApprovalVerdict } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
-import type { RailResult, RailContext, TransitionRecord } from './types.js';
-import { applyTransition } from './types.js';
+import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
+import { applyEvidenceApprovalTransition, applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
+import { blockedFromEvidenceApproval } from './auto-advance-overflow.js';
+import type { EvidenceApprovalAdmission } from '../audit/proofgraph/evidence-approval-admission.js';
 import {
   approvalCertificatePatch,
   enforceApprovalPreconditions,
@@ -141,6 +143,44 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
   return state;
 }
 
+// ─── Transition Application ───────────────────────────────────────────────────
+
+/**
+ * Apply the resolved decision transition. The protected evidence-approval edge
+ * only ever goes through the gate-checked application; the generic applier
+ * refuses it. Returns the canonical block instead of applying anything when
+ * the gate denies.
+ */
+function applyDecisionTransition(
+  clearedState: SessionState,
+  from: Phase,
+  target: Phase,
+  event: Event,
+  at: string,
+):
+  | { readonly kind: 'blocked'; readonly block: RailBlocked }
+  | {
+      readonly kind: 'applied';
+      readonly state: SessionState;
+      readonly approvalAdmission?: EvidenceApprovalAdmission;
+    } {
+  if (from !== 'EVIDENCE_REVIEW' || target !== 'EXPORT_READY') {
+    return { kind: 'applied', state: applyTransition(clearedState, from, target, event, at) };
+  }
+  const application = applyEvidenceApprovalTransition(clearedState, at);
+  if (application.kind === 'blocked') {
+    return {
+      kind: 'blocked',
+      block: blockedFromEvidenceApproval({
+        kind: 'blocked',
+        phase: from,
+        block: application.block,
+      }),
+    };
+  }
+  return { kind: 'applied', state: application.state, approvalAdmission: application.admission };
+}
+
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeReviewDecision(
@@ -215,9 +255,12 @@ export function executeReviewDecision(
     input.verdict,
   );
 
-  // 7. Apply transition
+  // 7. Apply transition (protected edge included).
   const at = ctx.now();
-  const finalState = applyTransition(clearedState, state.phase, target, event, at);
+  const applied = applyDecisionTransition(clearedState, state.phase, target, event, at);
+  if (applied.kind === 'blocked') return applied.block;
+  const finalState = applied.state;
+  const approvalAdmission = applied.approvalAdmission;
 
   // Record the single transition for audit
   const transition: TransitionRecord = {
@@ -236,5 +279,6 @@ export function executeReviewDecision(
     evalResult,
     transitions: [transition],
     decisionEvidence: decision,
+    ...(approvalAdmission !== undefined ? { approvalAdmission } : {}),
   };
 }

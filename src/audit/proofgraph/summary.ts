@@ -26,6 +26,8 @@ import { deriveProofGraph } from './derive.js';
 import { isFreshCounterexample } from './evaluate.js';
 import { bindExecutedTestEvidence } from './executed-test-binder.js';
 import { bindCounterexamples } from './counterexample-binder.js';
+import { uniqueClaimIds, claimsMatchDeclaredSet } from '../../state/proofgraph-claim-set.js';
+import { assessProofGraphEvidence } from './evidence-integrity.js';
 import type { MutationProfileSummary, MutationSurvivor } from './mutation-report.js';
 
 /** Adversarial outcome for one claim, with explicit revision freshness. */
@@ -104,27 +106,6 @@ export interface PersistedProofGraphSummary {
  * declare means the projection and the contract disagree — never PROVEN.
  * Missing, duplicated, or unauthorized claims are inconsistencies, not coverage.
  */
-function declaredClaimIds(
-  contract: NonNullable<SessionState['proofContract']>,
-): ReadonlySet<string> | null {
-  const ids = new Set(contract.claims.map((c) => c.claimId));
-  return ids.size === contract.claims.length ? ids : null;
-}
-
-function claimsMatchDeclaredSet(
-  claims: ProofGraphProjection['claims'],
-  declaredIds: ReadonlySet<string>,
-): boolean {
-  const occurrences = new Map<string, number>();
-  for (const claim of claims) {
-    occurrences.set(claim.claimId, (occurrences.get(claim.claimId) ?? 0) + 1);
-  }
-  for (const claimId of declaredIds) {
-    if (occurrences.get(claimId) !== 1) return false;
-  }
-  return true;
-}
-
 function hasUndeclaredGoverningClaim(
   claims: ProofGraphProjection['claims'],
   declaredIds: ReadonlySet<string>,
@@ -143,7 +124,7 @@ function contractCoverage(
   const contract = state.proofContract;
   if (contract === undefined) return 'NOT_DECLARED';
   if (contract.claims.length === 0) return 'NOT_VERIFIED';
-  const declaredIds = declaredClaimIds(contract);
+  const declaredIds = uniqueClaimIds(contract.claims);
   if (declaredIds === null) return 'NOT_VERIFIED';
   if (!claimsMatchDeclaredSet(claims, declaredIds)) return 'NOT_VERIFIED';
   if (hasUndeclaredGoverningClaim(claims, declaredIds)) return 'NOT_VERIFIED';
@@ -171,7 +152,11 @@ function contractCoverage(
  * state, not a passing one.
  */
 export function summarizePersistedProofGraph(state: SessionState): PersistedProofGraphSummary {
-  const claims = state.proofGraph.claims;
+  const claims = assessProofGraphEvidence(state.proofGraph, {
+    contract: state.proofContract,
+    validationAttempts: state.validationAttempts,
+    implementationDigest: state.implementation?.digest,
+  }).projection.claims;
   const provenCount = claims.filter((claim) => claim.verificationState === 'PROVEN').length;
   const unprovenCount = claims.length - provenCount;
   const contractClaimCount = state.proofContract?.claims.length ?? 0;

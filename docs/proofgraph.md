@@ -65,15 +65,30 @@ evidence requirements, not objective absence of defects.
 Enforcement is unconditional and has no policy switch. A switch would mean that
 an author declares a claim critical, has it human-approved, and the system then
 ignores whether it was ever proven — which contradicts the meaning of
-`critical`. The blast radius is bounded by the eligibility rule instead:
+`critical`. Policy decides **who may approve**, never **whether the evidence is
+sufficient**: an automatic approval under `solo`/`team-ci` clears the same
+canonical preflight as an explicit human decision, and the generic transition
+applier refuses the `EVIDENCE_REVIEW -> EXPORT_READY` edge entirely. The blast
+radius is bounded by the eligibility rule instead:
 
-- only at the `EVIDENCE_REVIEW` human gate, on approval;
+- at every `EVIDENCE_REVIEW -> EXPORT_READY` approval — explicit decision,
+  governance override, or policy-automatic;
+- the persistence boundary refuses a newly entered `EXPORT_READY` whose
+  refreshed evaluation does not clear the preflight, so a stale, replayed, or
+  process-local decision cannot be committed;
 - only for `fact` claims materialized from a valid plan approval certificate;
 - only when the author declared them `critical`;
 - `derived_signal` (architecture) and `hypothesis` (peer review) claims are
   never gate-eligible and remain advisory;
 - a session whose implementation has only `ceremony_only` risk triggers is
   unaffected.
+
+Plan approval itself is attested: a plan certificate carries an
+`explicit_decision` or `policy_auto` attestation bound to the session binding
+and frozen policy. Automatic plan approval is minted only from the same bound,
+accepted review evidence the explicit rail resolves — an exhausted review is
+never certified automatically — and a `policy_auto` certificate carries no
+invented human identity.
 
 For an implementation with a specific persisted risk trigger, FlowGuard
 requires that **every** detected trigger is explicitly covered by at least one
@@ -121,13 +136,42 @@ two distinct attempts) or the same validation attempt to both roles never
 becomes `PROVEN`; its diagnostic is `evidence_role_collision` /
 `PROOFGRAPH_EVIDENCE_ROLE_COLLISION`.
 
-If a current plan approval certificate authorizes a critical declaration but its
-claim is absent from the persisted ProofGraph projection, final evidence approval
-blocks with `PROOFGRAPH_EVALUATION_UNAVAILABLE`. A missing projection is never
-interpreted as an empty declaration set; request changes and restore the
-evaluation before approval.
+If a current plan approval certificate authorizes a critical declaration but the
+claim has no unique, correctly bound source and persisted ProofGraph evaluation
+(absent, duplicated, or bound to a different certificate), final evidence
+approval blocks with `PROOFGRAPH_EVALUATION_UNAVAILABLE`. A missing projection
+is never interpreted as an empty declaration set; request changes and restore
+the evaluation before approval. The same exactly-once rule applies to claim
+ids: an authorized critical claim must occur exactly once in the declared
+contract and exactly once in the projection with a matching certificate
+binding. Duplicate occurrences are never resolved by first/last match.
+
+Structured assertion evidence follows the same fail-closed identity rule. A
+provider-scoped assertion identity (provider, local id) that occurs more than
+once inside one extraction cannot select a result by order: the attempt's
+evidence is invalid for both the positive and the adversarial role, binding
+reports `assertion_identity_ambiguous` /
+`PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS`, and a cached `PROVEN` projection that
+references it is re-evaluated to a blocked, non-proven state. A provider
+mismatch inside one extraction keeps precedence
+(`assertion_provider_mismatch` / `PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH`).
+`exitCode: 0`, `passed: true`, or a valid cryptographic binding never upgrade
+ambiguous structured evidence into usable proof; the raw observations remain
+auditable and only their qualifying force is removed.
 
 ## Declaring claims
+
+Installed OpenCode, Claude Code and Codex planning instructions share the same
+claim guidance as the plan tool's input description. `specific_behavior` claims
+need claim-specific observations; `suite` claims need explicit full-check scope
+and registered aggregate capability for adversarial evidence. The illustrative
+`build`/`test` example is valid only when those checks are active and the selected
+candidate can bind the named assertion. Never invent an assertion identity.
+
+Plan `targetPaths` are advisory forecasts and can be partial or unknown. Declare
+explicit `coversRiskTriggers` for known applicable specific risks on critical
+claims whose behavior actually covers them. The actual implementation assessment
+can discover additional risks; it never silently widens approved coverage.
 
 `flowguard_declare_contract` (admissible in `IMPL_VALIDATION` / `IMPL_REVIEW`)
 records the claims a change asserts. Each claim is bound **fail-closed** to an
@@ -138,10 +182,12 @@ is rejected (`PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED`), never recorded.
 flowguard_declare_contract({
   claims: [
     {
-      statement: "the change is covered by the test check",
-      checkId: "test",              // evidence: a passing attempt PROVES the claim
-      critical: true,               // required
+      statement: "the user creation path rejects invalid input",
+      checkId: "test",              // positive execution evidence, not proof by itself
+      critical: true,
+      claimScope: "specific_behavior",
       counterexampleRequirement: {  // required for critical claims; a distinct check whose FAILURE contradicts the claim
+        kind: "assertion",
         checkId: "security",         // must differ from checkId: one execution cannot satisfy both evidence roles
         assertion: {
           providerId: "junit",
@@ -161,6 +207,80 @@ are appended without rewriting the materialized plan claims or their evidence.
 Manual claims may resolve to `fact` when they cite a governing authority, but
 they carry no approval certificate and therefore remain advisory at the final
 gate.
+
+## Recovery when approved claims must change
+
+Evidence repair and authority revision are different operations. With a valid,
+satisfiable approved claim, `/request-changes` at `EVIDENCE_REVIEW` returns to
+`IMPLEMENTATION`: repair, record with `/implement`, run fresh checks and complete
+review. A missing evaluation or stale risk assessment is repaired through that
+same product path. Do not edit the projection or assessment in session files.
+
+Missing approved coverage, a structurally unsatisfiable claim, or an invalid
+certificate requires a **new governed session**, not an in-place declaration
+change. No in-session post-approval replan is available:
+
+1. Preserve the old session identity, plan/certificate digests, detected triggers
+   and code changes. On an explicit user instruction, `/abort` terminates the old
+   session with its audit trail and historical authority retained.
+2. As an operator preparation step, create a separate worktree at the original
+   trusted pre-change base. Do not import the task's changes before hydration.
+3. Start a new **host session with a different host-session id**, then `/hydrate`
+   in that prepared worktree. Verify a distinct FlowGuard session identity and
+   `READY`. Hydrate in the old terminal binding is a read-only reload, not a
+   restart. A new session on unchanged pre-existing dirty files excludes those
+   bytes from its implementation scope and is not a recovery substitute.
+4. Run `/ticket`, then `/plan` with the complete corrected declarations and
+   applicable coverage. Complete independent review and obtain a new certificate
+   under the active policy. This is an independent plan lineage starting at v1,
+   not a fabricated v2 of the old lineage.
+5. Only in the new authorized `IMPLEMENTATION` step, reapply the preserved changes
+   through the regular governed host-mutation contract. Record with `/implement`
+   and verify the full intended change scope and fresh risk assessment. An
+   out-of-workflow `git apply` is not retroactively authorized by recording.
+6. Execute fresh positive and adversarial checks and complete required review
+   before evidence approval. Never transfer old certificates, attempts or
+   `PROVEN` projections: identical code bytes or claim ids are not new evidence.
+
+If a new host binding or trustworthy pre-change base is unavailable, report the
+missing prerequisite as **BLOCKED**. Do not reset authority files or automatically
+restart a session. The code change can be preserved without reusing its approval.
+
+Status and contextual help project the canonical approval preflight. A denied
+approval is shown as blocked even under an automatic policy; help does not
+recommend an approval whose preflight fails. The machine directive and command
+admissibility describe legal input routing, not a guarantee that an approval's
+evidence prerequisites are satisfied.
+
+### Verification levels
+
+`src/integration/proofgraph-replan-recovery.test.ts` deterministically exercises
+two host contexts through real Git, persistence, mutation hooks and executed
+checks; reviewer observations use test fixtures. This is CI contract evidence,
+**not a live host-session handoff**. A live recovery additionally needs retained
+host transcripts for both actual host-session ids, both FlowGuard ids, build SHA,
+installed template identity, baseline/scope, the explicit abort, new certificate,
+new execution attempts and final approval. Report that live step `NOT_VERIFIED`
+unless the complete host workflow was actually rerun.
+
+The opt-in real-host runner is
+`node demos/risk-trigger-fixture/run-live-replan-recovery.mjs --root <fresh-dir>`.
+It uses the canonical pinned Node/OpenCode toolchain and the configured model,
+installs the built artifact, retains every host turn and exports both parent and
+reviewer transcripts. Its `replan-recovery.json` reports failure unless the old
+session was aborted, terminal hydrate was read-only, a distinct session obtained
+a new certificate, identical code was reapplied under governed mutation and new
+attempts satisfied final approval. `--check` verifies the toolchain only and is
+not live recovery evidence.
+
+The corrected guidance may cause the reviewer to reject the deliberately
+uncovered **old** control plan before evidence approval. Only for that negative
+control, the operator can explicitly pass `--allow-old-plan-override` to use the
+installed canonical override command when its directive requires it. Without
+that flag the runner stops; it never silently escalates approval. The recorded
+old certificate binding exposes the override. This grants no evidence-approval
+bypass, and the new corrected plan must still pass ordinary independent review
+and approval.
 
 ## Falsification (counterexamples)
 

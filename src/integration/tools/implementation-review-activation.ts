@@ -209,9 +209,17 @@ export async function activateImplementationReviewObligation(
 export async function materializePostValidationContract(
   state: SessionState,
   worktree: string,
+  /**
+   * The review entry the caller's advance will take, when materialization must
+   * happen BEFORE the advance (an approval's basis must already include the
+   * contract and its admission). Omitted for callers that materialize on the
+   * already-advanced state.
+   */
+  entryPhase?: 'IMPL_REVIEW' | 'EVIDENCE_REVIEW',
 ): Promise<SessionState> {
-  const entersFullReview = state.phase === 'IMPL_REVIEW';
-  const entersReducedReview = state.phase === 'EVIDENCE_REVIEW' && reducedCeremonyReady(state);
+  const phase = entryPhase ?? state.phase;
+  const entersFullReview = phase === 'IMPL_REVIEW';
+  const entersReducedReview = phase === 'EVIDENCE_REVIEW' && reducedCeremonyReady(state);
   if (!entersFullReview && !entersReducedReview) return state;
 
   const materialized = await materializeApprovedPlanContractResult(state, worktree);

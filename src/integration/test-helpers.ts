@@ -418,6 +418,14 @@ export async function fulfillStrictReviewObligation(
     planVersion: number;
     overallVerdict?: ReviewFindings['overallVerdict'];
     childSessionId?: string;
+    /** Explicit falsification scenarios for tests exercising multi-challenge reviews. */
+    challengeScenarios?: readonly string[];
+    /**
+     * Outcome per required challenge (index-aligned; defaults to the approved
+     * outcome per kind). Tests exercise the #747 failing-challenge repair loop
+     * with `'fail'`.
+     */
+    challengeOutcomes?: readonly ('pass' | 'fail')[];
     /** Bind this exact attempt; defaults to the obligation's first attempt. */
     attemptId?: string;
     /**
@@ -426,6 +434,18 @@ export async function fulfillStrictReviewObligation(
      * fixture.
      */
     blockingIssueCount?: number;
+    /**
+     * Explicit blocking-issue messages (index-aligned with blockingIssueCount)
+     * for fixtures that assert a specific, actionable finding survives the
+     * repair flow.
+     */
+    blockingIssueMessages?: readonly string[];
+    /**
+     * Independent reviewer resolution verdicts for prior failing challenges
+     * (#747). The consumption boundary requires exactly one verdict per
+     * author-addressed open challenge.
+     */
+    resolutionVerdicts?: ReviewFindings['challengeResolutionVerdicts'];
   },
 ): Promise<ReviewFindings> {
   const state = await readState(sessDir);
@@ -449,13 +469,16 @@ export async function fulfillStrictReviewObligation(
   // host-observed identity must match exactly, including artifact section paths.
   const canonicalRefs = buildReviewChallengeContract(state, obligation)?.evidenceRefs as
     ReviewFindings['challenges'][number]['evidenceRefs'] | undefined;
-  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, () => {
+  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, (_, index) => {
     const challengeId = crypto.randomUUID();
+    const requestedOutcome = input.challengeOutcomes?.[index];
     if (obligation.requiredChallengeKind === 'implementation_challenge') {
       return {
         challengeId,
         obligationId: obligation.obligationId,
-        scenario: 'Exercise the changed behavior against its implementation evidence.',
+        scenario:
+          input.challengeScenarios?.[index] ??
+          'Exercise the changed behavior against its implementation evidence.',
         claim: 'The implementation handles the reviewed scenario.',
         locations: ['implementation evidence'],
         kind: 'implementation_challenge' as const,
@@ -476,13 +499,15 @@ export async function fulfillStrictReviewObligation(
                 crypto.randomUUID(),
             },
           ] satisfies ReviewFindings['challenges'][number]['evidenceRefs']),
-        outcome: 'pass' as const,
+        outcome: requestedOutcome ?? 'pass',
       };
     }
     return {
       challengeId,
       obligationId: obligation.obligationId,
-      scenario: 'Exercise the reviewed design against its canonical section.',
+      scenario:
+        input.challengeScenarios?.[index] ??
+        'Exercise the reviewed design against its canonical section.',
       claim: 'The design addresses the reviewed scenario.',
       locations: ['plan section'],
       kind: 'design_challenge' as const,
@@ -514,9 +539,19 @@ export async function fulfillStrictReviewObligation(
     blockingIssues: Array.from({ length: input.blockingIssueCount ?? 0 }, (_, index) => ({
       severity: 'major' as const,
       category: 'correctness' as const,
-      message: `captured incoherent finding ${String(index + 1)}`,
+      message:
+        input.blockingIssueMessages?.[index] ?? `captured incoherent finding ${String(index + 1)}`,
       relation: {
-        subjectAnchors: [{ kind: 'content' as const, subjectDigest: obligation.subjectDigest }],
+        subjectAnchors:
+          obligation.obligationType === 'implement' &&
+          obligation.reviewSubjectScope?.kind === 'implementation'
+            ? [
+                {
+                  kind: 'implementation' as const,
+                  implementationDigest: obligation.reviewSubjectScope.implementationDigest,
+                },
+              ]
+            : [{ kind: 'content' as const, subjectDigest: obligation.subjectDigest }],
         evidenceLocations: [],
       },
     })),
@@ -538,6 +573,7 @@ export async function fulfillStrictReviewObligation(
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
     challenges,
+    ...(input.resolutionVerdicts ? { challengeResolutionVerdicts: input.resolutionVerdicts } : {}),
   };
 
   const boundAttempt = bindHostTaskAttempt(

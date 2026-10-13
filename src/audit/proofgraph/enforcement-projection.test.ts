@@ -7,6 +7,31 @@ import { describe, expect, it } from 'vitest';
 import { computeProofGraphEnforcement } from './enforcement-projection.js';
 import type { ProofGraphSummary } from './summary.js';
 import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
+import type { ProofContract } from '../../state/proofgraph-contract.js';
+import type { ProofClaim } from '../../state/proofgraph.js';
+
+/**
+ * The canonical source contract a materializer would persist for the given
+ * evaluated claims. Used only by this suite's `enforce()` wrapper so the
+ * enforcement-logic cases stay focused; dedicated source-integrity cases pass
+ * an explicit contract (or an empty one for an absent source).
+ */
+function declaredSource(claims: readonly ProofClaim[] | undefined): ProofContract {
+  return {
+    version: 'contract.v2',
+    claims: (claims ?? []).map(
+      ({ verificationState: _state, freshness: _freshness, ...rest }) => rest,
+    ),
+  };
+}
+
+type EnforceInput = Parameters<typeof computeProofGraphEnforcement>[0];
+function enforce(input: Omit<EnforceInput, 'contract'> & { readonly contract?: ProofContract }) {
+  return computeProofGraphEnforcement({
+    ...input,
+    contract: input.contract ?? declaredSource(input.projection?.claims),
+  });
+}
 
 function summary(claims: unknown[] = []): {
   projection: ProofGraphSummary['projection'];
@@ -82,8 +107,54 @@ function claimWithBinding(overrides: Partial<AuthorizedClaimBinding>): Record<st
 }
 
 describe('computeProofGraphEnforcement', () => {
+  it.each([
+    { critical: false },
+    { signalClass: 'hypothesis', provenance: null },
+    { signalClass: 'derived_signal', provenance: null },
+    { provenance: null },
+  ])(
+    'fails closed on an authorized id collision with an ineligible occurrence: %j',
+    (overrides) => {
+      const eligible = provenClaim();
+      const ineligible = provenClaim(overrides);
+      for (const claims of [
+        [eligible, ineligible],
+        [ineligible, eligible],
+      ]) {
+        expect(
+          enforce({
+            projection: summary(claims).projection,
+            authorizedCriticalClaimIds: ['c1'],
+            authorizedClaimBindings: AUTHORIZED_BINDINGS,
+          }).decisionKind,
+        ).toBe('evaluation_unavailable');
+      }
+    },
+  );
+  it('evaluation_unavailable when the authorized source contract is absent', () => {
+    const result = enforce({
+      projection: summary([provenClaim()]).projection,
+      contract: { version: 'contract.v2', claims: [] },
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
+    });
+    expect(result.decisionKind).toBe('evaluation_unavailable');
+  });
+
+  it('evaluation_unavailable when the source contract repeats the authorized id even if the projection is unique', () => {
+    const claim = provenClaim();
+    const source = declaredSource([claim] as never);
+    const result = enforce({
+      projection: summary([claim]).projection,
+      contract: { version: 'contract.v2', claims: [...source.claims, ...source.claims] },
+      authorizedCriticalClaimIds: ['c1'],
+      authorizedClaimBindings: AUTHORIZED_BINDINGS,
+    });
+    expect(result.decisionKind).toBe('evaluation_unavailable');
+  });
+
   it('satisfied when all eligible claims are PROVEN', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -97,7 +168,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('gated when a claim is NOT_VERIFIED', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim({ claimId: 'c1', verificationState: 'NOT_VERIFIED' })])
         .projection,
       authorizedCriticalClaimIds: ['c1'],
@@ -110,7 +181,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('gated when a claim is CONTRADICTED', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim({ verificationState: 'CONTRADICTED' })]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -120,7 +191,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('gated when a claim is STALE', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim({ verificationState: 'STALE' })]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -130,7 +201,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('evaluation_unavailable when authorized claim missing from projection', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([]).projection,
       authorizedCriticalClaimIds: ['missing-claim'],
     });
@@ -141,7 +212,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('evaluation_unavailable when the evaluated claim binds a different certificate', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([
         provenClaim({
           provenance: {
@@ -173,7 +244,7 @@ describe('computeProofGraphEnforcement', () => {
   ] as const)(
     'evaluation_unavailable when the evaluated claim binding differs in %s',
     (_field, override) => {
-      const result = computeProofGraphEnforcement({
+      const result = enforce({
         projection: summary([claimWithBinding(override)]).projection,
         authorizedCriticalClaimIds: ['c1'],
         authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -183,7 +254,7 @@ describe('computeProofGraphEnforcement', () => {
   );
 
   it('evaluation_unavailable when an authorized claim has no approval binding', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([
         provenClaim({
           provenance: {
@@ -200,7 +271,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('evaluation_unavailable when an authorized claim appears more than once', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim(), provenClaim({ verificationState: 'UNPROVEN' })])
         .projection,
       authorizedCriticalClaimIds: ['c1'],
@@ -210,7 +281,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('certificate_invalid reason when the approval certificate is invalid', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
       certificateValid: false,
@@ -222,7 +293,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('critical_fact_required when risk triggers exist but no eligible claims', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([]).projection,
       authorizedCriticalClaimIds: [],
       riskTriggers: ['state_integrity'],
@@ -233,7 +304,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('risk_trigger_uncovered when no eligible claim declares the trigger coverage', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -247,7 +318,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('clear when an eligible proven claim covers every detected trigger', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([
         provenClaim({ coversRiskTriggers: ['state_integrity', 'identity_boundary'] }),
       ]).projection,
@@ -263,7 +334,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('does not trust projection coverage without the certificate-bound relation', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim({ coversRiskTriggers: ['state_integrity'] })]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -276,7 +347,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('rejects projection coverage widened beyond the approved relation', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([
         provenClaim({ coversRiskTriggers: ['state_integrity', 'audit_authority'] }),
       ]).projection,
@@ -291,7 +362,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('ignores authorized coverage for a claim that is not eligible in the projection', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim({ claimId: 'c1' })]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -304,7 +375,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('reports only the triggers without coverage', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim({ coversRiskTriggers: ['state_integrity'] })]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -317,7 +388,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('splits coverage across several eligible claims', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([
         provenClaim({ claimId: 'c1', coversRiskTriggers: ['state_integrity'] }),
         provenClaim({ claimId: 'c2', coversRiskTriggers: ['audit_authority'] }),
@@ -335,7 +406,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('does not let an advisory claim cover a trigger', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([
         provenClaim({
           signalClass: 'hypothesis',
@@ -351,7 +422,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('does not let a certificate-less claim cover a trigger', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([
         provenClaim({
           provenance: {
@@ -370,7 +441,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('riskAssessmentStale causes stale decision', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,
@@ -382,7 +453,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('clear when no authorized claims and no risk triggers', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([]).projection,
       authorizedCriticalClaimIds: [],
     });
@@ -391,7 +462,7 @@ describe('computeProofGraphEnforcement', () => {
   });
 
   it('reasonCode is proven when satisfied', () => {
-    const result = computeProofGraphEnforcement({
+    const result = enforce({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
       authorizedClaimBindings: AUTHORIZED_BINDINGS,

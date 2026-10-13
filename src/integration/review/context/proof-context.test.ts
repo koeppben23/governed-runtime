@@ -8,7 +8,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { makeState, PLAN_RECORD, ARCHITECTURE_DECISION } from '../../../fixtures.js';
+import {
+  makePlanApprovalCertificate,
+  makeState,
+  PLAN_RECORD,
+  ARCHITECTURE_DECISION,
+} from '../../../fixtures.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { ProofGraphProjection } from '../../../state/proofgraph.js';
 import { evaluateProofGraphGate } from '../../../audit/proofgraph/gate.js';
@@ -17,8 +22,10 @@ import {
   buildReviewerProofContext as rawBuildReviewerProofContext,
   renderCoverageGaps,
   renderDeclarationPreview as rawRenderDeclarationPreview,
+  renderImplementationRiskFocus,
   renderPersistedProofGraphContext,
 } from './proof-context.js';
+import { IMPL_EVIDENCE } from '../../../fixtures.js';
 
 const authorities = { evaluateProofGraphGate, renderPlanClaimDeclarations };
 
@@ -110,27 +117,15 @@ describe('renderDeclarationPreview', () => {
       ...planState,
       plan: {
         ...planState.plan!,
-        approvalCertificate: {
-          flow: 'plan',
-          authorityDigest: 'authority-digest',
+        approvalCertificate: makePlanApprovalCertificate(planState, {
           claimDeclarationsDigest: 'declarations-digest',
-          decisionAttestationDigest: 'decision-digest',
-          approvedAt: '2026-01-01T00:00:00.000Z',
-          approvedBy: 'approver',
-          certificateId: '44444444-4444-4444-8444-444444444444',
-          planVersion: 1,
-          planRecordDigest: 'record-digest',
-          reviewBinding: {
-            kind: 'current_review',
-            reviewObligationId: '55555555-5555-4555-8555-555555555555',
-            reviewEvidenceDigest: 'review-evidence-digest',
-            reviewedSubjectDigest: 'authority-digest',
-          },
-        },
+        }),
       },
     };
     const text = renderDeclarationPreview(certified).join('\n');
-    expect(text).toContain('44444444-4444-4444-8444-444444444444');
+    const certificateId = certified.plan?.approvalCertificate?.certificateId;
+    expect(certificateId).toBeDefined();
+    expect(text).toContain(certificateId!);
     expect(text).toContain('claimDeclarationsDigest declarations-digest');
   });
 
@@ -238,5 +233,56 @@ describe('renderCoverageGaps', () => {
 
   it('renders nothing when no gaps were recorded', () => {
     expect(renderCoverageGaps(makeState('READY'))).toEqual([]);
+  });
+});
+
+describe('renderImplementationRiskFocus (#1081 risk-adaptive context)', () => {
+  it('renders the digest-bound class, triggers, and surfaces as advisory focus', () => {
+    const state = makeState('IMPL_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: {
+        computedMinimumTaskClass: 'HIGH-RISK',
+        effectiveTaskClass: 'HIGH-RISK',
+        declaredTaskClass: 'STANDARD',
+        declarationKind: 'declared',
+        ticketDigest: 'ticket-digest',
+        touchedSurfaces: ['State', 'Audit'],
+        riskTriggers: ['state_integrity'],
+        assessedFrom: 'implementation_changed_files',
+        assessedFileCount: 2,
+        implementationDigest: IMPL_EVIDENCE.digest,
+      },
+    });
+    const text = renderImplementationRiskFocus(state).join('\n');
+    expect(text).toContain('Implementation Risk Focus (persisted, advisory)');
+    expect(text).toContain('Effective risk class: HIGH-RISK');
+    expect(text).toContain('ticket-declared floor STANDARD');
+    expect(text).toContain('Risk triggers: state_integrity');
+    expect(text).toContain('Touched surfaces: State, Audit');
+    expect(text).toContain('does not lower or raise any approval requirement');
+  });
+
+  it('marks a missing or stale assessment as NOT_VERIFIED instead of implying focus coverage', () => {
+    const state = makeState('IMPL_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: {
+        computedMinimumTaskClass: 'STANDARD',
+        effectiveTaskClass: 'STANDARD',
+        declaredTaskClass: null,
+        declarationKind: 'absent',
+        ticketDigest: null,
+        touchedSurfaces: [],
+        riskTriggers: [],
+        assessedFrom: 'implementation_changed_files',
+        assessedFileCount: 1,
+        implementationDigest: 'older-digest',
+      },
+    });
+    const text = renderImplementationRiskFocus(state).join('\n');
+    expect(text).toContain('Status: NOT_VERIFIED');
+  });
+
+  it('renders nothing outside an implementation review', () => {
+    expect(renderImplementationRiskFocus(makeState('READY'))).toEqual([]);
   });
 });

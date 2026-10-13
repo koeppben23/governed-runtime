@@ -22,6 +22,7 @@ describe('discovery-health-loader', () => {
       WRITE_FAILED: 'read_failed',
       DIRECT_WRITE_REQUIRES_PREPARE: 'read_failed',
       OUTBOX_ORDER_CONFLICT: 'read_failed',
+      EXPORT_READY_APPROVAL_UNVERIFIED: 'read_failed',
       LOCK_TIMEOUT: 'read_failed',
       LOCK_TIMEOUT_EXHAUSTED: 'read_failed',
     };
@@ -35,7 +36,7 @@ describe('discovery-health-loader', () => {
           code,
         ).toBe(expected);
       }
-      expect(Object.keys(EXPECTED_BY_CODE)).toHaveLength(9);
+      expect(Object.keys(EXPECTED_BY_CODE)).toHaveLength(10);
     });
 
     it('maps unknown errors and non-errors to read_failed', () => {

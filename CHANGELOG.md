@@ -9,6 +9,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Forensic demo assurance (#1080 follow-up).** The live-demo harness now
+  classifies denials and recoveries from structured host transcripts with
+  occurrence-bound recovery proofs (a denial after the last successful call is
+  never `recovered`), and unreadable governed output can no longer ground a
+  success claim. Killed negative controls are reported as `CONTROL_PASSED`
+  instead of being counted as completed workflows, `review_exhausted` and
+  review-stage subagent blocks (`SUBAGENT_UNABLE_TO_REVIEW`,
+  `SUBAGENT_FINDINGS_VERDICT_MISMATCH`, capture/consistency codes) are
+  classified as `NOT_VERIFIED` for positive proofs, an unresolved recoverable
+  denial (including plan/implement call-shape guards and admissibility guards)
+  is `NOT_VERIFIED` rather
+  than a contract violation, `flowguard_help` text output is recognized as
+  by-design, and the specialized runners
+  drive the persisted plan gate with bounded state-driven continuations instead
+  of a single `/plan` turn. Claim and risk controls share one full proof oracle
+  (positive and adversarial assertion, distinct attempts, role-specific
+  bindings, freshness, real package absence). `demos/run-all-demos.sh` adds a
+  mandatory dry-run environment gate (pins, npm-10 canary install, isolation,
+  checksum, provider ping) and a per-run install lock. See
+  `demos/DEMO_ASSURANCE.md`. Plan-gate classification now derives from the
+  persisted review obligation and its bound invocation (not findings counters),
+  JSONL framing losses abort a proof with `NOT_VERIFIED`, one immutable
+  digest-recorded product tarball is bound to every runner (replan included,
+  installed into an isolated npm prefix), the wrapper-owned lease is
+  token-checked with a fail-closed administrative force-remove, INT/TERM
+  terminate and confirm absence of the controlled demo process group (including
+  TERM-resistant grandchildren) before cleanup,
+  both replan sessions run through the state-driven continuation, attempt
+  identity is part of the plan-gate progress proof, typed identity conflicts
+  cannot be overridden by a matching claim, only operation-bound
+  recoveries resolve in-turn (a later tool success needs an independent
+  operation-scoped persistence witness, not any state-file change), structured
+  re-arms require explicit retry authorization and complete obligation/attempt
+  binding (anonymous retryable hints are observations only),
+  unexpected runner exit codes aggregate to FAILED, and
+  a failed product build aborts the wrapper.
+
+- **Assertion-identity integrity and exactly-once claims (#1080).** Structured
+  assertion evidence whose provider-scoped identity occurs more than once in one
+  extraction, or contradicts its extraction provider, no longer qualifies as
+  proof for either evidence role — regardless of `exitCode: 0`, `passed: true` or
+  a valid cryptographic binding. Binding reports
+  `PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS` /
+  `PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH`; a cached `PROVEN` projection that
+  references such an attempt is re-evaluated fail-closed. Certificate-authorized
+  critical claims must occur exactly once in the declared contract and once in
+  the projection with matching certificate binding before the gate counts them.
+  The claim-specific assertion binding now resolves provider-scoped identities
+  instead of first-match, and live demo controls only record `PASS` after their
+  parent and reviewer transcripts were captured and validated. Raw observations
+  remain auditable and the persisted formats are unchanged.
+
+- **Truthful ProofGraph planning and recovery (#1079).** OpenCode, Claude Code,
+  Codex and the plan tool share claim guidance requiring distinct check identities
+  and attempts, structurally bindable assertion/aggregate evidence and explicit
+  critical risk-trigger coverage. Diagnostics now distinguish evidence repair
+  from a required new authority. Post-approval authority recovery explicitly
+  preserves and aborts the old session, prepares a trusted pre-change worktree,
+  creates a different host/FlowGuard binding and obtains a new certificate before
+  governed reapplication and fresh verification. Hydrate is not a session reset.
+  Status/help consume the existing approval preflight and no longer advertise a
+  ready approval after an automatic-policy denial. Deterministic two-session
+  recovery and negative tests cover identical bytes, old authority, dirty-baseline
+  exclusion, unauthorized early mutation and in-place coverage widening.
+
 - **Live risk-trigger coverage controls.** `demos/risk-trigger-fixture/` is an
   isolated minimal Maven repository whose governed artifact lives under
   `src/state/` (HIGH-RISK + `state_integrity`),
@@ -17,6 +82,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   denied with exactly `PROOFGRAPH_RISK_TRIGGER_UNCOVERED`; the covered case declares
   `coversRiskTriggers` inside the approved claim set, reaches `PROVEN` and passes
   ordinary approval. No runtime or demo change was required.
+
+- **Unified evidence-approval preconditions (#1078).** A single canonical,
+  side-effect-free preflight now gates every `EVIDENCE_REVIEW -> EXPORT_READY`
+  approval: the explicit decision rail, governance overrides, and policy
+  automatic approval on reviewer acceptance all consume the same certificate,
+  authorized-claim, coverage, risk-assessment, and proof-state decision. The
+  generic transition applier refuses the protected edge; the LOWEST persistence
+  boundary (`writeStateAlreadyLocked`, covering `writeState`, the
+  artifact/audit commit path, and any direct caller) re-evaluates exactly what
+  is written and refuses a bootstrap directly into `EXPORT_READY`; a denied
+  automatic approval carries no state, no decision receipt, and no completion
+  artifact. A denied automatic implementation approval persists the legitimate
+  review progress at the evidence gate first, so the reported phase always
+  matches the persisted phase. Explicit full-review approvals re-attest the
+  live governed worktree bytes before approval. Automatic plan approval mints
+  a `policy_auto` certificate from the same bound review evidence as the
+  explicit path; an exhausted or uncertifiable accepted review blocks at the
+  plan gate itself with the canonical review-evidence error. Certificate ids
+  are recomputed canonically at parse and authorization time, and the upgrade
+  preflight classifies the archived session state through the same boundary
+  authority as the live read (`v10` archives are `incompatible`, malformed
+  current archives `invalid`).
 
 - **Live critical-claim controls.** `run-live-claim-controls.mjs` drives two real
   cases through the reduced evidence gate: a retained critical claim proven by
@@ -51,6 +138,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   structured report.
 
 ### Fixed
+
+- **Risk-adaptive implementation review and a convergent challenge-repair loop
+  (#1081).** The implementation reviewer criteria now carry the bounded
+  five-point quality checklist (acceptance/correctness, architecture fit,
+  safety/error boundaries, behavior-specific verification, minimal complexity)
+  scaled to the frozen risk class and triggers, plus an explicit
+  blocking-finding contract (violated approved obligation, exact changed code,
+  evidence/reproduction, feasible minimal repair) and a no-fabricated-findings
+  rule; optional style suggestions stay non-blocking. The reviewer prompt now
+  carries the persisted, digest-bound implementation risk focus (class,
+  triggers, touched surfaces) as advisory prioritization context. The #747
+  challenge-repair loop is convergent again: the native capture boundary
+  (`validateCapturedFindings`) enforces the same author-addressed challenge
+  requirements as the tool consumption boundary, and the canonical reviewer
+  prompt supplies the exact prior failing challenge identities plus the
+  author's advisory resolution bindings. A resolution recorded after reviewer
+  dispatch cannot be counted as independently reviewed (fail-closed with a
+  typed reason and bounded re-arm). The reviewer criteria generation advanced
+  to `p42-v2`; stale review obligations fail closed under the documented
+  `REVIEW_GENERATION_MISMATCH` recovery. The /implement, /check, Claude Code,
+  and Codex instructions now name the typed transport recovery
+  (`flowguard_review_implementation({ reviewRecovery: "retry_transport" })`),
+  the policy review budget, and dispatch on the returned phase instead of
+  assuming `IMPL_VALIDATION` or advertising the unreachable in-session
+  `/plan` recovery. Deterministic fixtures cover the correct minimal
+  implementation, the repaired failing challenge, and the concrete
+  test-fitting finding; scripted fixtures prove the lifecycle, not model
+  detection quality.
 
 - **Live-demo transcript completeness.** Host exports are captured directly to
   files and validated for JSON structure and session/worktree/parent identity
@@ -262,6 +377,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the derived outcome (`applied`, `skipped`, or `failed`).
 
 ### Changed
+
+- **BREAKING — session state v11 and the versioned plan approval certificate.**
+  The plan approval certificate is replaced by `plan-approval-certificate.v1`
+  with an explicit `explicit_decision` / `policy_auto` attestation bound to the
+  session binding and frozen policy; `approvedBy` no longer exists for plan
+  certificates, and a `policy_auto` certificate can only certify an accepted
+  review. Every `EVIDENCE_REVIEW -> EXPORT_READY` approval — automatic exactly
+  like explicit — must clear the canonical evidence preflight. Existing session
+  state (`v10`/earlier), including previously compatible active sessions, is
+  rejected with `SESSION_STATE_INCOMPATIBLE`; there is no migration path, and
+  historical exports require the matching previous runtime for re-verification.
 
 - **Single canonical session authority (#957).** Plugin hooks, tool execution,
   MCP projection, and hook session resolution now resolve sessions through
