@@ -8,7 +8,7 @@
 #             2 no FAILED but at least one NOT_VERIFIED.
 set -u
 # Job control: every demo runs in its own process group, so a signal can
-# terminate the whole tree (npx -> node runner -> opencode host) before the
+# terminate the controlled demo process group before the
 # lease is released.
 set -m
 
@@ -41,7 +41,7 @@ install_exit_traps release_lease
 # 1. Pinned npm 10: the installer engines require npm ^10 and user configs may
 #    set engine-strict=true, so the ambient npm major must be satisfied.
 if [[ "$(npm --version | cut -d. -f1)" != "10" ]]; then
-  npm install --prefix "$ROOT/.tooling/npm10" --no-audit --no-fund npm@10 >/dev/null
+  run_controlled_command npm install --prefix "$ROOT/.tooling/npm10" --no-audit --no-fund npm@10 >/dev/null || exit 1
   export PATH="$ROOT/.tooling/npm10/node_modules/.bin:$PATH"
 fi
 
@@ -62,7 +62,7 @@ collect() {
 # 3. Mandatory dry-run gate: build ONE immutable product tarball (abort on any
 #    build failure), verify its bytes, canary-install exactly that artifact,
 #    then hand the SAME tarball and product identity to every runner.
-if ! (cd "$REPO" && npm run build >/dev/null && npm run pack:checksums >/dev/null); then
+if ! run_controlled_command bash -c 'cd "$1" && npm run build && npm run pack:checksums' _ "$REPO" >/dev/null; then
   echo "product build failed; aborting before any demo run" >&2
   exit 1
 fi
@@ -77,20 +77,15 @@ GATE_DIGEST="$(shasum -a 256 "$GATE_TARBALL" | awk '{print $1}')"
 echo "product tarball: $GATE_TARBALL"
 echo "product sha256:  $GATE_DIGEST"
 echo "product gitSha:  $GATE_SHA"
-"${RUN[@]}" "$REPO/demos/lib/environment-gate.mjs" --root "$ROOT/gate" --repo "$REPO" \
+run_controlled_command "${RUN[@]}" "$REPO/demos/lib/environment-gate.mjs" --root "$ROOT/gate" --repo "$REPO" \
   --model "$MODEL" --tarball "$GATE_TARBALL" --canary-install || exit 1
 
 run_demo() {
   local name="$1"; shift
   echo "=== demo: $name"
-  # Background + wait so INT/TERM traps run promptly (bash defers traps while a
-  # foreground child is running). ACTIVE_CHILD_PGID lets the signal contract
-  # terminate the whole tree before the EXIT trap releases the lease.
-  "${RUN[@]}" "$@" --tarball "$GATE_TARBALL" --product-sha "$GATE_SHA" &
-  ACTIVE_CHILD_PGID=$!
   local code=0
-  wait "$ACTIVE_CHILD_PGID" || code=$?
-  ACTIVE_CHILD_PGID=""
+  # run_controlled_command tracks ACTIVE_CHILD_PGID through confirmed group exit.
+  run_controlled_command "${RUN[@]}" "$@" --tarball "$GATE_TARBALL" --product-sha "$GATE_SHA" || code=$?
   echo "=== demo: $name exit=$code"
   collect "$code"
 }
@@ -101,7 +96,7 @@ run_demo risk-trigger-controls "$REPO/demos/risk-trigger-fixture/run-live-risk-t
 run_demo replan-recovery "$REPO/demos/risk-trigger-fixture/run-live-replan-recovery.mjs" --root "$ROOT/replan" --allow-old-plan-override
 
 echo "=== demo: proofgraph-variants"
-bash "$REPO/demos/run-proofgraph-variants.sh"
+run_controlled_command bash "$REPO/demos/run-proofgraph-variants.sh"
 collect $?
 
 echo "ALL DEMOS exit=$STATUS (0=accepted evidence, 2=NOT_VERIFIED, 1=FAILED)"

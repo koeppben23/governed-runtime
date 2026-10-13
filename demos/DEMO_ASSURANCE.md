@@ -73,13 +73,16 @@ controlled A/B run with the SAME fixed harness.
   tokenless/foreign release, and concurrent stale-reclaim blocking are covered
   through the CLI boundary.
 - **Signal/exit contract:** `demos/lib/signal-exit.sh` converts INT/TERM into a
-  defined termination: the ENTIRE active process group is signalled
-  (`kill -TERM -- -PGID`, escalating to KILL) and awaited before the EXIT trap
-  releases the lease — a grandchild that would otherwise keep running (npx →
-  node runner → opencode host) is terminated first. The wrapper enables job
+  defined termination: the controlled demo process group is signalled
+  (`kill -TERM -- -PGID`, escalating to KILL). Both waiting phases probe the
+  negative PGID, including after the leader dies. Cleanup releases the lease
+  only after confirmed group absence; inability to establish that retains the
+  lease and fails the run. Processes that deliberately create a separate session
+  are outside this group contract. The regression includes a TERM-resistant
+  grandchild and checks group absence at the cleanup boundary. The wrapper enables job
   control (`set -m`), tracks `ACTIVE_CHILD_PGID` and runs each demo in the
-  background with `wait` so traps execute promptly. Covered by a real
-  subprocess test including a grandchild process.
+  background with `wait` so traps execute promptly. Bootstrap, build, preflight
+  and the variants script use the same lifecycle helper.
 - **Administrative removal is fail-closed:** `forceRemoveLease` refuses a lease
   whose owner is alive or whose expected owner identity does not match, and
   asks for manual removal when the lease file is unreadable; only a provably
@@ -97,9 +100,14 @@ controlled A/B run with the SAME fixed harness.
   shared operation key (`same_turn_operation_recovery`) resolves the denial
   in-turn. A later success without an operation binding is recorded as
   `later_tool_success` and moved into `awaitingRecovery`: an independent
-  persisted state transition from the next required step is needed to resolve
-  it, otherwise the flow stops. Structured reviewer re-arms supersede a
-  terminal block only for the SAME obligation when both envelopes expose one.
+  operation-scoped persistence witness from the next required step is needed to
+  resolve it. For plan/ADR approval it freezes the subject/revision and the
+  accepting review's obligation, invocation and attempt. Only the expected
+  approval command and a new certificate binding exactly that subject and
+  review may resolve it. A generic session-file digest change, foreign
+  certificate or unrelated audit update cannot. Unavailable witnesses stay
+  unproven. Structured re-arms require `retryable: true`; terminal supersession
+  additionally requires the same explicit obligation and a fresh attempt.
 - **Exit-code aggregation:** `demos/lib/aggregate-status.mjs` maps 0 to success,
   2 to `NOT_VERIFIED` and any other code (127, 137, signals) to `FAILED`, with
   FAILED outranking NOT_VERIFIED; the mapping is unit-tested and used by the

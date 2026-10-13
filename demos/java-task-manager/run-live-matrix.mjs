@@ -59,7 +59,6 @@ import {
   eventsOf,
   governedToolEvents,
   parseHostPayload,
-  sameTurnCorrectedTools,
   sameTurnRecoveryProofs,
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
@@ -67,6 +66,7 @@ import {
   transcriptTrust,
 } from '../lib/transcript.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
+import { expectRecovery, recoveryPersisted } from '../lib/recovery-state.mjs';
 
 export {
   assertExpectedDenial,
@@ -76,7 +76,6 @@ export {
   eventsOf,
   governedToolEvents,
   parseHostPayload,
-  sameTurnCorrectedTools,
   sameTurnRecoveryProofs,
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
@@ -555,28 +554,6 @@ export class Runner {
       return result;
     }
 
-    // A pending next-step recovery recorded by the previous turn becomes
-    // `recovered` only when this required step completed with a demonstrable
-    // state transition. Without that proof the flow is blocked.
-    if (session.awaitingRecovery) {
-      const digestAfter = this.currentStateDigest(session);
-      if (digestAfter === null || digestAfter === session.awaitingRecovery.digestBefore) {
-        throw new Error(
-          `${label}: pending recovery [${session.awaitingRecovery.codes.join(', ')}] was not demonstrated by a state transition; stopping the flow`,
-        );
-      }
-      session.recoveredDenials = session.recoveredDenials ?? [];
-      session.recoveredDenials.push({
-        step: session.awaitingRecovery.step,
-        codes: session.awaitingRecovery.codes,
-        evidence: `next_step_state_transition:${label}`,
-      });
-      this.log(
-        `${session.awaitingRecovery.step}: recovered via ${label} state transition [${session.awaitingRecovery.codes.join(', ')}]`,
-      );
-      session.awaitingRecovery = null;
-    }
-
     const trust = transcriptTrust(result.stdout);
     if (!trust.readable) {
       session.transcriptWarnings = session.transcriptWarnings ?? [];
@@ -589,6 +566,28 @@ export class Runner {
         `${label}: transcript is not trustworthy (${trust.framingLosses.length} framing loss(es), ` +
           `${trust.unreadable.length} unreadable governed tool output(s)); the proof is NOT_VERIFIED`,
       );
+    }
+    if (session.awaitingRecovery) {
+      const pending = session.awaitingRecovery;
+      const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
+      const after = this.requireBoundState(session).state;
+      if (!recoveryPersisted(pending.expected, after, command)) {
+        throw new DemoNotVerifiedError(
+          `${label}: pending recovery [${pending.codes.join(', ')}] was not demonstrated ` +
+            'by the authorized affected-operation transition; stopping the flow',
+        );
+      }
+      session.recoveredDenials = session.recoveredDenials ?? [];
+      session.recoveredDenials.push({
+        step: pending.step,
+        codes: pending.codes,
+        evidence: `next_step_operation_transition:${label}`,
+        expected: pending.expected,
+      });
+      this.log(
+        `${pending.step}: recovered by the authorized ${command} operation on its bound subject`,
+      );
+      session.awaitingRecovery = null;
     }
     const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
     const proofs = sameTurnRecoveryProofs(result.stdout);
@@ -650,7 +649,7 @@ export class Runner {
       ]),
     ];
     const unproven = unprovenOccurrences.filter(
-      (code) => isRecoverableFamily(code) && !pendingCodes.includes(code),
+      (code) => isRecoverableFamily(code) && !NEXT_STEP_RECOVERY_CODES.has(code),
     );
     if (unproven.length > 0) {
       throw new Error(
@@ -661,10 +660,23 @@ export class Runner {
       session.awaitingRecovery = {
         step: label,
         codes: pendingCodes,
-        digestBefore: this.currentStateDigest(session),
+        expected: expectRecovery(
+          this.requireBoundState(session).state,
+          [
+            ...new Set(
+              toolDenialEvents(result.stdout)
+                .filter((event) => pendingCodes.includes(event.code))
+                .map((event) => event.tool),
+            ),
+          ],
+          session.terminal,
+          recoverableProofs
+            .filter((proof) => proof.binding === 'tool')
+            .map((proof) => proof.denialKeys),
+        ),
       };
       this.log(
-        `${label}: pending recovery [${pendingCodes.join(', ')}]; the next required step must demonstrate a state transition`,
+        `${label}: pending recovery [${pendingCodes.join(', ')}]; the next required step must prove the bound operation`,
       );
     }
 

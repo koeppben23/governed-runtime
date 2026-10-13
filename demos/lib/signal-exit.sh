@@ -1,49 +1,79 @@
 #!/usr/bin/env bash
-# Signal/exit contract for the demo wrapper (unit-tested via demo-signal-exit.test.ts).
-#
-# The EXIT trap owns cleanup (lease release). INT/TERM terminate the WHOLE
-# active process group first (npx -> node runner -> opencode host all share the
-# background job's process group when job control is enabled), then reset the
-# traps and exit with 130/143. Cleanup must not run before the process tree has
-# actually exited, otherwise the lease could be released while a demo child is
-# still running.
-#
-# Requirements for callers:
-#   - run `set -m` before launching children (job control gives every
-#     background job its own process group);
-#   - expose the active child PID/PGID as ACTIVE_CHILD_PGID while waiting;
-#   - run children in the background and `wait` for them (bash defers traps
-#     while a foreground child is executing).
-#
-# Usage:
-#   source demos/lib/signal-exit.sh
-#   install_exit_traps release_lease
+# Controlled demo process groups only: children that create a separate session
+# are outside this contract. Callers enable job control with `set -m`.
 
-terminate_active_child() {
-  [[ -n "${ACTIVE_CHILD_PGID:-}" ]] || return 0
-  # Signal the entire process group (Linux and macOS both support kill -PGID).
-  kill -TERM -- "-${ACTIVE_CHILD_PGID}" 2>/dev/null ||
-    kill -TERM "${ACTIVE_CHILD_PGID}" 2>/dev/null ||
-    true
+demo_group_alive() {
+  kill -0 -- "-${ACTIVE_CHILD_PGID}" 2>/dev/null
+}
+
+wait_for_demo_group() {
   local waited=0
-  while kill -0 "${ACTIVE_CHILD_PGID}" 2>/dev/null && [[ "${waited}" -lt 50 ]]; do
+  while demo_group_alive && [[ "$waited" -lt 50 ]]; do
     sleep 0.1
     waited=$((waited + 1))
   done
-  if kill -0 "${ACTIVE_CHILD_PGID}" 2>/dev/null; then
-    kill -KILL -- "-${ACTIVE_CHILD_PGID}" 2>/dev/null ||
-      kill -KILL "${ACTIVE_CHILD_PGID}" 2>/dev/null ||
-      true
-    sleep 0.2
+  ! demo_group_alive
+}
+
+terminate_active_child() {
+  [[ -n "${ACTIVE_CHILD_PGID:-}" ]] || return 0
+  if [[ ! "$ACTIVE_CHILD_PGID" =~ ^[1-9][0-9]*$ ]]; then
+    echo 'Invalid controlled process group; retaining the lease.' >&2
+    return 1
   fi
+  if demo_group_alive; then
+    kill -TERM -- "-${ACTIVE_CHILD_PGID}" 2>/dev/null || true
+    if ! wait_for_demo_group; then
+      kill -KILL -- "-${ACTIVE_CHILD_PGID}" 2>/dev/null || true
+      if ! wait_for_demo_group; then
+        echo "Process group $ACTIVE_CHILD_PGID remains present; retaining the lease." >&2
+        return 1
+      fi
+    fi
+  fi
+  # Reap the direct child as well; its PID disappearing alone is not evidence
+  # that the group is gone.
+  wait "$ACTIVE_CHILD_PGID" 2>/dev/null || true
+  return 0
+}
+
+run_controlled_command() {
+  "$@" &
+  ACTIVE_CHILD_PGID=$!
+  local code=0
+  wait "$ACTIVE_CHILD_PGID" || code=$?
+  # A leader can exit while its descendants keep executing. Keep the lease and
+  # clean up that group even on ordinary command completion.
+  if ! terminate_active_child; then
+    # Do not launch the next stage or overwrite the still-active group ID.
+    exit 1
+  fi
+  ACTIVE_CHILD_PGID=''
+  return "$code"
+}
+
+demo_exit_cleanup() {
+  local code=$?
+  trap - EXIT INT TERM
+  if terminate_active_child; then
+    "$DEMO_EXIT_CLEANUP"
+  else
+    code=1
+  fi
+  exit "$code"
+}
+
+demo_signal_exit() {
+  local code="$1"
+  trap '' INT TERM
+  # EXIT will check the group again and only release after confirmed absence.
+  terminate_active_child || true
+  exit "$code"
 }
 
 install_exit_traps() {
-  local cleanup="$1"
-  # shellcheck disable=SC2064
-  trap "$cleanup" EXIT
-  # shellcheck disable=SC2064
-  trap 'terminate_active_child; trap - INT TERM; exit 130' INT
-  # shellcheck disable=SC2064
-  trap 'terminate_active_child; trap - INT TERM; exit 143' TERM
+  DEMO_EXIT_CLEANUP="$1"
+  trap demo_exit_cleanup EXIT
+  trap 'demo_signal_exit 130' INT
+  trap 'demo_signal_exit 143' TERM
 }

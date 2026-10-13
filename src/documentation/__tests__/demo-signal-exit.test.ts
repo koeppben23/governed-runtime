@@ -51,7 +51,19 @@ describe('demo signal/exit contract', () => {
       const script = join(root, 'wrapper.sh');
       const mark = join(root, 'mark.txt');
       const grandchildFile = join(root, 'grandchild.pid');
+      const grandchildScript = join(root, 'resistant.sh');
+      const leaderScript = join(root, 'leader.sh');
       const started = join(root, 'started');
+      writeFileSync(
+        grandchildScript,
+        [
+          '#!/usr/bin/env bash',
+          'trap "" TERM',
+          `echo $$ > "${grandchildFile}"`,
+          'while :; do sleep 1; done',
+        ].join('\n'),
+      );
+      writeFileSync(leaderScript, `bash "${grandchildScript}" &\nwait $!\n`);
       writeFileSync(
         script,
         [
@@ -59,9 +71,9 @@ describe('demo signal/exit contract', () => {
           'set -u',
           'set -m',
           `source "${HELPER}"`,
-          `cleanup() { echo cleanup >> "${mark}"; }`,
+          `cleanup() { if kill -0 -- "-$ACTIVE_CHILD_PGID" 2>/dev/null; then echo GROUP_STILL_ALIVE >> "${mark}"; else echo cleanup >> "${mark}"; fi; }`,
           'install_exit_traps cleanup',
-          `bash -c 'sleep 30 & echo $! > "${grandchildFile}"; wait $!' &`,
+          `bash "${leaderScript}" &`,
           'ACTIVE_CHILD_PGID=$!',
           `echo started > "${started}"`,
           'wait "$ACTIVE_CHILD_PGID"',
@@ -83,12 +95,46 @@ describe('demo signal/exit contract', () => {
         expect(readFileSync(mark, 'utf8').trim().split('\n')).toEqual(['cleanup']);
         await waitFor(() => !processAlive(grandchildPid));
       } finally {
+        if (existsSync(grandchildFile)) {
+          const pid = Number(readFileSync(grandchildFile, 'utf8').trim());
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            /* already stopped */
+          }
+        }
         wrapper.kill('SIGKILL');
       }
     });
   });
 
   describe('BAD — no code runs after the signal', () => {
+    it('retains cleanup ownership and stops subsequent stages when group absence cannot be proved', async () => {
+      const root = fixture('unconfirmed');
+      const script = join(root, 'wrapper.sh');
+      const mark = join(root, 'mark.txt');
+      writeFileSync(
+        script,
+        [
+          '#!/usr/bin/env bash',
+          'set -u',
+          'set -m',
+          `source "${HELPER}"`,
+          `cleanup() { echo cleanup >> "${mark}"; }`,
+          'install_exit_traps cleanup',
+          // Inject an unconfirmable group probe; neither TERM nor KILL may justify release.
+          'demo_group_alive() { return 0; }',
+          'wait_for_demo_group() { return 1; }',
+          'run_controlled_command bash -c "exit 0"',
+          `echo CONTINUED >> "${mark}"`,
+        ].join('\n'),
+      );
+      const wrapper = spawn('bash', [script], { stdio: 'ignore' });
+      const code = await new Promise<number | null>((resolve) => wrapper.once('exit', resolve));
+      expect(code).toBe(1);
+      expect(existsSync(mark)).toBe(false);
+    });
+
     it('does not reach the post-wait line', async () => {
       const root = fixture('bad');
       const script = join(root, 'wrapper.sh');

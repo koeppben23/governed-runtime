@@ -28,11 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   digest-recorded product tarball is bound to every runner (replan included,
   installed into an isolated npm prefix), the wrapper-owned lease is
   token-checked with a fail-closed administrative force-remove, INT/TERM
-  terminate the whole process group (including grandchildren) before cleanup,
+  terminate and confirm absence of the controlled demo process group (including
+  TERM-resistant grandchildren) before cleanup,
   both replan sessions run through the state-driven continuation, attempt
   identity is part of the plan-gate progress proof, only operation-bound
   recoveries resolve in-turn (a later tool success needs an independent
-  persisted transition), unexpected runner exit codes aggregate to FAILED, and
+  operation-scoped persistence witness, not any state-file change), structured
+  re-arms require explicit retry authorization and same-obligation binding,
+  unexpected runner exit codes aggregate to FAILED, and
   a failed product build aborts the wrapper.
 
 - **Assertion-identity integrity and exactly-once claims (#1080).** Structured

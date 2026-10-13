@@ -191,13 +191,17 @@ Recoverable typed denials are evidence-bound, never allow-listed blank. A denial
 counts as resolved in-turn only when a later call of the same tool shares an
 operation key (`same_turn_operation_recovery`). A later success without that
 binding is recorded as `later_tool_success` — an observation that does NOT
-resolve the denial: the next required step must prove a persisted state
-transition (`next_step_state_transition:<step>`), otherwise the flow stops. A
+resolve the denial: the next required step must prove the authorized persistence
+of the bound operation (`next_step_operation_transition:<step>`), otherwise the
+flow stops. A plan/ADR proof binds the exact subject/revision, accepting review
+and newly minted approval certificate; a generic state-file digest change never
+counts. A
 structured reviewer re-arm is recorded as `structured_rearm` and supersedes a
-terminal capture block only for the same obligation. `CONTINUE_AMBIGUOUS` is
+terminal capture block only with `retryable: true`, the same explicit obligation
+and a fresh attempt. `CONTINUE_AMBIGUOUS` is
 different: it mutates nothing and demands an explicit flow choice, so it is
-recorded as `pending_recovery` and becomes `recovered` only through the same
-persisted-transition proof. A recoverable denial without such proof stops the
+recorded as `pending_recovery` and becomes `recovered` only through the selected
+flow's expected operation and its actual persisted artifact/obligation. A recoverable denial without such proof stops the
 flow.
 
 The architecture negative probe is a controlled denial step: the runner

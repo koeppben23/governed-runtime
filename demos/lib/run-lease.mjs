@@ -5,7 +5,7 @@
  * build. The lease file itself is the mutex (`wx` create, atomic); ownership is
  * the PID of the long-lived wrapper process plus a unique token, so a
  * short-lived helper cannot leave a dead-owner lease and release is
- * identity-checked. Stale leases (dead owner PID) are reclaimed once.
+ * identity-checked. Stale leases require a separate administrative removal.
  *
  * Usage:
  *   node demos/lib/run-lease.mjs acquire --repo <checkout> [--pid <pid>]

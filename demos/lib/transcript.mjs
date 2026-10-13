@@ -184,15 +184,11 @@ export function sameTurnRecoveryProofs(output) {
         successIndex: success.index,
         binding: sharedKey !== undefined ? 'operation' : 'tool',
         operationKey: sharedKey ?? null,
+        denialKeys,
       });
     }
   }
   return { recovered, unproven };
-}
-
-/** Compatibility projection: tools with at least one proven occurrence recovery. */
-export function sameTurnCorrectedTools(output) {
-  return new Set(sameTurnRecoveryProofs(output).recovered.map((proof) => proof.tool));
 }
 
 /** Structured reviewer capture re-arms (`reviewDispatch.completed === false`). */
@@ -200,6 +196,7 @@ export function captureRetryEvents(output) {
   const events = [];
   for (const event of toolUseEvents(output)) {
     if (event.payload.kind !== 'json') continue;
+    if (event.payload.value?.error === true) continue;
     const retry = event.payload.value?.reviewRetry;
     if (retry && typeof retry.code === 'string') {
       events.push({
@@ -217,30 +214,48 @@ export function captureRetryEvents(output) {
 export function captureRetryCodes(output) {
   const codes = [];
   for (const event of captureRetryEvents(output)) {
+    if (!authorizedRearm(event)) continue;
     if (!codes.includes(event.code)) codes.push(event.code);
   }
   return codes;
 }
 
+function authorizedRearm(event) {
+  if (event.retryable !== true) return false;
+  // Both identities must be supplied together; a partial binding is unusable.
+  return (
+    (event.obligationId === null && event.attemptId === null) ||
+    (typeof event.obligationId === 'string' &&
+      event.obligationId.length > 0 &&
+      typeof event.attemptId === 'string' &&
+      event.attemptId.length > 0)
+  );
+}
+
 /**
  * A terminal capture block is superseded only by a structured re-arm on the
- * SAME code that occurs LATER in the transcript AND, when both envelopes expose
- * operation keys, refers to the SAME obligation.
+ * SAME code, with retryable:true and a fresh attempt on the SAME obligation.
+ * Without the terminal obligation identity there is no supersession proof.
  */
 export function structuredRearmSupersedesTerminal(output, code) {
   const events = toolUseEvents(output);
   const terminals = toolDenialEvents(output).filter((denial) => denial.code === code);
-  const rearms = captureRetryEvents(output).filter((event) => event.code === code);
+  const rearms = captureRetryEvents(output).filter(
+    (event) => event.code === code && authorizedRearm(event),
+  );
   if (terminals.length === 0 || rearms.length === 0) return false;
   const lastTerminal = terminals.at(-1);
-  const terminalKeys = operationKeys(
-    events.find((event) => event.index === lastTerminal?.index)?.payload,
-  );
+  const terminal = events.find((event) => event.index === lastTerminal?.index)?.payload.value;
+  const obligationId = terminal?.detail?.obligationId ?? terminal?.obligationId;
+  const failedAttemptId = terminal?.detail?.attemptId ?? terminal?.attemptId;
+  if (typeof obligationId !== 'string' || obligationId.length === 0) return false;
   return rearms.some((rearm) => {
     if (lastTerminal === undefined || rearm.index <= lastTerminal.index) return false;
-    const rearmKeys = operationKeys(events.find((event) => event.index === rearm.index)?.payload);
-    if (terminalKeys.length === 0 || rearmKeys.length === 0) return true;
-    return rearmKeys.some((key) => terminalKeys.includes(key));
+    return (
+      rearm.obligationId === obligationId &&
+      rearm.attemptId !== null &&
+      rearm.attemptId !== failedAttemptId
+    );
   });
 }
 

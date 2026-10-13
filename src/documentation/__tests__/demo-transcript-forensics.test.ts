@@ -132,6 +132,67 @@ describe('demo transcript forensics', () => {
   });
 
   describe('EDGE — transcript trust boundary', () => {
+    it('never treats an explicitly unauthorized retry as an authorized re-arm', () => {
+      const code = 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
+      const out = transcript(
+        toolUse('task', compact({ error: true, code, detail: { obligationId: 'ob-1' } })),
+        toolUse(
+          'task',
+          compact({
+            reviewRetry: {
+              code,
+              obligationId: 'ob-1',
+              attemptId: 'attempt-2',
+              retryable: false,
+            },
+          }),
+        ),
+      );
+      expect(captureRetryCodes(out)).toEqual([]);
+      expect(structuredRearmSupersedesTerminal(out, code)).toBe(false);
+      const noAuthorization = transcript(
+        toolUse(
+          'task',
+          compact({
+            reviewRetry: {
+              code,
+              obligationId: 'ob-1',
+              attemptId: 'attempt-2',
+            },
+          }),
+        ),
+      );
+      expect(captureRetryCodes(noAuthorization)).toEqual([]);
+      const contradictory = transcript(
+        toolUse(
+          'task',
+          compact({
+            error: true,
+            code,
+            reviewRetry: {
+              code,
+              obligationId: 'ob-1',
+              attemptId: 'attempt-2',
+              retryable: true,
+            },
+          }),
+        ),
+      );
+      expect(captureRetryCodes(contradictory)).toEqual([]);
+      const partialIdentity = transcript(
+        toolUse(
+          'task',
+          compact({
+            reviewRetry: {
+              code,
+              obligationId: 'ob-1',
+              retryable: true,
+            },
+          }),
+        ),
+      );
+      expect(captureRetryCodes(partialIdentity)).toEqual([]);
+    });
     it('flags unreadable governed output instead of reporting no denials', () => {
       const out = transcript(toolUse('flowguard_plan', '{"error":tru'));
       const trust = transcriptTrust(out);
@@ -170,15 +231,22 @@ describe('demo transcript forensics', () => {
     it('accepts a terminal block only when a structured re-arm follows later', () => {
       const rearm = {
         reviewDispatch: { required: true, completed: false },
-        reviewRetry: { code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION', retryable: true },
+        reviewRetry: {
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          retryable: true,
+          obligationId: 'ob-1',
+          attemptId: 'attempt-2',
+        },
       };
-      const forward = transcript(
-        toolUse('task', pretty(denial('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'))),
-        toolUse('task', pretty(rearm)),
-      );
+      const terminal = {
+        error: true,
+        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        detail: { obligationId: 'ob-1', attemptId: 'attempt-1' },
+      };
+      const forward = transcript(toolUse('task', pretty(terminal)), toolUse('task', pretty(rearm)));
       const backward = transcript(
         toolUse('task', pretty(rearm)),
-        toolUse('task', pretty(denial('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'))),
+        toolUse('task', pretty(terminal)),
       );
       expect(
         structuredRearmSupersedesTerminal(forward, 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'),
@@ -199,6 +267,7 @@ describe('demo transcript forensics', () => {
         reviewRetry: {
           code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
           obligationId,
+          attemptId: 'attempt-2',
           retryable: true,
         },
       });
