@@ -172,6 +172,22 @@ conformity conclusion. The machine never emits `ISO_COMPLIANT`,
 
 ---
 
+## Demonstration
+
+A self-contained, self-checking offline demo runs the whole chain against a
+built checkout — temporary foreign repository, synthetic session fixture,
+canonical export and verification, and all three projection scenarios
+(positive, missing/skipped assertion, tampered package):
+
+```bash
+npm run build
+node demos/iso27001-evidence-mapping/run-demo.mjs
+```
+
+See [demos/iso27001-evidence-mapping/README.md](../demos/iso27001-evidence-mapping/README.md)
+for the scenario table, exit codes, and the explicit statement that the
+synthetic fixture demonstrates the tool chain, not production state security.
+
 ## Trust Boundary
 
 - The **only** positive-evidence source is the raw completion export read from

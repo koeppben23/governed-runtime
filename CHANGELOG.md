@@ -23,7 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the internal session `ComplianceSummary` with an ISO decision. The reader
   requires the `.sha256` sidecar independently of verifier strictness, blocks
   redacted sharing archives and tampered packages, and binds findings to the
-  exact verified snapshot bytes.
+  exact verified snapshot bytes. The offline, self-checking demo
+  `demos/iso27001-evidence-mapping/run-demo.mjs` exercises the export,
+  verification and projection chain in a temporary foreign repository with a
+  synthetic fixture and asserts the positive, negative (skipped assertion and
+  aggregate report) and tamper outcomes itself.
 
 - **Forensic demo assurance (#1080 follow-up).** The live-demo harness now
   classifies denials and recoveries from structured host transcripts with
