@@ -66,7 +66,13 @@ describe('demo assurance wiring', () => {
       expect(leaseIndex).toBeGreaterThan(-1);
       expect(buildIndex).toBeGreaterThan(-1);
       expect(leaseIndex).toBeLessThan(buildIndex);
+      expect(wrapper).toContain('--pid $$');
+      expect(wrapper).toContain('--token "$LEASE_TOKEN"');
       expect(wrapper).toContain('trap release_lease');
+    });
+
+    it('aborts the wrapper when the product build fails', () => {
+      expect(readDemo('run-all-demos.sh')).toContain('product build failed; aborting');
     });
 
     it('hands one immutable, digest-recorded tarball to every runner', () => {
@@ -89,8 +95,9 @@ describe('demo assurance wiring', () => {
 
     it('replan installs its second workspace from the bound product artifact', () => {
       const replan = readDemo('risk-trigger-fixture/run-live-replan-recovery.mjs');
-      expect(replan).toContain('installerCli(');
-      expect(replan).toContain("'.tooling', 'product-cli'");
+      expect(replan).toContain('productCli(');
+      expect(replan).toContain('FLOWGUARD_CLI');
+      expect(readDemo('lib/product-cli.mjs')).toContain('product-prefix');
     });
   });
 

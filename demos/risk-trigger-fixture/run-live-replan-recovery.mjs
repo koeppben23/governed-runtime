@@ -33,6 +33,7 @@ import {
   assertNoCompletionPackage,
 } from './run-live-risk-trigger-controls.mjs';
 import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
+import { FLOWGUARD_CLI, FLOWGUARD_PACKAGE, productCli } from '../lib/product-cli.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
@@ -60,21 +61,10 @@ export function oldControlApprovalCommand(directive, allowOverride) {
 }
 
 /**
- * The installer CLI must come from the SAME bound product artifact as the
- * installed plugin: the tarball is extracted and its own install.js is used.
- * Only the build-from-checkout mode (no --tarball) uses the checkout dist.
+ * The installer CLI must come from a fully installed copy of the SAME bound
+ * product tarball: an extracted tarball has no node_modules, so the CLI is
+ * installed into an isolated npm prefix and executed from there.
  */
-function installerCli(tarball, root) {
-  if (tarball === undefined) return path.join(REPO, 'dist/cli/install.js');
-  const extractDir = path.join(root, '.tooling', 'product-cli');
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.mkdirSync(extractDir, { recursive: true });
-  execFileSync('tar', ['-xzf', tarball, '-C', extractDir]);
-  const cli = path.join(extractDir, 'package', 'dist', 'cli', 'install.js');
-  if (!fs.existsSync(cli)) throw new Error(`product installer missing in ${tarball}`);
-  return cli;
-}
-
 async function planAndApprove(runner, session, prefix, covered, allowOverride) {
   await runner.turn(session, `${prefix}-01-start`, undefined, { command: 'start' });
   await runner.turn(
@@ -236,16 +226,15 @@ async function main() {
 
     const newWorkspace = path.join(options.root, 'workspaces', 'new');
     git(oldWorkspace, 'worktree', 'add', '--detach', newWorkspace, base);
+    const productInstaller = productCli({
+      tarball,
+      root: options.root,
+      packageName: FLOWGUARD_PACKAGE,
+      relativeCli: FLOWGUARD_CLI,
+    });
     execFileSync(
       process.execPath,
-      [
-        installerCli(tarball, options.root),
-        'install',
-        '--install-scope',
-        'repo',
-        '--core-tarball',
-        tarball,
-      ],
+      [productInstaller, 'install', '--install-scope', 'repo', '--core-tarball', tarball],
       { cwd: newWorkspace, stdio: 'inherit' },
     );
     if (fs.readFileSync(path.join(newWorkspace, SUBJECT), 'utf8') !== original)

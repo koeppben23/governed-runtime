@@ -63,6 +63,16 @@ function latestInvocation(state, obligation) {
   return invocationsFor(state, obligation).at(-1) ?? null;
 }
 
+function attemptsFor(state, obligation) {
+  const attempts = state?.reviewAssurance?.attempts;
+  if (!Array.isArray(attempts)) return [];
+  return attempts.filter((attempt) => attempt?.obligationId === obligation.obligationId);
+}
+
+function latestAttempt(state, obligation) {
+  return attemptsFor(state, obligation).at(-1) ?? null;
+}
+
 export function classifyPlanGate(state) {
   if (
     !state ||
@@ -100,6 +110,8 @@ export function classifyPlanGate(state) {
 export function planGateProgressKey(state) {
   const obligation = openPlanObligation(state);
   const invocation = obligation ? latestInvocation(state, obligation) : null;
+  const attempt = obligation ? latestAttempt(state, obligation) : null;
+  const attemptCount = obligation ? attemptsFor(state, obligation).length : 0;
   const planVersion = state?.plan?.current?.planVersion ?? '?';
   const findings = Array.isArray(state?.plan?.reviewFindings)
     ? state.plan.reviewFindings.length
@@ -114,6 +126,7 @@ export function planGateProgressKey(state) {
       obligation?.invocationId ?? '-',
     )}:${String(obligation?.consumedAt ?? '-')}`,
     `a${String(invocation?.invocationId ?? '-')}:${String(invocation?.attemptId ?? '-')}`,
+    `t${String(attemptCount)}:${String(attempt?.attemptId ?? '-')}:${String(attempt?.status ?? '-')}`,
   ].join('|');
 }
 

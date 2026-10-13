@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `demos/DEMO_ASSURANCE.md`. Plan-gate classification now derives from the
   persisted review obligation and its bound invocation (not findings counters),
   JSONL framing losses abort a proof with `NOT_VERIFIED`, one immutable
-  digest-recorded product tarball is bound to every runner (replan included),
-  and an exclusive run lease is taken before the first build.
+  digest-recorded product tarball is bound to every runner (replan included,
+  installed into an isolated npm prefix), the wrapper-owned lease is
+  token-checked against stale/foreign releases, attempt identity is part of the
+  plan-gate progress proof, and a failed product build aborts the wrapper.
 
 - **Assertion-identity integrity and exactly-once claims (#1080).** Structured
   assertion evidence whose provider-scoped identity occurs more than once in one

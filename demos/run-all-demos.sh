@@ -20,11 +20,15 @@ fi
 mkdir -p "$ROOT/.tooling"
 
 # 0. Exclusive run lease BEFORE any build: two wrappers must never mutate the
-#    same checkout or build artifacts concurrently. Released on every exit.
-LEASE="$(node "$REPO/demos/lib/run-lease.mjs" acquire --repo "$REPO")" || exit 1
-echo "lease: $LEASE"
+#    same checkout or build artifacts concurrently. The lease is owned by THIS
+#    long-lived wrapper process (not the short-lived helper) and released by
+#    identity on every exit.
+LEASE_JSON="$(node "$REPO/demos/lib/run-lease.mjs" acquire --repo "$REPO" --pid $$)" || exit 1
+LEASE_TOKEN="$(printf '%s' "$LEASE_JSON" | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>process.stdout.write(JSON.parse(s).token))')"
+LEASE_FILE="$(printf '%s' "$LEASE_JSON" | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>process.stdout.write(JSON.parse(s).leaseFile))')"
+echo "lease: $LEASE_FILE"
 release_lease() {
-  node "$REPO/demos/lib/run-lease.mjs" release --repo "$REPO" >/dev/null 2>&1 || true
+  node "$REPO/demos/lib/run-lease.mjs" release --repo "$REPO" --token "$LEASE_TOKEN" >/dev/null 2>&1 || true
 }
 trap release_lease EXIT INT TERM
 
@@ -48,13 +52,20 @@ collect() {
   if [[ "$code" -eq 1 ]]; then STATUS=1; elif [[ "$code" -eq 2 && "$STATUS" -eq 0 ]]; then STATUS=2; fi
 }
 
-# 3. Mandatory dry-run gate: build ONE immutable product tarball, verify its
-#    bytes, canary-install exactly that artifact, then hand the SAME tarball and
-#    the declared product identity to every runner.
-(cd "$REPO" && npm run build >/dev/null && npm run pack:checksums >/dev/null)
+# 3. Mandatory dry-run gate: build ONE immutable product tarball (abort on any
+#    build failure), verify its bytes, canary-install exactly that artifact,
+#    then hand the SAME tarball and product identity to every runner.
+if ! (cd "$REPO" && npm run build >/dev/null && npm run pack:checksums >/dev/null); then
+  echo "product build failed; aborting before any demo run" >&2
+  exit 1
+fi
 VERSION="$(node -e "process.stdout.write(require('$REPO/package.json').version)")"
 GATE_TARBALL="$REPO/flowguard-core-$VERSION.tgz"
 GATE_SHA="$(cd "$REPO" && git rev-parse HEAD)"
+if [[ ! -f "$GATE_TARBALL" ]]; then
+  echo "product tarball missing after build: $GATE_TARBALL" >&2
+  exit 1
+fi
 GATE_DIGEST="$(shasum -a 256 "$GATE_TARBALL" | awk '{print $1}')"
 echo "product tarball: $GATE_TARBALL"
 echo "product sha256:  $GATE_DIGEST"

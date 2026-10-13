@@ -38,6 +38,7 @@ interface Options {
     consumedAt?: string | null;
   } | null;
   invocations?: Invocation[];
+  attempts?: Array<{ obligationId: string; attemptId: string; status: string }>;
 }
 
 function planState(options: Options = {}) {
@@ -68,6 +69,7 @@ function planState(options: Options = {}) {
               },
             ],
       invocations: options.invocations ?? [],
+      attempts: options.attempts ?? [],
     },
   };
 }
@@ -171,10 +173,12 @@ describe('demo review continuation classification', () => {
     it('progress key tracks obligation lifecycle and attempt identity', () => {
       const pending = planState({
         obligation: { id: 'ob-7', status: 'pending', invocationId: null },
+        attempts: [{ obligationId: 'ob-7', attemptId: 'att-1', status: 'spent' }],
       });
       const fulfilled = planState({
         obligation: { id: 'ob-7', status: 'fulfilled', invocationId: 'inv-7' },
         invocations: [boundInvocation],
+        attempts: [{ obligationId: 'ob-7', attemptId: 'att-1', status: 'spent' }],
       });
       const newerAttempt = planState({
         obligation: { id: 'ob-7', status: 'fulfilled', invocationId: 'inv-8' },
@@ -182,6 +186,7 @@ describe('demo review continuation classification', () => {
           boundInvocation,
           { ...boundInvocation, invocationId: 'inv-8', attemptId: 'att-8' },
         ],
+        attempts: [{ obligationId: 'ob-7', attemptId: 'att-1', status: 'spent' }],
       });
       const cosmetic = {
         ...pending,
@@ -190,6 +195,21 @@ describe('demo review continuation classification', () => {
       expect(planGateProgressKey(fulfilled)).not.toBe(planGateProgressKey(pending));
       expect(planGateProgressKey(newerAttempt)).not.toBe(planGateProgressKey(fulfilled));
       expect(planGateProgressKey(cosmetic)).toBe(planGateProgressKey(pending));
+    });
+
+    it('a re-armed attempt alone counts as progress (no false STALLED)', () => {
+      const before = planState({
+        obligation: { id: 'ob-7', status: 'pending', invocationId: null },
+        attempts: [{ obligationId: 'ob-7', attemptId: 'att-1', status: 'spent' }],
+      });
+      const afterRearm = planState({
+        obligation: { id: 'ob-7', status: 'pending', invocationId: null },
+        attempts: [
+          { obligationId: 'ob-7', attemptId: 'att-1', status: 'spent' },
+          { obligationId: 'ob-7', attemptId: 'att-2', status: 'created' },
+        ],
+      });
+      expect(planGateProgressKey(afterRearm)).not.toBe(planGateProgressKey(before));
     });
   });
 });

@@ -58,8 +58,25 @@ controlled A/B run with the SAME fixed harness.
   installed product identity. The replan runner extracts the installer CLI from
   the bound tarball for its second workspace instead of using the harness
   checkout's `dist/cli/install.js`.
-- **Run lease:** `demos/lib/run-lease.mjs` acquires an exclusive, stale-aware
+- **Run lease:** `demos/lib/run-lease.mjs` acquires an exclusive, token-checked
   lease BEFORE the wrapper's first build and releases it on every exit.
+
+## Second review round (PR #1098)
+
+- **Lease owner is the wrapper:** the lease file is the atomic mutex (`wx`
+  create) and records the long-lived wrapper PID (`--pid $$`) plus a unique
+  token; release only unlinks the matching token, so a dying first wrapper can
+  never delete a successor's lease. Cross-process exclusivity is covered by a
+  real two-process test through the CLI boundary.
+- **Replan installer runs from an isolated npm prefix:** an extracted tarball
+  has no `node_modules`; `demos/lib/product-cli.mjs` installs the bound tarball
+  into `<root>/.tooling/product-prefix` and executes the CLI from there, with a
+  dependency smoke test proving resolution.
+- **Attempt identity in the progress key:** `reviewAssurance.attempts` (latest
+  attempt id/status + count per obligation) are part of the fingerprint, so an
+  authorized re-arm alone counts as progress instead of a false `STALLED`.
+- **Build failures abort the wrapper** before any demo run, while the 0/1/2
+  result semantics of the runs themselves stay unchanged.
 
 ## Contract for the runners
 
