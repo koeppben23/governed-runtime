@@ -9,7 +9,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -73,13 +73,14 @@ describe('demo run lease', () => {
     });
   });
 
-  describe('CORNER — stale owners are reclaimed', () => {
-    it('reclaims a lease whose owner process is gone', () => {
+  describe('CORNER — stale leases require explicit removal', () => {
+    it('reports a stale lease instead of racing to reclaim it', () => {
       const repo = fakeRepo('stale');
       acquireLease(repo, { pid: 999_999 });
-      const reclaimed = acquireLease(repo, { pid: process.pid });
-      expect(reclaimed.token).toBeDefined();
-      reclaimed.release();
+      expect(() => acquireLease(repo, { pid: process.pid })).toThrow(/stale demo run lease/);
+      releaseLease(repo);
+      const lease = acquireLease(repo, { pid: process.pid });
+      lease.release();
     });
   });
 
@@ -104,6 +105,27 @@ describe('demo run lease', () => {
       await waitFor(() => !existsSync(demoLeasePath(repo)));
       const lease = acquireLease(repo);
       lease.release();
+    });
+
+    it('two concurrent stale-reclaims cannot both win', async () => {
+      const repo = fakeRepo('stale-concurrent');
+      acquireLease(repo, { pid: 999_999 });
+      const before = JSON.parse(readFileSync(demoLeasePath(repo), 'utf8')) as { pid: number };
+      const attempts = await Promise.all(
+        [0, 1].map(
+          () =>
+            new Promise<{ status: number | null }>((resolve) => {
+              const child = spawn(process.execPath, [CLI, 'acquire', '--repo', repo], {
+                stdio: ['ignore', 'ignore', 'pipe'],
+              });
+              child.on('exit', (status) => resolve({ status }));
+            }),
+        ),
+      );
+      expect(attempts.every((attempt) => attempt.status !== 0)).toBe(true);
+      const after = JSON.parse(readFileSync(demoLeasePath(repo), 'utf8')) as { pid: number };
+      expect(after.pid).toBe(before.pid);
+      releaseLease(repo);
     });
   });
 });

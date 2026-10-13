@@ -75,6 +75,19 @@ describe('demo assurance wiring', () => {
       expect(readDemo('run-all-demos.sh')).toContain('product build failed; aborting');
     });
 
+    it('aggregates unexpected runner exit codes through the tested helper', () => {
+      const wrapper = readDemo('run-all-demos.sh');
+      expect(wrapper).toContain('aggregate-status.mjs');
+      expect(wrapper).toContain('collect $?');
+    });
+
+    it('drives BOTH replan sessions through the plan-gate continuation', () => {
+      const replan = readDemo('risk-trigger-fixture/run-live-replan-recovery.mjs');
+      const continuations = replan.match(/convergePlanGate\(/g) ?? [];
+      expect(continuations.length).toBeGreaterThanOrEqual(2);
+      expect(replan).toContain("label: 'new-03-plan'");
+    });
+
     it('hands one immutable, digest-recorded tarball to every runner', () => {
       const wrapper = readDemo('run-all-demos.sh');
       expect(wrapper).toContain('GATE_DIGEST=');

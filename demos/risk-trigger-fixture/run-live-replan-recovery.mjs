@@ -262,6 +262,18 @@ async function main() {
         'Complete independent review; do not transfer certificates, evidence or verdicts from the old session.',
       { command: 'plan' },
     );
+    const newGate = await convergePlanGate({
+      runner,
+      session: newSession,
+      label: 'new-03-plan',
+    });
+    if (newGate.outcome !== PLAN_GATE.ACCEPTED) {
+      const reason =
+        newGate.outcome === PLAN_GATE.REVIEW_EXHAUSTED
+          ? 'the independent plan review exhausted its budget without acceptance'
+          : `the plan gate did not converge to a persisted reviewer_accepted plan (${newGate.outcome})`;
+      throw new DemoNotVerifiedError(`new: ${reason}; the recovery proof is NOT_VERIFIED`);
+    }
     await runner.approve(newSession, 'new-04-approve-plan', 'PLAN_REVIEW');
     const approved = snapshot(runner, newSession, 'new-approved');
     if (

@@ -61,22 +61,30 @@ controlled A/B run with the SAME fixed harness.
 - **Run lease:** `demos/lib/run-lease.mjs` acquires an exclusive, token-checked
   lease BEFORE the wrapper's first build and releases it on every exit.
 
-## Second review round (PR #1098)
+## Second/third review round (PR #1098)
 
 - **Lease owner is the wrapper:** the lease file is the atomic mutex (`wx`
   create) and records the long-lived wrapper PID (`--pid $$`) plus a unique
   token; release only unlinks the matching token, so a dying first wrapper can
-  never delete a successor's lease. Cross-process exclusivity is covered by a
-  real two-process test through the CLI boundary.
+  never delete a successor's lease. A stale lease is reported for EXPLICIT
+  removal (same reasoning as the installer lock) — automatic reclaim is racy
+  because a second process can then delete a successor's fresh lease.
+  Cross-process exclusivity, foreign-token release and concurrent
+  stale-reclaim blocking are covered through the CLI boundary.
 - **Replan installer runs from an isolated npm prefix:** an extracted tarball
   has no `node_modules`; `demos/lib/product-cli.mjs` installs the bound tarball
   into `<root>/.tooling/product-prefix` and executes the CLI from there, with a
-  dependency smoke test proving resolution.
+  dependency smoke test proving resolution. BOTH replan sessions (old and new)
+  are driven through `convergePlanGate`; only a persisted `reviewer_accepted`
+  leads to the ordinary approval.
 - **Attempt identity in the progress key:** `reviewAssurance.attempts` (latest
   attempt id/status + count per obligation) are part of the fingerprint, so an
   authorized re-arm alone counts as progress instead of a false `STALLED`.
-- **Build failures abort the wrapper** before any demo run, while the 0/1/2
-  result semantics of the runs themselves stay unchanged.
+- **Exit-code aggregation:** `demos/lib/aggregate-status.mjs` maps 0 to success,
+  2 to `NOT_VERIFIED` and any other code (127, 137, signals) to `FAILED`, with
+  FAILED outranking NOT_VERIFIED; the mapping is unit-tested and used by the
+  wrapper for the runners and the variants script. The wrapper aborts when the
+  product build fails.
 
 ## Contract for the runners
 

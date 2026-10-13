@@ -47,9 +47,10 @@ export FLOWGUARD_REVIEWER_EFFORT=none
 
 RUN=(npx --yes --package=node@22.22.2 -- node)
 STATUS=0
+# 0 = accepted evidence, 2 = NOT_VERIFIED, any other code = FAILED. The
+# mapping is unit-tested in demo-aggregate-status.test.ts.
 collect() {
-  local code="$1"
-  if [[ "$code" -eq 1 ]]; then STATUS=1; elif [[ "$code" -eq 2 && "$STATUS" -eq 0 ]]; then STATUS=2; fi
+  STATUS="$(node "$REPO/demos/lib/aggregate-status.mjs" "$STATUS" "$1")"
 }
 
 # 3. Mandatory dry-run gate: build ONE immutable product tarball (abort on any
@@ -87,7 +88,8 @@ run_demo risk-trigger-controls "$REPO/demos/risk-trigger-fixture/run-live-risk-t
 run_demo replan-recovery "$REPO/demos/risk-trigger-fixture/run-live-replan-recovery.mjs" --root "$ROOT/replan" --allow-old-plan-override
 
 echo "=== demo: proofgraph-variants"
-bash "$REPO/demos/run-proofgraph-variants.sh" || collect 1
+bash "$REPO/demos/run-proofgraph-variants.sh"
+collect $?
 
 echo "ALL DEMOS exit=$STATUS (0=accepted evidence, 2=NOT_VERIFIED, 1=FAILED)"
 exit "$STATUS"

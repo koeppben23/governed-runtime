@@ -44,38 +44,37 @@ function readOwner(leaseFile) {
 }
 
 /**
- * Acquire the lease atomically. The owner PID must be the process that stays
- * alive for the whole run (the wrapper passes its own PID). Throws when a live
- * owner holds it; reclaims a lease whose owner is gone.
+ * Acquire the lease atomically (`wx` create is the only mutation). The owner
+ * PID must be the process that stays alive for the whole run (the wrapper
+ * passes its own PID). A live owner blocks; a stale owner is reported for
+ * EXPLICIT removal — automatically deleting a stale lease is racy, because a
+ * second process can then delete a successor's fresh lease (same reasoning as
+ * the installer lock).
  */
 export function acquireLease(repo, { pid = process.pid } = {}) {
   const leaseFile = demoLeasePath(repo);
   const token = randomUUID();
   const record = JSON.stringify({ pid, token, repo, startedAt: new Date().toISOString() });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      writeFileSync(leaseFile, record, { flag: 'wx' });
-      return {
-        leaseFile,
-        token,
-        release: () => releaseLease(repo, token),
-      };
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      const owner = readOwner(leaseFile);
-      if (ownerAlive(owner?.pid)) {
-        throw new Error(
-          `another demo run is active for ${repo} (pid ${String(owner?.pid)}); lease ${leaseFile}`,
-        );
-      }
-      try {
-        unlinkSync(leaseFile);
-      } catch (reclaimError) {
-        if (reclaimError?.code !== 'ENOENT') throw reclaimError;
-      }
+  try {
+    writeFileSync(leaseFile, record, { flag: 'wx' });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    const owner = readOwner(leaseFile);
+    if (ownerAlive(owner?.pid)) {
+      throw new Error(
+        `another demo run is active for ${repo} (pid ${String(owner?.pid)}); lease ${leaseFile}`,
+      );
     }
+    throw new Error(
+      `stale demo run lease ${leaseFile} (owner pid ${String(owner?.pid ?? 'unknown')} is not ` +
+        'running); remove the file manually if no run is active',
+    );
   }
-  throw new Error(`could not acquire the demo run lease ${leaseFile}`);
+  return {
+    leaseFile,
+    token,
+    release: () => releaseLease(repo, token),
+  };
 }
 
 /**

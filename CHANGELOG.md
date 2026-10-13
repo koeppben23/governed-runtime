@@ -27,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSONL framing losses abort a proof with `NOT_VERIFIED`, one immutable
   digest-recorded product tarball is bound to every runner (replan included,
   installed into an isolated npm prefix), the wrapper-owned lease is
-  token-checked against stale/foreign releases, attempt identity is part of the
-  plan-gate progress proof, and a failed product build aborts the wrapper.
+  token-checked with explicit stale removal, both replan sessions run through
+  the state-driven continuation, attempt identity is part of the plan-gate
+  progress proof, unexpected runner exit codes aggregate to FAILED, and a
+  failed product build aborts the wrapper.
 
 - **Assertion-identity integrity and exactly-once claims (#1080).** Structured
   assertion evidence whose provider-scoped identity occurs more than once in one
