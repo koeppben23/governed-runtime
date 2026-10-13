@@ -1,8 +1,10 @@
 /**
  * @module documentation/demo-review-continuation.test
- * @description Plan-gate continuation must be state-driven: transport recovery,
- * bound-verdict submission, and authorized revisions are different outcomes, and
- * unreadable state never advances a flow.
+ * @description Plan-gate continuation must be state-driven from the REAL review
+ * assurance evidence: a bound verdict is a persisted invocation for the current
+ * obligation, never a findings/iteration counter. Transport recovery, bound
+ * verdict submission and authorized revisions are different outcomes; unreadable
+ * state never advances a flow.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  * @version v1
@@ -11,9 +13,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   PLAN_GATE,
+  boundPlanVerdict,
   classifyPlanGate,
   planGateProgressKey,
 } from '../../../demos/lib/review-continuation.mjs';
+
+interface Invocation {
+  invocationId: string;
+  obligationId: string;
+  attemptId: string;
+  fulfilledAt: string | null;
+}
 
 interface Options {
   phase?: string;
@@ -21,10 +31,17 @@ interface Options {
   iteration?: number;
   planVersion?: number;
   findings?: number;
-  obligation?: { id: string; status: 'pending' | 'fulfilled'; consumedAt: null | string } | null;
+  obligation?: {
+    id: string;
+    status: 'pending' | 'fulfilled';
+    invocationId?: string | null;
+    consumedAt?: string | null;
+  } | null;
+  invocations?: Invocation[];
 }
 
 function planState(options: Options = {}) {
+  const obligation = options.obligation ?? null;
   return {
     phase: options.phase ?? 'PLAN',
     plan: {
@@ -32,24 +49,35 @@ function planState(options: Options = {}) {
       current: { planVersion: options.planVersion ?? 1 },
       reviewFindings: Array.from({ length: options.findings ?? 0 }, (_, index) => ({
         index,
+        verdict: 'changes_requested',
       })),
     },
     selfReview: { iteration: options.iteration ?? 0, maxIterations: 3 },
     reviewAssurance: {
       obligations:
-        options.obligation === null
+        obligation === null
           ? []
           : [
               {
+                obligationId: obligation.id,
                 obligationType: 'plan',
-                obligationId: options.obligation?.id ?? 'ob-1',
-                status: options.obligation?.status ?? 'pending',
-                consumedAt: options.obligation?.consumedAt ?? null,
+                status: obligation.status,
+                invocationId: obligation.invocationId ?? null,
+                consumedAt: obligation.consumedAt ?? null,
+                iteration: options.iteration ?? 0,
               },
             ],
+      invocations: options.invocations ?? [],
     },
   };
 }
+
+const boundInvocation: Invocation = {
+  invocationId: 'inv-7',
+  obligationId: 'ob-7',
+  attemptId: 'att-7',
+  fulfilledAt: '2026-10-13T08:00:00.000Z',
+};
 
 describe('demo review continuation classification', () => {
   describe('HAPPY — persisted acceptance', () => {
@@ -79,28 +107,52 @@ describe('demo review continuation classification', () => {
     it('fails closed on a pending unknown phase', () => {
       expect(classifyPlanGate(planState({ phase: 'EXPORT_READY' }))).toBe(PLAN_GATE.UNREADABLE);
     });
-  });
 
-  describe('CORNER — open obligation with captured but unconsumed verdict', () => {
-    it('requires bound-verdict submission when findings exceed consumed iterations', () => {
+    it('fails closed when a fulfilled obligation has no bound invocation', () => {
       expect(
         classifyPlanGate(
           planState({
-            obligation: { id: 'ob-7', status: 'fulfilled', consumedAt: null },
-            findings: 1,
+            obligation: { id: 'ob-7', status: 'fulfilled', invocationId: 'inv-7' },
+            invocations: [],
+          }),
+        ),
+      ).toBe(PLAN_GATE.UNREADABLE);
+    });
+  });
+
+  describe('CORNER — bound verdict versus transport recovery', () => {
+    it('requires bound-verdict submission when the current obligation has a persisted invocation', () => {
+      const state = planState({
+        obligation: { id: 'ob-7', status: 'fulfilled', invocationId: 'inv-7' },
+        invocations: [boundInvocation],
+        findings: 0,
+        iteration: 0,
+      });
+      expect(boundPlanVerdict(state, state.reviewAssurance.obligations[0])).toEqual(
+        boundInvocation,
+      );
+      expect(classifyPlanGate(state)).toBe(PLAN_GATE.SUBMIT_BOUND_VERDICT);
+    });
+
+    it('requires transport recovery when the current obligation has no invocation', () => {
+      expect(
+        classifyPlanGate(
+          planState({
+            obligation: { id: 'ob-7', status: 'pending', invocationId: null },
+            findings: 0,
             iteration: 0,
           }),
         ),
-      ).toBe(PLAN_GATE.SUBMIT_BOUND_VERDICT);
+      ).toBe(PLAN_GATE.TRANSPORT_RETRY);
     });
 
-    it('requires transport recovery while the capture is still missing', () => {
+    it('ignores stale findings from previous review cycles', () => {
       expect(
         classifyPlanGate(
           planState({
-            obligation: { id: 'ob-7', status: 'pending', consumedAt: null },
-            findings: 0,
-            iteration: 0,
+            obligation: { id: 'ob-9', status: 'pending', invocationId: null },
+            findings: 5,
+            iteration: 2,
           }),
         ),
       ).toBe(PLAN_GATE.TRANSPORT_RETRY);
@@ -116,15 +168,28 @@ describe('demo review continuation classification', () => {
       ).toBe(PLAN_GATE.REVISE_PLAN);
     });
 
-    it('progress key changes only on review-relevant state', () => {
-      const before = planState({ obligation: null, findings: 1, iteration: 1 });
-      const progressed = planState({ obligation: null, findings: 2, iteration: 1 });
+    it('progress key tracks obligation lifecycle and attempt identity', () => {
+      const pending = planState({
+        obligation: { id: 'ob-7', status: 'pending', invocationId: null },
+      });
+      const fulfilled = planState({
+        obligation: { id: 'ob-7', status: 'fulfilled', invocationId: 'inv-7' },
+        invocations: [boundInvocation],
+      });
+      const newerAttempt = planState({
+        obligation: { id: 'ob-7', status: 'fulfilled', invocationId: 'inv-8' },
+        invocations: [
+          boundInvocation,
+          { ...boundInvocation, invocationId: 'inv-8', attemptId: 'att-8' },
+        ],
+      });
       const cosmetic = {
-        ...before,
-        plan: { ...before.plan, current: { planVersion: 1, note: 'x' } },
+        ...pending,
+        plan: { ...pending.plan, current: { planVersion: 1, note: 'x' } },
       };
-      expect(planGateProgressKey(progressed)).not.toBe(planGateProgressKey(before));
-      expect(planGateProgressKey(cosmetic)).toBe(planGateProgressKey(before));
+      expect(planGateProgressKey(fulfilled)).not.toBe(planGateProgressKey(pending));
+      expect(planGateProgressKey(newerAttempt)).not.toBe(planGateProgressKey(fulfilled));
+      expect(planGateProgressKey(cosmetic)).toBe(planGateProgressKey(pending));
     });
   });
 });

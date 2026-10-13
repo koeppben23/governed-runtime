@@ -58,6 +58,42 @@ describe('demo assurance wiring', () => {
     });
   });
 
+  describe('EDGE — product identity and run lease are bound', () => {
+    it('acquires the exclusive lease before any build', () => {
+      const wrapper = readDemo('run-all-demos.sh');
+      const leaseIndex = wrapper.indexOf('run-lease.mjs" acquire');
+      const buildIndex = wrapper.indexOf('npm run build');
+      expect(leaseIndex).toBeGreaterThan(-1);
+      expect(buildIndex).toBeGreaterThan(-1);
+      expect(leaseIndex).toBeLessThan(buildIndex);
+      expect(wrapper).toContain('trap release_lease');
+    });
+
+    it('hands one immutable, digest-recorded tarball to every runner', () => {
+      const wrapper = readDemo('run-all-demos.sh');
+      expect(wrapper).toContain('GATE_DIGEST=');
+      expect(wrapper).toContain('--tarball "$GATE_TARBALL"');
+      expect(wrapper).toContain('--product-sha "$GATE_SHA"');
+    });
+
+    it('every runner checks the declared product identity', () => {
+      expect(readDemo('java-task-manager/run-live-matrix.mjs')).toContain('options.productSha');
+      expect(readDemo('java-task-manager/run-live-claim-controls.mjs')).toContain('productSha');
+      expect(readDemo('risk-trigger-fixture/run-live-risk-trigger-controls.mjs')).toContain(
+        'expectedProductSha',
+      );
+      expect(readDemo('risk-trigger-fixture/run-live-replan-recovery.mjs')).toContain(
+        'options.productSha',
+      );
+    });
+
+    it('replan installs its second workspace from the bound product artifact', () => {
+      const replan = readDemo('risk-trigger-fixture/run-live-replan-recovery.mjs');
+      expect(replan).toContain('installerCli(');
+      expect(replan).toContain("'.tooling', 'product-cli'");
+    });
+  });
+
   describe('EDGE — result taxonomy is shared, not re-invented', () => {
     it('runners import the shared result kinds', () => {
       for (const runner of [

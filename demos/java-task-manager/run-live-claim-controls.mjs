@@ -33,6 +33,8 @@ import {
   finalizeControlRecord,
   parseArgs,
   readPins,
+  sha256,
+  verifyChecksumSidecar,
 } from './run-live-matrix.mjs';
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
 import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
@@ -236,6 +238,13 @@ async function runCase(runner, name, workspace, negative) {
   const savedSkip = process.env[SKIP_ASSERTION_ENV];
   try {
     await runner.turn(session, `${name}-01-start`, '/start');
+    const installed = runner.installedBuild(workspace);
+    record.installedBuild = installed;
+    if (runner.options.productSha !== undefined && installed.gitSha !== runner.options.productSha) {
+      throw new Error(
+        `installed artifact gitSha ${String(installed.gitSha)} != declared product ${runner.options.productSha}`,
+      );
+    }
     // Use the host command boundary with the ticket text as the message. This
     // keeps /task from spilling into planning; a leading `--file` argument would
     // be parsed as an opencode option, so the ticket content is passed directly.
@@ -372,6 +381,7 @@ async function main() {
         ).version;
         return path.join(REPO, `flowguard-core-${version}.tgz`);
       })();
+  verifyChecksumSidecar(tarball, path.join(path.dirname(tarball), 'checksums.sha256'));
   fs.writeFileSync(
     path.join(evidenceDir, 'metadata.json'),
     JSON.stringify(
@@ -381,6 +391,8 @@ async function main() {
         pins,
         checkoutHead,
         tarball,
+        tarballSha256: sha256(tarball),
+        productSha: options.productSha ?? null,
         flows: ['claim-positive', 'claim-negative'],
         claim: criticalClaimDeclaration(),
         positiveAssertion: POSITIVE_ASSERTION,

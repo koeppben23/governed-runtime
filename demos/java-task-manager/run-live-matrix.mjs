@@ -580,22 +580,23 @@ export class Runner {
     const trust = transcriptTrust(result.stdout);
     if (!trust.readable) {
       session.transcriptWarnings = session.transcriptWarnings ?? [];
-      session.transcriptWarnings.push({ step: label, unreadable: trust.unreadable });
+      session.transcriptWarnings.push({ step: label, ...trust });
       this.log(
-        `${label}: ${trust.unreadable.length} unreadable governed tool output(s); no recovery or denial proof is credited for this turn`,
+        `${label}: untrustworthy transcript (${trust.framingLosses.length} framing loss(es), ` +
+          `${trust.unreadable.length} unreadable governed tool output(s)); no proof can be credited`,
+      );
+      throw new DemoNotVerifiedError(
+        `${label}: transcript is not trustworthy (${trust.framingLosses.length} framing loss(es), ` +
+          `${trust.unreadable.length} unreadable governed tool output(s)); the proof is NOT_VERIFIED`,
       );
     }
     const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
-    const proofs = trust.readable
-      ? sameTurnRecoveryProofs(result.stdout)
-      : { recovered: [], unproven: [] };
+    const proofs = sameTurnRecoveryProofs(result.stdout);
     const sameTurnRecovered = [...new Set(proofs.recovered.map((proof) => proof.code))].filter(
       isRecoverableFamily,
     );
-    const unprovenOccurrences = trust.readable
-      ? [...new Set(proofs.unproven.map((proof) => proof.code))]
-      : recoverable;
-    const retryRecovered = trust.readable ? captureRetryCodes(result.stdout) : [];
+    const unprovenOccurrences = [...new Set(proofs.unproven.map((proof) => proof.code))];
+    const retryRecovered = captureRetryCodes(result.stdout);
     session.recoveredDenials = session.recoveredDenials ?? [];
     if (sameTurnRecovered.length > 0) {
       session.recoveredDenials.push({

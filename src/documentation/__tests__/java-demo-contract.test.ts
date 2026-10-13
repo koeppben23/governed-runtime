@@ -364,6 +364,43 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
+  it('never accepts a terminal state when the transcript is untrustworthy', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-trust-boundary-'));
+    const unreadableGoverned = JSON.stringify({
+      type: 'tool_use',
+      part: { tool: 'flowguard_plan', state: { output: '{"error":tru' } },
+    });
+    const damagedFrame = '{"type":"tool_use","part":{';
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: `${unreadableGoverned}\n${damagedFrame}\n`,
+      });
+      // Even a persisted terminal phase must not launder the untrustworthy turn.
+      runner.requireBoundState = () => ({
+        state: { phase: 'PEER_REVIEW_COMPLETE' },
+        sessionDir: root,
+      });
+      const session: {
+        workspace: string;
+        terminal: string;
+        terminalBlocks?: Array<Record<string, unknown>>;
+        transcriptWarnings?: Array<Record<string, unknown>>;
+      } = { workspace: root, terminal: 'PEER_REVIEW_COMPLETE' };
+      await expect(runner.turn(session, 'peer-review-09', 'x')).rejects.toThrow(/NOT_VERIFIED/);
+      expect(session.terminalBlocks ?? []).toEqual([]);
+      expect(session.transcriptWarnings?.[0]).toMatchObject({ step: 'peer-review-09' });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('requires a proven in-session retry before a recoverable denial counts as recovered', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-same-turn-'));
     try {

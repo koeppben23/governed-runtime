@@ -59,6 +59,22 @@ export function oldControlApprovalCommand(directive, allowOverride) {
   );
 }
 
+/**
+ * The installer CLI must come from the SAME bound product artifact as the
+ * installed plugin: the tarball is extracted and its own install.js is used.
+ * Only the build-from-checkout mode (no --tarball) uses the checkout dist.
+ */
+function installerCli(tarball, root) {
+  if (tarball === undefined) return path.join(REPO, 'dist/cli/install.js');
+  const extractDir = path.join(root, '.tooling', 'product-cli');
+  fs.rmSync(extractDir, { recursive: true, force: true });
+  fs.mkdirSync(extractDir, { recursive: true });
+  execFileSync('tar', ['-xzf', tarball, '-C', extractDir]);
+  const cli = path.join(extractDir, 'package', 'dist', 'cli', 'install.js');
+  if (!fs.existsSync(cli)) throw new Error(`product installer missing in ${tarball}`);
+  return cli;
+}
+
 async function planAndApprove(runner, session, prefix, covered, allowOverride) {
   await runner.turn(session, `${prefix}-01-start`, undefined, { command: 'start' });
   await runner.turn(
@@ -158,6 +174,7 @@ async function main() {
     name: 'replan-recovery',
     checkoutHead,
     tarballSha256: sha256(tarball),
+    productSha: options.productSha ?? null,
     result: RESULT.FAILED,
     snapshots: {},
   };
@@ -174,6 +191,7 @@ async function main() {
       runner.installedBuild(oldWorkspace),
       checkoutHead,
       !options.tarball,
+      options.productSha,
     );
     await runner.turn(
       oldSession,
@@ -221,7 +239,7 @@ async function main() {
     execFileSync(
       process.execPath,
       [
-        path.join(REPO, 'dist/cli/install.js'),
+        installerCli(tarball, options.root),
         'install',
         '--install-scope',
         'repo',
@@ -240,6 +258,7 @@ async function main() {
       runner.installedBuild(newWorkspace),
       checkoutHead,
       !options.tarball,
+      options.productSha,
     );
     await runner.turn(
       newSession,

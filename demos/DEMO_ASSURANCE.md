@@ -41,6 +41,26 @@ gaps plus model-driven review non-convergence. Whether #1080 changes the
 frequency or trigger conditions of that non-convergence remains open until a
 controlled A/B run with the SAME fixed harness.
 
+## Follow-up review round (PR #1098)
+
+- **Real review evidence:** `classifyPlanGate`/`boundPlanVerdict` decide between
+  `SUBMIT_BOUND_VERDICT` and `TRANSPORT_RETRY` from the persisted
+  `reviewAssurance` obligation + its linked invocation (never from
+  findings/iteration counters, which can carry stale data across cycles). The
+  progress key tracks obligation lifecycle (`pending → fulfilled`, invocation
+  link, consumedAt) and the latest attempt identity.
+- **Transcript trust:** JSONL framing losses are tracked explicitly and, like
+  unreadable governed output, abort the proof with `NOT_VERIFIED` — a later
+  terminal state cannot launder an untrustworthy turn.
+- **Product byte binding:** the wrapper builds ONE immutable tarball, records
+  its SHA-256, canary-installs exactly that artifact and hands the same
+  `--tarball`/`--product-sha` to every runner; each runner verifies the
+  installed product identity. The replan runner extracts the installer CLI from
+  the bound tarball for its second workspace instead of using the harness
+  checkout's `dist/cli/install.js`.
+- **Run lease:** `demos/lib/run-lease.mjs` acquires an exclusive, stale-aware
+  lease BEFORE the wrapper's first build and releases it on every exit.
+
 ## Contract for the runners
 
 - Recovery evidence is occurrence-bound; unreadable governed output never

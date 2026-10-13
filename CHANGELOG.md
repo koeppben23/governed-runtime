@@ -22,7 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bindings, freshness, real package absence). `demos/run-all-demos.sh` adds a
   mandatory dry-run environment gate (pins, npm-10 canary install, isolation,
   checksum, provider ping) and a per-run install lock. See
-  `demos/DEMO_ASSURANCE.md`.
+  `demos/DEMO_ASSURANCE.md`. Plan-gate classification now derives from the
+  persisted review obligation and its bound invocation (not findings counters),
+  JSONL framing losses abort a proof with `NOT_VERIFIED`, one immutable
+  digest-recorded product tarball is bound to every runner (replan included),
+  and an exclusive run lease is taken before the first build.
 
 - **Assertion-identity integrity and exactly-once claims (#1080).** Structured
   assertion evidence whose provider-scoped identity occurs more than once in one

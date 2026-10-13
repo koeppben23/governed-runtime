@@ -37,6 +37,32 @@ function openPlanObligation(state) {
   );
 }
 
+function invocationsFor(state, obligation) {
+  const invocations = state?.reviewAssurance?.invocations;
+  if (!Array.isArray(invocations)) return [];
+  return invocations.filter((invocation) => invocation?.obligationId === obligation.obligationId);
+}
+
+/**
+ * A bound verdict is a persisted host-orchestrated invocation for the CURRENT
+ * obligation (linked by `obligation.invocationId` or already fulfilled). This
+ * never relies on findings counters, which can carry stale data across cycles.
+ */
+export function boundPlanVerdict(state, obligation) {
+  const invocations = invocationsFor(state, obligation);
+  if (invocations.length === 0) return null;
+  if (obligation.invocationId != null) {
+    return (
+      invocations.find((invocation) => invocation.invocationId === obligation.invocationId) ?? null
+    );
+  }
+  return invocations.find((invocation) => invocation.fulfilledAt != null) ?? null;
+}
+
+function latestInvocation(state, obligation) {
+  return invocationsFor(state, obligation).at(-1) ?? null;
+}
+
 export function classifyPlanGate(state) {
   if (
     !state ||
@@ -51,29 +77,29 @@ export function classifyPlanGate(state) {
   if (state.phase !== 'PLAN' && state.phase !== 'PLAN_REVIEW') return PLAN_GATE.UNREADABLE;
   if (state.plan.reviewCompletion === 'reviewer_accepted') return PLAN_GATE.ACCEPTED;
   if (state.plan.reviewCompletion === 'review_exhausted') return PLAN_GATE.REVIEW_EXHAUSTED;
-  const iteration = Number.isInteger(state.selfReview.iteration)
-    ? state.selfReview.iteration
-    : null;
-  if (iteration === null) return PLAN_GATE.UNREADABLE;
-  const findings = Array.isArray(state.plan.reviewFindings)
-    ? state.plan.reviewFindings.length
-    : null;
-  if (findings === null) return PLAN_GATE.UNREADABLE;
+  if (!Number.isInteger(state.selfReview.iteration)) return PLAN_GATE.UNREADABLE;
+  if (!Array.isArray(state.plan.reviewFindings)) return PLAN_GATE.UNREADABLE;
 
   const obligation = openPlanObligation(state);
   if (obligation) {
-    return findings > iteration ? PLAN_GATE.SUBMIT_BOUND_VERDICT : PLAN_GATE.TRANSPORT_RETRY;
+    if (boundPlanVerdict(state, obligation) !== null) return PLAN_GATE.SUBMIT_BOUND_VERDICT;
+    if (obligation.status === 'fulfilled' || obligation.invocationId != null) {
+      return PLAN_GATE.UNREADABLE;
+    }
+    return PLAN_GATE.TRANSPORT_RETRY;
   }
   if (state.phase === 'PLAN') return PLAN_GATE.REVISE_PLAN;
   return PLAN_GATE.UNREADABLE;
 }
 
 /**
- * Review-relevant progress fingerprint. Cosmetic state changes (or a mere
- * audit/metadata update) must not count as progress.
+ * Review-relevant progress fingerprint: obligation identity AND lifecycle
+ * (status, invocation link), the latest attempt identity, iteration, findings
+ * and completion. Cosmetic or audit-only state changes never count as progress.
  */
 export function planGateProgressKey(state) {
   const obligation = openPlanObligation(state);
+  const invocation = obligation ? latestInvocation(state, obligation) : null;
   const planVersion = state?.plan?.current?.planVersion ?? '?';
   const findings = Array.isArray(state?.plan?.reviewFindings)
     ? state.plan.reviewFindings.length
@@ -84,7 +110,10 @@ export function planGateProgressKey(state) {
     `v${String(planVersion)}`,
     `i${String(state?.selfReview?.iteration ?? '?')}`,
     `f${String(findings)}`,
-    `o${String(obligation?.obligationId ?? '-')}`,
+    `o${String(obligation?.obligationId ?? '-')}:${String(obligation?.status ?? '-')}:${String(
+      obligation?.invocationId ?? '-',
+    )}:${String(obligation?.consumedAt ?? '-')}`,
+    `a${String(invocation?.invocationId ?? '-')}:${String(invocation?.attemptId ?? '-')}`,
   ].join('|');
 }
 

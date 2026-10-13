@@ -21,18 +21,25 @@ export function isGovernedTool(tool) {
   );
 }
 
+/** Parse JSONL framing explicitly: unparseable lines are trust defects, not noise. */
+export function parseTranscript(output) {
+  const events = [];
+  const framingLosses = [];
+  const lines = String(output).split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === '') continue;
+    try {
+      events.push(JSON.parse(line));
+    } catch {
+      framingLosses.push(index + 1);
+    }
+  }
+  return { events, framingLosses };
+}
+
 export function eventsOf(output) {
-  return String(output)
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
+  return parseTranscript(output).events;
 }
 
 /** Parse one governed tool payload; `unreadable` is a trust defect, not "no denial". */
@@ -66,12 +73,17 @@ export function governedToolEvents(output) {
   return toolUseEvents(output).filter((event) => isGovernedTool(event.tool));
 }
 
-/** Trust boundary: governed output that cannot be parsed can never prove success. */
+/** Trust boundary: framing losses or unparseable governed output can never prove success. */
 export function transcriptTrust(output) {
+  const { framingLosses } = parseTranscript(output);
   const unreadable = governedToolEvents(output)
     .filter((event) => event.payload.kind === 'unreadable')
     .map((event) => ({ index: event.index, tool: event.tool }));
-  return { readable: unreadable.length === 0, unreadable };
+  return {
+    readable: framingLosses.length === 0 && unreadable.length === 0,
+    framingLosses,
+    unreadable,
+  };
 }
 
 /** Ordered denial occurrences with the tool that produced them (when named). */
@@ -198,7 +210,8 @@ export function assertExpectedDenial(output, expectedCode) {
   const trust = transcriptTrust(output);
   if (!trust.readable) {
     throw new Error(
-      `transcript contains ${trust.unreadable.length} unreadable governed tool output(s); ` +
+      `transcript is not trustworthy (${trust.framingLosses.length} framing loss(es), ` +
+        `${trust.unreadable.length} unreadable governed tool output(s)); ` +
         `cannot certify the expected denial ${expectedCode}`,
     );
   }

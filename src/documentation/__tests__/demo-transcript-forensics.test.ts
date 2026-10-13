@@ -111,13 +111,26 @@ describe('demo transcript forensics', () => {
       expect(trust.unreadable).toHaveLength(1);
     });
 
+    it('flags a damaged JSONL frame even when a valid expected denial is present', () => {
+      const out = transcript(
+        toolUse('flowguard_plan', compact(denial('PROOFGRAPH_RISK_TRIGGER_UNCOVERED'))),
+        '{"type":"tool_use","part":{', // damaged outer frame
+      );
+      const trust = transcriptTrust(out);
+      expect(trust.readable).toBe(false);
+      expect(trust.framingLosses).toEqual([2]);
+      expect(() => assertExpectedDenial(out, 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED')).toThrow(
+        /not trustworthy/i,
+      );
+    });
+
     it('refuses to certify an expected denial when governed output is unreadable', () => {
       const out = transcript(
         toolUse('flowguard_plan', compact(denial('PROOFGRAPH_RISK_TRIGGER_UNCOVERED'))),
         toolUse('flowguard_plan', 'not-json-at-all'),
       );
       expect(() => assertExpectedDenial(out, 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED')).toThrow(
-        /transcript/i,
+        /not trustworthy/i,
       );
     });
 

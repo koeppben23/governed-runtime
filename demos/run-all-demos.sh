@@ -19,6 +19,15 @@ if [[ -e "$ROOT" ]]; then
 fi
 mkdir -p "$ROOT/.tooling"
 
+# 0. Exclusive run lease BEFORE any build: two wrappers must never mutate the
+#    same checkout or build artifacts concurrently. Released on every exit.
+LEASE="$(node "$REPO/demos/lib/run-lease.mjs" acquire --repo "$REPO")" || exit 1
+echo "lease: $LEASE"
+release_lease() {
+  node "$REPO/demos/lib/run-lease.mjs" release --repo "$REPO" >/dev/null 2>&1 || true
+}
+trap release_lease EXIT INT TERM
+
 # 1. Pinned npm 10: the installer engines require npm ^10 and user configs may
 #    set engine-strict=true, so the ambient npm major must be satisfied.
 if [[ "$(npm --version | cut -d. -f1)" != "10" ]]; then
@@ -39,19 +48,24 @@ collect() {
   if [[ "$code" -eq 1 ]]; then STATUS=1; elif [[ "$code" -eq 2 && "$STATUS" -eq 0 ]]; then STATUS=2; fi
 }
 
-# 3. Mandatory dry-run gate: build the product tarball once for the canary
-#    install, then verify pins, npm compatibility, isolation and the provider.
+# 3. Mandatory dry-run gate: build ONE immutable product tarball, verify its
+#    bytes, canary-install exactly that artifact, then hand the SAME tarball and
+#    the declared product identity to every runner.
 (cd "$REPO" && npm run build >/dev/null && npm run pack:checksums >/dev/null)
 VERSION="$(node -e "process.stdout.write(require('$REPO/package.json').version)")"
 GATE_TARBALL="$REPO/flowguard-core-$VERSION.tgz"
 GATE_SHA="$(cd "$REPO" && git rev-parse HEAD)"
+GATE_DIGEST="$(shasum -a 256 "$GATE_TARBALL" | awk '{print $1}')"
+echo "product tarball: $GATE_TARBALL"
+echo "product sha256:  $GATE_DIGEST"
+echo "product gitSha:  $GATE_SHA"
 "${RUN[@]}" "$REPO/demos/lib/environment-gate.mjs" --root "$ROOT/gate" --repo "$REPO" \
   --model "$MODEL" --tarball "$GATE_TARBALL" --canary-install || exit 1
 
 run_demo() {
   local name="$1"; shift
   echo "=== demo: $name"
-  "${RUN[@]}" "$@" --product-sha "$GATE_SHA"; local code=$?
+  "${RUN[@]}" "$@" --tarball "$GATE_TARBALL" --product-sha "$GATE_SHA"; local code=$?
   echo "=== demo: $name exit=$code"
   collect "$code"
 }
