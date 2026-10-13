@@ -18,8 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review-stage subagent blocks (`SUBAGENT_UNABLE_TO_REVIEW`,
   `SUBAGENT_FINDINGS_VERDICT_MISMATCH`, capture/consistency codes) are
   classified as `NOT_VERIFIED` for positive proofs, an unresolved recoverable
-  denial (including plan/implement call-shape guards) is `NOT_VERIFIED` rather
-  than a contract violation, and the specialized runners
+  denial (including plan/implement call-shape guards and admissibility guards)
+  is `NOT_VERIFIED` rather
+  than a contract violation, `flowguard_help` text output is recognized as
+  by-design, and the specialized runners
   drive the persisted plan gate with bounded state-driven continuations instead
   of a single `/plan` turn. Claim and risk controls share one full proof oracle
   (positive and adversarial assertion, distinct attempts, role-specific

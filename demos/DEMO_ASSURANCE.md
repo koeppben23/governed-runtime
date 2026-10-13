@@ -126,7 +126,9 @@ controlled A/B run with the SAME fixed harness.
 ## Contract for the runners
 
 - Recovery evidence is occurrence-bound; unreadable governed output never
-  grounds a success claim.
+  grounds a success claim. `flowguard_help` is the single governed tool whose
+  by-design output is human-readable text (verified against real transcripts),
+  so it is not a trust defect; every action tool must return a JSON envelope.
 - `review_exhausted` is a governed terminal outcome. Positive proofs become
   `NOT_VERIFIED`; only the deliberately uncovered old replan control may use
   `/override-approve`, and only with `--allow-old-plan-override`.
@@ -137,7 +139,8 @@ controlled A/B run with the SAME fixed harness.
 - A correctly refused negative control is `CONTROL_PASSED`, never `COMPLETE`.
 - An unresolved recoverable denial — including plan/implement call-shape guards
   such as `INVALID_PLAN_TOOL_SEQUENCE`, `INVALID_IMPLEMENT_TOOL_SEQUENCE`,
-  `PLAN_APPROVE_WITH_TEXT` and `PLAN_SUBMISSION_REQUIRED` — is `NOT_VERIFIED`
+  `PLAN_APPROVE_WITH_TEXT` and `PLAN_SUBMISSION_REQUIRED`, and the admissibility
+  guards `COMMAND_NOT_ALLOWED` / `WRONG_PHASE` — is `NOT_VERIFIED`
   with its occurrence evidence preserved. `FAILED` is reserved for a proven
   wrong denial code, contradictory evidence or an unexpected unknown block.
 

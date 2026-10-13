@@ -344,6 +344,15 @@ describe('demo transcript forensics', () => {
       expect(transcriptTrust(out).readable).toBe(true);
     });
 
+    it('accepts the by-design text output of flowguard_help without losing strictness', () => {
+      const help = transcript(
+        toolUse('flowguard_help', '## Status\n\n**Phase:** Architecture in progress\n'),
+      );
+      expect(transcriptTrust(help).readable).toBe(true);
+      const actionToolText = transcript(toolUse('flowguard_plan', 'not-an-envelope'));
+      expect(transcriptTrust(actionToolText).readable).toBe(false);
+    });
+
     it('accepts a terminal block only when a structured re-arm follows later', () => {
       const rearm = {
         reviewDispatch: { required: true, completed: false },

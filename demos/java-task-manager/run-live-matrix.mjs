@@ -321,6 +321,10 @@ export const RECOVERABLE_DENIAL_CODES = new Set([
   'INVALID_IMPLEMENT_TOOL_SEQUENCE',
   'PLAN_APPROVE_WITH_TEXT',
   'PLAN_SUBMISSION_REQUIRED',
+  // Admissibility guards: a command outside the current phase is corrected by
+  // using an allowed command for the persisted phase.
+  'COMMAND_NOT_ALLOWED',
+  'WRONG_PHASE',
 ]);
 
 /**

@@ -13,6 +13,14 @@
 
 const GOVERNED_TOOL_PREFIX = 'flowguard_';
 const GOVERNED_TOOL_EXACT = new Set(['task']);
+/**
+ * Governed tools whose output is human-readable text BY DESIGN. Verified
+ * systematically against real transcripts: flowguard_help is the only one;
+ * every other governed tool returns a JSON contract envelope. Text from these
+ * tools can neither ground a success/recovery claim nor carry an error
+ * envelope, so it is not a trust defect.
+ */
+const GOVERNED_TEXT_TOOLS = new Set(['flowguard_help']);
 
 export function isGovernedTool(tool) {
   return (
@@ -77,6 +85,7 @@ export function governedToolEvents(output) {
 export function transcriptTrust(output) {
   const { framingLosses } = parseTranscript(output);
   const unreadable = governedToolEvents(output)
+    .filter((event) => !GOVERNED_TEXT_TOOLS.has(event.tool))
     .filter((event) => event.payload.kind === 'unreadable')
     .map((event) => ({ index: event.index, tool: event.tool }));
   return {
