@@ -339,7 +339,10 @@ async function runArchiveVerification(
     findings,
   );
   if (!prepared) {
-    await fs.rm(extractionRoot, { recursive: true, force: true });
+    // Capture the snapshot digest BEFORE the extraction root is discarded, so
+    // a blocked package is still identifiable as an unverifiable package
+    // rather than reported as missing on platforms where tar inspection
+    // rejects tampered bytes before extraction.
     let packageSha256: string | null = null;
     if (capture) {
       try {
@@ -348,6 +351,7 @@ async function runArchiveVerification(
         packageSha256 = null;
       }
     }
+    await fs.rm(extractionRoot, { recursive: true, force: true });
     return {
       verification: buildVerificationResult(findings, null),
       capture: capture ? emptyCapture(packageSha256) : emptyCapture(),

@@ -12,6 +12,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { archiveCompletionExport, archiveSession } from './archive.js';
 import { archiveFileName } from './archive-layout.js';
 import { verifyCompletionExport, verifyCompletionExportCaptured } from './archive-verify-chain.js';
@@ -315,7 +317,7 @@ describe('adapters/workspace/archive-read-verified', () => {
       // session; the manifest/session binding check is defense in depth.
       const read = await readVerifiedCompletionExport(fixture.fingerprint, otherSessionId);
       expect(read.kind).toBe('blocked');
-      if (read.kind === 'blocked') expect(read.code).toBe('PACKAGE_MISSING');
+      if (read.kind === 'blocked') expect(read.code).toBe('PACKAGE_UNVERIFIABLE');
     });
   });
 
@@ -330,6 +332,43 @@ describe('adapters/workspace/archive-read-verified', () => {
         );
         expect(read.manifest.rawIncluded).toBe(true);
         expect(read.manifest.redactionMode).toBe('none');
+      }
+    });
+
+    it('reports a snapshot that fails the member gate as unverifiable, not missing', async () => {
+      const fixture = await createExportFixture();
+      const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'iso-member-gate-'));
+      try {
+        await promisify(execFile)('tar', ['xzf', fixture.exportPath, '-C', staging], {
+          windowsHide: true,
+        });
+        await fs.writeFile(path.join(staging, 'outside.txt'), 'not a session member\n', 'utf8');
+        const original = await fs.readFile(fixture.exportPath);
+        await promisify(execFile)(
+          'tar',
+          [
+            '--format=ustar',
+            '-czf',
+            fixture.exportPath,
+            '-C',
+            staging,
+            fixture.sessionId,
+            'outside.txt',
+          ],
+          { windowsHide: true },
+        );
+        const digest = await hashFile(fixture.exportPath);
+        await fs.writeFile(
+          `${fixture.exportPath}.sha256`,
+          `${digest}  ${path.basename(fixture.exportPath)}\n`,
+        );
+
+        const read = await readVerifiedCompletionExport(fixture.fingerprint, fixture.sessionId);
+        expect(read.kind).toBe('blocked');
+        if (read.kind === 'blocked') expect(read.code).toBe('PACKAGE_UNVERIFIABLE');
+        expect(original.length).toBeGreaterThan(0);
+      } finally {
+        await fs.rm(staging, { recursive: true, force: true });
       }
     });
   });
