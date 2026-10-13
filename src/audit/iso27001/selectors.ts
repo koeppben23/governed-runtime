@@ -36,7 +36,7 @@ import type { LiveExportBinding, VerifiedEvidenceSnapshot } from './evidence.js'
  * These are report findings, NOT runtime blocked-reason codes: they never gate
  * a workflow and deliberately do not live in the reason registry.
  */
-export const ISO27001_FINDING_CODES = [
+const ISO27001_FINDING_CODES = [
   'PLAN_ABSENT',
   'APPROVAL_CERTIFICATE_MISSING',
   'APPROVAL_CERTIFICATE_NOT_CURRENT',
@@ -78,7 +78,7 @@ export const ISO27001_FINDING_CODES = [
   'APPLICABILITY_ASSERTION_UNVERIFIED',
 ] as const;
 export type Iso27001FindingCode = (typeof ISO27001_FINDING_CODES)[number];
-export const Iso27001FindingCodeSchema = z.enum(ISO27001_FINDING_CODES);
+const Iso27001FindingCodeSchema = z.enum(ISO27001_FINDING_CODES);
 
 // ─── Selector Vocabulary ──────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ export type EvidenceSelector = z.infer<typeof EvidenceSelectorSchema>;
 export const STATE_MEMBER = 'state/session-state.json';
 export const AUDIT_MEMBER = 'audit/audit.jsonl';
 
-export const SelectorStatusSchema = z.enum([
+const SelectorStatusSchema = z.enum([
   'EVIDENCE_LINKED_VERIFIED',
   'EVIDENCE_PRESENT_UNVERIFIED',
   'EVIDENCE_MISSING',
@@ -162,7 +162,7 @@ export const SelectorFindingSchema = z
   .strict();
 export type SelectorFinding = z.infer<typeof SelectorFindingSchema>;
 
-export const EvidenceRefSchema = z
+const EvidenceRefSchema = z
   .object({
     source: z.enum(['state', 'audit', 'manifest', 'live_state', 'live_audit']),
     sessionId: z.string().min(1),

@@ -62,11 +62,3 @@ export {
 // ── Archive ──────────────────────────────────────────────────────────────────
 export { archiveSession } from './archive.js';
 export { verifyArchive, verifyCompletionExport } from './archive-verify-chain.js';
-export {
-  readVerifiedCompletionExport,
-  describeBlockedExport,
-  type VerifiedCompletionExportRead,
-  type VerifiedCompletionExport,
-  type BlockedCompletionExport,
-  type VerifiedExportBlockCode,
-} from './archive-read-verified.js';

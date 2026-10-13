@@ -30,13 +30,13 @@ import {
 } from './control-catalog.js';
 import { EvidenceSelectorSchema } from './selectors.js';
 
-export const ISO27001_MAPPING_SCHEMA_VERSION = 'iso27001-evidence-mapping.v1' as const;
+const ISO27001_MAPPING_SCHEMA_VERSION = 'iso27001-evidence-mapping.v1' as const;
 
 /** Bounded identifier for organization-owned references. */
 const OrganizationIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** Annex A control reference — edition and annex are part of the identity. */
-export const AnnexAControlRefSchema = z
+const AnnexAControlRefSchema = z
   .object({
     namespace: z.literal(ISO27001_ANNEX_A_NAMESPACE),
     controlId: z.enum(ANNEX_A_CONTROL_IDS),
@@ -44,7 +44,7 @@ export const AnnexAControlRefSchema = z
   .strict();
 
 /** Organization control reference — a separate namespace, never Annex A. */
-export const OrganizationControlRefSchema = z
+const OrganizationControlRefSchema = z
   .object({
     namespace: z.literal('organization'),
     controlId: z.string().regex(OrganizationIdPattern),
@@ -71,7 +71,7 @@ export const SoaReferenceSchema = z
   .strict();
 export type SoaReference = z.infer<typeof SoaReferenceSchema>;
 
-export const MappingRuleSchema = z
+const MappingRuleSchema = z
   .object({
     ruleId: z.string().regex(OrganizationIdPattern),
     controlRef: ControlRefSchema,

@@ -6,7 +6,6 @@
  */
 
 import {
-  CURRENT_IMPL_RISK_ASSESSMENT,
   FIXED_TIME,
   IMPL_EVIDENCE,
   makePlanApprovalCertificate,
@@ -33,10 +32,10 @@ import {
 } from './evidence.js';
 import type { SelectorContext } from './selectors.js';
 
-export const TEST_PACKAGE_SHA256 = 'a'.repeat(64);
-export const TEST_SIDECAR_SHA256 = 'a'.repeat(64);
-export const TEST_CONTENT_DIGEST = 'b'.repeat(64);
-export const TEST_OBLIGATION_ID = '00000000-0000-4000-8000-000000000765';
+const TEST_PACKAGE_SHA256 = 'a'.repeat(64);
+const TEST_SIDECAR_SHA256 = 'a'.repeat(64);
+const TEST_CONTENT_DIGEST = 'b'.repeat(64);
+const TEST_OBLIGATION_ID = '00000000-0000-4000-8000-000000000765';
 export const TEST_ATTEMPT_ID = '00000000-0000-4000-8000-000000000766';
 
 /**
@@ -278,5 +277,3 @@ export function makeSelectorContext(
   }
   return { snapshot, liveBinding, receipts, receiptsReadable };
 }
-
-export { CURRENT_IMPL_RISK_ASSESSMENT };

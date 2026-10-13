@@ -71,10 +71,7 @@ export function planFields(snapshot: VerifiedEvidenceSnapshot, ref: EvidenceRef)
   return { ...ref, planVersion: plan.current.planVersion, planDigest: plan.current.digest };
 }
 
-export function implementationFields(
-  snapshot: VerifiedEvidenceSnapshot,
-  ref: EvidenceRef,
-): EvidenceRef {
+function implementationFields(snapshot: VerifiedEvidenceSnapshot, ref: EvidenceRef): EvidenceRef {
   const implementation = snapshot.state.implementation;
   if (implementation === null) return ref;
   return {

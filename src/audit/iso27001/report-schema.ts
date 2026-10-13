@@ -17,17 +17,12 @@
 import { z } from 'zod';
 import { ISO27001_FRAMEWORK_ID } from './control-catalog.js';
 import { ControlRefSchema, SoaReferenceSchema } from './mapping-schema.js';
-import {
-  EvidenceSelectorSchema,
-  Iso27001FindingCodeSchema,
-  SelectorFindingSchema,
-  SelectorResolutionSchema,
-} from './selectors.js';
+import { SelectorFindingSchema, SelectorResolutionSchema } from './selectors.js';
 
 export const ISO27001_REPORT_SCHEMA_VERSION = 'iso27001-evidence-report.v1' as const;
 
 /** Per-rule technical evidence status. */
-export const RuleStatusSchema = z.enum([
+const RuleStatusSchema = z.enum([
   'EVIDENCE_LINKED_VERIFIED',
   'EVIDENCE_PRESENT_UNVERIFIED',
   'EVIDENCE_MISSING',
@@ -39,7 +34,7 @@ export type RuleStatus = z.infer<typeof RuleStatusSchema>;
  * Per-control aggregate. `NOT_MAPPED` is informational: the control is in the
  * candidate catalog but the organization mapping contains no rule for it.
  */
-export const ControlStatusSchema = z.enum([
+const ControlStatusSchema = z.enum([
   'EVIDENCE_LINKED_VERIFIED',
   'EVIDENCE_PRESENT_UNVERIFIED',
   'EVIDENCE_MISSING',
@@ -54,7 +49,7 @@ export type ControlStatus = z.infer<typeof ControlStatusSchema>;
  * deliberately absent from the vocabulary — asserted exclusions stay
  * `not_verified` and can never reach a verified rule status).
  */
-export const ApplicabilityReportSchema = z
+const ApplicabilityReportSchema = z
   .object({
     assertion: z.enum(['asserted_applicable', 'asserted_excluded', 'not_asserted']),
     verification: z.literal('not_verified'),
@@ -62,7 +57,7 @@ export const ApplicabilityReportSchema = z
   .strict();
 export type ApplicabilityReport = z.infer<typeof ApplicabilityReportSchema>;
 
-export const RuleReportSchema = z
+const RuleReportSchema = z
   .object({
     ruleId: z.string().min(1).max(64),
     controlRef: ControlRefSchema,
@@ -76,7 +71,7 @@ export const RuleReportSchema = z
   .strict();
 export type RuleReport = z.infer<typeof RuleReportSchema>;
 
-export const ControlReportSchema = z
+const ControlReportSchema = z
   .object({
     controlRef: ControlRefSchema,
     /** Short catalog name for Annex A controls; null for organization controls. */
@@ -88,7 +83,7 @@ export const ControlReportSchema = z
   .strict();
 export type ControlReport = z.infer<typeof ControlReportSchema>;
 
-export const EvidencePackageReportSchema = z
+const EvidencePackageReportSchema = z
   .object({
     sessionId: z.string().min(1),
     fingerprint: z.string().min(1),
@@ -120,11 +115,11 @@ export const ISO27001_LIMITATION_CODES = [
   'ISO_27002_IS_IMPLEMENTATION_GUIDANCE_NOT_NORM',
   'SINGLE_COMPLETION_EXPORT_ONLY',
 ] as const;
-export const LimitationCodeSchema = z.enum(ISO27001_LIMITATION_CODES);
+const LimitationCodeSchema = z.enum(ISO27001_LIMITATION_CODES);
 export type LimitationCode = z.infer<typeof LimitationCodeSchema>;
 
 /** Explicit accounting of the owning work items referenced by the issue. */
-export const UnresolvedImpactSchema = z
+const UnresolvedImpactSchema = z
   .object({
     reference: z.string().min(1).max(64),
     status: z.enum(['resolved_on_baseline', 'open', 'parked']),
@@ -184,7 +179,3 @@ export const Iso27001EvidenceReportSchema = z
   })
   .strict();
 export type Iso27001EvidenceReport = z.infer<typeof Iso27001EvidenceReportSchema>;
-
-/** Finding codes that may appear in rule-level findings. */
-export const RuleFindingCodeSchema = Iso27001FindingCodeSchema;
-export { EvidenceSelectorSchema };
