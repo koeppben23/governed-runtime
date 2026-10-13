@@ -14,6 +14,7 @@ import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
 import {
   authorizedCriticalPlanClaimIds as authorizedCriticalPlanClaimIdsOf,
+  hasCurrentPlanApprovalCertificate,
   type AuthorizedCriticalPlanClaimIds,
   type PlanApprovalContext,
   type PlanClaimAuthority,
@@ -57,6 +58,21 @@ export function authorizedCriticalPlanClaimIds(
   state: SessionState,
 ): AuthorizedCriticalPlanClaimIds {
   return authorizedCriticalPlanClaimIdsOf(
+    planClaimAuthorityOfState(state),
+    planApprovalContextOf(state),
+  );
+}
+
+/**
+ * Whether the session's current plan carries a current, session- and
+ * policy-bound approval certificate.
+ *
+ * This is the only state-level boolean entry point: the plan-record shape is
+ * converted to the certificate authority here, so callers never rebuild the
+ * bridge (or a weaker context) themselves.
+ */
+export function hasCurrentPlanApprovalCertificateForState(state: SessionState): boolean {
+  return hasCurrentPlanApprovalCertificate(
     planClaimAuthorityOfState(state),
     planApprovalContextOf(state),
   );

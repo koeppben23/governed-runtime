@@ -10,6 +10,7 @@
  * - archive-files.ts             — internal filesystem helpers shared by archive build and verification
  * - archive-verify-manifest.ts   — file-inventory and digest verification
  * - archive-verify-chain.ts      — audit-chain, timestamp, content-digest verification (owns verifyArchive)
+ * - archive-read-verified.ts     — verified-snapshot reader for read-only evidence projections
  *
  * All existing imports from "./workspace" or "../adapters/workspace" resolve
  * to this barrel unchanged because TypeScript resolves directory imports to index.ts.

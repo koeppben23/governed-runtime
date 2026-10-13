@@ -1,0 +1,491 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "flowguardSessionId": "00000000-0000-4000-8000-000000000001",
+  "schemaVersion": "v11",
+  "assuranceEpoch": "assurance-epoch.v3",
+  "stateDigestFormat": "state-digest.v2",
+  "runtimeLease": null,
+  "auditChainFormat": "audit-chain.v3",
+  "phase": "EXPORT_READY",
+  "binding": {
+    "hostSessionId": "ses_iso27001_demo_session_0001",
+    "worktree": "__DEMO_WORKTREE__",
+    "fingerprint": "341e1252988fa1ceaa0ec3ee",
+    "resolvedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "ticket": {
+    "text": "Fix the auth bug in login.ts",
+    "digest": "36f24774caf30199f4c7d48f620813e5c6a58a169d8b9c7d5f7e41dee14b0b00",
+    "source": "user",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "riskDeclaration": {
+      "kind": "absent"
+    }
+  },
+  "architecture": null,
+  "plan": {
+    "current": {
+      "body": "## Plan\n1. Fix auth\n2. Add tests",
+      "digest": "ccdbbfa314b9ebf6bf3d7a4abb7410521d6b66762034dd533313eb68b3906399",
+      "sections": [
+        "Plan"
+      ],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "revisionId": "00000000-0000-4000-8000-000000000001",
+      "recordDigest": "b3f712024727449c71062736ed7676bfdddaada70487e252c8013f581be61e2d",
+      "planVersion": 1,
+      "supersedesRecordDigest": null,
+      "originatingReviewObligationId": null,
+      "revisionReason": null,
+      "lineageStatus": "verified"
+    },
+    "history": [],
+    "reviewFindings": [],
+    "reviewCompletion": "pending",
+    "approvalCertificate": {
+      "schemaVersion": "plan-approval-certificate.v1",
+      "flow": "plan",
+      "authorityDigest": "ccdbbfa314b9ebf6bf3d7a4abb7410521d6b66762034dd533313eb68b3906399",
+      "claimDeclarationsDigest": "a8a7d8dd1a6de17299d1b4e81af752ab099ef29a6439462d3fab7810cd350b05",
+      "decisionAttestationDigest": "c5d6d0c9de0e4fb4d498700dbbad630722a96e74d7112627acc7c4caebc0413c",
+      "approvedAt": "2026-01-01T00:00:00.000Z",
+      "certificateId": "c16df4ed-ade3-413a-828b-59a7ed6b037a",
+      "planVersion": 1,
+      "planRecordDigest": "b3f712024727449c71062736ed7676bfdddaada70487e252c8013f581be61e2d",
+      "reviewBinding": {
+        "kind": "current_review",
+        "reviewObligationId": "00000000-0000-4000-8000-000000000765",
+        "reviewEvidenceDigest": "review-evidence-digest",
+        "reviewedSubjectDigest": "ccdbbfa314b9ebf6bf3d7a4abb7410521d6b66762034dd533313eb68b3906399"
+      },
+      "approvalAttestation": {
+        "kind": "explicit_decision",
+        "decision": {
+          "verdict": "approve",
+          "rationale": "LGTM",
+          "decidedAt": "2026-01-01T00:00:00.000Z",
+          "decisionIdentity": {
+            "actorId": "reviewer-1",
+            "actorEmail": "reviewer@test.com",
+            "actorSource": "env",
+            "actorAssurance": "best_effort"
+          }
+        },
+        "flowguardSessionId": "00000000-0000-4000-8000-000000000001",
+        "bindingDigest": "ed25ab1247f23262a37d4127be51d2a1dcf69e0efe1f5d53a661376504c89f95",
+        "policyHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "policyHashVersion": "policy-digest.v4"
+      }
+    }
+  },
+  "selfReview": {
+    "iteration": 1,
+    "reviewCycle": 1,
+    "maxIterations": 3,
+    "prevDigest": null,
+    "currDigest": "ccdbbfa314b9ebf6bf3d7a4abb7410521d6b66762034dd533313eb68b3906399",
+    "revisionDelta": "none",
+    "verdict": "accept"
+  },
+  "validation": [
+    {
+      "checkId": "test",
+      "passed": true,
+      "detail": "All tests pass",
+      "executedAt": "2026-01-01T00:00:00.000Z",
+      "kind": "test",
+      "candidateId": "vc_198de81d965cb8cf08f42aac223173eb915d3fcee35aaa21e812341804051600",
+      "command": "npm test",
+      "exitCode": 0,
+      "executionMs": 1200,
+      "outputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "timedOut": false,
+      "outcome": "supported"
+    },
+    {
+      "checkId": "lint",
+      "passed": true,
+      "detail": "No lint errors",
+      "executedAt": "2026-01-01T00:00:00.000Z",
+      "kind": "lint",
+      "candidateId": "vc_c267ec001c6df83970ddb8ab22c9d9839a7f9fad0c3cab9abb70ae4863095c99",
+      "command": "npm run lint",
+      "exitCode": 0,
+      "executionMs": 800,
+      "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "timedOut": false,
+      "outcome": "supported"
+    }
+  ],
+  "validationAttempts": [
+    {
+      "attemptId": "00000000-0000-4000-8000-000000000766",
+      "scope": "implementation",
+      "implementationId": "00000000-0000-4000-8000-0000000000aa",
+      "implementationDigest": "digest-of-impl",
+      "executionObservation": {
+        "executionObservedStateDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "preCommitStateDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "result": {
+        "checkId": "test",
+        "passed": true,
+        "detail": "fixture",
+        "executedAt": "2026-01-01T00:00:00.000Z",
+        "kind": "test",
+        "command": "npm test",
+        "exitCode": 0,
+        "executionMs": 1000,
+        "outputDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "timedOut": false,
+        "outcome": "supported",
+        "assertionExtraction": {
+          "status": "extracted",
+          "attemptId": "00000000-0000-4000-8000-000000000766",
+          "providerId": "vitest",
+          "format": "vitest_json",
+          "bindingCapability": "assertion",
+          "reportDigests": [
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          ],
+          "assertions": [
+            {
+              "assertion": {
+                "providerId": "vitest",
+                "localId": "auth.spec.ts::rejects-invalid-token"
+              },
+              "providerId": "vitest",
+              "status": "passed",
+              "testName": "security regression auth.spec.ts::rejects-invalid-token"
+            }
+          ],
+          "summary": {
+            "assertionCount": 1,
+            "passedCount": 1,
+            "failedCount": 0,
+            "erroredCount": 0,
+            "skippedCount": 0,
+            "suiteInfrastructureError": false
+          }
+        }
+      }
+    },
+    {
+      "attemptId": "00000000-0000-4000-8000-000000000771",
+      "scope": "implementation",
+      "implementationId": "00000000-0000-4000-8000-0000000000aa",
+      "implementationDigest": "digest-of-impl",
+      "executionObservation": {
+        "executionObservedStateDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "preCommitStateDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "result": {
+        "checkId": "integration",
+        "passed": true,
+        "detail": "fixture",
+        "executedAt": "2026-01-01T00:00:00.000Z",
+        "kind": "test",
+        "command": "npm test",
+        "exitCode": 0,
+        "executionMs": 1000,
+        "outputDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "timedOut": false,
+        "outcome": "supported",
+        "assertionExtraction": {
+          "status": "extracted",
+          "attemptId": "00000000-0000-4000-8000-000000000771",
+          "providerId": "vitest",
+          "format": "vitest_json",
+          "bindingCapability": "assertion",
+          "reportDigests": [
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          ],
+          "assertions": [
+            {
+              "assertion": {
+                "providerId": "vitest",
+                "localId": "legacy.spec.ts::deprecated-path"
+              },
+              "providerId": "vitest",
+              "status": "skipped",
+              "testName": "security regression legacy.spec.ts::deprecated-path"
+            }
+          ],
+          "summary": {
+            "assertionCount": 1,
+            "passedCount": 0,
+            "failedCount": 0,
+            "erroredCount": 0,
+            "skippedCount": 1,
+            "suiteInfrastructureError": false
+          }
+        }
+      }
+    },
+    {
+      "attemptId": "00000000-0000-4000-8000-000000000772",
+      "scope": "implementation",
+      "implementationId": "00000000-0000-4000-8000-0000000000aa",
+      "implementationDigest": "digest-of-impl",
+      "executionObservation": {
+        "executionObservedStateDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "preCommitStateDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "result": {
+        "checkId": "regression",
+        "passed": true,
+        "detail": "fixture",
+        "executedAt": "2026-01-01T00:00:00.000Z",
+        "kind": "test",
+        "command": "npm test",
+        "exitCode": 0,
+        "executionMs": 1000,
+        "outputDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "timedOut": false,
+        "outcome": "supported",
+        "assertionExtraction": {
+          "status": "extracted",
+          "attemptId": "00000000-0000-4000-8000-000000000772",
+          "providerId": "vitest",
+          "format": "vitest_json",
+          "bindingCapability": "aggregate",
+          "reportDigests": [
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          ],
+          "assertions": [
+            {
+              "assertion": {
+                "providerId": "vitest",
+                "localId": "regression.spec.ts::suite-entry"
+              },
+              "providerId": "vitest",
+              "status": "passed",
+              "testName": "security regression regression.spec.ts::suite-entry"
+            }
+          ],
+          "summary": {
+            "assertionCount": 1,
+            "passedCount": 1,
+            "failedCount": 0,
+            "erroredCount": 0,
+            "skippedCount": 0,
+            "suiteInfrastructureError": false
+          }
+        }
+      }
+    }
+  ],
+  "mutationAttempts": [],
+  "mutationEpisodes": [],
+  "mutationEpisodeResolutions": [],
+  "challengeResolutions": [],
+  "implValidation": [
+    {
+      "checkId": "test",
+      "passed": true,
+      "detail": "All tests pass",
+      "executedAt": "2026-01-01T00:00:00.000Z",
+      "kind": "test",
+      "candidateId": "vc_198de81d965cb8cf08f42aac223173eb915d3fcee35aaa21e812341804051600",
+      "command": "npm test",
+      "exitCode": 0,
+      "executionMs": 1200,
+      "outputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "timedOut": false,
+      "outcome": "supported"
+    },
+    {
+      "checkId": "lint",
+      "passed": true,
+      "detail": "No lint errors",
+      "executedAt": "2026-01-01T00:00:00.000Z",
+      "kind": "lint",
+      "candidateId": "vc_c267ec001c6df83970ddb8ab22c9d9839a7f9fad0c3cab9abb70ae4863095c99",
+      "command": "npm run lint",
+      "exitCode": 0,
+      "executionMs": 800,
+      "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "timedOut": false,
+      "outcome": "supported"
+    }
+  ],
+  "implementation": {
+    "implementationId": "00000000-0000-4000-8000-0000000000aa",
+    "changedFiles": [
+      "src/auth.ts",
+      "src/auth.test.ts"
+    ],
+    "domainFiles": [
+      "src/auth.ts"
+    ],
+    "digest": "digest-of-impl",
+    "executedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "implementationRiskAssessment": {
+    "computedMinimumTaskClass": "STANDARD",
+    "effectiveTaskClass": "STANDARD",
+    "declaredTaskClass": null,
+    "declarationKind": "absent",
+    "ticketDigest": null,
+    "touchedSurfaces": [
+      "src/auth.ts",
+      "src/auth.test.ts"
+    ],
+    "riskTriggers": [
+      "ceremony_only"
+    ],
+    "assessedFrom": "implementation_changed_files",
+    "assessedFileCount": 2,
+    "implementationDigest": "digest-of-impl"
+  },
+  "implementationRework": null,
+  "reducedCeremony": null,
+  "implReview": {
+    "iteration": 1,
+    "reviewCycle": 1,
+    "maxIterations": 3,
+    "prevDigest": null,
+    "currDigest": "digest-of-impl",
+    "revisionDelta": "none",
+    "verdict": "accept",
+    "executedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "reviewCycles": {
+    "plan": 1,
+    "architecture": 1,
+    "implementation": 1
+  },
+  "reviewDecision": {
+    "verdict": "approve",
+    "rationale": "LGTM",
+    "decidedAt": "2026-01-01T00:00:00.000Z",
+    "decisionIdentity": {
+      "actorId": "reviewer-1",
+      "actorEmail": "reviewer@test.com",
+      "actorSource": "env",
+      "actorAssurance": "best_effort"
+    }
+  },
+  "reviewReportPath": null,
+  "peerReviewEvidence": [],
+  "implReviewFindings": [],
+  "peerReviewFindings": [],
+  "nextAdrNumber": 1,
+  "activeProfile": null,
+  "activeChecks": [
+    "test",
+    "lint"
+  ],
+  "implementationBaseline": {
+    "dirtyFiles": null,
+    "capturedAt": "2026-01-01T00:00:00.000Z",
+    "controlPlaneMarker": "test-control-plane-marker"
+  },
+  "proofGraph": {
+    "version": "proofgraph.v2",
+    "claims": [],
+    "evaluatedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "policySnapshot": {
+    "mode": "team",
+    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hashVersion": "policy-digest.v4",
+    "resolvedAt": "2026-01-01T00:00:00.000Z",
+    "requestedMode": "team",
+    "effectiveGateBehavior": "human_gated",
+    "requireHumanGates": true,
+    "reviewBudget": {
+      "plan": 3,
+      "architecture": 3,
+      "implementation": 3
+    },
+    "maxIncoherentReviewerCaptureRetries": 1,
+    "maxReviewerAttempts": 1,
+    "allowSelfApproval": true,
+    "minimumActorAssuranceForApproval": "best_effort",
+    "identityProviderMode": "optional",
+    "challengePolicy": {
+      "version": "challenge-policy.v1",
+      "counts": {
+        "TRIVIAL": 0,
+        "STANDARD": 1,
+        "HIGH-RISK": 2
+      }
+    },
+    "enforceRiskClassification": false,
+    "allowReducedCeremony": false,
+    "discoveryHealth": {
+      "enforcement": "off",
+      "onDegraded": "allow",
+      "onDrift": "allow"
+    },
+    "validationEvidence": {
+      "enforcement": "off",
+      "allowNoCommands": false
+    },
+    "audit": {
+      "emitTransitions": true,
+      "emitToolCalls": true,
+      "enableChainHash": true,
+      "timestampAssurance": {
+        "enabled": false,
+        "mode": "local_only",
+        "strict": false,
+        "criticalEvents": [
+          "decision",
+          "lifecycle"
+        ],
+        "ntpServers": [
+          "pool.ntp.org"
+        ],
+        "ntpDriftThresholdMs": 30000,
+        "tsaTimeoutMs": 10000
+      }
+    },
+    "actorClassification": {
+      "flowguard_decision": "human"
+    }
+  },
+  "initiatedBy": "initiator-1",
+  "initiatedByIdentity": {
+    "actorId": "initiator-1",
+    "actorEmail": "initiator@test.com",
+    "actorSource": "env",
+    "actorAssurance": "best_effort"
+  },
+  "transition": null,
+  "pendingAuditOperations": [],
+  "error": null,
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "exportCompletionEvidence": null,
+  "pendingSystemWork": null,
+  "regulatedArchiveStatus": null,
+  "implementationBaseAuthority": {
+    "kind": "commit",
+    "repositoryIdentity": {
+      "kind": "local",
+      "rootCommitDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "objectSha": "dddddddddddddddddddddddddddddddddddddddd"
+  },
+  "verificationCandidates": [
+    {
+      "assertionCapability": "unsupported",
+      "kind": "test",
+      "command": "npm test",
+      "source": "package.json:scripts.test",
+      "confidence": "high",
+      "reason": "fixture",
+      "candidateId": "vc_198de81d965cb8cf08f42aac223173eb915d3fcee35aaa21e812341804051600"
+    },
+    {
+      "assertionCapability": "unsupported",
+      "kind": "lint",
+      "command": "npm run lint",
+      "source": "package.json:scripts.lint",
+      "confidence": "high",
+      "reason": "fixture",
+      "candidateId": "vc_c267ec001c6df83970ddb8ab22c9d9839a7f9fad0c3cab9abb70ae4863095c99"
+    }
+  ]
+}

@@ -534,17 +534,20 @@ flowguard inspect --session <id>       # Full compliance report for one session
 flowguard inspect --session <id> --json # ComplianceSummary as JSON
 flowguard inspect --upgrade-check      # Read-only pre-upgrade preflight; exits 1 when the workspace is not upgrade-ready, not a git worktree, or not initialized
 flowguard inspect --upgrade-check --json # Upgrade preflight report as JSON
+flowguard inspect --session <id> --iso27001-mapping <file> # ISO/IEC 27001:2022 evidence-to-control companion report (Markdown; opt-in)
+flowguard inspect --session <id> --iso27001-mapping <file> --json --output <file> # JSON companion report, written once
 ```
 
 **Modes:**
 
-| Mode                     | Output                                                                                                    |
-| ------------------------ | --------------------------------------------------------------------------------------------------------- |
-| List (no args)           | Session ID, event count, phase progression, last event age                                                |
-| Single session           | Check-by-check pass/fail with statistics and chain integrity                                              |
-| `--json`                 | Direct `ComplianceSummary` object from `src/audit/summary.ts`                                             |
-| `--upgrade-check`        | Workspace-scoped hard-cut preflight (blockers and warnings); requires a resolvable, initialized workspace |
-| `--upgrade-check --json` | Structured preflight report for automation                                                                |
+| Mode                     | Output                                                                                                                                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| List (no args)           | Session ID, event count, phase progression, last event age                                                                                                                                      |
+| Single session           | Check-by-check pass/fail with statistics and chain integrity                                                                                                                                    |
+| `--json`                 | Direct `ComplianceSummary` object from `src/audit/summary.ts`                                                                                                                                   |
+| `--upgrade-check`        | Workspace-scoped hard-cut preflight (blockers and warnings); requires a resolvable, initialized workspace                                                                                       |
+| `--upgrade-check --json` | Structured preflight report for automation                                                                                                                                                      |
+| `--iso27001-mapping`     | Read-only evidence-to-control projection over the verified completion export (see [ISO/IEC 27001 mapping](./iso27001-evidence-mapping.md)); exits 2 when the package is missing or unverifiable |
 
 The `--upgrade-check` mode is part of the operator recovery path in
 [Upgrade and Rollback](./upgrade-rollback.md) (section "Operator recovery for

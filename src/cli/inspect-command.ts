@@ -24,6 +24,7 @@ import { GitError, resolveRoot } from '../adapters/git.js';
 import { verifyChain } from '../audit/integrity.js';
 import { generateComplianceSummary, type ComplianceSummary } from '../audit/summary.js';
 import { runUpgradeCheck, reportWorkspaceUnresolved } from './inspect-upgrade-check.js';
+import { runIso27001Inspect } from './inspect-iso27001.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -35,42 +36,113 @@ export interface InspectArgs {
   readonly sessionId?: string;
   readonly json: boolean;
   readonly upgradeCheck: boolean;
+  /** Organization-owned ISO/IEC 27001:2022 evidence mapping path. */
+  readonly iso27001Mapping?: string;
+  /** Optional companion-report output path (write-once). */
+  readonly output?: string;
+}
+
+interface MutableInspectArgs {
+  sessionId?: string;
+  json: boolean;
+  upgradeCheck: boolean;
+  iso27001Mapping?: string;
+  output?: string;
+}
+
+const VALUE_FLAGS = new Set(['--session', '--iso27001-mapping', '--output']);
+
+function valueFlagError(flag: string): string {
+  return flag === '--session' ? '--session requires a session ID' : `${flag} requires a file path`;
+}
+
+function assignValueFlag(args: MutableInspectArgs, flag: string, value: string): string | null {
+  if (flag === '--session') {
+    args.sessionId = value;
+    return null;
+  }
+  if (flag === '--iso27001-mapping') {
+    if (args.iso27001Mapping !== undefined) {
+      return '--iso27001-mapping may be provided only once';
+    }
+    args.iso27001Mapping = value;
+    return null;
+  }
+  if (args.output !== undefined) return '--output may be provided only once';
+  args.output = value;
+  return null;
+}
+
+function validateInspectCombinations(args: MutableInspectArgs): string | null {
+  if (args.upgradeCheck && args.sessionId !== undefined) {
+    return '--upgrade-check cannot be combined with --session';
+  }
+  if (args.iso27001Mapping !== undefined && args.upgradeCheck) {
+    return '--iso27001-mapping cannot be combined with --upgrade-check';
+  }
+  if (args.iso27001Mapping !== undefined && args.sessionId === undefined) {
+    return '--iso27001-mapping requires --session <id>';
+  }
+  if (args.output !== undefined && args.iso27001Mapping === undefined) {
+    return '--output requires --iso27001-mapping';
+  }
+  return null;
+}
+
+type ArgConsumption =
+  | { readonly kind: 'ok'; readonly nextIndex: number }
+  | { readonly kind: 'error'; readonly error: string }
+  | { readonly kind: 'help' };
+
+function consumeInspectArg(
+  argv: string[],
+  index: number,
+  args: MutableInspectArgs,
+): ArgConsumption {
+  const arg = argv[index];
+  if (arg === undefined) return { kind: 'ok', nextIndex: index };
+  if (arg === '--help' || arg === '-h') return { kind: 'help' };
+  if (arg === '--upgrade-check') {
+    args.upgradeCheck = true;
+    return { kind: 'ok', nextIndex: index };
+  }
+  if (arg === '--json') {
+    args.json = true;
+    return { kind: 'ok', nextIndex: index };
+  }
+  if (!VALUE_FLAGS.has(arg)) return { kind: 'error', error: `Unknown argument: ${arg}` };
+  const value = argv[index + 1];
+  if (!value) return { kind: 'error', error: valueFlagError(arg) };
+  const assignmentError = assignValueFlag(args, arg, value);
+  if (assignmentError !== null) return { kind: 'error', error: assignmentError };
+  return { kind: 'ok', nextIndex: index + 1 };
 }
 
 export function parseInspectArgs(
   argv: string[],
 ): { ok: true; args: InspectArgs } | { ok: false; error: string } {
-  let sessionId: string | undefined;
-  let json = false;
-  let upgradeCheck = false;
+  const args: MutableInspectArgs = { json: false, upgradeCheck: false };
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === undefined) break;
-
-    if (arg === '--session') {
-      const next = argv[i + 1];
-      if (!next) return { ok: false, error: '--session requires a session ID' };
-      sessionId = next;
-      i++;
-    } else if (arg === '--upgrade-check') {
-      upgradeCheck = true;
-    } else if (arg === '--json') {
-      json = true;
-    } else if (arg === '--help' || arg === '-h') {
-      return { ok: false, error: 'help' };
-    } else {
-      return { ok: false, error: `Unknown argument: ${arg}` };
-    }
+  let index = 0;
+  while (index < argv.length) {
+    const consumed = consumeInspectArg(argv, index, args);
+    if (consumed.kind === 'help') return { ok: false, error: 'help' };
+    if (consumed.kind === 'error') return { ok: false, error: consumed.error };
+    index = consumed.nextIndex + 1;
   }
 
-  if (upgradeCheck && sessionId !== undefined) {
-    return { ok: false, error: '--upgrade-check cannot be combined with --session' };
-  }
+  const combinationError = validateInspectCombinations(args);
+  if (combinationError !== null) return { ok: false, error: combinationError };
 
   return {
     ok: true,
-    args: { json, upgradeCheck, ...(sessionId !== undefined ? { sessionId } : {}) },
+    args: {
+      json: args.json,
+      upgradeCheck: args.upgradeCheck,
+      ...(args.sessionId !== undefined ? { sessionId: args.sessionId } : {}),
+      ...(args.iso27001Mapping !== undefined ? { iso27001Mapping: args.iso27001Mapping } : {}),
+      ...(args.output !== undefined ? { output: args.output } : {}),
+    },
   };
 }
 
@@ -83,13 +155,21 @@ Modes:
   flowguard inspect                      List all sessions in the workspace
   flowguard inspect --session <id>       Full compliance report for one session
   flowguard inspect --upgrade-check      Pre-upgrade preflight for this workspace
+  flowguard inspect --session <id> --iso27001-mapping <file>
+                                          ISO/IEC 27001:2022 evidence-to-control report
+                                          (Markdown by default, JSON with --json)
 
 Options:
-  --session <id>   Session ID to inspect
-  --upgrade-check  Report sessions/archives that block a hard-cut upgrade
-                   (exit 1 when the workspace is not upgrade-ready)
-  --json           Output JSON (requires --session or --upgrade-check)
-  -h, --help       Show this help
+  --session <id>          Session ID to inspect
+  --upgrade-check         Report sessions/archives that block a hard-cut upgrade
+                          (exit 1 when the workspace is not upgrade-ready)
+  --iso27001-mapping <f>  Organization-owned ISO/IEC 27001:2022 mapping file
+                          (requires --session; exit 2 when the completion
+                          export is missing or fails verification)
+  --output <f>            Write the companion report to a new file (write-once;
+                          requires --iso27001-mapping)
+  --json                  Output JSON (requires --session or --upgrade-check)
+  -h, --help              Show this help
 
 inspect operates on the current repository and does not accept
 installation-target or host-selection flags.`;
@@ -360,6 +440,33 @@ async function inspectSingleSessionMode(
   return summary.compliant ? 0 : 1;
 }
 
+async function dispatchInspect(workspace: ResolvedWorkspace, args: InspectArgs): Promise<number> {
+  const { sessionId, json, upgradeCheck, iso27001Mapping, output } = args;
+
+  if (upgradeCheck) return runUpgradeCheck(workspace, json);
+
+  const sessions = listWorkspaceSessions(workspace.fingerprint);
+
+  if (!sessionId) return listWorkspaceSessionsMode(workspace.fingerprint, sessions);
+
+  if (!sessions.includes(sessionId)) {
+    return exitWithError(`Session ${sessionId} not found in this workspace.`);
+  }
+
+  if (iso27001Mapping !== undefined) {
+    return runIso27001Inspect({
+      fingerprint: workspace.fingerprint,
+      sessDir: sessionDir(workspace.fingerprint, sessionId),
+      sessionId,
+      mappingPath: iso27001Mapping,
+      json,
+      ...(output !== undefined ? { outputPath: output } : {}),
+    });
+  }
+
+  return inspectSingleSessionMode(workspace.fingerprint, sessionId, json);
+}
+
 export async function inspectMain(argv: string[]): Promise<number> {
   const parsed = parseInspectArgs(argv);
 
@@ -388,19 +495,5 @@ export async function inspectMain(argv: string[]): Promise<number> {
     });
   }
 
-  if (upgradeCheck) {
-    return runUpgradeCheck(workspace, json);
-  }
-
-  const sessions = listWorkspaceSessions(workspace.fingerprint);
-
-  if (!sessionId) {
-    return listWorkspaceSessionsMode(workspace.fingerprint, sessions);
-  }
-
-  if (!sessions.includes(sessionId)) {
-    return exitWithError(`Session ${sessionId} not found in this workspace.`);
-  }
-
-  return inspectSingleSessionMode(workspace.fingerprint, sessionId, json);
+  return dispatchInspect(workspace, parsed.args);
 }

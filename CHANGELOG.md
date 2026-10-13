@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ISO/IEC 27001:2022 evidence-to-control mapping (#1083).** New opt-in,
+  read-only companion report `flowguard inspect --session <id>
+--iso27001-mapping <file>` links organization-owned policy requirements to
+  evidence from the verified raw completion export. The strict mapping schema
+  is edition-specific, uses a closed evidence-selector vocabulary with separate
+  organization namespaces, and fails closed on duplicates, unknown controls,
+  unsupported selectors, and asserted exclusions (no
+  `NOT_APPLICABLE_BY_SOA` in v1). Emitted states are limited to
+  `EVIDENCE_LINKED_VERIFIED`, `EVIDENCE_PRESENT_UNVERIFIED`,
+  `EVIDENCE_MISSING`, `NOT_VERIFIED`, and `NOT_MAPPED`; the report never emits
+  a conformity, certification, audit verdict, or score, and never conflates
+  the internal session `ComplianceSummary` with an ISO decision. The reader
+  requires the `.sha256` sidecar independently of verifier strictness, blocks
+  redacted sharing archives and tampered packages, and binds findings to the
+  exact verified snapshot bytes. The offline, self-checking demo
+  `demos/iso27001-evidence-mapping/run-demo.mjs` exercises the export,
+  verification and projection chain in a temporary foreign repository with a
+  synthetic fixture and asserts the positive, negative (skipped assertion and
+  aggregate report) and tamper outcomes itself.
+
 - **Forensic demo assurance (#1080 follow-up).** The live-demo harness now
   classifies denials and recoveries from structured host transcripts with
   occurrence-bound recovery proofs (a denial after the last successful call is

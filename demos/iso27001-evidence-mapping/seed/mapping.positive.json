@@ -1,0 +1,56 @@
+{
+  "mappingSchemaVersion": "iso27001-evidence-mapping.v1",
+  "framework": { "id": "ISO/IEC 27001:2022", "annex": "A" },
+  "organizationId": "acme-secdev",
+  "ismsScopeId": "isms-iso-demo",
+  "mappingVersion": "1.0",
+  "owner": "Secure Development Lead",
+  "approval": {
+    "reference": "ISMS-APPROVAL-2026-014",
+    "approvedAt": "2026-01-15T10:00:00.000Z",
+    "assertedBy": "CISO Office"
+  },
+  "soaRef": { "documentId": "soa-2026", "version": "2026.1", "status": "current" },
+  "rules": [
+    {
+      "ruleId": "sec-testing",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.29" },
+      "policyRequirementId": "SDLC-SEC-TEST-01",
+      "applicability": "asserted_applicable",
+      "evidence": [
+        { "kind": "validation.check_supported", "checkId": "test" },
+        {
+          "kind": "validation.assertion_passed",
+          "checkId": "test",
+          "assertion": {
+            "providerId": "vitest",
+            "localId": "auth.spec.ts::rejects-invalid-token"
+          }
+        }
+      ]
+    },
+    {
+      "ruleId": "change-control",
+      "controlRef": { "namespace": "iso27001:2022/annexA", "controlId": "A.8.32" },
+      "policyRequirementId": "CHG-CONTROL-01",
+      "applicability": "asserted_applicable",
+      "evidence": [
+        { "kind": "plan.approved" },
+        { "kind": "implementation.revision" },
+        {
+          "kind": "review.human_approval_decision",
+          "gatePhase": "EVIDENCE_REVIEW",
+          "acceptedVerdicts": ["approve", "approve_with_governance_override"],
+          "minActorAssurance": "best_effort"
+        }
+      ]
+    },
+    {
+      "ruleId": "export-evidence",
+      "controlRef": { "namespace": "organization", "controlId": "EXP-1" },
+      "policyRequirementId": "EXPORT-EVIDENCE-01",
+      "applicability": "asserted_applicable",
+      "evidence": [{ "kind": "export.completion" }]
+    }
+  ]
+}

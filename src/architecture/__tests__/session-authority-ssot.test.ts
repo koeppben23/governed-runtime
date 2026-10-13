@@ -58,7 +58,14 @@ const SANCTIONED: ReadonlyMap<string, { calls: number; reason: string }> = new M
     'adapters/workspace/archive-verify-publication.ts',
     { calls: 1, reason: 'audit read of an explicit archive location' },
   ],
-  ['cli/inspect-command.ts', { calls: 2, reason: 'read-only diagnostic over explicit ids' }],
+  [
+    'cli/inspect-command.ts',
+    {
+      calls: 3,
+      reason:
+        'read-only diagnostic over explicit ids (session summary, session inspection, ISO/IEC 27001 companion projection)',
+    },
+  ],
   ['cli/doctor-handshake.ts', { calls: 1, reason: 'read-only pointer diagnostic' }],
   [
     'mcp-server/session-resolver.ts',
