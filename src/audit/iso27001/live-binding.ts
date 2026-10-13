@@ -11,9 +11,9 @@
  * 2. the live trail extends the verified archive anchor: it carries at least
  *    the archived event count and its prefix head equals the manifest anchor
  *    (a forked or replaced trail cannot masquerade as the archived one),
- * 3. a canonical materialization transition (`EXPORT_READY` → a terminal
- *    phase, decided by the canonical terminal authority) exists inside the
- *    live extension.
+ * 3. a canonical materialization transition exists inside the live extension:
+ *    `EXPORT_READY → COMPLETE` as resolved by the state-machine authority
+ *    (`evaluateWithEvent`), never any other terminal phase.
  *
  * The live (mutable) state contributes only the reported package digest; the
  * materialization proof comes from the chain-verified live audit.
@@ -21,7 +21,7 @@
  * @version v1
  */
 
-import { isTerminalPhase } from '../../machine/topology.js';
+import { evaluateWithEvent } from '../../machine/evaluate.js';
 import type { AuditEvent } from '../../state/evidence.js';
 import { getLastChainHash, verifyChain } from '../integrity.js';
 import type { LiveExportBinding } from './evidence.js';
@@ -52,11 +52,19 @@ function unverified(input: LiveExportBindingInput): LiveExportBinding {
   };
 }
 
+/**
+ * Canonical target phase of the export materialization edge, resolved through
+ * the state-machine authority (not a local literal and not merely "some
+ * terminal phase": `EXPORT_READY --EXPORT_MATERIALIZED--> COMPLETE` only, so a
+ * chain-valid event aiming at another terminal phase such as `ABORTED` is
+ * never accepted as a materialization).
+ */
+const MATERIALIZATION_TARGET = evaluateWithEvent('EXPORT_READY', 'EXPORT_MATERIALIZED');
+
 function isMaterializationEvent(event: AuditEvent): boolean {
   if (event.event !== 'transition:EXPORT_MATERIALIZED') return false;
   if (event.detail.from !== 'EXPORT_READY') return false;
-  const target = event.detail.to;
-  return typeof target === 'string' && isTerminalPhase(target);
+  return event.detail.to === MATERIALIZATION_TARGET;
 }
 
 /** Evaluate the live binding. Pure and deterministic. */

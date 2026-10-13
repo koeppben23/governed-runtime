@@ -125,6 +125,17 @@ describe('audit/iso27001/live-binding', () => {
       expect(result.liveChainVerified).toBe(true);
       expect(result.materializedTransitionAt).toBeNull();
     });
+
+    it('rejects a chain-valid materialization aiming at another terminal phase', () => {
+      // ABORTED is terminal, but the canonical edge is EXPORT_READY -> COMPLETE.
+      const prefix = buildChain(2);
+      const events = withMaterialization(prefix, { target: 'ABORTED' });
+      const result = evaluateLiveExportBinding(
+        inputFrom(events, { archiveAuditEventCount: prefix.length }),
+      );
+      expect(result.liveChainVerified).toBe(true);
+      expect(result.materializedTransitionAt).toBeNull();
+    });
   });
 
   describe('CORNER — unreadable inputs degrade to unverified, never positive', () => {
