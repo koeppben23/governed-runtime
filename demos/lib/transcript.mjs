@@ -129,17 +129,43 @@ export function governedSuccessEvents(output) {
 }
 
 /**
+ * Operation-binding keys exposed by a governed envelope when the host provides
+ * them. Recovery can only be claimed as an OPERATION correction when a denial
+ * and a later success share such a key; otherwise the honest record is merely
+ * "a later call of the same tool succeeded".
+ */
+export function operationKeys(payload) {
+  if (payload?.kind !== 'json' || !payload.value || typeof payload.value !== 'object') return [];
+  const value = payload.value;
+  const candidates = [
+    value.obligationId,
+    value.claimId,
+    value.planDigest,
+    value.subjectDigest,
+    value.reviewObligation?.obligationId,
+    value.reviewRetry?.obligationId,
+    value.reviewFeedback?.obligation?.id,
+    value.detail?.obligationId,
+  ];
+  return [...new Set(candidates.filter((candidate) => typeof candidate === 'string' && candidate))];
+}
+
+/**
  * Occurrence-bound recovery proofs. A denial is recovered iff a later
- * invocation of the same governed tool succeeded; one later success may
- * resolve several earlier rejections, but a denial after the last success
- * stays open.
+ * invocation of the same governed tool succeeded. The proof records WHICH
+ * binding was available: `operation` when both envelopes share an operation
+ * key, otherwise `tool` (documented later success, never a same-operation
+ * correction claim). A denial after the last success stays open.
  */
 export function sameTurnRecoveryProofs(output) {
+  const events = toolUseEvents(output);
   const denials = toolDenialEvents(output);
   const successes = governedSuccessEvents(output);
   const recovered = [];
   const unproven = [];
   for (const denial of denials) {
+    const denialEvent = events.find((event) => event.index === denial.index);
+    const denialKeys = operationKeys(denialEvent?.payload);
     const success = successes.find(
       (candidate) =>
         denial.tool !== undefined &&
@@ -149,11 +175,15 @@ export function sameTurnRecoveryProofs(output) {
     if (success === undefined) {
       unproven.push({ code: denial.code, tool: denial.tool, index: denial.index });
     } else {
+      const successKeys = operationKeys(success.payload);
+      const sharedKey = denialKeys.find((key) => successKeys.includes(key));
       recovered.push({
         code: denial.code,
         tool: denial.tool,
         denialIndex: denial.index,
         successIndex: success.index,
+        binding: sharedKey !== undefined ? 'operation' : 'tool',
+        operationKey: sharedKey ?? null,
       });
     }
   }

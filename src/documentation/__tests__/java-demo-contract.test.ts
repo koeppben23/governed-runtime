@@ -447,7 +447,7 @@ describe('Java Task Manager demo contract', () => {
       } = { workspace: root };
       await runner.turn(session, 'plan-b', 'x');
       expect(session.recoveredDenials).toEqual([
-        { step: 'plan-b', codes: ['REVISED_PLAN_REQUIRED'], evidence: 'same_turn_retry_success' },
+        { step: 'plan-b', codes: ['REVISED_PLAN_REQUIRED'], evidence: 'later_tool_success' },
       ]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });

@@ -188,13 +188,16 @@ flow if the required artifact is missing. Any block observed before the terminal
 phase still stops the flow.
 
 Recoverable typed denials are evidence-bound, never allow-listed blank. A denial
-counts as recovered only when the same tool succeeded later in the same turn
-(`same_turn_retry_success`) or a structured reviewer re-arm was observed
-(`structured_rearm`). `CONTINUE_AMBIGUOUS` is different: it mutates nothing and
-demands an explicit flow choice, so it is recorded as `pending_recovery` and only
-becomes `recovered` when the next required step completes with a demonstrable
-state transition (`next_step_state_transition:<step>`). A recoverable denial
-without such proof stops the flow.
+counts as recovered when the same tool succeeded later in the same turn: as an
+operation correction when both envelopes share an operation key
+(`same_turn_operation_recovery`), otherwise only as a documented later success
+of the same tool (`later_tool_success`) — never as a claimed correction of the
+same operation. A structured reviewer re-arm is recorded as `structured_rearm`.
+`CONTINUE_AMBIGUOUS` is different: it mutates nothing and demands an explicit
+flow choice, so it is recorded as `pending_recovery` and only becomes
+`recovered` when the next required step completes with a demonstrable state
+transition (`next_step_state_transition:<step>`). A recoverable denial without
+such proof stops the flow.
 
 The architecture negative probe is a controlled denial step: the runner
 requires the exact `ARCHITECTURE_CLAIM_INVALID` rejection, proves that the rejected

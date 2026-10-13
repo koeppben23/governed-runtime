@@ -67,7 +67,7 @@ export function acquireLease(repo, { pid = process.pid } = {}) {
     }
     throw new Error(
       `stale demo run lease ${leaseFile} (owner pid ${String(owner?.pid ?? 'unknown')} is not ` +
-        'running); remove the file manually if no run is active',
+        'running); administrative removal: node demos/lib/run-lease.mjs force-remove --repo <checkout>',
     );
   }
   return {
@@ -78,13 +78,19 @@ export function acquireLease(repo, { pid = process.pid } = {}) {
 }
 
 /**
- * Release only the lease owned by `token`; never removes a successor's lease.
+ * Release ONLY the lease owned by `token`. A token is mandatory: without it
+ * there is no owner proof, and no non-owner path may unlink a lease.
  */
 export function releaseLease(repo, token) {
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new Error(
+      'releaseLease requires the owner token; use forceRemoveLease for administrative removal',
+    );
+  }
   const leaseFile = demoLeasePath(repo);
   const owner = readOwner(leaseFile);
   if (owner === null) return false;
-  if (token !== undefined && owner.token !== token) return false;
+  if (owner.token !== token) return false;
   try {
     unlinkSync(leaseFile);
   } catch (error) {
@@ -92,6 +98,21 @@ export function releaseLease(repo, token) {
     return false;
   }
   return true;
+}
+
+/**
+ * Explicit administrative removal of a lease that is provably stale. Separate
+ * from the owner path on purpose; never used by the wrapper.
+ */
+export function forceRemoveLease(repo) {
+  const leaseFile = demoLeasePath(repo);
+  try {
+    unlinkSync(leaseFile);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
 }
 
 async function main() {
@@ -112,6 +133,11 @@ async function main() {
     const token = rest.includes('--token') ? value('--token') : undefined;
     const released = releaseLease(repo, token);
     console.log(JSON.stringify({ released }));
+    return;
+  }
+  if (command === 'force-remove') {
+    const removed = forceRemoveLease(repo);
+    console.log(JSON.stringify({ removed }));
     return;
   }
   if (command === 'hold') {

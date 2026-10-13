@@ -61,16 +61,23 @@ controlled A/B run with the SAME fixed harness.
 - **Run lease:** `demos/lib/run-lease.mjs` acquires an exclusive, token-checked
   lease BEFORE the wrapper's first build and releases it on every exit.
 
-## Second/third review round (PR #1098)
+## Review rounds (PR #1098)
 
 - **Lease owner is the wrapper:** the lease file is the atomic mutex (`wx`
   create) and records the long-lived wrapper PID (`--pid $$`) plus a unique
-  token; release only unlinks the matching token, so a dying first wrapper can
-  never delete a successor's lease. A stale lease is reported for EXPLICIT
-  removal (same reasoning as the installer lock) — automatic reclaim is racy
-  because a second process can then delete a successor's fresh lease.
-  Cross-process exclusivity, foreign-token release and concurrent
-  stale-reclaim blocking are covered through the CLI boundary.
+  token. Release is only possible with the matching token (`force-remove` is
+  the separate administrative operation for a provably stale lease); a dying
+  first wrapper can never delete a successor's lease. A stale lease is reported
+  for explicit removal — automatic reclaim is racy because a second process can
+  then delete a successor's fresh lease. Cross-process exclusivity,
+  tokenless/foreign release, and concurrent stale-reclaim blocking are covered
+  through the CLI boundary.
+- **Signal/exit contract:** `demos/lib/signal-exit.sh` converts INT/TERM into a
+  defined termination (in-flight children are signalled, then `exit 130/143`);
+  the EXIT trap performs the lease cleanup exactly once. The wrapper runs each
+  demo in the background and `wait`s for it so bash processes the signal traps
+  promptly. Covered by a real subprocess test (child killed, cleanup once,
+  no continued execution).
 - **Replan installer runs from an isolated npm prefix:** an extracted tarball
   has no `node_modules`; `demos/lib/product-cli.mjs` installs the bound tarball
   into `<root>/.tooling/product-prefix` and executes the CLI from there, with a
@@ -80,6 +87,11 @@ controlled A/B run with the SAME fixed harness.
 - **Attempt identity in the progress key:** `reviewAssurance.attempts` (latest
   attempt id/status + count per obligation) are part of the fingerprint, so an
   authorized re-arm alone counts as progress instead of a false `STALLED`.
+- **Operation-bound recovery labels:** a same-turn recovery is recorded as
+  `same_turn_operation_recovery` only when denial and later success share an
+  operation key (obligation/claim/subject identity); otherwise the honest label
+  is `later_tool_success` — a later success of the same tool, never a claimed
+  correction of the same operation.
 - **Exit-code aggregation:** `demos/lib/aggregate-status.mjs` maps 0 to success,
   2 to `NOT_VERIFIED` and any other code (127, 137, signals) to `FAILED`, with
   FAILED outranking NOT_VERIFIED; the mapping is unit-tested and used by the

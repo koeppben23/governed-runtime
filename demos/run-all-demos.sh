@@ -30,7 +30,9 @@ echo "lease: $LEASE_FILE"
 release_lease() {
   node "$REPO/demos/lib/run-lease.mjs" release --repo "$REPO" --token "$LEASE_TOKEN" >/dev/null 2>&1 || true
 }
-trap release_lease EXIT INT TERM
+# shellcheck source=lib/signal-exit.sh
+source "$REPO/demos/lib/signal-exit.sh"
+install_exit_traps release_lease
 
 # 1. Pinned npm 10: the installer engines require npm ^10 and user configs may
 #    set engine-strict=true, so the ambient npm major must be satisfied.
@@ -77,7 +79,12 @@ echo "product gitSha:  $GATE_SHA"
 run_demo() {
   local name="$1"; shift
   echo "=== demo: $name"
-  "${RUN[@]}" "$@" --tarball "$GATE_TARBALL" --product-sha "$GATE_SHA"; local code=$?
+  # Background + wait so INT/TERM traps run promptly (bash defers traps while a
+  # foreground child is running).
+  "${RUN[@]}" "$@" --tarball "$GATE_TARBALL" --product-sha "$GATE_SHA" &
+  local child=$!
+  local code=0
+  wait "$child" || code=$?
   echo "=== demo: $name exit=$code"
   collect "$code"
 }

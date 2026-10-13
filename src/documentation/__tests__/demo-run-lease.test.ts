@@ -13,7 +13,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { acquireLease, demoLeasePath, releaseLease } from '../../../demos/lib/run-lease.mjs';
+import {
+  acquireLease,
+  demoLeasePath,
+  forceRemoveLease,
+  releaseLease,
+} from '../../../demos/lib/run-lease.mjs';
 
 const CLI = join(process.cwd(), 'demos', 'lib', 'run-lease.mjs');
 const roots: string[] = [];
@@ -35,7 +40,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
 afterEach(() => {
   while (roots.length > 0) {
     const root = roots.pop()!;
-    releaseLease(root);
+    forceRemoveLease(root);
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -71,6 +76,18 @@ describe('demo run lease', () => {
       expect(existsSync(lease.leaseFile)).toBe(true);
       lease.release();
     });
+
+    it('requires an owner token for release', () => {
+      const repo = fakeRepo('tokenless');
+      const lease = acquireLease(repo);
+      expect(() => releaseLease(repo)).toThrow(/requires the owner token/);
+      const cli = spawnSync(process.execPath, [CLI, 'release', '--repo', repo], {
+        encoding: 'utf8',
+      });
+      expect(cli.status).not.toBe(0);
+      expect(existsSync(lease.leaseFile)).toBe(true);
+      lease.release();
+    });
   });
 
   describe('CORNER — stale leases require explicit removal', () => {
@@ -78,7 +95,7 @@ describe('demo run lease', () => {
       const repo = fakeRepo('stale');
       acquireLease(repo, { pid: 999_999 });
       expect(() => acquireLease(repo, { pid: process.pid })).toThrow(/stale demo run lease/);
-      releaseLease(repo);
+      expect(forceRemoveLease(repo)).toBe(true);
       const lease = acquireLease(repo, { pid: process.pid });
       lease.release();
     });
@@ -125,7 +142,7 @@ describe('demo run lease', () => {
       expect(attempts.every((attempt) => attempt.status !== 0)).toBe(true);
       const after = JSON.parse(readFileSync(demoLeasePath(repo), 'utf8')) as { pid: number };
       expect(after.pid).toBe(before.pid);
-      releaseLease(repo);
+      forceRemoveLease(repo);
     });
   });
 });

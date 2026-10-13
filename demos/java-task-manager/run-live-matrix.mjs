@@ -592,19 +592,43 @@ export class Runner {
     }
     const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
     const proofs = sameTurnRecoveryProofs(result.stdout);
-    const sameTurnRecovered = [...new Set(proofs.recovered.map((proof) => proof.code))].filter(
-      isRecoverableFamily,
-    );
+    const recoverableProofs = proofs.recovered.filter((proof) => isRecoverableFamily(proof.code));
+    const operationRecovered = [
+      ...new Set(
+        recoverableProofs
+          .filter((proof) => proof.binding === 'operation')
+          .map((proof) => proof.code),
+      ),
+    ];
+    const laterSuccessOnly = [
+      ...new Set(
+        recoverableProofs.filter((proof) => proof.binding === 'tool').map((proof) => proof.code),
+      ),
+    ];
+    const sameTurnRecovered = [...new Set([...operationRecovered, ...laterSuccessOnly])];
     const unprovenOccurrences = [...new Set(proofs.unproven.map((proof) => proof.code))];
     const retryRecovered = captureRetryCodes(result.stdout);
     session.recoveredDenials = session.recoveredDenials ?? [];
-    if (sameTurnRecovered.length > 0) {
+    if (operationRecovered.length > 0) {
       session.recoveredDenials.push({
         step: label,
-        codes: sameTurnRecovered,
-        evidence: 'same_turn_retry_success',
+        codes: operationRecovered,
+        evidence: 'same_turn_operation_recovery',
       });
-      this.log(`${label}: recovered via same-turn retry [${sameTurnRecovered.join(', ')}]`);
+      this.log(
+        `${label}: recovered via same-turn operation recovery [${operationRecovered.join(', ')}]`,
+      );
+    }
+    if (laterSuccessOnly.length > 0) {
+      session.recoveredDenials.push({
+        step: label,
+        codes: laterSuccessOnly,
+        evidence: 'later_tool_success',
+      });
+      this.log(
+        `${label}: later success of the same tool recorded without an operation binding ` +
+          `[${laterSuccessOnly.join(', ')}]`,
+      );
     }
     if (retryRecovered.length > 0) {
       session.recoveredDenials.push({

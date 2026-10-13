@@ -68,7 +68,7 @@ describe('demo assurance wiring', () => {
       expect(leaseIndex).toBeLessThan(buildIndex);
       expect(wrapper).toContain('--pid $$');
       expect(wrapper).toContain('--token "$LEASE_TOKEN"');
-      expect(wrapper).toContain('trap release_lease');
+      expect(wrapper).toContain('install_exit_traps release_lease');
     });
 
     it('aborts the wrapper when the product build fails', () => {

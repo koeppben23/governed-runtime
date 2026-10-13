@@ -85,6 +85,34 @@ describe('demo transcript forensics', () => {
       expect(proofs.recovered).toEqual([]);
       expect(proofs.unproven.map((proof) => proof.code)).toEqual(['REVISED_PLAN_REQUIRED']);
     });
+
+    it('claims an operation correction only when the envelopes share an operation key', () => {
+      const sameOperation = transcript(
+        toolUse(
+          'flowguard_plan',
+          compact({ error: true, code: 'REVISED_PLAN_REQUIRED', obligationId: 'ob-1' }),
+        ),
+        toolUse('flowguard_plan', compact({ phase: 'PLAN', obligationId: 'ob-1' })),
+      );
+      expect(sameTurnRecoveryProofs(sameOperation).recovered[0]).toMatchObject({
+        code: 'REVISED_PLAN_REQUIRED',
+        binding: 'operation',
+        operationKey: 'ob-1',
+      });
+
+      const otherOperation = transcript(
+        toolUse(
+          'flowguard_plan',
+          compact({ error: true, code: 'REVISED_PLAN_REQUIRED', obligationId: 'ob-1' }),
+        ),
+        toolUse('flowguard_plan', compact({ phase: 'PLAN', obligationId: 'ob-2' })),
+      );
+      expect(sameTurnRecoveryProofs(otherOperation).recovered[0]).toMatchObject({
+        code: 'REVISED_PLAN_REQUIRED',
+        binding: 'tool',
+        operationKey: null,
+      });
+    });
   });
 
   describe('CORNER — one later success may resolve several earlier rejections', () => {
