@@ -216,8 +216,43 @@ export function renderCoverageGaps(state: SessionState): string[] {
   ];
 }
 
-/** Render the trigger requirement section from an evaluated gate decision. */
-function renderTriggerRequirement(decision: ReviewProofGraphGateDecision): string[] {
+/**
+ * Render the persisted, digest-bound implementation risk assessment as reviewer
+ * focus. This is advisory prioritization context: it reclassifies nothing,
+ * evaluates no evidence, and never gates approval. Scale the verification depth
+ * of the review to these triggers instead of applying a uniform heavy check.
+ */
+export function renderImplementationRiskFocus(state: SessionState): string[] {
+  if (!state.implementation) return [];
+  const assessment = state.implementationRiskAssessment;
+  if (!assessment || assessment.implementationDigest !== state.implementation.digest) {
+    return [
+      '## Implementation Risk Focus (persisted, advisory)',
+      '',
+      '- Status: NOT_VERIFIED. The implementation risk assessment is missing or stale for the current implementation revision.',
+      '',
+    ];
+  }
+  const declared = assessment.declaredTaskClass
+    ? `, ticket-declared floor ${assessment.declaredTaskClass}`
+    : '';
+  const escalated = assessment.escalatedTaskClass
+    ? `, escalated ${assessment.escalatedTaskClass}`
+    : '';
+  return [
+    '## Implementation Risk Focus (persisted, advisory)',
+    '',
+    `- Effective risk class: ${assessment.effectiveTaskClass} (computed ${assessment.computedMinimumTaskClass}${declared}${escalated}).`,
+    `- Risk triggers: ${assessment.riskTriggers.length > 0 ? assessment.riskTriggers.join(', ') : 'none detected'}.`,
+    `- Touched surfaces: ${assessment.touchedSurfaces.length > 0 ? assessment.touchedSurfaces.join(', ') : 'none recorded'}.`,
+    '- This persisted context does not lower or raise any approval requirement; it only prioritizes where independent falsification matters most.',
+    '',
+  ];
+}
+
+/** Render the trigger requirement section from an evaluated gate decision. */ function renderTriggerRequirement(
+  decision: ReviewProofGraphGateDecision,
+): string[] {
   if (decision.relevantTriggers.length === 0) return [];
   const header = ['## Critical Fact Claim Requirement (persisted)', ''];
   if (decision.kind === 'risk_trigger_uncovered') {
@@ -291,6 +326,7 @@ export function buildReviewerProofContext(
 ): string[] {
   return [
     ...renderPersistedProofGraphContext(state.proofGraph),
+    ...renderImplementationRiskFocus(state),
     ...renderDeclarationPreview(state, authorities),
     ...renderCoverageGaps(state),
     ...renderCriticalClaimRequirement(state, authorities),

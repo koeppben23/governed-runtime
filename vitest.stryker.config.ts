@@ -55,6 +55,8 @@ export default defineConfig({
       'src/discovery/**/*.test.ts',
       'src/verification/**/*.test.ts',
       'src/integration/review/dispatch/agent-resolution.test.ts',
+      'src/integration/review/dispatch/native-task-review-bindings.test.ts',
+      'src/integration/review/dispatch/native-task-review-prompt.test.ts',
       'src/integration/review/validation/challenge-policy-evaluation.test.ts',
       'src/integration/review/enforcement/dispatch-signal.test.ts',
       'src/integration/review/enforcement/enforce-before-verdict.test.ts',

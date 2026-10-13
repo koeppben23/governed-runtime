@@ -122,16 +122,17 @@ ${SHARED_REVIEW_LOOP({
   changesRequestedExtra:
     '\n         Then run the repair-recheck cycle: make the code changes based on blockingIssues, call flowguard_implement({}) again to re-record, dispatch on the returned phase again (step 4), run the post-recording checks only while the machine is still in IMPL_VALIDATION, record resolutions for any open implementation challenges (first bullet of step 7), then continue the review loop automatically from step 7.',
   changesRequestedVerdictFirst: true,
-  recoveryCall: 'flowguard_implement({})',
-  iterationNote: '(max 3 iterations)',
+  recoveryCall: 'flowguard_review_implementation({ reviewRecovery: "retry_transport" })',
+  iterationNote: '(max iterations from policy.reviewBudget.implementation)',
   repeatStep: 7,
   subagentExtra: '',
   fallbackExtra: '',
   unableDescription:
     'e.g., contradictory plan vs. code, missing prerequisites, or scope ambiguity that prevents critique',
-  unableRecoveryA: 'revise the plan via /plan first',
+  unableRecoveryA:
+    'if the reviewer found the approved plan itself contradictory or ambiguous, stop and surface the plan-authority change — an in-session /plan is not available after approval; the operator must run the documented new-session plan recovery before implementation continues',
   unableRecoveryB:
-    'record substantially-new implementation evidence (new flowguard_implement({}) call after additional code changes, which starts a fresh review obligation)',
+    'otherwise invoke the fresh independent reviewer attempt FlowGuard prepared for the successor obligation (retryObligationId/retryAttemptId in the blocked payload); the recorded implementation evidence stays valid and no code change is required',
 })}
    - The changes_requested branch is an INTERNAL continuation, not a terminal result: FlowGuard returns no presentation card while the review loop is still active. Never render an intermediate outcome as final, and never stop for user input between iterations. Only the loop's terminal responses — converged acceptance (EVIDENCE_REVIEW), exhausted budget (EVIDENCE_REVIEW override gate: \`/override-approve\`, \`/request-changes\`, or \`/reject\`), or a BLOCKED code — end the loop and carry a presentation card to display verbatim.
 
@@ -139,7 +140,7 @@ ${SHARED_REVIEW_LOOP({
 
 - The approved plan's scope, acceptance criteria, contracts, authority decisions, and required outcomes are binding; implementation mechanics may adapt locally inside those boundaries.
 - Make only changes necessary to satisfy the approved scope, outcomes, contracts, authority decisions, and acceptance criteria: no speculative flexibility, no defensive handling for scenarios that cannot occur, no unrequested refactors of untouched code (see AP-B11 Over-Engineering).
-- If a materially different solution is required for correctness, stop and return to /plan rather than silently changing approved scope or behavior.
+- If a materially different solution is required for correctness, stop and hand control back to the user for the documented plan-authority recovery (a new plan cycle in a fresh session per the ProofGraph recovery guidance); never silently change approved scope or behavior and never attempt /plan from IMPLEMENTATION or IMPL_REVIEW — that command is not available in this phase.
 - Solve the problem generally; never special-case test inputs or hardcode values to make checks pass (see AP-B12 Test-Fitting). If a test looks wrong, surface it instead of fitting to it.
 - Use the standard project tools; do not build helper-script workarounds to shortcut a task. Remove any temporary files or scaffolding created for iteration before finishing.
 - Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE starting the review loop.
@@ -149,7 +150,7 @@ ${SHARED_REVIEW_LOOP({
   with \`flowguard_implement({})\` and dispatch on the returned phase again.
 - In Verification Evidence, list only checks that were actually executed. Mark all others as NOT_VERIFIED.
 - Follow profile rules from \`flowguard_status\` when implementing.
-- Do not call flowguard_plan during /implement — planning is complete unless a material approved-contract change is required, in which case stop and return control to the user.
+- Do not call flowguard_plan during /implement — planning is complete unless a material approved-contract change is required, in which case stop and return control to the user (the plan-authority recovery is a new plan cycle in a fresh session, not an in-session /plan).
 - Do not auto-chain into /review-decision after implementation — the user decides.
 
 ## Example (correct tool sequences)
@@ -198,6 +199,6 @@ ${renderCommandGovernanceRules()}
   passing against the frozen implementation.
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the fallback \`reviewCard\` is displayed verbatim.
-- On the converged path: phase has advanced to EVIDENCE_REVIEW and the canonical presentation conclusion is the only visible next action.
+- On the converged path: the phase returned by the runtime (the \`EVIDENCE_REVIEW\` user gate or a policy-permitted automatic terminal phase) is authoritative and the canonical presentation conclusion is the only visible next action.
 - On a blocked path (review not converged, reviewer unavailable, or a FlowGuard error code): no \`/review-decision\` next action is emitted; the response surfaces the FlowGuard blocker and its recovery instead.
 `;

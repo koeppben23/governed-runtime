@@ -102,6 +102,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Risk-adaptive implementation review and a convergent challenge-repair loop
+  (#1081).** The implementation reviewer criteria now carry the bounded
+  five-point quality checklist (acceptance/correctness, architecture fit,
+  safety/error boundaries, behavior-specific verification, minimal complexity)
+  scaled to the frozen risk class and triggers, plus an explicit
+  blocking-finding contract (violated approved obligation, exact changed code,
+  evidence/reproduction, feasible minimal repair) and a no-fabricated-findings
+  rule; optional style suggestions stay non-blocking. The reviewer prompt now
+  carries the persisted, digest-bound implementation risk focus (class,
+  triggers, touched surfaces) as advisory prioritization context. The #747
+  challenge-repair loop is convergent again: the native capture boundary
+  (`validateCapturedFindings`) enforces the same author-addressed challenge
+  requirements as the tool consumption boundary, and the canonical reviewer
+  prompt supplies the exact prior failing challenge identities plus the
+  author's advisory resolution bindings. A resolution recorded after reviewer
+  dispatch cannot be counted as independently reviewed (fail-closed with a
+  typed reason and bounded re-arm). The reviewer criteria generation advanced
+  to `p42-v2`; stale review obligations fail closed under the documented
+  `REVIEW_GENERATION_MISMATCH` recovery. The /implement, /check, Claude Code,
+  and Codex instructions now name the typed transport recovery
+  (`flowguard_review_implementation({ reviewRecovery: "retry_transport" })`),
+  the policy review budget, and dispatch on the returned phase instead of
+  assuming `IMPL_VALIDATION` or advertising the unreachable in-session
+  `/plan` recovery. Deterministic fixtures cover the correct minimal
+  implementation, the repaired failing challenge, and the concrete
+  test-fitting finding; scripted fixtures prove the lifecycle, not model
+  detection quality.
+
 - **Live-demo transcript completeness.** Host exports are captured directly to
   files and validated for JSON structure and session/worktree/parent identity
   before their hashes are registered. Architecture negative-probe recovery now

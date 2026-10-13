@@ -112,9 +112,10 @@ export const implement: ToolDefinition = {
   description:
     'Record implementation evidence. Auto-detects changed files via git. ' +
     'Use AFTER making code changes with read/write/bash tools. Takes no arguments.\n' +
-    'On success, auto-advances to IMPL_REVIEW. To submit the reviewer verdict, ' +
-    'use the separate flowguard_review_implementation tool (issue #565: record and ' +
-    'verdict are distinct single-purpose tools).',
+    'On success, returns the authoritative phase: IMPL_VALIDATION when post-implementation ' +
+    'checks must run, a policy-permitted later phase, or a typed recovery. To submit the ' +
+    'reviewer verdict, use the separate flowguard_review_implementation tool (issue #565: ' +
+    'record and verdict are distinct single-purpose tools).',
   // Record mode takes NO arguments. The empty (strict) schema makes it
   // impossible to send a verdict on a record call — the previously-conflated
   // multi-mode failure state is now unrepresentable at the tool surface.

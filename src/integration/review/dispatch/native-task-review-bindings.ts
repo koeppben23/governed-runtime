@@ -16,6 +16,7 @@ import { hashFindings } from '../findings-hash.js';
 import { validatePipelineAttestation } from '../shared-helpers.js';
 import { validateChallengeConsistency } from '../enforcement/challenge-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../obligations/challenge-history.js';
+import { projectImplementationChallengeResolutionRequirements } from '../../../state/implementation-review-findings.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
 import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
 import { captureStructuredFindingsFromVisibleChild } from './structured-followup.js';
@@ -177,6 +178,23 @@ export async function capturePreparedFindings(
   return { kind: 'captured', prepared: prepared.findings, fulfilledAt: structured.fulfilledAt };
 }
 
+/**
+ * #747 resolution requirements projected for the capture gate. Derived from
+ * persisted state only, mirroring the tool consumption boundary
+ * (`implement-review-state.ts`) through the shared state authority.
+ */
+function implementResolutionRequirements(state: PersistedState) {
+  const requirements = projectImplementationChallengeResolutionRequirements({
+    findingsHistory: state.implReviewFindings,
+    challengeResolutions: state.challengeResolutions,
+    implementationDigest: state.implementation?.digest,
+  });
+  return {
+    unresolvedImplementationChallengeIds: requirements.targetedResolutionIds,
+    unaddressedPriorFailIds: requirements.unaddressedPriorFailIds,
+  };
+}
+
 export function validateCapturedFindings(
   state: PersistedState,
   obligation: ReviewObligation,
@@ -217,6 +235,14 @@ export function validateCapturedFindings(
     ...(allowedEvidenceRefs !== undefined ? { allowedEvidenceRefs } : {}),
     ...(resolutionVerdicts !== undefined ? { resolutionVerdicts } : {}),
     previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
+    // The capture gate must enforce the SAME #747 resolution requirements the
+    // tool consumption boundary later enforces. Without these sets the capture
+    // would accept an `accept` verdict while a prior failing challenge is
+    // unaddressed, or reject the very verdicts consumption requires — the
+    // repair loop could not converge. Targets are derived from persisted state
+    // only; a resolution recorded after dispatch is NOT in the reviewer prompt
+    // and a missing verdict for it therefore fails closed here.
+    ...(obligation.obligationType === 'implement' ? implementResolutionRequirements(state) : {}),
   });
   if (!challenge.ok) {
     return {
