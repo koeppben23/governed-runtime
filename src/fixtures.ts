@@ -22,6 +22,7 @@ import {
   type ReviewObligation,
 } from './state/evidence-review.js';
 import type { ReviewInvocationEvidence } from './state/evidence-review-invocation.js';
+import { computePolicySnapshotHash } from './state/evidence-policy.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,
@@ -76,10 +77,9 @@ export const BINDING: BindingInfo = {
   resolvedAt: FIXED_TIME,
 };
 
-export const POLICY_SNAPSHOT: PolicySnapshot = {
+const POLICY_SNAPSHOT_FIELDS: Omit<PolicySnapshot, 'hash'> = {
   riskTriggerPaths: [],
   mode: 'team',
-  hash: 'a'.repeat(64),
   hashVersion: POLICY_DIGEST_VERSION,
   resolvedAt: FIXED_TIME,
   requestedMode: 'team',
@@ -119,14 +119,20 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   },
 };
 
-export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
-  ...POLICY_SNAPSHOT,
+/** Author a current snapshot; overrides must never inherit a stale policy hash. */
+export function makePolicySnapshot(overrides: Partial<PolicySnapshot> = {}): PolicySnapshot {
+  const snapshot = { ...POLICY_SNAPSHOT_FIELDS, hash: '', ...overrides };
+  return { ...snapshot, hash: computePolicySnapshotHash(snapshot) };
+}
+
+export const POLICY_SNAPSHOT = makePolicySnapshot();
+export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = makePolicySnapshot({
   mode: 'regulated',
   requestedMode: 'regulated',
   allowSelfApproval: false,
   minimumActorAssuranceForApproval: 'best_effort',
   enforceRiskClassification: true,
-};
+});
 
 export const DECISION_IDENTITY_INITIATOR: DecisionIdentity = {
   actorId: 'initiator-1',
@@ -727,6 +733,8 @@ export function makePlanApprovalCertificate(
 /**
  * Create a minimal valid SessionState at any phase.
  * Override fields via the partial parameter.
+ * Policy overrides author a new fixture policy with its matching hash.
+ * Tamper tests must alter the constructed snapshot afterwards.
  */
 export function makeState(
   phase: Phase = 'READY',
@@ -774,7 +782,6 @@ export function makeState(
       controlPlaneMarker: 'test-control-plane-marker',
     },
     proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: FIXED_TIME },
-    policySnapshot: POLICY_SNAPSHOT,
     initiatedBy: 'initiator-1',
     initiatedByIdentity: DECISION_IDENTITY_INITIATOR,
     transition: null,
@@ -785,6 +792,7 @@ export function makeState(
     pendingSystemWork: null,
     regulatedArchiveStatus: null,
     ...overrides,
+    policySnapshot: makePolicySnapshot(overrides.policySnapshot),
   };
 }
 export function makeProgressedState(phase: Phase): SessionState {

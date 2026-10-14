@@ -40,7 +40,13 @@ import {
   freezeReviewMaterial,
 } from '../integration/review/obligations/assurance.js';
 import { ensureReviewAssurance } from './review-dispatch.js';
-import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
+import {
+  makeState,
+  makePolicySnapshot,
+  FIXED_TIME,
+  FIXED_UUID,
+  FIXED_SESSION_UUID,
+} from '../fixtures.js';
 import { makePlanRevision } from './evidence-test-constants.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { readState } from '../adapters/persistence.js';
@@ -640,7 +646,7 @@ describe('state schemas', () => {
     });
 
     it('PolicySnapshotSchema validates nested audit object', () => {
-      const snapshot = {
+      const snapshot = makePolicySnapshot({
         mode: 'team',
         hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
@@ -679,12 +685,12 @@ describe('state schemas', () => {
         actorClassification: {
           flowguard_decision: 'human',
         },
-      };
+      });
       expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
     });
 
     it('PolicySnapshotSchema accepts typed jwks identityProvider', () => {
-      const snapshot = {
+      const snapshot = makePolicySnapshot({
         mode: 'team',
         hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
@@ -731,7 +737,7 @@ describe('state schemas', () => {
         actorClassification: {
           flowguard_decision: 'human',
         },
-      };
+      });
       expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
     });
 
@@ -768,7 +774,7 @@ describe('state schemas', () => {
     });
 
     it('PolicySnapshotSchema accepts P29 applied-policy provenance fields', () => {
-      const snapshot = {
+      const snapshot = makePolicySnapshot({
         mode: 'regulated',
         hash: VALID_POLICY_DIGEST,
         hashVersion: POLICY_DIGEST_VERSION,
@@ -813,7 +819,7 @@ describe('state schemas', () => {
         actorClassification: {
           flowguard_decision: 'human',
         },
-      };
+      });
       expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
     });
 

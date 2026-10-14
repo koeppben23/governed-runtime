@@ -320,6 +320,7 @@ function parseStateJson(raw: string, filePath: string): unknown {
 export type PersistedStateAssessment =
   | { readonly kind: 'compatible'; readonly state: SessionState }
   | { readonly kind: 'incompatible' }
+  | { readonly kind: 'integrity_mismatch'; readonly message: string }
   | { readonly kind: 'invalid'; readonly message: string };
 
 function hasRemovedStateFields(contract: Record<string, unknown>): boolean {
@@ -357,6 +358,15 @@ export function assessPersistedStateDocument(json: unknown): PersistedStateAsses
     };
   }
   const result = SessionState.safeParse(json);
+  if (
+    !result.success &&
+    result.error.issues.some((issue) => issue.message === 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH')
+  ) {
+    return {
+      kind: 'integrity_mismatch',
+      message: 'Frozen policy fields do not match their recorded content digest.',
+    };
+  }
   return result.success
     ? { kind: 'compatible', state: result.data }
     : {
@@ -383,6 +393,8 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   if (assessment.kind === 'invalid') {
     throw new PersistenceError('SCHEMA_VALIDATION_FAILED', assessment.message);
   }
+  if (assessment.kind === 'integrity_mismatch')
+    throw new PersistenceError('POLICY_SNAPSHOT_INTEGRITY_MISMATCH', assessment.message);
   return assessment.state;
 }
 
@@ -411,6 +423,11 @@ export async function writeStateAlreadyLocked(
 ): Promise<void> {
   const result = SessionState.safeParse(state);
   if (!result.success) {
+    if (result.error.issues.some((issue) => issue.message === 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH'))
+      throw new PersistenceError(
+        'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+        'Refusing a frozen policy whose fields do not match its digest.',
+      );
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
       `Refusing to persist invalid state: ${result.error.message}`,

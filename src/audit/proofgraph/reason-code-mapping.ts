@@ -26,7 +26,7 @@ export type EnforcementReasonCode =
 
 /** Maps enforcement reason codes to registry BlockedReason codes. */
 export function mapEnforcementReasonToRegistryCode(reasonCode: EnforcementReasonCode): string {
-  return ENFORCEMENT_REGISTRY_MAP[reasonCode] ?? 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
+  return ENFORCEMENT_REGISTRY_MAP[reasonCode];
 }
 
 const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {

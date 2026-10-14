@@ -11,6 +11,8 @@ import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identif
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import { FrozenIdpConfigSchema } from '../shared/policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 
 /**
  * Executable policy authorities.
@@ -178,7 +180,7 @@ export type ValidationEvidencePolicy = ExactDeepReadonly<
  * Lives in state layer (not config) because it is part of SessionState —
  * the innermost layer must not depend on outer layers.
  */
-export const PolicySnapshotSchema = z
+const PolicySnapshotBase = z
   .object({
     /**
      * The effective policy mode at session creation time.
@@ -256,6 +258,60 @@ export const PolicySnapshotSchema = z
      */
     actorClassification: z.record(z.string(), z.string()),
   })
-  .strict()
-  .readonly();
+  .strict();
+
+/** The one executable-content projection; provenance is never executable policy. */
+export function policyContentFromSnapshot(snapshot: z.infer<typeof PolicySnapshotBase>) {
+  const tsa = snapshot.audit.timestampAssurance;
+  return {
+    mode: snapshot.mode,
+    requireHumanGates: snapshot.requireHumanGates,
+    reviewBudget: { ...snapshot.reviewBudget },
+    maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries,
+    maxReviewerAttempts: snapshot.maxReviewerAttempts,
+    allowSelfApproval: snapshot.allowSelfApproval,
+    challengePolicy: snapshot.challengePolicy,
+    minimumActorAssuranceForApproval: snapshot.minimumActorAssuranceForApproval,
+    audit: {
+      emitTransitions: snapshot.audit.emitTransitions,
+      emitToolCalls: snapshot.audit.emitToolCalls,
+      enableChainHash: snapshot.audit.enableChainHash,
+      timestampAssurance: {
+        enabled: tsa.enabled,
+        mode: tsa.mode,
+        strict: tsa.strict,
+        criticalEvents: [...tsa.criticalEvents],
+        ntpDriftThresholdMs: tsa.ntpDriftThresholdMs,
+        tsaTimeoutMs: tsa.tsaTimeoutMs,
+        ...(tsa.tsaUrl !== undefined ? { tsaUrl: tsa.tsaUrl } : {}),
+        ...(tsa.trustAnchors !== undefined ? { trustAnchors: [...tsa.trustAnchors] } : {}),
+        ...(tsa.ntpServers !== undefined ? { ntpServers: [...tsa.ntpServers] } : {}),
+      },
+    },
+    actorClassification: { ...snapshot.actorClassification },
+    ...(snapshot.identityProvider !== undefined
+      ? { identityProvider: snapshot.identityProvider }
+      : {}),
+    identityProviderMode: snapshot.identityProviderMode,
+    enforceRiskClassification: snapshot.enforceRiskClassification,
+    riskTriggerPaths: snapshot.riskTriggerPaths.map((rule) => ({ ...rule })),
+    allowReducedCeremony: snapshot.allowReducedCeremony,
+    discoveryHealth: { ...snapshot.discoveryHealth },
+    validationEvidence: { ...snapshot.validationEvidence },
+  };
+}
+
+export function computePolicySnapshotHash(snapshot: z.infer<typeof PolicySnapshotBase>): string {
+  return hashText(canonicalJsonStringify(policyContentFromSnapshot(snapshot)));
+}
+
+export const PolicySnapshotSchema = PolicySnapshotBase.superRefine((snapshot, context) => {
+  if (snapshot.hash !== computePolicySnapshotHash(snapshot))
+    context.addIssue({
+      code: 'custom',
+      path: ['hash'],
+      message: 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+      params: { integrityCode: 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH' },
+    });
+}).readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

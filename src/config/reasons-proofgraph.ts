@@ -28,6 +28,15 @@ const CERTIFIED_PLAN_RECOVERY: readonly string[] = [
 /** Reason codes for recording and consuming ProofGraph mutation evidence. */
 export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   {
+    code: 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Frozen policy fields do not match their recorded digest. This is an integrity failure, not a version incompatibility.',
+    recoverySteps: [
+      'Preserve the suspect state for investigation; restore a trusted copy or start a distinct governed session. Never repair the hash to accept altered policy.',
+    ],
+  },
+  {
     code: 'PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS',
     category: 'precondition',
     messageTemplate:
@@ -222,17 +231,6 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Run the mutation command and record it with flowguard_record_mutation_evidence',
       'Record the evidence at the current implementation digest, then declare the claim',
-    ],
-  },
-
-  {
-    code: 'UNSUPPORTED_ASSERTION_CAPABILITY',
-    category: 'precondition',
-    messageTemplate:
-      "Verification check '{checkId}' does not support structured assertion evidence for counterexample binding.",
-    recoverySteps: [
-      'Use a verification command that produces structured test reports (e.g. Maven Surefire, Gradle, Vitest, Jest)',
-      'Ensure the project is configured with a recognized test framework',
     ],
   },
 

@@ -1,5 +1,18 @@
 # Release Policy
 
+## v11 state-contract freeze
+
+The unreleased v11 contract includes certified claim origins, canonical POSIX
+repository paths, frozen repository risk mappings and policy-content hash
+verification. After this hardening release v11 is frozen. Further ProofGraph
+architecture changes require a concrete, reproducible finding.
+
+A release may contain at most one state-contract hard cut. The preceding released
+artifact must already provide `flowguard inspect --upgrade-check`; the release
+checklist must record the writing release and recovery path before publishing a
+cut. An integrity mismatch is corruption/tampering, not evidence that an older
+runtime will make the state compatible. Preserve suspect evidence unchanged.
+
 This document describes how FlowGuard releases are produced, distributed, and supported.
 
 ---
