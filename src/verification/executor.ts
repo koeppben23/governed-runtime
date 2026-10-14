@@ -120,7 +120,8 @@ export async function executeCheck(input: ExecuteCheckInput): Promise<ExecutionE
 
   const executionMs = Math.round(performance.now() - startTime);
 
-  // Compute tamper-evident digest BEFORE truncation (full output)
+  // Compute the integrity-comparison digest BEFORE truncation (full output);
+  // keyless, so it detects accidental drift, not a same-user rewrite.
   const outputDigest = hashText(stdout + stderr);
 
   // Truncate for evidence embedding
