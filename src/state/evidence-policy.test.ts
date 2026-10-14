@@ -13,19 +13,20 @@ import {
   ReviewBudgetSchema,
   TimestampAssurancePolicySchema,
   ValidationEvidencePolicySchema,
+  computePolicySnapshotHash,
 } from './evidence-policy.js';
+import { makePolicySnapshot } from '../fixtures.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 
-const VALID_POLICY_DIGEST = 'a'.repeat(64);
-
 /** A COMPLETE current-epoch snapshot: exactly what the hydrate writer persists. */
-const CURRENT_SNAPSHOT = {
-  mode: 'team',
-  hash: VALID_POLICY_DIGEST,
+const SNAPSHOT_FIELDS = {
+  mode: 'team' as const,
+  hash: '',
+  riskTriggerPaths: [],
   hashVersion: POLICY_DIGEST_VERSION,
   resolvedAt: FIXED_TIME,
-  requestedMode: 'team',
+  requestedMode: 'team' as const,
   effectiveGateBehavior: 'human_gated' as const,
   requireHumanGates: true,
   reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
@@ -62,6 +63,8 @@ const CURRENT_SNAPSHOT = {
   },
   actorClassification: { flowguard_decision: 'human' },
 };
+const CURRENT_SNAPSHOT = { ...SNAPSHOT_FIELDS, hash: computePolicySnapshotHash(SNAPSHOT_FIELDS) };
+const VALID_POLICY_DIGEST = CURRENT_SNAPSHOT.hash;
 
 describe('evidence-policy', () => {
   describe('HAPPY', () => {
@@ -83,14 +86,16 @@ describe('evidence-policy', () => {
     });
 
     it('PolicySnapshotSchema accepts regulated snapshot', () => {
-      const parsed = PolicySnapshotSchema.parse({
-        ...CURRENT_SNAPSHOT,
-        mode: 'regulated',
-        requestedMode: 'regulated',
-        allowSelfApproval: false,
-        minimumActorAssuranceForApproval: 'claim_validated',
-        enforceRiskClassification: true,
-      });
+      const parsed = PolicySnapshotSchema.parse(
+        makePolicySnapshot({
+          ...CURRENT_SNAPSHOT,
+          mode: 'regulated',
+          requestedMode: 'regulated',
+          allowSelfApproval: false,
+          minimumActorAssuranceForApproval: 'claim_validated',
+          enforceRiskClassification: true,
+        }),
+      );
       expect(parsed.mode).toBe('regulated');
       expect(parsed.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
@@ -187,11 +192,13 @@ describe('evidence-policy', () => {
     });
 
     it('preserves explicit authority values verbatim (no reinterpretation)', () => {
-      const parsed = PolicySnapshotSchema.parse({
-        ...CURRENT_SNAPSHOT,
-        discoveryHealth: { enforcement: 'required', onDegraded: 'block', onDrift: 'block' },
-        validationEvidence: { enforcement: 'required', allowNoCommands: true },
-      });
+      const parsed = PolicySnapshotSchema.parse(
+        makePolicySnapshot({
+          ...CURRENT_SNAPSHOT,
+          discoveryHealth: { enforcement: 'required', onDegraded: 'block', onDrift: 'block' },
+          validationEvidence: { enforcement: 'required', allowNoCommands: true },
+        }),
+      );
       expect(parsed.discoveryHealth).toEqual({
         enforcement: 'required',
         onDegraded: 'block',
@@ -219,10 +226,12 @@ describe('evidence-policy', () => {
     };
 
     it('parses a canonical persisted IdP snapshot without rewriting it', () => {
-      const parsed = PolicySnapshotSchema.parse({
-        ...CURRENT_SNAPSHOT,
-        identityProvider: CANONICAL_STATIC_IDP,
-      });
+      const parsed = PolicySnapshotSchema.parse(
+        makePolicySnapshot({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: CANONICAL_STATIC_IDP,
+        }),
+      );
       expect(parsed.identityProvider).toEqual(CANONICAL_STATIC_IDP);
       // Read -> serialize -> parse is byte-identical: no read-time synthesis.
       const reParsed = PolicySnapshotSchema.parse(JSON.parse(JSON.stringify(parsed)));
@@ -261,17 +270,19 @@ describe('evidence-policy', () => {
     });
 
     it('parses a canonical jwks IdP snapshot with its persisted cacheTtlSeconds', () => {
-      const parsed = PolicySnapshotSchema.parse({
-        ...CURRENT_SNAPSHOT,
-        identityProvider: {
-          mode: 'jwks',
-          issuer: 'https://issuer.example.test',
-          audience: ['flowguard', 'flowguard-ci'],
-          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
-          jwksUri: 'https://issuer.example.test/.well-known/jwks.json',
-          cacheTtlSeconds: 300,
-        },
-      });
+      const parsed = PolicySnapshotSchema.parse(
+        makePolicySnapshot({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: {
+            mode: 'jwks',
+            issuer: 'https://issuer.example.test',
+            audience: ['flowguard', 'flowguard-ci'],
+            claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+            jwksUri: 'https://issuer.example.test/.well-known/jwks.json',
+            cacheTtlSeconds: 300,
+          },
+        }),
+      );
       expect(parsed.identityProvider).toMatchObject({ cacheTtlSeconds: 300 });
     });
 
@@ -291,10 +302,12 @@ describe('evidence-policy', () => {
     };
 
     it('parses a canonical PEM signing key and round-trips byte-identical', () => {
-      const parsed = PolicySnapshotSchema.parse({
-        ...CURRENT_SNAPSHOT,
-        identityProvider: CANONICAL_PEM_IDP,
-      });
+      const parsed = PolicySnapshotSchema.parse(
+        makePolicySnapshot({
+          ...CURRENT_SNAPSHOT,
+          identityProvider: CANONICAL_PEM_IDP,
+        }),
+      );
       expect(parsed.identityProvider).toEqual(CANONICAL_PEM_IDP);
       const reParsed = PolicySnapshotSchema.parse(JSON.parse(JSON.stringify(parsed)));
       expect(JSON.stringify(reParsed)).toBe(JSON.stringify(parsed));
@@ -445,7 +458,7 @@ describe('evidence-policy', () => {
     it.each(['solo', 'team', 'team-ci', 'regulated'] as const)(
       'accepts the canonical mode %p',
       (mode) => {
-        const snapshot = { ...CURRENT_SNAPSHOT, mode, requestedMode: mode };
+        const snapshot = makePolicySnapshot({ ...CURRENT_SNAPSHOT, mode, requestedMode: mode });
         expect(PolicySnapshotSchema.parse(snapshot).mode).toBe(mode);
       },
     );

@@ -62,6 +62,7 @@ import {
   SessionState,
 } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
+import { computePolicySnapshotHash } from '../state/evidence-policy.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
 import { assertEvidenceApprovalWriteBoundary } from './evidence-approval-write-guard.js';
@@ -291,6 +292,30 @@ async function syncDirectory(dir: string): Promise<void> {
  * reference, never a shared mutable object.
  */
 
+/**
+ * Root phase of the persisted predecessor for the evidence-approval boundary.
+ *
+ * Uses exactly the parse the canonical read uses (`JSON.parse` of the whole
+ * document), never a textual heuristic: duplicate keys, key order, indentation,
+ * CRLF, or a BOM therefore resolve identically here and in {@link readState}.
+ * Schema validation is deliberately skipped (it runs only when the predecessor
+ * is approved). Anything that is not a JSON object with a string root `phase`
+ * reports `unknown`, so the caller fails closed through the canonical read.
+ */
+async function persistedPhaseForBoundary(sessionDir: string): Promise<string | 'unknown' | null> {
+  const raw = await readStateFile(statePath(sessionDir));
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return 'unknown';
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return 'unknown';
+  const phase = (parsed as { phase?: unknown }).phase;
+  return typeof phase === 'string' ? phase : 'unknown';
+}
+
 async function readStateFile(filePath: string): Promise<string | null> {
   try {
     return await fs.readFile(filePath, 'utf-8');
@@ -320,6 +345,7 @@ function parseStateJson(raw: string, filePath: string): unknown {
 export type PersistedStateAssessment =
   | { readonly kind: 'compatible'; readonly state: SessionState }
   | { readonly kind: 'incompatible' }
+  | { readonly kind: 'integrity_mismatch'; readonly message: string }
   | { readonly kind: 'invalid'; readonly message: string };
 
 function hasRemovedStateFields(contract: Record<string, unknown>): boolean {
@@ -357,12 +383,20 @@ export function assessPersistedStateDocument(json: unknown): PersistedStateAsses
     };
   }
   const result = SessionState.safeParse(json);
-  return result.success
-    ? { kind: 'compatible', state: result.data }
-    : {
-        kind: 'invalid',
-        message: `State file failed Zod validation: ${result.error.message}`,
+  if (result.success) {
+    const snapshot = result.data.policySnapshot;
+    if (computePolicySnapshotHash(snapshot) !== snapshot.hash) {
+      return {
+        kind: 'integrity_mismatch',
+        message: 'Frozen policy fields do not match their recorded content digest.',
       };
+    }
+    return { kind: 'compatible', state: result.data };
+  }
+  return {
+    kind: 'invalid',
+    message: `State file failed Zod validation: ${result.error.message}`,
+  };
 }
 
 export async function readState(sessionDir: string): Promise<SessionState | null> {
@@ -383,6 +417,8 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   if (assessment.kind === 'invalid') {
     throw new PersistenceError('SCHEMA_VALIDATION_FAILED', assessment.message);
   }
+  if (assessment.kind === 'integrity_mismatch')
+    throw new PersistenceError('POLICY_SNAPSHOT_INTEGRITY_MISMATCH', assessment.message);
   return assessment.state;
 }
 
@@ -416,6 +452,12 @@ export async function writeStateAlreadyLocked(
       `Refusing to persist invalid state: ${result.error.message}`,
     );
   }
+  if (computePolicySnapshotHash(result.data.policySnapshot) !== result.data.policySnapshot.hash) {
+    throw new PersistenceError(
+      'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+      'Refusing a frozen policy whose fields do not match its digest.',
+    );
+  }
 
   // Single persistence-boundary guard for the implementation-entry invariant:
   // no IMPLEMENTATION-phase state may be written without a frozen pre-mutation
@@ -424,11 +466,19 @@ export async function writeStateAlreadyLocked(
   // fails closed here instead of persisting an unreviewable implementation.
   assertImplementationEntryFrozen(result.data);
 
-  // THE lowest evidence-approval boundary: a newly entered EXPORT_READY must
-  // be authorized by the canonical protected application for EXACTLY this
-  // evidence basis. This covers every writer — `writeState`, the artifact/audit
-  // commit path, and any future direct caller.
-  if (result.data.phase === 'EXPORT_READY') {
+  // THE lowest evidence-approval boundary. A write that enters `EXPORT_READY`
+  // or leaves an approved predecessor must present the canonical admission and
+  // an unchanged basis — regardless of the chosen target phase, so a direct
+  // writer cannot bypass the protection through an out-of-topology transition.
+  // The predecessor phase comes from the same JSON parse as the canonical
+  // read (no schema pass on ordinary writes); an approved or unreadable
+  // predecessor goes through the full canonical read and therefore fails
+  // closed on corruption, integrity, or contract mismatch.
+  const predecessorPhase =
+    result.data.phase === 'EXPORT_READY'
+      ? 'EXPORT_READY'
+      : await persistedPhaseForBoundary(sessionDir);
+  if (predecessorPhase === 'EXPORT_READY' || predecessorPhase === 'unknown') {
     const previous = await readState(sessionDir);
     await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
   }

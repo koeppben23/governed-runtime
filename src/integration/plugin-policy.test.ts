@@ -21,16 +21,17 @@ import * as path from 'node:path';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { makeState, FIXED_TIME } from '../fixtures.js';
 import type { PolicyMode } from '../config/policy.js';
+import { makePolicySnapshot } from '../fixtures.js';
 
 function createValidState(policyMode: PolicyMode) {
   const baseState = makeState('TICKET');
   return {
     ...baseState,
-    policySnapshot: {
+    policySnapshot: makePolicySnapshot({
       ...baseState.policySnapshot,
       mode: policyMode,
       requestedMode: policyMode,
-    },
+    }),
   };
 }
 

@@ -10,7 +10,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { makePlanApprovalCertificate, makeState, PLAN_RECORD } from '../../fixtures.js';
+import {
+  makePlanApprovalCertificate,
+  makeState,
+  materializedPlanClaim,
+  PLAN_RECORD,
+} from '../../fixtures.js';
 import {
   projectImplementationProofStatus,
   projectCompletionProofStatus,
@@ -78,20 +83,15 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
   // A real, session/policy-bound certificate: the gate only counts a PROVEN
   // claim whose provenance matches the current certificate.
   const certificate = makePlanApprovalCertificate(baseWithPlan, {});
-  const boundClaims = claims.map((claim) => ({
-    ...claim,
-    provenance: {
-      kind: 'canonical_authority' as const,
-      authorityId: 'plan',
-      digest: PLAN_RECORD.current.digest,
-      approval: {
-        certificateId: certificate.certificateId,
-        claimDeclarationsDigest: certificate.claimDeclarationsDigest,
-        decisionAttestationDigest: certificate.decisionAttestationDigest,
-        declarationId: claim.claimId,
-      },
-    },
-  }));
+  const boundClaims = claims.map((claim) => {
+    const declaration = claimDeclarations.claims.find((item) => item.claimId === claim.claimId);
+    if (!declaration) throw new Error('fixture requires a matching declaration');
+    return {
+      ...materializedPlanClaim(declaration, certificate),
+      verificationState: claim.verificationState,
+      ...(claim.freshness !== undefined ? { freshness: claim.freshness } : {}),
+    };
+  });
   return {
     ...baseWithPlan,
     proofGraph: {

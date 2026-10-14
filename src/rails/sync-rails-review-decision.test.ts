@@ -6,6 +6,7 @@ import {
   makePlanApprovalCertificate,
   makeState,
   makeProgressedState,
+  materializedPlanClaim,
   REGULATED_POLICY_SNAPSHOT,
   DECISION_IDENTITY_REVIEWER,
   DECISION_IDENTITY_VERIFIED_REVIEWER,
@@ -103,31 +104,10 @@ function withCertifiedCriticalPlan(
   const declaration = declarations.claims[0]!;
   return {
     ...base,
-    // Materialized source contract the gate requires alongside the certificate:
-    // the declared critical fact bound to the certificate provenance.
+    // Materialized source contract the gate requires alongside the certificate.
     proofContract: {
       version: 'contract.v2' as const,
-      claims: [
-        {
-          claimId: declaration.claimId,
-          statement: declaration.statement,
-          signalClass: 'fact' as const,
-          critical: true,
-          provenance: {
-            kind: 'canonical_authority' as const,
-            authorityId: 'plan',
-            digest: certificate.authorityDigest,
-            approval: {
-              certificateId: certificate.certificateId,
-              claimDeclarationsDigest: certificate.claimDeclarationsDigest,
-              decisionAttestationDigest: certificate.decisionAttestationDigest,
-              declarationId: declaration.claimId,
-            },
-          },
-          evidenceRefs: [],
-          counterexampleRefs: [],
-        },
-      ],
+      claims: [materializedPlanClaim(declaration, certificate)],
     },
     plan: {
       ...base.plan,
@@ -161,6 +141,32 @@ function bindToCurrentCertificate(
         },
       },
     })),
+  };
+}
+
+/**
+ * Evaluated projection built from the state's materialized contract claim, so
+ * the certified origin digest recomputes. Coverage overrides model a tampered
+ * projection and must fail the certificate binding.
+ */
+function materializedProjection(
+  state: ReturnType<typeof withCertifiedCriticalPlan>,
+  opts: { readonly coversRiskTriggers?: readonly SpecificRiskTrigger[] } = {},
+): ProofGraphProjection {
+  const claim = state.proofContract.claims[0];
+  if (!claim) throw new Error('fixture requires a materialized contract claim');
+  return {
+    version: 'proofgraph.v2',
+    evaluatedAt: '2026-01-01T00:00:00.000Z',
+    claims: [
+      {
+        ...claim,
+        verificationState: 'PROVEN',
+        ...(opts.coversRiskTriggers !== undefined
+          ? { coversRiskTriggers: [...opts.coversRiskTriggers] }
+          : {}),
+      },
+    ],
   };
 }
 
@@ -335,17 +341,10 @@ describe('review-decision rail', () => {
 
     it('blocks a detected risk trigger that no certified claim covers', () => {
       const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
-      const projected = proofGraph('fact', 'PROVEN');
       const result = executeReviewDecision(
         {
           ...certified,
-          proofGraph: bindToCurrentCertificate(certified, {
-            ...projected,
-            claims: projected.claims.map((claim) => ({
-              ...claim,
-              claimId: '00000000-0000-4000-8000-000000000763',
-            })),
-          }),
+          proofGraph: materializedProjection(certified),
           implementation: {
             implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
@@ -381,18 +380,10 @@ describe('review-decision rail', () => {
       const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'), {
         coversRiskTriggers: ['state_integrity'],
       });
-      const projected = proofGraph('fact', 'PROVEN');
       const result = executeReviewDecision(
         {
           ...certified,
-          proofGraph: bindToCurrentCertificate(certified, {
-            ...projected,
-            claims: projected.claims.map((claim) => ({
-              ...claim,
-              claimId: '00000000-0000-4000-8000-000000000763',
-              coversRiskTriggers: ['state_integrity'],
-            })),
-          }),
+          proofGraph: materializedProjection(certified),
           implementation: {
             implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
@@ -424,17 +415,13 @@ describe('review-decision rail', () => {
       const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'), {
         coversRiskTriggers: ['state_integrity'],
       });
-      const projected = proofGraph('fact', 'PROVEN');
       const result = executeReviewDecision(
         {
           ...certified,
-          proofGraph: bindToCurrentCertificate(certified, {
-            ...projected,
-            claims: projected.claims.map((claim) => ({
-              ...claim,
-              claimId: '00000000-0000-4000-8000-000000000763',
-              coversRiskTriggers: ['state_integrity', 'audit_authority'],
-            })),
+          // A tampered projection widening the certified coverage relation is
+          // no longer an evaluation of the certified declaration.
+          proofGraph: materializedProjection(certified, {
+            coversRiskTriggers: ['state_integrity', 'audit_authority'],
           }),
           implementation: {
             implementationId: '00000000-0000-4000-8000-0000000000aa',
@@ -462,9 +449,8 @@ describe('review-decision rail', () => {
       );
       expect(result).toMatchObject({
         kind: 'blocked',
-        code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+        code: 'PROOFGRAPH_CERTIFIED_CLAIM_MISMATCH',
       });
-      if (result.kind === 'blocked') expect(result.reason).toContain('audit_authority');
     });
 
     it('blocks a stale assessment whose digest does not match the recorded implementation', () => {

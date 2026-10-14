@@ -447,6 +447,31 @@ describe('handlePreToolUse', () => {
     expect(result).toEqual({ decision: 'allow' });
   });
 
+  it('BAD: denies mutating host tools while an integrity incident (evidence reuse) is unresolved', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: '33333333-3333-4333-8333-333333333333',
+              status: 'blocked',
+              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+              consumedAt: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await handlePreToolUse(validPayload);
+
+    expect(result.decision).toBe('deny');
+    expect(result.code).toBe('INTEGRITY_INCIDENT_MUTATION_DENIED');
+  });
+
   it('HAPPY: allows non-mutating resolution tools without session resolution', async () => {
     const result = await handlePreToolUse({ ...validPayload, tool_name: 'Read' });
 

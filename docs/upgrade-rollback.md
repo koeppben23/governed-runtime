@@ -99,6 +99,11 @@ upgrade before managed artifacts are written.
 
 ### State Schema Compatibility
 
+Current-contract policy hash mismatches are reported separately as
+`POLICY_SNAPSHOT_INTEGRITY_MISMATCH` / `STATE_INTEGRITY_MISMATCH`. They are
+integrity failures, not version incompatibilities. Preserve suspect evidence and
+restore a trusted copy; never recompute a stored hash to accept modified policy.
+
 FlowGuard is a prerelease product. The persisted session-state schema is
 `schemaVersion: 'v11'`, `assurance-epoch.v3`, `state-digest.v2`,
 `policy-digest.v4`, and audit records are strictly `audit-chain.v3`. Pre-v11

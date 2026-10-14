@@ -21,12 +21,14 @@ export type EnforcementReasonCode =
   | 'evaluation_unavailable'
   | 'risk_assessment_stale'
   | 'certificate_invalid'
+  | 'certified_claim_mismatch'
   | 'critical_fact_required'
   | 'risk_trigger_uncovered';
+// Certified-contract mismatches are distinct from missing evaluation.
 
 /** Maps enforcement reason codes to registry BlockedReason codes. */
 export function mapEnforcementReasonToRegistryCode(reasonCode: EnforcementReasonCode): string {
-  return ENFORCEMENT_REGISTRY_MAP[reasonCode] ?? 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
+  return ENFORCEMENT_REGISTRY_MAP[reasonCode];
 }
 
 const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
@@ -40,6 +42,7 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   evaluation_unavailable: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
   risk_assessment_stale: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',
   certificate_invalid: 'PROOFGRAPH_CERTIFICATE_INVALID',
+  certified_claim_mismatch: 'PROOFGRAPH_CERTIFIED_CLAIM_MISMATCH',
   critical_fact_required: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
   risk_trigger_uncovered: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
   aggregate_check_mismatch: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
@@ -53,6 +56,7 @@ const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
   check_mismatch: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
   check_only_evidence: 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE',
   evidence_role_collision: 'PROOFGRAPH_EVIDENCE_ROLE_COLLISION',
+  counterexample_conflict: 'PROOFGRAPH_COUNTEREXAMPLE_CONFLICT',
 };
 /** Assertion binding reason codes emitted by the binding projection. */
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';

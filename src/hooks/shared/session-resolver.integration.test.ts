@@ -16,9 +16,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initWorkspace } from '../../adapters/workspace/index.js';
 import { writeState } from '../../adapters/persistence.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
-import { resolveSession } from './session-resolver.js';
+import { resolveRoot } from '../../adapters/git.js';
+import { resolveSession, type SessionResolution } from './session-resolver.js';
 
 const SESSION_ID = 'resolver-integration-session';
+
+/** Fail with the typed code/reason instead of a bare false. */
+function expectResolved(result: SessionResolution): void {
+  expect(result.ok, result.ok ? '' : `${result.code}: ${result.reason}`).toBe(true);
+}
 
 describe('resolveSession integration (local-only git repo)', () => {
   let base: string;
@@ -47,13 +53,17 @@ describe('resolveSession integration (local-only git repo)', () => {
 
     const initialized = await initWorkspace(worktree, SESSION_ID);
     sessionDir = initialized.sessionDir;
+    // Persist the git-canonical root exactly like hydrate does (the authority
+    // returns it); an OS-level path alias (Windows 8.3) must never become a
+    // different session binding identity.
+    const canonicalWorktree = await resolveRoot(worktree);
     await writeState(
       initialized.sessionDir,
       makeState('IMPLEMENTATION', {
         implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         binding: {
           hostSessionId: SESSION_ID,
-          worktree,
+          worktree: canonicalWorktree,
           fingerprint: initialized.fingerprint,
           resolvedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -74,7 +84,7 @@ describe('resolveSession integration (local-only git repo)', () => {
 
   it('resolves the bound session from the worktree root', async () => {
     const result = await resolveSession(worktree, SESSION_ID);
-    expect(result.ok).toBe(true);
+    expectResolved(result);
   });
 
   it('resolves from a subdirectory without an origin remote', async () => {
@@ -83,7 +93,7 @@ describe('resolveSession integration (local-only git repo)', () => {
 
     const result = await resolveSession(subdir, SESSION_ID);
 
-    expect(result.ok).toBe(true);
+    expectResolved(result);
   });
 
   it.skipIf(process.platform === 'win32')('resolves from a symlinked path', async () => {
@@ -92,7 +102,7 @@ describe('resolveSession integration (local-only git repo)', () => {
 
     const result = await resolveSession(link, SESSION_ID);
 
-    expect(result.ok).toBe(true);
+    expectResolved(result);
   });
 
   it('accepts the override when it names the authorized session directory', async () => {
@@ -100,7 +110,7 @@ describe('resolveSession integration (local-only git repo)', () => {
 
     const result = await resolveSession(worktree, SESSION_ID);
 
-    expect(result.ok).toBe(true);
+    expectResolved(result);
     if (result.ok) expect(result.sessionDir).toBe(sessionDir);
   });
 

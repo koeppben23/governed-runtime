@@ -22,23 +22,16 @@ import {
 export function classifyDiscoveryHealthUnavailable(
   error: unknown,
 ): DiscoveryHealthUnavailableReason {
-  if (error instanceof PersistenceError) {
-    switch (error.code) {
-      case 'PARSE_FAILED':
-        return 'corrupt';
-      case 'SCHEMA_VALIDATION_FAILED':
-      case 'SESSION_STATE_INCOMPATIBLE':
-        return 'schema_invalid';
-      case 'READ_FAILED':
-      case 'WRITE_FAILED':
-      case 'DIRECT_WRITE_REQUIRES_PREPARE':
-      case 'OUTBOX_ORDER_CONFLICT':
-      case 'EXPORT_READY_APPROVAL_UNVERIFIED':
-      case 'LOCK_TIMEOUT':
-      case 'LOCK_TIMEOUT_EXHAUSTED':
-        return 'read_failed';
-    }
-  }
+  if (
+    error instanceof PersistenceError &&
+    (error.code === 'PARSE_FAILED' || error.code === 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH')
+  )
+    return 'corrupt';
+  if (
+    error instanceof PersistenceError &&
+    (error.code === 'SCHEMA_VALIDATION_FAILED' || error.code === 'SESSION_STATE_INCOMPATIBLE')
+  )
+    return 'schema_invalid';
   return 'read_failed';
 }
 

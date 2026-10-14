@@ -29,14 +29,14 @@ FlowGuard processes data in two contexts:
 
 ### Session State
 
-| Attribute                         | Classification   | Protection              |
-| --------------------------------- | ---------------- | ----------------------- |
-| **Session ID**                    | Internal         | FlowGuard runtime       |
-| **Phase**                         | Internal         | FlowGuard runtime       |
-| **Profile**                       | Internal         | FlowGuard runtime       |
-| **Evidence (ticket, plan, etc.)** | **Confidential** | Customer responsibility |
-| **Review decisions**              | **Confidential** | Customer responsibility |
-| **Policy snapshot**               | Internal         | Hash-protected          |
+| Attribute                         | Classification   | Protection                                                                         |
+| --------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
+| **Session ID**                    | Internal         | FlowGuard runtime                                                                  |
+| **Phase**                         | Internal         | FlowGuard runtime                                                                  |
+| **Profile**                       | Internal         | FlowGuard runtime                                                                  |
+| **Evidence (ticket, plan, etc.)** | **Confidential** | Customer responsibility                                                            |
+| **Review decisions**              | **Confidential** | Customer responsibility                                                            |
+| **Policy snapshot**               | Internal         | Content hash verified on read; local filesystem access remains customer-controlled |
 
 **Currently Delivered:**
 

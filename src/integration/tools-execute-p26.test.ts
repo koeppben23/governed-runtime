@@ -58,6 +58,7 @@ import {
   CURRENT_IMPL_RISK_ASSESSMENT,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { hashText } from '../shared/hashing.js';
@@ -412,7 +413,7 @@ describe('P26: regulated archive completion', () => {
         actorSource: 'env' as const,
         actorAssurance: 'best_effort' as const,
       },
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...baseState!.policySnapshot,
         mode: 'regulated' as const,
         requestedMode: 'regulated' as const,
@@ -422,7 +423,7 @@ describe('P26: regulated archive completion', () => {
           ...baseState!.policySnapshot.audit,
           enableChainHash: true,
         },
-      },
+      }),
       error: null,
     };
     await writeStateWithArtifacts(sessDir, regulatedState);
@@ -632,13 +633,13 @@ describe('P26: regulated archive completion', () => {
       expect(state).not.toBeNull();
       await writeState(sessDir, {
         ...state!,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           mode: 'regulated',
           requestedMode: 'regulated',
           allowSelfApproval: false,
           requireHumanGates: true,
-        },
+        }),
       });
 
       // Abort → the explicit terminal ABORTED position with an error marker

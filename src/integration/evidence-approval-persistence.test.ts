@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmod, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readState, writeState, writeStateAlreadyLocked } from '../adapters/persistence.js';
@@ -234,6 +234,63 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
       reviewCycles: { ...persisted.reviewCycles, plan: persisted.reviewCycles.plan + 1 },
     });
     expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
+  });
+
+  it.each(['COMPLETE', 'ABORTED', 'TICKET'] as const)(
+    'keeps the approved basis immutable when leaving for %s (also outside the topology)',
+    async (phase) => {
+      const previous = autoEvidenceState();
+      await writeState(sessDir, previous);
+      const application = approveOrThrow(previous);
+      await writeState(sessDir, application.state, undefined, application.admission);
+      const persisted = (await readState(sessDir))!;
+      await expect(
+        writeState(sessDir, { ...persisted, phase, ticket: null }),
+      ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+      await writeState(sessDir, { ...persisted, phase });
+      expect((await readState(sessDir))?.phase).toBe(phase);
+    },
+  );
+
+  describe('predecessor phase resolution cannot be laundered by document formatting', () => {
+    async function approvedOnDisk(): Promise<SessionState> {
+      const previous = autoEvidenceState();
+      await writeState(sessDir, previous);
+      const application = approveOrThrow(previous);
+      await writeState(sessDir, application.state, undefined, application.admission);
+      return (await readState(sessDir))!;
+    }
+
+    it('BAD: a leading duplicate root "phase" key does not disable the approved-basis guard', async () => {
+      const persisted = await approvedOnDisk();
+      const file = join(sessDir, 'session-state.json');
+      const raw = await readFile(file, 'utf-8');
+      // JSON.parse keeps the LAST duplicate key, so the parsed state is still
+      // the approved EXPORT_READY document; only a textual probe would see TICKET.
+      await writeFile(file, raw.replace(/^\{\n/, '{\n  "phase": "TICKET",\n'), 'utf-8');
+      expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
+      await expect(
+        writeState(sessDir, { ...persisted, phase: 'COMPLETE', ticket: null }),
+      ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+    });
+
+    it('BAD: a BOM-prefixed predecessor fails closed instead of being overwritten', async () => {
+      const persisted = await approvedOnDisk();
+      const file = join(sessDir, 'session-state.json');
+      const raw = await readFile(file, 'utf-8');
+      await writeFile(file, `\uFEFF${raw}`, 'utf-8');
+      await expect(
+        writeState(sessDir, { ...persisted, phase: 'COMPLETE', ticket: null }),
+      ).rejects.toMatchObject({ code: 'PARSE_FAILED' });
+    });
+
+    it('BAD: an unparsable predecessor fails closed instead of being overwritten', async () => {
+      await writeState(sessDir, autoEvidenceState());
+      await writeFile(join(sessDir, 'session-state.json'), '{ "phase": "TICKET", ', 'utf-8');
+      await expect(writeState(sessDir, makeState('TICKET'))).rejects.toMatchObject({
+        code: 'PARSE_FAILED',
+      });
+    });
   });
 
   it('persists the autoAdvance approval only when its carried admission is passed', async () => {

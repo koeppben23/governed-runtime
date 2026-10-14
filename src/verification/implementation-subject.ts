@@ -10,7 +10,8 @@
  * @version v1
  */
 
-import { isAbsolute, normalize } from 'node:path';
+import { isAbsolute, posix } from 'node:path';
+import { normalizeRepoRelativePath } from '../shared/repo-path.js';
 
 import { changedFiles, hashWorktreeFiles } from '../adapters/git.js';
 import { isVerificationCandidateBound } from '../state/candidate-identity.js';
@@ -149,10 +150,16 @@ function runSpecificResultPattern(
   return candidate.assertionReport.resultPatternTemplate;
 }
 
-/** Substitute the attempt id and reject anything outside the worktree. */
+/**
+ * Substitute the attempt id and reject anything outside the worktree. The path
+ * is collapsed with POSIX semantics first, so an embedded traversal such as
+ * `a/../../x` is rejected exactly like a leading `../x`.
+ */
 function safeArtifactPath(template: string, attemptId: string): string | null {
-  const path = normalize(template.replace(/\{attemptId\}/g, attemptId));
-  return isAbsolute(path) || path.startsWith('..') ? null : path;
+  const logical = normalizeRepoRelativePath(template.replace(/\{attemptId\}/g, attemptId));
+  if (isAbsolute(logical) || posix.isAbsolute(logical)) return null;
+  const path = posix.normalize(logical);
+  return path === '..' || path.startsWith('../') || path === '.' ? null : path;
 }
 
 function sameFileSet(left: readonly string[], right: readonly string[]): boolean {
@@ -186,10 +193,10 @@ export async function reattestImplementationSubject(input: {
 }): Promise<ImplementationSubjectReattestation> {
   const rawFiles = await changedFiles(input.worktree);
   const scoped = await scopeImplementationFiles(input.worktree, rawFiles, input.baseline);
-  const ignored = new Set((input.ignoredArtifacts ?? []).map((path) => normalize(path)));
+  const ignored = new Set((input.ignoredArtifacts ?? []).map(normalizeRepoRelativePath));
   const currentFiles =
     scoped.kind === 'ok'
-      ? scoped.subject.files.filter((file) => !ignored.has(normalize(file)))
+      ? scoped.subject.files.filter((file) => !ignored.has(normalizeRepoRelativePath(file)))
       : [];
 
   if (!sameFileSet(currentFiles, input.frozenFiles)) {

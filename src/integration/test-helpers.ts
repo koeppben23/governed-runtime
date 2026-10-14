@@ -185,6 +185,8 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
   // A bare `.git` marker is not a repository and fails closed now.
   const { execFileSync } = await import('node:child_process');
   execFileSync('git', ['init', '--quiet', tmpDir], { windowsHide: true });
+  // Byte-exact fixture content on every platform (no CRLF conversion).
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: tmpDir, windowsHide: true });
 
   return {
     tmpDir,
@@ -228,11 +230,19 @@ export async function canonicalBinding(
   root: string,
   hostSessionId: string = crypto.randomUUID(),
 ): Promise<BindingInfo> {
-  const canonicalRoot = await fs.realpath(root);
+  let canonicalRoot = await fs.realpath(root);
   // Dynamic import keeps the workspace/git module graph out of this helper's
   // static imports: test files mock the git adapter, and a static edge here
   // would be evaluated before the vi.mock factory installs the mock.
+  const { resolveRoot } = await import('../adapters/git-repo.js');
   const { computeFingerprint } = await import('../adapters/workspace/index.js');
+  try {
+    // Fingerprint the git-canonical root like the session authority does so a
+    // path alias (Windows 8.3 short names) cannot select a divergent workspace.
+    canonicalRoot = await resolveRoot(canonicalRoot);
+  } catch {
+    // Non-repository roots keep the physical path fingerprint.
+  }
   const { fingerprint } = await computeFingerprint(canonicalRoot);
   return {
     hostSessionId,

@@ -11,6 +11,18 @@
     "related": false
   },
   "mutate": [
+    "src/audit/proofgraph/evidence-approval-admission.ts",
+    "src/audit/proofgraph/evidence-approval-preflight.ts",
+    "src/adapters/evidence-approval-write-guard.ts",
+    "src/rails/evidence-approval-application.ts",
+    "src/audit/proofgraph/evidence-role-independence.ts",
+    "src/audit/proofgraph/evidence-integrity.ts",
+    "src/state/proofgraph-plan-certificate.ts",
+    "src/state/proofgraph-claim-certification.ts",
+    "src/state/evidence-policy.ts",
+    "src/verification/report-isolation.ts",
+    "src/state/risk-path-classifier.ts",
+    "src/shared/repo-path.ts",
     "src/adapters/binding.ts",
     "src/adapters/host-adapter.ts",
     "src/adapters/implementation-base-authority.ts",

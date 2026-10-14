@@ -21,7 +21,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
-import { makeProgressedState, makeState } from '../fixtures.js';
+import { makePolicySnapshot, makeProgressedState, makeState } from '../fixtures.js';
 import { buildStateWriteBody } from '../audit/types.js';
 import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
@@ -305,10 +305,10 @@ describe('direct metadata write channel', () => {
       'policySnapshot',
       (state: SessionState): SessionState => ({
         ...state,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state.policySnapshot,
           enforceRiskClassification: state.policySnapshot.enforceRiskClassification !== true,
-        },
+        }),
       }),
     ],
     [
@@ -549,10 +549,10 @@ describe('direct metadata write channel', () => {
   it('keeps authority committed after the decision read when a discovery block persists', async () => {
     const base = makeProgressedState('IMPLEMENTATION');
     const seeded = await seedClaimState('IMPLEMENTATION', {
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...base.policySnapshot,
         discoveryHealth: { enforcement: 'required', onDegraded: 'block', onDrift: 'block' },
-      },
+      }),
     });
     const intervening = await writeStateWithAuditOperations(sessDir, seeded, [
       {

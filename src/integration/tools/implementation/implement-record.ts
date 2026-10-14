@@ -400,7 +400,7 @@ export async function handleImplRecord(
   const declarationBlocked = ticketDeclarationBlocked(input.state);
   if (declarationBlocked !== null) return declarationBlocked;
   const ceremony = projectCeremonyEligibility({ state: input.state, changedFiles: files });
-  const assessment = assessMinimumTaskClass(files);
+  const assessment = assessMinimumTaskClass(files, input.state.policySnapshot.riskTriggerPaths);
   const nextState: SessionState = {
     ...input.state,
     mutationEpisodes: reconcileMutationEpisodes(

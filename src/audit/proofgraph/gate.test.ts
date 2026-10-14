@@ -9,6 +9,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  certifiedClaimDigest,
+  materializedClaimDigest,
+  requiredEvidenceForDeclaration,
+} from '../../state/proofgraph-claim-certification.js';
+import {
   evaluateProofGraphGate,
   evaluateProofGraphGateFromState,
   isRiskAssessmentCurrent,
@@ -26,7 +31,7 @@ import type {
 } from '../../state/proofgraph-approval.js';
 import type { PlanRecord } from '../../state/evidence-plan.js';
 import { makePlanRevision } from '../../state/evidence-test-constants.js';
-import { makePlanApprovalCertificate, makeState } from '../../fixtures.js';
+import { makePlanApprovalCertificate, makeState, VALIDATION_PASSED } from '../../fixtures.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 
@@ -57,9 +62,42 @@ function gate(input: GateInput) {
   return evaluateProofGraphGate({
     ...rest,
     contract: contract ?? declaredSource(rest.projection?.claims),
-    validationAttempts: validationAttempts ?? [],
+    validationAttempts: validationAttempts ?? [positiveAttempt(implementationDigest)],
     implementationDigest,
+    ...(input.authorizedClaimBindings
+      ? {
+          authorizedClaimBindings: new Map(
+            [...input.authorizedClaimBindings].map(([id, binding]) => [
+              id,
+              {
+                ...binding,
+                certifiedClaimDigest: materializedClaimDigest(
+                  claim(id, {
+                    coversRiskTriggers: input.projection?.claims.find((c) => c.claimId === id)
+                      ?.coversRiskTriggers,
+                  }),
+                )!,
+              },
+            ]),
+          ),
+        }
+      : {}),
   });
+}
+
+const POSITIVE_ATTEMPT = '00000000-0000-4000-8000-000000000077';
+function positiveAttempt(digest?: string): SessionState['validationAttempts'][number] {
+  return {
+    attemptId: POSITIVE_ATTEMPT,
+    scope: 'implementation',
+    implementationId: POSITIVE_ATTEMPT,
+    implementationDigest: digest as string,
+    executionObservation: {
+      executionObservedStateDigest: 'a'.repeat(64),
+      preCommitStateDigest: 'a'.repeat(64),
+    },
+    result: { ...VALIDATION_PASSED[0]!, checkId: 'test' },
+  };
 }
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -79,10 +117,19 @@ const AUTHORIZED_BINDING: AuthorizedClaimBinding = {
   claimDeclarationsDigest: APPROVAL.claimDeclarationsDigest,
   decisionAttestationDigest: APPROVAL.decisionAttestationDigest,
   declarationId: APPROVAL.declarationId,
+  certifiedClaimDigest: 'c'.repeat(64),
 };
 
 function authorizedBindings(...claimIds: string[]): ReadonlyMap<string, AuthorizedClaimBinding> {
-  return new Map(claimIds.map((claimId) => [claimId, AUTHORIZED_BINDING] as const));
+  return new Map(
+    claimIds.map(
+      (claimId) =>
+        [
+          claimId,
+          { ...AUTHORIZED_BINDING, certifiedClaimDigest: materializedClaimDigest(claim(claimId))! },
+        ] as const,
+    ),
+  );
 }
 
 function claim(
@@ -93,10 +140,10 @@ function claim(
     state?: ClaimVerificationState;
     /** Omit to model a self-declared claim that never passed a human approval. */
     certified?: boolean;
-    coversRiskTriggers?: readonly SpecificRiskTrigger[];
+    coversRiskTriggers?: readonly SpecificRiskTrigger[] | undefined;
   } = {},
 ): ProofClaim {
-  return {
+  const value: ProofClaim = {
     claimId,
     statement: 'x',
     signalClass: opts.signalClass ?? 'fact',
@@ -107,12 +154,17 @@ function claim(
       digest: 'd',
       ...(opts.certified === false ? {} : { approval: APPROVAL }),
     },
-    evidenceRefs: [],
+    evidenceRefs: [{ kind: 'validation_attempt', attemptId: POSITIVE_ATTEMPT }],
     counterexampleRefs: [],
+    certifiedPlan: { authoritySectionId: 's1', expectedCheckId: 'test', digest: 'c'.repeat(64) },
     ...(opts.coversRiskTriggers !== undefined
       ? { coversRiskTriggers: [...opts.coversRiskTriggers] }
       : {}),
     verificationState: opts.state ?? 'PROVEN',
+  };
+  return {
+    ...value,
+    certifiedPlan: { ...value.certifiedPlan!, digest: materializedClaimDigest(value)! },
   };
 }
 
@@ -431,11 +483,20 @@ describe('evaluateProofGraphGateFromState', () => {
     overrides: Partial<ProofClaim> = {},
     certificateId = certificate(decls).certificateId,
   ): ProofClaim {
+    const declaration = decls.claims.find((d) => d.claimId === claimId)!;
     return {
       claimId,
       statement: 'x',
       signalClass: 'fact',
       critical: true,
+      claimScope: declaration.claimScope,
+      requiredEvidence: requiredEvidenceForDeclaration(declaration),
+      coversRiskTriggers: declaration.coversRiskTriggers,
+      certifiedPlan: {
+        authoritySectionId: declaration.authoritySectionId,
+        expectedCheckId: declaration.expectedCheckId,
+        digest: certifiedClaimDigest(declaration),
+      },
       provenance: {
         kind: 'canonical_authority',
         authorityId: 'plan',
@@ -447,7 +508,7 @@ describe('evaluateProofGraphGateFromState', () => {
           declarationId: claimId,
         },
       },
-      evidenceRefs: [],
+      evidenceRefs: [{ kind: 'validation_attempt', attemptId: POSITIVE_ATTEMPT }],
       counterexampleRefs: [],
       verificationState: 'PROVEN',
       ...overrides,
@@ -459,7 +520,10 @@ describe('evaluateProofGraphGateFromState', () => {
   }
 
   function stateWith(overrides: Partial<SessionState>): SessionState {
-    return makeState('EVIDENCE_REVIEW', overrides);
+    return makeState('EVIDENCE_REVIEW', {
+      validationAttempts: [positiveAttempt(overrides.implementation?.digest)],
+      ...overrides,
+    });
   }
 
   it('is clear for a session without plan, claims, or risk assessment', () => {
@@ -591,6 +655,8 @@ describe('evaluateProofGraphGateFromState', () => {
   });
 
   it('blocks a projection that widens the approved trigger coverage', () => {
+    // The projection is re-bound to certificate provenance but its coverage no
+    // longer matches the certified declaration; the certified digest detects it.
     const decls = declarations(true, UUID(1), ['state_integrity']);
     const claims = [
       certifiedClaim(decls, UUID(1), {
@@ -619,10 +685,50 @@ describe('evaluateProofGraphGateFromState', () => {
     );
     expect(decision).toMatchObject({
       gated: true,
-      kind: 'risk_trigger_uncovered',
-      uncoveredTriggers: ['audit_authority'],
+      kind: 'certified_claim_mismatch',
+      uncoveredTriggers: [],
     });
   });
+
+  it.each([
+    [
+      'drops the certified adversarial requirement',
+      { requiredEvidence: { positive: ['executed_test' as const], adversarial: [] } },
+      'certified_claim_mismatch',
+    ],
+    [
+      'narrows the certified claim scope',
+      { claimScope: 'suite' as const },
+      'certified_claim_mismatch',
+    ],
+    [
+      'rewrites the certified statement',
+      { statement: 'a different, weaker statement' },
+      'certified_claim_mismatch',
+    ],
+    // A non-critical claim is no longer gate-eligible, so the authorized critical
+    // claim counts as missing: still blocking, never a silent pass.
+    ['downgrades the certified criticality', { critical: false }, 'evaluation_unavailable'],
+    [
+      'swaps the certified counterexample requirement',
+      { counterexampleRequirement: { kind: 'aggregate_check' as const, checkId: 'lint' } },
+      'certified_claim_mismatch',
+    ],
+  ])(
+    'BAD: blocks a PROVEN contract claim that %s after certification',
+    (_label, edit: Partial<ProofClaim>, expectedKind) => {
+      const decls = declarations(true);
+      const claims = [certifiedClaim(decls, UUID(1), edit)];
+      const decision = evaluateProofGraphGateFromState(
+        stateWith({
+          plan: planRecord(decls, certificate(decls)),
+          proofGraph: projection(claims),
+          proofContract: declaredSource(claims),
+        }),
+      );
+      expect(decision).toMatchObject({ gated: true, kind: expectedKind });
+    },
+  );
 
   it('reports evaluation_unavailable when the evaluated claim binds a different certificate', () => {
     const decls = declarations(true);

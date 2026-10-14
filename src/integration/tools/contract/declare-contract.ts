@@ -27,7 +27,7 @@ import {
 } from '../../../state/proofgraph-approval.js';
 import type { CounterexampleRequirement as CounterexampleRequirementType } from '../../../state/proofgraph-approval.js';
 import type { DeclaredClaim } from '../../../state/proofgraph.js';
-import type { ProofProviderKind } from '../../../state/proofgraph-primitives.js';
+import { requiredEvidenceForDeclaration } from '../../../state/proofgraph-claim-certification.js';
 import type { ClaimAuthorityRef } from '../../../state/proofgraph-refs.js';
 import {
   SURFACE_COMMAND_REGISTRATION,
@@ -160,18 +160,13 @@ function buildOptionalEvidence(
 ):
   | {
       readonly refs: DeclaredClaim['evidenceRefs'][number][];
-      readonly positive: ProofProviderKind[];
     }
   | { readonly unresolvedProfileId: string } {
   const refs: DeclaredClaim['evidenceRefs'][number][] = [];
-  const positive: ProofProviderKind[] = [];
   // A declared structural surface becomes required positive evidence, so a
   // claim cannot be proven while its consistency assertion is failing/stale.
   if (rc.structuralSurface !== undefined) {
     refs.push({ kind: 'structural_surface', surfaceId: rc.structuralSurface });
-    positive.push(
-      rc.structuralSurface === SURFACE_CONFIG_DEFAULTS ? 'schema_compare' : 'structural_assertion',
-    );
   }
   // A declared mutation profile is resolved to a CONCRETE, digest-verified
   // attempt, so surviving mutants (or a missing run) keep the claim unproven.
@@ -188,9 +183,8 @@ function buildOptionalEvidence(
       attemptId: attempt.attemptId,
       profileId: rc.mutationProfile,
     });
-    positive.push('fault_injection');
   }
-  return { refs, positive };
+  return { refs };
 }
 
 /**
@@ -242,7 +236,6 @@ function buildDeclaredClaims(
     const optional = buildOptionalEvidence(state, rc, digest, verdicts);
     if ('unresolvedProfileId' in optional) return optional;
     const evidenceRefs: DeclaredClaim['evidenceRefs'][number][] = [evidenceRef, ...optional.refs];
-    const positive: ProofProviderKind[] = ['executed_test', ...optional.positive];
     claims.push({
       claimId: manualClaimId(rc.statement),
       statement: rc.statement,
@@ -258,13 +251,7 @@ function buildDeclaredClaims(
       // (Run-9 F4). A critical fact claim additionally requires an executed
       // counterexample; a missing/unresolved counterexample keeps it
       // NOT_VERIFIED.
-      requiredEvidence: {
-        positive,
-        adversarial:
-          (critical && isFact) || rc.counterexampleRequirement !== undefined
-            ? ['counterexample' as const]
-            : [],
-      },
+      requiredEvidence: requiredEvidenceForDeclaration({ ...rc, critical: critical && isFact }),
       counterexampleRequirement: rc.counterexampleRequirement,
     });
   }

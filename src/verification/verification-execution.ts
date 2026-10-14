@@ -18,6 +18,7 @@ import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
 import { FORMATS_BY_PROVIDER, PARSER_BY_FORMAT } from '../providers/registry.js';
 import { VerificationError } from './errors.js';
+import { prepareReportIsolation } from './report-isolation.js';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ async function buildPreparedReport(
   switch (spec.collection) {
     case 'run_specific': {
       const resultPattern = spec.resultPatternTemplate.replace(/\{attemptId\}/g, attemptId);
+      await prepareReportIsolation(cwd, attemptId, resultPattern);
       return {
         kind: 'run_specific',
         spec: spec,

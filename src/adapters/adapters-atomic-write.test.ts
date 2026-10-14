@@ -71,6 +71,7 @@ import {
   FIXED_TIME,
   FIXED_UUID,
   FIXED_SESSION_UUID,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { materializeReviewCardArtifact } from './workspace/evidence-artifacts.js';
 import { hashText } from '../shared/hashing.js';
@@ -357,7 +358,7 @@ describe('persistence', () => {
         const state = makeState('COMPLETE', { binding: { ...BINDING, worktree } });
         await writeState(sessDir, {
           ...state,
-          policySnapshot: { ...state.policySnapshot, mode: 'regulated' },
+          policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'regulated' }),
         });
 
         const archiveDir = path.join(configDir, 'workspaces', fingerprint, 'sessions', 'archive');

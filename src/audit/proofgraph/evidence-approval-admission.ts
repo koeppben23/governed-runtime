@@ -78,41 +78,49 @@ function semanticProofGraph(
 /**
  * Canonical digest over the immutable approval basis. The basis is split into:
  *
- * - **approval authority** — review decision, plan authority, certificate,
- *   frozen policy hash, session binding;
+ * - **approval authority** — review decision, the full frozen policy snapshot,
+ *   session binding and identities, ticket, architecture, the full plan record
+ *   (claims, certificate, diagnostics), reduced-ceremony and rework state;
+ * - **implementation subject** — the full implementation record, its frozen
+ *   pre-mutation base authority, and the verification candidates and their
+ *   execution-subject bindings that define what a check executes;
  * - **review/validation evidence** — implementation review result and
- *   findings, review assurance (reviewer evidence ledger), validation
- *   attempts, implementation validation, mutation episodes and resolutions,
- *   implementation revision, risk assessment, proof contract and evaluated
- *   proof graph semantics.
+ *   findings, challenge resolutions, review assurance (reviewer evidence
+ *   ledger), validation attempts, implementation validation, mutation episodes
+ *   and resolutions, risk assessment, proof contract, contract coverage, and
+ *   evaluated proof graph semantics.
  *
- * Operative metadata that is deliberately NOT part of the basis: runtime
- * lease, audit outbox, risk/discovery gates, error, review cycles, pending
- * system work. Any basis change invalidates a previously issued admission and
- * is refused for an already-approved session.
+ * Everything else is deliberately NOT part of the basis because it is either
+ * operative metadata or not evidence for the approval: runtime lease, audit
+ * outbox, risk/discovery gates and discovery projections, error, review cycles,
+ * pending system work, transition (bound separately at entry), export
+ * completion evidence, regulated archive status, self-review loop state,
+ * pre-implementation validation, peer-review records, active checks/profile,
+ * implementation baseline, claimed task class, mutation attempts (their
+ * verdicts enter through the contract/proof graph), and timestamps. Any basis
+ * change invalidates a previously issued admission and is refused for an
+ * already-approved session.
  */
 function evidenceApprovalBasisProjection(
   state: SessionState,
   includeDecision: boolean,
 ): Record<string, unknown> {
-  const plan = state.plan;
   return {
     flowguardSessionId: state.flowguardSessionId,
     bindingDigest: evidenceApprovalBindingDigest(state),
-    // The FULL frozen policy snapshot, not only its stored hash: the reader
-    // does not recompute the hash from the fields, so a hash-only binding
-    // would not detect in-place policy tampering.
+    // The FULL frozen policy snapshot, not only its stored hash: the hash is
+    // keyless, so binding the fields themselves is what pins the policy the
+    // approval was admitted under.
     policySnapshot: state.policySnapshot,
+    ticket: state.ticket,
+    architecture: state.architecture,
+    actorInfo: state.actorInfo ?? null,
+    initiatedBy: state.initiatedBy,
+    initiatedByIdentity: state.initiatedByIdentity ?? null,
+    reducedCeremony: state.reducedCeremony,
+    implementationRework: state.implementationRework ?? null,
     ...(includeDecision ? { reviewDecision: state.reviewDecision } : {}),
-    plan:
-      plan === null
-        ? null
-        : {
-            current: plan.current,
-            claimDeclarations: plan.claimDeclarations ?? null,
-            reviewCompletion: plan.reviewCompletion,
-            approvalCertificate: plan.approvalCertificate ?? null,
-          },
+    plan: state.plan,
     implReview: state.implReview,
     implReviewFindings: state.implReviewFindings ?? null,
     reviewAssurance: state.reviewAssurance ?? null,
@@ -120,10 +128,14 @@ function evidenceApprovalBasisProjection(
     implValidation: state.implValidation,
     mutationEpisodes: state.mutationEpisodes,
     mutationEpisodeResolutions: state.mutationEpisodeResolutions,
-    implementationDigest: state.implementation?.digest ?? null,
-    implementationChangedFiles: state.implementation?.changedFiles ?? null,
+    implementation: state.implementation,
+    implementationBaseAuthority: state.implementationBaseAuthority ?? null,
+    verificationCandidates: state.verificationCandidates ?? null,
+    executionSubjectInputsByCandidateId: state.executionSubjectInputsByCandidateId ?? null,
+    challengeResolutions: state.challengeResolutions,
     implementationRiskAssessment: state.implementationRiskAssessment,
     proofContract: state.proofContract ?? null,
+    proofContractCoverage: state.proofContractCoverage ?? null,
     proofGraph: semanticProofGraph(state.proofGraph),
   };
 }
@@ -140,6 +152,16 @@ function evidenceApprovalSourceBasisDigest(state: SessionState): string {
 
 export function evidenceApprovalBasisDigest(state: SessionState): string {
   return hashText(canonicalJsonStringify(evidenceApprovalBasisProjection(state, true)));
+}
+
+/** Top-level basis keys that differ between two states, for forensic diagnostics. */
+export function evidenceApprovalBasisDiff(previous: SessionState, next: SessionState): string[] {
+  const before = evidenceApprovalBasisProjection(previous, true);
+  const after = evidenceApprovalBasisProjection(next, true);
+  return Object.keys(before).filter(
+    (key) =>
+      canonicalJsonStringify(before[key] ?? null) !== canonicalJsonStringify(after[key] ?? null),
+  );
 }
 
 /**

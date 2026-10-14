@@ -13,6 +13,7 @@
  * policy-layer decision and is intentionally not encoded here.
  *
  * Verification-state precedence (first match wins):
+ *   0. conflicting counterexample history        -> NOT_VERIFIED
  *   1. missing provenance                       -> NOT_VERIFIED
  *   2. a FRESH counterexample contradicted it    -> CONTRADICTED
  *  2.5 a FRESH counterexample is blocked         -> BLOCKED
@@ -464,5 +465,21 @@ export function evaluateProofGraph(
   const claims: ProofClaim[] = [...input.claims]
     .sort((a, b) => (a.claimId < b.claimId ? -1 : a.claimId > b.claimId ? 1 : 0))
     .map((claim) => evaluateClaim(claim, input, evaluatedAt));
-  return { version: PROOFGRAPH_SCHEMA_VERSION, claims, evaluatedAt };
+  const conflicts = input.claims.filter(
+    (claim) =>
+      selectCurrentCounterexamples(input.counterexamples.filter((c) => c.claimId === claim.claimId))
+        .conflicting,
+  );
+  return {
+    version: PROOFGRAPH_SCHEMA_VERSION,
+    claims,
+    evaluatedAt,
+    ...(conflicts.length > 0
+      ? {
+          claimDiagnostics: Object.fromEntries(
+            conflicts.map((claim) => [claim.claimId, 'counterexample_conflict' as const]),
+          ),
+        }
+      : {}),
+  };
 }

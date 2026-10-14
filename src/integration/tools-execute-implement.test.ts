@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
@@ -51,6 +52,7 @@ import { appendReviewDispatch } from '../state/review-dispatch.js';
 import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
+  makePolicySnapshot,
   makeProgressedState,
   TICKET,
   PLAN_RECORD,
@@ -229,6 +231,7 @@ let ctx: TestToolContext;
 let cleanupEnv: () => void;
 
 beforeEach(async () => {
+  configuredImplementationBudget = 1;
   cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
   ws = await createTestWorkspace();
   ctx = createToolContext({
@@ -290,7 +293,22 @@ async function hydrateSession(
   return parseToolResult(raw);
 }
 
+/**
+ * Implementation review budget frozen at hydrate time. Tests that need more
+ * than one implementation review iteration must hydrate with a higher budget;
+ * mutating the frozen snapshot after approval invalidates the plan certificate.
+ */
+let configuredImplementationBudget = 1;
+
 async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
+  await fs.mkdir(join(ws.tmpDir, '.opencode'), { recursive: true });
+  await fs.writeFile(
+    join(ws.tmpDir, '.opencode', 'flowguard.json'),
+    JSON.stringify({
+      schemaVersion: 'v1',
+      policy: { reviewBudget: { implementation: configuredImplementationBudget } },
+    }),
+  );
   await hydrateSession();
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
 }
@@ -348,13 +366,6 @@ describe('implement', () => {
     const sessDir = await currentSessionDir();
     const readyForImplementation = await readState(sessDir);
     expect(readyForImplementation?.phase).toBe('IMPLEMENTATION');
-    await writeState(sessDir, {
-      ...readyForImplementation!,
-      policySnapshot: {
-        ...readyForImplementation!.policySnapshot,
-        reviewBudget: { ...readyForImplementation!.policySnapshot.reviewBudget, implementation: 1 },
-      },
-    });
   }
 
   /**
@@ -603,12 +614,12 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           allowReducedCeremony: true,
           requireHumanGates: true,
           effectiveGateBehavior: 'human_gated',
-        },
+        }),
       });
 
       vi.mocked(gitMock.changedFiles).mockResolvedValue(['docs/usage-notes.md']);
@@ -662,12 +673,12 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           allowReducedCeremony: true,
           requireHumanGates: true,
           effectiveGateBehavior: 'human_gated',
-        },
+        }),
       });
 
       vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/security/policy.ts']);
@@ -915,12 +926,12 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           allowReducedCeremony: true,
           requireHumanGates: true,
           effectiveGateBehavior: 'human_gated',
-        },
+        }),
         implementationBaseline: {
           ...state!.implementationBaseline,
           dirtyFiles: [{ path: 'package.json', hash: 'stable:package.json' }],
@@ -993,9 +1004,7 @@ describe('implement', () => {
       const state = await readState(sessDir);
       const retryState = {
         ...state!,
-        policySnapshot: {
-          ...state!.policySnapshot,
-        },
+        policySnapshot: makePolicySnapshot(state!.policySnapshot),
       };
       await writeState(sessDir, retryState);
 
@@ -1142,9 +1151,7 @@ describe('implement', () => {
       const state = await readState(sessDir);
       await writeState(sessDir, {
         ...state!,
-        policySnapshot: {
-          ...state!.policySnapshot,
-        },
+        policySnapshot: makePolicySnapshot(state!.policySnapshot),
       });
     }
 
@@ -1257,10 +1264,10 @@ describe('implement', () => {
       const state = await readState(sessDir);
       await writeState(sessDir, {
         ...state!,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           reviewBudget: { ...state!.policySnapshot.reviewBudget, implementation: 3 },
-        },
+        }),
       });
 
       await fulfillReview('implement', 1, 'changes_requested');
@@ -1615,17 +1622,12 @@ describe('implement', () => {
     // model discovers the defect in free execution — that remains NOT_VERIFIED
     // without a real-host run (see the live smoke harness).
     describe('#1081 quality-repair flow fixtures', () => {
+      beforeEach(() => {
+        configuredImplementationBudget = 3;
+      });
+
       async function allowMultipleIterations(): Promise<string> {
-        const sessDir = await currentSessionDir();
-        const state = await readState(sessDir);
-        await writeState(sessDir, {
-          ...state!,
-          policySnapshot: {
-            ...state!.policySnapshot,
-            reviewBudget: { ...state!.policySnapshot.reviewBudget, implementation: 3 },
-          },
-        });
-        return sessDir;
+        return currentSessionDir();
       }
 
       async function resetChangedFiles(): Promise<void> {

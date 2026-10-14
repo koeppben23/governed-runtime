@@ -28,6 +28,7 @@ import {
   export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { makePolicySnapshot } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-chain.js';
@@ -491,7 +492,7 @@ describe('audit/archive tamper matrix', () => {
     expect(state).not.toBeNull();
     const tsaCriticalState: SessionState = {
       ...state!,
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...state!.policySnapshot,
         audit: {
           ...state!.policySnapshot.audit,
@@ -507,7 +508,7 @@ describe('audit/archive tamper matrix', () => {
             tsaTimeoutMs: 10000,
           },
         },
-      },
+      }),
     };
 
     const events = await readArchivedAuditEvents(ids);

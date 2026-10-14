@@ -3,7 +3,11 @@ import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
 import { buildEnforcementError } from './blocked-result.js';
 
-import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
+import {
+  isMutatingHostTool,
+  isHostToolAllowedInPhase,
+  hostMutationIntegrityGate,
+} from './phase-tool-gate.js';
 import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
 import { enforceBeforeVerdict } from './review/enforcement/enforcement.js';
@@ -160,6 +164,13 @@ async function enforceBeforeRules(
   let hostResolution: { sessDir: string; state: SessionState } | null = null;
   if (mutatingHost) {
     hostResolution = await resolveHostToolStateOrThrow(runtime, toolName, sessionId);
+    const integrity = hostMutationIntegrityGate(
+      toolName,
+      hostResolution.state,
+      args,
+      hostResolution.sessDir,
+    );
+    if (integrity.kind === 'blocked') throw buildEnforcementError(integrity.code, integrity.reason);
   }
 
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
@@ -402,6 +413,8 @@ function enforceHostToolPhase(
   sessionId: string,
   state: SessionState,
 ): void {
+  const integrity = hostMutationIntegrityGate(toolName, state);
+  if (integrity.kind === 'blocked') throw buildEnforcementError(integrity.code, integrity.reason);
   const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
   runtime.log.debug('enforcement', 'evaluating phase gate', {
     tool: toolName,

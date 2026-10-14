@@ -33,6 +33,7 @@ import {
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import {
+  makePolicySnapshot,
   IMPL_EVIDENCE,
   makePlanApprovalCertificate,
   makeState,
@@ -40,6 +41,7 @@ import {
   REDUCED_CEREMONY_DECISION,
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
+  materializedPlanClaim,
 } from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
@@ -472,25 +474,9 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
   it('does not invent a gate code when the Evidence gate is satisfied', () => {
     const plan = approvedPlan();
     const approvalCertificate = plan.approvalCertificate!;
-    const declaredClaim = {
-      claimId: CLAIM_ID,
-      statement: 'x',
-      signalClass: 'fact' as const,
-      critical: true,
-      provenance: {
-        kind: 'canonical_authority' as const,
-        authorityId: 'plan',
-        digest: PLAN_CURRENT.digest,
-        approval: {
-          certificateId: approvalCertificate.certificateId,
-          claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations())),
-          decisionAttestationDigest: approvalCertificate.decisionAttestationDigest,
-          declarationId: CLAIM_ID,
-        },
-      },
-      evidenceRefs: [],
-      counterexampleRefs: [],
-    };
+    // Materialize exactly as the product does: the certified origin digest is
+    // recomputed from the declaration, so the gate can count the claim.
+    const declaredClaim = materializedPlanClaim(declarations().claims[0]!, approvalCertificate);
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
       policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
@@ -861,11 +847,11 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
         changedFiles: ['docs/usage-notes.md'],
         domainFiles: [],
       },
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...POLICY_SNAPSHOT,
         allowReducedCeremony: true,
         requireHumanGates: true,
-      },
+      }),
     });
 
     expect(state.reducedCeremony).toBeNull();
@@ -900,12 +886,12 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
   });
 
   it('reports an applied decision only while the machine binding still holds', () => {
-    const policySnapshot = {
+    const policySnapshot = makePolicySnapshot({
       ...POLICY_SNAPSHOT,
       allowReducedCeremony: true,
       requireHumanGates: true,
-      effectiveGateBehavior: 'human_gated' as const,
-    };
+      effectiveGateBehavior: 'human_gated',
+    });
     const attempt = (checkId: string, index: number) => ({
       attemptId: `00000000-0000-4000-8000-0000000000${index}d`,
       scope: 'implementation' as const,

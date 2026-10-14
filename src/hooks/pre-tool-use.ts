@@ -38,6 +38,7 @@ import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
   isSubagentAuthorized,
+  hostMutationIntegrityGate,
 } from './shared/phase-gate.js';
 import {
   formatUnresolvedBlockingObligationReason,
@@ -164,6 +165,16 @@ async function main(): Promise<void> {
     }
 
     const { state } = resolution;
+    const integrity = hostMutationIntegrityGate(
+      toolNameLower,
+      state,
+      validated.tool_input,
+      resolution.sessionDir,
+    );
+    if (integrity.kind === 'blocked') {
+      await writePreToolUseDeny(guard, integrity.code, integrity.reason);
+      return;
+    }
     const unresolved = unresolvedBlockingObligations(state);
     if (unresolved.length > 0) {
       const reason = formatUnresolvedBlockingObligationReason(unresolved);

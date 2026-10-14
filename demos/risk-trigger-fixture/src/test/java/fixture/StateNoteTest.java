@@ -1,9 +1,8 @@
 package fixture;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
+import fixture.state.ModuleStateStore;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Positive assertion for the retained claim: the invariant is documented. */
 class StateNoteTest {
@@ -11,9 +10,8 @@ class StateNoteTest {
 
     @Test
     void documentsInvariant() throws Exception {
-        Path note = Path.of("src", "state", "module-state.md");
-        assertTrue(Files.exists(note), "the state note must exist");
-        assertTrue(Files.readString(note).contains(INVARIANT),
-            "the state note must document the ownership invariant");
+        ModuleStateStore store = new ModuleStateStore();
+        store.write("state-platform");
+        assertEquals("state-platform", store.ownership());
     }
 }

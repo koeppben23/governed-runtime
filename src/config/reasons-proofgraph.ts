@@ -28,6 +28,60 @@ const CERTIFIED_PLAN_RECOVERY: readonly string[] = [
 /** Reason codes for recording and consuming ProofGraph mutation evidence. */
 export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   {
+    code: 'PROOFGRAPH_CERTIFIED_CLAIM_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Materialized claim requirements, check/surface/mutation bindings or authority differ from their certified declaration.',
+    recoverySteps: [
+      'Preserve the mismatched contract and projection. Request changes and rematerialize the unchanged certified claims with fresh execution evidence; revise authority only in a distinct governed session.',
+    ],
+  },
+  {
+    code: 'PROOFGRAPH_COUNTEREXAMPLE_CONFLICT',
+    category: 'state',
+    messageTemplate:
+      'Counterexample history contains contradictory outcomes for the same revision; the claim is NOT_VERIFIED.',
+    recoverySteps: [
+      'Preserve the contradictory observations. Repair through governed implementation and execute fresh evidence; never delete a historical falsification.',
+    ],
+  },
+  {
+    code: 'VERIFICATION_REPORT_ISOLATION_FAILED',
+    category: 'adapter',
+    messageTemplate: 'FlowGuard could not create a fresh, non-symlinked attempt report directory.',
+    recoverySteps: [
+      'Preserve unexpected report paths for diagnosis, repair their ownership/layout and retry with a fresh attempt. Isolation is not cryptographic producer attestation.',
+    ],
+  },
+  {
+    code: 'INTEGRITY_INCIDENT_MUTATION_DENIED',
+    category: 'state',
+    messageTemplate:
+      'Repository mutation is denied while a reviewer-evidence integrity incident is unresolved.',
+    recoverySteps: [
+      'Preserve evidence with status/inspect/archive tools and use /abort for controlled termination; diagnosis and evidence preservation remain available.',
+      'Start a distinct host session at a trusted baseline; later reviews do not erase the incident.',
+    ],
+  },
+  {
+    code: 'SESSION_STATE_DIRECT_WRITE_DENIED',
+    category: 'state',
+    messageTemplate:
+      'Direct shell writes to governed session authority are denied by the defense-in-depth barrier.',
+    recoverySteps: [
+      'Use governed tools to update state; use Read/status/inspect for diagnosis. This heuristic is not cryptographic attestation or an OS sandbox.',
+    ],
+  },
+  {
+    code: 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Frozen policy fields do not match their recorded digest. This is an integrity failure, not a version incompatibility.',
+    recoverySteps: [
+      'Preserve the suspect state for investigation; restore a trusted copy or start a distinct governed session. Never repair the hash to accept altered policy.',
+    ],
+  },
+  {
     code: 'PROOFGRAPH_ASSERTION_IDENTITY_AMBIGUOUS',
     category: 'precondition',
     messageTemplate:
@@ -142,9 +196,9 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     code: 'EXPORT_READY_APPROVAL_UNVERIFIED',
     category: 'state',
     messageTemplate:
-      'The EXPORT_READY approval was not persisted because the persisted evidence does not clear the canonical evidence-approval preflight.',
+      'The approved-state write failed its admission, predecessor, transition, receipt or immutable-evidence binding.',
     recoverySteps: [
-      'Recompute the evidence for the current implementation revision and retry the evidence approval',
+      'Inspect the boundary error; obtain a fresh canonical approval admission for unchanged, sufficient evidence before retrying',
       'Apply the approval through the protected transition application, never a direct state write',
       'Do not retry a persisted approval that no longer clears the preflight; fix the evidence first',
     ],
@@ -222,17 +276,6 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Run the mutation command and record it with flowguard_record_mutation_evidence',
       'Record the evidence at the current implementation digest, then declare the claim',
-    ],
-  },
-
-  {
-    code: 'UNSUPPORTED_ASSERTION_CAPABILITY',
-    category: 'precondition',
-    messageTemplate:
-      "Verification check '{checkId}' does not support structured assertion evidence for counterexample binding.",
-    recoverySteps: [
-      'Use a verification command that produces structured test reports (e.g. Maven Surefire, Gradle, Vitest, Jest)',
-      'Ensure the project is configured with a recognized test framework',
     ],
   },
 

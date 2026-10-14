@@ -176,7 +176,7 @@ separate runtime re-read is injected into the prompt. This evidence is
 executor-produced (`flowguard_run_check` via `src/verification/executor.ts`),
 never agent-reported: each entry exposes the executed attempt identity
 (`attemptId`, `executedAt`), the verification `kind`, `command`, `exitCode`,
-pass/fail/timeout status, `executionMs`, the tamper-evident `outputDigest`, and
+pass/fail/timeout status, `executionMs`, the integrity-comparison `outputDigest`, and
 the execution-continuity observation described below.
 
 Execution-continuity binding:
@@ -477,7 +477,7 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 
 Validation logic is implemented once in `src/integration/review/validation/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
 
-**Blocked obligations and integrity incidents.** A `blocked` obligation is terminal and historically failed — it is never open work, and its documented recovery is a fresh obligation. A reuse rejection (`SUBAGENT_EVIDENCE_REUSED`) is additionally an integrity incident: the session stays authorization-relevant until an explicitly permitted recovery resolves it. Because the durable state carries no incident timestamp (`blockedAt`) and the rejected reuse attempt is not persisted, a later obligation or invocation cannot be proven to have happened after the incident. The integrity gate therefore never auto-resolves from later evidence: reduced-ceremony eligibility and the approval waiver stay withheld for the session while the full-ceremony review path remains available (no permanent workflow dead-end). Recovery is a fresh governed session. `blocked` stays terminal, `isOpenReviewObligation` remains the open-work authority, and `hasUnresolvedIntegrityIncident` is a separate predicate in `src/state/review-dispatch.ts`.
+**Blocked obligations and integrity incidents.** A `blocked` obligation remains terminal historical work, not an open obligation. A reuse rejection (`SUBAGENT_EVIDENCE_REUSED`) additionally marks an unresolved integrity incident. The canonical `hasUnresolvedIntegrityIncident` predicate denies repository-mutating host tools and withholds reduced ceremony/approval waivers; later observations never erase the incident. Read-only diagnosis, evidence preservation through admissible archive/export tools, audit reconciliation and controlled `/abort` remain available. Recover in a distinct governed session at a trusted baseline. `isOpenReviewObligation` retains its existing open-work semantics.
 
 **Challenge freshness binding (host-captured structured resolution).** When an
 obligation carries a frozen challenge requirement, challenge `evidenceRefs` are

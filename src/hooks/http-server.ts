@@ -57,6 +57,7 @@ import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
   isSubagentAuthorized,
+  hostMutationIntegrityGate,
 } from './shared/phase-gate.js';
 import {
   assessObligationEscalation,
@@ -214,6 +215,14 @@ export async function handlePreToolUse(
     return { decision: 'deny', code: resolution.code, reason: resolution.reason };
   }
 
+  const integrity = hostMutationIntegrityGate(
+    toolNameLower,
+    resolution.state,
+    tool_input,
+    resolution.sessionDir,
+  );
+  if (integrity.kind === 'blocked')
+    return { decision: 'deny', code: integrity.code, reason: integrity.reason };
   const unresolved = unresolvedBlockingObligations(resolution.state);
   if (unresolved.length > 0) {
     return {

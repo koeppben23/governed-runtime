@@ -241,7 +241,10 @@ export function buildPlanSubmissionResponse(
 function planRiskWarning(scope: PlanExecutionScope): ReturnType<typeof buildHeuristicRiskWarning> {
   return buildHeuristicRiskWarning({
     targetPaths: scope.args.targetPaths,
-    assessedTaskClass: assessMinimumTaskClass(scope.args.targetPaths ?? []).minimumTaskClass,
+    assessedTaskClass: assessMinimumTaskClass(
+      scope.args.targetPaths ?? [],
+      scope.state.policySnapshot.riskTriggerPaths,
+    ).minimumTaskClass,
     criticalClaimCount: (scope.args.claims ?? []).filter((claim) => claim.critical).length,
   });
 }

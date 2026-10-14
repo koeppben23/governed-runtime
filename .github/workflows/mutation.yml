@@ -31,7 +31,10 @@ jobs:
   mutation:
     name: mutation
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # The base admission run now covers 135 targets (v11 candidates included);
+    # the standard ubuntu runner needs roughly 170 minutes, so the cap must not
+    # truncate the mutation step before the admission manifest is verified.
+    timeout-minutes: 240
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1

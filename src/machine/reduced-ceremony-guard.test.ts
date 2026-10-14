@@ -17,6 +17,7 @@ import {
   POLICY_SNAPSHOT,
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import type {
   ImplementationRiskAssessment,
@@ -65,12 +66,12 @@ const RISK_ASSESSMENT: ImplementationRiskAssessment = {
   implementationDigest: DOC_IMPL.digest,
 };
 
-const POLICY = {
+const POLICY = makePolicySnapshot({
   ...POLICY_SNAPSHOT,
   allowReducedCeremony: true,
   requireHumanGates: true,
-  effectiveGateBehavior: 'human_gated' as const,
-};
+  effectiveGateBehavior: 'human_gated',
+});
 
 const DECISION: ReducedCeremonyDecision = {
   profile: 'reduced',
@@ -303,11 +304,15 @@ describe('reducedCeremonyReady binding invariants', () => {
   it('BAD: disabled policy flags reject the decision', () => {
     expect(
       reducedCeremonyReady(
-        boundState({ policySnapshot: { ...POLICY, allowReducedCeremony: false } }),
+        boundState({
+          policySnapshot: makePolicySnapshot({ ...POLICY, allowReducedCeremony: false }),
+        }),
       ),
     ).toBe(false);
     expect(
-      reducedCeremonyReady(boundState({ policySnapshot: { ...POLICY, requireHumanGates: false } })),
+      reducedCeremonyReady(
+        boundState({ policySnapshot: makePolicySnapshot({ ...POLICY, requireHumanGates: false }) }),
+      ),
     ).toBe(false);
   });
 

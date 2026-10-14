@@ -16,11 +16,33 @@ import {
 import { planApprovalContextOf } from '../../state/proofgraph-approval-context.js';
 import type { SessionState } from '../../state/schema.js';
 import {
+  certifiedClaimDigest,
+  requiredEvidenceForDeclaration,
+} from '../../state/proofgraph-claim-certification.js';
+import {
   resolveVerifiedMutationAttempt,
   resolveVerifiedMutationVerdicts,
 } from './mutation-provider.js';
 
 const EMPTY_CONTRACT: ProofContract = { version: 'contract.v2', claims: [] };
+
+function missingImplementationContract(): MaterializedPlanContract {
+  return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_implementation' }] };
+}
+
+function certifiedPlanOrigin(declaration: PlanClaimDeclaration) {
+  return {
+    authoritySectionId: declaration.authoritySectionId,
+    expectedCheckId: declaration.expectedCheckId,
+    ...(declaration.structuralSurface !== undefined
+      ? { structuralSurface: declaration.structuralSurface }
+      : {}),
+    ...(declaration.mutationProfile !== undefined
+      ? { mutationProfile: declaration.mutationProfile }
+      : {}),
+    digest: certifiedClaimDigest(declaration),
+  };
+}
 
 export type MaterializedPlanContract = {
   readonly contract: ProofContract;
@@ -61,25 +83,6 @@ function evidenceRefs(
     });
   }
   return refs;
-}
-
-function requiredEvidence(declaration: PlanClaimDeclaration) {
-  const positive: NonNullable<ProofContract['claims'][number]['requiredEvidence']>['positive'] = [
-    'executed_test',
-  ];
-  if (declaration.structuralSurface) {
-    positive.push(
-      declaration.structuralSurface === 'config-defaults'
-        ? 'schema_compare'
-        : 'structural_assertion',
-    );
-  }
-  if (declaration.mutationProfile) positive.push('fault_injection');
-  // A declared assertion is claim-carrying evidence at ANY criticality: the
-  // positive check pass alone must never prove a specific behavior (Run-9 F4).
-  const requiresAdversarial =
-    declaration.critical || declaration.counterexampleRequirement !== undefined;
-  return { positive, adversarial: requiresAdversarial ? ['counterexample' as const] : [] };
 }
 
 function isAggregateCounterexampleAttempt(
@@ -191,11 +194,8 @@ export async function materializeApprovedPlanContractResult(
   if (certificate.kind !== 'valid') {
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: certificate.cause }] };
   }
-  if (!implementationDigest) {
-    return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_implementation' }] };
-  }
+  if (!implementationDigest) return missingImplementationContract();
   const mutationVerdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);
-
   const attempts = state.validationAttempts.filter(
     (a) => a.scope === 'implementation' && a.implementationDigest === implementationDigest,
   );
@@ -234,6 +234,7 @@ export async function materializeApprovedPlanContractResult(
       signalClass: 'fact' as const,
       critical: declaration.critical,
       claimScope: declaration.claimScope,
+      certifiedPlan: certifiedPlanOrigin(declaration),
       provenance: {
         kind: 'canonical_authority' as const,
         authorityId: 'plan',
@@ -254,7 +255,7 @@ export async function materializeApprovedPlanContractResult(
       ...(declaration.coversRiskTriggers !== undefined
         ? { coversRiskTriggers: [...declaration.coversRiskTriggers] }
         : {}),
-      requiredEvidence: requiredEvidence(declaration),
+      requiredEvidence: requiredEvidenceForDeclaration(declaration),
     };
   });
   return { contract: { version: 'contract.v2', claims }, coverage };

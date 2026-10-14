@@ -33,6 +33,7 @@ import {
   withTestEnv,
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, status } from './tools/index.js';
+import { makePolicySnapshot } from '../fixtures.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
@@ -577,10 +578,10 @@ describe('identity-policy-e2e', () => {
       // This simulates a scenario where the snapshot differs from mode defaults
       const patchedState = {
         ...state!,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state!.policySnapshot,
           minimumActorAssuranceForApproval: 'idp_verified' as const,
-        },
+        }),
       };
       await writeState(sessDir, patchedState);
 

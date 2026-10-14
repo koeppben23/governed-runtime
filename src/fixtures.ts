@@ -22,6 +22,7 @@ import {
   type ReviewObligation,
 } from './state/evidence-review.js';
 import type { ReviewInvocationEvidence } from './state/evidence-review-invocation.js';
+import { computePolicySnapshotHash } from './state/evidence-policy.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,
@@ -43,10 +44,16 @@ import { POLICY_DIGEST_VERSION } from './state/evidence-identifiers.js';
 import {
   emptyClaimDeclarations,
   PlanApprovalCertificate,
+  type PlanClaimDeclaration,
   type ReviewBinding,
 } from './state/proofgraph-approval.js';
 import { planApprovalContextOf } from './state/proofgraph-approval-context.js';
 import { planApprovalCertificateIdentity } from './state/proofgraph-plan-certificate.js';
+import {
+  certifiedClaimDigest,
+  requiredEvidenceForDeclaration,
+} from './state/proofgraph-claim-certification.js';
+import type { DeclaredClaim } from './state/proofgraph.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
 
@@ -76,9 +83,9 @@ export const BINDING: BindingInfo = {
   resolvedAt: FIXED_TIME,
 };
 
-export const POLICY_SNAPSHOT: PolicySnapshot = {
+const POLICY_SNAPSHOT_FIELDS: Omit<PolicySnapshot, 'hash'> = {
+  riskTriggerPaths: [],
   mode: 'team',
-  hash: 'a'.repeat(64),
   hashVersion: POLICY_DIGEST_VERSION,
   resolvedAt: FIXED_TIME,
   requestedMode: 'team',
@@ -118,14 +125,20 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   },
 };
 
-export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
-  ...POLICY_SNAPSHOT,
+/** Author a current snapshot; overrides must never inherit a stale policy hash. */
+export function makePolicySnapshot(overrides: Partial<PolicySnapshot> = {}): PolicySnapshot {
+  const snapshot = { ...POLICY_SNAPSHOT_FIELDS, hash: '', ...overrides };
+  return { ...snapshot, hash: computePolicySnapshotHash(snapshot) };
+}
+
+export const POLICY_SNAPSHOT = makePolicySnapshot();
+export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = makePolicySnapshot({
   mode: 'regulated',
   requestedMode: 'regulated',
   allowSelfApproval: false,
   minimumActorAssuranceForApproval: 'best_effort',
   enforceRiskClassification: true,
-};
+});
 
 export const DECISION_IDENTITY_INITIATOR: DecisionIdentity = {
   actorId: 'initiator-1',
@@ -721,11 +734,63 @@ export function makePlanApprovalCertificate(
   });
 }
 
+/**
+ * Materialize a certificate-bound plan claim exactly as the product
+ * materializer does: the certified origin digest is recomputed from the
+ * declaration so gate bindings verify. Tests must not hand-copy the digest.
+ */
+export function materializedPlanClaim(
+  declaration: PlanClaimDeclaration,
+  certificate: PlanApprovalCertificate,
+): DeclaredClaim {
+  return {
+    claimId: declaration.claimId,
+    statement: declaration.statement,
+    signalClass: 'fact',
+    critical: declaration.critical,
+    claimScope: declaration.claimScope,
+    provenance: {
+      kind: 'canonical_authority',
+      authorityId: 'plan',
+      digest: certificate.authorityDigest,
+      approval: {
+        certificateId: certificate.certificateId,
+        claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+        decisionAttestationDigest: certificate.decisionAttestationDigest,
+        declarationId: declaration.claimId,
+      },
+    },
+    evidenceRefs: [],
+    counterexampleRefs: [],
+    ...(declaration.counterexampleRequirement !== undefined
+      ? { counterexampleRequirement: declaration.counterexampleRequirement }
+      : {}),
+    ...(declaration.coversRiskTriggers !== undefined
+      ? { coversRiskTriggers: [...declaration.coversRiskTriggers] }
+      : {}),
+    requiredEvidence: requiredEvidenceForDeclaration(declaration),
+    certifiedPlan: {
+      authoritySectionId: declaration.authoritySectionId,
+      expectedCheckId: declaration.expectedCheckId,
+      ...(declaration.structuralSurface !== undefined
+        ? { structuralSurface: declaration.structuralSurface }
+        : {}),
+      ...(declaration.mutationProfile !== undefined
+        ? { mutationProfile: declaration.mutationProfile }
+        : {}),
+      digest: certifiedClaimDigest(declaration),
+    },
+  };
+}
+
 // ─── State Factory ────────────────────────────────────────────────────────────
 
 /**
  * Create a minimal valid SessionState at any phase.
  * Override fields via the partial parameter.
+ * Policy overrides AUTHOR a new fixture policy with its matching hash. To model
+ * on-disk policy tampering use {@link withTamperedPolicySnapshot}; a
+ * `policySnapshot` override can never express a digest mismatch.
  */
 export function makeState(
   phase: Phase = 'READY',
@@ -773,7 +838,6 @@ export function makeState(
       controlPlaneMarker: 'test-control-plane-marker',
     },
     proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: FIXED_TIME },
-    policySnapshot: POLICY_SNAPSHOT,
     initiatedBy: 'initiator-1',
     initiatedByIdentity: DECISION_IDENTITY_INITIATOR,
     transition: null,
@@ -784,7 +848,25 @@ export function makeState(
     pendingSystemWork: null,
     regulatedArchiveStatus: null,
     ...overrides,
+    // An explicitly undefined snapshot models a corrupted state (fail-closed
+    // tests); otherwise overrides author a snapshot with its matching hash.
+    ...('policySnapshot' in overrides && overrides.policySnapshot === undefined
+      ? { policySnapshot: undefined as never }
+      : { policySnapshot: makePolicySnapshot(overrides.policySnapshot) }),
   };
+}
+
+/**
+ * Model on-disk policy tampering: change frozen policy fields WITHOUT
+ * recomputing the recorded digest, so the canonical persistence boundary must
+ * classify the result as an integrity mismatch. The explicit tamper helper is
+ * the only fixture path that produces a digest mismatch.
+ */
+export function withTamperedPolicySnapshot(
+  state: SessionState,
+  edits: Partial<Omit<PolicySnapshot, 'hash'>>,
+): SessionState {
+  return { ...state, policySnapshot: { ...state.policySnapshot, ...edits } };
 }
 export function makeProgressedState(phase: Phase): SessionState {
   switch (phase) {

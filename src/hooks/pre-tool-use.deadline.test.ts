@@ -78,7 +78,13 @@ describe('pre-tool-use git deadline delivery', () => {
 
     const startedAt = Date.now();
     const importPromise = import('./pre-tool-use.js');
-    await vi.waitFor(() => expect(failRemoteProbe).toBeDefined());
+    // The cold hook-module import alone can exceed vitest's 1s default waitFor
+    // budget on slower runners (observed on Windows); the observable contract is
+    // the host window, not the module-load time.
+    await vi.waitFor(() => expect(failRemoteProbe).toBeDefined(), {
+      timeout: HOST_WINDOW_MS,
+      interval: 10,
+    });
     failRemoteProbe!(new GitError('GIT_TIMEOUT', 'Session authority deadline exceeded'));
     await importPromise;
 

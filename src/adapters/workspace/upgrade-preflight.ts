@@ -2,18 +2,9 @@
  * @module workspace/upgrade-preflight
  * @description Read-only pre-upgrade preflight read model.
  *
- * Answers exactly one question for the current workspace: must it be cleaned
- * up before a hard-cut upgrade? It inventories every session directory
- * (including sessions without an audit trail) and every archive, and
- * classifies them against the current contracts. It never migrates, re-seals,
- * or fully verifies archives — full integrity verification stays with
- * `verifyArchive`, and historical archives never block upgrade readiness.
- *
- * The caller passes the canonically resolved workspace identity; a resolvable
- * worktree without an initialized FlowGuard workspace fails closed instead of
- * reporting an empty inventory, and prior workspace evidence under a different
- * fingerprint (identity change) blocks instead of being silently skipped.
- *
+ * Inventories sessions and archives under the canonical workspace identity.
+ * No migration or re-sealing; full archive verification stays with verifyArchive.
+ * Missing initialization and changed workspace identity block fail-closed.
  * @version v3
  */
 
@@ -36,6 +27,7 @@ import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
 const ARCHIVE_STATE_MEMBER = 'state/session-state.json';
 import { sessionDir, workspaceDir } from './init.js';
 import { scanWorktreeWorkspaces, type WorkspaceEvidence } from './upgrade-preflight-identity.js';
+import { classifyLiveStateReadFailure } from './upgrade-preflight-live-state.js';
 import { validateSessionId } from './types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -49,7 +41,8 @@ export interface UpgradeCheckFinding {
   readonly recovery?: readonly string[];
 }
 
-export type LiveStateStatus = 'ok' | 'incompatible' | 'unreadable' | 'missing';
+export type LiveStateStatus =
+  'ok' | 'incompatible' | 'unreadable' | 'missing' | 'integrity_mismatch';
 export type LiveAuditStatus = 'ok' | 'invalid' | 'unreadable' | 'missing';
 export type ArchiveContractStatus = 'compatible' | 'incompatible' | 'invalid' | 'unknown';
 export type ArchiveExtractable = 'yes' | 'no';
@@ -134,7 +127,9 @@ export function classifyStateMember(
   }
   const assessment = assessPersistedStateDocument(parsed);
   if (assessment.kind === 'incompatible') return 'incompatible';
-  return assessment.kind === 'invalid' ? 'invalid' : 'compatible';
+  return assessment.kind === 'invalid' || assessment.kind === 'integrity_mismatch'
+    ? 'invalid'
+    : 'compatible';
 }
 
 /** Classify a manifest member read against the current archive contract. */
@@ -203,29 +198,8 @@ async function classifyLiveState(
   try {
     state = await readState(sessDir);
   } catch (error) {
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error
-        ? String(error.code)
-        : 'UNKNOWN';
-    const status: LiveStateStatus =
-      code === 'SESSION_STATE_INCOMPATIBLE' ? 'incompatible' : 'unreadable';
-    return {
-      status,
-      phase: null,
-      terminal: null,
-      findings: [
-        {
-          severity: 'blocker',
-          code: `STATE_${status.toUpperCase()}`,
-          message: `Session ${sessionId} state cannot be read under the current contract (${code}).`,
-          recovery: [
-            'Recover the session with the release that wrote it: complete active sessions normally.',
-            'Archive terminal sessions only when the archive preflight permits it; preserve aborted or otherwise non-exportable evidence unchanged.',
-            'Do not edit persisted state to bridge the contract boundary.',
-          ],
-        },
-      ],
-    };
+    const failure = classifyLiveStateReadFailure(sessionId, error);
+    return { status: failure.status, phase: null, terminal: null, findings: [failure.finding] };
   }
 
   if (state === null) return { status: 'missing', phase: null, terminal: null, findings: [] };

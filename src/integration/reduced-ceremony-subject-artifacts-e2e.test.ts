@@ -34,8 +34,8 @@ vi.mock('./git-control-plane', async (importOriginal) => {
 });
 
 import { readState } from '../adapters/persistence.js';
-import { sessionDir, verifyCompletionExport } from '../adapters/workspace/index.js';
-import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { verifyCompletionExport } from '../adapters/workspace/index.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
@@ -49,6 +49,7 @@ import {
   makeProgressedState,
   POLICY_SNAPSHOT,
   VALIDATION_PASSED,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
@@ -152,6 +153,7 @@ async function boot(options: BootOptions = {}): Promise<SE> {
   // spelling for the test-directory guard.
   const w = realpathSync(join(r, 'worktree'));
   execFileSync('git', ['init', '-q'], { cwd: w });
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: w });
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: w });
   execFileSync('git', ['config', 'user.name', 'T'], { cwd: w });
   writeFileSync(join(w, 'README.md'), '# E2E');
@@ -190,14 +192,20 @@ async function boot(options: BootOptions = {}): Promise<SE> {
   if (typeof hydrated !== 'string' || hydrated.includes('"error":true')) {
     throw new Error(`boot hydrate failed: ${String(hydrated).slice(0, 400)}`);
   }
-  const fp = await computeFingerprint(w);
+  // Derive the session location through the canonical authority exactly like
+  // the product does; a direct fingerprint of the raw path can disagree with
+  // git's canonical root on Windows (8.3 short names).
+  const authority = await resolveSessionAuthority({ root: w, sessionId: id });
+  if (authority.status !== 'resolved') {
+    throw new Error(`boot authority failed: ${authority.status}`);
+  }
   return {
     rootDir: r,
     worktree: w,
     configDir: c,
-    fingerprint: fp.fingerprint,
+    fingerprint: authority.fingerprint,
     sId: id,
-    sDir: sessionDir(fp.fingerprint, id),
+    sDir: authority.sessDir,
     tc,
   };
 }
@@ -227,7 +235,7 @@ function executorWritesReport(): void {
       stdout: 'OK',
       stderr: '',
       timedOut: false,
-      startedAt: '2026-09-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     };
   });
 }
@@ -296,12 +304,12 @@ async function subjectState(
     policySnapshot:
       policySnapshot ??
       (reduced
-        ? {
+        ? makePolicySnapshot({
             ...POLICY_SNAPSHOT,
             allowReducedCeremony: true,
             requireHumanGates: true,
-            effectiveGateBehavior: 'human_gated' as const,
-          }
+            effectiveGateBehavior: 'human_gated',
+          })
         : base.policySnapshot),
   };
   await writeStateWithArtifacts(se.sDir, state);
@@ -374,7 +382,7 @@ describe('reduced-ceremony subject artifacts (real git)', () => {
 
     expect(String(result)).not.toContain('"error":true');
     const state = await readState(se.sDir);
-    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.phase, String(result)).toBe('IMPL_REVIEW');
   });
 });
 
@@ -411,12 +419,12 @@ describe('baseline VALIDATION reports (real git)', () => {
     await writeStateWithArtifacts(se.sDir, {
       ...state!,
       claimedTaskClass: 'TRIVIAL',
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...POLICY_SNAPSHOT,
         allowReducedCeremony: true,
         requireHumanGates: true,
         effectiveGateBehavior: 'human_gated',
-      },
+      }),
     });
   }
 
@@ -461,7 +469,7 @@ describe('baseline VALIDATION reports (real git)', () => {
     expect(state!.implementation?.changedFiles).toEqual([DOC_PATH, 'src-unexpected.ts']);
     expect(state!.implementationRiskAssessment?.computedMinimumTaskClass).toBe('STANDARD');
     expect(state!.reducedCeremony).toBeNull();
-    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.phase, String(result)).toBe('IMPL_REVIEW');
   });
 });
 
@@ -572,12 +580,20 @@ describe('team opt-in completion (real git)', () => {
     );
     expect(existsSync(archivePath)).toBe(true);
     const members = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf-8' })
-      .split('\n')
+      .split(/\r?\n/)
       .filter(Boolean);
     const stateMember = `${se.sId}/state/session-state.json`;
     const manifestMember = `${se.sId}/archive-manifest.json`;
-    expect(members).toContain(stateMember);
-    expect(members).toContain(manifestMember);
+    expect(
+      members,
+      `actual tar members:
+${members.join('\n')}`,
+    ).toContain(stateMember);
+    expect(
+      members,
+      `actual tar members:
+${members.join('\n')}`,
+    ).toContain(manifestMember);
     const archivedState = JSON.parse(
       execFileSync('tar', ['-xOzf', archivePath, stateMember], { encoding: 'utf-8' }),
     ) as SessionState;

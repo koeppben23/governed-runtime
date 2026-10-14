@@ -291,7 +291,10 @@ function decisionMatchesRiskFacts(
   if (!assessmentMatchesImplementation(s, assessment, decision, implementation)) return false;
   if (!assessmentBindsTicketDeclaration(s, assessment, declaration)) return false;
 
-  const recomputed = assessMinimumTaskClass(implementation.changedFiles);
+  const recomputed = assessMinimumTaskClass(
+    implementation.changedFiles,
+    s.policySnapshot.riskTriggerPaths,
+  );
   if (recomputed.minimumTaskClass !== assessment.computedMinimumTaskClass) return false;
   if (!samePathSet(assessment.touchedSurfaces, recomputed.touchedSurfaces)) return false;
   if (!samePathSet(decision.touchedSurfaces, recomputed.touchedSurfaces)) return false;

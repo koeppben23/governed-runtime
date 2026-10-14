@@ -9,6 +9,7 @@ import type { ProofGraphSummary } from './summary.js';
 import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
 import type { ProofContract } from '../../state/proofgraph-contract.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
+import { materializedClaimDigest } from '../../state/proofgraph-claim-certification.js';
 
 /**
  * The canonical source contract a materializer would persist for the given
@@ -29,6 +30,26 @@ type EnforceInput = Parameters<typeof computeProofGraphEnforcement>[0];
 function enforce(input: Omit<EnforceInput, 'contract'> & { readonly contract?: ProofContract }) {
   return computeProofGraphEnforcement({
     ...input,
+    ...(input.authorizedClaimBindings
+      ? {
+          authorizedClaimBindings: new Map(
+            [...input.authorizedClaimBindings].map(([id, binding]) => [
+              id,
+              {
+                ...binding,
+                certifiedClaimDigest: materializedClaimDigest(
+                  provenClaim({
+                    claimId: id,
+                    coversRiskTriggers: input.projection?.claims.find(
+                      (claim) => claim.claimId === id,
+                    )?.coversRiskTriggers,
+                  }) as unknown as ProofClaim,
+                )!,
+              },
+            ]),
+          ),
+        }
+      : {}),
     contract: input.contract ?? declaredSource(input.projection?.claims),
   });
 }
@@ -57,6 +78,7 @@ const AUTHORIZED_BINDING: AuthorizedClaimBinding = {
   claimDeclarationsDigest: 'a'.repeat(64),
   decisionAttestationDigest: 'b'.repeat(64),
   declarationId: '00000000-0000-4000-8000-000000000002',
+  certifiedClaimDigest: 'c'.repeat(64),
 };
 
 const AUTHORIZED_BINDINGS = new Map([
@@ -65,7 +87,7 @@ const AUTHORIZED_BINDINGS = new Map([
 ]);
 
 function provenClaim(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
+  const value = {
     claimId: 'c1',
     statement: 'System satisfies constraint X',
     critical: true,
@@ -84,8 +106,12 @@ function provenClaim(overrides: Record<string, unknown> = {}): Record<string, un
     verificationState: 'PROVEN',
     evidenceRefs: [],
     counterexampleRefs: [],
+    certifiedPlan: { authoritySectionId: 's1', expectedCheckId: 'test', digest: 'c'.repeat(64) },
     ...overrides,
   };
+  value.certifiedPlan.digest =
+    materializedClaimDigest(value as unknown as ProofClaim) ?? 'c'.repeat(64);
+  return value;
 }
 
 /** Claim whose provenance is built from AUTHORIZED_BINDING with one field overridden. */

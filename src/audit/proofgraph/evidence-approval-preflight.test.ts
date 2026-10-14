@@ -12,6 +12,7 @@ import {
   IMPL_EVIDENCE,
   makePlanApprovalCertificate,
   makeState,
+  materializedPlanClaim,
   PLAN_RECORD,
 } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
@@ -63,31 +64,12 @@ function certifiedClaim(
 ): ProofGraphProjection {
   const certificate = state.plan?.approvalCertificate;
   if (!certificate) throw new Error('fixture requires a certificate');
+  const declaration = state.plan?.claimDeclarations?.claims[0];
+  if (!declaration) throw new Error('fixture requires a declaration');
   return {
     version: 'proofgraph.v2',
     evaluatedAt: NOW,
-    claims: [
-      {
-        claimId: CLAIM_ID,
-        statement: 'the change preserves the intended behavior',
-        signalClass: 'fact',
-        critical: true,
-        provenance: {
-          kind: 'canonical_authority',
-          authorityId: 'plan',
-          digest: certificate.authorityDigest,
-          approval: {
-            certificateId: certificate.certificateId,
-            claimDeclarationsDigest: certificate.claimDeclarationsDigest,
-            decisionAttestationDigest: certificate.decisionAttestationDigest,
-            declarationId: CLAIM_ID,
-          },
-        },
-        evidenceRefs: [],
-        counterexampleRefs: [],
-        verificationState,
-      },
-    ],
+    claims: [{ ...materializedPlanClaim(declaration, certificate), verificationState }],
   };
 }
 

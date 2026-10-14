@@ -283,6 +283,52 @@ export const AUTHORITY_ROOTS: readonly AuthorityRoot[] = [
 ];
 
 export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
+  ...(
+    [
+      [
+        'src/audit/proofgraph/evidence-approval-admission.ts',
+        'src/audit/proofgraph/evidence-approval-admission.test.ts',
+      ],
+      [
+        'src/audit/proofgraph/evidence-approval-preflight.ts',
+        'src/audit/proofgraph/evidence-approval-preflight.test.ts',
+      ],
+      [
+        'src/adapters/evidence-approval-write-guard.ts',
+        'src/integration/evidence-approval-persistence.test.ts',
+      ],
+      [
+        'src/rails/evidence-approval-application.ts',
+        'src/rails/evidence-approval-transition.test.ts',
+      ],
+      [
+        'src/audit/proofgraph/evidence-role-independence.ts',
+        'src/audit/proofgraph/evidence-role-independence.test.ts',
+      ],
+      [
+        'src/audit/proofgraph/evidence-integrity.ts',
+        'src/audit/proofgraph/positive-assertion-integrity.test.ts',
+      ],
+      ['src/state/proofgraph-plan-certificate.ts', 'src/state/proofgraph-approval.test.ts'],
+      [
+        'src/state/proofgraph-claim-certification.ts',
+        'src/state/proofgraph-claim-certification.test.ts',
+      ],
+      ['src/state/evidence-policy.ts', 'src/adapters/policy-snapshot-integrity.test.ts'],
+      ['src/verification/report-isolation.ts', 'src/verification/report-isolation.test.ts'],
+      ['src/state/risk-path-classifier.ts', 'src/state/risk-trigger-paths.test.ts'],
+      ['src/shared/repo-path.ts', 'src/state/risk-trigger-paths.test.ts'],
+    ] as const
+  ).map(([target, suite]) =>
+    candidate(
+      target,
+      'v11 proof/evidence trust boundary',
+      'base',
+      [suite],
+      'Full-profile mutation measurement required before admission.',
+      { critical: true, source: [SOURCE.trustBoundaries] },
+    ),
+  ),
   // ── Base profile: required (curated governance core) ──────────────────────
   required(
     'src/adapters/persistence-lock.ts',

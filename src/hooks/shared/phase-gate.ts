@@ -17,6 +17,7 @@
 export {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
+  hostMutationIntegrityGate,
   type PhaseGateResult,
 } from '../../integration/phase-tool-gate.js';
 

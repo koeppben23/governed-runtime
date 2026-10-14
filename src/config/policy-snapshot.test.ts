@@ -304,6 +304,7 @@ describe('resolvePolicyFromSnapshot', () => {
 function maxDeviationPolicy(): FlowGuardPolicy {
   const base = REGULATED_POLICY;
   return {
+    riskTriggerPaths: [{ trigger: 'state_integrity', pattern: 'src/main/java/store/**' }],
     mode: 'team-ci',
     requireHumanGates: false,
     reviewBudget: { plan: 2, architecture: 3, implementation: 4 },

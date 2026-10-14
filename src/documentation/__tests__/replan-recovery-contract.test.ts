@@ -103,7 +103,12 @@ describe('live two-session recovery evidence contract', () => {
         ...newState,
         implementationBaseline: {
           ...newState.implementationBaseline,
-          dirtyFiles: [{ path: 'src/state/module-state.md', hash: 'hash-of-preserved-task-bytes' }],
+          dirtyFiles: [
+            {
+              path: 'src/main/java/fixture/state/ModuleStateStore.java',
+              hash: 'hash-of-preserved-task-bytes',
+            },
+          ],
         },
       }),
     ).toThrow('before the new baseline');

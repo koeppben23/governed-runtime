@@ -40,10 +40,22 @@ function lacksRequiredSuiteScope(
 
 /** Identity-integrity detail, otherwise the suite-scope detail, otherwise none. */
 function unavailableAttemptDetail(
-  claim: { readonly claimScope?: 'specific_behavior' | 'suite' | undefined },
+  claim: {
+    readonly claimScope?: 'specific_behavior' | 'suite' | undefined;
+    readonly certifiedPlan?: { readonly expectedCheckId: string } | undefined;
+  },
   result: SessionState['validationAttempts'][number]['result'],
   attemptId: string,
 ): string | undefined {
+  // A certificate-authorized claim is proven only by its CERTIFIED positive
+  // check: a reference to any other passing check (lint, build, ...) is not
+  // evidence for this claim, whatever the persisted contract says.
+  if (claim.certifiedPlan !== undefined && result.checkId !== claim.certifiedPlan.expectedCheckId) {
+    return (
+      `attempt ${attemptId} executed check '${result.checkId}', ` +
+      `not the certified positive check '${claim.certifiedPlan.expectedCheckId}'`
+    );
+  }
   const integrity = assessAssertionEvidenceIntegrity(result.assertionExtraction);
   if (integrity.kind === 'invalid') return integrity.detail;
   return lacksRequiredSuiteScope(claim, result)
