@@ -23,6 +23,7 @@ const NPM_CLI = process.env.npm_execpath;
 let tmpDir: string;
 let tarballPath: string;
 let installedDir: string;
+let omitOptionalDir: string;
 let packedPackageJson: {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -30,6 +31,21 @@ let packedPackageJson: {
 let packedFiles: string[];
 
 const providedTarball = process.env.FLOWGUARD_TARBALL;
+
+/**
+ * Opt-in npm timing diagnostics: `--timing` plus a bounded aggregation of the
+ * install's timing file (no raw npm logs). Kept off by default so the smoke
+ * path stays lean.
+ */
+const NPM_TIMING_ENABLED = process.env.FLOWGUARD_SMOKE_NPM_TIMING === '1';
+
+/**
+ * Opt-in experiment: run the regular and the `--omit=optional` installs
+ * concurrently. Diagnostic npm timing is mutually exclusive with this mode
+ * because each install must own exactly one timing file.
+ */
+const PARALLEL_INSTALLS_REQUESTED = process.env.FLOWGUARD_SMOKE_PARALLEL_INSTALLS === '1';
+const PARALLEL_INSTALLS = PARALLEL_INSTALLS_REQUESTED && !NPM_TIMING_ENABLED;
 
 async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'gov-smoke-'));
@@ -103,6 +119,131 @@ function assertSuccess(
   );
 }
 
+function formatSeconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Wall-clock timing line for one smoke step (bounded, one line per step). */
+async function timedStep<T>(label: string, fn: () => Promise<T> | T): Promise<T> {
+  const started = performance.now();
+  try {
+    const value = await fn();
+    console.log(
+      `[install-verify][timing] ${label} ${formatSeconds(performance.now() - started)} ok`,
+    );
+    return value;
+  } catch (error) {
+    console.error(
+      `[install-verify][timing] ${label} ${formatSeconds(performance.now() - started)} failed`,
+    );
+    throw error;
+  }
+}
+
+/** npm's own one-line install summary, when present (never raw output). */
+function npmSummary(stdout: string): string | null {
+  const match = /added \d+ packages? in [\d.]+s/.exec(stdout);
+  return match ? match[0] : null;
+}
+
+let resolvedNpmCacheDir: string | null | undefined;
+
+/** Resolve the npm cache directory the way npm itself does. */
+function npmCacheDir(): string | null {
+  if (resolvedNpmCacheDir !== undefined) return resolvedNpmCacheDir;
+  const fromEnv = process.env.npm_config_cache;
+  if (fromEnv && fromEnv.length > 0) {
+    resolvedNpmCacheDir = fromEnv;
+    return resolvedNpmCacheDir;
+  }
+  try {
+    const out = execFileSync(process.execPath, npmArgs(['config', 'get', 'cache']), {
+      encoding: 'utf-8',
+    }).trim();
+    resolvedNpmCacheDir = out.length > 0 ? out : null;
+  } catch {
+    resolvedNpmCacheDir = null;
+  }
+  return resolvedNpmCacheDir;
+}
+
+async function npmTimingFiles(cacheDir: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(path.join(cacheDir, '_logs'));
+    return entries.filter((name) => name.endsWith('-timing.json'));
+  } catch {
+    return [];
+  }
+}
+
+function boundedMs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Bounded aggregation of one npm timing file. Phase totals are taken from
+ * their exact aggregate keys (prefix sums would double-count the nested
+ * per-package timers); `fetch` sums only real `http*` timers, so a warm cache
+ * honestly reports 0. Raw keys are length-capped; raw npm logs are never read
+ * or printed.
+ */
+const TIMING_AGGREGATE_KEYS = new Set(['npm', 'command:install', 'reify', 'idealTree']);
+const TIMING_PER_PACKAGE_PREFIXES = ['reifyNode:', 'idealTree:node_modules/', 'idealTree:#root'];
+
+function summarizeNpmTiming(parsed: unknown): string | null {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const timers = (parsed as { timers?: unknown }).timers;
+  if (!timers || typeof timers !== 'object') return null;
+  const entries = Object.entries(timers as Record<string, unknown>)
+    .map(([name, value]) => [name, boundedMs(value)] as const)
+    .filter((entry): entry is readonly [string, number] => entry[1] !== null);
+  if (entries.length === 0) return null;
+
+  const byName = new Map(entries);
+  const total = byName.get('command:install') ?? byName.get('npm') ?? null;
+  const idealTreeMs = byName.get('idealTree') ?? null;
+  const reifyMs = byName.get('reify') ?? null;
+  const fetchMs = entries
+    .filter(([name]) => name.startsWith('http'))
+    .reduce((sum, [, ms]) => sum + ms, 0);
+  const top = [...entries]
+    .filter(
+      ([name]) =>
+        !TIMING_AGGREGATE_KEYS.has(name) &&
+        !TIMING_PER_PACKAGE_PREFIXES.some((prefix) => name.startsWith(prefix)),
+    )
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, ms]) => `${name.slice(0, 48)}=${ms}ms`)
+    .join(',');
+
+  return [
+    ...(total !== null ? [`total=${total}ms`] : []),
+    ...(idealTreeMs !== null ? [`idealTree=${idealTreeMs}ms`] : []),
+    ...(reifyMs !== null ? [`reify=${reifyMs}ms`] : []),
+    `fetch=${fetchMs}ms`,
+    ...(top.length > 0 ? [`top3=${top}`] : []),
+  ].join(' ');
+}
+
+/** Read exactly the timing file written by the install that just finished. */
+async function readNewNpmTimingSummary(
+  cacheDir: string | null,
+  knownFiles: readonly string[],
+): Promise<string | null> {
+  if (cacheDir === null) return null;
+  const known = new Set(knownFiles);
+  const fresh = (await npmTimingFiles(cacheDir)).filter((name) => !known.has(name));
+  if (fresh.length !== 1) return null;
+  try {
+    const raw = await fs.readFile(path.join(cacheDir, '_logs', fresh[0]!), 'utf-8');
+    if (raw.length > 256 * 1024) return null;
+    return summarizeNpmTiming(JSON.parse(raw) as unknown);
+  } catch {
+    return null;
+  }
+}
+
 function parseTarEntries(buffer: Buffer): Map<string, Buffer> {
   const entries = new Map<string, Buffer>();
   let offset = 0;
@@ -158,9 +299,12 @@ async function installTarball(
   extraArgs: readonly string[] = [],
   timeoutMs = 420_000,
 ): Promise<void> {
+  const cacheDir = NPM_TIMING_ENABLED ? npmCacheDir() : null;
+  const knownTimingFiles = cacheDir !== null ? await npmTimingFiles(cacheDir) : [];
   const installArgs = [
     'install',
     '--prefer-offline',
+    ...(NPM_TIMING_ENABLED ? ['--timing'] : []),
     ...extraArgs,
     '--no-audit',
     '--no-fund',
@@ -168,6 +312,18 @@ async function installTarball(
   ];
   const installRes = await runFile(process.execPath, npmArgs(installArgs), cwd, timeoutMs);
   assertSuccess(installRes, commandForLog('npm', installArgs));
+  const summary = npmSummary(installRes.stdout);
+  if (summary !== null) {
+    console.log(`[install-verify][npm] ${summary}`);
+  }
+  if (NPM_TIMING_ENABLED) {
+    const timingSummary = await readNewNpmTimingSummary(cacheDir, knownTimingFiles);
+    console.log(
+      timingSummary !== null
+        ? `[install-verify][npm-timing] ${timingSummary}`
+        : '[install-verify][npm-timing] unavailable for this install',
+    );
+  }
 }
 
 describe('install-verify', () => {
@@ -178,26 +334,49 @@ describe('install-verify', () => {
       tarballPath = path.resolve(providedTarball);
     } else {
       // Pack new tarball (default behavior)
-      tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-      execFileSync(process.execPath, npmArgs(['pack', '--pack-destination', tmpDir]), {
-        cwd: REPO_ROOT,
-        encoding: 'utf-8',
+      await timedStep('npm pack', () => {
+        tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
+        execFileSync(process.execPath, npmArgs(['pack', '--pack-destination', tmpDir]), {
+          cwd: REPO_ROOT,
+          encoding: 'utf-8',
+        });
       });
     }
     const tarball = await readPackedTarball();
     packedPackageJson = tarball.packageJson;
     packedFiles = tarball.files;
 
-    // Standard install is the expensive smoke path. Keep it single-shot and
-    // reuse the project for import/export assertions to avoid Windows timeouts.
+    // One full-dependency install plus ONE shared `--omit=optional` install.
+    // The omit fixture serves both omit assertions; no second omit install is
+    // performed, and no test is dropped.
     installedDir = path.join(tmpDir, 'installed');
+    omitOptionalDir = path.join(tmpDir, 'omit-optional');
     await writeFreshPackageProject(installedDir);
-    await installTarball(installedDir);
-  }, 480_000);
+    await writeFreshPackageProject(omitOptionalDir);
+
+    if (PARALLEL_INSTALLS_REQUESTED && !PARALLEL_INSTALLS) {
+      console.log(
+        '[install-verify][timing] parallel installs disabled while FLOWGUARD_SMOKE_NPM_TIMING=1 (timing-file attribution)',
+      );
+    }
+    if (PARALLEL_INSTALLS) {
+      await timedStep('install(regular + omit=optional, parallel)', () =>
+        Promise.all([
+          installTarball(installedDir),
+          installTarball(omitOptionalDir, ['--omit=optional'], 480_000),
+        ]),
+      );
+    } else {
+      await timedStep('install(regular)', () => installTarball(installedDir));
+      await timedStep('install(omit=optional)', () =>
+        installTarball(omitOptionalDir, ['--omit=optional'], 480_000),
+      );
+    }
+  }, 900_000);
 
   afterAll(async () => {
-    await cleanTmpDir(tmpDir);
-  }, 120000);
+    await timedStep('cleanup(rm)', () => cleanTmpDir(tmpDir));
+  }, 180_000);
 
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
@@ -216,26 +395,22 @@ describe('install-verify', () => {
       ).toBeDefined();
     });
 
-    it('installs with --omit=optional without crashing', async () => {
-      const p = path.join(tmpDir, 'omit-optional-test');
-      await writeFreshPackageProject(p);
-      await installTarball(p, ['--omit=optional'], 420_000);
-    }, 480000);
+    it('installs with --omit=optional without crashing', () => {
+      const packageDir = path.join(omitOptionalDir, 'node_modules', '@flowguard', 'core');
+      expect(existsSync(path.join(packageDir, 'dist', 'index.js'))).toBe(true);
+    }, 30_000);
 
     it('imports core module with --omit=optional', async () => {
-      const p = path.join(tmpDir, 'omit-optional-import-test');
-      await writeFreshPackageProject(p);
-      await installTarball(p, ['--omit=optional'], 210_000);
       const res = await runFile(
         'node',
         [
           '-e',
           "import('@flowguard/core').then(m => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })",
         ],
-        p,
+        omitOptionalDir,
       );
       expect(res.code).toBe(0);
-    }, 240000);
+    }, 60_000);
 
     it('tarball is installed in shared node_modules', () => {
       expect(existsSync(path.join(installedDir, 'node_modules', '@flowguard', 'core'))).toBe(true);
