@@ -67,7 +67,7 @@ import {
   transcriptTrust,
 } from '../lib/transcript.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
-import { expectRecovery, recoveryPersisted } from '../lib/recovery-state.mjs';
+import { expectRecovery, readAuditEvents, recoveryPersisted } from '../lib/recovery-state.mjs';
 
 export {
   assertExpectedDenial,
@@ -662,7 +662,7 @@ export class Runner {
       });
       this.log(`${label}: recovered via structured re-arm [${retryRecovered.join(', ')}]`);
     }
-    const pendingCodes = [
+    let pendingCodes = [
       ...new Set([
         ...recoverable.filter(
           (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
@@ -677,6 +677,45 @@ export class Runner {
       throw new DemoNotVerifiedError(
         `${label}: recoverable denial occurrence(s) without a later proven correction (${unproven.join(', ')}); stopping the flow (the proof is NOT_VERIFIED)`,
       );
+    }
+    // A TICKET_SOURCE_CONFLICT is corrected by the same-turn adoption of the
+    // actual ticket; that correction is settled HERE, bound to the persisted
+    // ticket identity and the audit sequence (denial -> successful ticket call
+    // with a transition -> READY/TICKET selection). A bare later tool success
+    // without that witness stays an observation and cannot settle the denial.
+    if (pendingCodes.includes('TICKET_SOURCE_CONFLICT')) {
+      const snapshot = this.requireBoundState(session);
+      const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
+      const deniedTools = [
+        ...new Set(
+          toolDenialEvents(result.stdout)
+            .filter((event) => event.code === 'TICKET_SOURCE_CONFLICT')
+            .map((event) => event.tool),
+        ),
+      ];
+      const expected = expectRecovery(
+        snapshot.state,
+        deniedTools,
+        session.terminal,
+        recoverableProofs
+          .filter((proof) => proof.binding === 'tool')
+          .map((proof) => proof.denialIdentity),
+      );
+      if (
+        expected.kind === 'ticket_adoption' &&
+        recoveryPersisted(expected, snapshot.state, command, readAuditEvents(snapshot.sessionDir))
+      ) {
+        session.recoveredDenials.push({
+          step: label,
+          codes: ['TICKET_SOURCE_CONFLICT'],
+          evidence: 'ticket_adoption',
+          expected,
+        });
+        this.log(
+          `${label}: recovered via bound ticket adoption (digest ${expected.digest.slice(0, 12)}…)`,
+        );
+        pendingCodes = pendingCodes.filter((code) => code !== 'TICKET_SOURCE_CONFLICT');
+      }
     }
     if (pendingCodes.length > 0) {
       session.awaitingRecovery = {

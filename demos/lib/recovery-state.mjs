@@ -1,10 +1,31 @@
 /** External persistence witnesses for demo recoveries; no state transitions are synthesized. */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 function identity(state) {
   return {
     flowguardSessionId: state?.flowguardSessionId,
     hostSessionId: state?.binding?.hostSessionId,
   };
+}
+
+/**
+ * Demo-side reader for the session audit trail. The witness itself is a plain
+ * sequence check over the persisted events; the product's canonical verifier
+ * remains the authority for archive and chain validation, which this runner
+ * exercises separately.
+ */
+export function readAuditEvents(sessionDir) {
+  try {
+    return fs
+      .readFileSync(path.join(sessionDir, 'audit.jsonl'), 'utf8')
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line));
+  } catch {
+    return [];
+  }
 }
 
 function acceptingReview(state, type, digest) {
@@ -55,6 +76,31 @@ export function expectRecovery(state, tools, terminal, deniedIdentities = []) {
             : null;
     return { kind: 'flow_selection', ...actor, command };
   }
+  if (tools.length === 1 && tools[0] === 'flowguard_ticket') {
+    // A TICKET_SOURCE_CONFLICT correction is the adoption of the actual ticket.
+    // The identity is the persisted ticket digest; conflicts or a missing
+    // persisted ticket stay unproven. The audit-side transition witness is
+    // checked by recoveryPersisted, never here.
+    if (deniedIdentities.some((entry) => entry.conflicts.length > 0)) {
+      return { kind: 'unproven', ...actor };
+    }
+    const ticket = state?.ticket;
+    if (
+      typeof ticket?.digest !== 'string' ||
+      ticket.digest.length === 0 ||
+      typeof ticket.text !== 'string' ||
+      ticket.text.length === 0
+    ) {
+      return { kind: 'unproven', ...actor };
+    }
+    return {
+      kind: 'ticket_adoption',
+      ...actor,
+      command: 'task',
+      digest: ticket.digest,
+      source: typeof ticket.source === 'string' ? ticket.source : null,
+    };
+  }
   const kind =
     tools.length === 1 && tools[0] === 'flowguard_plan'
       ? 'plan'
@@ -100,8 +146,52 @@ export function expectRecovery(state, tools, terminal, deniedIdentities = []) {
   };
 }
 
+/**
+ * Operation-bound ticket-adoption witness.
+ *
+ * The persisted ticket must be the exact adopted identity (digest + content),
+ * and the audit trail must show the operational sequence that corrected the
+ * denial: a failed `flowguard_ticket` call with TICKET_SOURCE_CONFLICT,
+ * followed by a successful `flowguard_ticket` call that itself records a
+ * transition, followed by the canonical `READY → TICKET` selection. A state
+ * update alone - or a persisted ticket without that sequence - never counts.
+ */
+function ticketAdoptionPersisted(expected, state, auditEvents) {
+  const ticket = state?.ticket;
+  if (state?.phase !== 'TICKET') return false;
+  if (typeof ticket?.digest !== 'string' || ticket.digest !== expected.digest) return false;
+  if (typeof ticket.text !== 'string' || ticket.text.length === 0) return false;
+
+  const denialIndex = auditEvents.findIndex(
+    (event) =>
+      event?.event === 'tool_call:flowguard_ticket' &&
+      event.detail?.tool === 'flowguard_ticket' &&
+      event.detail?.success === false &&
+      event.detail?.errorCode === 'TICKET_SOURCE_CONFLICT',
+  );
+  if (denialIndex === -1) return false;
+  const successIndex = auditEvents.findIndex(
+    (event, index) =>
+      index > denialIndex &&
+      event?.event === 'tool_call:flowguard_ticket' &&
+      event.detail?.tool === 'flowguard_ticket' &&
+      event.detail?.success === true &&
+      typeof event.detail?.transitionCount === 'number' &&
+      event.detail.transitionCount > 0,
+  );
+  if (successIndex === -1) return false;
+  return auditEvents.some(
+    (event, index) =>
+      index > successIndex &&
+      event?.event === 'transition:TICKET_SELECTED' &&
+      event.detail?.from === 'READY' &&
+      event.detail?.to === 'TICKET' &&
+      event.detail?.event === 'TICKET_SELECTED',
+  );
+}
+
 /** An unrelated phase, audit or metadata update is never an operation witness. */
-export function recoveryPersisted(expected, state, command) {
+export function recoveryPersisted(expected, state, command, auditEvents = []) {
   if (
     !expected ||
     expected.command !== command ||
@@ -111,6 +201,9 @@ export function recoveryPersisted(expected, state, command) {
     return false;
   if (typeof expected.flowguardSessionId !== 'string' || typeof expected.hostSessionId !== 'string')
     return false;
+  if (expected.kind === 'ticket_adoption') {
+    return ticketAdoptionPersisted(expected, state, auditEvents);
+  }
   if (expected.kind === 'flow_selection') {
     if (command === 'task')
       return (
