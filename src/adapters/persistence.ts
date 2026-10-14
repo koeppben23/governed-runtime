@@ -292,6 +292,55 @@ async function syncDirectory(dir: string): Promise<void> {
  * reference, never a shared mutable object.
  */
 
+/**
+ * Cheap phase probe for the evidence-approval boundary. Parses only the raw
+ * document to read `phase`; a malformed document reports `unknown` so the
+ * caller fails closed through the canonical full read.
+ */
+async function persistedPhaseForBoundary(sessionDir: string): Promise<string | 'unknown' | null> {
+  const filePath = statePath(sessionDir);
+  // The canonical writer serializes with 2-space indentation, so the ROOT
+  // phase is an exactly two-space indented line near the document head. A
+  // bounded prefix read keeps ordinary writes cheap; anything unexpected
+  // falls through to the full document parse (never a silent skip).
+  const prefix = await readStatePrefix(filePath, 2048);
+  if (prefix !== null) {
+    const match = /^ {2}"phase": "([A-Z_]+)"/m.exec(prefix);
+    if (match) return match[1] ?? 'unknown';
+  }
+  const raw = await readStateFile(filePath);
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as { phase?: unknown }).phase === 'string'
+    ) {
+      return (parsed as { phase: string }).phase;
+    }
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/** Read at most `maxBytes` from the head of a file; null when it is absent. */
+async function readStatePrefix(filePath: string, maxBytes: number): Promise<string | null> {
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  try {
+    handle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    return buffer.subarray(0, bytesRead).toString('utf-8');
+  } catch (err) {
+    if (isEnoent(err)) return null;
+    throw err;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
 async function readStateFile(filePath: string): Promise<string | null> {
   try {
     return await fs.readFile(filePath, 'utf-8');
@@ -442,12 +491,20 @@ export async function writeStateAlreadyLocked(
   // fails closed here instead of persisting an unreviewable implementation.
   assertImplementationEntryFrozen(result.data);
 
-  // THE lowest evidence-approval boundary. The predecessor is read for EVERY
-  // write so the approved-state protections cannot be bypassed by a direct
-  // writer that chooses an unexpected target phase; the boundary itself
-  // returns early unless the write enters or leaves `EXPORT_READY`.
-  const previous = await readState(sessionDir);
-  await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
+  // THE lowest evidence-approval boundary. A write that enters `EXPORT_READY`
+  // or leaves an approved predecessor must present the canonical admission and
+  // an unchanged basis — regardless of the chosen target phase, so a direct
+  // writer cannot bypass the protection through an out-of-topology transition.
+  // A cheap phase probe avoids the full predecessor parse on ordinary writes;
+  // an unreadable predecessor fails closed through the canonical read.
+  const predecessorPhase =
+    result.data.phase === 'EXPORT_READY'
+      ? 'EXPORT_READY'
+      : await persistedPhaseForBoundary(sessionDir);
+  if (predecessorPhase === 'EXPORT_READY' || predecessorPhase === 'unknown') {
+    const previous = await readState(sessionDir);
+    await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
+  }
 
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';

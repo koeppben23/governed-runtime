@@ -280,10 +280,9 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       '2026-08-13T10:00:00.000Z',
     );
     void obligation;
-    // Start from a clean session state: the persistence boundary reads the
-    // predecessor on every write, and the previous test intentionally left an
-    // invalid legacy file behind.
-    fs.rmSync(statePath(sessDir), { force: true });
+    // Overwrites the invalid legacy file left by the previous test: the phase
+    // probe does not treat an unrelated non-approved predecessor as a basis
+    // drift, so a governed repair write stays possible.
     await writeState(sessDir, { ...makeState('PLAN'), reviewAssurance: assurance });
     const raw = fs.readFileSync(statePath(sessDir), 'utf-8');
     expect(raw).toContain('"review-assurance.v7"');
