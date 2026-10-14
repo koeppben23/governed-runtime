@@ -22,6 +22,7 @@ import {
 } from './proofgraph-plan-certificate.js';
 import { SpecificRiskTrigger } from './risk-trigger.js';
 import { uniqueClaimIds } from './proofgraph-claim-set.js';
+import { certifiedClaimDigest } from './proofgraph-claim-certification.js';
 
 export { PlanApprovalCertificate, ReviewBinding } from './proofgraph-plan-certificate.js';
 export {
@@ -425,6 +426,7 @@ export interface AuthorizedClaimBinding {
   readonly claimDeclarationsDigest: string;
   readonly decisionAttestationDigest: string;
   readonly declarationId: string;
+  readonly certifiedClaimDigest: string;
 }
 
 /**
@@ -475,6 +477,7 @@ export function authorizedCriticalPlanClaimIds(
       claimDeclarationsDigest: certificate.claimDeclarationsDigest,
       decisionAttestationDigest: certificate.decisionAttestationDigest,
       declarationId: claim.claimId,
+      certifiedClaimDigest: certifiedClaimDigest(claim),
     });
   }
   return {

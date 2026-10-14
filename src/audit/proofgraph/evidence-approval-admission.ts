@@ -95,7 +95,6 @@ function evidenceApprovalBasisProjection(
   state: SessionState,
   includeDecision: boolean,
 ): Record<string, unknown> {
-  const plan = state.plan;
   return {
     flowguardSessionId: state.flowguardSessionId,
     bindingDigest: evidenceApprovalBindingDigest(state),
@@ -103,16 +102,15 @@ function evidenceApprovalBasisProjection(
     // does not recompute the hash from the fields, so a hash-only binding
     // would not detect in-place policy tampering.
     policySnapshot: state.policySnapshot,
+    ticket: state.ticket,
+    architecture: state.architecture,
+    actorInfo: state.actorInfo ?? null,
+    initiatedBy: state.initiatedBy,
+    initiatedByIdentity: state.initiatedByIdentity ?? null,
+    reducedCeremony: state.reducedCeremony,
+    implementationRework: state.implementationRework ?? null,
     ...(includeDecision ? { reviewDecision: state.reviewDecision } : {}),
-    plan:
-      plan === null
-        ? null
-        : {
-            current: plan.current,
-            claimDeclarations: plan.claimDeclarations ?? null,
-            reviewCompletion: plan.reviewCompletion,
-            approvalCertificate: plan.approvalCertificate ?? null,
-          },
+    plan: state.plan,
     implReview: state.implReview,
     implReviewFindings: state.implReviewFindings ?? null,
     reviewAssurance: state.reviewAssurance ?? null,
@@ -120,8 +118,7 @@ function evidenceApprovalBasisProjection(
     implValidation: state.implValidation,
     mutationEpisodes: state.mutationEpisodes,
     mutationEpisodeResolutions: state.mutationEpisodeResolutions,
-    implementationDigest: state.implementation?.digest ?? null,
-    implementationChangedFiles: state.implementation?.changedFiles ?? null,
+    implementation: state.implementation,
     implementationRiskAssessment: state.implementationRiskAssessment,
     proofContract: state.proofContract ?? null,
     proofGraph: semanticProofGraph(state.proofGraph),

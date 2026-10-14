@@ -137,6 +137,18 @@ const proofClaimBase = {
    * satisfy the final trigger requirement. `ceremony_only` is not coverable.
    */
   coversRiskTriggers: z.array(SpecificRiskTrigger).optional(),
+  /** Certified plan-only origin; manual/advisory claims carry no plan authority. */
+  certifiedPlan: z
+    .object({
+      authoritySectionId: z.string().min(1),
+      expectedCheckId: z.string().min(1),
+      structuralSurface: z.string().min(1).optional(),
+      mutationProfile: z.string().min(1).optional(),
+      digest: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict()
+    .readonly()
+    .optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;

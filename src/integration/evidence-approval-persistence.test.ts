@@ -236,6 +236,22 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
   });
 
+  it.each(['COMPLETE', 'ABORTED'] as const)(
+    'keeps the approved basis immutable when leaving for %s',
+    async (phase) => {
+      const previous = autoEvidenceState();
+      await writeState(sessDir, previous);
+      const application = approveOrThrow(previous);
+      await writeState(sessDir, application.state, undefined, application.admission);
+      const persisted = (await readState(sessDir))!;
+      await expect(
+        writeState(sessDir, { ...persisted, phase, ticket: null }),
+      ).rejects.toMatchObject({ code: 'EXPORT_READY_APPROVAL_UNVERIFIED' });
+      await writeState(sessDir, { ...persisted, phase });
+      expect((await readState(sessDir))?.phase).toBe(phase);
+    },
+  );
+
   it('persists the autoAdvance approval only when its carried admission is passed', async () => {
     const previous: SessionState = {
       ...makeProgressedState('EVIDENCE_REVIEW'),

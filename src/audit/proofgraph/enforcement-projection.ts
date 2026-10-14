@@ -21,6 +21,7 @@ import { claimOccurrences } from '../../state/proofgraph-claim-set.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
 import type { SpecificRiskTrigger } from '../../state/risk-trigger.js';
 import type { AuthorizedClaimBinding } from '../../state/proofgraph-approval.js';
+import { materializedClaimDigest } from '../../state/proofgraph-claim-certification.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   mapBindingReasonToRegistryCode,
@@ -181,7 +182,7 @@ export interface ComputeEnforcementInput {
 
 /** Whether the evaluated claim's provenance binds exactly the expected certificate. */
 function matchesAuthorizedBinding(
-  claim: Pick<ProofClaim, 'provenance'>,
+  claim: import('../../state/proofgraph.js').DeclaredClaim,
   expected: AuthorizedClaimBinding,
 ): boolean {
   const provenance = claim.provenance;
@@ -192,7 +193,9 @@ function matchesAuthorizedBinding(
     provenance.approval.certificateId === expected.certificateId &&
     provenance.approval.claimDeclarationsDigest === expected.claimDeclarationsDigest &&
     provenance.approval.decisionAttestationDigest === expected.decisionAttestationDigest &&
-    provenance.approval.declarationId === expected.declarationId
+    provenance.approval.declarationId === expected.declarationId &&
+    claim.certifiedPlan?.digest === expected.certifiedClaimDigest &&
+    materializedClaimDigest(claim) === expected.certifiedClaimDigest
   );
 }
 

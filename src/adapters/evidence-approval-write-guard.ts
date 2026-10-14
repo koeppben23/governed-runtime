@@ -194,7 +194,10 @@ export async function assertEvidenceApprovalWriteBoundary(
   next: SessionState,
   approvalAdmission: unknown,
 ): Promise<void> {
-  if (next.phase !== 'EXPORT_READY') return;
+  if (next.phase !== 'EXPORT_READY') {
+    if (previous?.phase === 'EXPORT_READY') assertApprovalBasisImmutable(previous, next);
+    return;
+  }
   if (previous?.phase === 'EXPORT_READY') {
     assertApprovalBasisImmutable(previous, next);
     return;

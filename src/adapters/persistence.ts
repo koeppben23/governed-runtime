@@ -428,7 +428,7 @@ export async function writeStateAlreadyLocked(
   // be authorized by the canonical protected application for EXACTLY this
   // evidence basis. This covers every writer — `writeState`, the artifact/audit
   // commit path, and any future direct caller.
-  if (result.data.phase === 'EXPORT_READY') {
+  {
     const previous = await readState(sessionDir);
     await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
   }
