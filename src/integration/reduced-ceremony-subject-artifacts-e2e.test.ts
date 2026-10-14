@@ -382,7 +382,7 @@ describe('reduced-ceremony subject artifacts (real git)', () => {
 
     expect(String(result)).not.toContain('"error":true');
     const state = await readState(se.sDir);
-    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.phase, String(result)).toBe('IMPL_REVIEW');
   });
 });
 
@@ -469,7 +469,7 @@ describe('baseline VALIDATION reports (real git)', () => {
     expect(state!.implementation?.changedFiles).toEqual([DOC_PATH, 'src-unexpected.ts']);
     expect(state!.implementationRiskAssessment?.computedMinimumTaskClass).toBe('STANDARD');
     expect(state!.reducedCeremony).toBeNull();
-    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.phase, String(result)).toBe('IMPL_REVIEW');
   });
 });
 
@@ -584,8 +584,16 @@ describe('team opt-in completion (real git)', () => {
       .filter(Boolean);
     const stateMember = `${se.sId}/state/session-state.json`;
     const manifestMember = `${se.sId}/archive-manifest.json`;
-    expect(members).toContain(stateMember);
-    expect(members).toContain(manifestMember);
+    expect(
+      members,
+      `actual tar members:
+${members.join('\n')}`,
+    ).toContain(stateMember);
+    expect(
+      members,
+      `actual tar members:
+${members.join('\n')}`,
+    ).toContain(manifestMember);
     const archivedState = JSON.parse(
       execFileSync('tar', ['-xOzf', archivePath, stateMember], { encoding: 'utf-8' }),
     ) as SessionState;
