@@ -261,6 +261,9 @@ async function repository() {
     }),
   );
   git(worktree, 'init');
+  // Keep fixture bytes byte-exact across platforms: the test compares the
+  // reapplied file to the literal LF content.
+  git(worktree, 'config', 'core.autocrlf', 'false');
   git(worktree, 'config', 'user.name', 'Test');
   git(worktree, 'config', 'user.email', 'test@example.test');
   git(worktree, 'add', '.');

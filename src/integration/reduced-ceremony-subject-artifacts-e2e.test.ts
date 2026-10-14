@@ -34,8 +34,8 @@ vi.mock('./git-control-plane', async (importOriginal) => {
 });
 
 import { readState } from '../adapters/persistence.js';
-import { sessionDir, verifyCompletionExport } from '../adapters/workspace/index.js';
-import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
+import { verifyCompletionExport } from '../adapters/workspace/index.js';
+import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
@@ -153,6 +153,7 @@ async function boot(options: BootOptions = {}): Promise<SE> {
   // spelling for the test-directory guard.
   const w = realpathSync(join(r, 'worktree'));
   execFileSync('git', ['init', '-q'], { cwd: w });
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: w });
   execFileSync('git', ['config', 'user.email', 't@t'], { cwd: w });
   execFileSync('git', ['config', 'user.name', 'T'], { cwd: w });
   writeFileSync(join(w, 'README.md'), '# E2E');
@@ -191,14 +192,20 @@ async function boot(options: BootOptions = {}): Promise<SE> {
   if (typeof hydrated !== 'string' || hydrated.includes('"error":true')) {
     throw new Error(`boot hydrate failed: ${String(hydrated).slice(0, 400)}`);
   }
-  const fp = await computeFingerprint(w);
+  // Derive the session location through the canonical authority exactly like
+  // the product does; a direct fingerprint of the raw path can disagree with
+  // git's canonical root on Windows (8.3 short names).
+  const authority = await resolveSessionAuthority({ root: w, sessionId: id });
+  if (authority.status !== 'resolved') {
+    throw new Error(`boot authority failed: ${authority.status}`);
+  }
   return {
     rootDir: r,
     worktree: w,
     configDir: c,
-    fingerprint: fp.fingerprint,
+    fingerprint: authority.fingerprint,
     sId: id,
-    sDir: sessionDir(fp.fingerprint, id),
+    sDir: authority.sessDir,
     tc,
   };
 }
