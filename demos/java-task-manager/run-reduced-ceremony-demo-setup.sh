@@ -5,7 +5,7 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $0 [--prepare-only | --install --tarball <tgz>] <base-dir>
+Usage: $0 [--prepare-only | --install --tarball <tgz> [--install-scope global|repo]] <base-dir>
        $0 --verify-session <workspace>
 
 Modes:
@@ -17,6 +17,10 @@ Modes:
                                session of this workspace and assert the activity
                                checks were actually selected as build + test.
 
+Install scope (with --install):
+  global                       Install once into ~/.config/opencode (default).
+  repo                         Install per workspace into .opencode: isolated.
+
 The base directory receives two fresh workspaces from the same seed:
   <base-dir>/reduced-on    policy.allowReducedCeremony = true
   <base-dir>/reduced-off   policy.allowReducedCeremony = false
@@ -24,7 +28,8 @@ Both keep policy.defaultMode = team and otherwise identical configuration.
 
 Examples:
   $0 /tmp/flowguard-reduced-demo
-  $0 --install --tarball /tmp/flowguard-core-1.2.0.tgz /tmp/flowguard-reduced-demo
+  $0 --install --tarball /tmp/flowguard-core-2.0.0-tp.2.tgz /tmp/flowguard-reduced-demo
+  $0 --install --install-scope repo --tarball /tmp/flowguard-core-2.0.0-tp.2.tgz /tmp/flowguard-reduced-demo
   $0 --verify-session /tmp/flowguard-reduced-demo/reduced-on
 EOF
     exit 1
@@ -34,6 +39,8 @@ EOF
 
 MODE="prepare-only"
 TARBALL=""
+INSTALL_SCOPE="global"
+INSTALL_SCOPE_EXPLICIT=""
 VERIFY_WORKSPACE=""
 BASE_DIR=""
 
@@ -47,6 +54,12 @@ while [[ $# -gt 0 ]]; do
                 usage
             fi
             TARBALL="$2"; shift 2 ;;
+        --install-scope)
+            if [[ $# -lt 2 || "$2" == -* || ( "$2" != "global" && "$2" != "repo" ) ]]; then
+                echo "Error: --install-scope requires 'global' or 'repo'." >&2
+                usage
+            fi
+            INSTALL_SCOPE="$2"; INSTALL_SCOPE_EXPLICIT="1"; shift 2 ;;
         --verify-session)
             if [[ $# -lt 2 || "$2" == -* || -z "$2" ]]; then
                 echo "Error: --verify-session requires a workspace path." >&2
@@ -67,6 +80,15 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SETUP_SCRIPT="$SCRIPT_DIR/run-main-demo-setup.sh"
+LIB_SCRIPT="$SCRIPT_DIR/install-flowguard-lib.sh"
+
+if [[ ! -f "$LIB_SCRIPT" ]]; then
+    echo "Error: install helper not found at $LIB_SCRIPT" >&2
+    exit 1
+fi
+
+# shellcheck source=install-flowguard-lib.sh
+source "$LIB_SCRIPT"
 
 # ─── Runtime session preflight (read-only) ────────────────────────────────────
 
@@ -206,6 +228,11 @@ if [[ "$MODE" == "install" && ! -f "$TARBALL" ]]; then
     exit 1
 fi
 
+if [[ "$MODE" != "install" && -n "$INSTALL_SCOPE_EXPLICIT" ]]; then
+    echo "Error: --install-scope may be used only with --install." >&2
+    usage
+fi
+
 if [[ -n "$TARBALL" ]]; then
     TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
 fi
@@ -232,8 +259,8 @@ echo ""
 
 prepare_workspace() {
     local target="$1"
-    if [[ "$MODE" == "install" ]]; then
-        "$SETUP_SCRIPT" --install --tarball "$TARBALL" "$target"
+    if [[ "$MODE" == "install" && "$INSTALL_SCOPE" == "repo" ]]; then
+        "$SETUP_SCRIPT" --install --install-scope repo --tarball "$TARBALL" "$target"
     else
         "$SETUP_SCRIPT" --prepare-only "$target"
     fi
@@ -244,6 +271,20 @@ prepare_workspace "$REDUCED_ON"
 echo ""
 echo "--- Preparing reduced-off ---"
 prepare_workspace "$REDUCED_OFF"
+
+if [[ "$MODE" == "install" && "$INSTALL_SCOPE" == "global" ]]; then
+    echo ""
+    echo "--- Installing FlowGuard once (install scope: global) ---"
+    echo "  Note: a global install writes to ~/.config/opencode and activates FlowGuard"
+    echo "        for every OpenCode project. The workspace policy configs written below"
+    echo "        keep team mode and set allowReducedCeremony per workspace."
+    echo "        Restart OpenCode Desktop after the install to load commands and plugin."
+    flowguard_install "$TARBALL" global
+    echo ""
+    echo "--- Verifying FlowGuard install ---"
+    flowguard_verify_install global
+    echo "--- FlowGuard install verified ---"
+fi
 
 # ─── Write both policy configs explicitly ─────────────────────────────────────
 

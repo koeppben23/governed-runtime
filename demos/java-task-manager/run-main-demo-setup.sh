@@ -5,15 +5,22 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $0 [--prepare-only | --install --tarball <tgz>] <target-dir>
+Usage: $0 [--prepare-only | --install --tarball <tgz> [--install-scope global|repo]] <target-dir>
 
 Modes:
   --prepare-only               Copy seed, git init, commit (default).
   --install --tarball <tgz>    Prepare + install FlowGuard from tarball.
 
+Install scope (with --install):
+  global                       Install into ~/.config/opencode (default): commands,
+                               plugin, and mandates for every OpenCode project.
+  repo                         Install into <target-dir>/.opencode: isolated to
+                               this workspace.
+
 Examples:
   $0 /tmp/flowguard-java-demo
-  $0 --install --tarball /tmp/flowguard-core-1.2.0.tgz /tmp/flowguard-java-demo
+  $0 --install --tarball /tmp/flowguard-core-2.0.0-tp.2.tgz /tmp/flowguard-java-demo
+  $0 --install --install-scope repo --tarball /tmp/flowguard-core-2.0.0-tp.2.tgz /tmp/flowguard-java-demo
 EOF
     exit 1
 }
@@ -22,6 +29,8 @@ EOF
 
 MODE="prepare-only"
 TARBALL=""
+INSTALL_SCOPE="global"
+INSTALL_SCOPE_EXPLICIT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -33,6 +42,12 @@ while [[ $# -gt 0 ]]; do
                 usage
             fi
             TARBALL="$2"; shift 2 ;;
+        --install-scope)
+            if [[ $# -lt 2 || "$2" == -* || ( "$2" != "global" && "$2" != "repo" ) ]]; then
+                echo "Error: --install-scope requires 'global' or 'repo'." >&2
+                usage
+            fi
+            INSTALL_SCOPE="$2"; INSTALL_SCOPE_EXPLICIT="1"; shift 2 ;;
         -h|--help)      usage ;;
         -*)
             echo "Unknown option: $1" >&2
@@ -55,15 +70,29 @@ if [[ "$MODE" == "install" && -z "$TARBALL" ]]; then
     usage
 fi
 
+if [[ "$MODE" != "install" && -n "$INSTALL_SCOPE_EXPLICIT" ]]; then
+    echo "Error: --install-scope may be used only with --install." >&2
+    usage
+fi
+
 # ─── Locate seed ──────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SEED_DIR="$SCRIPT_DIR/seed"
+LIB_SCRIPT="$SCRIPT_DIR/install-flowguard-lib.sh"
 
 if [[ ! -d "$SEED_DIR" ]]; then
     echo "Error: seed directory not found at $SEED_DIR" >&2
     exit 1
 fi
+
+if [[ ! -f "$LIB_SCRIPT" ]]; then
+    echo "Error: install helper not found at $LIB_SCRIPT" >&2
+    exit 1
+fi
+
+# shellcheck source=install-flowguard-lib.sh
+source "$LIB_SCRIPT"
 
 if [[ "$MODE" == "install" && ! -f "$TARBALL" ]]; then
     echo "Error: tarball not found: $TARBALL" >&2
@@ -119,46 +148,20 @@ git status --short
 
 if [[ "$MODE" == "install" ]]; then
     echo ""
-    echo "--- Installing FlowGuard ---"
-    npx --package "$TARBALL" flowguard install \
-        --install-scope repo \
-        --policy-mode team \
-        --core-tarball "$TARBALL" \
-        --force
+    echo "--- Installing FlowGuard (install scope: $INSTALL_SCOPE) ---"
+    if [[ "$INSTALL_SCOPE" == "global" ]]; then
+        echo "  Note: a global install writes to ~/.config/opencode and activates FlowGuard"
+        echo "        for every OpenCode project. The global policy default becomes 'team';"
+        echo "        a repository config can only restrict it."
+        echo "        Restart OpenCode Desktop after the install to load commands and plugin."
+    fi
+    flowguard_install "$TARBALL" "$INSTALL_SCOPE"
 
     echo ""
     echo "--- Verifying FlowGuard install ---"
     # Fail closed: the demo must not proceed to `opencode serve` on a broken
-    # install. Assert the artifacts the OpenCode installer writes for repo scope.
-    install_ok=1
-
-    if [[ -f opencode.json || -f opencode.jsonc ]]; then
-        echo "  ok: opencode config present"
-    else
-        echo "  MISSING: opencode.json / opencode.jsonc" >&2
-        install_ok=0
-    fi
-
-    if [[ -f .opencode/agents/flowguard-reviewer.md ]]; then
-        echo "  ok: .opencode/agents/flowguard-reviewer.md"
-    else
-        echo "  MISSING: .opencode/agents/flowguard-reviewer.md" >&2
-        install_ok=0
-    fi
-
-    if [[ -d .opencode/commands ]]; then
-        echo "  ok: .opencode/commands/ ($(ls .opencode/commands 2>/dev/null | wc -l | tr -d ' ') commands)"
-    else
-        echo "  MISSING: .opencode/commands/ (FlowGuard slash commands)" >&2
-        install_ok=0
-    fi
-
-    if [[ "$install_ok" -ne 1 ]]; then
-        echo "" >&2
-        echo "Error: FlowGuard install verification failed. Do not start the demo." >&2
-        echo "Check the 'flowguard install' output above and the tarball path." >&2
-        exit 1
-    fi
+    # install. Assert the scope-specific artifacts the OpenCode installer writes.
+    flowguard_verify_install "$INSTALL_SCOPE"
     echo "--- FlowGuard install verified ---"
 fi
 
@@ -177,9 +180,14 @@ echo "Next steps:"
 echo "  cd $TARGET_DIR"
 echo "  ./mvnw test           # Verify: 16 tests, 0 failures, 1 skipped"
 if [[ "$MODE" == "prepare-only" ]]; then
-    echo "  # Install FlowGuard and start OpenCode Desktop:"
+    echo "  # Install FlowGuard globally (default) and restart OpenCode Desktop:"
+    echo "  npx --package <tarball> flowguard install --policy-mode team --core-tarball <tarball> --force"
+    echo "  # Or install repo-scoped into this workspace only:"
     echo "  npx --package <tarball> flowguard install --install-scope repo --policy-mode team --core-tarball <tarball> --force"
 fi
 echo "  # Open $TARGET_DIR in OpenCode Desktop"
+if [[ "$MODE" == "install" && "$INSTALL_SCOPE" == "global" ]]; then
+    echo "  # (Restart OpenCode Desktop first so the global FlowGuard install is loaded.)"
+fi
 echo "  # Then follow DEMO_SCRIPT.md"
 echo "  # No FlowGuard session has been started and no demo flow has run."

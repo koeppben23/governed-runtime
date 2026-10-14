@@ -67,9 +67,15 @@ and the forensic findings this harness enforces.
 tarball. It does not call `/start`, dispatch a reviewer, or complete any flow.
 Follow the live-evidence checklist below before claiming a demo was executed.
 
+The install scope defaults to `--install-scope global` (`~/.config/opencode`,
+commands available in every OpenCode project; restart OpenCode Desktop after
+the install). The runbooks below pass `--install-scope repo` explicitly: it
+keeps FlowGuard isolated inside each demo workspace, so no global state is
+touched.
+
 ```bash
-# From demos/java-task-manager/: prepare every live demo workspace
-../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/: prepare every live demo workspace (repo-scoped)
+../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 cd /tmp/flowguard-demos/java-task-manager
 
 # Verify the starting state
@@ -355,7 +361,8 @@ demos/java-task-manager/
 ├── RESET.md                     ← How to reset for a fresh demo
 ├── EVIDENCE_PACKAGE.md          ← Evidence-package verification scope and limits
 ├── evidence-manifest.example.json ← Template binding the three sessions to their artifacts
-├── run-main-demo-setup.sh       ← Main-workspace setup primitive
+├── run-main-demo-setup.sh       ← Main-workspace setup primitive (--install-scope global|repo)
+├── install-flowguard-lib.sh     ← Shared install/verify helpers for the setup scripts
 ├── run-reduced-ceremony-demo-setup.sh ← Two fresh workspaces, explicit policies, --verify-session
 ├── run-demo-preflight.sh        ← Pre-flight checks before a live pitch
 ├── verify-evidence-package.mjs  ← Standalone offline package verifier

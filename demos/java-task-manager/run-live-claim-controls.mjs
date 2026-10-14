@@ -407,7 +407,14 @@ async function main() {
 
   execFileSync(
     path.join(REPO, 'run-demo-setup.sh'),
-    ['--install', '--tarball', tarball, path.join(options.root, 'workspaces')],
+    [
+      '--install',
+      '--install-scope',
+      'repo',
+      '--tarball',
+      tarball,
+      path.join(options.root, 'workspaces'),
+    ],
     {
       cwd: REPO,
       stdio: 'inherit',

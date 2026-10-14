@@ -19,9 +19,11 @@ working tree — it operates independently of Development changes on `main`.
 ## Prerequisites (run before the demo)
 
 ```bash
-# From demos/java-task-manager/
-../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/ (repo-scoped: isolated to the demo workspaces)
+../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 # Open /tmp/flowguard-demos/java-task-manager in OpenCode Desktop
+# Alternative: omit --install-scope repo to install globally (~/.config/opencode,
+# commands in every project); restart OpenCode Desktop after a global install.
 ```
 
 ---
