@@ -239,6 +239,33 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     expect(payload.detail.sessionMapping).toBe('unresolved');
   });
 
+  it('BAD: blocks a mutating host tool while an integrity incident (evidence reuse) is unresolved', async () => {
+    const base = makeState('IMPLEMENTATION');
+    const state = {
+      ...base,
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId: '44444444-4444-4444-8444-444444444444',
+            status: 'blocked',
+            blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+            consumedAt: null,
+          },
+        ],
+      },
+    } as unknown as SessionState;
+    const runtime = makeRuntime({
+      ws: { resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state)) },
+    });
+    let caught: unknown;
+    try {
+      await toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} });
+    } catch (err) {
+      caught = err;
+    }
+    expect(enforcementPayload(caught).code).toBe('INTEGRITY_INCIDENT_MUTATION_DENIED');
+  });
+
   it('blocks with SESSION_DIR_NOT_FOUND when the directory is missing', async () => {
     const ws = await createTestWorkspace();
     try {

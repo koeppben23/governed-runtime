@@ -253,6 +253,35 @@ describe('pre-tool-use review obligation enforcement', () => {
 
     expect(stdout).toBe('');
   });
+
+  it('BAD: denies a mutating tool while an integrity incident (evidence reuse) is unresolved', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: 'reused-1',
+              status: 'blocked',
+              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+              consumedAt: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const stdout = await runPreToolUse(payload);
+    const output = JSON.parse(stdout.trim()) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
+      'INTEGRITY_INCIDENT_MUTATION_DENIED',
+    );
+  });
 });
 
 describe('pre-tool-use hook diagnostics', () => {
