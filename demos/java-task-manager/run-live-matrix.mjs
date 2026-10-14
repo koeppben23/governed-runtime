@@ -377,6 +377,7 @@ export function hostTurnWasNoOp(lastTurn, label) {
     lastTurn !== null &&
     lastTurn.label === label &&
     lastTurn.toolCalls === 0 &&
+    lastTurn.stateObserved === true &&
     lastTurn.stateChanged === false
   );
 }
@@ -581,10 +582,13 @@ export class Runner {
     session.sessionId = session.sessionId ?? observed;
     if (!session.sessionId) throw new Error(`${label}: no host session id observed`);
     const digestAfter = this.currentStateDigest(session);
+    const stateObserved = digestBefore !== null && digestAfter !== null;
     session.lastTurn = {
       label,
       toolCalls: toolUseEvents(result.stdout).length,
-      stateChanged: digestBefore !== null && digestAfter !== null && digestAfter !== digestBefore,
+      stateObserved,
+      // An unreadable state digest is NOT an observed unchanged state.
+      stateChanged: stateObserved ? digestAfter !== digestBefore : null,
       phaseAfter: this.currentPhase(session),
     };
     if (options.expectedDenial) {

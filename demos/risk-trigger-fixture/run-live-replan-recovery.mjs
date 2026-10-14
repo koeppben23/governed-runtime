@@ -25,6 +25,8 @@ import {
   verifyChecksumSidecar,
 } from '../java-task-manager/run-live-matrix.mjs';
 import {
+  applyFixtureRepoConfig,
+  fixtureRepoConfigRiskTriggerPaths,
   prepareWorkspace,
   claimDeclaration,
   assertFullEvidence,
@@ -144,6 +146,20 @@ async function planAndApprove(runner, session, prefix, covered, allowOverride) {
       'This does not authorize evidence approval or override missing risk coverage.',
     { command },
   );
+}
+
+/**
+ * Both recovery sessions must carry the fixture's frozen repository-specific
+ * risk trigger mapping in their policy snapshot; otherwise the recovered
+ * session could prove nothing about the mapping it was supposed to require.
+ */
+export function assertFrozenRiskTriggerPaths(state, expected, label) {
+  const actual = state?.policySnapshot?.riskTriggerPaths;
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(
+      `${label} session policy snapshot does not carry the frozen fixture riskTriggerPaths`,
+    );
+  }
 }
 
 export function assertRecoveryIdentities(oldState, newState) {
@@ -267,12 +283,19 @@ async function main() {
       [productInstaller, 'install', '--install-scope', 'repo', '--core-tarball', tarball],
       { cwd: newWorkspace, stdio: 'inherit' },
     );
+    // `.opencode/` is gitignored, so the git worktree does not carry the
+    // fixture configuration: apply it after the regular install, before the
+    // first session of the recovery worktree.
+    applyFixtureRepoConfig(newWorkspace);
     if (fs.readFileSync(path.join(newWorkspace, SUBJECT), 'utf8') !== original)
       throw new Error('untrusted recovery base');
     const newSession = { workspace: newWorkspace, terminal: 'COMPLETE' };
     await runner.turn(newSession, 'new-01-start', undefined, { command: 'start' });
     const fresh = snapshot(runner, newSession, 'fresh');
     assertRecoveryIdentities(aborted.state, fresh.state);
+    const expectedRiskTriggerPaths = fixtureRepoConfigRiskTriggerPaths();
+    assertFrozenRiskTriggerPaths(aborted.state, expectedRiskTriggerPaths, 'old');
+    assertFrozenRiskTriggerPaths(fresh.state, expectedRiskTriggerPaths, 'new');
     assertInstalledBuildIdentity(
       runner.installedBuild(newWorkspace),
       checkoutHead,

@@ -85,28 +85,41 @@ describe('documentation/demo-harness-reliability', () => {
   });
 
   describe('BAD — only a true no-op turn may downgrade to NOT_VERIFIED', () => {
-    it('requires zero tool calls and an unchanged state for the exact label', () => {
+    it('requires zero tool calls and an observed, unchanged state for the exact label', () => {
       expect(
         hostTurnWasNoOp(
-          { label: 'flow-05-implement', toolCalls: 0, stateChanged: false },
+          { label: 'flow-05-implement', toolCalls: 0, stateObserved: true, stateChanged: false },
           'flow-05-implement',
         ),
       ).toBe(true);
       expect(
         hostTurnWasNoOp(
-          { label: 'flow-05-implement', toolCalls: 1, stateChanged: false },
+          { label: 'flow-05-implement', toolCalls: 1, stateObserved: true, stateChanged: false },
           'flow-05-implement',
         ),
       ).toBe(false);
       expect(
         hostTurnWasNoOp(
-          { label: 'flow-05-implement', toolCalls: 0, stateChanged: true },
+          { label: 'flow-05-implement', toolCalls: 0, stateObserved: true, stateChanged: true },
           'flow-05-implement',
         ),
       ).toBe(false);
       expect(
         hostTurnWasNoOp(
-          { label: 'other-step', toolCalls: 0, stateChanged: false },
+          { label: 'other-step', toolCalls: 0, stateObserved: true, stateChanged: false },
+          'flow-05-implement',
+        ),
+      ).toBe(false);
+      // An unreadable state digest is never an observed unchanged state.
+      expect(
+        hostTurnWasNoOp(
+          { label: 'flow-05-implement', toolCalls: 0, stateObserved: false, stateChanged: null },
+          'flow-05-implement',
+        ),
+      ).toBe(false);
+      expect(
+        hostTurnWasNoOp(
+          { label: 'flow-05-implement', toolCalls: 0, stateChanged: false },
           'flow-05-implement',
         ),
       ).toBe(false);

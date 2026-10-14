@@ -298,6 +298,14 @@ function mergeConfig(base, override) {
   return merged;
 }
 
+/** The fixture-declared risk trigger paths (empty when the fixture has none). */
+export function fixtureRepoConfigRiskTriggerPaths(fixtureDir = FIXTURE) {
+  const source = path.join(fixtureDir, '.opencode', 'flowguard.json');
+  if (!fs.existsSync(source)) return [];
+  const parsed = JSON.parse(fs.readFileSync(source, 'utf8'));
+  return parsed?.policy?.riskTriggerPaths ?? [];
+}
+
 /**
  * Apply the fixture's repo-scoped configuration AFTER the regular install.
  *
