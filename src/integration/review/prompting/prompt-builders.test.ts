@@ -133,6 +133,25 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
   });
 });
 
+describe('unable_to_review prioritization', () => {
+  const PRIORITIZATION_LINE =
+    '- Before declaring unable_to_review, identify the facts your verdict depends on and resolve them through the authorized observation means actually available to this review';
+  const UNABLE_LINE =
+    '- unable_to_review is valid only when honest review is impossible because required context/evidence is missing, corrupt, mismatched, or unavailable AND the necessary facts could not be established through those authorized observation means.';
+
+  it('requires resolving verdict-relevant facts through authorized observation first', () => {
+    const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
+
+    expect(prompt).toContain(PRIORITIZATION_LINE);
+    expect(prompt).toContain('the supplied Discovery context and flowguard_observe_repository');
+    expect(prompt).toContain(UNABLE_LINE);
+    // The prioritization rule leads; the inability clause remains the narrow
+    // residual case and keeps the fail-closed semantics unchanged.
+    expect(prompt.indexOf(PRIORITIZATION_LINE)).toBeGreaterThan(-1);
+    expect(prompt.indexOf(PRIORITIZATION_LINE)).toBeLessThan(prompt.indexOf(UNABLE_LINE));
+  });
+});
+
 describe('frozen review subject envelope', () => {
   const frozenReviewerContext: FrozenReviewerContext = {
     reviewMaterial: {

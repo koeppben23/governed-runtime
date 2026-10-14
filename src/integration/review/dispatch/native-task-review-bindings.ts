@@ -22,7 +22,7 @@ import { replayAndPersistObservations } from '../observations/observation-replay
 import { captureStructuredFindingsFromVisibleChild } from './structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
-import type { ReviewerSuccessResult } from '../types.js';
+import type { PendingReviewRetryDiagnostic, ReviewerSuccessResult } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 import type { ReplayPersistDeps } from '../observations/observation-replay-persist.js';
 import type { NativeReviewLineage, PersistedState } from './native-task-review-types.js';
@@ -147,7 +147,12 @@ export async function capturePreparedFindings(
   obligation: ReviewObligation,
   childSessionId: string,
 ): Promise<
-  | { readonly kind: 'blocked'; readonly code: string; readonly reason: string }
+  | {
+      readonly kind: 'blocked';
+      readonly code: string;
+      readonly reason: string;
+      readonly diagnostics?: readonly PendingReviewRetryDiagnostic[];
+    }
   | {
       readonly kind: 'captured';
       readonly prepared: Record<string, unknown>;

@@ -327,6 +327,8 @@ async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise
     input.runtime.orchestratorDeps,
     input.sessDir,
     input.callId,
+    undefined,
+    { code: input.code, diagnostics: input.diagnostics },
   );
   if (rearm.kind !== 'rearmed') {
     const blockedReason =
@@ -337,8 +339,7 @@ async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise
         : 'FlowGuard found no exact abandoned dispatch lineage to re-arm.';
     await abandonAndBlock({
       ...input,
-      // The actionable recovery cause leads: the bounded reason keeps it even
-      // when the underlying capture detail is truncated.
+      // The actionable recovery cause leads even when the capture detail is truncated.
       reason: `${blockedReason} Previous capture failure: ${input.reason}`,
     });
     return;
@@ -596,7 +597,7 @@ async function completeStructuredReview(
       ...captureFailure,
       code: captured.code,
       reason: captured.reason,
-      diagnostics: [buildCodeOnlyRetryDiagnostic(captured.code)],
+      diagnostics: captured.diagnostics ?? [buildCodeOnlyRetryDiagnostic(captured.code)],
     });
     return;
   }

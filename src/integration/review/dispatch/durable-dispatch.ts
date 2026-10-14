@@ -30,6 +30,9 @@ import {
 } from '../../../state/review-dispatch.js';
 import type { ReviewAttempt, ReviewDispatchRecord } from '../../../state/evidence-review.js';
 import type { SessionState } from '../../../state/schema.js';
+import type { SemanticAuditIntent } from '../../audit-outbox.js';
+import type { PendingReviewRetryDiagnostic } from '../types.js';
+import { captureClosureAuditDiagnostics } from './capture-retry.js';
 
 const REVIEW_DISPATCH_PERSISTENCE_FAILED = 'REVIEW_DISPATCH_PERSISTENCE_FAILED' as const;
 
@@ -37,7 +40,14 @@ export interface DispatchLedgerWriteDeps {
   readonly updateReviewAssurance: (
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
+    semanticIntents?: (state: SessionState, now: string) => readonly SemanticAuditIntent[],
   ) => Promise<void>;
+}
+
+/** Bounded capture-failure facts carried into the budget-exhausted closure audit. */
+export interface CaptureClosureAuditInput {
+  readonly code: string;
+  readonly diagnostics: readonly PendingReviewRetryDiagnostic[];
 }
 
 export interface AuthorizedReviewDispatchInput {
@@ -194,63 +204,115 @@ export type AbandonAndRearmOutcome =
  *
  * When the re-arm is refused, the abandon+stale mutation is still persisted so
  * the spent attempt can never be re-released; only the fresh attempt mint is
- * skipped.
+ * skipped. A budget-exhausted refusal additionally binds a semantic
+ * `review:obligation_blocked` audit intent to that same mutation, so the audit
+ * trail records the closure with the bounded capture diagnostics — but only
+ * when the resulting state actually carries the blocked obligation.
  */
 export async function abandonAndRearmByHostCall(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
   hostCallId: string,
   now: string = new Date().toISOString(),
+  captureFailure?: CaptureClosureAuditInput,
 ): Promise<AbandonAndRearmOutcome> {
   let outcome: AbandonAndRearmOutcome = { kind: 'noop' };
-  await deps.updateReviewAssurance(sessDir, (state) => {
-    const assurance = ensureReviewAssurance(state.reviewAssurance);
-    const authorized = (assurance.dispatches ?? []).filter(
-      (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
-    );
-    if (authorized.length !== 1) return state;
-    const record = authorized[0];
-    if (record === undefined) return state;
-    const attempt = (assurance.attempts ?? []).find(
-      (candidate) => candidate.attemptId === record.attemptId,
-    );
-    if (attempt === undefined || attempt.status !== 'created') return state;
+  await deps.updateReviewAssurance(
+    sessDir,
+    (state) => {
+      const assurance = ensureReviewAssurance(state.reviewAssurance);
+      const authorized = (assurance.dispatches ?? []).filter(
+        (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
+      );
+      if (authorized.length !== 1) return state;
+      const record = authorized[0];
+      if (record === undefined) return state;
+      const attempt = (assurance.attempts ?? []).find(
+        (candidate) => candidate.attemptId === record.attemptId,
+      );
+      if (attempt === undefined || attempt.status !== 'created') return state;
 
-    const staled = updateAttemptStatus(
-      abandonReviewDispatch(assurance, hostCallId),
-      attempt.attemptId,
-      'stale',
-      now,
-    );
-    const spent = (staled.attempts ?? []).find(
-      (candidate) => candidate.attemptId === attempt.attemptId,
-    );
-    if (spent === undefined) return state;
+      const staled = updateAttemptStatus(
+        abandonReviewDispatch(assurance, hostCallId),
+        attempt.attemptId,
+        'stale',
+        now,
+      );
+      const spent = (staled.attempts ?? []).find(
+        (candidate) => candidate.attemptId === attempt.attemptId,
+      );
+      if (spent === undefined) return state;
 
-    const rearm = buildInterruptedDispatchRearm(staled, spent, now);
-    if (rearm.kind === 'blocked') {
-      outcome = {
-        kind: 'blocked',
-        reason: rearm.reason,
-        cause: rearm.cause,
-        obligationId: attempt.obligationId,
-      };
-      // The attempt budget is exhausted: the obligation is unrecoverable in
-      // place. Close it deterministically so the next originating command can
-      // mint a fresh obligation instead of dead-ending on a pending one.
-      if (rearm.cause === 'budget_exhausted') {
-        return blockObligation(
-          { ...state, reviewAssurance: staled },
-          attempt.obligationId,
-          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-        );
+      const rearm = buildInterruptedDispatchRearm(staled, spent, now);
+      if (rearm.kind === 'blocked') {
+        outcome = {
+          kind: 'blocked',
+          reason: rearm.reason,
+          cause: rearm.cause,
+          obligationId: attempt.obligationId,
+        };
+        // The attempt budget is exhausted: the obligation is unrecoverable in
+        // place. Close it deterministically so the next originating command can
+        // mint a fresh obligation instead of dead-ending on a pending one.
+        if (rearm.cause === 'budget_exhausted') {
+          return blockObligation(
+            { ...state, reviewAssurance: staled },
+            attempt.obligationId,
+            'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          );
+        }
+        return { ...state, reviewAssurance: staled };
       }
-      return { ...state, reviewAssurance: staled };
-    }
-    outcome = { kind: 'rearmed', attempt: rearm.attempt, obligationId: rearm.attempt.obligationId };
-    return { ...state, reviewAssurance: rearm.assurance };
-  });
+      outcome = {
+        kind: 'rearmed',
+        attempt: rearm.attempt,
+        obligationId: rearm.attempt.obligationId,
+      };
+      return { ...state, reviewAssurance: rearm.assurance };
+    },
+    closureAuditIntents(() => outcome, captureFailure, now),
+  );
   return outcome;
+}
+
+/**
+ * Semantic audit intent for the budget-exhausted closure, evaluated against the
+ * state produced by the SAME mutation. It is emitted only when that mutation
+ * set a blocked/budget-exhausted outcome AND the resulting state carries the
+ * blocked obligation; a no-op (repeated host call, missing lineage) never sets
+ * a blocked outcome and stays silent, so the closure is never reported twice.
+ */
+function closureAuditIntents(
+  currentOutcome: () => AbandonAndRearmOutcome,
+  captureFailure: CaptureClosureAuditInput | undefined,
+  now: string,
+): (state: SessionState) => readonly SemanticAuditIntent[] {
+  return (state) => {
+    const outcome = currentOutcome();
+    if (outcome.kind !== 'blocked' || outcome.cause !== 'budget_exhausted') return [];
+    const obligationId = outcome.obligationId;
+    const obligation = ensureReviewAssurance(state.reviewAssurance).obligations.find(
+      (item) => item.obligationId === obligationId,
+    );
+    if (!obligation || obligation.status !== 'blocked') return [];
+    return [
+      {
+        phase: state.phase,
+        event: 'review:obligation_blocked',
+        occurredAt: now,
+        detail: {
+          obligationId,
+          blockedCode: obligation.blockedCode ?? 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          ...(captureFailure !== undefined
+            ? {
+                captureCode: captureFailure.code,
+                diagnostics: captureClosureAuditDiagnostics(captureFailure.diagnostics),
+              }
+            : {}),
+        },
+      },
+    ];
+  };
 }
 
 export type InterruptedDispatchRearm =

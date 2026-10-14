@@ -16,7 +16,7 @@ import type { EvidenceLocationFailure } from '../observations/observation-bindin
 import type { ReviewObligationType } from '../../../state/evidence.js';
 import { REASON_MANDATE_MISSING, REASON_MANDATE_MISMATCH } from '../shared-helpers.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
-import type { StructuredFollowupFailureCode } from './structured-followup.js';
+import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
 
 /**
  * Codes emitted by the reviewers' binding boundary. The union is DERIVED from
@@ -244,6 +244,113 @@ export function buildBindingRetryDiagnostics(
     code,
     reasonKind: failure.kind,
     data: locationFailureData(failure),
+  }));
+}
+
+/**
+ * Max structured reviewer-contract diagnostics carried per capture failure.
+ * The primary failure leads; further issues must not turn diagnostics into a
+ * second copy of the rejected payload.
+ */
+export const MAX_STRUCTURED_CONTRACT_DIAGNOSTICS = 3;
+
+function structuredIssueRecord(issue: unknown): Record<string, unknown> | null {
+  return issue && typeof issue === 'object' ? (issue as Record<string, unknown>) : null;
+}
+
+function structuredIssuePath(issue: Record<string, unknown>): string {
+  const path = issue.path;
+  if (!Array.isArray(path)) return '';
+  return path
+    .filter(
+      (segment): segment is string | number =>
+        typeof segment === 'string' || typeof segment === 'number',
+    )
+    .map(String)
+    .join('.');
+}
+
+/** Allowed values or expected type of a canonical schema issue, when present. */
+function structuredIssueConstraint(issue: Record<string, unknown>): string | undefined {
+  const values = issue.values;
+  if (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.every(
+      (value) =>
+        typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean',
+    )
+  ) {
+    return values.map(String).join('|');
+  }
+  const expected = issue.expected;
+  return typeof expected === 'string' && expected.length > 0 ? expected : undefined;
+}
+
+/**
+ * Bounded, data-lean diagnostics for a reviewer findings payload rejected by
+ * the canonical ReviewerFindingsInput schema. Only the offending field path,
+ * the issue code, and the violated constraint travel — never the rejected
+ * value, raw schema output, or any other reviewer-authored content.
+ */
+export function buildStructuredFindingsContractDiagnostics(
+  issues: readonly unknown[],
+): readonly PendingReviewRetryDiagnostic[] {
+  const diagnostics: PendingReviewRetryDiagnostic[] = [];
+  for (const issue of issues) {
+    const record = structuredIssueRecord(issue);
+    if (!record) continue;
+    const code = record.code;
+    if (typeof code !== 'string' || code.length === 0) continue;
+    const constraint = structuredIssueConstraint(record);
+    diagnostics.push({
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      reasonKind: truncateRetryScalar(code),
+      data: {
+        path: truncateRetryScalar(structuredIssuePath(record)),
+        ...(constraint !== undefined ? { constraint: truncateRetryScalar(constraint) } : {}),
+      },
+    });
+    if (diagnostics.length >= MAX_STRUCTURED_CONTRACT_DIAGNOSTICS) break;
+  }
+  return diagnostics;
+}
+
+/**
+ * Short, primary-first block reason for a canonical reviewer-contract
+ * rejection. The first offending field and its violated constraint lead, so
+ * the bounded operator envelope keeps the decisive cause instead of a
+ * truncated serialization of raw schema output.
+ */
+export function structuredFindingsContractReason(issues: readonly unknown[]): string {
+  const [first] = buildStructuredFindingsContractDiagnostics(issues);
+  const count = issues.length;
+  const noun = count === 1 ? 'issue' : 'issues';
+  if (!first) {
+    return `ReviewerFindingsInput rejected (${String(count)} schema ${noun}); no structured issue detail available`;
+  }
+  const path = first.data?.path ?? '';
+  const constraint = first.data?.constraint;
+  const detail =
+    constraint !== undefined
+      ? `expected ${constraint}`
+      : (first.reasonKind ?? 'contract_violation');
+  return `ReviewerFindingsInput rejected (${String(count)} schema ${noun}); first: ${path} — ${detail}`;
+}
+
+/**
+ * Data-lean audit projection of bounded capture diagnostics for the durable
+ * closure record: reason kind, field path, and violated constraint only.
+ */
+export function captureClosureAuditDiagnostics(
+  diagnostics: readonly PendingReviewRetryDiagnostic[],
+): readonly Readonly<Record<string, string>>[] {
+  return diagnostics.slice(0, MAX_STRUCTURED_CONTRACT_DIAGNOSTICS).map((diagnostic) => ({
+    reasonKind: diagnostic.reasonKind ?? diagnostic.code,
+    path: diagnostic.data?.path ?? '',
+    ...(diagnostic.data?.constraint !== undefined
+      ? { constraint: diagnostic.data.constraint }
+      : {}),
   }));
 }
 

@@ -11,6 +11,7 @@ import { SessionState } from '../../../state/schema.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
 import { hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { makeState } from '../../../fixtures.js';
+import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import {
   abandonAndRearmByHostCall,
   abandonReviewDispatchByHostCall,
@@ -60,10 +61,17 @@ function baseAssurance(obligationType: 'plan' | 'review' = 'plan') {
   };
 }
 
-function writeDeps(stateRef: { current: SessionState }): DispatchLedgerWriteDeps {
+function writeDeps(
+  stateRef: { current: SessionState },
+  intentsRef?: { current: readonly SemanticAuditIntent[] },
+): DispatchLedgerWriteDeps {
   return {
-    updateReviewAssurance: vi.fn(async (_sessDir, update) => {
-      stateRef.current = update(stateRef.current, NOW);
+    updateReviewAssurance: vi.fn(async (_sessDir, update, semanticIntents) => {
+      const next = update(stateRef.current, NOW);
+      stateRef.current = next;
+      if (intentsRef) {
+        intentsRef.current = semanticIntents ? [...semanticIntents(next, NOW)] : [];
+      }
     }),
   };
 }
@@ -549,6 +557,112 @@ describe('abandonAndRearmByHostCall', () => {
       'blocked',
     );
     expect(resolveReviewContinuation(after, 'plan')).toMatchObject({ kind: 'blocked' });
+  });
+
+  it('BUDGET: binds a bounded closure audit intent to the exact blocked settlement', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const intentsRef: { current: readonly SemanticAuditIntent[] } = { current: [] };
+    const deps = writeDeps(stateRef, intentsRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    const first = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+    expect(first.kind).toBe('rearmed');
+    // A successful re-arm is not a closure: no audit intent may be emitted.
+    expect(intentsRef.current).toEqual([]);
+    if (first.kind !== 'rearmed') return;
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: first.attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD_2,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const second = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD_2, NOW, {
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      diagnostics: [
+        {
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          reasonKind: 'invalid_value',
+          data: {
+            path: 'majorRisks.0.category',
+            constraint: 'completeness|correctness|feasibility|risk|quality',
+          },
+        },
+      ],
+    });
+
+    expect(second.kind).toBe('blocked');
+    expect(intentsRef.current).toEqual([
+      {
+        phase: 'PLAN',
+        event: 'review:obligation_blocked',
+        occurredAt: NOW,
+        detail: {
+          obligationId: obligation.obligationId,
+          blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+          captureCode: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          diagnostics: [
+            {
+              reasonKind: 'invalid_value',
+              path: 'majorRisks.0.category',
+              constraint: 'completeness|correctness|feasibility|risk|quality',
+            },
+          ],
+        },
+      },
+    ]);
+    const serialized = JSON.stringify(intentsRef.current);
+    // Data-lean: the rejected value and raw schema output never travel.
+    expect(serialized).not.toContain('verification');
+    expect(serialized).not.toContain('dangerous');
+  });
+
+  it('BUDGET: a repeated host call and a no-op never emit the closure audit intent', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const intentsRef: { current: readonly SemanticAuditIntent[] } = { current: [] };
+    const deps = writeDeps(stateRef, intentsRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    const first = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW);
+    if (first.kind !== 'rearmed') throw new Error('expected a re-armed attempt');
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: first.attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD_2,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    const captureFailure = {
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      diagnostics: [
+        {
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          reasonKind: 'invalid_value',
+          data: { path: 'majorRisks.0.category' },
+        },
+      ],
+    };
+
+    const blocked = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD_2, NOW, captureFailure);
+    expect(blocked.kind).toBe('blocked');
+    expect(intentsRef.current).toHaveLength(1);
+
+    // Repeated processing of the same host call is a no-op and must not
+    // re-emit the closure — the closure already happened in the first call.
+    const repeated = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD_2, NOW, captureFailure);
+    expect(repeated).toEqual({ kind: 'noop' });
+    expect(intentsRef.current).toEqual([]);
+
+    const unknown = await abandonAndRearmByHostCall(
+      deps,
+      SESS_DIR,
+      'unknown-host-call',
+      NOW,
+      captureFailure,
+    );
+    expect(unknown).toEqual({ kind: 'noop' });
+    expect(intentsRef.current).toEqual([]);
   });
 
   it('EDGE: an unknown host call is a no-op with the original state', async () => {

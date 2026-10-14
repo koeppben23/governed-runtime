@@ -107,4 +107,28 @@ describe('native capture-failure block detail (Run-10 diagnostics)', () => {
     expect(output.message).not.toContain('{obligationId}');
     expect(output.message).not.toContain('{reason}');
   });
+
+  it('summarizes structured contract diagnostics by path and constraint without raw values', () => {
+    const detail = captureFailureBlockDetail({
+      obligationId: OBLIGATION_ID,
+      reason: 'ReviewerFindingsInput rejected (1 schema issue); first: majorRisks.0.category',
+      diagnostics: [
+        {
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          reasonKind: 'invalid_value',
+          data: {
+            path: 'majorRisks.0.category',
+            constraint: 'completeness|correctness|feasibility|risk|quality',
+          },
+        },
+      ],
+    });
+
+    expect(detail.diagnostics).toContain('path=majorRisks.0.category');
+    expect(detail.diagnostics).toContain(
+      'constraint=completeness|correctness|feasibility|risk|quality',
+    );
+    expect(JSON.stringify(detail)).not.toContain('verification');
+    expect(JSON.stringify(detail)).not.toContain('dangerous');
+  });
 });
