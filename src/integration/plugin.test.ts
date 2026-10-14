@@ -1401,6 +1401,17 @@ describe('integration/plugin', () => {
         const first = await completeReviewerTask(hooks, sessionID);
         const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
         expect(retry.reviewRetry).toBeDefined();
+        expect(retry.reviewRetry).toMatchObject({
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          retryable: true,
+          diagnostics: [
+            {
+              code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+              reasonKind: 'invalid_type',
+              data: { path: 'attestation', constraint: 'object' },
+            },
+          ],
+        });
 
         await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
         const second = await completeReviewerTask(hooks, sessionID, 'call-native-2');
@@ -1409,11 +1420,78 @@ describe('integration/plugin', () => {
         expect(blocked.error).toBe(true);
         expect(blocked.code).toBe('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
         expect((blocked.detail as Record<string, unknown>).reason).toContain('budget exhausted');
+        expect((blocked.detail as Record<string, unknown>).diagnostics).toContain(
+          'path=attestation',
+        );
 
         const state = await readState(sessDir);
         const attempts = state?.reviewAssurance?.attempts ?? [];
         expect(attempts).toHaveLength(2);
         expect(attempts.find((a) => a.attemptId !== ATTEMPT_ID)?.status).toBe('stale');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('rejects an out-of-vocabulary finding category with data-lean diagnostics and never normalizes it', async () => {
+      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession((obligationId) =>
+        nativeFindings(obligationId, {
+          overallVerdict: 'changes_requested',
+          blockingIssues: [
+            {
+              severity: 'major',
+              category: 'verification',
+              message: 'The invariant sentence is not checked by any test.',
+              relation: {
+                subjectAnchors: [
+                  {
+                    kind: 'repository_location',
+                    location: { path: 'docs/usage-notes.md', revision: 'head' },
+                  },
+                ],
+                evidenceLocations: [],
+              },
+            },
+          ],
+        }),
+      );
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const first = await completeReviewerTask(hooks, sessionID);
+        const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
+        expect(retry.reviewRetry).toMatchObject({
+          code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+          retryable: true,
+          diagnostics: [
+            {
+              code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+              reasonKind: 'invalid_value',
+              data: {
+                path: 'blockingIssues.0.category',
+                constraint: 'completeness|correctness|feasibility|risk|quality',
+              },
+            },
+          ],
+        });
+
+        await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
+        const second = await completeReviewerTask(hooks, sessionID, 'call-native-2');
+
+        const blocked = JSON.parse(String(second.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
+        const detail = blocked.detail as Record<string, unknown>;
+        expect(detail.reason).toContain('budget exhausted');
+        expect(detail.diagnostics).toContain('path=blockingIssues.0.category');
+        expect(detail.diagnostics).toContain(
+          'constraint=completeness|correctness|feasibility|risk|quality',
+        );
+        // The rejected category value never travels in any envelope field.
+        expect(JSON.stringify(blocked)).not.toContain('verification');
+        expect(JSON.stringify(retry)).not.toContain('verification');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('blocked');
       } finally {
         await ws.cleanup();
       }

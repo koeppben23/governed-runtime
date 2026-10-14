@@ -17,14 +17,12 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
-import type { OrchestratorClient } from '../types.js';
-
-/** Every blocked code the same-child structured follow-up can return. */
-export type StructuredFollowupFailureCode =
-  | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
-  | 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE'
-  | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
-  | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
+import type { OrchestratorClient, PendingReviewRetryDiagnostic } from '../types.js';
+import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
+import {
+  buildStructuredFindingsContractDiagnostics,
+  structuredFindingsContractReason,
+} from './capture-retry.js';
 
 export type StructuredFollowupResult =
   | {
@@ -37,6 +35,7 @@ export type StructuredFollowupResult =
       readonly kind: 'blocked';
       readonly code: StructuredFollowupFailureCode;
       readonly reason: string;
+      readonly diagnostics?: readonly PendingReviewRetryDiagnostic[];
     };
 
 type BlockedFollowup = Extract<StructuredFollowupResult, { readonly kind: 'blocked' }>;
@@ -135,10 +134,12 @@ function parseStructuredFindings(response: PromptResponse): ParsedFollowup {
   }
   const parsed = ReviewerFindingsInput.safeParse(structured);
   if (!parsed.success) {
+    const diagnostics = buildStructuredFindingsContractDiagnostics(parsed.error.issues);
     return {
       kind: 'blocked',
       code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
-      reason: `OpenCode returned structured reviewer output outside the canonical ReviewerFindingsInput contract: ${parsed.error.message}`,
+      reason: structuredFindingsContractReason(parsed.error.issues),
+      ...(diagnostics.length > 0 ? { diagnostics } : {}),
     };
   }
   return { kind: 'ok', findings: { ...parsed.data } };

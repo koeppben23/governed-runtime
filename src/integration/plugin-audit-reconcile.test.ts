@@ -24,8 +24,20 @@ import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.
 import { resolveBootstrapStateExistence } from './plugin-audit-reconcile.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
-import { prepareAuditOperations } from './audit-outbox.js';
+import { prepareAuditOperations, writeStateWithAuditOperations } from './audit-outbox.js';
 import { buildDecisionAuditIntent } from './services/decision-audit-intent.js';
+import {
+  abandonAndRearmByHostCall,
+  persistAuthorizedReviewDispatch,
+  type DispatchLedgerWriteDeps,
+} from './review/dispatch/durable-dispatch.js';
+import {
+  appendObligationWithAttempt,
+  artifactReviewSubjectScope,
+  createReviewObligation,
+  freezeReviewMaterial,
+} from './review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../state/review-dispatch.js';
 import {
   absentAuthority,
   resolvedAuthority,
@@ -919,5 +931,145 @@ describe('resolveBootstrapStateExistence', () => {
         .mockResolvedValue(unavailableAuthority('SESSION_BINDING_MISMATCH')),
     });
     await expect(resolveBootstrapStateExistence(deps, SESSION_ID)).resolves.toBe('unavailable');
+  });
+});
+
+describe('budget-exhausted reviewer closure audit', () => {
+  const CLOSURE_AT = '2026-05-10T12:00:00.000Z';
+  const CHILD_1 = 'closure-child-1';
+  const CHILD_2 = 'closure-child-2';
+  const PROMPT_DIGEST = 'b'.repeat(64);
+
+  /** Persistence-backed reviewer ledger deps that emit real audit operations. */
+  const closureDeps: DispatchLedgerWriteDeps = {
+    updateReviewAssurance: async (sessDir, update, semanticIntents) => {
+      const current = await readState(sessDir);
+      if (current === null) throw new Error(`No state at ${sessDir}`);
+      const next = update(current, CLOSURE_AT);
+      await writeStateWithAuditOperations(
+        sessDir,
+        next,
+        semanticIntents ? semanticIntents(next, CLOSURE_AT) : [],
+      );
+    },
+  };
+
+  async function seedClosureSession(sessDir: string) {
+    const obligation = createReviewObligation({
+      obligationType: 'plan',
+      reviewCycle: 1,
+      iteration: 0,
+      planVersion: 1,
+      now: CLOSURE_AT,
+      subjectDigest: 'subject-digest-1',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'subject-digest-1'),
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest-1'),
+      repositoryEvidenceFreeze: { kind: 'unavailable' as const, reason: 'repository_unavailable' },
+    });
+    const minted = appendObligationWithAttempt(
+      ensureReviewAssurance(undefined),
+      obligation,
+      CLOSURE_AT,
+    );
+    const attempt = minted.assurance.attempts.find((item) => item.attemptId === minted.attemptId)!;
+    await writeState(
+      sessDir,
+      makeState('PLAN', { id: SESSION_ID, reviewAssurance: minted.assurance }),
+    );
+    return { obligation, attempt };
+  }
+
+  it('materializes the closure event with bounded diagnostics exactly once', async () => {
+    const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-closure-audit-'));
+    try {
+      const { obligation, attempt } = await seedClosureSession(sessDir);
+      await persistAuthorizedReviewDispatch(closureDeps, sessDir, {
+        attemptId: attempt.attemptId,
+        obligationId: obligation.obligationId,
+        hostCallId: CHILD_1,
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: CLOSURE_AT,
+      });
+      const first = await abandonAndRearmByHostCall(closureDeps, sessDir, CHILD_1, CLOSURE_AT);
+      if (first.kind !== 'rearmed') throw new Error('expected a re-armed attempt');
+      await persistAuthorizedReviewDispatch(closureDeps, sessDir, {
+        attemptId: first.attempt.attemptId,
+        obligationId: obligation.obligationId,
+        hostCallId: CHILD_2,
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: CLOSURE_AT,
+      });
+
+      const blocked = await abandonAndRearmByHostCall(closureDeps, sessDir, CHILD_2, CLOSURE_AT, {
+        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        diagnostics: [
+          {
+            code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+            reasonKind: 'invalid_value',
+            data: {
+              path: 'majorRisks.0.category',
+              constraint: 'completeness|correctness|feasibility|risk|quality',
+            },
+          },
+        ],
+      });
+      expect(blocked.kind).toBe('blocked');
+
+      // Producer: the closure and its audit intent are one durable mutation.
+      const pending = await readState(sessDir);
+      const semantic = (pending?.pendingAuditOperations ?? []).filter(
+        (operation) => operation.kind === 'semantic',
+      );
+      expect(semantic).toHaveLength(1);
+      if (semantic[0]?.kind !== 'semantic') throw new Error('expected a semantic operation');
+      expect(semantic[0].semantic.event).toBe('review:obligation_blocked');
+      expect(semantic[0].semantic.detail).toMatchObject({
+        obligationId: obligation.obligationId,
+        captureCode: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        diagnostics: [
+          {
+            reasonKind: 'invalid_value',
+            path: 'majorRisks.0.category',
+            constraint: 'completeness|correctness|feasibility|risk|quality',
+          },
+        ],
+      });
+
+      // Consumer: reconciliation materializes the exact event in the audit trail.
+      const deps = depsForDisk(sessDir, pending);
+      await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
+      const emitted = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls.map(
+        (call) => call[0] as Record<string, unknown>,
+      );
+      const blockedEvent = emitted.find((event) => event.event === 'review:obligation_blocked');
+      expect(blockedEvent).toBeDefined();
+      expect(blockedEvent?.detail).toMatchObject({
+        obligationId: obligation.obligationId,
+        captureCode: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        diagnostics: [
+          {
+            reasonKind: 'invalid_value',
+            path: 'majorRisks.0.category',
+            constraint: 'completeness|correctness|feasibility|risk|quality',
+          },
+        ],
+      });
+      const serialized = JSON.stringify(blockedEvent);
+      expect(serialized).not.toContain('verification');
+      expect(serialized).not.toContain('dangerous');
+
+      // The outbox is drained: every operation is reconciled, and a repeated
+      // reconciliation adds no second closure event.
+      const after = await readState(sessDir);
+      const reconciled = after?.pendingAuditOperations ?? [];
+      expect(reconciled.length).toBeGreaterThan(0);
+      expect(reconciled.every((operation) => operation.status === 'reconciled')).toBe(true);
+      expect(reconciled.filter((operation) => operation.kind === 'semantic')).toHaveLength(1);
+      const callsBefore = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls.length;
+      await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
+      expect((deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore);
+    } finally {
+      await fs.rm(sessDir, { recursive: true, force: true });
+    }
   });
 });

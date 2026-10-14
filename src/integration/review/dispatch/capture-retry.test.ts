@@ -8,14 +8,18 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_RETRY_DIAGNOSTICS,
   MAX_RETRY_SCALAR_CHARS,
+  MAX_STRUCTURED_CONTRACT_DIAGNOSTICS,
   RETRYABLE_REVIEWER_CAPTURE_CODES,
   TERMINAL_REVIEWER_CAPTURE_CODES,
   buildBindingRetryDiagnostics,
   buildCaptureFailureDiagnostics,
   buildCodeOnlyRetryDiagnostic,
   buildReviewerCaptureRetryOutput,
+  buildStructuredFindingsContractDiagnostics,
+  captureClosureAuditDiagnostics,
   classifyReviewerCaptureFailure,
   isKnownReviewerCaptureFailureCode,
+  structuredFindingsContractReason,
 } from './capture-retry.js';
 import type { EvidenceLocationFailure } from '../observations/observation-binding.js';
 
@@ -183,5 +187,141 @@ describe('retry diagnostic DTOs', () => {
       ],
     });
     expect(JSON.stringify(output)).not.toContain('trusted retry context');
+  });
+});
+
+describe('structured findings contract diagnostics', () => {
+  const CATEGORY_CONSTRAINT = 'completeness|correctness|feasibility|risk|quality';
+  const ENUM_ISSUE = {
+    code: 'invalid_value',
+    values: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
+    path: ['majorRisks', 0, 'category'],
+    message: 'Invalid option: expected one of …; received "dangerous"',
+  };
+  const TYPE_ISSUE = {
+    expected: 'object',
+    code: 'invalid_type',
+    path: ['attestation'],
+    message: 'Invalid input: expected object, received undefined',
+  };
+
+  it('reduces canonical schema issues to path, reason kind, and constraint', () => {
+    expect(buildStructuredFindingsContractDiagnostics([ENUM_ISSUE, TYPE_ISSUE])).toEqual([
+      {
+        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        reasonKind: 'invalid_value',
+        data: { path: 'majorRisks.0.category', constraint: CATEGORY_CONSTRAINT },
+      },
+      {
+        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        reasonKind: 'invalid_type',
+        data: { path: 'attestation', constraint: 'object' },
+      },
+    ]);
+  });
+
+  it('never carries the rejected value, raw schema messages, or payload content', () => {
+    const serialized = JSON.stringify(buildStructuredFindingsContractDiagnostics([ENUM_ISSUE]));
+    expect(serialized).not.toContain('dangerous');
+    expect(serialized).not.toContain('received');
+    expect(serialized).not.toContain('Invalid option');
+    expect(serialized).not.toContain('message');
+    expect(serialized).not.toContain('values');
+  });
+
+  it('caps diagnostics at the primary failures and stays safe for malformed issues', () => {
+    const many = Array.from(
+      { length: MAX_STRUCTURED_CONTRACT_DIAGNOSTICS + 4 },
+      (_unused, index) => ({
+        code: 'invalid_value',
+        values: ['a', 'b'],
+        path: ['majorRisks', index, 'category'],
+      }),
+    );
+    const bounded = buildStructuredFindingsContractDiagnostics(many);
+    expect(bounded).toHaveLength(MAX_STRUCTURED_CONTRACT_DIAGNOSTICS);
+    expect(bounded[0]?.data?.path).toBe('majorRisks.0.category');
+    expect(buildStructuredFindingsContractDiagnostics([null, 'x', {}, { code: '' }])).toEqual([]);
+  });
+
+  it('bounds long paths and constraints centrally', () => {
+    const diagnostics = buildStructuredFindingsContractDiagnostics([
+      {
+        code: 'invalid_value',
+        values: Array.from({ length: 60 }, (_unused, index) => `value-${String(index)}`),
+        path: ['x'.repeat(MAX_RETRY_SCALAR_CHARS + 40)],
+      },
+    ]);
+    const data = diagnostics[0]?.data ?? {};
+    expect(data.path).toHaveLength(MAX_RETRY_SCALAR_CHARS + 1);
+    expect(data.constraint).toHaveLength(MAX_RETRY_SCALAR_CHARS + 1);
+  });
+
+  it('leads the bounded block reason with the primary offending field', () => {
+    const reason = structuredFindingsContractReason([ENUM_ISSUE, TYPE_ISSUE]);
+    expect(reason).toBe(
+      `ReviewerFindingsInput rejected (2 schema issues); first: majorRisks.0.category — expected ${CATEGORY_CONSTRAINT}`,
+    );
+    expect(reason.length).toBeLessThan(240);
+    expect(reason).not.toContain('dangerous');
+  });
+
+  it('degrades safely when no issue detail is parseable', () => {
+    expect(structuredFindingsContractReason([null])).toBe(
+      'ReviewerFindingsInput rejected (1 schema issue); no structured issue detail available',
+    );
+  });
+
+  it('falls back to the expected type for empty or mixed value lists', () => {
+    const empty = buildStructuredFindingsContractDiagnostics([
+      { code: 'invalid_value', values: [], expected: 'string', path: ['a'] },
+    ]);
+    expect(empty[0]?.data).toEqual({ path: 'a', constraint: 'string' });
+    const mixed = buildStructuredFindingsContractDiagnostics([
+      { code: 'invalid_value', values: ['a', { nested: true }], expected: 'string', path: ['b'] },
+    ]);
+    expect(mixed[0]?.data).toEqual({ path: 'b', constraint: 'string' });
+  });
+
+  it('omits the constraint for an empty or non-string expected value', () => {
+    const empty = buildStructuredFindingsContractDiagnostics([
+      { code: 'invalid_type', expected: '', path: ['a'] },
+    ]);
+    expect(empty[0]?.data).toEqual({ path: 'a' });
+    const nonString = buildStructuredFindingsContractDiagnostics([
+      { code: 'invalid_type', expected: ['x'], path: ['b'] },
+    ]);
+    expect(nonString[0]?.data).toEqual({ path: 'b' });
+  });
+
+  it('projects the closure audit view with caps and defaults', () => {
+    const bounded = captureClosureAuditDiagnostics([
+      { code: 'CODE_A', reasonKind: 'kind_a', data: { path: 'a', constraint: 'c' } },
+      { code: 'CODE_B', data: { path: 'b' } },
+      { code: 'CODE_C', data: { path: 'c' } },
+      { code: 'CODE_D', data: { path: 'd' } },
+    ]);
+    expect(bounded).toEqual([
+      { reasonKind: 'kind_a', path: 'a', constraint: 'c' },
+      { reasonKind: 'CODE_B', path: 'b' },
+      { reasonKind: 'CODE_C', path: 'c' },
+    ]);
+    expect(captureClosureAuditDiagnostics([{ code: 'CODE_ONLY' }])).toEqual([
+      { reasonKind: 'CODE_ONLY', path: '' },
+    ]);
+  });
+
+  it('projects the closure audit view without raw values', () => {
+    const audit = captureClosureAuditDiagnostics(
+      buildStructuredFindingsContractDiagnostics([ENUM_ISSUE]),
+    );
+    expect(audit).toEqual([
+      {
+        reasonKind: 'invalid_value',
+        path: 'majorRisks.0.category',
+        constraint: CATEGORY_CONSTRAINT,
+      },
+    ]);
+    expect(JSON.stringify(audit)).not.toContain('dangerous');
   });
 });

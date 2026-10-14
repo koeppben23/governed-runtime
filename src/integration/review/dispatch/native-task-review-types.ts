@@ -7,6 +7,13 @@ import type { readState } from '../../../adapters/persistence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { findBindableAttempt } from '../../../state/review-continuation.js';
 
+/** Every blocked code the same-child structured follow-up can return. */
+export type StructuredFollowupFailureCode =
+  | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
+  | 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE'
+  | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
+  | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
+
 export type PersistedState = NonNullable<Awaited<ReturnType<typeof readState>>>;
 
 type BindableAttempt = NonNullable<ReturnType<typeof findBindableAttempt>>;
