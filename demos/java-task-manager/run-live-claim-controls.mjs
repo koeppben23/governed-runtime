@@ -39,6 +39,7 @@ import {
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
 import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
+import { isMainModule } from '../lib/is-main-module.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
@@ -448,7 +449,7 @@ async function main() {
   process.exitCode = code;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(String(error));
     process.exitCode = 1;

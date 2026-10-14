@@ -7,15 +7,24 @@ const runnerUrl = new URL(
   '../../../demos/risk-trigger-fixture/run-live-replan-recovery.mjs',
   import.meta.url,
 );
-const { assertRecoveryIdentities, exhaustedOverrideSubjectBindable, oldControlApprovalCommand } =
-  (await import(runnerUrl.href)) as {
-    assertRecoveryIdentities(oldState: SessionState, newState: SessionState): void;
-    oldControlApprovalCommand(
-      directive: { commands: readonly string[] },
-      allowOverride: boolean,
-    ): string;
-    exhaustedOverrideSubjectBindable(state: unknown): boolean;
-  };
+const {
+  assertFrozenRiskTriggerPaths,
+  assertRecoveryIdentities,
+  exhaustedOverrideSubjectBindable,
+  oldControlApprovalCommand,
+} = (await import(runnerUrl.href)) as {
+  assertRecoveryIdentities(oldState: SessionState, newState: SessionState): void;
+  oldControlApprovalCommand(
+    directive: { commands: readonly string[] },
+    allowOverride: boolean,
+  ): string;
+  exhaustedOverrideSubjectBindable(state: unknown): boolean;
+  assertFrozenRiskTriggerPaths(state: unknown, expected: unknown, label: string): void;
+};
+const { fixtureRepoConfigRiskTriggerPaths } = (await import(
+  new URL('../../../demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs', import.meta.url)
+    .href
+)) as { fixtureRepoConfigRiskTriggerPaths(fixtureDir?: string): unknown };
 const oldState = makeState('ABORTED');
 const newState = makeState('READY', {
   id: '11111111-1111-4111-8111-111111111111',
@@ -29,6 +38,33 @@ const newState = makeState('READY', {
 });
 
 describe('live two-session recovery evidence contract', () => {
+  it('proves the fixture risk mapping is frozen into both recovery sessions', () => {
+    const expected = fixtureRepoConfigRiskTriggerPaths();
+    expect(expected).toEqual([
+      { trigger: 'state_integrity', pattern: 'src/main/java/fixture/state/**' },
+    ]);
+    const matching = { policySnapshot: { riskTriggerPaths: expected } };
+    expect(() => assertFrozenRiskTriggerPaths(matching, expected, 'old')).not.toThrow();
+    expect(() => assertFrozenRiskTriggerPaths(matching, expected, 'new')).not.toThrow();
+  });
+
+  it('refuses a recovery session whose frozen mapping is absent or different', () => {
+    const expected = [{ trigger: 'state_integrity', pattern: 'src/main/java/fixture/state/**' }];
+    expect(() =>
+      assertFrozenRiskTriggerPaths({ policySnapshot: { riskTriggerPaths: [] } }, expected, 'new'),
+    ).toThrow('riskTriggerPaths');
+    expect(() => assertFrozenRiskTriggerPaths({ policySnapshot: {} }, expected, 'new')).toThrow(
+      'riskTriggerPaths',
+    );
+    expect(() =>
+      assertFrozenRiskTriggerPaths(
+        { policySnapshot: { riskTriggerPaths: [{ trigger: 'audit_authority', pattern: 'x' }] } },
+        expected,
+        'new',
+      ),
+    ).toThrow('riskTriggerPaths');
+  });
+
   it('binds an exhausted override only to the last reviewed plan subject', () => {
     const reviewed = {
       plan: { current: { digest: 'plan-subject-3', planVersion: 3 } },

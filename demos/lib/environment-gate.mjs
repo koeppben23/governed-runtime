@@ -24,6 +24,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isMainModule } from './is-main-module.mjs';
 
 function parseArgs(argv) {
   const options = { canaryInstall: false, providerPing: true };
@@ -205,7 +206,7 @@ function main() {
   console.log(`[environment-gate] OK; manifest written to ${manifestPath}`);
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isMainModule(import.meta.url)) {
   try {
     main();
   } catch (error) {
