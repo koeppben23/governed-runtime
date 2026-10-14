@@ -788,8 +788,9 @@ export function materializedPlanClaim(
 /**
  * Create a minimal valid SessionState at any phase.
  * Override fields via the partial parameter.
- * Policy overrides author a new fixture policy with its matching hash.
- * Tamper tests must alter the constructed snapshot afterwards.
+ * Policy overrides AUTHOR a new fixture policy with its matching hash. To model
+ * on-disk policy tampering use {@link withTamperedPolicySnapshot}; a
+ * `policySnapshot` override can never express a digest mismatch.
  */
 export function makeState(
   phase: Phase = 'READY',
@@ -853,6 +854,19 @@ export function makeState(
       ? { policySnapshot: undefined as never }
       : { policySnapshot: makePolicySnapshot(overrides.policySnapshot) }),
   };
+}
+
+/**
+ * Model on-disk policy tampering: change frozen policy fields WITHOUT
+ * recomputing the recorded digest, so the canonical persistence boundary must
+ * classify the result as an integrity mismatch. The explicit tamper helper is
+ * the only fixture path that produces a digest mismatch.
+ */
+export function withTamperedPolicySnapshot(
+  state: SessionState,
+  edits: Partial<Omit<PolicySnapshot, 'hash'>>,
+): SessionState {
+  return { ...state, policySnapshot: { ...state.policySnapshot, ...edits } };
 }
 export function makeProgressedState(phase: Phase): SessionState {
   switch (phase) {
