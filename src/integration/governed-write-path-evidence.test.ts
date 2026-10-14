@@ -160,26 +160,28 @@ describe('R5 persistence evidence: validation counts per write scenario', () => 
     spy.mockClear();
     await writeStateWithArtifactsAndAuditOperations(sessDir, { ...fullPrepare! });
     // read (boundary) + prepareState input + prepareState ProofGraph refresh +
-    // prepareAuditOperations + prepared-artifact commit + raw write boundary.
-    expect(spy.mock.calls.length, 'full-prepare update').toBe(6);
+    // prepareAuditOperations + prepared-artifact commit + predecessor read +
+    // raw write boundary.
+    expect(spy.mock.calls.length, 'full-prepare update').toBe(7);
 
     const direct = await readState(sessDir);
     spy.mockClear();
     await writeStateWithAuditOperations(sessDir, { ...direct! });
-    // direct-channel read + audit preparation + raw write boundary.
-    expect(spy.mock.calls.length, 'direct metadata write').toBe(3);
+    // direct-channel read + audit preparation + predecessor read + raw write boundary.
+    expect(spy.mock.calls.length, 'direct metadata write').toBe(4);
 
     spy.mockClear();
     const mutated = await mutateStateWithAuditOperations(sessDir, (current) => ({ next: current }));
-    // read + re-read under the lock + audit preparation + raw write boundary.
+    // read + re-read under the lock + audit preparation + predecessor read +
+    // raw write boundary.
     expect(mutated).not.toBeNull();
-    expect(spy.mock.calls.length, 'mutate under lock').toBe(4);
+    expect(spy.mock.calls.length, 'mutate under lock').toBe(5);
 
     spy.mockClear();
     const workspace = new PluginWorkspaceImpl({ auditWorktree: undefined });
     await workspace.updateReviewAssurance(sessDir, (state) => state);
-    // same double-read shape as mutateStateWithAuditOperations.
-    expect(spy.mock.calls.length, 'updateReviewAssurance').toBe(4);
+    // same shape as mutateStateWithAuditOperations plus the boundary read.
+    expect(spy.mock.calls.length, 'updateReviewAssurance').toBe(5);
   });
 });
 

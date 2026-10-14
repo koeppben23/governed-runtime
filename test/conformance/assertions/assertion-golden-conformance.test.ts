@@ -64,7 +64,10 @@ function makeEvidence(stdout: string): ExecutionEvidence {
     stdout,
     stderr: '',
     timedOut: false,
-    startedAt: '2026-01-01T00:00:00.000Z',
+    // The report files are written moments before extraction, so the simulated
+    // execution window must be current; the report isolation rejects reports
+    // whose mtime lies outside the claimed execution window.
+    startedAt: new Date(Date.now() - 1_000).toISOString(),
   };
 }
 

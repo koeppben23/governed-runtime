@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeState } from '../fixtures.js';
 import { writeState } from './persistence.js';
 import { resolveSessionAuthority } from './session-authority.js';
-import { computeFingerprint, sessionDir } from './workspace/index.js';
+import { computeFingerprint, ensureWorkspace, sessionDir } from './workspace/index.js';
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const RESOLVED_AT = '2026-01-01T00:00:00.000Z';
@@ -86,6 +86,17 @@ describe('resolveSessionAuthority', () => {
       expect(result.fingerprint).toBe(await fingerprintOf());
       expect(result.state.binding.worktree).toBe(repo);
     }
+  });
+
+  it('bootstraps one workspace fingerprint from the root and from a subdirectory', async () => {
+    const subdir = join(repo, 'src');
+    mkdirSync(subdir);
+
+    const fromRoot = await ensureWorkspace(repo);
+    const fromSubdir = await ensureWorkspace(subdir);
+
+    expect(fromSubdir.fingerprint).toBe(fromRoot.fingerprint);
+    expect(fromSubdir.workspaceDir).toBe(fromRoot.workspaceDir);
   });
 
   it('canonicalizes a subdirectory of the worktree', async () => {

@@ -30,6 +30,8 @@ import {
   type SessionPointer,
 } from './types.js';
 import { computeFingerprint } from './fingerprint.js';
+import { resolveRoot } from '../git-repo.js';
+import { GitError } from '../git-command.js';
 
 // -- Path Resolution (SSOT) ---------------------------------------------------
 
@@ -135,7 +137,20 @@ export function sessionDir(fingerprint: string, sessionId: string): string {
 export async function ensureWorkspace(
   worktree: string,
 ): Promise<{ info: WorkspaceInfo; fingerprint: string; workspaceDir: string }> {
-  const fpResult = await computeFingerprint(worktree);
+  // Fingerprint the git-canonical root exactly like the session authority does.
+  // On Windows the same directory can be spelled with an 8.3 short name or a
+  // long name; canonicalizing through git keeps workspace creation and later
+  // session resolution on ONE fingerprint. Non-repository paths keep their
+  // input spelling (path-fingerprint fallback); a hung git probe never falls
+  // back, so the workspace identity cannot silently change.
+  let canonicalWorktree: string;
+  try {
+    canonicalWorktree = await resolveRoot(worktree);
+  } catch (err) {
+    if (err instanceof GitError && err.code === 'GIT_TIMEOUT') throw err;
+    canonicalWorktree = worktree;
+  }
+  const fpResult = await computeFingerprint(canonicalWorktree);
   const fp = fpResult.fingerprint;
   const wsDir = workspaceDir(fp);
 

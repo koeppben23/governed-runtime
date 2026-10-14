@@ -236,8 +236,8 @@ describe('EXPORT_READY evidence-approval persistence boundary', () => {
     expect((await readState(sessDir))?.phase).toBe('EXPORT_READY');
   });
 
-  it.each(['COMPLETE', 'ABORTED'] as const)(
-    'keeps the approved basis immutable when leaving for %s',
+  it.each(['COMPLETE', 'ABORTED', 'TICKET'] as const)(
+    'keeps the approved basis immutable when leaving for %s (also outside the topology)',
     async (phase) => {
       const previous = autoEvidenceState();
       await writeState(sessDir, previous);

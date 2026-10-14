@@ -63,7 +63,6 @@ import {
 } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
 import { computePolicySnapshotHash } from '../state/evidence-policy.js';
-import { isTerminalPhase } from '../machine/topology.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
 import { assertEvidenceApprovalWriteBoundary } from './evidence-approval-write-guard.js';
@@ -443,16 +442,12 @@ export async function writeStateAlreadyLocked(
   // fails closed here instead of persisting an unreviewable implementation.
   assertImplementationEntryFrozen(result.data);
 
-  // THE lowest evidence-approval boundary: an entered `EXPORT_READY` and any
-  // write that can leave the approved state (→ COMPLETE/ABORTED) must be
-  // authorized for EXACTLY this evidence basis. This covers every writer —
-  // `writeState`, the artifact/audit commit path, and any future direct caller.
-  // `EXPORT_READY` is the protected approval state; `isTerminalPhase` owns the
-  // terminal set (a write leaving the approved state can only go terminal).
-  if (result.data.phase === 'EXPORT_READY' || isTerminalPhase(result.data.phase)) {
-    const previous = await readState(sessionDir);
-    await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
-  }
+  // THE lowest evidence-approval boundary. The predecessor is read for EVERY
+  // write so the approved-state protections cannot be bypassed by a direct
+  // writer that chooses an unexpected target phase; the boundary itself
+  // returns early unless the write enters or leaves `EXPORT_READY`.
+  const previous = await readState(sessionDir);
+  await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
 
   await ensureDir(sessionDir);
   const json = JSON.stringify(result.data, null, 2) + '\n';
