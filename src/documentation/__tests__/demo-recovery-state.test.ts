@@ -161,6 +161,41 @@ describe('ticket-adoption recovery witnesses', () => {
     expect(recoveryPersisted(expected, foreignHost, 'task', adoptionAudit)).toBe(false);
   });
 
+  it('reproduces the former reduced-on failure with the real ticket identity and audit sequence', () => {
+    // Values captured from the failing full-sweep run (session
+    // ses_ec8e3f6f9ffeqJ3uRUQ87uNkLs, 2026-10-13): the exact persisted ticket
+    // digest and the audit sequence that corrected the conflict denial.
+    const state = {
+      ...actor,
+      phase: 'TICKET',
+      ticket: {
+        digest: 'e3db9099de201438b35a5354690b838ab249638fffe375466dc38c1314934aa3',
+        text: '# TICKET: Document Local Build and Test Instructions',
+        source: 'user',
+        references: [{ ref: 'TICKET_DOCS.md', type: 'doc' }],
+      },
+    };
+    const audit = [
+      {
+        event: 'tool_call:flowguard_ticket',
+        detail: { tool: 'flowguard_ticket', success: false, errorCode: 'TICKET_SOURCE_CONFLICT' },
+      },
+      {
+        event: 'tool_call:flowguard_ticket',
+        detail: { tool: 'flowguard_ticket', success: true, transitionCount: 1 },
+      },
+      {
+        event: 'transition:TICKET_SELECTED',
+        detail: { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED' },
+      },
+    ];
+    const expected = expectRecovery(state, ['flowguard_ticket'], 'COMPLETE');
+    expect(expected.kind).toBe('ticket_adoption');
+    expect(recoveryPersisted(expected, state, 'task', audit)).toBe(true);
+    // The persisted ticket alone, without the operational sequence, stays unproven.
+    expect(recoveryPersisted(expected, state, 'task', [audit[1]])).toBe(false);
+  });
+
   it('keeps a conflicting denial identity unproven', () => {
     const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE', [
       { bindings: {}, conflicts: ['subjectDigest'] },
