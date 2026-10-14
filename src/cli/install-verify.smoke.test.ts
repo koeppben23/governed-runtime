@@ -39,14 +39,6 @@ const providedTarball = process.env.FLOWGUARD_TARBALL;
  */
 const NPM_TIMING_ENABLED = process.env.FLOWGUARD_SMOKE_NPM_TIMING === '1';
 
-/**
- * Opt-in experiment: run the regular and the `--omit=optional` installs
- * concurrently. Diagnostic npm timing is mutually exclusive with this mode
- * because each install must own exactly one timing file.
- */
-const PARALLEL_INSTALLS_REQUESTED = process.env.FLOWGUARD_SMOKE_PARALLEL_INSTALLS === '1';
-const PARALLEL_INSTALLS = PARALLEL_INSTALLS_REQUESTED && !NPM_TIMING_ENABLED;
-
 async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'gov-smoke-'));
 }
@@ -348,30 +340,18 @@ describe('install-verify', () => {
 
     // One full-dependency install plus ONE shared `--omit=optional` install.
     // The omit fixture serves both omit assertions; no second omit install is
-    // performed, and no test is dropped.
+    // performed, and no test is dropped. Measured on Windows: running the two
+    // installs concurrently is slower (npm cache and disk I/O contention,
+    // 312/220/218 s parallel vs 213 s sequential), so they stay sequential.
     installedDir = path.join(tmpDir, 'installed');
     omitOptionalDir = path.join(tmpDir, 'omit-optional');
     await writeFreshPackageProject(installedDir);
     await writeFreshPackageProject(omitOptionalDir);
 
-    if (PARALLEL_INSTALLS_REQUESTED && !PARALLEL_INSTALLS) {
-      console.log(
-        '[install-verify][timing] parallel installs disabled while FLOWGUARD_SMOKE_NPM_TIMING=1 (timing-file attribution)',
-      );
-    }
-    if (PARALLEL_INSTALLS) {
-      await timedStep('install(regular + omit=optional, parallel)', () =>
-        Promise.all([
-          installTarball(installedDir),
-          installTarball(omitOptionalDir, ['--omit=optional'], 480_000),
-        ]),
-      );
-    } else {
-      await timedStep('install(regular)', () => installTarball(installedDir));
-      await timedStep('install(omit=optional)', () =>
-        installTarball(omitOptionalDir, ['--omit=optional'], 480_000),
-      );
-    }
+    await timedStep('install(regular)', () => installTarball(installedDir));
+    await timedStep('install(omit=optional)', () =>
+      installTarball(omitOptionalDir, ['--omit=optional'], 480_000),
+    );
   }, 900_000);
 
   afterAll(async () => {
