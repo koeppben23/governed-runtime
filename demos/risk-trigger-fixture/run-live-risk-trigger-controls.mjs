@@ -4,7 +4,7 @@
  * @description Real-host controls for #1074 risk-trigger coverage.
  *
  * An isolated minimal Maven repository whose governed artifact lives under
- * `src/state/` (classification: HIGH-RISK + `state_integrity`). Two cases:
+  * `src/main/java/fixture/state/`, explicitly mapped by frozen repository policy.
  *
  *  - uncovered: a valid certificate-authorized critical fact claim exists but
  *    does not cover the detected trigger. The real approval gate must deny with
@@ -51,7 +51,7 @@ export const ADVERSARIAL_ASSERTION =
 /** TRUE when the claim declares the detected trigger; FALSE keeps it uncovered. */
 export function claimDeclaration(covered) {
   return {
-    statement: `src/state/module-state.md documents the ownership invariant: ${INVARIANT}`,
+    statement: `src/main/java/fixture/state/ModuleStateStore.java enforces the ownership invariant: ${INVARIANT}`,
     critical: true,
     authoritySectionId: 'Invariant',
     claimScope: 'specific_behavior',
@@ -165,7 +165,7 @@ async function runCase(runner, name, workspace, covered, context) {
     await runner.turn(
       session,
       `${name}-05-implement`,
-      'Implement only src/state/module-state.md as the ticket describes: add the ## Change log ' +
+      'Implement only src/main/java/fixture/state/ModuleStateStore.java as the ticket describes: add the review comment ' +
         'section and keep the documented invariant unchanged. Run every required check. Do not modify the ' +
         'test fixtures, the build, the active checks, assertion reports or the retained claim. Stop at the ' +
         'human evidence gate; do not approve, override or export.',

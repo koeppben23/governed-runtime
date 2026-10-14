@@ -4,6 +4,30 @@ FlowGuard supports per-repository configuration via `flowguard.json`.
 
 ## Config File Location
 
+### Repository-specific risk surfaces
+
+Repository policy can add specific authority surfaces with `policy.riskTriggerPaths`:
+
+```json
+{
+  "schemaVersion": "v1",
+  "policy": {
+    "riskTriggerPaths": [
+      { "trigger": "state_integrity", "pattern": "src/main/java/store/**" },
+      { "trigger": "identity_boundary", "pattern": "app/auth/**" }
+    ]
+  }
+}
+```
+
+Mappings are additive, frozen at hydration and hash-bound with the executable
+policy. `*` matches within a segment; `**` matches zero or more whole segments.
+Absolute paths, parent traversal, backslashes and unknown triggers are rejected.
+Every matching specific trigger also imposes the `HIGH-RISK` minimum class.
+Map the actual state, audit, identity, approval, policy or command authority;
+never map an entire language source tree to an unrelated authority. Build and CI
+manifests for Java, Python and Go have conservative built-in distribution rules.
+
 ```
 ~/.config/opencode/flowguard.json              # Global (fallback)
 {worktree}/.opencode/flowguard.json            # Repo-scoped (takes priority)

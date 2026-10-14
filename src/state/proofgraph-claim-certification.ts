@@ -1,12 +1,23 @@
 /** Canonical certified claim semantics, shared by materialization and approval. */
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import type { PlanClaimDeclaration } from './proofgraph-approval.js';
 import type { DeclaredClaim, RequiredEvidence } from './proofgraph.js';
+
+/** Structural input port: no dependency back on the certificate authority. */
+type ClaimCertificationInput = Pick<
+  DeclaredClaim,
+  'claimId' | 'statement' | 'critical' | 'counterexampleRequirement' | 'coversRiskTriggers'
+> & {
+  readonly claimScope: NonNullable<DeclaredClaim['claimScope']>;
+  readonly authoritySectionId: string;
+  readonly expectedCheckId: string;
+  readonly structuralSurface?: string | undefined;
+  readonly mutationProfile?: string | undefined;
+};
 
 export function requiredEvidenceForDeclaration(
   declaration: Pick<
-    PlanClaimDeclaration,
+    ClaimCertificationInput,
     'critical' | 'counterexampleRequirement' | 'structuralSurface' | 'mutationProfile'
   >,
 ): RequiredEvidence {
@@ -37,8 +48,8 @@ function semanticDigest(claim: {
   readonly expectedCheckId: string;
   readonly structuralSurface?: string | undefined;
   readonly mutationProfile?: string | undefined;
-  readonly counterexampleRequirement?: PlanClaimDeclaration['counterexampleRequirement'];
-  readonly coversRiskTriggers?: PlanClaimDeclaration['coversRiskTriggers'];
+  readonly counterexampleRequirement?: DeclaredClaim['counterexampleRequirement'];
+  readonly coversRiskTriggers?: DeclaredClaim['coversRiskTriggers'];
   readonly requiredEvidence?: RequiredEvidence | undefined;
 }): string {
   return hashText(
@@ -60,7 +71,7 @@ function semanticDigest(claim: {
   );
 }
 
-export function certifiedClaimDigest(declaration: PlanClaimDeclaration): string {
+export function certifiedClaimDigest(declaration: ClaimCertificationInput): string {
   return semanticDigest({
     ...declaration,
     requiredEvidence: requiredEvidenceForDeclaration(declaration),

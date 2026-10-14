@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { RiskTriggerPathsSchema } from './risk-trigger-paths.js';
 import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import { FrozenIdpConfigSchema } from '../shared/policy-idp-config.js';
@@ -239,6 +240,7 @@ export const PolicySnapshotSchema = z
     challengePolicy: ChallengePolicySchema,
     /** Runtime risk-classification enforcement frozen at hydrate time. */
     enforceRiskClassification: z.boolean(),
+    riskTriggerPaths: RiskTriggerPathsSchema,
     /** Structured downgrade override permission. */
     /** Reduced ceremony permission. */
     allowReducedCeremony: z.boolean(),

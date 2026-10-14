@@ -146,10 +146,14 @@ function resolveFrozenChallengeRequirements(
     declaredTaskClass?: TaskClass | null | undefined;
     escalatedTaskClass?: TaskClass | undefined;
     provisionalScopeUnknown?: boolean | undefined;
+    policySnapshot?: { riskTriggerPaths?: PolicySnapshot['riskTriggerPaths'] } | null | undefined;
   },
 ): ReturnType<typeof resolveChallengeRequirements> {
   return resolveChallengeRequirements(challengePolicy, {
     obligationType: input.obligationType,
+    ...(input.policySnapshot?.riskTriggerPaths !== undefined
+      ? { riskTriggerPaths: input.policySnapshot.riskTriggerPaths }
+      : {}),
     ...(input.changedFiles !== undefined ? { changedFiles: input.changedFiles } : {}),
     ...(input.declaredTaskClass !== undefined
       ? { declaredTaskClass: input.declaredTaskClass }
@@ -176,6 +180,7 @@ export function createReviewObligation(input: {
   policySnapshot?:
     | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
+        riskTriggerPaths?: PolicySnapshot['riskTriggerPaths'];
       })
     | null
     | undefined;

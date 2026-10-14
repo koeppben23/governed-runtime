@@ -140,7 +140,7 @@ function claim(
     state?: ClaimVerificationState;
     /** Omit to model a self-declared claim that never passed a human approval. */
     certified?: boolean;
-    coversRiskTriggers?: readonly SpecificRiskTrigger[];
+    coversRiskTriggers?: readonly SpecificRiskTrigger[] | undefined;
   } = {},
 ): ProofClaim {
   const value: ProofClaim = {

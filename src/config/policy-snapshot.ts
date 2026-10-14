@@ -154,6 +154,7 @@ export function createPolicySnapshot(
       counts: { ...policy.challengePolicy.counts },
     },
     enforceRiskClassification: policy.enforceRiskClassification,
+    riskTriggerPaths: policy.riskTriggerPaths.map((rule) => ({ ...rule })),
     allowReducedCeremony: policy.allowReducedCeremony,
     discoveryHealth: {
       enforcement: policy.discoveryHealth.enforcement,
@@ -232,6 +233,7 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
       : {}),
     identityProviderMode: snapshot.identityProviderMode,
     enforceRiskClassification: snapshot.enforceRiskClassification,
+    riskTriggerPaths: snapshot.riskTriggerPaths.map((rule) => ({ ...rule })),
     allowReducedCeremony: snapshot.allowReducedCeremony,
     discoveryHealth: { ...snapshot.discoveryHealth },
     validationEvidence: { ...snapshot.validationEvidence },

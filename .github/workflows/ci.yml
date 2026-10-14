@@ -35,6 +35,7 @@ jobs:
           FORCE_COLOR: 0
 
   scripts-windows:
+    # Windows integration evidence is owned by critical-windows below.
     name: scripts-windows
     runs-on: windows-latest
     timeout-minutes: 15
@@ -47,6 +48,20 @@ jobs:
         run: npm run test:scripts
         env:
           FORCE_COLOR: 0
+
+  critical-windows:
+    name: critical-windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Verify critical state and hook boundaries
+        run: npx vitest run --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts
+      - name: Verify real-Git approval and recovery paths
+        run: npx vitest run --project integration src/integration/proofgraph-replan-recovery.test.ts src/integration/evidence-approval-persistence.test.ts src/integration/reduced-ceremony-subject-artifacts-e2e.test.ts
 
   known-issues-note:
     name: known-issues-note

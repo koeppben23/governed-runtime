@@ -1,8 +1,9 @@
 # Risk-trigger coverage fixture
 
 Isolated minimal Maven repository used by `run-live-risk-trigger-controls.mjs`.
-The governed artifact lives under `src/state/`, which the canonical risk-path
-classifier treats as HIGH-RISK with the `state_integrity` trigger, so the
+The governed artifact is a Java ownership-enforcing state store under
+`src/main/java/fixture/state/`. The repository's `.opencode/flowguard.json`
+explicitly maps that authority surface to HIGH-RISK with `state_integrity`, so the
 ProofGraph gate requires explicit certificate-authorized coverage for the
 current implementation revision.
 

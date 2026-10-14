@@ -529,18 +529,18 @@ describe('phase-tool-gate', () => {
       ]);
     });
 
-    it('HAPPY — root tool/editor config (opencode.json, tsconfig, vitest config) is not a STANDARD floor', () => {
+    it('HAPPY — editor config is not a STANDARD floor; verification config is', () => {
       for (const cfg of [
         'opencode.json',
         'opencode.jsonc',
         'tsconfig.json',
-        'vitest.config.ts',
         '.eslintrc.json',
         '.prettierrc',
         '.gitignore',
       ]) {
         expect(assessMinimumTaskClass([cfg]).minimumTaskClass, cfg).toBe('TRIVIAL');
       }
+      expect(assessMinimumTaskClass(['vitest.config.ts']).minimumTaskClass).toBe('STANDARD');
     });
 
     it('BAD — high-risk config stays HIGH-RISK and is NOT downgraded as non-domain config', () => {

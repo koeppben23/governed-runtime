@@ -9,6 +9,7 @@
  */
 
 import * as path from 'node:path';
+import { normalizeRepoRelativePath } from '../shared/repo-path.js';
 import { GitError, git, gitRaw } from './git-command.js';
 import { isNotRepoFailure, notGitRepoError } from './git-repo.js';
 
@@ -94,12 +95,12 @@ export function parsePorcelainZ(raw: string): string[] {
     const isRenameOrCopy = index === 'R' || index === 'C' || worktree === 'R' || worktree === 'C';
     // Path begins after the 2-char status and its separating space (index 3).
     const newPath = field.slice(3);
-    out.push(path.normalize(newPath));
+    out.push(normalizeRepoRelativePath(newPath));
     if (isRenameOrCopy) {
       // The old path is the next NUL-separated field, emitted bare.
       const oldPath = fields[i + 1];
       if (oldPath) {
-        out.push(path.normalize(oldPath));
+        out.push(normalizeRepoRelativePath(oldPath));
       }
       i++; // consume the old-path field
     }
@@ -262,7 +263,7 @@ export async function listRepoSignals(worktree: string): Promise<{
   const allFiles = raw
     .split('\0')
     .filter((file) => file.length > 0)
-    .map((file) => path.normalize(file));
+    .map((file) => normalizeRepoRelativePath(file));
 
   // Categorize by basename; the normalized full path is the canonical signal
   const packageFilePaths: string[] = [];

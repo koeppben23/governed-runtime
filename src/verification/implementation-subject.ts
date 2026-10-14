@@ -10,7 +10,8 @@
  * @version v1
  */
 
-import { isAbsolute, normalize } from 'node:path';
+import { isAbsolute } from 'node:path';
+import { normalizeRepoRelativePath } from '../shared/repo-path.js';
 
 import { changedFiles, hashWorktreeFiles } from '../adapters/git.js';
 import { isVerificationCandidateBound } from '../state/candidate-identity.js';
@@ -151,7 +152,7 @@ function runSpecificResultPattern(
 
 /** Substitute the attempt id and reject anything outside the worktree. */
 function safeArtifactPath(template: string, attemptId: string): string | null {
-  const path = normalize(template.replace(/\{attemptId\}/g, attemptId));
+  const path = normalizeRepoRelativePath(template.replace(/\{attemptId\}/g, attemptId));
   return isAbsolute(path) || path.startsWith('..') ? null : path;
 }
 
@@ -186,10 +187,10 @@ export async function reattestImplementationSubject(input: {
 }): Promise<ImplementationSubjectReattestation> {
   const rawFiles = await changedFiles(input.worktree);
   const scoped = await scopeImplementationFiles(input.worktree, rawFiles, input.baseline);
-  const ignored = new Set((input.ignoredArtifacts ?? []).map((path) => normalize(path)));
+  const ignored = new Set((input.ignoredArtifacts ?? []).map(normalizeRepoRelativePath));
   const currentFiles =
     scoped.kind === 'ok'
-      ? scoped.subject.files.filter((file) => !ignored.has(normalize(file)))
+      ? scoped.subject.files.filter((file) => !ignored.has(normalizeRepoRelativePath(file)))
       : [];
 
   if (!sameFileSet(currentFiles, input.frozenFiles)) {

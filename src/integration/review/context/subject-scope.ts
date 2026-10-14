@@ -105,6 +105,7 @@ export function resolveChallengeRequirements(
     declaredTaskClass?: TaskClass | null;
     escalatedTaskClass?: TaskClass;
     provisionalScopeUnknown?: boolean;
+    riskTriggerPaths?: PolicySnapshot['riskTriggerPaths'];
   },
 ): {
   requiredChallengeCount: number;
@@ -115,7 +116,10 @@ export function resolveChallengeRequirements(
   // challengePolicy, and the obligation freezes the requirement explicitly.
   // TRIVIAL is the explicit zero — never an implicit no-policy state.
   const declaredTaskClass = input.declaredTaskClass ?? null;
-  const computed = assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass;
+  const computed = assessMinimumTaskClass(
+    input.changedFiles ?? [],
+    input.riskTriggerPaths,
+  ).minimumTaskClass;
   const effectiveTaskClass = resolveEffectiveTaskClass({
     // An unresolved pre-implementation scope is floored at STANDARD: absence of
     // target evidence is not evidence of a trivial change.

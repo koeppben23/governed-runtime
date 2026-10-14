@@ -37,7 +37,7 @@ import { FLOWGUARD_CLI, FLOWGUARD_PACKAGE, productCli } from '../lib/product-cli
 import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
-const SUBJECT = 'src/state/module-state.md';
+const SUBJECT = 'src/main/java/fixture/state/ModuleStateStore.java';
 
 function git(workspace, ...args) {
   return execFileSync('git', args, { cwd: workspace, encoding: 'utf8' }).trim();
@@ -215,7 +215,7 @@ async function main() {
     await runner.turn(
       oldSession,
       'old-05-implement',
-      'Add the ticket change log only in src/state/module-state.md; preserve its invariant. ' +
+      'Add the ticket review comment only in src/main/java/fixture/state/ModuleStateStore.java; preserve its invariant. ' +
         'Complete governed mutation, recording, every active check and independent review. Stop at EVIDENCE_REVIEW.',
       { command: 'implement' },
     );

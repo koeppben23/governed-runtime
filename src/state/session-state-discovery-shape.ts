@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod';
+import { RepositoryPathSchema } from './evidence-findings.js';
 import {
   DetectedStackSchema,
   DiscoverySummarySchema,
@@ -89,7 +90,7 @@ export const SessionStateDiscoveryShape = {
     dirtyFiles: z
       .array(
         z.object({
-          path: z.string(),
+          path: RepositoryPathSchema,
           hash: z.string().nullable(),
         }),
       )

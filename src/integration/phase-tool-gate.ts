@@ -345,7 +345,7 @@ export function isRiskClassificationAllowed(
     normalizePathForRisk,
   );
   const uniquePaths = [...new Set(combinedPaths)].sort();
-  const assessment = assessMinimumTaskClass(uniquePaths);
+  const assessment = assessMinimumTaskClass(uniquePaths, state.policySnapshot.riskTriggerPaths);
   const provisional = (input.mode ?? 'final') === 'provisional';
   const unknownScope = input.unknownScope === true;
   // Missing scope information is never interpreted as low risk: the
@@ -418,7 +418,8 @@ function ceremonyEffectiveTaskClass(
 ): TaskClass {
   const declaration: TicketRiskDeclaration = state.ticket?.riskDeclaration ?? { kind: 'absent' };
   return resolveEffectiveTaskClass({
-    computed: assessMinimumTaskClass(changedFiles).minimumTaskClass,
+    computed: assessMinimumTaskClass(changedFiles, state.policySnapshot.riskTriggerPaths)
+      .minimumTaskClass,
     declaration,
     escalated: state.claimedTaskClass,
   });
@@ -448,7 +449,10 @@ export function projectCeremonyEligibility(
  * checks bound to the current implementation generation.
  */
 export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyProfileDecision {
-  const assessment = assessMinimumTaskClass(input.changedFiles);
+  const assessment = assessMinimumTaskClass(
+    input.changedFiles,
+    input.state.policySnapshot.riskTriggerPaths,
+  );
   const declaration: TicketRiskDeclaration = input.state.ticket?.riskDeclaration ?? {
     kind: 'absent',
   };

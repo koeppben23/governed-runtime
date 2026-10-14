@@ -77,6 +77,7 @@ export const BINDING: BindingInfo = {
 };
 
 export const POLICY_SNAPSHOT: PolicySnapshot = {
+  riskTriggerPaths: [],
   mode: 'team',
   hash: 'a'.repeat(64),
   hashVersion: POLICY_DIGEST_VERSION,

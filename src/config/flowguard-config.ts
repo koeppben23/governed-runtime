@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { RiskTriggerPathsSchema } from '../state/risk-trigger-paths.js';
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
@@ -161,6 +162,7 @@ export const FlowGuardConfigSchema = z.object({
       identityProviderMode: IdentityProviderModeSchema.optional(),
       /** Enforce machine-checked runtime risk classification. */
       enforceRiskClassification: z.boolean().optional(),
+      riskTriggerPaths: RiskTriggerPathsSchema.optional(),
       /** Permit structured risk-downgrade overrides. Initial presets keep this false. */
       /** Permit policy-gated reduced ceremony for runtime-verified TRIVIAL tasks. */
       allowReducedCeremony: z.boolean().optional(),
