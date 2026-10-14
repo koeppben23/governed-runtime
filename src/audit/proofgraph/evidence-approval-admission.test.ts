@@ -56,4 +56,65 @@ describe('approval capability consumption', () => {
         .kind,
     ).toBe('rejected');
   });
+
+  // Each dedicated check is proven by its own reason, not only by `kind`:
+  // session and binding are also part of the basis, so a kind-only assertion
+  // could not show which branch rejected.
+  it.each([
+    [
+      'a forged lookalike handle',
+      (input: ReturnType<typeof setup>) => ({
+        ...input,
+        admission: { kind: 'evidence-approval-admission' },
+      }),
+      'not issued by this runtime',
+    ],
+    [
+      'a foreign session',
+      (input: ReturnType<typeof setup>) => ({
+        ...input,
+        state: { ...input.state, flowguardSessionId: '00000000-0000-4000-8000-000000000099' },
+      }),
+      'belongs to another session',
+    ],
+    [
+      'a foreign worktree binding',
+      (input: ReturnType<typeof setup>) => ({
+        ...input,
+        state: { ...input.state, binding: { ...input.state.binding, fingerprint: 'foreign' } },
+      }),
+      'belongs to another worktree binding',
+    ],
+    [
+      'a missing predecessor',
+      (input: ReturnType<typeof setup>) => ({ ...input, predecessor: null }),
+      'persisted predecessor changed',
+    ],
+    [
+      'a replaced applied transition',
+      (input: ReturnType<typeof setup>) => ({
+        ...input,
+        state: { ...input.state, transition: null },
+      }),
+      'applied approval transition changed',
+    ],
+    [
+      'evidence drift after admission',
+      (input: ReturnType<typeof setup>) => ({
+        ...input,
+        state: { ...input.state, ticket: null },
+      }),
+      'evidence basis changed',
+    ],
+  ])('rejects %s through its dedicated check', (_label, mutate, reason) => {
+    const result = consumeEvidenceApprovalAdmission(mutate(setup()));
+    expect(result).toMatchObject({ kind: 'rejected' });
+    expect(result.kind === 'rejected' ? result.reason : '').toContain(reason);
+  });
+
+  it('a rejected consumption does not burn the admission', () => {
+    const input = setup();
+    expect(consumeEvidenceApprovalAdmission({ ...input, predecessor: null }).kind).toBe('rejected');
+    expect(consumeEvidenceApprovalAdmission(input).kind).toBe('accepted');
+  });
 });
