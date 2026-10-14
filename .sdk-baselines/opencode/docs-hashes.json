@@ -1,17 +1,17 @@
 {
-  "generated": "2026-09-26T20:43:24.269Z",
+  "generated": "2026-10-14T08:04:04.715Z",
   "version": "1",
   "hashes": {
     "sdk": {
-      "hash": "4b5552892a24ca87b9e278a745f818427c7f339b5a0ed3dcb51228ed5f393dcf",
-      "sections": 139
+      "hash": "7d260bd4ee7de2d397744b89c6e70a9644c2056a421c8ba5d991c48b7a774eab",
+      "sections": 138
     },
     "plugins": {
-      "hash": "fdd42a49435c87ccb2663c6871bcd64b9f10dc976fe900c9cb4b5b5ed93e5365",
-      "sections": 42
+      "hash": "19aa2954856b9d2b2b18a753f8a1c0ced112f7dd7c37dbd113298f34ea08bff2",
+      "sections": 41
     },
     "config": {
-      "hash": "db21d4adcefa51214b40be2d302a95720d999de3b5fa6af19081adc30c171b4f",
+      "hash": "0106cd121aab87a94dd5fc60e91deb4cf68f7a91c2de47cbadf115824f8ef4b7",
       "sections": 88
     },
     "commands": {
@@ -19,19 +19,19 @@
       "sections": 34
     },
     "permissions": {
-      "hash": "e612378f8b0ab7c304a0ddafbeac2186062a3cc0160c9c0b101eae21c3ad9d9a",
+      "hash": "a48a17a6aa1c17821382fc593fc83bd2121e6a371103f24e7a9e51ef24545261",
       "sections": 21
     },
     "agents": {
-      "hash": "c1fb63fb3db275427cf0b0712f3c645ae9c124b5d10b8b32d4da301f2d23faa3",
-      "sections": 80
+      "hash": "25b8190dba88d52b7ba62741bf1d7b588750b282aa23a543164802a64b4478e6",
+      "sections": 79
     },
     "custom-tools": {
       "hash": "78801255ba5b7e352607364a78febb1c46d753701fc2fafc9ccd4ff9f09ad489",
       "sections": 17
     },
     "skills": {
-      "hash": "2bdf64d3be2a7f7d0f432c93b253b8798a6d43519a1da3623420d76d6400e718",
+      "hash": "9955826536062fafea268329933856a34cee4f6a004d15c0d8f4f3e3ee060333",
       "sections": 27
     }
   }
