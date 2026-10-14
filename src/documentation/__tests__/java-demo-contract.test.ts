@@ -1596,4 +1596,67 @@ describe('Java Task Manager demo contract', () => {
       ),
     ).rejects.toMatchObject({ code: 1 });
   });
+
+  it('rejects invalid install-scope arguments on the root and main setup scripts', async () => {
+    const invalidRootCases = [
+      [ROOT_SETUP_SCRIPT, '--install', '--tarball', '/dev/null', '--install-scope'],
+      [
+        ROOT_SETUP_SCRIPT,
+        '--install',
+        '--install-scope',
+        'bogus',
+        '--tarball',
+        '/dev/null',
+        '/tmp/flowguard-demos',
+      ],
+      [ROOT_SETUP_SCRIPT, '--prepare-only', '--install-scope', 'repo', '/tmp/flowguard-demos'],
+      [ROOT_SETUP_SCRIPT, '--install-scope', 'repo', '/tmp/flowguard-demos'],
+    ];
+    for (const args of invalidRootCases) {
+      await expect(execFile('bash', args, { cwd: REPO_ROOT })).rejects.toMatchObject({ code: 1 });
+    }
+
+    const invalidMainCases = [
+      [SETUP_SCRIPT, '--install', '--tarball', '/dev/null', '--install-scope'],
+      [
+        SETUP_SCRIPT,
+        '--install',
+        '--install-scope',
+        'bogus',
+        '--tarball',
+        '/dev/null',
+        '/tmp/flowguard-java-demo',
+      ],
+      [SETUP_SCRIPT, '--prepare-only', '--install-scope', 'repo', '/tmp/flowguard-java-demo'],
+    ];
+    for (const args of invalidMainCases) {
+      await expect(execFile('bash', args, { cwd: REPO_ROOT })).rejects.toMatchObject({ code: 1 });
+    }
+  });
+
+  it('declares global as the default install scope and pins live runners to repo scope', async () => {
+    const [rootSetup, mainSetup, reducedSetup, matrixRunner, claimRunner, lib] = await Promise.all([
+      fs.readFile(ROOT_SETUP_SCRIPT, 'utf-8'),
+      fs.readFile(SETUP_SCRIPT, 'utf-8'),
+      fs.readFile(REDUCED_SETUP_SCRIPT, 'utf-8'),
+      fs.readFile(path.join(DEMO_DIR, 'run-live-matrix.mjs'), 'utf-8'),
+      fs.readFile(path.join(DEMO_DIR, 'run-live-claim-controls.mjs'), 'utf-8'),
+      fs.readFile(path.join(DEMO_DIR, 'install-flowguard-lib.sh'), 'utf-8'),
+    ]);
+
+    for (const script of [rootSetup, mainSetup, reducedSetup]) {
+      expect(script).toContain('INSTALL_SCOPE="global"');
+      expect(script).toContain('--install-scope');
+      expect(script).toContain('may be used only with --install');
+    }
+    expect(mainSetup).toContain('install-flowguard-lib.sh');
+    expect(reducedSetup).toContain('install-flowguard-lib.sh');
+    expect(lib).toContain('--install-scope "$scope"');
+    expect(lib).toContain('--policy-mode team');
+
+    // Live automation must never follow the global default: the runners keep
+    // the isolated repo-scoped install explicitly.
+    expect(matrixRunner).toMatch(/'--install',\s*'--install-scope',\s*'repo'/);
+    expect(claimRunner).toMatch(/'--install',\s*'--install-scope',\s*'repo'/);
+  });
 });

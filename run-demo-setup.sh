@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $0 [--prepare-only | --install --tarball <tgz>] [--demo main|reduced] <target-root>
+Usage: $0 [--prepare-only | --install --tarball <tgz> [--install-scope global|repo]] [--demo main|reduced] <target-root>
 
 Prepare fresh FlowGuard live-demo workspaces. This prepares files and optional
 installs only; it does not start a session or execute a demo flow. Without
@@ -12,6 +12,12 @@ installs only; it does not start a session or execute a demo flow. Without
 Modes:
   --prepare-only               Copy seeds and initialize Git repositories (default).
   --install --tarball <tgz>    Prepare and install FlowGuard from tarball.
+
+Install scope (with --install):
+  global                       Install into ~/.config/opencode (default): commands,
+                               plugin, and mandates for every OpenCode project.
+  repo                         Install into each workspace's .opencode: isolated
+                               per demo workspace.
 
 Demos:
   --demo main                  Java Task Manager: architecture, development, peer review.
@@ -24,8 +30,8 @@ The target root must not already exist. The produced layout is:
 
 Examples:
   $0 --prepare-only /tmp/flowguard-demos
-  $0 --install --tarball ./flowguard-core-1.2.0.tgz /tmp/flowguard-demos
-  $0 --install --tarball ./flowguard-core-1.2.0.tgz --demo main /tmp/flowguard-demos
+  $0 --install --tarball ./flowguard-core-2.0.0-tp.2.tgz /tmp/flowguard-demos
+  $0 --install --install-scope repo --tarball ./flowguard-core-2.0.0-tp.2.tgz --demo main /tmp/flowguard-demos
 EOF
     exit 1
 }
@@ -33,6 +39,8 @@ EOF
 MODE="prepare-only"
 MODE_EXPLICIT=""
 TARBALL=""
+INSTALL_SCOPE="global"
+INSTALL_SCOPE_EXPLICIT=""
 DEMO="all"
 TARGET_ROOT=""
 
@@ -56,6 +64,12 @@ while [[ $# -gt 0 ]]; do
                 usage
             fi
             TARBALL="$2"; shift 2 ;;
+        --install-scope)
+            if [[ $# -lt 2 || "$2" == -* || ( "$2" != "global" && "$2" != "repo" ) ]]; then
+                echo "Error: --install-scope requires 'global' or 'repo'." >&2
+                usage
+            fi
+            INSTALL_SCOPE="$2"; INSTALL_SCOPE_EXPLICIT="1"; shift 2 ;;
         --demo)
             if [[ $# -lt 2 || "$2" == -* || ( "$2" != "main" && "$2" != "reduced" ) ]]; then
                 echo "Error: --demo requires 'main' or 'reduced'." >&2
@@ -93,6 +107,11 @@ fi
 
 if [[ "$MODE" != "install" && -n "$TARBALL" ]]; then
     echo "Error: --tarball may be used only with --install." >&2
+    usage
+fi
+
+if [[ "$MODE" != "install" && -n "$INSTALL_SCOPE_EXPLICIT" ]]; then
+    echo "Error: --install-scope may be used only with --install." >&2
     usage
 fi
 
@@ -136,7 +155,7 @@ mkdir "$TARGET_ROOT"
 run_setup() {
     local script="$1" target="$2"
     if [[ "$MODE" == "install" ]]; then
-        "$script" --install --tarball "$TARBALL" "$target"
+        "$script" --install --install-scope "$INSTALL_SCOPE" --tarball "$TARBALL" "$target"
     else
         "$script" --prepare-only "$target"
     fi
@@ -145,6 +164,9 @@ run_setup() {
 echo "=== FlowGuard Demo Setup ==="
 echo "Target root: $TARGET_ROOT"
 echo "Demos: $DEMO"
+if [[ "$MODE" == "install" ]]; then
+    echo "Install scope: $INSTALL_SCOPE"
+fi
 
 if [[ "$DEMO" == "all" || "$DEMO" == "main" ]]; then
     echo ""
@@ -192,5 +214,11 @@ fi
 echo "Executable ProofGraph fixtures:"
 echo "  ./demos/run-proofgraph-variants.sh"
 echo ""
-echo "No FlowGuard session has been started and no demo flow has run."
-echo "Open a prepared workspace and follow its runbook before claiming live evidence."
+if [[ "$MODE" == "install" && "$INSTALL_SCOPE" == "global" ]]; then
+    echo "No FlowGuard session has been started and no demo flow has run."
+    echo "FlowGuard is installed globally (~/.config/opencode) — restart OpenCode Desktop,"
+    echo "then open a prepared workspace and follow its runbook before claiming live evidence."
+else
+    echo "No FlowGuard session has been started and no demo flow has run."
+    echo "Open a prepared workspace and follow its runbook before claiming live evidence."
+fi

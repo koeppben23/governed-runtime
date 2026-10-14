@@ -7,9 +7,9 @@ A real reset is a **fresh workspace plus an exact tarball install plus a fresh
 files never does.
 
 ```bash
-# Option A: Delete and recreate with setup script (recommended)
+# Option A: Delete and recreate with setup script (recommended; repo-scoped)
 rm -rf /tmp/flowguard-java-demo
-./demos/java-task-manager/run-main-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
+./demos/java-task-manager/run-main-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
 
 # Then open the workspace in OpenCode Desktop and start a fresh session:
 # /start

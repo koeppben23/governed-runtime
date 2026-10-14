@@ -60,9 +60,14 @@ session or execute either scenario; the runtime preflight below is required
 after `/start` in each fresh workspace.
 
 ```bash
-# From demos/java-task-manager/
-../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/ (repo-scoped: both A/B workspaces stay isolated)
+../../run-demo-setup.sh --install --install-scope repo --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 ```
+
+The default install scope is global (`~/.config/opencode`); the explicit
+`--install-scope repo` above keeps both A/B workspaces self-contained. With a
+global install, restart OpenCode Desktop and keep the workspace configs below
+as the authoritative per-workspace policy.
 
 The root runner prepares every installable live demo and creates the two A/B
 workspaces from the same seed:
