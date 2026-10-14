@@ -580,7 +580,7 @@ describe('team opt-in completion (real git)', () => {
     );
     expect(existsSync(archivePath)).toBe(true);
     const members = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf-8' })
-      .split('\n')
+      .split(/\r?\n/)
       .filter(Boolean);
     const stateMember = `${se.sId}/state/session-state.json`;
     const manifestMember = `${se.sId}/archive-manifest.json`;

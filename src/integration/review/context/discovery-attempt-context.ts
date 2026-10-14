@@ -147,7 +147,14 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
   if (!input.repositoryGoverned) {
     return { kind: 'not_applicable', context: { kind: 'not_applicable' } };
   }
+  // The persisted binding fingerprint is the canonical workspace identity
+  // (the session authority validated it); prefer it over recomputing from a
+  // possibly OS-aliased input path (Windows 8.3 short names), which could
+  // select a workspace where the Discovery basis was never persisted.
   let fingerprint = input.fingerprint ?? null;
+  if (!fingerprint && input.state.binding.fingerprint.length > 0) {
+    fingerprint = input.state.binding.fingerprint;
+  }
   if (!fingerprint && input.worktree) {
     try {
       fingerprint = (await computeFingerprint(input.worktree)).fingerprint;
