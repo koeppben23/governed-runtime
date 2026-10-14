@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initWorkspace } from '../../adapters/workspace/index.js';
 import { writeState } from '../../adapters/persistence.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../../fixtures.js';
+import { resolveRoot } from '../../adapters/git.js';
 import { resolveSession, type SessionResolution } from './session-resolver.js';
 
 const SESSION_ID = 'resolver-integration-session';
@@ -52,13 +53,17 @@ describe('resolveSession integration (local-only git repo)', () => {
 
     const initialized = await initWorkspace(worktree, SESSION_ID);
     sessionDir = initialized.sessionDir;
+    // Persist the git-canonical root exactly like hydrate does (the authority
+    // returns it); an OS-level path alias (Windows 8.3) must never become a
+    // different session binding identity.
+    const canonicalWorktree = await resolveRoot(worktree);
     await writeState(
       initialized.sessionDir,
       makeState('IMPLEMENTATION', {
         implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         binding: {
           hostSessionId: SESSION_ID,
-          worktree,
+          worktree: canonicalWorktree,
           fingerprint: initialized.fingerprint,
           resolvedAt: '2026-01-01T00:00:00.000Z',
         },
