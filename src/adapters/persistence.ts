@@ -293,52 +293,27 @@ async function syncDirectory(dir: string): Promise<void> {
  */
 
 /**
- * Cheap phase probe for the evidence-approval boundary. Parses only the raw
- * document to read `phase`; a malformed document reports `unknown` so the
- * caller fails closed through the canonical full read.
+ * Root phase of the persisted predecessor for the evidence-approval boundary.
+ *
+ * Uses exactly the parse the canonical read uses (`JSON.parse` of the whole
+ * document), never a textual heuristic: duplicate keys, key order, indentation,
+ * CRLF, or a BOM therefore resolve identically here and in {@link readState}.
+ * Schema validation is deliberately skipped (it runs only when the predecessor
+ * is approved). Anything that is not a JSON object with a string root `phase`
+ * reports `unknown`, so the caller fails closed through the canonical read.
  */
 async function persistedPhaseForBoundary(sessionDir: string): Promise<string | 'unknown' | null> {
-  const filePath = statePath(sessionDir);
-  // The canonical writer serializes with 2-space indentation, so the ROOT
-  // phase is an exactly two-space indented line near the document head. A
-  // bounded prefix read keeps ordinary writes cheap; anything unexpected
-  // falls through to the full document parse (never a silent skip).
-  const prefix = await readStatePrefix(filePath, 2048);
-  if (prefix !== null) {
-    const match = /^ {2}"phase": "([A-Z_]+)"/m.exec(prefix);
-    if (match) return match[1] ?? 'unknown';
-  }
-  const raw = await readStateFile(filePath);
+  const raw = await readStateFile(statePath(sessionDir));
   if (raw === null) return null;
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as { phase?: unknown }).phase === 'string'
-    ) {
-      return (parsed as { phase: string }).phase;
-    }
-    return 'unknown';
+    parsed = JSON.parse(raw);
   } catch {
     return 'unknown';
   }
-}
-
-/** Read at most `maxBytes` from the head of a file; null when it is absent. */
-async function readStatePrefix(filePath: string, maxBytes: number): Promise<string | null> {
-  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
-  try {
-    handle = await fs.open(filePath, 'r');
-    const buffer = Buffer.alloc(maxBytes);
-    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
-    return buffer.subarray(0, bytesRead).toString('utf-8');
-  } catch (err) {
-    if (isEnoent(err)) return null;
-    throw err;
-  } finally {
-    await handle?.close().catch(() => {});
-  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return 'unknown';
+  const phase = (parsed as { phase?: unknown }).phase;
+  return typeof phase === 'string' ? phase : 'unknown';
 }
 
 async function readStateFile(filePath: string): Promise<string | null> {
@@ -495,8 +470,10 @@ export async function writeStateAlreadyLocked(
   // or leaves an approved predecessor must present the canonical admission and
   // an unchanged basis — regardless of the chosen target phase, so a direct
   // writer cannot bypass the protection through an out-of-topology transition.
-  // A cheap phase probe avoids the full predecessor parse on ordinary writes;
-  // an unreadable predecessor fails closed through the canonical read.
+  // The predecessor phase comes from the same JSON parse as the canonical
+  // read (no schema pass on ordinary writes); an approved or unreadable
+  // predecessor goes through the full canonical read and therefore fails
+  // closed on corruption, integrity, or contract mismatch.
   const predecessorPhase =
     result.data.phase === 'EXPORT_READY'
       ? 'EXPORT_READY'
