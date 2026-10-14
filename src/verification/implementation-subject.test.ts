@@ -104,6 +104,26 @@ function structuredAttempt(
   };
 }
 
+/** A still-bound run_specific candidate (id re-derived) with a custom result template. */
+function stateWithBoundTemplate(template: string) {
+  const definition = {
+    ...RUN_SPECIFIC_DEFINITION,
+    assertionReport: {
+      ...RUN_SPECIFIC_DEFINITION.assertionReport,
+      resultPatternTemplate: template,
+    },
+  };
+  const candidate = { ...definition, candidateId: deriveVerificationCandidateId(definition) };
+  const attempt = structuredAttempt();
+  return makeState('IMPL_VALIDATION', {
+    implementation: IMPL_EVIDENCE,
+    verificationCandidates: [candidate],
+    validationAttempts: [
+      { ...attempt, result: { ...attempt.result, candidateId: candidate.candidateId } },
+    ],
+  });
+}
+
 describe('flowguardReportArtifacts', () => {
   it('HAPPY: derives the exact report path of a bound run_specific attempt', () => {
     const state = makeState('IMPL_VALIDATION', {
@@ -131,6 +151,23 @@ describe('flowguardReportArtifacts', () => {
       validationAttempts: [structuredAttempt()],
     });
     expect(flowguardReportArtifacts(state)).toEqual([]);
+  });
+
+  it.each([
+    ['an embedded traversal', '.flowguard/../../outside/{attemptId}.json'],
+    ['a leading traversal', '../outside/{attemptId}.json'],
+    ['a Windows-separated traversal', 'reports\\..\\..\\outside.json'],
+    ['an absolute path', '/etc/{attemptId}.json'],
+  ])('BAD: a bound template with %s contributes no artifact path', (_label, template) => {
+    expect(flowguardReportArtifacts(stateWithBoundTemplate(template))).toEqual([]);
+  });
+
+  it('CORNER: an in-worktree template with a redundant segment is collapsed', () => {
+    expect(
+      flowguardReportArtifacts(
+        stateWithBoundTemplate('.flowguard/tmp/../reports/{attemptId}/jest.json'),
+      ),
+    ).toEqual([`.flowguard/reports/${RUN_SPECIFIC_ATTEMPT_ID}/jest.json`]);
   });
 
   it('HAPPY: baseline attempts of the current plan contribute their report paths', () => {

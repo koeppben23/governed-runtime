@@ -47,7 +47,30 @@ export async function prepareReportIsolation(
   }
 }
 
+/**
+ * Whether a collected report is a regular file inside this attempt's isolated
+ * directory, reached without symlinks, and written within the execution
+ * window. Any filesystem error while proving this (dangling link, a file
+ * removed between glob and check, permission failure) is NOT proof of
+ * isolation: it returns `false`, which the collector reports as the typed
+ * `path_rejected` block instead of an untyped exception.
+ */
 export async function reportMatchesExecutionWindow(
+  cwd: string,
+  path: string,
+  attemptId: string,
+  startedAt: string,
+  executionMs: number,
+): Promise<boolean> {
+  try {
+    return await reportIsIsolated(cwd, path, attemptId, startedAt, executionMs);
+  } catch (error) {
+    if (error instanceof VerificationError) throw error;
+    return false;
+  }
+}
+
+async function reportIsIsolated(
   cwd: string,
   path: string,
   attemptId: string,

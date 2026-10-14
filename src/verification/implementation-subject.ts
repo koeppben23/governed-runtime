@@ -10,7 +10,7 @@
  * @version v1
  */
 
-import { isAbsolute } from 'node:path';
+import { isAbsolute, posix } from 'node:path';
 import { normalizeRepoRelativePath } from '../shared/repo-path.js';
 
 import { changedFiles, hashWorktreeFiles } from '../adapters/git.js';
@@ -150,10 +150,16 @@ function runSpecificResultPattern(
   return candidate.assertionReport.resultPatternTemplate;
 }
 
-/** Substitute the attempt id and reject anything outside the worktree. */
+/**
+ * Substitute the attempt id and reject anything outside the worktree. The path
+ * is collapsed with POSIX semantics first, so an embedded traversal such as
+ * `a/../../x` is rejected exactly like a leading `../x`.
+ */
 function safeArtifactPath(template: string, attemptId: string): string | null {
-  const path = normalizeRepoRelativePath(template.replace(/\{attemptId\}/g, attemptId));
-  return isAbsolute(path) || path.startsWith('..') ? null : path;
+  const logical = normalizeRepoRelativePath(template.replace(/\{attemptId\}/g, attemptId));
+  if (isAbsolute(logical) || posix.isAbsolute(logical)) return null;
+  const path = posix.normalize(logical);
+  return path === '..' || path.startsWith('../') || path === '.' ? null : path;
 }
 
 function sameFileSet(left: readonly string[], right: readonly string[]): boolean {

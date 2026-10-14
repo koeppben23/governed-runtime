@@ -45,4 +45,10 @@ describe('attempt-local report isolation (not attestation)', () => {
       code: 'VERIFICATION_REPORT_ISOLATION_FAILED',
     });
   });
+  it('rejects (never throws untyped) a report that vanished before the isolation check', async () => {
+    await prepareReportIsolation(cwd, 'attempt', report);
+    await expect(
+      reportMatchesExecutionWindow(cwd, report, 'attempt', new Date().toISOString(), 1000),
+    ).resolves.toBe(false);
+  });
 });
