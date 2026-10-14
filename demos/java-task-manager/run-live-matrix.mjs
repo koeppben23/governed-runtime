@@ -497,6 +497,16 @@ function readState(configDir, sessionId) {
   };
 }
 
+/** Highest persisted audit sequence before the current turn (0 without a trail). */
+function lastAuditSequence(configDir, sessionId) {
+  const found = sessionStateDir(configDir, sessionId);
+  if (!found) return 0;
+  return readAuditEvents(found.sessionDir).reduce(
+    (max, event) => Math.max(max, Number(event?.auditSequence) || 0),
+    0,
+  );
+}
+
 function assertHostCallOk(result, label) {
   if (result.timedOut) throw new Error(`${label}: host process timed out`);
   if (result.code !== 0) throw new Error(`${label}: host exit code ${String(result.code)}`);
@@ -552,6 +562,11 @@ export class Runner {
 
   async turn(session, label, prompt, options = {}) {
     const phaseBefore = this.currentPhase(session);
+    // Recovery witnesses must be bound to events appended by THIS turn; a
+    // historical sequence may never confirm a later operation.
+    const auditFloorBefore = session.sessionId
+      ? lastAuditSequence(this.configDir, session.sessionId)
+      : 0;
     const args = ['run', '--dir', session.workspace, '-m', this.options.model, '--format', 'json'];
     if (session.sessionId) args.push('--session', session.sessionId);
     if (options.command) args.push('--command', options.command);
@@ -700,6 +715,7 @@ export class Runner {
         recoverableProofs
           .filter((proof) => proof.binding === 'tool')
           .map((proof) => proof.denialIdentity),
+        auditFloorBefore,
       );
       if (
         expected.kind === 'ticket_adoption' &&

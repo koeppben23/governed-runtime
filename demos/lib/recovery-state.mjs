@@ -1,5 +1,6 @@
 /** External persistence witnesses for demo recoveries; no state transitions are synthesized. */
 
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -62,8 +63,13 @@ function acceptingReview(state, type, digest) {
   return null;
 }
 
+/** Canonical ticket content digest: sha256 hex of the ticket text (product `hashText`). */
+function ticketContentDigest(text) {
+  return createHash('sha256').update(text, 'utf-8').digest('hex');
+}
+
 /** Freeze the affected subject and the exact authorized NEXT operation. */
-export function expectRecovery(state, tools, terminal, deniedIdentities = []) {
+export function expectRecovery(state, tools, terminal, deniedIdentities = [], auditSequenceFloor = 0) {
   const actor = identity(state);
   if (tools.length === 1 && tools[0] === 'flowguard_continue' && state?.phase === 'READY') {
     const command =
@@ -89,7 +95,8 @@ export function expectRecovery(state, tools, terminal, deniedIdentities = []) {
       typeof ticket?.digest !== 'string' ||
       ticket.digest.length === 0 ||
       typeof ticket.text !== 'string' ||
-      ticket.text.length === 0
+      ticket.text.length === 0 ||
+      ticketContentDigest(ticket.text) !== ticket.digest
     ) {
       return { kind: 'unproven', ...actor };
     }
@@ -99,6 +106,7 @@ export function expectRecovery(state, tools, terminal, deniedIdentities = []) {
       command: 'task',
       digest: ticket.digest,
       source: typeof ticket.source === 'string' ? ticket.source : null,
+      auditSequenceFloor,
     };
   }
   const kind =
@@ -149,20 +157,35 @@ export function expectRecovery(state, tools, terminal, deniedIdentities = []) {
 /**
  * Operation-bound ticket-adoption witness.
  *
- * The persisted ticket must be the exact adopted identity (digest + content),
- * and the audit trail must show the operational sequence that corrected the
- * denial: a failed `flowguard_ticket` call with TICKET_SOURCE_CONFLICT,
- * followed by a successful `flowguard_ticket` call that itself records a
- * transition, followed by the canonical `READY → TICKET` selection. A state
- * update alone - or a persisted ticket without that sequence - never counts.
+ * The persisted ticket must be the exact adopted identity: the stored digest
+ * must equal the expected digest AND the SHA-256 of the stored content, so a
+ * tampered ticket text can never inherit a trusted digest. The audit trail
+ * must show the operational sequence that corrected THIS denial - a failed
+ * `flowguard_ticket` call with TICKET_SOURCE_CONFLICT, followed by a
+ * successful `flowguard_ticket` call that itself records a transition,
+ * followed by the canonical `READY -> TICKET` selection - restricted to the
+ * current recovery turn (`auditSequenceFloor`) and the verified FlowGuard
+ * session. A state update alone, a historical sequence, or a tampered ticket
+ * never counts.
  */
 function ticketAdoptionPersisted(expected, state, auditEvents) {
   const ticket = state?.ticket;
   if (state?.phase !== 'TICKET') return false;
   if (typeof ticket?.digest !== 'string' || ticket.digest !== expected.digest) return false;
   if (typeof ticket.text !== 'string' || ticket.text.length === 0) return false;
+  if (ticketContentDigest(ticket.text) !== expected.digest) return false;
 
-  const denialIndex = auditEvents.findIndex(
+  const floor =
+    typeof expected.auditSequenceFloor === 'number' && Number.isFinite(expected.auditSequenceFloor)
+      ? expected.auditSequenceFloor
+      : 0;
+  const scoped = auditEvents.filter(
+    (event) =>
+      (Number(event?.auditSequence) || 0) > floor &&
+      event?.flowguardSessionId === expected.flowguardSessionId,
+  );
+
+  const denialIndex = scoped.findIndex(
     (event) =>
       event?.event === 'tool_call:flowguard_ticket' &&
       event.detail?.tool === 'flowguard_ticket' &&
@@ -170,7 +193,7 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
       event.detail?.errorCode === 'TICKET_SOURCE_CONFLICT',
   );
   if (denialIndex === -1) return false;
-  const successIndex = auditEvents.findIndex(
+  const successIndex = scoped.findIndex(
     (event, index) =>
       index > denialIndex &&
       event?.event === 'tool_call:flowguard_ticket' &&
@@ -180,7 +203,7 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
       event.detail.transitionCount > 0,
   );
   if (successIndex === -1) return false;
-  return auditEvents.some(
+  return scoped.some(
     (event, index) =>
       index > successIndex &&
       event?.event === 'transition:TICKET_SELECTED' &&

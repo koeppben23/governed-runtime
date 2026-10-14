@@ -1,6 +1,7 @@
 /** Operation-scoped persistence witnesses; unrelated changes must stay unproven. */
 import { describe, expect, it } from 'vitest';
 import { expectRecovery, recoveryPersisted } from '../../../demos/lib/recovery-state.mjs';
+import { hashText } from '../../shared/hashing.js';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
 
 describe('operation-scoped recovery witnesses', () => {
@@ -73,12 +74,14 @@ describe('ticket-adoption recovery witnesses', () => {
     flowguardSessionId: 'fg-1',
     binding: { hostSessionId: 'ses_parent' },
   };
+  const ticketText = '# TICKET: Document local build';
+  const ticketDigest = hashText(ticketText);
   const adoptedTicket = {
     ...actor,
     phase: 'TICKET',
     ticket: {
-      digest: 'ticket-A',
-      text: '# TICKET: Document local build',
+      digest: ticketDigest,
+      text: ticketText,
       source: 'user',
       references: [{ ref: 'TICKET_DOCS.md', type: 'doc' }],
     },
@@ -86,16 +89,19 @@ describe('ticket-adoption recovery witnesses', () => {
   const adoptionAudit = [
     {
       auditSequence: 1,
+      flowguardSessionId: 'fg-1',
       event: 'tool_call:flowguard_ticket',
       detail: { tool: 'flowguard_ticket', success: false, errorCode: 'TICKET_SOURCE_CONFLICT' },
     },
     {
       auditSequence: 2,
+      flowguardSessionId: 'fg-1',
       event: 'tool_call:flowguard_ticket',
       detail: { tool: 'flowguard_ticket', success: true, transitionCount: 1 },
     },
     {
       auditSequence: 3,
+      flowguardSessionId: 'fg-1',
       event: 'transition:TICKET_SELECTED',
       detail: { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED' },
     },
@@ -104,8 +110,44 @@ describe('ticket-adoption recovery witnesses', () => {
   it('accepts the same-turn adoption of the exact persisted ticket with its audit sequence', () => {
     const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
     expect(expected.kind).toBe('ticket_adoption');
-    expect((expected as { digest?: string }).digest).toBe('ticket-A');
+    expect((expected as { digest?: string }).digest).toBe(ticketDigest);
     expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(true);
+  });
+
+  it('rejects content that does not hash to the expected ticket digest', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    const tampered = structuredClone(adoptedTicket);
+    tampered.ticket.text = `${ticketText} (tampered)`;
+    expect(recoveryPersisted(expected, tampered, 'task', adoptionAudit)).toBe(false);
+    // The digest is only trusted when it is the SHA-256 of the stored content.
+    const wrongDigest = expectRecovery(
+      { ...adoptedTicket, ticket: { ...adoptedTicket.ticket, digest: 'ticket-A' } },
+      ['flowguard_ticket'],
+      'COMPLETE',
+    );
+    expect(wrongDigest.kind).toBe('unproven');
+  });
+
+  it('rejects a historical audit sequence from another session or before the turn floor', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    const foreignSession = adoptionAudit.map((event) => ({
+      ...event,
+      flowguardSessionId: 'fg-other',
+    }));
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', foreignSession)).toBe(false);
+    // Events 1..3 are already persisted before this recovery turn (floor 3).
+    const floored = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE', [], 3);
+    expect(recoveryPersisted(floored, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    // The denial itself must also lie inside the current turn: a success and
+    // transition without their in-turn denial never confirm the recovery.
+    const flooredAfterDenial = expectRecovery(
+      adoptedTicket,
+      ['flowguard_ticket'],
+      'COMPLETE',
+      [],
+      1,
+    );
+    expect(recoveryPersisted(flooredAfterDenial, adoptedTicket, 'task', adoptionAudit)).toBe(false);
   });
 
   it('does not turn a missing or empty persisted ticket into a recovery', () => {
@@ -164,27 +206,39 @@ describe('ticket-adoption recovery witnesses', () => {
   it('reproduces the former reduced-on failure with the real ticket identity and audit sequence', () => {
     // Values captured from the failing full-sweep run (session
     // ses_ec8e3f6f9ffeqJ3uRUQ87uNkLs, 2026-10-13): the exact persisted ticket
-    // digest and the audit sequence that corrected the conflict denial.
+    // text and digest plus the audit sequence that corrected the conflict
+    // denial. Capturing the original bytes keeps the digest-content invariant
+    // honest instead of pinning an inconsistent pair.
+    const originalText =
+      '# TICKET: Document Local Build and Test Instructions\n\n## Summary\n\nThe Task Manager has no usage notes describing how to build, run, and test the\napplication locally. Add a short, self-contained guide at `docs/usage-notes.md`\nso a new contributor can start from a fresh checkout.\n\n## Required Change\n\nCreate `docs/usage-notes.md` with a short guide covering:\n\n1. Prerequisites (JDK 21+).\n2. Build and full verification: `./mvnw verify`.\n3. Running the test suite: `./mvnw test`.\n4. Starting the application locally: `./mvnw spring-boot:run` (default port\n   8080, see `src/main/resources/application.properties`).\n5. A short example of the task API endpoints.\n\n## Do Not Change\n\n- Do not change any Java source or test file.\n- Do not change `README.md`, `TICKET.md`, `ADR_TICKET.md`, or the Maven build.\n- Do not add files other than `docs/usage-notes.md`.\n\n## Acceptance Criteria\n\n- `docs/usage-notes.md` exists and is non-empty.\n- It documents `./mvnw verify` and `./mvnw test`.\n- No other file in the repository changed.\n';
+    const originalDigest = 'e3db9099de201438b35a5354690b838ab249638fffe375466dc38c1314934aa3';
+    expect(hashText(originalText)).toBe(originalDigest);
     const state = {
       ...actor,
       phase: 'TICKET',
       ticket: {
-        digest: 'e3db9099de201438b35a5354690b838ab249638fffe375466dc38c1314934aa3',
-        text: '# TICKET: Document Local Build and Test Instructions',
+        digest: originalDigest,
+        text: originalText,
         source: 'user',
         references: [{ ref: 'TICKET_DOCS.md', type: 'doc' }],
       },
     };
     const audit = [
       {
+        auditSequence: 1,
+        flowguardSessionId: 'fg-1',
         event: 'tool_call:flowguard_ticket',
         detail: { tool: 'flowguard_ticket', success: false, errorCode: 'TICKET_SOURCE_CONFLICT' },
       },
       {
+        auditSequence: 2,
+        flowguardSessionId: 'fg-1',
         event: 'tool_call:flowguard_ticket',
         detail: { tool: 'flowguard_ticket', success: true, transitionCount: 1 },
       },
       {
+        auditSequence: 3,
+        flowguardSessionId: 'fg-1',
         event: 'transition:TICKET_SELECTED',
         detail: { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED' },
       },
