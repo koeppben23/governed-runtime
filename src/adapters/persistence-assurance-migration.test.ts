@@ -250,7 +250,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
     });
   });
 
-  it('EDGE: writeState persists the v6 literal', async () => {
+  it('EDGE: writeState persists the current assurance literal', async () => {
     const obligation = createReviewObligation({
       obligationType: 'plan',
       reviewCycle: 1,
@@ -280,6 +280,10 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       '2026-08-13T10:00:00.000Z',
     );
     void obligation;
+    // Start from a clean session state: the persistence boundary reads the
+    // predecessor on every write, and the previous test intentionally left an
+    // invalid legacy file behind.
+    fs.rmSync(statePath(sessDir), { force: true });
     await writeState(sessDir, { ...makeState('PLAN'), reviewAssurance: assurance });
     const raw = fs.readFileSync(statePath(sessDir), 'utf-8');
     expect(raw).toContain('"review-assurance.v7"');
