@@ -31,6 +31,7 @@ import {
   readPins,
   sha256,
   verifyChecksumSidecar,
+  DENIAL_BASELINE,
 } from '../java-task-manager/run-live-matrix.mjs';
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
 import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
@@ -257,6 +258,13 @@ async function runCase(runner, name, workspace, covered, context) {
     if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
     else process.env[SKIP_ASSERTION_ENV] = savedSkip;
   }
+  record.turns = runner.turnObservations.filter((turn) => turn.label.startsWith(`${name}-`));
+  record.denialCounts = Object.fromEntries([...new Set(record.turns.flatMap((turn) => turn.denialCodes))].map((code) => [code, record.turns.reduce((count, turn) => count + turn.denialCodes.filter((value) => value === code).length, 0)]));
+  if (record.result === RESULT.COMPLETE || record.result === RESULT.CONTROL_PASSED) {
+    for (const code of DENIAL_BASELINE.requiredControls[name]) {
+      if (!(record.denialCounts[code] > 0)) { record.result = RESULT.FAILED; record.error = `required control denial missing: ${code}`; }
+    }
+  }
   return record;
 }
 
@@ -395,6 +403,10 @@ async function main() {
       path.join(evidenceDir, 'risk-trigger-controls.json'),
       JSON.stringify(records, null, 2),
     );
+    if (options.evidenceOut) {
+      fs.mkdirSync(path.dirname(options.evidenceOut), { recursive: true });
+      fs.writeFileSync(options.evidenceOut, JSON.stringify({ version: 1, checkoutHead, pins, model: options.model, denialBaseline: DENIAL_BASELINE, records }, null, 2));
+    }
   }
   runner.log(resultLine(records, 'RISK TRIGGER CONTROLS'));
   process.exitCode = exitCodeForResults(records);

@@ -154,7 +154,14 @@ async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
   );
   const persisted = await readState(sessDir);
   const complete = {
-    ...reviewState('COMPLETE'),
+    ...persisted!,
+    phase: 'COMPLETE' as const,
+    transition: {
+      from: 'EXPORT_READY' as const,
+      to: 'COMPLETE' as const,
+      event: 'EXPORT_MATERIALIZED' as const,
+      at: AT,
+    },
     pendingAuditOperations: persisted!.pendingAuditOperations,
   };
   await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
@@ -302,9 +309,16 @@ describe('recoverRegulatedCompletion', () => {
       application.admission,
     );
     const persisted = await readState(sessDir);
+    // The terminal checkpoint must preserve the approved basis exactly.
     const complete = {
-      ...reviewState('COMPLETE'),
-      pendingAuditOperations: persisted!.pendingAuditOperations,
+      ...persisted!,
+      phase: 'COMPLETE' as const,
+      transition: {
+        from: 'EXPORT_READY' as const,
+        to: 'COMPLETE' as const,
+        event: 'EXPORT_MATERIALIZED' as const,
+        at: AT,
+      },
     };
     // The terminal checkpoint carries its own decision intent, as committed by
     // the interrupted completion: the competing append below must still fail
@@ -385,9 +399,16 @@ describe('recoverRegulatedCompletion', () => {
       application.admission,
     );
     const persisted = await readState(sessDir);
+    // The terminal checkpoint must preserve the approved basis exactly.
     const complete = {
-      ...reviewState('COMPLETE'),
-      pendingAuditOperations: persisted!.pendingAuditOperations,
+      ...persisted!,
+      phase: 'COMPLETE' as const,
+      transition: {
+        from: 'EXPORT_READY' as const,
+        to: 'COMPLETE' as const,
+        event: 'EXPORT_MATERIALIZED' as const,
+        at: AT,
+      },
     };
     await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
 

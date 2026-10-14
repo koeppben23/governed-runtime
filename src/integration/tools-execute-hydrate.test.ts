@@ -45,6 +45,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { GitError } from '../adapters/git-command.js';
@@ -725,10 +726,10 @@ describe('hydrate', () => {
       const stateBefore = await readState(sessDir);
       await writeState(sessDir, {
         ...stateBefore!,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...stateBefore!.policySnapshot,
           policyVersion: '2026.04',
-        },
+        }),
       });
 
       const centralPath = `${ws.tmpDir}/central-policy.json`;

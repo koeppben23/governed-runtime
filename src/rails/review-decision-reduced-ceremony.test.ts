@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  makePolicySnapshot,
   IMPL_EVIDENCE,
   makeState,
   PLAN_REVIEW_ASSURANCE,
@@ -45,12 +46,12 @@ function attempt(checkId: string) {
 }
 
 function reducedState(): SessionState {
-  const policySnapshot = {
+  const policySnapshot = makePolicySnapshot({
     ...POLICY_SNAPSHOT,
     allowReducedCeremony: true,
     requireHumanGates: true,
-    effectiveGateBehavior: 'human_gated' as const,
-  };
+    effectiveGateBehavior: 'human_gated',
+  });
   return makeState('EVIDENCE_REVIEW', {
     claimedTaskClass: 'TRIVIAL',
     verificationCandidates: VERIFICATION_CANDIDATES,

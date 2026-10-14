@@ -21,6 +21,7 @@ import {
   IMPL_EVIDENCE,
   makePlanApprovalCertificate,
   makeState,
+  materializedPlanClaim,
   PLAN_RECORD,
   REVIEW_APPROVE,
 } from '../fixtures.js';
@@ -85,42 +86,15 @@ function blockedState(): SessionState {
   const certificate = makePlanApprovalCertificate(base, {
     claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
   });
+  const sourceClaim = materializedPlanClaim(decls.claims[0]!, certificate);
   const projection: ProofGraphProjection = {
     version: 'proofgraph.v2',
     evaluatedAt: NOW,
-    claims: [
-      {
-        claimId: CLAIM_ID,
-        statement: 'the change preserves the intended behavior',
-        signalClass: 'fact',
-        critical: true,
-        provenance: {
-          kind: 'canonical_authority',
-          authorityId: 'plan',
-          digest: certificate.authorityDigest,
-          approval: {
-            certificateId: certificate.certificateId,
-            claimDeclarationsDigest: certificate.claimDeclarationsDigest,
-            decisionAttestationDigest: certificate.decisionAttestationDigest,
-            declarationId: CLAIM_ID,
-          },
-        },
-        evidenceRefs: [],
-        counterexampleRefs: [],
-        verificationState: 'PROVEN',
-      },
-    ],
+    claims: [{ ...sourceClaim, verificationState: 'PROVEN' }],
   };
-  const {
-    verificationState: _state,
-    freshness: _freshness,
-    ...sourceClaim
-  } = projection.claims[0]!;
   return {
     ...base,
     plan: { ...base.plan!, approvalCertificate: certificate },
-    // Materialized source contract the gate requires alongside the certificate;
-    // the declared fact without its evaluated verification state.
     proofContract: { version: 'contract.v2', claims: [sourceClaim] },
     proofGraph: projection,
   };

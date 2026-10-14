@@ -18,6 +18,7 @@ import {
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
   type PlanApprovalCertificateOverrides,
+  makePolicySnapshot,
 } from '../../fixtures.js';
 import {
   TEST_EXECUTION_OBSERVATION,
@@ -69,12 +70,12 @@ const RISK_ASSESSMENT: ImplementationRiskAssessment = {
   implementationDigest: DOC_IMPL.digest,
 };
 
-const POLICY = {
+const POLICY = makePolicySnapshot({
   ...POLICY_SNAPSHOT,
   allowReducedCeremony: true,
   requireHumanGates: true,
-  effectiveGateBehavior: 'human_gated' as const,
-};
+  effectiveGateBehavior: 'human_gated',
+});
 
 const DECISION: ReducedCeremonyDecision = {
   profile: 'reduced',

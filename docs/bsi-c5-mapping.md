@@ -79,7 +79,7 @@ The RB domain covers change management, operational documentation, logging, and 
 - Tamper-evident design: each event's hash includes the previous event's hash
 - 5 structured event kinds: `transition`, `tool_call`, `error`, `lifecycle`, `decision`
 - Automated compliance summary generation from audit trail (7-check assessment)
-- Policy snapshot: immutable, SHA-256 hashed copy of the active policy frozen at session creation
+- Policy snapshot: frozen executable policy, SHA-256 content verified on read/write; no cryptographic authenticity against an OS user who can replace state and hash
 
 **Operational Documentation:**
 
@@ -121,7 +121,7 @@ EVIDENCE_REVIEW, ARCH_REVIEW}` in `src/machine/topology.ts`
 **Policy Enforcement:**
 
 - Policy mode is set at session creation and governs all subsequent transitions
-- Policy configuration is immutable for the session lifetime (policy snapshot with SHA-256 hash)
+- Runtime-mediated policy is frozen for the session lifetime and its content hash is checked. Local filesystem enforcement and trusted external evidence remain organization responsibilities.
 
 #### Organization Must Provide
 

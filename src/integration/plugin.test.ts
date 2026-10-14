@@ -18,7 +18,7 @@ import { PERF_ENABLED } from '../test-policy.js';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeProgressedState, makeState } from '../fixtures.js';
+import { makePolicySnapshot, makeProgressedState, makeState } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
@@ -790,11 +790,11 @@ describe('integration/plugin', () => {
       const state = makeState('TICKET');
       return {
         ...state,
-        policySnapshot: {
+        policySnapshot: makePolicySnapshot({
           ...state.policySnapshot,
           mode: policyMode,
           requestedMode: policyMode,
-        },
+        }),
       };
     }
 

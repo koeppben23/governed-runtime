@@ -278,10 +278,9 @@ export const REVIEW_VALIDATION_REASONS = [
     category: 'state',
     messageTemplate: 'Session aborted: {reason}',
     recoverySteps: [
-      'Start a new session with /hydrate',
+      'Start a new host session with a different host-session id, then /hydrate at a trusted baseline; /hydrate in the aborted session only reloads it',
       'The aborted session is preserved in the audit trail',
     ],
-    quickFixCommand: '/hydrate',
   },
 
   {

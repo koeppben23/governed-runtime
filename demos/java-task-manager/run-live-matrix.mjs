@@ -158,6 +158,7 @@ export function parseArgs(argv) {
       return value;
     };
     if (flag === '--root') options.root = next();
+    else if (flag === '--evidence-out') options.evidenceOut = path.resolve(next());
     else if (flag === '--model') options.model = next();
     else if (flag === '--tarball') options.tarball = next();
     else if (flag === '--product-sha') options.productSha = next();
@@ -295,37 +296,8 @@ function run(command, args, options = {}) {
  * shows these occur on normal successful flows; they are recorded but do not
  * stop the flow. Every other denial stays flow-stopping.
  */
-export const RECOVERABLE_DENIAL_CODES = new Set([
-  'PROOFGRAPH_CLAIM_NOT_DECLARED',
-  'PROOFGRAPH_CLAIM_UNSATISFIABLE',
-  'PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE',
-  'PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED',
-  'ADR_SUBMISSION_MIXED_INPUTS',
-  'ADR_REVIEW_IN_PROGRESS',
-  'ARCHITECTURE_CLAIM_INVALID',
-  'TICKET_SOURCE_CONFLICT',
-  'CONTENT_ANALYSIS_REQUIRED',
-  'REVISED_PLAN_CLAIMS_REQUIRED',
-  // Typed command-input validation: the author corrects the call and resubmits
-  // in-session (Run 11: an architecture session reached ARCH_COMPLETE after
-  // EMPTY_ADR_TITLE, and the negative probe continued after EMPTY_ADR_TEXT).
-  'EMPTY_ADR_TITLE',
-  'EMPTY_ADR_TEXT',
-  // Run 13: a plan revision submission omitted planText; the author corrected
-  // the call in the same turn and the plan was accepted.
-  'REVISED_PLAN_REQUIRED',
-  // Call-shape guards: plan/implement submissions must not mix verdict or
-  // review inputs, and approval text belongs to its own input. The author
-  // corrects the call and resubmits in-session.
-  'INVALID_PLAN_TOOL_SEQUENCE',
-  'INVALID_IMPLEMENT_TOOL_SEQUENCE',
-  'PLAN_APPROVE_WITH_TEXT',
-  'PLAN_SUBMISSION_REQUIRED',
-  // Admissibility guards: a command outside the current phase is corrected by
-  // using an allowed command for the persisted phase.
-  'COMMAND_NOT_ALLOWED',
-  'WRONG_PHASE',
-]);
+export const DENIAL_BASELINE = JSON.parse(fs.readFileSync(path.join(REPO, 'demos/risk-trigger-fixture/expected-denials.json'), 'utf8'));
+export const RECOVERABLE_DENIAL_CODES = new Set(DENIAL_BASELINE.recoverable);
 
 /**
  * Recoverable denials whose correction is NOT a same-turn retry of the denied
@@ -523,6 +495,7 @@ export class Runner {
     this.evidenceDir = path.join(root, 'evidence');
     this.logFile = path.join(this.evidenceDir, 'driver.log');
     this.flows = [];
+    this.turnObservations = [];
   }
 
   log(message) {
@@ -549,6 +522,7 @@ export class Runner {
     fs.closeSync(stdoutFd);
     fs.closeSync(stderrFd);
     const output = fs.readFileSync(stdoutPath, 'utf8');
+    this.turnObservations.push({ label, exitCode: result.code, durationMs: result.durationMs, denialCodes: toolDenialCodes(output) });
     const sessionIds = [
       ...new Set(
         eventsOf(output)

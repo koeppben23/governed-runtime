@@ -121,6 +121,10 @@ export default defineConfig({
       // (see MUTATION_AUTHORITY_INVENTORY); the suite stays selected so that
       // verdict remains reproducible.
       'src/state/proofgraph-approval.test.ts',
+      'src/state/proofgraph-claim-certification.test.ts',
+      'src/state/risk-trigger-paths.test.ts',
+      'src/integration/evidence-approval-persistence.test.ts',
+      'src/verification/report-isolation.test.ts',
     ],
     exclude: [
       'src/security/actions-pinning.test.ts',

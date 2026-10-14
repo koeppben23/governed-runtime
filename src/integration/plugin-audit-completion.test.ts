@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import { writeState } from '../adapters/persistence.js';
-import { makeState } from '../fixtures.js';
+import { makePolicySnapshot, makeState } from '../fixtures.js';
 import {
   buildTransitionBody,
   finalizeWithTimestampEvidence,
@@ -46,7 +46,7 @@ function completedState(): SessionState {
   };
   return {
     ...state,
-    policySnapshot: { ...state.policySnapshot, mode: 'team' },
+    policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'team' }),
     pendingAuditOperations: [operation],
   };
 }
@@ -149,7 +149,7 @@ describe('plugin audit completion idempotency', () => {
       const operation = state.pendingAuditOperations[0]!;
       const invalid = {
         ...state,
-        policySnapshot: { ...state.policySnapshot, mode: 'regulated' as const },
+        policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'regulated' as const }),
         pendingAuditOperations:
           authority === 'missing'
             ? []
@@ -189,7 +189,7 @@ describe('plugin audit completion idempotency', () => {
       throw new TypeError('expected terminal transition operation');
     const invalid = {
       ...state,
-      policySnapshot: { ...state.policySnapshot, mode: 'regulated' as const },
+      policySnapshot: makePolicySnapshot({ ...state.policySnapshot, mode: 'regulated' as const }),
       pendingAuditOperations: [
         {
           ...operation,

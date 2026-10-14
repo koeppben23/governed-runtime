@@ -44,10 +44,16 @@ import { POLICY_DIGEST_VERSION } from './state/evidence-identifiers.js';
 import {
   emptyClaimDeclarations,
   PlanApprovalCertificate,
+  type PlanClaimDeclaration,
   type ReviewBinding,
 } from './state/proofgraph-approval.js';
 import { planApprovalContextOf } from './state/proofgraph-approval-context.js';
 import { planApprovalCertificateIdentity } from './state/proofgraph-plan-certificate.js';
+import {
+  certifiedClaimDigest,
+  requiredEvidenceForDeclaration,
+} from './state/proofgraph-claim-certification.js';
+import type { DeclaredClaim } from './state/proofgraph.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
 
@@ -728,6 +734,55 @@ export function makePlanApprovalCertificate(
   });
 }
 
+/**
+ * Materialize a certificate-bound plan claim exactly as the product
+ * materializer does: the certified origin digest is recomputed from the
+ * declaration so gate bindings verify. Tests must not hand-copy the digest.
+ */
+export function materializedPlanClaim(
+  declaration: PlanClaimDeclaration,
+  certificate: PlanApprovalCertificate,
+): DeclaredClaim {
+  return {
+    claimId: declaration.claimId,
+    statement: declaration.statement,
+    signalClass: 'fact',
+    critical: declaration.critical,
+    claimScope: declaration.claimScope,
+    provenance: {
+      kind: 'canonical_authority',
+      authorityId: 'plan',
+      digest: certificate.authorityDigest,
+      approval: {
+        certificateId: certificate.certificateId,
+        claimDeclarationsDigest: certificate.claimDeclarationsDigest,
+        decisionAttestationDigest: certificate.decisionAttestationDigest,
+        declarationId: declaration.claimId,
+      },
+    },
+    evidenceRefs: [],
+    counterexampleRefs: [],
+    ...(declaration.counterexampleRequirement !== undefined
+      ? { counterexampleRequirement: declaration.counterexampleRequirement }
+      : {}),
+    ...(declaration.coversRiskTriggers !== undefined
+      ? { coversRiskTriggers: [...declaration.coversRiskTriggers] }
+      : {}),
+    requiredEvidence: requiredEvidenceForDeclaration(declaration),
+    certifiedPlan: {
+      authoritySectionId: declaration.authoritySectionId,
+      expectedCheckId: declaration.expectedCheckId,
+      ...(declaration.structuralSurface !== undefined
+        ? { structuralSurface: declaration.structuralSurface }
+        : {}),
+      ...(declaration.mutationProfile !== undefined
+        ? { mutationProfile: declaration.mutationProfile }
+        : {}),
+      digest: certifiedClaimDigest(declaration),
+    },
+  };
+}
+
 // ─── State Factory ────────────────────────────────────────────────────────────
 
 /**
@@ -792,7 +847,11 @@ export function makeState(
     pendingSystemWork: null,
     regulatedArchiveStatus: null,
     ...overrides,
-    policySnapshot: makePolicySnapshot(overrides.policySnapshot),
+    // An explicitly undefined snapshot models a corrupted state (fail-closed
+    // tests); otherwise overrides author a snapshot with its matching hash.
+    ...('policySnapshot' in overrides && overrides.policySnapshot === undefined
+      ? { policySnapshot: undefined as never }
+      : { policySnapshot: makePolicySnapshot(overrides.policySnapshot) }),
   };
 }
 export function makeProgressedState(phase: Phase): SessionState {

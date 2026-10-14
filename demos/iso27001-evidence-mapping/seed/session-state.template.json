@@ -47,9 +47,9 @@
       "flow": "plan",
       "authorityDigest": "ccdbbfa314b9ebf6bf3d7a4abb7410521d6b66762034dd533313eb68b3906399",
       "claimDeclarationsDigest": "a8a7d8dd1a6de17299d1b4e81af752ab099ef29a6439462d3fab7810cd350b05",
-      "decisionAttestationDigest": "c5d6d0c9de0e4fb4d498700dbbad630722a96e74d7112627acc7c4caebc0413c",
+      "decisionAttestationDigest": "b61c26792ef3300f97b9a312a564c1ab1fb433da0d1d058e1a2dac1101b628e3",
       "approvedAt": "2026-01-01T00:00:00.000Z",
-      "certificateId": "c16df4ed-ade3-413a-828b-59a7ed6b037a",
+      "certificateId": "7ba1ea05-7fef-4e97-86db-cc5d6bc2c1da",
       "planVersion": 1,
       "planRecordDigest": "b3f712024727449c71062736ed7676bfdddaada70487e252c8013f581be61e2d",
       "reviewBinding": {
@@ -73,7 +73,7 @@
         },
         "flowguardSessionId": "00000000-0000-4000-8000-000000000001",
         "bindingDigest": "ed25ab1247f23262a37d4127be51d2a1dcf69e0efe1f5d53a661376504c89f95",
-        "policyHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "policyHash": "ebe10c074fe6b1d359e76bb63b8ed08a501fc40426f04b6bc664660953b8a4ce",
         "policyHashVersion": "policy-digest.v4"
       }
     }
@@ -388,7 +388,7 @@
   },
   "policySnapshot": {
     "mode": "team",
-    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hash": "ebe10c074fe6b1d359e76bb63b8ed08a501fc40426f04b6bc664660953b8a4ce",
     "hashVersion": "policy-digest.v4",
     "resolvedAt": "2026-01-01T00:00:00.000Z",
     "requestedMode": "team",
@@ -444,7 +444,8 @@
     },
     "actorClassification": {
       "flowguard_decision": "human"
-    }
+    },
+    "riskTriggerPaths": []
   },
   "initiatedBy": "initiator-1",
   "initiatedByIdentity": {

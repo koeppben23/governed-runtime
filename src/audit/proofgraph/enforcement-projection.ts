@@ -42,6 +42,7 @@ export type EnforcementDecisionKind =
   | 'evaluation_unavailable'
   | 'risk_assessment_stale'
   | 'certificate_invalid'
+  | 'certified_claim_mismatch'
   | 'critical_fact_required'
   | 'risk_trigger_uncovered'
   | 'facts_unproven';
@@ -252,6 +253,45 @@ function missingAuthorizedClaimIds(
   });
 }
 
+/**
+ * A certificate-authorized, gate-eligible claim that declares a certified
+ * origin but no longer recomputes to it is a materialization mismatch. Claims
+ * without a certified origin fall through to the missing-binding path.
+ */
+function certifiedMismatchDecision(
+  input: ComputeEnforcementInput,
+  eligibleClaims: readonly ProofClaim[],
+): ProofGraphEnforcement | null {
+  const eligibleIds = new Set(eligibleClaims.map((claim) => claim.claimId));
+  const mismatches = (input.authorizedCriticalClaimIds ?? []).filter((id) => {
+    if (!eligibleIds.has(id)) return false;
+    const expected = input.authorizedClaimBindings?.get(id);
+    if (expected === undefined) return false;
+    return [...(input.contract?.claims ?? []), ...(input.projection?.claims ?? [])].some(
+      (claim) =>
+        claim.claimId === id &&
+        isGateEligible(claim) &&
+        claim.certifiedPlan !== undefined &&
+        materializedClaimDigest(claim) !== expected.certifiedClaimDigest,
+    );
+  });
+  if (mismatches.length === 0) return null;
+  return {
+    claims: [],
+    blockingClaims: mismatches.map((claimId) => ({
+      claimId,
+      state: 'NOT_VERIFIED' as const,
+      reasonCode: 'certified_claim_mismatch' as const,
+      registryCode: mapEnforcementReasonToRegistryCode('certified_claim_mismatch'),
+    })),
+    satisfied: false,
+    decisionKind: 'certified_claim_mismatch',
+    reasonCode: 'certified_claim_mismatch',
+    reason: 'Materialized claim semantics differ from their certified declaration.',
+    uncoveredTriggers: [],
+  };
+}
+
 function evaluatePreconditions(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
@@ -269,6 +309,8 @@ function evaluatePreconditions(
     };
   }
   const missingIds = missingAuthorizedClaimIds(input, eligibleClaims);
+  const mismatchDecision = certifiedMismatchDecision(input, eligibleClaims);
+  if (mismatchDecision) return mismatchDecision;
   if (missingIds.length > 0) {
     return {
       claims: [],

@@ -139,6 +139,16 @@ export function evidenceApprovalBasisDigest(state: SessionState): string {
   return hashText(canonicalJsonStringify(evidenceApprovalBasisProjection(state, true)));
 }
 
+/** Top-level basis keys that differ between two states, for forensic diagnostics. */
+export function evidenceApprovalBasisDiff(previous: SessionState, next: SessionState): string[] {
+  const before = evidenceApprovalBasisProjection(previous, true);
+  const after = evidenceApprovalBasisProjection(next, true);
+  return Object.keys(before).filter(
+    (key) =>
+      canonicalJsonStringify(before[key] ?? null) !== canonicalJsonStringify(after[key] ?? null),
+  );
+}
+
 /**
  * Issue an admission bound to the exact checked basis.
  *

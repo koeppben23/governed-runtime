@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 
 import { readState, writeState } from '../adapters/persistence.js';
 import {
+  makePolicySnapshot,
   IMPL_EVIDENCE,
   makeState,
   POLICY_SNAPSHOT,
@@ -107,12 +108,12 @@ function validationAttempt(checkId: string) {
 
 /** Reduced-ceremony-ready state (otherwise valid waiver) with seeded assurance. */
 function reducedReadyState(reviewAssurance: SessionState['reviewAssurance']): SessionState {
-  const policySnapshot = {
+  const policySnapshot = makePolicySnapshot({
     ...POLICY_SNAPSHOT,
     allowReducedCeremony: true,
     requireHumanGates: true,
-    effectiveGateBehavior: 'human_gated' as const,
-  };
+    effectiveGateBehavior: 'human_gated',
+  });
   return makeState('EVIDENCE_REVIEW', {
     claimedTaskClass: 'TRIVIAL',
     verificationCandidates: VERIFICATION_CANDIDATES,

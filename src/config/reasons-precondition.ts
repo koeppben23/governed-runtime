@@ -522,7 +522,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Hydrate cannot change the claimed task class of a terminal session (phase {phase}, current {currentTaskClass}, requested {requestedTaskClass}). Terminal sessions are read-only.',
     recoverySteps: [
       'Reload the terminal session without a claimedTaskClass argument',
-      'Start a new session with /hydrate for a workflow that needs a different task class',
+      'Start a distinct host session and /hydrate there for a different task class; re-hydrating this terminal session only reloads it',
     ],
   },
 ];

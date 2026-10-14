@@ -20,6 +20,11 @@ export interface BindingDiagnosticCopy {
 export const BINDING_DIAGNOSTIC_COPY: Readonly<
   Record<AssertionBindingReasonCode, BindingDiagnosticCopy>
 > = {
+  counterexample_conflict: {
+    headline: 'Conflicting counterexample history',
+    explanation:
+      'The same revision has contradictory counterexample outcomes; preserve the falsification and obtain fresh evidence after a governed repair.',
+  },
   check_mismatch: {
     headline: 'Check mismatch',
     explanation: 'The evidence check does not match the check required by this claim.',

@@ -25,47 +25,12 @@ export type ProofEvidenceIntegrityInput = {
   readonly implementationDigest: string | undefined;
 };
 
-function certifiedReferencesFailure(
-  claim: DeclaredClaim,
-  input: ProofEvidenceIntegrityInput,
-): AssertionBindingReasonCode | null {
-  const origin = claim.certifiedPlan;
-  if (origin === undefined) return null;
-  const positives = claim.evidenceRefs.filter((ref) => ref.kind === 'validation_attempt');
-  if (
-    positives.length === 0 ||
-    positives.some(
-      (ref) =>
-        !input.validationAttempts.some(
-          (attempt) =>
-            attempt.attemptId === ref.attemptId &&
-            attempt.scope === 'implementation' &&
-            attempt.implementationDigest === input.implementationDigest &&
-            attempt.result.checkId === origin.expectedCheckId,
-        ),
-    )
-  )
-    return 'check_mismatch';
-  if (
-    claim.evidenceRefs.some(
-      (ref) =>
-        (ref.kind === 'structural_surface' && ref.surfaceId !== origin.structuralSurface) ||
-        ((ref.kind === 'mutation_attempt' || ref.kind === 'mutation_profile') &&
-          ref.profileId !== origin.mutationProfile),
-    )
-  )
-    return 'evidence_missing';
-  return null;
-}
-
 function integrityFailures(
   projection: ProofGraphProjection,
   input: ProofEvidenceIntegrityInput,
 ): ReadonlyMap<string, AssertionBindingReasonCode> {
   const failures = new Map<string, AssertionBindingReasonCode>();
   for (const claim of [...(input.contract?.claims ?? []), ...projection.claims]) {
-    const referenceFailure = certifiedReferencesFailure(claim, input);
-    if (referenceFailure !== null) failures.set(claim.claimId, referenceFailure);
     const references = new Set(
       [...claim.evidenceRefs, ...claim.counterexampleRefs]
         .filter((ref) => ref.kind === 'validation_attempt')

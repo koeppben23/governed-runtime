@@ -55,7 +55,7 @@ function semanticDigest(claim: {
   return hashText(
     canonicalJsonStringify({
       ...claim,
-      statement: claim.statement.trim().replace(/\s+/g, ' ').toLowerCase(),
+      statement: claim.statement,
       counterexampleRequirement: claim.counterexampleRequirement ?? null,
       structuralSurface: claim.structuralSurface ?? null,
       mutationProfile: claim.mutationProfile ?? null,

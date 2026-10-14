@@ -19,6 +19,7 @@ import { evidenceGateDecisionOf } from '../state/evidence-gate-decision.js';
 import { PersistenceError } from './persistence-core.js';
 import {
   consumeEvidenceApprovalAdmission,
+  evidenceApprovalBasisDiff,
   evidenceApprovalBasisDigest,
 } from '../audit/proofgraph/evidence-approval-admission.js';
 
@@ -147,9 +148,10 @@ function assertCanonicalApprovalTransition(next: SessionState): void {
 /** Approval-relevant evidence is immutable while a session is already approved. */
 function assertApprovalBasisImmutable(previous: SessionState, next: SessionState): void {
   if (evidenceApprovalBasisDigest(previous) === evidenceApprovalBasisDigest(next)) return;
+  const changed = evidenceApprovalBasisDiff(previous, next).join(', ');
   throw new PersistenceError(
     'EXPORT_READY_APPROVAL_UNVERIFIED',
-    'Refusing to change approval-relevant evidence while already in EXPORT_READY; ' +
+    `Refusing to change approval-relevant evidence (${changed}) while already in EXPORT_READY; ` +
       'only audit/metadata updates are admissible after the approval.',
   );
 }

@@ -9,14 +9,18 @@ state. It improves reviewability; it does **not** claim correctness.
 Each declared claim is evaluated to exactly one state. The evaluator is
 deterministic and applies this precedence (first match wins):
 
-| State          | Meaning                                                                 |
-| -------------- | ----------------------------------------------------------------------- |
-| `NOT_VERIFIED` | Provenance is missing, or a required provider was unavailable.          |
-| `CONTRADICTED` | An executed counterexample falsified the claim.                         |
-| `BLOCKED`      | A required provider errored (an execution problem, not a verdict).      |
-| `UNPROVEN`     | Declared with provenance, but no passing evidence (or a failing check). |
-| `PROVEN`       | Fresh, revision-bound passing evidence (or a passing structural check). |
-| `STALE`        | The only passing revision-bound evidence is bound to an old revision.   |
+| Order | State                | Condition                                                                                                                            |
+| ----- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 0     | `NOT_VERIFIED`       | Contradictory counterexample history (`counterexample_conflict`), including a falsification followed by a pass at the same revision. |
+| 1     | `NOT_VERIFIED`       | Missing provenance.                                                                                                                  |
+| 2     | `CONTRADICTED`       | A selected fresh counterexample falsifies the claim.                                                                                 |
+| 3     | `BLOCKED`            | A fresh counterexample is blocked, or a current positive provider errored. Error takes precedence over unavailable.                  |
+| 4     | `NOT_VERIFIED`       | A positive provider is unavailable.                                                                                                  |
+| 5     | `UNPROVEN`           | A positive provider failed on the current revision.                                                                                  |
+| 6     | `NOT_VERIFIED`       | Specific-behavior binding or independent evidence roles are missing.                                                                 |
+| 7     | `PROVEN`             | Every fresh positive and adversarial requirement is satisfied; a solely stale adversarial history yields `STALE`.                    |
+| 8     | `NOT_VERIFIED`       | Required adversarial evidence is unresolved.                                                                                         |
+| 9     | `STALE` / `UNPROVEN` | Remaining evidence is superseded, or no sufficient positive evidence exists.                                                         |
 
 Evidence is **digest-bound**: a passing provider result proves only while its
 binding still matches the current revision/surface. `executed_test` and
@@ -74,8 +78,9 @@ radius is bounded by the eligibility rule instead:
 - at every `EVIDENCE_REVIEW -> EXPORT_READY` approval — explicit decision,
   governance override, or policy-automatic;
 - the persistence boundary refuses a newly entered `EXPORT_READY` whose
-  refreshed evaluation does not clear the preflight, so a stale, replayed, or
-  process-local decision cannot be committed;
+  approval lacks an authentic, single-use admission for the exact predecessor,
+  applied transition and evidence basis. This protects writes through FlowGuard's
+  persistence API; direct filesystem writes bypass that API;
 - only for `fact` claims materialized from a valid plan approval certificate;
 - only when the author declared them `critical`;
 - `derived_signal` (architecture) and `hypothesis` (peer review) claims are
@@ -96,7 +101,7 @@ certificate-authorized critical `fact` claim. Coverage is declared with
 `coversRiskTriggers` on the claim; it is never inferred from claim text. The
 final gate enforces the coverage relation from the current approval
 certificate's declaration set — not from the persisted projection — so a stale
-or tampered projection cannot widen the approved contract. A `PROVEN` claim
+or tampered projection cannot widen certificate-authorized coverage. A `PROVEN` claim
 only counts when its provenance binds the current certificate (certificate id,
 declaration digest, attestation digest, declaration id, and authority digest)
 and appears exactly once in the projection; a claim evaluated under a different
@@ -296,7 +301,7 @@ contradict the claim. The outcome is derived from the executed validation result
 
 A **critical `fact` claim additionally requires** a `supported` counterexample from a
 check distinct from its positive check:
-without an executed falsification that was attempted and did not hold, the claim
+without a passing executed assertion bound to the declared counterexample identity, the claim
 stays `NOT_VERIFIED`, never `PROVEN`. This is expressed per claim via
 `requiredEvidence` (`{ positive, adversarial }`) and enforced by the evaluator; a
 missing or `not_verified` counterexample is a missing required provider, not a
@@ -329,6 +334,12 @@ longer satisfy the claim.
 
 ## Selective semantic mutation
 
+**Current capability:** every `mutationProfile` declaration is rejected with
+`PROOFGRAPH_CLAIM_UNSATISFIABLE`. No FlowGuard-executed proving mutation provider
+exists. The shipped recording/ingestion tool remains usable for visible,
+auditable `external_self_reported` observations, which never satisfy positive
+proof. The profiles below describe ingestion, not a currently usable proof opt-in.
+
 Mutation evidence is **recorded, never executed** by FlowGuard. A repo-wide
 per-PR mutation run is documented as unreliable and is deliberately not a
 requirement; instead an already-produced Stryker report
@@ -339,8 +350,8 @@ requirement; instead an already-produced Stryker report
 | `proofgraph-evaluator` | `src/audit/proofgraph/evaluate.ts` |
 | `proofgraph-gate`      | `src/audit/proofgraph/gate.ts`     |
 
-A claim opts in with `mutationProfile`, which adds `fault_injection` to
-`requiredEvidence`. Survivor semantics are explicit:
+The declaration contract would require `fault_injection` for `mutationProfile`;
+the current capability gate refuses that unsatisfiable contract. Survivor semantics are explicit:
 
 - `Survived` and `NoCoverage` are **survivors** → failing evidence;
 - `Killed` and `Timeout` are detected;
@@ -353,6 +364,27 @@ evidence binds to the implementation digest, so it goes `STALE` with the
 revision.
 
 ## Inspecting the ProofGraph
+
+### What ProofGraph does not prevent
+
+- An agent authors the tests and their semantic content; a passing named assertion
+  is not proof that the test meaningfully falsifies the claim. Review must inspect it.
+- Reports are written by the verification process in the agent-controlled project.
+  FlowGuard creates fresh attempt directories, rejects symbolic links and checks
+  execution-window timestamps. These are isolation measures, not producer attestation;
+  a concurrent process running as the same OS user can still fabricate reports.
+- Session state remains plaintext and writable to the local OS user. Schema,
+  policy-hash, certified-claim and admission checks enforce consistency through
+  the runtime. The shell write barrier catches obvious direct writes and is heuristic.
+- Gitignored helper files can influence execution outside the Git-derived implementation
+  subject. Declared execution inputs cover known configuration, not every runtime dependency.
+- Keyless hashes support comparison with a trusted reference. They do not establish
+  authenticity when the adversary can rewrite both data and hashes. Stronger guarantees
+  require execution/state attestation outside the agent's reach.
+
+These limits define the bounded adversarial threat model. Diagnosis, evidence
+preservation and controlled `/abort` remain available after an integrity incident;
+repository mutations are denied until recovery in a distinct governed session.
 
 `flowguard_status({ proofGraph: true })` returns the projection. Reading it is
 read-only and never gates; the gate itself acts only at the `EVIDENCE_REVIEW`

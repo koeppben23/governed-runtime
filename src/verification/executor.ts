@@ -8,7 +8,7 @@
  * Design:
  * - Uses child_process.execFile with shell:true for script-based commands
  * - Per-kind timeout defaults (configurable)
- * - sha256 digest of combined stdout+stderr (tamper-evident evidence binding)
+ * - sha256 digest of combined stdout+stderr (integrity comparison, not authenticity)
  * - Output truncation to bounded size (avoids token overflow)
  * - Fail-closed: any internal error is surfaced, never silently swallowed
  *
@@ -38,7 +38,7 @@ export interface ExecutionEvidence {
   readonly passed: boolean;
   /** Execution wall-clock duration in milliseconds. */
   readonly executionMs: number;
-  /** sha256 hex digest of (stdout + stderr) — tamper-evident binding. */
+  /** sha256 of observed output; not authentication against a same-user adversary. */
   readonly outputDigest: string;
   /** Truncated stdout (bounded to MAX_OUTPUT_BYTES). */
   readonly stdout: string;

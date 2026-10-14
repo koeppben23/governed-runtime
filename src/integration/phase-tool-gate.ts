@@ -42,6 +42,35 @@ import type { GateDecision } from '../shared/gate-decision.js';
 import { FLOWGUARD_TOOL_PREFIX, MCP_FLOWGUARD_TOOL_PREFIX } from './tool-names.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { appendReviewAuditEvent } from './review/evidence/audit-events.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
+
+/** Defense-in-depth; shell inspection is not an OS sandbox or attestation. */
+export function hostMutationIntegrityGate(
+  tool: string,
+  state: SessionState,
+  input: Record<string, unknown> = {},
+  sessionDirectory?: string,
+):
+  | { readonly kind: 'clear' }
+  | { readonly kind: 'blocked'; readonly code: string; readonly reason: string } {
+  if (!isMutatingHostTool(tool)) return { kind: 'clear' };
+  let code: string | null = null;
+  if (hasUnresolvedIntegrityIncident(state.reviewAssurance))
+    code = 'INTEGRITY_INCIDENT_MUTATION_DENIED';
+  if (tool === 'bash' && typeof input.command === 'string') {
+    const command = normalizePathForRisk(input.command).toLowerCase();
+    const targetsState =
+      (sessionDirectory !== undefined &&
+        command.includes(normalizePathForRisk(sessionDirectory).toLowerCase())) ||
+      (command.includes('/workspaces/') && command.includes('/sessions/'));
+    const writes =
+      />|\b(rm|mv|cp|tee|truncate|dd|chmod|python\w*|node|perl|ruby)\b|\bsed\b.*\s-i/.test(command);
+    if (targetsState && writes) code = 'SESSION_STATE_DIRECT_WRITE_DENIED';
+  }
+  return code === null
+    ? { kind: 'clear' }
+    : { kind: 'blocked', code, reason: defaultReasonRegistry.format(code).reason };
+}
 
 function riskClassificationFacts(input: {
   readonly state: SessionState;

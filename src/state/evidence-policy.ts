@@ -305,13 +305,11 @@ export function computePolicySnapshotHash(snapshot: z.infer<typeof PolicySnapsho
   return hashText(canonicalJsonStringify(policyContentFromSnapshot(snapshot)));
 }
 
-export const PolicySnapshotSchema = PolicySnapshotBase.superRefine((snapshot, context) => {
-  if (snapshot.hash !== computePolicySnapshotHash(snapshot))
-    context.addIssue({
-      code: 'custom',
-      path: ['hash'],
-      message: 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
-      params: { integrityCode: 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH' },
-    });
-}).readonly();
+/**
+ * Structural policy-snapshot contract. Content-hash verification is owned by
+ * the canonical persistence boundary (`assessPersistedStateDocument` and the
+ * controlled writer), which classifies a mismatch as an integrity failure
+ * rather than a legacy-version incompatibility.
+ */
+export const PolicySnapshotSchema = PolicySnapshotBase.readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

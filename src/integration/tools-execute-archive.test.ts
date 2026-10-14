@@ -56,6 +56,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -323,11 +324,11 @@ describe('archive', () => {
           ...state!,
           phase: 'COMPLETE',
           regulatedArchiveStatus: 'verified',
-          policySnapshot: {
+          policySnapshot: makePolicySnapshot({
             ...state!.policySnapshot,
             mode: 'regulated',
             requestedMode: 'regulated',
-          },
+          }),
         });
 
         const result = parseToolResult(await archive.execute({}, ctx));

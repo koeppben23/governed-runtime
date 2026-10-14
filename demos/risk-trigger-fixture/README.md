@@ -9,3 +9,10 @@ current implementation revision.
 
 The Maven wrapper is copied from the Java demo seed at setup time; this fixture
 holds only the project files, the JUnit assertions and the ticket.
+
+The live runner accepts `--evidence-out <file>` and emits build/pin/model identity,
+per-turn durations, denial counts and the machine-readable denial baseline from
+`expected-denials.json`. Required negative-control denials must be observed;
+allowed recoverable codes still need the existing occurrence-bound recovery proof.
+The manually dispatched `ProofGraph live controls` workflow retains this result
+and transcripts as an artifact. A local toolchain check is not live evidence.

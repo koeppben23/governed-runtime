@@ -333,6 +333,11 @@ function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
         primaryReason:
           'Detected risk triggers have no certificate-authorized critical claim coverage. Declare coversRiskTriggers on the critical plan claim.',
       };
+    case 'certified_claim_mismatch':
+      return {
+        primaryReason:
+          'A materialized claim no longer matches its certified declaration and cannot authorize the gate.',
+      };
     case 'certificate_invalid':
       return {
         primaryReason:

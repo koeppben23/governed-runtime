@@ -1,0 +1,33 @@
+name: ProofGraph live controls
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Prepare Node
+        uses: ./.github/actions/prepare-node
+      - name: Prepare Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # actions/setup-java v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install pinned host
+        run: npm install -g "opencode-ai@$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")"
+      - name: Run real-host controls
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          test -n "$DEEPSEEK_API_KEY"
+          node demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs --root "$RUNNER_TEMP/proofgraph-live" --evidence-out "$RUNNER_TEMP/proofgraph-live/evidence/result.json"
+      - name: Retain structured result and transcripts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.1
+        with:
+          name: proofgraph-live-controls
+          path: ${{ runner.temp }}/proofgraph-live/evidence/

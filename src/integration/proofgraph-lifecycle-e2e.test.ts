@@ -1453,8 +1453,9 @@ describe('ProofGraph materialization and gate (runtime)', () => {
 
     expect(blocked.kind).toBe('blocked');
     if (blocked.kind !== 'blocked') return;
-    expect(blocked.code).toBe('PROOFGRAPH_RISK_TRIGGER_UNCOVERED');
-    expect(blocked.reason).toContain('audit_authority');
+    // The widened coverage is detected as a certified-claim mismatch: the
+    // projection is no longer an evaluation of the certified declaration.
+    expect(blocked.code).toBe('PROOFGRAPH_CERTIFIED_CLAIM_MISMATCH');
   });
 
   it('NEGATIVE gate: a claim evaluated under a different certificate cannot authorize approval', async () => {

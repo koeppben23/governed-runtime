@@ -655,6 +655,8 @@ describe('evaluateProofGraphGateFromState', () => {
   });
 
   it('blocks a projection that widens the approved trigger coverage', () => {
+    // The projection is re-bound to certificate provenance but its coverage no
+    // longer matches the certified declaration; the certified digest detects it.
     const decls = declarations(true, UUID(1), ['state_integrity']);
     const claims = [
       certifiedClaim(decls, UUID(1), {
@@ -683,7 +685,7 @@ describe('evaluateProofGraphGateFromState', () => {
     );
     expect(decision).toMatchObject({
       gated: true,
-      kind: 'evaluation_unavailable',
+      kind: 'certified_claim_mismatch',
       uncoveredTriggers: [],
     });
   });

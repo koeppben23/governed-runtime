@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   prepareVerificationExecution,
   type PreparedVerificationExecution,
@@ -56,7 +59,8 @@ describe('prepareVerificationExecution', () => {
         resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
       },
     });
-    const prepared = await prepareVerificationExecution(candidate, '/tmp', 'test-id');
+    const directory = await mkdtemp(join(tmpdir(), 'fg-report-prep-'));
+    const prepared = await prepareVerificationExecution(candidate, directory, 'test-id');
     expect(prepared.command).toContain('--reporter=json');
     expect(prepared.command).toContain('test-id');
     expect(prepared.command).not.toContain('{attemptId}');
@@ -67,6 +71,7 @@ describe('prepareVerificationExecution', () => {
         'test-id',
       );
     }
+    await rm(directory, { recursive: true, force: true });
   });
 
   it('stdout collection keeps command unchanged', async () => {

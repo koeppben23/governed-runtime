@@ -49,6 +49,7 @@ import {
   makeProgressedState,
   POLICY_SNAPSHOT,
   VALIDATION_PASSED,
+  makePolicySnapshot,
 } from '../fixtures.js';
 import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
@@ -227,7 +228,7 @@ function executorWritesReport(): void {
       stdout: 'OK',
       stderr: '',
       timedOut: false,
-      startedAt: '2026-09-01T00:00:00.000Z',
+      startedAt: new Date(Date.now() - 500).toISOString(),
     };
   });
 }
@@ -296,12 +297,12 @@ async function subjectState(
     policySnapshot:
       policySnapshot ??
       (reduced
-        ? {
+        ? makePolicySnapshot({
             ...POLICY_SNAPSHOT,
             allowReducedCeremony: true,
             requireHumanGates: true,
-            effectiveGateBehavior: 'human_gated' as const,
-          }
+            effectiveGateBehavior: 'human_gated',
+          })
         : base.policySnapshot),
   };
   await writeStateWithArtifacts(se.sDir, state);
@@ -411,12 +412,12 @@ describe('baseline VALIDATION reports (real git)', () => {
     await writeStateWithArtifacts(se.sDir, {
       ...state!,
       claimedTaskClass: 'TRIVIAL',
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...POLICY_SNAPSHOT,
         allowReducedCeremony: true,
         requireHumanGates: true,
         effectiveGateBehavior: 'human_gated',
-      },
+      }),
     });
   }
 

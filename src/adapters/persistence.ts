@@ -62,6 +62,8 @@ import {
   SessionState,
 } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
+import { computePolicySnapshotHash } from '../state/evidence-policy.js';
+import { isTerminalPhase } from '../machine/topology.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 import { assertImplementationEntryFrozen } from './implementation-entry-guard.js';
 import { assertEvidenceApprovalWriteBoundary } from './evidence-approval-write-guard.js';
@@ -358,21 +360,20 @@ export function assessPersistedStateDocument(json: unknown): PersistedStateAsses
     };
   }
   const result = SessionState.safeParse(json);
-  if (
-    !result.success &&
-    result.error.issues.some((issue) => issue.message === 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH')
-  ) {
-    return {
-      kind: 'integrity_mismatch',
-      message: 'Frozen policy fields do not match their recorded content digest.',
-    };
-  }
-  return result.success
-    ? { kind: 'compatible', state: result.data }
-    : {
-        kind: 'invalid',
-        message: `State file failed Zod validation: ${result.error.message}`,
+  if (result.success) {
+    const snapshot = result.data.policySnapshot;
+    if (computePolicySnapshotHash(snapshot) !== snapshot.hash) {
+      return {
+        kind: 'integrity_mismatch',
+        message: 'Frozen policy fields do not match their recorded content digest.',
       };
+    }
+    return { kind: 'compatible', state: result.data };
+  }
+  return {
+    kind: 'invalid',
+    message: `State file failed Zod validation: ${result.error.message}`,
+  };
 }
 
 export async function readState(sessionDir: string): Promise<SessionState | null> {
@@ -423,14 +424,15 @@ export async function writeStateAlreadyLocked(
 ): Promise<void> {
   const result = SessionState.safeParse(state);
   if (!result.success) {
-    if (result.error.issues.some((issue) => issue.message === 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH'))
-      throw new PersistenceError(
-        'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
-        'Refusing a frozen policy whose fields do not match its digest.',
-      );
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
       `Refusing to persist invalid state: ${result.error.message}`,
+    );
+  }
+  if (computePolicySnapshotHash(result.data.policySnapshot) !== result.data.policySnapshot.hash) {
+    throw new PersistenceError(
+      'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
+      'Refusing a frozen policy whose fields do not match its digest.',
     );
   }
 
@@ -441,11 +443,13 @@ export async function writeStateAlreadyLocked(
   // fails closed here instead of persisting an unreviewable implementation.
   assertImplementationEntryFrozen(result.data);
 
-  // THE lowest evidence-approval boundary: a newly entered EXPORT_READY must
-  // be authorized by the canonical protected application for EXACTLY this
-  // evidence basis. This covers every writer — `writeState`, the artifact/audit
-  // commit path, and any future direct caller.
-  {
+  // THE lowest evidence-approval boundary: an entered `EXPORT_READY` and any
+  // write that can leave the approved state (→ COMPLETE/ABORTED) must be
+  // authorized for EXACTLY this evidence basis. This covers every writer —
+  // `writeState`, the artifact/audit commit path, and any future direct caller.
+  // `EXPORT_READY` is the protected approval state; `isTerminalPhase` owns the
+  // terminal set (a write leaving the approved state can only go terminal).
+  if (result.data.phase === 'EXPORT_READY' || isTerminalPhase(result.data.phase)) {
     const previous = await readState(sessionDir);
     await assertEvidenceApprovalWriteBoundary(previous, result.data, approvalAdmission);
   }

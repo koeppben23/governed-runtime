@@ -169,7 +169,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 123 security-critical
+The `mutation` job runs StrykerJS mutation testing against 135 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -356,7 +356,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-123 files are mutated in the base profile, covering the fail-closed governance
+135 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -380,7 +380,8 @@ above is the classification authority):
 | Logging (`error-serialize`)                                                                                                                                                                       | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                               | 6       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                                         | **123** | uploaded as `reports/mutation/` |
+| v11 admission candidates (approval, claims, policy, paths, report isolation)                                                                                                                      | 12      | full-profile admission pending  |
+| **Total**                                                                                                                                                                                         | **135** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -583,6 +584,19 @@ The 2026-10-10 Run-10 diagnostics work additionally stages
 transport and capture-failure block composition).
 They carry no provenance until a freeze-commit full run meets the per-target
 threshold; a targeted diagnostic run is not admission evidence.
+
+The v11 proof/evidence trust-boundary hardening stages twelve further candidates
+for a future full base-profile run: `src/audit/proofgraph/evidence-approval-admission.ts`,
+`src/audit/proofgraph/evidence-approval-preflight.ts`,
+`src/adapters/evidence-approval-write-guard.ts`,
+`src/rails/evidence-approval-application.ts`,
+`src/audit/proofgraph/evidence-role-independence.ts`,
+`src/audit/proofgraph/evidence-integrity.ts`,
+`src/state/proofgraph-plan-certificate.ts`,
+`src/state/proofgraph-claim-certification.ts`,
+`src/state/evidence-policy.ts`, `src/verification/report-isolation.ts`,
+`src/state/risk-path-classifier.ts` and `src/shared/repo-path.ts`. The
+canonical admission remains the profile full run on the freeze commit.
 
 ### Running Locally
 

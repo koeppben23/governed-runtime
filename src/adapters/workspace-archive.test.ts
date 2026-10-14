@@ -25,7 +25,7 @@ import * as persistenceAudit from './persistence-audit.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
 import { verifyChain } from '../audit/integrity.js';
-import { BINDING, makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
+import { BINDING, makePolicySnapshot, makeState, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { createTempWorktree, runCleanups } from './workspace-test-helpers.js';
@@ -988,7 +988,7 @@ describe('Archive Layout v2', () => {
     const state = await readState(sessionDir);
     const strictTsaState: SessionState = {
       ...state!,
-      policySnapshot: {
+      policySnapshot: makePolicySnapshot({
         ...state!.policySnapshot,
         mode: 'team',
         audit: {
@@ -1005,7 +1005,7 @@ describe('Archive Layout v2', () => {
             tsaTimeoutMs: 10000,
           },
         },
-      },
+      }),
     };
     await writeState(sessionDir, strictTsaState);
     // A critical lifecycle event WITHOUT any external TSA token.

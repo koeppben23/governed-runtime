@@ -16,7 +16,7 @@
  * Design:
  * - Single check per call (allows agent to observe results between checks)
  * - Commands come ONLY from verificationCandidates (never from agent input)
- * - Agent cannot fabricate pass/fail — only runtime evidence is accepted
+ * - Accepts runtime-observed process results; agent-controlled tests/reports can still mislead
  * - Check execution is decoupled from state persistence so slow subprocesses
  *   (e.g. build) do not starve concurrent checks of the session write lock
  *

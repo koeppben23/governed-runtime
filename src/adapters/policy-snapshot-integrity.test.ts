@@ -23,7 +23,9 @@ describe('frozen policy integrity at the canonical persistence boundary', () => 
         ...state,
         policySnapshot: { ...state.policySnapshot, [field]: !state.policySnapshot[field] },
       };
-      expect(PolicySnapshotSchema.safeParse(changed.policySnapshot).success).toBe(false);
+      // The structural schema stays permissive; the canonical persistence
+      // boundary classifies the mismatch as an integrity failure.
+      expect(PolicySnapshotSchema.safeParse(changed.policySnapshot).success).toBe(true);
       expect(assessPersistedStateDocument(changed).kind).toBe('integrity_mismatch');
       await expect(writeState(directory, changed)).rejects.toMatchObject({
         code: 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH',
