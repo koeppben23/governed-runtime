@@ -19,6 +19,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isMainModule } from './is-main-module.mjs';
 
 export function demoLeasePath(repo) {
   const hash = createHash('sha256').update(repo).digest('hex').slice(0, 16);
@@ -170,7 +171,7 @@ async function main() {
   throw new Error(`unknown command: ${String(command)}`);
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(`[run-lease] ${String(error)}`);
     process.exitCode = 1;

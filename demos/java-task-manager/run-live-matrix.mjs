@@ -64,10 +64,12 @@ import {
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
   toolDenialEvents,
+  toolUseEvents,
   transcriptTrust,
 } from '../lib/transcript.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 import { expectRecovery, readAuditEvents, recoveryPersisted } from '../lib/recovery-state.mjs';
+import { isMainModule } from '../lib/is-main-module.mjs';
 
 export {
   assertExpectedDenial,
@@ -296,7 +298,9 @@ function run(command, args, options = {}) {
  * shows these occur on normal successful flows; they are recorded but do not
  * stop the flow. Every other denial stays flow-stopping.
  */
-export const DENIAL_BASELINE = JSON.parse(fs.readFileSync(path.join(REPO, 'demos/risk-trigger-fixture/expected-denials.json'), 'utf8'));
+export const DENIAL_BASELINE = JSON.parse(
+  fs.readFileSync(path.join(REPO, 'demos/risk-trigger-fixture/expected-denials.json'), 'utf8'),
+);
 export const RECOVERABLE_DENIAL_CODES = new Set(DENIAL_BASELINE.recoverable);
 
 /**
@@ -358,6 +362,23 @@ export function planReviewCorrectionProven(state) {
 /** Recoverable-family denial: corrected in-session or by the required next step. */
 export function isRecoverableFamily(code) {
   return RECOVERABLE_DENIAL_CODES.has(code) || NEXT_STEP_RECOVERY_CODES.has(code);
+}
+
+/**
+ * True when the most recent host turn produced NO tool call at all AND left
+ * the persisted state byte-identical. That is a model/host no-op, not a
+ * product denial or a failed tool call: the positive proof is NOT_VERIFIED
+ * instead of FAILED. Any observed tool activity or state change keeps the
+ * strict FAILED classification.
+ */
+export function hostTurnWasNoOp(lastTurn, label) {
+  return (
+    typeof lastTurn === 'object' &&
+    lastTurn !== null &&
+    lastTurn.label === label &&
+    lastTurn.toolCalls === 0 &&
+    lastTurn.stateChanged === false
+  );
 }
 
 /** Denials observed in a step that must stop the flow (never recovered in-session). */
@@ -522,7 +543,12 @@ export class Runner {
     fs.closeSync(stdoutFd);
     fs.closeSync(stderrFd);
     const output = fs.readFileSync(stdoutPath, 'utf8');
-    this.turnObservations.push({ label, exitCode: result.code, durationMs: result.durationMs, denialCodes: toolDenialCodes(output) });
+    this.turnObservations.push({
+      label,
+      exitCode: result.code,
+      durationMs: result.durationMs,
+      denialCodes: toolDenialCodes(output),
+    });
     const sessionIds = [
       ...new Set(
         eventsOf(output)
@@ -536,6 +562,7 @@ export class Runner {
 
   async turn(session, label, prompt, options = {}) {
     const phaseBefore = this.currentPhase(session);
+    const digestBefore = this.currentStateDigest(session);
     // Recovery witnesses must be bound to events appended by THIS turn; a
     // historical sequence may never confirm a later operation.
     const auditFloorBefore = session.sessionId
@@ -553,6 +580,13 @@ export class Runner {
     }
     session.sessionId = session.sessionId ?? observed;
     if (!session.sessionId) throw new Error(`${label}: no host session id observed`);
+    const digestAfter = this.currentStateDigest(session);
+    session.lastTurn = {
+      label,
+      toolCalls: toolUseEvents(result.stdout).length,
+      stateChanged: digestBefore !== null && digestAfter !== null && digestAfter !== digestBefore,
+      phaseAfter: this.currentPhase(session),
+    };
     if (options.expectedDenial) {
       assertExpectedDenial(result.stdout, options.expectedDenial);
       return result;
@@ -896,6 +930,12 @@ export class Runner {
       const phase = this.currentPhase(session);
       if (phase === 'EVIDENCE_REVIEW') return;
       if (phase !== 'IMPL_REVIEW') {
+        if (hostTurnWasNoOp(session.lastTurn, label)) {
+          throw new DemoNotVerifiedError(
+            `${label}: the host turn produced no tool call and no state change ` +
+              `(observed ${String(phase)}); the positive proof is NOT_VERIFIED`,
+          );
+        }
         throw new Error(
           `${label}: expected IMPL_REVIEW or EVIDENCE_REVIEW, observed ${String(phase)}`,
         );
@@ -905,6 +945,12 @@ export class Runner {
       await this.turn(session, stepLabel, '/implement');
       const digestAfter = this.currentStateDigest(session);
       if (digestAfter === null || digestAfter === digestBefore) {
+        if (hostTurnWasNoOp(session.lastTurn, stepLabel)) {
+          throw new DemoNotVerifiedError(
+            `${stepLabel}: the host turn produced no tool call and no state change; ` +
+              'the positive proof is NOT_VERIFIED',
+          );
+        }
         throw new Error(
           `${stepLabel}: bounded implementation review resume produced no state progress; stopping the flow`,
         );
@@ -1379,7 +1425,7 @@ async function main() {
   process.exitCode = exitCode;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(String(error));
     process.exitCode = 1;

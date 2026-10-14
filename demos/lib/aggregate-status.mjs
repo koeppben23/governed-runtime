@@ -10,6 +10,8 @@
  * @version v1
  */
 
+import { isMainModule } from './is-main-module.mjs';
+
 export function aggregateStatus(current, code) {
   const normalizedCurrent = Number(current);
   const normalizedCode = Number(code);
@@ -21,7 +23,7 @@ export function aggregateStatus(current, code) {
   return 1;
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isMainModule(import.meta.url)) {
   const [, , current, code] = process.argv;
   process.stdout.write(String(aggregateStatus(current, code)));
 }

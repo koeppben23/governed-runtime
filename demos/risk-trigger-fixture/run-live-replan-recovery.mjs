@@ -35,6 +35,7 @@ import {
 import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
 import { FLOWGUARD_CLI, FLOWGUARD_PACKAGE, productCli } from '../lib/product-cli.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
+import { isMainModule } from '../lib/is-main-module.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const SUBJECT = 'src/main/java/fixture/state/ModuleStateStore.java';
@@ -373,7 +374,7 @@ async function main() {
   process.exitCode = exitCodeForResults([record]);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(String(error));
     process.exitCode = 1;

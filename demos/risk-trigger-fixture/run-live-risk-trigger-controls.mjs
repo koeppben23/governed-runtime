@@ -4,7 +4,7 @@
  * @description Real-host controls for #1074 risk-trigger coverage.
  *
  * An isolated minimal Maven repository whose governed artifact lives under
-  * `src/main/java/fixture/state/`, explicitly mapped by frozen repository policy.
+ * `src/main/java/fixture/state/`, explicitly mapped by frozen repository policy.
  *
  *  - uncovered: a valid certificate-authorized critical fact claim exists but
  *    does not cover the detected trigger. The real approval gate must deny with
@@ -36,6 +36,7 @@ import {
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
 import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
+import { isMainModule } from '../lib/is-main-module.mjs';
 
 export { assertNoCompletionPackage };
 
@@ -259,10 +260,21 @@ async function runCase(runner, name, workspace, covered, context) {
     else process.env[SKIP_ASSERTION_ENV] = savedSkip;
   }
   record.turns = runner.turnObservations.filter((turn) => turn.label.startsWith(`${name}-`));
-  record.denialCounts = Object.fromEntries([...new Set(record.turns.flatMap((turn) => turn.denialCodes))].map((code) => [code, record.turns.reduce((count, turn) => count + turn.denialCodes.filter((value) => value === code).length, 0)]));
+  record.denialCounts = Object.fromEntries(
+    [...new Set(record.turns.flatMap((turn) => turn.denialCodes))].map((code) => [
+      code,
+      record.turns.reduce(
+        (count, turn) => count + turn.denialCodes.filter((value) => value === code).length,
+        0,
+      ),
+    ]),
+  );
   if (record.result === RESULT.COMPLETE || record.result === RESULT.CONTROL_PASSED) {
     for (const code of DENIAL_BASELINE.requiredControls[name]) {
-      if (!(record.denialCounts[code] > 0)) { record.result = RESULT.FAILED; record.error = `required control denial missing: ${code}`; }
+      if (!(record.denialCounts[code] > 0)) {
+        record.result = RESULT.FAILED;
+        record.error = `required control denial missing: ${code}`;
+      }
     }
   }
   return record;
@@ -275,12 +287,45 @@ const PLAN_PROMPT = (claims) =>
   `The assertion fixtures already exist. Retain this claim through every stage: do not withdraw, ` +
   `reclassify, replace or weaken it. Complete the full independent plan review.`;
 
+/** Deep-merge a fixture override into a parsed config; arrays and scalars replace. */
+function mergeConfig(base, override) {
+  if (typeof override !== 'object' || override === null || Array.isArray(override)) return override;
+  if (typeof base !== 'object' || base === null || Array.isArray(base)) return override;
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    merged[key] = key in base ? mergeConfig(base[key], value) : value;
+  }
+  return merged;
+}
+
+/**
+ * Apply the fixture's repo-scoped configuration AFTER the regular install.
+ *
+ * The fixture's `.opencode/flowguard.json` is demo configuration, not a
+ * pre-installed FlowGuard: copying it before the installer would make the
+ * install fail closed ("FlowGuard is already installed"). The installer's own
+ * repo config is kept and only the fixture-declared values (today the frozen
+ * `riskTriggerPaths`) are merged in - before the first session, so the frozen
+ * policy snapshot contains them.
+ */
+export function applyFixtureRepoConfig(workspace, fixtureDir = FIXTURE) {
+  const source = path.join(fixtureDir, '.opencode', 'flowguard.json');
+  if (!fs.existsSync(source)) return false;
+  const target = path.join(workspace, '.opencode', 'flowguard.json');
+  const installed = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8')) : {};
+  const fixture = JSON.parse(fs.readFileSync(source, 'utf8'));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, `${JSON.stringify(mergeConfig(installed, fixture), null, 2)}\n`);
+  return true;
+}
+
 /** Copy the fixture, the Maven wrapper and install FlowGuard into a fresh repo. */
 export function prepareWorkspace(workspace, tarball) {
   fs.cpSync(FIXTURE, workspace, {
     recursive: true,
     filter: (source) =>
       !source.includes(`${path.sep}.git`) &&
+      !source.split(path.sep).includes('.opencode') &&
       !source.endsWith('run-live-risk-trigger-controls.mjs') &&
       !source.endsWith('run-live-replan-recovery.mjs'),
   });
@@ -316,6 +361,7 @@ export function prepareWorkspace(workspace, tarball) {
     ],
     { cwd: workspace, stdio: 'inherit' },
   );
+  applyFixtureRepoConfig(workspace);
   return workspace;
 }
 
@@ -405,14 +451,28 @@ async function main() {
     );
     if (options.evidenceOut) {
       fs.mkdirSync(path.dirname(options.evidenceOut), { recursive: true });
-      fs.writeFileSync(options.evidenceOut, JSON.stringify({ version: 1, checkoutHead, pins, model: options.model, denialBaseline: DENIAL_BASELINE, records }, null, 2));
+      fs.writeFileSync(
+        options.evidenceOut,
+        JSON.stringify(
+          {
+            version: 1,
+            checkoutHead,
+            pins,
+            model: options.model,
+            denialBaseline: DENIAL_BASELINE,
+            records,
+          },
+          null,
+          2,
+        ),
+      );
     }
   }
   runner.log(resultLine(records, 'RISK TRIGGER CONTROLS'));
   process.exitCode = exitCodeForResults(records);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(String(error));
     process.exitCode = 1;
