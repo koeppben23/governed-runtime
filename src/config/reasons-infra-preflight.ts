@@ -35,6 +35,19 @@ export const PREFLIGHT_INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'STATE_INTEGRITY_MISMATCH',
+    category: 'adapter',
+    messageTemplate:
+      'Session {sessionId} frozen policy fields do not match their recorded content digest',
+    recoverySteps: [
+      'Preserve the suspect state unchanged as evidence',
+      'Restore a trusted copy of the session state and investigate the integrity mismatch',
+      'Changing runtime versions does not repair an integrity mismatch',
+      'Never recompute a stored digest to accept modified policy',
+    ],
+  },
+
+  {
     code: 'STATE_MISSING_WITH_AUDIT',
     category: 'adapter',
     messageTemplate: 'Session {sessionId} has an audit trail but no readable state',

@@ -27,6 +27,7 @@ import { ARCHIVE_MANIFEST_FILE } from './archive-layout.js';
 const ARCHIVE_STATE_MEMBER = 'state/session-state.json';
 import { sessionDir, workspaceDir } from './init.js';
 import { scanWorktreeWorkspaces, type WorkspaceEvidence } from './upgrade-preflight-identity.js';
+import { classifyLiveStateReadFailure } from './upgrade-preflight-live-state.js';
 import { validateSessionId } from './types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -197,35 +198,8 @@ async function classifyLiveState(
   try {
     state = await readState(sessDir);
   } catch (error) {
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error
-        ? String(error.code)
-        : 'UNKNOWN';
-    const status: LiveStateStatus =
-      code === 'POLICY_SNAPSHOT_INTEGRITY_MISMATCH'
-        ? 'integrity_mismatch'
-        : code === 'SESSION_STATE_INCOMPATIBLE'
-          ? 'incompatible'
-          : 'unreadable';
-    return {
-      status,
-      phase: null,
-      terminal: null,
-      findings: [
-        {
-          severity: 'blocker',
-          code: `STATE_${status.toUpperCase()}`,
-          message: `Session ${sessionId} state cannot be read under the current contract (${code}).`,
-          recovery: [
-            status === 'integrity_mismatch'
-              ? 'Preserve the suspect state; restore a trusted copy and investigate the integrity mismatch. Changing runtime versions does not repair it.'
-              : 'Recover the session with the release that wrote it: complete active sessions normally.',
-            'Archive terminal sessions only when the archive preflight permits it; preserve aborted or otherwise non-exportable evidence unchanged.',
-            'Do not edit persisted state to bridge the contract boundary.',
-          ],
-        },
-      ],
-    };
+    const failure = classifyLiveStateReadFailure(sessionId, error);
+    return { status: failure.status, phase: null, terminal: null, findings: [failure.finding] };
   }
 
   if (state === null) return { status: 'missing', phase: null, terminal: null, findings: [] };
