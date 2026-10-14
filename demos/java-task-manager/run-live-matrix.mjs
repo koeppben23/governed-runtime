@@ -67,7 +67,7 @@ import {
   transcriptTrust,
 } from '../lib/transcript.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
-import { expectRecovery, recoveryPersisted } from '../lib/recovery-state.mjs';
+import { expectRecovery, readAuditEvents, recoveryPersisted } from '../lib/recovery-state.mjs';
 
 export {
   assertExpectedDenial,
@@ -497,6 +497,16 @@ function readState(configDir, sessionId) {
   };
 }
 
+/** Highest persisted audit sequence before the current turn (0 without a trail). */
+function lastAuditSequence(configDir, sessionId) {
+  const found = sessionStateDir(configDir, sessionId);
+  if (!found) return 0;
+  return readAuditEvents(found.sessionDir).reduce(
+    (max, event) => Math.max(max, Number(event?.auditSequence) || 0),
+    0,
+  );
+}
+
 function assertHostCallOk(result, label) {
   if (result.timedOut) throw new Error(`${label}: host process timed out`);
   if (result.code !== 0) throw new Error(`${label}: host exit code ${String(result.code)}`);
@@ -552,6 +562,11 @@ export class Runner {
 
   async turn(session, label, prompt, options = {}) {
     const phaseBefore = this.currentPhase(session);
+    // Recovery witnesses must be bound to events appended by THIS turn; a
+    // historical sequence may never confirm a later operation.
+    const auditFloorBefore = session.sessionId
+      ? lastAuditSequence(this.configDir, session.sessionId)
+      : 0;
     const args = ['run', '--dir', session.workspace, '-m', this.options.model, '--format', 'json'];
     if (session.sessionId) args.push('--session', session.sessionId);
     if (options.command) args.push('--command', options.command);
@@ -662,7 +677,7 @@ export class Runner {
       });
       this.log(`${label}: recovered via structured re-arm [${retryRecovered.join(', ')}]`);
     }
-    const pendingCodes = [
+    let pendingCodes = [
       ...new Set([
         ...recoverable.filter(
           (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
@@ -677,6 +692,46 @@ export class Runner {
       throw new DemoNotVerifiedError(
         `${label}: recoverable denial occurrence(s) without a later proven correction (${unproven.join(', ')}); stopping the flow (the proof is NOT_VERIFIED)`,
       );
+    }
+    // A TICKET_SOURCE_CONFLICT is corrected by the same-turn adoption of the
+    // actual ticket; that correction is settled HERE, bound to the persisted
+    // ticket identity and the audit sequence (denial -> successful ticket call
+    // with a transition -> READY/TICKET selection). A bare later tool success
+    // without that witness stays an observation and cannot settle the denial.
+    if (pendingCodes.includes('TICKET_SOURCE_CONFLICT')) {
+      const snapshot = this.requireBoundState(session);
+      const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
+      const deniedTools = [
+        ...new Set(
+          toolDenialEvents(result.stdout)
+            .filter((event) => event.code === 'TICKET_SOURCE_CONFLICT')
+            .map((event) => event.tool),
+        ),
+      ];
+      const expected = expectRecovery(
+        snapshot.state,
+        deniedTools,
+        session.terminal,
+        recoverableProofs
+          .filter((proof) => proof.binding === 'tool')
+          .map((proof) => proof.denialIdentity),
+        auditFloorBefore,
+      );
+      if (
+        expected.kind === 'ticket_adoption' &&
+        recoveryPersisted(expected, snapshot.state, command, readAuditEvents(snapshot.sessionDir))
+      ) {
+        session.recoveredDenials.push({
+          step: label,
+          codes: ['TICKET_SOURCE_CONFLICT'],
+          evidence: 'ticket_adoption',
+          expected,
+        });
+        this.log(
+          `${label}: recovered via bound ticket adoption (digest ${expected.digest.slice(0, 12)}…)`,
+        );
+        pendingCodes = pendingCodes.filter((code) => code !== 'TICKET_SOURCE_CONFLICT');
+      }
     }
     if (pendingCodes.length > 0) {
       session.awaitingRecovery = {

@@ -1,6 +1,7 @@
 /** Operation-scoped persistence witnesses; unrelated changes must stay unproven. */
 import { describe, expect, it } from 'vitest';
 import { expectRecovery, recoveryPersisted } from '../../../demos/lib/recovery-state.mjs';
+import { hashText } from '../../shared/hashing.js';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
 
 describe('operation-scoped recovery witnesses', () => {
@@ -65,5 +66,195 @@ describe('operation-scoped recovery witnesses', () => {
     const captured = { ...ready, phase: 'TICKET', ticket: { digest: 'ticket-A' } };
     expect(recoveryPersisted(expected, captured, 'status')).toBe(false);
     expect(recoveryPersisted(expected, captured, 'task')).toBe(true);
+  });
+});
+
+describe('ticket-adoption recovery witnesses', () => {
+  const actor = {
+    flowguardSessionId: 'fg-1',
+    binding: { hostSessionId: 'ses_parent' },
+  };
+  const ticketText = '# TICKET: Document local build';
+  const ticketDigest = hashText(ticketText);
+  const adoptedTicket = {
+    ...actor,
+    phase: 'TICKET',
+    ticket: {
+      digest: ticketDigest,
+      text: ticketText,
+      source: 'user',
+      references: [{ ref: 'TICKET_DOCS.md', type: 'doc' }],
+    },
+  };
+  const adoptionAudit = [
+    {
+      auditSequence: 1,
+      flowguardSessionId: 'fg-1',
+      event: 'tool_call:flowguard_ticket',
+      detail: { tool: 'flowguard_ticket', success: false, errorCode: 'TICKET_SOURCE_CONFLICT' },
+    },
+    {
+      auditSequence: 2,
+      flowguardSessionId: 'fg-1',
+      event: 'tool_call:flowguard_ticket',
+      detail: { tool: 'flowguard_ticket', success: true, transitionCount: 1 },
+    },
+    {
+      auditSequence: 3,
+      flowguardSessionId: 'fg-1',
+      event: 'transition:TICKET_SELECTED',
+      detail: { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED' },
+    },
+  ];
+
+  it('accepts the same-turn adoption of the exact persisted ticket with its audit sequence', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    expect(expected.kind).toBe('ticket_adoption');
+    expect((expected as { digest?: string }).digest).toBe(ticketDigest);
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(true);
+  });
+
+  it('rejects content that does not hash to the expected ticket digest', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    const tampered = structuredClone(adoptedTicket);
+    tampered.ticket.text = `${ticketText} (tampered)`;
+    expect(recoveryPersisted(expected, tampered, 'task', adoptionAudit)).toBe(false);
+    // The digest is only trusted when it is the SHA-256 of the stored content.
+    const wrongDigest = expectRecovery(
+      { ...adoptedTicket, ticket: { ...adoptedTicket.ticket, digest: 'ticket-A' } },
+      ['flowguard_ticket'],
+      'COMPLETE',
+    );
+    expect(wrongDigest.kind).toBe('unproven');
+  });
+
+  it('rejects a historical audit sequence from another session or before the turn floor', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    const foreignSession = adoptionAudit.map((event) => ({
+      ...event,
+      flowguardSessionId: 'fg-other',
+    }));
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', foreignSession)).toBe(false);
+    // Events 1..3 are already persisted before this recovery turn (floor 3).
+    const floored = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE', [], 3);
+    expect(recoveryPersisted(floored, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    // The denial itself must also lie inside the current turn: a success and
+    // transition without their in-turn denial never confirm the recovery.
+    const flooredAfterDenial = expectRecovery(
+      adoptedTicket,
+      ['flowguard_ticket'],
+      'COMPLETE',
+      [],
+      1,
+    );
+    expect(recoveryPersisted(flooredAfterDenial, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+  });
+
+  it('does not turn a missing or empty persisted ticket into a recovery', () => {
+    const missing = expectRecovery({ ...actor, phase: 'TICKET' }, ['flowguard_ticket'], 'COMPLETE');
+    expect(missing.kind).toBe('unproven');
+    expect(recoveryPersisted(missing, adoptedTicket, 'task', adoptionAudit)).toBe(false);
+    const empty = expectRecovery(
+      { ...adoptedTicket, ticket: { digest: '', text: '' } },
+      ['flowguard_ticket'],
+      'COMPLETE',
+    );
+    expect(empty.kind).toBe('unproven');
+  });
+
+  it('rejects a different, cleared or phase-foreign ticket identity', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    const other = structuredClone(adoptedTicket);
+    other.ticket.digest = 'ticket-B';
+    expect(recoveryPersisted(expected, other, 'task', adoptionAudit)).toBe(false);
+    expect(
+      recoveryPersisted(expected, { ...adoptedTicket, ticket: null }, 'task', adoptionAudit),
+    ).toBe(false);
+    const foreignPhase = { ...adoptedTicket, phase: 'PLAN_REVIEW' };
+    expect(recoveryPersisted(expected, foreignPhase, 'task', adoptionAudit)).toBe(false);
+    const foreignContent = structuredClone(adoptedTicket);
+    foreignContent.ticket.text = '';
+    expect(recoveryPersisted(expected, foreignContent, 'task', adoptionAudit)).toBe(false);
+  });
+
+  it('requires the operational audit sequence, not a bare tool-level success', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', [])).toBe(false);
+    const [denial, success] = adoptionAudit;
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', [denial, success])).toBe(false);
+    expect(
+      recoveryPersisted(expected, adoptedTicket, 'task', [
+        denial,
+        success,
+        { auditSequence: 4, event: 'transition:PLAN_READY', detail: {} },
+      ]),
+    ).toBe(false);
+    const transitionBeforeSuccess = [denial, adoptionAudit[2], success];
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', transitionBeforeSuccess)).toBe(false);
+  });
+
+  it('rejects a ticket adopted before the conflict denial and a foreign actor or command', () => {
+    const adoptionBeforeDenial = [adoptionAudit[2], adoptionAudit[0], adoptionAudit[1]];
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionBeforeDenial)).toBe(false);
+    expect(recoveryPersisted(expected, adoptedTicket, 'plan', adoptionAudit)).toBe(false);
+    const foreignHost = structuredClone(adoptedTicket);
+    foreignHost.binding.hostSessionId = 'ses_other';
+    expect(recoveryPersisted(expected, foreignHost, 'task', adoptionAudit)).toBe(false);
+  });
+
+  it('reproduces the former reduced-on failure with the real ticket identity and audit sequence', () => {
+    // Values captured from the failing full-sweep run (session
+    // ses_ec8e3f6f9ffeqJ3uRUQ87uNkLs, 2026-10-13): the exact persisted ticket
+    // text and digest plus the audit sequence that corrected the conflict
+    // denial. Capturing the original bytes keeps the digest-content invariant
+    // honest instead of pinning an inconsistent pair.
+    const originalText =
+      '# TICKET: Document Local Build and Test Instructions\n\n## Summary\n\nThe Task Manager has no usage notes describing how to build, run, and test the\napplication locally. Add a short, self-contained guide at `docs/usage-notes.md`\nso a new contributor can start from a fresh checkout.\n\n## Required Change\n\nCreate `docs/usage-notes.md` with a short guide covering:\n\n1. Prerequisites (JDK 21+).\n2. Build and full verification: `./mvnw verify`.\n3. Running the test suite: `./mvnw test`.\n4. Starting the application locally: `./mvnw spring-boot:run` (default port\n   8080, see `src/main/resources/application.properties`).\n5. A short example of the task API endpoints.\n\n## Do Not Change\n\n- Do not change any Java source or test file.\n- Do not change `README.md`, `TICKET.md`, `ADR_TICKET.md`, or the Maven build.\n- Do not add files other than `docs/usage-notes.md`.\n\n## Acceptance Criteria\n\n- `docs/usage-notes.md` exists and is non-empty.\n- It documents `./mvnw verify` and `./mvnw test`.\n- No other file in the repository changed.\n';
+    const originalDigest = 'e3db9099de201438b35a5354690b838ab249638fffe375466dc38c1314934aa3';
+    expect(hashText(originalText)).toBe(originalDigest);
+    const state = {
+      ...actor,
+      phase: 'TICKET',
+      ticket: {
+        digest: originalDigest,
+        text: originalText,
+        source: 'user',
+        references: [{ ref: 'TICKET_DOCS.md', type: 'doc' }],
+      },
+    };
+    const audit = [
+      {
+        auditSequence: 1,
+        flowguardSessionId: 'fg-1',
+        event: 'tool_call:flowguard_ticket',
+        detail: { tool: 'flowguard_ticket', success: false, errorCode: 'TICKET_SOURCE_CONFLICT' },
+      },
+      {
+        auditSequence: 2,
+        flowguardSessionId: 'fg-1',
+        event: 'tool_call:flowguard_ticket',
+        detail: { tool: 'flowguard_ticket', success: true, transitionCount: 1 },
+      },
+      {
+        auditSequence: 3,
+        flowguardSessionId: 'fg-1',
+        event: 'transition:TICKET_SELECTED',
+        detail: { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED' },
+      },
+    ];
+    const expected = expectRecovery(state, ['flowguard_ticket'], 'COMPLETE');
+    expect(expected.kind).toBe('ticket_adoption');
+    expect(recoveryPersisted(expected, state, 'task', audit)).toBe(true);
+    // The persisted ticket alone, without the operational sequence, stays unproven.
+    expect(recoveryPersisted(expected, state, 'task', [audit[1]])).toBe(false);
+  });
+
+  it('keeps a conflicting denial identity unproven', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE', [
+      { bindings: {}, conflicts: ['subjectDigest'] },
+    ]);
+    expect(expected.kind).toBe('unproven');
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(false);
   });
 });

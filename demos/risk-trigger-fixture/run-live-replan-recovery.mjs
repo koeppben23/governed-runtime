@@ -61,6 +61,27 @@ export function oldControlApprovalCommand(directive, allowOverride) {
 }
 
 /**
+ * CE5 binds an exhausted-review override to the LAST reviewed plan subject.
+ * When the review is exhausted but the current plan revision is newer than
+ * every consumed plan obligation - typically a revision submitted after the
+ * budget was spent - no override can release it. The runner must classify that
+ * as NOT_VERIFIED instead of provoking the canonical refusal and reporting it
+ * as a hard failure.
+ */
+export function exhaustedOverrideSubjectBindable(state) {
+  const obligations = (state?.reviewAssurance?.obligations ?? []).filter(
+    (obligation) => obligation?.obligationType === 'plan' && obligation?.status === 'consumed',
+  );
+  const reviewedSubjectDigest = obligations.at(-1)?.subjectDigest ?? null;
+  const approvedSubjectDigest = state?.plan?.current?.digest ?? null;
+  return (
+    typeof reviewedSubjectDigest === 'string' &&
+    reviewedSubjectDigest.length > 0 &&
+    reviewedSubjectDigest === approvedSubjectDigest
+  );
+}
+
+/**
  * The installer CLI must come from a fully installed copy of the SAME bound
  * product tarball: an extracted tarball has no node_modules, so the CLI is
  * installed into an isolated npm prefix and executed from there.
@@ -94,6 +115,14 @@ async function planAndApprove(runner, session, prefix, covered, allowOverride) {
           ? 'the independent plan review exhausted its budget without acceptance'
           : `the plan gate did not converge to a persisted reviewer_accepted plan (${gate.outcome})`;
       throw new DemoNotVerifiedError(`${prefix}: ${reason}; the recovery proof is NOT_VERIFIED`);
+    }
+    if (!exhaustedOverrideSubjectBindable(state)) {
+      throw new DemoNotVerifiedError(
+        `${prefix}: the review is exhausted but the current plan revision (v${String(
+          state.plan?.current?.planVersion ?? '?',
+        )}) is not the last reviewed subject; an override cannot release an unreviewed revision. ` +
+          'The recovery proof is NOT_VERIFIED',
+      );
     }
   }
   if (state.phase !== 'PLAN_REVIEW') throw new Error('old control did not reach PLAN_REVIEW');

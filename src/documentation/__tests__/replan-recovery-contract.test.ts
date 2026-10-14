@@ -7,13 +7,15 @@ const runnerUrl = new URL(
   '../../../demos/risk-trigger-fixture/run-live-replan-recovery.mjs',
   import.meta.url,
 );
-const { assertRecoveryIdentities, oldControlApprovalCommand } = (await import(runnerUrl.href)) as {
-  assertRecoveryIdentities(oldState: SessionState, newState: SessionState): void;
-  oldControlApprovalCommand(
-    directive: { commands: readonly string[] },
-    allowOverride: boolean,
-  ): string;
-};
+const { assertRecoveryIdentities, exhaustedOverrideSubjectBindable, oldControlApprovalCommand } =
+  (await import(runnerUrl.href)) as {
+    assertRecoveryIdentities(oldState: SessionState, newState: SessionState): void;
+    oldControlApprovalCommand(
+      directive: { commands: readonly string[] },
+      allowOverride: boolean,
+    ): string;
+    exhaustedOverrideSubjectBindable(state: unknown): boolean;
+  };
 const oldState = makeState('ABORTED');
 const newState = makeState('READY', {
   id: '11111111-1111-4111-8111-111111111111',
@@ -27,6 +29,42 @@ const newState = makeState('READY', {
 });
 
 describe('live two-session recovery evidence contract', () => {
+  it('binds an exhausted override only to the last reviewed plan subject', () => {
+    const reviewed = {
+      plan: { current: { digest: 'plan-subject-3', planVersion: 3 } },
+      reviewAssurance: {
+        obligations: [
+          { obligationType: 'plan', status: 'consumed', subjectDigest: 'plan-subject-1' },
+          { obligationType: 'plan', status: 'consumed', subjectDigest: 'plan-subject-3' },
+        ],
+      },
+    };
+    expect(exhaustedOverrideSubjectBindable(reviewed)).toBe(true);
+    expect(
+      exhaustedOverrideSubjectBindable({
+        ...reviewed,
+        plan: { current: { digest: 'plan-subject-4', planVersion: 4 } },
+      }),
+    ).toBe(false);
+    expect(
+      exhaustedOverrideSubjectBindable({
+        plan: reviewed.plan,
+        reviewAssurance: { obligations: [] },
+      }),
+    ).toBe(false);
+    expect(exhaustedOverrideSubjectBindable({ plan: reviewed.plan })).toBe(false);
+    expect(
+      exhaustedOverrideSubjectBindable({
+        plan: { current: { digest: 'plan-subject-3' } },
+        reviewAssurance: {
+          obligations: [
+            { obligationType: 'plan', status: 'pending', subjectDigest: 'plan-subject-3' },
+          ],
+        },
+      }),
+    ).toBe(false);
+  });
+
   it('never escalates ordinary approval to override implicitly, even for the old control', () => {
     expect(oldControlApprovalCommand({ commands: ['/approve'] }, false)).toBe('approve');
     expect(() => oldControlApprovalCommand({ commands: ['/override-approve'] }, false)).toThrow(
