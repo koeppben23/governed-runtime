@@ -690,6 +690,46 @@ describe('evaluateProofGraphGateFromState', () => {
     });
   });
 
+  it.each([
+    [
+      'drops the certified adversarial requirement',
+      { requiredEvidence: { positive: ['executed_test' as const], adversarial: [] } },
+      'certified_claim_mismatch',
+    ],
+    [
+      'narrows the certified claim scope',
+      { claimScope: 'suite' as const },
+      'certified_claim_mismatch',
+    ],
+    [
+      'rewrites the certified statement',
+      { statement: 'a different, weaker statement' },
+      'certified_claim_mismatch',
+    ],
+    // A non-critical claim is no longer gate-eligible, so the authorized critical
+    // claim counts as missing: still blocking, never a silent pass.
+    ['downgrades the certified criticality', { critical: false }, 'evaluation_unavailable'],
+    [
+      'swaps the certified counterexample requirement',
+      { counterexampleRequirement: { kind: 'aggregate_check' as const, checkId: 'lint' } },
+      'certified_claim_mismatch',
+    ],
+  ])(
+    'BAD: blocks a PROVEN contract claim that %s after certification',
+    (_label, edit: Partial<ProofClaim>, expectedKind) => {
+      const decls = declarations(true);
+      const claims = [certifiedClaim(decls, UUID(1), edit)];
+      const decision = evaluateProofGraphGateFromState(
+        stateWith({
+          plan: planRecord(decls, certificate(decls)),
+          proofGraph: projection(claims),
+          proofContract: declaredSource(claims),
+        }),
+      );
+      expect(decision).toMatchObject({ gated: true, kind: expectedKind });
+    },
+  );
+
   it('reports evaluation_unavailable when the evaluated claim binds a different certificate', () => {
     const decls = declarations(true);
     const claims = [certifiedClaim(decls, UUID(1), {}, '00000000-0000-4000-8000-0000000000ff')];

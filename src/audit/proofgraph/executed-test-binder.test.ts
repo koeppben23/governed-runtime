@@ -218,4 +218,46 @@ describe('bindExecutedTestEvidence', () => {
       expect(() => ProofProviderResult.parse(r)).not.toThrow();
     }
   });
+
+  describe('certificate-authorized claims bind only their certified positive check', () => {
+    function certifiedState(executedCheckId: string): SessionState {
+      return makeState('IMPL_VALIDATION', {
+        implementation: IMPL,
+        proofContract: {
+          version: 'contract.v2',
+          claims: [
+            {
+              ...claimRefingAttempt(),
+              certifiedPlan: {
+                authoritySectionId: 's1',
+                expectedCheckId: 'test',
+                digest: 'f'.repeat(64),
+              },
+            },
+          ],
+        },
+        validationAttempts: [
+          {
+            attemptId: ATT,
+            scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
+            result: validationResult(true, { checkId: executedCheckId, kind: 'lint' }),
+          },
+        ],
+      });
+    }
+
+    it('BAD: a passing reference to a different check is unavailable, never a pass', () => {
+      const [r] = bindExecutedTestEvidence(certifiedState('lint'), NOW);
+      expect(r).toMatchObject({ claimId: CLAIM, status: 'unavailable' });
+      expect(r!.detail).toContain("not the certified positive check 'test'");
+      expect(() => ProofProviderResult.parse(r)).not.toThrow();
+    });
+
+    it('binds a passing reference to the certified check', () => {
+      expect(bindExecutedTestEvidence(certifiedState('test'), NOW)[0]!.status).toBe('pass');
+    });
+  });
 });
