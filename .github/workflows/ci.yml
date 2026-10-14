@@ -61,12 +61,7 @@ jobs:
       - name: Verify critical state and hook boundaries
         run: npx vitest run --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts
       - name: Verify real-Git approval and recovery paths
-        # The reduced-ceremony subject-artifact e2e suite stays POSIX-only for
-        # now: on windows-latest two assertions depend on POSIX archive/member
-        # listing and a phase progression that needs its own investigation
-        # (tar member separators, IMPL_VALIDATION -> IMPL_REVIEW). It still runs
-        # in the main Linux integration job.
-        run: npx vitest run --project integration src/integration/proofgraph-replan-recovery.test.ts src/integration/evidence-approval-persistence.test.ts
+        run: npx vitest run --project integration src/integration/proofgraph-replan-recovery.test.ts src/integration/evidence-approval-persistence.test.ts src/integration/reduced-ceremony-subject-artifacts-e2e.test.ts
 
   known-issues-note:
     name: known-issues-note
