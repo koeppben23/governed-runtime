@@ -122,8 +122,7 @@ export function getToolTraceId(
 // ─── Diagnostic tool latency (never enforcement) ─────────────────────────────
 
 /** Why a tool latency could not be measured. A missing measurement is never 0. */
-type ToolLatencyUnavailable =
-  'call_id_missing' | 'session_id_missing' | 'start_not_observed';
+type ToolLatencyUnavailable = 'call_id_missing' | 'session_id_missing' | 'start_not_observed';
 
 export type ToolLatencyObservation =
   { readonly beforeToAfterMs: number } | { readonly durationUnavailable: ToolLatencyUnavailable };
