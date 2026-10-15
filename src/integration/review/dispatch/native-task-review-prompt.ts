@@ -25,6 +25,8 @@ import {
 import type { PendingReviewRetryDiagnostic } from '../types.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
+import { buildImplementationAnchorContractLines } from '../evidence/anchor-contract-lines.js';
+import { resolveRepositoryObservationAccess } from '../observations/observation-access.js';
 import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
 import {
   buildReviewChallengeContract,
@@ -115,6 +117,13 @@ export function canonicalTaskPrompt(
     ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0 ? { retryDiagnostics } : {}),
     frozenReviewerContext,
     artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
+    // Implementation reviews receive the SAME host-enforced anchor contract the
+    // binder validates (kind "implementation" + exact digest); the evidence rule
+    // derives from the authority enforcement uses.
+    implementationAnchorContract: buildImplementationAnchorContractLines(
+      obligation,
+      resolveRepositoryObservationAccess(obligation, attempt),
+    ),
     repositoryDiscoverySnapshot:
       attempt.repositoryDiscovery.kind === 'repository'
         ? attempt.repositoryDiscovery.snapshot
