@@ -155,3 +155,28 @@ canary install, isolation, artifact checksum, provider ping), then the matrix,
 claim controls, risk-trigger controls and the replan recovery sequentially with
 fresh roots, and exits `0` (accepted evidence), `2` (`NOT_VERIFIED`) or `1`
 (`FAILED`). Existing evidence directories are never overwritten.
+
+## Latency baseline (read-only)
+
+```bash
+node demos/lib/perf-baseline.mjs <run-root> [<run-root>...] --json <out.json> --md <out.md>
+```
+
+`demos/lib/perf-baseline.mjs` reads archived run roots only (`evidence/` and,
+when present, FlowGuard diagnostic logs under `workspaces/*/.opencode/logs/`),
+never the host database, and refuses to write inside an analyzed root. The
+output carries identifiers, codes, labels and numbers only.
+
+- Every observed denial is classified per occurrence (`controlled_negative`,
+  `avoidable_call_shape`, `governance_feedback`, `wait_state`, `unexpected`);
+  a negative flow or a required control makes any code `controlled_negative`.
+- Extra cost is `attributed` only for an occurrence-bound same-turn recovery
+  without a competing denial of the same tool, or a runner-proven next-step
+  recovery; otherwise `NOT_OBSERVED`. A legitimate `changes_requested` is a
+  review verdict, never a denial.
+- Phases come only from observed governed payloads of the same turn; model
+  steps only from transcript step events; reviewer Task and structured
+  follow-up are split at FlowGuard's follow-up prompt in the host export.
+- Comparable runs share flow, model, host version and build. p95 is
+  `insufficient_sample` below 20 runs, `exploratory` from 20 to 99 and
+  `descriptive` from 100; individual values and the median are always shown.
