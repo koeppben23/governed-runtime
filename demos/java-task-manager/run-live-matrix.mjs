@@ -103,6 +103,21 @@ export const DEFAULT_FLOWS = [
 export const NEGATIVE_PROBE_WORKSPACE = 'java-task-manager-architecture-negative';
 
 /**
+ * Controlled negative steps of the architecture-negative flow, each bound to
+ * the ONE typed denial the runner expects and asserts. The latency analyzer
+ * classifies a denial as a controlled negative only for the exact (step, code)
+ * pair declared here; a different code inside a control step stays a real
+ * defect instead of being laundered as part of the control.
+ *
+ * `architecture-negative-04-approve` only expects a denial on the exhausted
+ * branch; the converged branch performs the ordinary approval instead.
+ */
+export const CONTROLLED_NEGATIVE_STEPS = new Map([
+  ['architecture-negative-02-probe', 'ARCHITECTURE_CLAIM_INVALID'],
+  ['architecture-negative-04-approve', 'GOVERNANCE_OVERRIDE_REQUIRED'],
+]);
+
+/**
  * Verifier flow identity per matrix scenario. The reduced-ceremony scenarios
  * are development flows; their scenario names are never verifier flow names.
  */
@@ -1176,7 +1191,7 @@ export async function runFlows(runner) {
           session,
           'architecture-negative-02-probe',
           'Call flowguard_architecture exactly once with a minimal ADR (title Negative-Path Probe, adrText with the sections ## Context, ## Decision, ## Consequences) and EXACTLY this intentionally invalid plan-shaped claims array: [{"statement":"probe plan-shaped claim","claimScope":"specific_behavior","expectedCheckId":"probe","critical":true}]. Report the typed rejection code, do not resubmit in this step, and stop.',
-          { expectedDenial: 'ARCHITECTURE_CLAIM_INVALID' },
+          { expectedDenial: CONTROLLED_NEGATIVE_STEPS.get('architecture-negative-02-probe') },
         );
         const probed = runner.requireBoundState(session);
         assertArchitectureProbeNotPersisted(probed.state);
@@ -1195,7 +1210,10 @@ export async function runFlows(runner) {
             session,
             'architecture-negative-04-approve',
             'Demo approval through the real command boundary.',
-            { command: 'approve', expectedDenial: 'GOVERNANCE_OVERRIDE_REQUIRED' },
+            {
+              command: 'approve',
+              expectedDenial: CONTROLLED_NEGATIVE_STEPS.get('architecture-negative-04-approve'),
+            },
           );
           const refused = runner.requireBoundState(session);
           if (

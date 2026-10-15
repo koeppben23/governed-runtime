@@ -38,6 +38,7 @@ import {
   toolUseEvents,
 } from './transcript.mjs';
 import {
+  CONTROLLED_NEGATIVE_STEPS,
   DENIAL_BASELINE,
   NEXT_STEP_RECOVERY_CODES,
   PLAN_REVIEW_CORRECTION_CODE,
@@ -45,12 +46,13 @@ import {
 
 export const NOT_OBSERVED = 'NOT_OBSERVED';
 
-/** Flows whose purpose IS a denial: every denial there is a controlled negative. */
-export const NEGATIVE_FLOWS = new Set(['architecture-negative']);
-
 /**
- * Default code classes. Context outranks these defaults: a controlled flow or a
- * required control makes any code `controlled_negative`.
+ * Default code classes. Context outranks these defaults:
+ * - the fixture's `requiredControls` declares a code expected in that flow, and
+ * - a runner-declared control step (`CONTROLLED_NEGATIVE_STEPS`) declares the
+ *   ONE typed denial it asserts for that exact step.
+ * A denial inside a negative flow but outside a declared control step, or with
+ * a different code than the control declares, is classified by its own code.
  */
 export const WAIT_STATE_CODES = new Set(['ADR_REVIEW_IN_PROGRESS', PLAN_REVIEW_CORRECTION_CODE]);
 export const CALL_SHAPE_CODES = new Set([
@@ -137,9 +139,11 @@ export function describeSample(values) {
 
 // ─── Denials ─────────────────────────────────────────────────────────────────
 
-export function classifyDenial({ code, flow }) {
-  if (NEGATIVE_FLOWS.has(flow)) return 'controlled_negative';
+export function classifyDenial({ code, flow, step }) {
   if ((DENIAL_BASELINE.requiredControls?.[flow] ?? []).includes(code)) {
+    return 'controlled_negative';
+  }
+  if (step !== undefined && CONTROLLED_NEGATIVE_STEPS.get(step) === code) {
     return 'controlled_negative';
   }
   if (WAIT_STATE_CODES.has(code)) return 'wait_state';
@@ -192,7 +196,7 @@ export function analyzeTurnDenials({ output, flow, step, record }) {
       flow,
       step,
       phase: observedPhaseAt(output, denial.index),
-      class: classifyDenial({ code: denial.code, flow }),
+      class: classifyDenial({ code: denial.code, flow, step }),
     };
     const proof = recovered.find(
       (candidate) => candidate.denialIndex === denial.index && candidate.code === denial.code,

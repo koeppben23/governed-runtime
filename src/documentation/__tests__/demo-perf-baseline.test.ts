@@ -17,6 +17,7 @@ import {
   FOLLOWUP_PROMPT_SENTINEL,
   NOT_OBSERVED,
   analyzeRunRoot,
+  classifyDenial,
   assertOutsideRoots,
   buildReport,
   describeSample,
@@ -266,15 +267,56 @@ describe('demo perf baseline - denial attribution', () => {
     expect(denied).not.toHaveProperty('extraHostTurns');
   });
 
-  it('CORNER: the same code is a controlled negative in a negative flow only', () => {
+  it('CORNER: outside a declared control step the code class decides, even in the negative flow', () => {
     expect(turn('architecture-negative', 'architecture-negative-01-adr').denials[0]).toMatchObject({
       code: 'WRONG_PHASE',
-      class: 'controlled_negative',
+      class: 'avoidable_call_shape',
     });
     expect(turn('development', 'development-04-validate').denials[0]).toMatchObject({
       code: 'WRONG_PHASE',
       class: 'avoidable_call_shape',
     });
+  });
+
+  it('BAD: a control step declares ONE expected code; another denial there is a real defect', () => {
+    expect(
+      classifyDenial({
+        code: 'WRONG_PHASE',
+        flow: 'architecture-negative',
+        step: 'architecture-negative-02-probe',
+      }),
+    ).toBe('avoidable_call_shape');
+    expect(
+      classifyDenial({
+        code: 'WRONG_PHASE',
+        flow: 'architecture-negative',
+        step: 'architecture-negative-04-approve',
+      }),
+    ).toBe('avoidable_call_shape');
+    expect(
+      classifyDenial({
+        code: 'GOVERNANCE_OVERRIDE_REQUIRED',
+        flow: 'architecture-negative',
+        step: 'architecture-negative-02-probe',
+      }),
+    ).toBe('unexpected');
+  });
+
+  it('HAPPY: only the declared (step, code) pair is a controlled negative', () => {
+    expect(
+      classifyDenial({
+        code: 'ARCHITECTURE_CLAIM_INVALID',
+        flow: 'architecture-negative',
+        step: 'architecture-negative-02-probe',
+      }),
+    ).toBe('controlled_negative');
+    expect(
+      classifyDenial({
+        code: 'GOVERNANCE_OVERRIDE_REQUIRED',
+        flow: 'architecture-negative',
+        step: 'architecture-negative-04-approve',
+      }),
+    ).toBe('controlled_negative');
   });
 
   it('EDGE: phases and model steps are never guessed', () => {

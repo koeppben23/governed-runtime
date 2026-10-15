@@ -168,8 +168,11 @@ never the host database, and refuses to write inside an analyzed root. The
 output carries identifiers, codes, labels and numbers only.
 
 - Every observed denial is classified per occurrence (`controlled_negative`,
-  `avoidable_call_shape`, `governance_feedback`, `wait_state`, `unexpected`);
-  a negative flow or a required control makes any code `controlled_negative`.
+  `avoidable_call_shape`, `governance_feedback`, `wait_state`, `unexpected`).
+  `controlled_negative` requires either the fixture's `requiredControls` entry
+  for that flow or the runner-declared `(step, code)` pair in
+  `CONTROLLED_NEGATIVE_STEPS`; any other denial - including another code inside
+  a control step - is classified by its own code.
 - Extra cost is `attributed` only for an occurrence-bound same-turn recovery
   without a competing denial of the same tool, or a runner-proven next-step
   recovery; otherwise `NOT_OBSERVED`. A legitimate `changes_requested` is a
