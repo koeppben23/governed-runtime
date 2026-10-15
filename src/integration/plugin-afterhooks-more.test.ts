@@ -66,6 +66,7 @@ function makeRuntime(
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(),
     toolTraceIds: new Map<string, string>(),
+    toolLatencyStarts: new Map<string, number>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
     logError: vi.fn(),
@@ -389,5 +390,140 @@ describe('afterhook — /check rework-continuation latch', () => {
     } finally {
       await ws.cleanup();
     }
+  });
+});
+
+describe('toolAfter - diagnostic latency fields on tool.execute.after', () => {
+  const ALLOWED_FIELDS = new Set([
+    'tool',
+    'callId',
+    'beforeToAfterMs',
+    'durationUnavailable',
+    'hostToolOutcome',
+    'hostToolCode',
+    'statusProjection',
+  ]);
+
+  function afterLogFields(runtime: FlowGuardPluginRuntime): Record<string, unknown> {
+    const call = vi
+      .mocked(runtime.log.info)
+      .mock.calls.find(
+        ([service, message]) => service === 'hook' && message === 'tool.execute.after',
+      );
+    expect(call, 'tool.execute.after must still be logged exactly as one line').toBeDefined();
+    const fields = call?.[2] ?? {};
+    for (const key of Object.keys(fields)) expect(ALLOWED_FIELDS.has(key), key).toBe(true);
+    return fields;
+  }
+
+  function primedRuntime(callID: string): FlowGuardPluginRuntime {
+    const runtime = makeRuntime();
+    runtime.toolLatencyStarts.set(`${SESSION_ID}\u0000${callID}`, performance.now());
+    return runtime;
+  }
+
+  it('HAPPY: a host tool gets a measured duration and an unknown outcome (text result)', async () => {
+    const runtime = primedRuntime('c-read');
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c-read', args: {} },
+      hookOutput('plain text'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(Object.keys(fields).sort()).toEqual([
+      'beforeToAfterMs',
+      'callId',
+      'hostToolOutcome',
+      'tool',
+    ]);
+    expect(fields.beforeToAfterMs).toBeGreaterThanOrEqual(0);
+    expect(fields.hostToolOutcome).toBe('unknown');
+    expect(runtime.toolLatencyStarts.size).toBe(0);
+  });
+
+  it('BAD: JSON text from a host tool is never classified as a FlowGuard outcome', async () => {
+    const runtime = primedRuntime('c-bash');
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c-bash', args: {} },
+      hookOutput('{"error":true,"code":"FAKE"}'),
+    );
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('unknown');
+  });
+
+  it('HAPPY: a returned flowguard_status result names its projection', async () => {
+    const runtime = primedRuntime('c-status');
+    await toolAfter(
+      runtime,
+      {
+        tool: 'flowguard_status',
+        sessionID: SESSION_ID,
+        callID: 'c-status',
+        args: { whyBlocked: true },
+      },
+      hookOutput('{"phase":"PLAN"}'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(fields.hostToolOutcome).toBe('flowguard_returned');
+    expect(fields.statusProjection).toBe('whyBlocked');
+    expect(fields.hostToolCode).toBeUndefined();
+  });
+
+  it('BAD: a FlowGuard blocked result carries its code, before further after-hook processing', async () => {
+    const runtime = primedRuntime('c-blocked');
+    await toolAfter(
+      runtime,
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-blocked', args: {} },
+      hookOutput('{"error":true,"code":"NO_SESSION"}'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(fields.hostToolOutcome).toBe('flowguard_blocked');
+    expect(fields.hostToolCode).toBe('NO_SESSION');
+    expect(fields.statusProjection).toBe('full');
+  });
+
+  it('BAD: an unreadable FlowGuard payload stays unknown, never returned', async () => {
+    const runtime = primedRuntime('c-garbled');
+    await toolAfter(
+      runtime,
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-garbled', args: {} },
+      hookOutput('not json'),
+    );
+    expect(afterLogFields(runtime).hostToolOutcome).toBe('unknown');
+  });
+
+  it('BAD: a missing start is reported as unavailable, never as zero', async () => {
+    const runtime = makeRuntime();
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c-none', args: {} },
+      hookOutput('ok'),
+    );
+    const fields = afterLogFields(runtime);
+    expect(fields.beforeToAfterMs).toBeUndefined();
+    expect(fields.durationUnavailable).toBe('start_not_observed');
+  });
+
+  it('EDGE: a throwing input accessor never changes the hook result', async () => {
+    const runtime = primedRuntime('c-throw');
+    const input = { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-throw' };
+    Object.defineProperty(input, 'args', {
+      get() {
+        throw new Error('hostile accessor');
+      },
+    });
+    const output = hookOutput('{"phase":"PLAN"}');
+    await expect(toolAfter(runtime, input, output)).resolves.toBeUndefined();
+    // Reference: the same call with readable args yields the same hook result.
+    const reference = hookOutput('{"phase":"PLAN"}');
+    await toolAfter(
+      makeRuntime(),
+      { tool: 'flowguard_status', sessionID: SESSION_ID, callID: 'c-throw', args: {} },
+      reference,
+    );
+    expect(output.output).toBe(reference.output);
+    const fields = afterLogFields(runtime);
+    expect(fields.statusProjection).toBeUndefined();
+    expect(fields.beforeToAfterMs).toBeGreaterThanOrEqual(0);
   });
 });
