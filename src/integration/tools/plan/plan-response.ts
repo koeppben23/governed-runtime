@@ -48,16 +48,16 @@ import { autoAdvance } from '../../../rails/types.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import { TOOL_FLOWGUARD_PLAN } from '../../tool-names.js';
 import {
-  artifactReviewSubjectScope,
   createObligationAndAttempt,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
+import { artifactReviewSubjectScopeFromSections } from '../../review/context/subject-scope.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
 } from '../../review/dispatch/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
-import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
+import { buildFrozenArtifactReviewMaterial } from '../../review/context/reviewer-context.js';
 import { buildChildSessionReviewInstruction } from '../../review/dispatch/child-session-instruction.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import {
@@ -132,6 +132,13 @@ export function buildPlanReviewObligationInput(input: {
   if (classificationFiles && classificationFiles.length > 0) {
     metadata.targetPaths = [...classificationFiles];
   }
+  const artifactReviewMaterial = buildFrozenArtifactReviewMaterial({
+    obligationType: 'plan',
+    state,
+    artifact: planEvidence.body,
+    planClaimDeclarations,
+    renderPlanClaimDeclarations,
+  });
   return {
     obligationType: 'plan',
     iteration,
@@ -141,18 +148,17 @@ export function buildPlanReviewObligationInput(input: {
     subjectDigest: planEvidence.digest,
     claimDeclarationsDigest: hashText(canonicalJsonStringify(planClaimDeclarations)),
     // Frozen review material: the exact plan artifact plus originating
-    // ticket context, canonicalized and digest-bound at creation time.
-    reviewMaterial: freezeReviewMaterial(
-      buildFrozenReviewMaterialContent({
-        obligationType: 'plan',
-        state,
-        artifact: planEvidence.body,
-        planClaimDeclarations,
-        renderPlanClaimDeclarations,
-      }),
+    // ticket context and the rendered claim declarations, canonicalized and
+    // digest-bound at creation time.
+    reviewMaterial: freezeReviewMaterial(artifactReviewMaterial.content, planEvidence.digest),
+    // The anchor whitelist is minted from the SAME subject markdown the
+    // reviewer evidence refs are indexed from, so a claims-section ref offered
+    // in the prompt can never be rejected as out-of-scope.
+    reviewSubjectScope: artifactReviewSubjectScopeFromSections(
+      'plan',
+      artifactReviewMaterial.subjectSectionPaths,
       planEvidence.digest,
     ),
-    reviewSubjectScope: artifactReviewSubjectScope('plan', planEvidence.body, planEvidence.digest),
     policySnapshot: state.policySnapshot,
     changedFiles: classificationFiles,
     declaredTaskClass: declaredTaskClassFor(state),

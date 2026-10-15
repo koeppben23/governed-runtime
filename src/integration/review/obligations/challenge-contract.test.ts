@@ -10,7 +10,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { makeState } from '../../../fixtures.js';
+import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { makePlanRevision } from '../../../state/evidence-test-constants.js';
+import { markdownSectionPathsEqual } from '../../../shared/markdown-sections.js';
+import { validateReviewFindingsScope } from '../enforcement/findings-consistency.js';
+import { buildFrozenArtifactReviewMaterial } from '../context/reviewer-context.js';
+import { artifactReviewSubjectScopeFromSections } from '../context/subject-scope.js';
 import { buildReviewChallengeContract } from './challenge-contract.js';
 import {
   artifactReviewSubjectScope,
@@ -153,5 +158,189 @@ describe('buildReviewChallengeContract frozen authority', () => {
 
     expect(contract?.requiredChallengeCount).toBeGreaterThan(0);
     expect(contract?.evidenceRefs).toBeUndefined();
+  });
+
+  it('offers only subject refs inside the frozen anchor whitelist and binds the claims section', () => {
+    const state = makeState('PLAN_REVIEW');
+    // Mirrors the RCA shape: ten plan sections, then the appended claims
+    // section as the eleventh H2 sibling.
+    const planSections = Array.from(
+      { length: 10 },
+      (_unused, index) => `## Section ${index + 1}\n\nBody ${index + 1}.`,
+    );
+    const parts = buildFrozenArtifactReviewMaterial({
+      obligationType: 'plan',
+      state,
+      artifact: ['# Implementation Plan', '', ...planSections].join('\n\n'),
+      renderPlanClaimDeclarations,
+    });
+    const obligation = createReviewObligation({
+      obligationType: 'plan',
+      reviewCycle: 1,
+      iteration: 1,
+      planVersion: 1,
+      now: NOW,
+      subjectDigest: SUBJECT,
+      reviewMaterial: freezeReviewMaterial(parts.content, SUBJECT),
+      reviewSubjectScope: artifactReviewSubjectScopeFromSections(
+        'plan',
+        parts.subjectSectionPaths,
+        SUBJECT,
+      ),
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      changedFiles: ['src/example.ts'],
+    });
+    const scope = obligation.reviewSubjectScope;
+    if (scope.kind !== 'artifact') throw new Error('expected artifact scope');
+
+    const refs = buildReviewChallengeContract(state, obligation)?.evidenceRefs ?? [];
+    expect(refs.length).toBeGreaterThan(0);
+    type SectionPath = readonly {
+      headingDepth: number;
+      siblingIndex: number;
+      headingText: string;
+    }[];
+    for (const ref of refs) {
+      const sectionPath = ref.sectionPath as SectionPath;
+      expect(
+        scope.artifact.sectionPaths.some((allowed) =>
+          markdownSectionPathsEqual(allowed, sectionPath),
+        ),
+        JSON.stringify(sectionPath),
+      ).toBe(true);
+    }
+
+    const claimsPath = refs
+      .map((ref) => ref.sectionPath as SectionPath)
+      .find((path) => path.at(-1)?.headingText === 'Plan Claim Declarations Under Review');
+    if (!claimsPath) throw new Error('expected a claims-section evidence ref');
+    expect(claimsPath.at(-1)).toMatchObject({
+      headingDepth: 2,
+      siblingIndex: 11,
+      headingText: 'Plan Claim Declarations Under Review',
+    });
+
+    // RCA regression: a finding anchored to the exact claims section binds
+    // under the frozen digest instead of being rejected as out-of-scope.
+    expect(
+      validateReviewFindingsScope({
+        findings: [
+          {
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'artifact_section',
+                  artifactKind: 'plan',
+                  artifactDigest: SUBJECT,
+                  sectionPath: claimsPath,
+                },
+              ],
+              evidenceLocations: [],
+            },
+          },
+        ],
+        reviewSubjectScope: scope,
+      }),
+    ).toEqual({ ok: true });
+
+    // A foreign artifact digest is still rejected for the same section.
+    expect(
+      validateReviewFindingsScope({
+        findings: [
+          {
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'artifact_section',
+                  artifactKind: 'plan',
+                  artifactDigest: 'b'.repeat(64),
+                  sectionPath: claimsPath,
+                },
+              ],
+              evidenceLocations: [],
+            },
+          },
+        ],
+        reviewSubjectScope: scope,
+      }),
+    ).toMatchObject({ ok: false, code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE' });
+
+    // Context sections in the material never become subject authority.
+    expect(
+      validateReviewFindingsScope({
+        findings: [
+          {
+            relation: {
+              subjectAnchors: [
+                {
+                  kind: 'artifact_section',
+                  artifactKind: 'plan',
+                  artifactDigest: SUBJECT,
+                  sectionPath: [
+                    {
+                      headingDepth: 2,
+                      siblingIndex: 1,
+                      headingText: 'Ticket Under Review (originating request)',
+                    },
+                  ],
+                },
+              ],
+              evidenceLocations: [],
+            },
+          },
+        ],
+        reviewSubjectScope: scope,
+      }),
+    ).toMatchObject({ ok: false, code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE' });
+
+    const headings = refs.flatMap((ref) =>
+      (ref.sectionPath as SectionPath).map((part) => part.headingText),
+    );
+    expect(headings).not.toContain('Ticket Under Review (originating request)');
+    expect(headings).not.toContain('Plan Artifact');
+  });
+
+  it('keeps ADR evidence refs and the frozen scope consistent', () => {
+    const state = makeState('ARCHITECTURE');
+    const parts = buildFrozenArtifactReviewMaterial({
+      obligationType: 'architecture',
+      state,
+      artifact: '# ADR-1 Title\n\n## Decision\n\nBody.',
+      renderPlanClaimDeclarations,
+    });
+    const obligation = createReviewObligation({
+      obligationType: 'architecture',
+      reviewCycle: 1,
+      iteration: 1,
+      planVersion: 1,
+      now: NOW,
+      subjectDigest: SUBJECT,
+      reviewMaterial: freezeReviewMaterial(parts.content, SUBJECT),
+      reviewSubjectScope: artifactReviewSubjectScopeFromSections(
+        'adr',
+        parts.subjectSectionPaths,
+        SUBJECT,
+      ),
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      changedFiles: ['src/example.ts'],
+    });
+    const scope = obligation.reviewSubjectScope;
+    if (scope.kind !== 'artifact') throw new Error('expected artifact scope');
+
+    const refs = buildReviewChallengeContract(state, obligation)?.evidenceRefs ?? [];
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      const sectionPath = ref.sectionPath as readonly {
+        headingDepth: number;
+        siblingIndex: number;
+        headingText: string;
+      }[];
+      expect(
+        scope.artifact.sectionPaths.some((allowed) =>
+          markdownSectionPathsEqual(allowed, sectionPath),
+        ),
+        JSON.stringify(sectionPath),
+      ).toBe(true);
+    }
   });
 });

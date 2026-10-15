@@ -298,10 +298,14 @@ describe('integration/tools/architecture (wrapper)', () => {
     if (obligation?.reviewSubjectScope?.kind === 'artifact') {
       expect(obligation.reviewSubjectScope.artifact.kind).toBe('adr');
       expect(obligation.reviewSubjectScope.artifact.digest).toBe('digest-adr');
+      // Section identities are material-relative: the ticket context and the
+      // artifact wrapper are the first top-level H2 sections of the frozen
+      // material, so the ADR's own H2s start at sibling index 3. The same
+      // identities are offered as `plan_adr_section` evidence refs.
       expect(obligation.reviewSubjectScope.artifact.sectionPaths).toEqual([
-        [{ headingDepth: 2, siblingIndex: 1, headingText: 'Context' }],
-        [{ headingDepth: 2, siblingIndex: 2, headingText: 'Decision' }],
-        [{ headingDepth: 2, siblingIndex: 3, headingText: 'Consequences' }],
+        [{ headingDepth: 2, siblingIndex: 3, headingText: 'Context' }],
+        [{ headingDepth: 2, siblingIndex: 4, headingText: 'Decision' }],
+        [{ headingDepth: 2, siblingIndex: 5, headingText: 'Consequences' }],
       ]);
     }
   });

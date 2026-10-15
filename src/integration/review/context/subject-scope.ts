@@ -11,6 +11,7 @@
  */
 
 import type { ReviewSubjectScope } from '../../../state/evidence-review-subject.js';
+import type { MarkdownSectionPath } from '../../../state/evidence-findings.js';
 import type { TaskClass } from '../../../state/task-class.js';
 import { resolveEffectiveTaskClass } from '../../../state/risk-declaration.js';
 import { assessMinimumTaskClass } from '../../phase-tool-gate.js';
@@ -18,6 +19,38 @@ import { challengeKindForObligation, type ChallengeKind } from '../../../config/
 import type { PolicySnapshot } from '../../../state/evidence.js';
 import type { ReviewObligationType } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';
+
+/**
+ * Mint the canonical artifact subject scope for pre-implementation reviews
+ * (plan, ADR) from the exact subject section paths. Production call sites MUST
+ * derive these paths from
+ * `buildFrozenArtifactReviewMaterial(...).subjectSectionPaths` — the artifact
+ * plus claim-declarations sections as indexed from the frozen material itself
+ * — so the anchor whitelist and the reviewer-visible `plan_adr_section`
+ * evidence refs share identical identities. Context sections (the originating
+ * ticket, the presentation wrapper) are deliberately not part of this
+ * whitelist.
+ *
+ * Fail-closed: an artifact without ATX headings cannot produce section anchors
+ * and therefore cannot support a bindable artifact review.
+ */
+export function artifactReviewSubjectScopeFromSections(
+  kind: 'plan' | 'adr',
+  sectionPaths: readonly MarkdownSectionPath[],
+  digest: string,
+): ReviewSubjectScope {
+  if (sectionPaths.length === 0) {
+    throw new IntegrationInvariantError(
+      'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
+      `FAIL_CLOSED: cannot mint a ${kind} artifact review subject scope without ` +
+        'sections; artifact review findings must anchor to concrete sections.',
+    );
+  }
+  return {
+    kind: 'artifact',
+    artifact: { kind, digest, sectionPaths },
+  };
+}
 
 /**
  * Pre-implementation artifact reviews (plan, ADR) MUST mint an explicit

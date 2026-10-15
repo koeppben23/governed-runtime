@@ -56,6 +56,7 @@ export function isCurrentReviewGeneration(
   );
 }
 import {
+  artifactReviewSubjectScopeFromSections,
   resolveSubjectScope,
   resolveChallengeRequirements,
   requireArtifactSubjectScope,
@@ -70,32 +71,21 @@ function resolveSubjectDigest(input: {
 }
 
 /**
- * Mint the canonical artifact subject scope for pre-implementation reviews
- * (plan, ADR). The subject is the exact frozen artifact, indexed by the same
- * canonical Markdown section authority that feeds the reviewer prompt's
- * evidence refs (`indexMarkdownSections`), so scope sections and reviewer-
- * visible sections are structurally identical.
- *
- * Fail-closed: an artifact without ATX headings cannot produce section anchors
- * and therefore cannot support a bindable artifact review.
+ * Mint an artifact subject scope from a standalone artifact markdown document.
+ * Use only where the document itself is the complete review subject; plan and
+ * ADR obligations must use {@link artifactReviewSubjectScopeFromSections}
+ * with the paths derived from the frozen material.
  */
 export function artifactReviewSubjectScope(
   kind: 'plan' | 'adr',
   markdown: string,
   digest: string,
 ): ReviewSubjectScope {
-  const sectionPaths = indexMarkdownSections(markdown).map((section) => section.sectionPath);
-  if (sectionPaths.length === 0) {
-    throw new IntegrationInvariantError(
-      'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
-      `FAIL_CLOSED: cannot mint a ${kind} artifact review subject scope from Markdown ` +
-        'without ATX headings; artifact review findings must anchor to concrete sections.',
-    );
-  }
-  return {
-    kind: 'artifact',
-    artifact: { kind, digest, sectionPaths },
-  };
+  return artifactReviewSubjectScopeFromSections(
+    kind,
+    indexMarkdownSections(markdown).map((section) => section.sectionPath),
+    digest,
+  );
 }
 
 import { ensureReviewAssurance, isOpenReviewObligation } from '../../../state/review-dispatch.js';
