@@ -15,12 +15,19 @@
 export const PLAN_GATE = Object.freeze({
   ACCEPTED: 'reviewer_accepted',
   REVIEW_EXHAUSTED: 'review_exhausted',
+  NOT_SUBMITTED: 'not_submitted',
   SUBMIT_BOUND_VERDICT: 'submit_bound_verdict',
   TRANSPORT_RETRY: 'transport_retry',
   REVISE_PLAN: 'revise_plan',
   STALLED: 'stalled',
   UNREADABLE: 'unreadable',
 });
+
+function hasPlanObligation(state) {
+  const obligations = state?.reviewAssurance?.obligations;
+  if (!Array.isArray(obligations)) return false;
+  return obligations.some((obligation) => obligation?.obligationType === 'plan');
+}
 
 function openPlanObligation(state) {
   const obligations = state?.reviewAssurance?.obligations;
@@ -82,6 +89,20 @@ export function classifyPlanGate(state) {
     !state.selfReview ||
     typeof state.selfReview !== 'object'
   ) {
+    // A completed plan turn that submitted nothing leaves the valid pre-plan
+    // TICKET shape (no plan record, no self-review, no plan obligation). That
+    // is NEVER conflated with a corrupted gate state: it gets its own outcome
+    // so the callers can report the missing model action precisely.
+    if (
+      state &&
+      typeof state === 'object' &&
+      state.phase === 'TICKET' &&
+      state.plan == null &&
+      state.selfReview == null &&
+      !hasPlanObligation(state)
+    ) {
+      return PLAN_GATE.NOT_SUBMITTED;
+    }
     return PLAN_GATE.UNREADABLE;
   }
   if (state.phase !== 'PLAN' && state.phase !== 'PLAN_REVIEW') return PLAN_GATE.UNREADABLE;
@@ -100,6 +121,21 @@ export function classifyPlanGate(state) {
   }
   if (state.phase === 'PLAN') return PLAN_GATE.REVISE_PLAN;
   return PLAN_GATE.UNREADABLE;
+}
+
+/**
+ * Canonical NOT_VERIFIED reason for a plan gate that did not accept. Distinct
+ * causes stay distinct: budget exhaustion, a plan the agent never submitted
+ * and a genuinely unreadable gate state are never conflated.
+ */
+export function planGateNotConvergedReason(gate) {
+  if (gate === PLAN_GATE.REVIEW_EXHAUSTED) {
+    return 'the independent plan review exhausted its budget without acceptance';
+  }
+  if (gate === PLAN_GATE.NOT_SUBMITTED) {
+    return 'the plan was never submitted in this session';
+  }
+  return `the plan gate did not converge to a persisted reviewer_accepted plan (${gate})`;
 }
 
 /**
@@ -158,6 +194,7 @@ export async function convergePlanGate({ runner, session, label, maxContinuation
     if (
       outcome === PLAN_GATE.ACCEPTED ||
       outcome === PLAN_GATE.REVIEW_EXHAUSTED ||
+      outcome === PLAN_GATE.NOT_SUBMITTED ||
       outcome === PLAN_GATE.UNREADABLE
     ) {
       return { outcome, state };

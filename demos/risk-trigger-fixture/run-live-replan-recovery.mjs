@@ -34,7 +34,11 @@ import {
   assertInstalledBuildIdentity,
   assertNoCompletionPackage,
 } from './run-live-risk-trigger-controls.mjs';
-import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
+import {
+  PLAN_GATE,
+  convergePlanGate,
+  planGateNotConvergedReason,
+} from '../lib/review-continuation.mjs';
 import { FLOWGUARD_CLI, FLOWGUARD_PACKAGE, productCli } from '../lib/product-cli.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
@@ -113,10 +117,7 @@ async function planAndApprove(runner, session, prefix, covered, allowOverride) {
     const overridePath =
       allowOverride && gate.outcome === PLAN_GATE.REVIEW_EXHAUSTED && state.phase === 'PLAN_REVIEW';
     if (!overridePath) {
-      const reason =
-        gate.outcome === PLAN_GATE.REVIEW_EXHAUSTED
-          ? 'the independent plan review exhausted its budget without acceptance'
-          : `the plan gate did not converge to a persisted reviewer_accepted plan (${gate.outcome})`;
+      const reason = planGateNotConvergedReason(gate.outcome);
       throw new DemoNotVerifiedError(`${prefix}: ${reason}; the recovery proof is NOT_VERIFIED`);
     }
     if (!exhaustedOverrideSubjectBindable(state)) {
@@ -321,10 +322,7 @@ async function main() {
       label: 'new-03-plan',
     });
     if (newGate.outcome !== PLAN_GATE.ACCEPTED) {
-      const reason =
-        newGate.outcome === PLAN_GATE.REVIEW_EXHAUSTED
-          ? 'the independent plan review exhausted its budget without acceptance'
-          : `the plan gate did not converge to a persisted reviewer_accepted plan (${newGate.outcome})`;
+      const reason = planGateNotConvergedReason(newGate.outcome);
       throw new DemoNotVerifiedError(`new: ${reason}; the recovery proof is NOT_VERIFIED`);
     }
     await runner.approve(newSession, 'new-04-approve-plan', 'PLAN_REVIEW');

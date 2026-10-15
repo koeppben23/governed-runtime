@@ -34,7 +34,11 @@ import {
   DENIAL_BASELINE,
 } from '../java-task-manager/run-live-matrix.mjs';
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
-import { PLAN_GATE, convergePlanGate } from '../lib/review-continuation.mjs';
+import {
+  PLAN_GATE,
+  convergePlanGate,
+  planGateNotConvergedReason,
+} from '../lib/review-continuation.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 
@@ -153,10 +157,7 @@ async function runCase(runner, name, workspace, covered, context) {
     });
     const gate = await convergePlanGate({ runner, session, label: `${name}-03-plan` });
     if (gate.outcome !== PLAN_GATE.ACCEPTED) {
-      const reason =
-        gate.outcome === PLAN_GATE.REVIEW_EXHAUSTED
-          ? 'the independent plan review exhausted its budget without acceptance'
-          : `the plan gate did not converge to a persisted reviewer_accepted plan (${gate.outcome})`;
+      const reason = planGateNotConvergedReason(gate.outcome);
       throw new DemoNotVerifiedError(`${name}: ${reason}; the control proof is NOT_VERIFIED`);
     }
     assertRetainedClaim(runner.requireBoundState(session).state, covered);
