@@ -281,7 +281,10 @@ describe('review/enforcement/findings-consistency', () => {
           reviewSubjectScope: REPOSITORY_SCOPE,
           repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
-      ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY' });
+      ).toMatchObject({
+        code: 'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
+        details: { outOfScopeFindingIndexes: [0] },
+      });
     });
 
     it.each(['/etc/passwd', 'file:///tmp/evidence.ts'])(
@@ -300,7 +303,10 @@ describe('review/enforcement/findings-consistency', () => {
             reviewSubjectScope: REPOSITORY_SCOPE,
             repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
           }),
-        ).toMatchObject({ code: 'REVIEW_EVIDENCE_LOCATION_INVALID' });
+        ).toMatchObject({
+          code: 'REVIEW_EVIDENCE_LOCATION_INVALID',
+          details: { outOfScopeFindingIndexes: [0] },
+        });
       },
     );
 
@@ -311,7 +317,10 @@ describe('review/enforcement/findings-consistency', () => {
           reviewSubjectScope: REPOSITORY_SCOPE,
           repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
-      ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+        details: { outOfScopeFindingIndexes: [0] },
+      });
       expect(
         validateReviewFindingsScope({
           findings: [
@@ -327,7 +336,33 @@ describe('review/enforcement/findings-consistency', () => {
           reviewSubjectScope: REPOSITORY_SCOPE,
           repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
         }),
-      ).toMatchObject({ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' });
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+        details: { outOfScopeFindingIndexes: [0] },
+      });
+    });
+
+    it('reports the positional index of a structurally invalid finding', () => {
+      expect(
+        validateReviewFindingsScope({
+          findings: [
+            { relation: repositoryRelation },
+            {
+              relation: {
+                ...repositoryRelation,
+                subjectAnchors: [
+                  { kind: 'not_an_anchor' },
+                ] as unknown as typeof repositoryRelation.subjectAnchors,
+              },
+            },
+          ],
+          reviewSubjectScope: REPOSITORY_SCOPE,
+          repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+        }),
+      ).toMatchObject({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+        details: { outOfScopeFindingIndexes: [1] },
+      });
     });
 
     it('rejects repository locations at revisions unavailable to the scope', () => {

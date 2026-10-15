@@ -131,4 +131,38 @@ describe('native capture-failure block detail (Run-10 diagnostics)', () => {
     expect(JSON.stringify(detail)).not.toContain('verification');
     expect(JSON.stringify(detail)).not.toContain('dangerous');
   });
+
+  it('interpolates the validated finding positions for anchor and scope failures', () => {
+    for (const code of [
+      'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+    ]) {
+      const block = JSON.parse(
+        strictBlockedOutput(
+          code,
+          captureFailureBlockDetail({
+            obligationId: OBLIGATION_ID,
+            reason: 'capture contract failure',
+            diagnostics: [{ code, data: { findingIndex: '0, 2' } }],
+          }),
+        ),
+      ) as { message: string; detail: Record<string, string> };
+
+      expect(block.detail.findingIndex, code).toBe('0, 2');
+      expect(block.message, code).toContain('0, 2');
+      expect(block.message, code).not.toContain('{findingIndex}');
+    }
+  });
+
+  it('never promotes an unvalidated finding position', () => {
+    const detail = captureFailureBlockDetail({
+      obligationId: OBLIGATION_ID,
+      reason: 'capture contract failure',
+      diagnostics: [
+        { code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE', data: { findingIndex: '0; rm' } },
+      ],
+    });
+
+    expect(detail.findingIndex).toBeUndefined();
+  });
 });

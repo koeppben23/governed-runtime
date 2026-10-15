@@ -144,6 +144,76 @@ describe('retry diagnostic DTOs', () => {
     ).toEqual([{ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE' }]);
   });
 
+  it('transports validator-derived finding positions for scope and anchor failures', () => {
+    for (const code of [
+      'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+      'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
+      'REVIEW_EVIDENCE_LOCATION_INVALID',
+      'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+    ]) {
+      expect(
+        buildCaptureFailureDiagnostics(code, {
+          obligationId: 'obligation-1',
+          findingIndex: '0, 2',
+        }),
+        code,
+      ).toEqual([{ code, data: { findingIndex: '0, 2' } }]);
+    }
+  });
+
+  it('normalizes transported finding positions to valid non-negative integers only', () => {
+    expect(
+      buildCaptureFailureDiagnostics('REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE', {
+        findingIndex: ' 1 , 02 , x, -1, 3.5, 1e3, ',
+      }),
+    ).toEqual([
+      { code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE', data: { findingIndex: '1, 2' } },
+    ]);
+  });
+
+  it('degrades absent or malformed finding positions to the code-only diagnostic', () => {
+    for (const details of [
+      {},
+      { findingIndex: '' },
+      { findingIndex: 'not-a-position' },
+      { findingIndex: '-1' },
+      { findingIndex: 1 },
+    ]) {
+      expect(
+        buildCaptureFailureDiagnostics('REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED', details),
+        JSON.stringify(details),
+      ).toEqual([{ code: 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED' }]);
+    }
+  });
+
+  it('bounds the transported finding positions', () => {
+    const csv = Array.from({ length: 12 }, (_unused, index) => String(index)).join(', ');
+    const data = buildCaptureFailureDiagnostics('REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE', {
+      findingIndex: csv,
+    })[0]?.data;
+    expect(data?.findingIndex).toBe('0, 1, 2, 3, 4, 5, 6, 7');
+  });
+
+  it('embeds finding positions in the retry output for the next reviewer attempt', () => {
+    const output = JSON.parse(
+      buildReviewerCaptureRetryOutput({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+        obligationId: 'obligation-1',
+        attemptId: 'attempt-2',
+        diagnostics: [
+          {
+            code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+            data: { findingIndex: '0, 2' },
+          },
+        ],
+      }),
+    ) as { reviewRetry?: { diagnostics?: readonly unknown[] } };
+    expect(output.reviewRetry?.diagnostics).toEqual([
+      { code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE', data: { findingIndex: '0, 2' } },
+    ]);
+  });
+
   it('bounds diagnostic count and untrusted scalar length centrally', () => {
     const longPath = `docs/${'x'.repeat(MAX_RETRY_SCALAR_CHARS + 50)}.md`;
     const failures: EvidenceLocationFailure[] = Array.from(

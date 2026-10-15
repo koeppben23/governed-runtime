@@ -44,6 +44,7 @@ export type ReviewFindingsScopeResult =
       readonly ok: false;
       readonly code: ReviewFindingsScopeFailureCode;
       readonly details: {
+        /** Findings that failed scope validation: out-of-scope anchors or structurally invalid relations. */
         readonly outOfScopeFindingIndexes: readonly number[];
         readonly reviewSubjectScope: ReviewSubjectScopeValue | undefined;
       };
@@ -238,7 +239,7 @@ function classifyFindingScope(
       result: {
         ok: false,
         code: relationFailureCode(relationCandidate),
-        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: parsedScope?.data },
+        details: { outOfScopeFindingIndexes: [index], reviewSubjectScope: parsedScope?.data },
       },
     };
   }
