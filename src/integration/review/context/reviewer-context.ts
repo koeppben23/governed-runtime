@@ -8,6 +8,7 @@ import type { PlanClaimDeclarations } from '../../../state/proofgraph-approval.j
 import type { MarkdownSectionPath } from '../../../state/evidence-findings.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { indexMarkdownSections } from '../../../shared/markdown-sections.js';
+import { IntegrationInvariantError } from '../../errors.js';
 import { stateVerificationEvidence } from '../shared-helpers.js';
 
 /**
@@ -84,25 +85,49 @@ export function buildFrozenArtifactReviewMaterial(
       .join('\n')
       .split('\n').length;
     const claimsEndLine = claimsStartLine + claims.join('\n').split('\n').length;
-    const subjectSectionPaths = indexMarkdownSections(content)
+    const materialSections = indexMarkdownSections(content);
+    const artifactSectionPaths = materialSections
       .filter(
         (section_) =>
-          (section_.lineIndex >= artifactStartLine && section_.lineIndex < artifactEndLine) ||
-          (section_.lineIndex >= claimsStartLine && section_.lineIndex < claimsEndLine),
+          section_.lineIndex >= artifactStartLine && section_.lineIndex < artifactEndLine,
       )
       .map((section_) => section_.sectionPath);
-    return { content, subjectSectionPaths };
+    // Fail closed: the claims section is appended by the host and must never
+    // substitute for a plan artifact without its own anchorable sections.
+    if (artifactSectionPaths.length === 0) {
+      throw new IntegrationInvariantError(
+        'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
+        'FAIL_CLOSED: cannot review a plan artifact without ATX headings; artifact ' +
+          'review findings must anchor to concrete plan sections.',
+      );
+    }
+    const claimsSectionPaths = materialSections
+      .filter(
+        (section_) => section_.lineIndex >= claimsStartLine && section_.lineIndex < claimsEndLine,
+      )
+      .map((section_) => section_.sectionPath);
+    return {
+      content,
+      subjectSectionPaths: [...artifactSectionPaths, ...claimsSectionPaths],
+    };
   }
   const wrapperHeading = '## Architecture Decision Artifact';
   const content = [...ticket, wrapperHeading, '', input.artifact, ''].join('\n');
   const artifactStartLine = [...ticket, wrapperHeading, ''].join('\n').split('\n').length;
   const artifactEndLine = artifactStartLine + input.artifact.split('\n').length;
-  const subjectSectionPaths = indexMarkdownSections(content)
+  const artifactSectionPaths = indexMarkdownSections(content)
     .filter(
       (section_) => section_.lineIndex >= artifactStartLine && section_.lineIndex < artifactEndLine,
     )
     .map((section_) => section_.sectionPath);
-  return { content, subjectSectionPaths };
+  if (artifactSectionPaths.length === 0) {
+    throw new IntegrationInvariantError(
+      'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
+      'FAIL_CLOSED: cannot review an ADR artifact without ATX headings; artifact ' +
+        'review findings must anchor to concrete sections.',
+    );
+  }
+  return { content, subjectSectionPaths: artifactSectionPaths };
 }
 
 /**

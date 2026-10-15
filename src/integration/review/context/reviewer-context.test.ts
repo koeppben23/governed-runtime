@@ -81,7 +81,7 @@ describe('buildFrozenReviewMaterialContent', () => {
       obligationType: 'plan',
       renderPlanClaimDeclarations,
       state: makeState('PLAN_REVIEW'),
-      artifact: 'the plan',
+      artifact: '# Plan\n\nBody.',
     });
 
     expect(content).not.toContain('Verification Evidence (host-executed)');
@@ -113,6 +113,42 @@ describe('buildFrozenArtifactReviewMaterial', () => {
     expect(headings).toContain('Plan Claim Declarations Under Review');
     expect(headings).not.toContain('Ticket Under Review (originating request)');
     expect(headings).not.toContain('Plan Artifact');
+    expect(parts.subjectSectionPaths.at(0)?.at(-1)?.headingText).toBe('Implementation Plan');
+    expect(parts.subjectSectionPaths.at(-1)?.at(-1)?.headingText).toBe(
+      'Plan Claim Declarations Under Review',
+    );
+  });
+
+  it('fails closed for a plan artifact without ATX headings even though claims are appended', () => {
+    let failure: { code?: string; message?: string } | null = null;
+    try {
+      buildFrozenArtifactReviewMaterial({
+        obligationType: 'plan',
+        state: makeState('PLAN_REVIEW'),
+        artifact: 'No headings at all.',
+        renderPlanClaimDeclarations,
+      });
+    } catch (error) {
+      failure = error as { code?: string; message?: string };
+    }
+    expect(failure?.code).toBe('REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING');
+    expect(failure?.message).toContain('FAIL_CLOSED');
+  });
+
+  it('fails closed for an ADR artifact without ATX headings', () => {
+    let failure: { code?: string; message?: string } | null = null;
+    try {
+      buildFrozenArtifactReviewMaterial({
+        obligationType: 'architecture',
+        state: makeState('ARCHITECTURE'),
+        artifact: 'plain text only',
+        renderPlanClaimDeclarations,
+      });
+    } catch (error) {
+      failure = error as { code?: string; message?: string };
+    }
+    expect(failure?.code).toBe('REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING');
+    expect(failure?.message).toContain('FAIL_CLOSED');
   });
 
   it('indexes the frozen anchor whitelist from the same sections the material carries', () => {
