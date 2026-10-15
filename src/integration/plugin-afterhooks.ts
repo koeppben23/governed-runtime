@@ -39,10 +39,17 @@ import {
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import {
   cleanupSessionRuntime,
+  consumeToolLatency,
   getToolTraceId,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
-import { FLOWGUARD_TOOL_PREFIX, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import {
+  FLOWGUARD_TOOL_PREFIX,
+  isFlowGuardToolName,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_STATUS,
+} from './tool-names.js';
+import { statusProjectionKind } from './status/status-detail-projections.js';
 import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-validation.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
@@ -60,12 +67,15 @@ export async function toolAfter(
     const toolName = hookInput?.tool ?? '';
     // Stryker disable next-line OptionalChaining
     const sessionId = hookInput?.sessionID ?? 'unknown';
+    // Measured at after-hook entry, before any further after-hook processing.
+    const latencyFields = toolLatencyLogFields(runtime, toolName, input, hookOutput);
     const traceId = getToolTraceId(runtime, input, 'after');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       const now = new Date().toISOString();
       // Stryker disable next-line ObjectLiteral
       runtime.log.info('hook', 'tool.execute.after', {
         tool: toolName,
+        ...latencyFields,
       });
       const afterCtx: AfterHookContext = {
         toolName,
@@ -89,6 +99,58 @@ export async function toolAfter(
   });
 }
 
+/**
+ * Diagnostic outcome of the tool result as it reached the after-hook, i.e.
+ * BEFORE the remaining after-hook processing (diagnostics, audit
+ * reconciliation, enforcement), which may still block or fail. Only FlowGuard
+ * tools carry the FlowGuard result contract; every other or unreadable result
+ * is `unknown` and never evidence of a successful execution.
+ */
+type HostToolOutcomeFields =
+  | { readonly hostToolOutcome: 'flowguard_blocked'; readonly hostToolCode: string }
+  | { readonly hostToolOutcome: 'flowguard_returned' | 'unknown' };
+
+function classifyHostToolOutcome(toolName: string, rawOutput: unknown): HostToolOutcomeFields {
+  if (!isFlowGuardToolName(toolName)) return { hostToolOutcome: 'unknown' };
+  const parsed = parseToolResult(rawOutput);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { hostToolOutcome: 'unknown' };
+  }
+  if (parsed.error === true && typeof parsed.code === 'string' && parsed.code.length > 0) {
+    return { hostToolOutcome: 'flowguard_blocked', hostToolCode: parsed.code };
+  }
+  return { hostToolOutcome: 'flowguard_returned' };
+}
+
+/**
+ * Diagnostic-only latency fields for the existing `tool.execute.after` line:
+ * `callId`, `beforeToAfterMs` or `durationUnavailable`, `hostToolOutcome`
+ * (+ `hostToolCode`), and `statusProjection` for `flowguard_status`. Reads the
+ * hook input/output without mutating them; any failure yields fewer fields,
+ * never a changed hook result.
+ */
+function toolLatencyLogFields(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  input: unknown,
+  hookOutput: ToolHookAfterOutput | undefined,
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  try {
+    Object.assign(fields, consumeToolLatency(runtime, input));
+    const hookInput = input as Partial<ToolHookAfterInput> | undefined;
+    if (typeof hookInput?.callID === 'string' && hookInput.callID.length > 0) {
+      fields.callId = hookInput.callID;
+    }
+    Object.assign(fields, classifyHostToolOutcome(toolName, hookOutput?.output));
+    if (toolName === TOOL_FLOWGUARD_STATUS) {
+      fields.statusProjection = statusProjectionKind(hookInput?.args);
+    }
+  } catch {
+    if (fields.hostToolOutcome === undefined) fields.hostToolOutcome = 'unknown';
+  }
+  return fields;
+}
 interface AfterHookContext {
   readonly toolName: string;
   readonly sessionId: string;

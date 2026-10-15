@@ -11,12 +11,17 @@
  * requires (or accept findings consumption later rejects).
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import { makeState } from '../../../fixtures.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../../state/evidence-test-constants.js';
-import { validateCapturedFindings } from './native-task-review-bindings.js';
+import {
+  capturePreparedFindings,
+  validateCapturedFindings,
+  type NativeReviewRuntimePort,
+} from './native-task-review-bindings.js';
+import { _resetAgentResolutionCache } from './agent-resolution.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import {
   createReviewObligation,
@@ -335,5 +340,69 @@ describe('native capture — implementation challenge repair loop (#1081/#747)',
     };
     const result = validateCapturedFindings(state, planObligation, prepared);
     expect(result.kind).toBe('valid');
+  });
+});
+
+describe('native capture - structured follow-up timing diagnostics', () => {
+  const ALLOWED_FIELDS = new Set([
+    'obligationId',
+    'childSessionId',
+    'followupPromptMs',
+    'promptOutcome',
+    'followupPromptMsUnavailable',
+  ]);
+
+  afterEach(() => {
+    _resetAgentResolutionCache();
+  });
+
+  function runtimeWith(info: (...args: unknown[]) => void): NativeReviewRuntimePort {
+    return {
+      orchestratorDeps: {
+        client: {
+          app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
+          session: { prompt: vi.fn(async () => ({ data: { info: {} } })) },
+        },
+      },
+      log: { info, warn: vi.fn() },
+      logError: vi.fn(),
+    } as unknown as NativeReviewRuntimePort;
+  }
+
+  const obligation = { obligationId: OBLIGATION_ID } as unknown as ReviewObligation;
+
+  it('logs one allowlisted timing line per follow-up, without content', async () => {
+    const info = vi.fn();
+    await capturePreparedFindings(runtimeWith(info), obligation, 'ses_child_1');
+    const timingCalls = info.mock.calls.filter(
+      ([, message]) => message === 'review structured followup timing',
+    );
+    expect(timingCalls).toHaveLength(1);
+    const fields = timingCalls[0]?.[2] as Record<string, unknown>;
+    for (const key of Object.keys(fields)) expect(ALLOWED_FIELDS.has(key), key).toBe(true);
+    expect(fields).toMatchObject({
+      obligationId: OBLIGATION_ID,
+      childSessionId: 'ses_child_1',
+      promptOutcome: 'responded',
+    });
+  });
+
+  it('a throwing logger never changes the capture result', async () => {
+    const throwing = vi.fn(() => {
+      throw new Error('log sink failure');
+    });
+    const observed = await capturePreparedFindings(
+      runtimeWith(throwing),
+      obligation,
+      'ses_child_1',
+    );
+    _resetAgentResolutionCache();
+    const reference = await capturePreparedFindings(
+      runtimeWith(vi.fn()),
+      obligation,
+      'ses_child_1',
+    );
+    expect(observed).toEqual(reference);
+    expect(throwing).toHaveBeenCalled();
   });
 });

@@ -15,6 +15,7 @@ import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput 
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 import {
   getToolTraceId,
+  recordToolLatencyStart,
   type ActiveCommandScope,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
@@ -113,6 +114,9 @@ export async function toolBefore(
         }
         throw err;
       }
+      // Diagnostic only: the last statement of a fully passed before-hook, so
+      // a blocked call never leaves a latency start behind.
+      recordToolLatencyStart(runtime, input);
     });
   });
 }

@@ -164,6 +164,25 @@ const actorMock = await import('../adapters/actor.js');
 const discoveryPersistenceMock = await import('../adapters/persistence-discovery.js');
 const executorMock = await import('../verification/executor.js');
 
+// Runtime readiness (toolchain probes) is spied, never replaced: the full status
+// keeps its real behavior while focused projections must not reach it.
+const runtimeProjectionOriginal = vi.hoisted(() => ({
+  resolveRuntimeWithProfileIds:
+    null as unknown as (typeof import('./tools/status/status-provider-projection.js'))['resolveRuntimeWithProfileIds'],
+}));
+
+vi.mock('./tools/status/status-provider-projection.js', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('./tools/status/status-provider-projection.js')>();
+  runtimeProjectionOriginal.resolveRuntimeWithProfileIds = original.resolveRuntimeWithProfileIds;
+  return {
+    ...original,
+    resolveRuntimeWithProfileIds: vi.fn(original.resolveRuntimeWithProfileIds),
+  };
+});
+
+const runtimeProjectionMock = await import('./tools/status/status-provider-projection.js');
+
 // ─── Test Setup ──────────────────────────────────────────────────────────────
 
 let ws: TestWorkspace;
@@ -198,6 +217,9 @@ afterEach(async () => {
   vi.mocked(executorMock.executeCheck)
     .mockReset()
     .mockImplementation(executorOriginal.executeCheck);
+  vi.mocked(runtimeProjectionMock.resolveRuntimeWithProfileIds)
+    .mockReset()
+    .mockImplementation(runtimeProjectionOriginal.resolveRuntimeWithProfileIds);
   cleanupEnv();
   vi.clearAllMocks();
   await ws.cleanup();
@@ -587,6 +609,34 @@ describe('status', () => {
       expect(focusedEvidence.implementationGuidance).toBeUndefined();
       expect(focusedEvidence.discoveryDrift).toBeUndefined();
       expect(focusedEvidence.detectedStack).toBeUndefined();
+    });
+  });
+
+  describe('runtime toolchain probes run only for the full status', () => {
+    const FOCUSED_FLAGS = [
+      'finish',
+      'whyBlocked',
+      'evidence',
+      'context',
+      'readiness',
+      'reviewFeedback',
+      'proofGraph',
+    ] as const;
+
+    it.each(FOCUSED_FLAGS)('focused %s projection performs zero runtime probes', async (flag) => {
+      await hydrateSession();
+      vi.mocked(runtimeProjectionMock.resolveRuntimeWithProfileIds).mockClear();
+      const result = parseToolResult(await status.execute({ [flag]: true }, ctx));
+      expect(result.error ?? null).toBeNull();
+      expect(runtimeProjectionMock.resolveRuntimeWithProfileIds).not.toHaveBeenCalled();
+    });
+
+    it('the full status resolves runtime readiness exactly once', async () => {
+      await hydrateSession();
+      vi.mocked(runtimeProjectionMock.resolveRuntimeWithProfileIds).mockClear();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.error ?? null).toBeNull();
+      expect(runtimeProjectionMock.resolveRuntimeWithProfileIds).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -5,10 +5,12 @@
  * Returns phase, evidence summary, policy info, completeness matrix,
  * and next action. Does NOT mutate state.
  *
- * Supports focused projections via optional boolean flags:
- * whyBlocked, evidence, context, readiness, reviewFeedback.
+ * Supports focused projections via optional boolean flags (first match wins,
+ * see {@link statusProjectionKind}): finish, whyBlocked, evidence, context,
+ * readiness, reviewFeedback, proofGraph. Focused projections never run the
+ * runtime toolchain probes; only the full status does.
  *
- * @version v2 (extracted projection dispatch and full status builder)
+ * @version v3 (single projection-kind authority; probes only for full status)
  */
 
 import { z } from 'zod';
@@ -60,6 +62,7 @@ import {
   buildContextProjection,
   buildReadinessProjection,
   buildReviewFeedbackProjection,
+  statusProjectionKind,
 } from '../../status/status-detail-projections.js';
 import { buildFinishCard } from '../../status/status-finish.js';
 import {
@@ -232,82 +235,71 @@ function buildReviewFeedbackProjectionResponse(
   );
 }
 
+function focusedResponse(
+  state: SessionState,
+  projection: Record<string, unknown>,
+  checkFields: Record<string, unknown>,
+): string {
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      { phase: state.phase, sessionId: state.id, ...projection, ...checkFields },
+      state,
+    ),
+  );
+}
+
+function buildWhyBlockedProjectionResponse(
+  input: ResolveProjectionInput,
+  checkFields: Record<string, unknown>,
+): string {
+  const { state, policy, presentation } = input;
+  const blocked = buildBlockedProjection(state, policy);
+  const whyPres = buildWhyPresentationProjection(state, policy, blocked);
+  const whyDoc = buildWhyDocument(whyPres);
+  emitDetailRequested(state);
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        phase: state.phase,
+        sessionId: state.id,
+        whyBlocked: blocked,
+        ...checkFields,
+        presentation: { markdown: renderMarkdown(whyDoc, presentation) },
+      },
+      state,
+    ),
+  );
+}
+
 async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
-  const { args, state, policy, presentation } = input;
+  const kind = statusProjectionKind(input.args);
+  if (kind === 'full') return null;
+  const { state, policy } = input;
   const checkFields = buildCheckProjectionFields(state, policy);
-  // /finish is the most comprehensive focused projection and is placed first so
-  // its own template call is never shadowed by a stray additional flag. This
-  // preserves the existing first-match dispatch semantics for all other flags.
-  if (args.finish) {
-    return await buildFinishProjectionResponse(input, checkFields);
-  }
-  if (args.whyBlocked) {
-    const blocked = buildBlockedProjection(state, policy);
-    const whyPres = buildWhyPresentationProjection(state, policy, blocked);
-    const whyDoc = buildWhyDocument(whyPres);
-    emitDetailRequested(state);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          whyBlocked: blocked,
-          ...checkFields,
-          presentation: { markdown: renderMarkdown(whyDoc, presentation) },
-        },
+  switch (kind) {
+    case 'finish':
+      return await buildFinishProjectionResponse(input, checkFields);
+    case 'whyBlocked':
+      return buildWhyBlockedProjectionResponse(input, checkFields);
+    case 'evidence':
+      return focusedResponse(
         state,
-      ),
-    );
-  }
-  if (args.evidence) {
-    const evidenceDetail = buildEvidenceDetailProjection(state);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          evidence: evidenceDetail,
-          ...checkFields,
-        },
+        { evidence: buildEvidenceDetailProjection(state) },
+        checkFields,
+      );
+    case 'context':
+      return focusedResponse(state, { context: buildContextProjection(state) }, checkFields);
+    case 'readiness':
+      return focusedResponse(
         state,
-      ),
-    );
+        { readiness: buildReadinessProjection(state, policy) },
+        checkFields,
+      );
+    case 'reviewFeedback':
+      return buildReviewFeedbackProjectionResponse(state, checkFields);
+    case 'proofGraph':
+      return await buildProofGraphProjectionResponse(state, policy, checkFields);
   }
-  if (args.context) {
-    const contextDetail = buildContextProjection(state);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          context: contextDetail,
-          ...checkFields,
-        },
-        state,
-      ),
-    );
-  }
-  if (args.readiness) {
-    const readinessDetail = buildReadinessProjection(state, policy);
-    return JSON.stringify(
-      enrichWithWorkflowDirective(
-        {
-          phase: state.phase,
-          sessionId: state.id,
-          readiness: readinessDetail,
-          ...checkFields,
-        },
-        state,
-      ),
-    );
-  }
-  if (args.reviewFeedback) {
-    return buildReviewFeedbackProjectionResponse(state, checkFields);
-  }
-  if (args.proofGraph) {
-    return await buildProofGraphProjectionResponse(state, policy, checkFields);
-  }
-  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -386,9 +378,8 @@ export const status: ToolDefinition = {
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;
 
-      // Resolve runtime readiness via toolchain probes — planner for profile IDs
-      const runtimeCandidates = await resolveRuntimeWithProfileIds(state);
-
+      // Focused projections never need runtime readiness: they return before
+      // any toolchain probe runs.
       const projection = await resolveProjection({
         args,
         state,
@@ -398,6 +389,9 @@ export const status: ToolDefinition = {
       });
       if (projection !== null) return projection;
 
+      // Full status only: resolve runtime readiness via toolchain probes
+      // (planner for profile IDs).
+      const runtimeCandidates = await resolveRuntimeWithProfileIds(state);
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
       const discoveryDrift = await buildDiscoveryDriftStatus({
         workspaceDir: wsDir,

@@ -4,8 +4,9 @@
  *              reviewer Task in the SAME visible child session.
  *
  * The native OpenCode Task transport owns execution visibility, child-session
- * identity, navigation, and permission isolation. OpenCode 1.18.30 does not
- * expose json_schema format on Task itself, so FlowGuard performs a second
+ * identity, navigation, and permission isolation. The host's Task transport
+ * does not return schema-validated structured output (pinned host baseline:
+ * `.sdk-baselines/opencode/host-version.json`), so FlowGuard performs a second
  * prompt in that exact child session whose sole purpose is serialization.
  *
  * The Task text is never findings authority. Only `info.structured` from this
@@ -145,23 +146,61 @@ function parseStructuredFindings(response: PromptResponse): ParsedFollowup {
   return { kind: 'ok', findings: { ...parsed.data } };
 }
 
+/**
+ * Diagnostic timing of the structured follow-up host prompt only (agent
+ * resolution, validation, and binding are excluded). A prompt that was never
+ * invoked has no duration; a missing measurement is never reported as 0.
+ */
+export type StructuredFollowupTiming =
+  | { readonly followupPromptMs: number; readonly promptOutcome: 'responded' | 'threw' }
+  | { readonly followupPromptMsUnavailable: 'not_invoked' };
+
+export type StructuredFollowupTimingObserver = (timing: StructuredFollowupTiming) => void;
+
+/** Diagnostics never change the follow-up result or its failure path. */
+function reportTiming(
+  observe: StructuredFollowupTimingObserver | undefined,
+  timing: StructuredFollowupTiming,
+): void {
+  try {
+    observe?.(timing);
+  } catch {
+    // A failing diagnostic observer must not alter reviewer evidence handling.
+  }
+}
+
 /** Serialize findings from an existing visible reviewer child. Never creates a child. */
 export async function captureStructuredFindingsFromVisibleChild(
   client: OrchestratorClient,
   input: { readonly childSessionId: string; readonly obligationId: string },
+  observeTiming?: StructuredFollowupTimingObserver,
 ): Promise<StructuredFollowupResult> {
   const agent = await resolveAgent(client);
-  if (typeof agent !== 'string') return agent;
+  if (typeof agent !== 'string') {
+    reportTiming(observeTiming, { followupPromptMsUnavailable: 'not_invoked' });
+    return agent;
+  }
 
   const invokedAt = new Date().toISOString();
-  const response = await client.session.prompt({
-    path: { id: input.childSessionId },
-    body: {
-      agent,
-      parts: [{ type: 'text', text: serializationPrompt(input.obligationId) }],
-      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
-    },
-  });
+  const promptStartedAt = performance.now();
+  let promptOutcome: 'responded' | 'threw' = 'threw';
+  let response: Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
+  try {
+    response = await client.session.prompt({
+      path: { id: input.childSessionId },
+      body: {
+        agent,
+        parts: [{ type: 'text', text: serializationPrompt(input.obligationId) }],
+        format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
+      },
+    });
+    promptOutcome = 'responded';
+  } finally {
+    reportTiming(observeTiming, {
+      followupPromptMs: Number((performance.now() - promptStartedAt).toFixed(3)),
+      promptOutcome,
+    });
+  }
 
   const failure = responseFailure(response);
   if (failure) return failure;

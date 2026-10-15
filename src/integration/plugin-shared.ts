@@ -24,6 +24,10 @@ type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
 
 const TRACE_REGISTRY_LIMIT = 1000;
+/** Upper bound for in-flight latency starts; the oldest start is evicted first. */
+const LATENCY_REGISTRY_LIMIT = 1000;
+/** Separator that cannot occur in a host session id or call id. */
+const LATENCY_KEY_SEPARATOR = '\u0000';
 
 /** Limits tool use until the host observes the next explicit user command. */
 export type ActiveCommandScope = 'check';
@@ -45,6 +49,11 @@ export interface FlowGuardPluginRuntime {
   readonly orchestratorDeps: OrchestratorDeps;
   readonly auditDeps: AuditDeps;
   readonly toolTraceIds: Map<string, string>;
+  /**
+   * Diagnostic-only tool latency starts keyed by session and call id (see
+   * {@link recordToolLatencyStart}). Never consulted by enforcement.
+   */
+  readonly toolLatencyStarts: Map<string, number>;
   readonly activeCommandScopes: Map<string, ActiveCommandScope>;
   readonly checkReworkContinuations: Set<string>;
   readonly logError: (message: string, err: unknown) => void;
@@ -55,7 +64,8 @@ export interface FlowGuardPluginRuntime {
  *
  * Single cleanup authority for host session termination: persists nothing,
  * drops enforcement/chain state plus the in-memory maps held by the plugin
- * runtime (command scopes, rework continuations, tool trace correlation).
+ * runtime (command scopes, rework continuations, tool trace correlation,
+ * tool latency starts).
  */
 export function cleanupSessionRuntime(runtime: FlowGuardPluginRuntime, sessionId: string): void {
   runtime.ws.invalidateChainState(sessionId);
@@ -64,6 +74,10 @@ export function cleanupSessionRuntime(runtime: FlowGuardPluginRuntime, sessionId
   const traceKeyPrefix = `${sessionId}:`;
   for (const key of runtime.toolTraceIds.keys()) {
     if (key.startsWith(traceKeyPrefix)) runtime.toolTraceIds.delete(key);
+  }
+  const latencyKeyPrefix = `${sessionId}${LATENCY_KEY_SEPARATOR}`;
+  for (const key of runtime.toolLatencyStarts.keys()) {
+    if (key.startsWith(latencyKeyPrefix)) runtime.toolLatencyStarts.delete(key);
   }
 }
 
@@ -103,4 +117,74 @@ export function getToolTraceId(
   if (runtime.toolTraceIds.size >= TRACE_REGISTRY_LIMIT) runtime.toolTraceIds.clear();
   runtime.toolTraceIds.set(key, traceId);
   return traceId;
+}
+
+// ─── Diagnostic tool latency (never enforcement) ─────────────────────────────
+
+/** Why a tool latency could not be measured. A missing measurement is never 0. */
+type ToolLatencyUnavailable = 'call_id_missing' | 'session_id_missing' | 'start_not_observed';
+
+export type ToolLatencyObservation =
+  { readonly beforeToAfterMs: number } | { readonly durationUnavailable: ToolLatencyUnavailable };
+
+/**
+ * Correlation key: exactly one host call in exactly one session. Without a
+ * call id there is NO key - concurrent calls of the same tool in one session
+ * must never be attributed to each other.
+ */
+function toolLatencyKey(input: unknown): string | ToolLatencyUnavailable {
+  const hookInput = isRecord(input) ? (input as Partial<ToolHookBeforeInput>) : {};
+  if (typeof hookInput.callID !== 'string' || hookInput.callID.length === 0) {
+    return 'call_id_missing';
+  }
+  if (typeof hookInput.sessionID !== 'string' || hookInput.sessionID.length === 0) {
+    return 'session_id_missing';
+  }
+  return `${hookInput.sessionID}${LATENCY_KEY_SEPARATOR}${hookInput.callID}`;
+}
+
+function isLatencyKey(key: string | ToolLatencyUnavailable): boolean {
+  return key.includes(LATENCY_KEY_SEPARATOR);
+}
+
+/**
+ * Record the end of a successfully completed FlowGuard before-hook. Callers
+ * invoke this only after every before-hook rule passed, so a blocked call never
+ * leaves a start behind. Diagnostics never change hook behavior: any failure
+ * here is swallowed.
+ */
+export function recordToolLatencyStart(runtime: FlowGuardPluginRuntime, input: unknown): void {
+  try {
+    const key = toolLatencyKey(input);
+    if (!isLatencyKey(key)) return;
+    runtime.toolLatencyStarts.delete(key);
+    if (runtime.toolLatencyStarts.size >= LATENCY_REGISTRY_LIMIT) {
+      const oldest = runtime.toolLatencyStarts.keys().next();
+      if (oldest.done !== true) runtime.toolLatencyStarts.delete(oldest.value);
+    }
+    runtime.toolLatencyStarts.set(key, performance.now());
+  } catch {
+    // Diagnostic-only: a failed latency start must never affect the tool call.
+  }
+}
+
+/**
+ * Consume the latency start for this exact call: the elapsed time from the end
+ * of the FlowGuard before-hook to the entry of the after-hook (host execution
+ * plus host overhead, NOT pure tool time). An absent start is reported as
+ * unavailable, never as a zero duration.
+ */
+export function consumeToolLatency(
+  runtime: FlowGuardPluginRuntime,
+  input: unknown,
+): ToolLatencyObservation {
+  const key = toolLatencyKey(input);
+  if (!isLatencyKey(key)) return { durationUnavailable: key as ToolLatencyUnavailable };
+  const start = runtime.toolLatencyStarts.get(key);
+  runtime.toolLatencyStarts.delete(key);
+  if (start === undefined) return { durationUnavailable: 'start_not_observed' };
+  const elapsed = performance.now() - start;
+  return Number.isFinite(elapsed) && elapsed >= 0
+    ? { beforeToAfterMs: Number(elapsed.toFixed(3)) }
+    : { durationUnavailable: 'start_not_observed' };
 }
