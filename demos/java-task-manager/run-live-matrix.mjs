@@ -70,6 +70,7 @@ import {
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 import { expectRecovery, readAuditEvents, recoveryPersisted } from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
+import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
 
 export {
   assertExpectedDenial,
@@ -372,6 +373,17 @@ export function planReviewCorrectionProven(state) {
     selfReview.verdict === 'accept' &&
     iterationConsistent
   );
+}
+
+/**
+ * Terminal decision for a tracked same-turn `PLAN_REVIEW_IN_PROGRESS`
+ * correction at the next expected PLAN_REVIEW step. A governed review
+ * exhaustion is a NOT_VERIFIED outcome (never a raw harness crash); proven
+ * acceptance continues; an unreadable or still-open gate stays blocked.
+ */
+export function planCorrectionGateDecision(state) {
+  if (classifyPlanGate(state) === PLAN_GATE.REVIEW_EXHAUSTED) return 'review_exhausted';
+  return planReviewCorrectionProven(state) ? 'proven' : 'blocked';
 }
 
 /** Recoverable-family denial: corrected in-session or by the required next step. */
@@ -914,7 +926,14 @@ export class Runner {
       session.pendingReviewRecovery = null;
     }
     if (expectedPhase === 'PLAN_REVIEW' && session.pendingPlanReviewCorrection) {
-      if (!planReviewCorrectionProven(snapshot.state)) {
+      const correctionDecision = planCorrectionGateDecision(snapshot.state);
+      if (correctionDecision === 'review_exhausted') {
+        throw new DemoNotVerifiedError(
+          `${label}: independent plan review exhausted its budget without acceptance ` +
+            `(${PLAN_REVIEW_CORRECTION_CODE} correction tracked); the positive proof is NOT_VERIFIED`,
+        );
+      }
+      if (correctionDecision !== 'proven') {
         throw new Error(
           `${label}: ${PLAN_REVIEW_CORRECTION_CODE} correction did not persist a consistent reviewer_accepted plan; stopping the flow`,
         );

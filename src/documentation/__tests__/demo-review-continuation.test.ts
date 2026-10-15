@@ -15,6 +15,7 @@ import {
   PLAN_GATE,
   boundPlanVerdict,
   classifyPlanGate,
+  planGateNotConvergedReason,
   planGateProgressKey,
 } from '../../../demos/lib/review-continuation.mjs';
 
@@ -210,6 +211,56 @@ describe('demo review continuation classification', () => {
         ],
       });
       expect(planGateProgressKey(afterRearm)).not.toBe(planGateProgressKey(before));
+    });
+  });
+
+  describe('BAD — a plan that was never submitted is a distinct outcome', () => {
+    it('classifies a valid pre-plan TICKET session as not_submitted', () => {
+      expect(
+        classifyPlanGate({
+          phase: 'TICKET',
+          plan: null,
+          selfReview: null,
+          reviewAssurance: { obligations: [] },
+        }),
+      ).toBe(PLAN_GATE.NOT_SUBMITTED);
+    });
+
+    it('keeps corrupted pre-plan shapes unreadable instead of not_submitted', () => {
+      expect(
+        classifyPlanGate({
+          phase: 'TICKET',
+          plan: null,
+          selfReview: null,
+          reviewAssurance: {
+            obligations: [
+              {
+                obligationId: 'ob-7',
+                obligationType: 'plan',
+                status: 'consumed',
+                consumedAt: '2026-10-15T00:00:00.000Z',
+              },
+            ],
+          },
+        }),
+      ).toBe(PLAN_GATE.UNREADABLE);
+      expect(classifyPlanGate({ phase: 'TICKET', plan: {}, selfReview: null })).toBe(
+        PLAN_GATE.UNREADABLE,
+      );
+      expect(classifyPlanGate({ phase: 'PLAN', plan: null, selfReview: null })).toBe(
+        PLAN_GATE.UNREADABLE,
+      );
+    });
+
+    it('never conflates exhaustion, missing submission, and unreadable state', () => {
+      const exhausted = planGateNotConvergedReason(PLAN_GATE.REVIEW_EXHAUSTED);
+      const notSubmitted = planGateNotConvergedReason(PLAN_GATE.NOT_SUBMITTED);
+      const unreadable = planGateNotConvergedReason(PLAN_GATE.UNREADABLE);
+
+      expect(exhausted).toContain('exhausted its budget without acceptance');
+      expect(notSubmitted).toContain('never submitted');
+      expect(unreadable).toContain('(unreadable)');
+      expect(new Set([exhausted, notSubmitted, unreadable]).size).toBe(3);
     });
   });
 });

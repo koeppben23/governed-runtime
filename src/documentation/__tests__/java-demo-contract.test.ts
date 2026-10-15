@@ -19,6 +19,7 @@ import {
   captureRetryCodes,
   planReviewSameTurnCorrection,
   planReviewCorrectionProven,
+  planCorrectionGateDecision,
   structuredRearmSupersedesTerminal,
   assertExpectedDenial,
   assertSessionBinding,
@@ -784,6 +785,31 @@ describe('Java Task Manager demo contract', () => {
         }),
       ).toBe(false);
 
+      // Tracked same-turn correction at the next PLAN_REVIEW step: a governed
+      // exhaustion is NOT_VERIFIED ('review_exhausted'), a proven acceptance
+      // continues ('proven'), and anything else stays a genuine block.
+      expect(
+        planCorrectionGateDecision({
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'review_exhausted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'changes_requested' },
+        }),
+      ).toBe('review_exhausted');
+      expect(
+        planCorrectionGateDecision({
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'reviewer_accepted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'accept' },
+        }),
+      ).toBe('proven');
+      expect(
+        planCorrectionGateDecision({
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'pending' },
+          selfReview: { iteration: 1, maxIterations: 3, verdict: 'changes_requested' },
+        }),
+      ).toBe('blocked');
+
       await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
       const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
       const hostResult = (stdout: string) => async () => ({
@@ -823,14 +849,30 @@ describe('Java Task Manager demo contract', () => {
       runner.requireBoundState = () => ({
         state: {
           phase: 'PLAN_REVIEW',
-          plan: { reviewCompletion: 'review_exhausted' },
-          selfReview: { iteration: 3, maxIterations: 3, verdict: 'changes_requested' },
+          plan: { reviewCompletion: 'pending' },
+          selfReview: { iteration: 1, maxIterations: 3, verdict: 'changes_requested' },
         },
         sessionDir: root,
       });
       await expect(runner.approve(session, 'approve-plan', 'PLAN_REVIEW')).rejects.toThrow(
         /did not persist a consistent reviewer_accepted/,
       );
+      expect(session.recoveredDenials).toEqual([]);
+
+      // ...classifies a tracked correction whose review exhausted its budget as
+      // a governed NOT_VERIFIED outcome instead of a raw harness crash...
+      runner.requireBoundState = () => ({
+        state: {
+          phase: 'PLAN_REVIEW',
+          plan: { reviewCompletion: 'review_exhausted' },
+          selfReview: { iteration: 3, maxIterations: 3, verdict: 'changes_requested' },
+        },
+        sessionDir: root,
+      });
+      await expect(runner.approve(session, 'approve-plan', 'PLAN_REVIEW')).rejects.toThrow(
+        /exhausted its budget without acceptance .*the positive proof is NOT_VERIFIED/,
+      );
+      expect(session.recoveredDenials).toEqual([]);
 
       // ...and admits it only after reviewer_accepted with a consistent iteration.
       runner.requireBoundState = () => ({
