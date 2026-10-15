@@ -432,6 +432,33 @@ Session state + audit chain
 
 > Diagnostic logs are not governance evidence.
 
+### Latency diagnostics
+
+Two `info` log lines carry diagnostic latency. They change no state, audit,
+or enforcement behavior, and they contain identifiers, codes, and numbers only.
+
+`hook` / `tool.execute.after` (the existing after-hook line) adds:
+
+| Field                 | Meaning                                                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `callId`              | Host call id, when the host supplies one.                                                                                                                                                                                       |
+| `beforeToAfterMs`     | End of a fully passed FlowGuard before-hook to entry of the after-hook: host execution plus host overhead, not pure tool time.                                                                                                  |
+| `durationUnavailable` | Instead of a number: `call_id_missing`, `session_id_missing`, or `start_not_observed` (restart, eviction, or no passed before-hook). Never reported as 0.                                                                       |
+| `hostToolOutcome`     | Tool result as it reached the after-hook, BEFORE further after-hook processing: `flowguard_blocked` (with `hostToolCode`), `flowguard_returned`, or `unknown`. Non-FlowGuard host tools (bash, edit, ...) are always `unknown`. |
+| `statusProjection`    | `flowguard_status` only: the selected projection (`finish`, `whyBlocked`, ..., `full`).                                                                                                                                         |
+
+`orchestrator` / `review structured followup timing` (one line per structured
+follow-up) carries `obligationId`, `childSessionId`, and either
+`followupPromptMs` with `promptOutcome` (`responded` or `threw`) or
+`followupPromptMsUnavailable: not_invoked` when no host prompt was sent. It
+times only the host prompt, not agent resolution, validation, or binding.
+
+Limits: the native reviewer Task bypasses the generic tool hooks, so its
+execution is not covered by `beforeToAfterMs`; use the host session export
+for Task and model timings. These lines are absent while the file sink is not
+yet active, when the configured level is above `info`, or when an enabled rate
+limit drops them; absence is not a measurement.
+
 ### Recommended breakpoints
 
 | Boundary                    | Location                                                     |

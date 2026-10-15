@@ -69,6 +69,7 @@ function makeRuntime(
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(null, null),
     toolTraceIds: new Map<string, string>(),
+    toolLatencyStarts: new Map<string, number>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
     logError: vi.fn(),
@@ -218,6 +219,28 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     await expect(
       toolBefore(runtime, { tool: 'read', sessionID: SESSION_ID, callID: 'c1' }, null),
     ).resolves.toBeUndefined();
+  });
+
+  it('records a diagnostic latency start only after the before-hook fully passed', async () => {
+    const runtime = makeRuntime();
+    await toolBefore(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c-ok' },
+      { args: {} },
+    );
+    expect([...runtime.toolLatencyStarts.keys()]).toEqual([`${SESSION_ID}\u0000c-ok`]);
+  });
+
+  it('a blocked before-hook leaves no diagnostic latency start behind', async () => {
+    const runtime = makeRuntime();
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'write', sessionID: SESSION_ID, callID: 'c-blocked' },
+        { args: {} },
+      ),
+    ).rejects.toThrow();
+    expect(runtime.toolLatencyStarts.size).toBe(0);
   });
 
   it('handles a missing callID via the trace fallback registry', async () => {

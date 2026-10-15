@@ -11,7 +11,10 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from '../review/obligations/assurance.js';
 import { hashFindings } from '../review/findings-hash.js';
-import { buildReviewFeedbackProjection } from './status-detail-projections.js';
+import {
+  buildReviewFeedbackProjection,
+  statusProjectionKind,
+} from './status-detail-projections.js';
 
 function feedbackState() {
   const base = makeState('ARCHITECTURE');
@@ -192,5 +195,38 @@ describe('buildReviewFeedbackProjection', () => {
     expect(buildReviewFeedbackProjection(architectureReview)).toBeNull();
     expect(buildReviewFeedbackProjection(staleGeneration)).toBeNull();
     expect(buildReviewFeedbackProjection(planObligation)).toBeNull();
+  });
+});
+
+describe('statusProjectionKind (single projection-dispatch authority)', () => {
+  it('selects the full status without a focused flag', () => {
+    expect(statusProjectionKind({})).toBe('full');
+    expect(statusProjectionKind({ whyBlocked: false, evidence: undefined })).toBe('full');
+  });
+
+  it.each([null, undefined, 'evidence', 42])('treats non-object arguments (%j) as full', (args) => {
+    expect(statusProjectionKind(args)).toBe('full');
+  });
+
+  it.each([
+    'finish',
+    'whyBlocked',
+    'evidence',
+    'context',
+    'readiness',
+    'reviewFeedback',
+    'proofGraph',
+  ] as const)('selects the %s projection for its own flag', (flag) => {
+    expect(statusProjectionKind({ [flag]: true })).toBe(flag);
+  });
+
+  it('keeps first-match precedence when several flags are set', () => {
+    expect(statusProjectionKind({ proofGraph: true, finish: true, whyBlocked: true })).toBe(
+      'finish',
+    );
+    expect(statusProjectionKind({ reviewFeedback: true, evidence: true, whyBlocked: true })).toBe(
+      'whyBlocked',
+    );
+    expect(statusProjectionKind({ proofGraph: true, readiness: true })).toBe('readiness');
   });
 });

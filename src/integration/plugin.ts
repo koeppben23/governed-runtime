@@ -101,6 +101,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient);
   const toolTraceIds = new Map<string, string>();
+  const toolLatencyStarts = new Map<string, number>();
   const activeCommandScopes = new Map<string, ActiveCommandScope>();
   const checkReworkContinuations = new Set<string>();
   const auditDeps = createAuditDeps(
@@ -130,6 +131,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     orchestratorDeps,
     auditDeps,
     toolTraceIds,
+    toolLatencyStarts,
     activeCommandScopes,
     checkReworkContinuations,
     logError,
