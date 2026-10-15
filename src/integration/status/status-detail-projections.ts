@@ -1,6 +1,7 @@
 /**
  * @module integration/status/status-detail-projections
- * @description Per-flag status surfaces: evidence, why-blocked, context, readiness.
+ * @description Per-flag status surfaces: evidence, why-blocked, context, readiness,
+ * and the single projection-kind authority that selects among them.
  *
  * Pure projections of canonical runtime truth; no independent interpretation.
  */
@@ -39,6 +40,35 @@ import type {
   ReviewFeedbackFindingProjection,
   ReviewFeedbackProjection,
 } from './status-types.js';
+
+/**
+ * Focused status projections in first-match dispatch order. `finish` is the
+ * most comprehensive projection and is placed first so its own template call is
+ * never shadowed by a stray additional flag.
+ */
+const FOCUSED_STATUS_PROJECTIONS = [
+  'finish',
+  'whyBlocked',
+  'evidence',
+  'context',
+  'readiness',
+  'reviewFeedback',
+  'proofGraph',
+] as const;
+
+/** Projection a status call resolves to: one focused projection or the full status. */
+export type StatusProjectionKind = (typeof FOCUSED_STATUS_PROJECTIONS)[number] | 'full';
+
+/**
+ * Single authority for which projection a set of status arguments selects.
+ * Used by the projection dispatch itself and by diagnostics, so the two can
+ * never disagree. Non-object arguments select the full status.
+ */
+export function statusProjectionKind(args: unknown): StatusProjectionKind {
+  if (typeof args !== 'object' || args === null) return 'full';
+  const flags = args as Record<string, unknown>;
+  return FOCUSED_STATUS_PROJECTIONS.find((flag) => Boolean(flags[flag])) ?? 'full';
+}
 
 /**
  * Build EvidenceDetailProjection from canonical completeness report.
