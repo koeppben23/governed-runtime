@@ -19,7 +19,10 @@ import { collectPreviouslyUsedChallengeIds } from '../obligations/challenge-hist
 import { projectImplementationChallengeResolutionRequirements } from '../../../state/implementation-review-findings.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
 import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
-import { captureStructuredFindingsFromVisibleChild } from './structured-followup.js';
+import {
+  captureStructuredFindingsFromVisibleChild,
+  type StructuredFollowupTiming,
+} from './structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import type { PendingReviewRetryDiagnostic, ReviewerSuccessResult } from '../types.js';
@@ -142,6 +145,27 @@ export async function persistReviewerObservations(
   );
 }
 
+/**
+ * Diagnostic-only latency line for the structured follow-up host prompt.
+ * Allowlisted identifiers and timing fields only; never content. A logging
+ * failure never changes reviewer evidence handling.
+ */
+function logStructuredFollowupTiming(
+  runtime: NativeReviewRuntimePort,
+  obligationId: string,
+  childSessionId: string,
+  timing: StructuredFollowupTiming,
+): void {
+  try {
+    runtime.log.info('orchestrator', 'review structured followup timing', {
+      obligationId,
+      childSessionId,
+      ...timing,
+    });
+  } catch {
+    // Diagnostics only.
+  }
+}
 export async function capturePreparedFindings(
   runtime: NativeReviewRuntimePort,
   obligation: ReviewObligation,
@@ -162,6 +186,8 @@ export async function capturePreparedFindings(
   const structured = await captureStructuredFindingsFromVisibleChild(
     runtime.orchestratorDeps.client,
     { childSessionId, obligationId: obligation.obligationId },
+    (timing) =>
+      logStructuredFollowupTiming(runtime, obligation.obligationId, childSessionId, timing),
   );
   if (structured.kind === 'blocked') return structured;
   const prepared = prepareReviewerFindingsForValidation({
