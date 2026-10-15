@@ -51,9 +51,9 @@ const SEED = path.join(REPO, 'demos', 'java-task-manager', 'seed');
 const FIXTURE = SCRIPT_DIR;
 const SKIP_ASSERTION_ENV = 'FLOWGUARD_LIVE_SKIP_ASSERTION';
 const INVARIANT = 'The module must reject any write that omits the ownership field.';
-export const POSITIVE_ASSERTION = 'fixture.StateNoteTest#documentsInvariant';
+export const POSITIVE_ASSERTION = 'fixture.StateNoteTest#storesValidOwnership';
 export const ADVERSARIAL_ASSERTION =
-  'fixture.StateNoteFalsificationProbeTest#noRelaxedInvariantIsDocumented';
+  'fixture.StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership';
 
 /** TRUE when the claim declares the detected trigger; FALSE keeps it uncovered. */
 export function claimDeclaration(covered) {

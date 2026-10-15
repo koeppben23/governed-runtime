@@ -144,6 +144,16 @@ describe('risk-trigger control oracles', () => {
     expect(() => assertRetainedClaim(noIdentity, false)).toThrow(/runtime-minted identity/);
   });
 
+  it('keeps both control cases on identical executable checks, differing only by coverage', () => {
+    const uncovered = claimDeclaration(false);
+    const covered = claimDeclaration(true);
+    const { coversRiskTriggers, ...rest } = covered;
+
+    expect(coversRiskTriggers).toEqual(['state_integrity']);
+    expect(rest).toEqual(uncovered);
+    expect(uncovered).not.toHaveProperty('coversRiskTriggers');
+  });
+
   it('requires the same full PROVEN evidence contract before either approval', () => {
     expect(assertFullEvidence(state(true), true).buildAttemptId).toBe('build-attempt');
     expect(assertFullEvidence(state(false), false).testAttemptId).toBe('test-attempt');
