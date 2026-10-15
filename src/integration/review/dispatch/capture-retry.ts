@@ -132,11 +132,53 @@ const MAX_BLOCK_REASON_CHARS = 240;
 const MAX_DIAGNOSTIC_SUMMARY_ENTRIES = 3;
 const MAX_DIAGNOSTIC_VALUE_CHARS = 160;
 
+/** Failure codes whose catalog message interpolates the failing finding index. */
+const FINDING_INDEX_FAILURE_CODES: ReadonlySet<string> = new Set([
+  'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED',
+  'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+  'REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY',
+  'REVIEW_EVIDENCE_LOCATION_INVALID',
+  'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+]);
+
+/** Max finding positions transported per diagnostic; bounds the transported list. */
+const MAX_FINDING_INDEX_POSITIONS = 8;
+
 function boundCaptureReason(reason: string): string {
   const firstLine = reason.split('\n')[0]?.trim() ?? '';
   return firstLine.length > MAX_BLOCK_REASON_CHARS
     ? `${firstLine.slice(0, MAX_BLOCK_REASON_CHARS)}…`
     : firstLine;
+}
+
+/**
+ * Validator-derived finding positions ONLY: a comma-separated list is
+ * re-normalized to canonical decimal positions, dropping every segment that is
+ * not a valid non-negative integer. Returns undefined when no valid position
+ * remains, so no invented value ever travels and callers degrade to the
+ * code-only diagnostic instead.
+ */
+function normalizeFindingIndexes(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const positions: string[] = [];
+  for (const segment of value.split(',')) {
+    const candidate = segment.trim();
+    if (!/^\d{1,9}$/.test(candidate)) continue;
+    positions.push(String(Number.parseInt(candidate, 10)));
+    if (positions.length >= MAX_FINDING_INDEX_POSITIONS) break;
+  }
+  return positions.length > 0 ? positions.join(', ') : undefined;
+}
+
+/** First validated finding position carried by the diagnostics, when present. */
+function firstFindingIndex(
+  diagnostics: readonly PendingReviewRetryDiagnostic[],
+): string | undefined {
+  for (const diagnostic of diagnostics) {
+    const normalized = normalizeFindingIndexes(diagnostic.data?.findingIndex);
+    if (normalized !== undefined) return normalized;
+  }
+  return undefined;
 }
 
 /** Bounded, structured diagnostic summary derived from the retry diagnostics. */
@@ -162,7 +204,9 @@ function boundedDiagnosticSummary(diagnostics: readonly PendingReviewRetryDiagno
  * obligation id is always interpolated (never a `{obligationId}` placeholder),
  * the raw capture reason is bounded to its first line, and the concrete
  * location failures travel as a bounded structured summary instead of a raw
- * JSON blob (Run-10 diagnostics).
+ * JSON blob (Run-10 diagnostics). Validated finding positions from the
+ * diagnostics travel as their own `findingIndex` field so the catalog template
+ * interpolates the actual rejected finding instead of a raw placeholder.
  */
 export function captureFailureBlockDetail(input: {
   readonly obligationId: string;
@@ -173,8 +217,11 @@ export function captureFailureBlockDetail(input: {
     obligationId: input.obligationId,
     reason: boundCaptureReason(input.reason),
   };
-  const summary = boundedDiagnosticSummary(input.diagnostics ?? []);
+  const diagnostics = input.diagnostics ?? [];
+  const summary = boundedDiagnosticSummary(diagnostics);
   if (summary.length > 0) detail.diagnostics = summary.join(' | ');
+  const findingIndex = firstFindingIndex(diagnostics);
+  if (findingIndex !== undefined) detail.findingIndex = findingIndex;
   return detail;
 }
 
@@ -394,8 +441,9 @@ function isEvidenceLocationFailure(value: unknown): value is EvidenceLocationFai
 
 /**
  * Build the retry diagnostics for one object-shaped capture/binding failure.
- * Only REVIEW_EVIDENCE_NOT_OBSERVED carries structured location failures; any
- * malformed or unexpected details shape degrades to the code-only diagnostic.
+ * REVIEW_EVIDENCE_NOT_OBSERVED carries structured location failures; scope and
+ * anchor failures carry the validator-derived finding positions. Any malformed
+ * or unexpected details shape degrades to the code-only diagnostic.
  */
 export function buildCaptureFailureDiagnostics(
   code: string,
@@ -406,6 +454,12 @@ export function buildCaptureFailureDiagnostics(
     const valid = Array.isArray(failures) ? failures.filter(isEvidenceLocationFailure) : [];
     if (valid.length > 0) {
       return buildBindingRetryDiagnostics('REVIEW_EVIDENCE_NOT_OBSERVED', valid);
+    }
+  }
+  if (FINDING_INDEX_FAILURE_CODES.has(code)) {
+    const findingIndex = normalizeFindingIndexes(details.findingIndex);
+    if (findingIndex !== undefined) {
+      return [{ code, data: { findingIndex } }];
     }
   }
   return [buildCodeOnlyRetryDiagnostic(code)];
