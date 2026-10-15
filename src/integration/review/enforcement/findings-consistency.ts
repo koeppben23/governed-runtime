@@ -9,7 +9,6 @@ import {
   ReviewSubjectAnchor,
   type ArtifactSectionAnchor,
   type FindingRelation as FindingRelationValue,
-  type MarkdownSectionPath,
 } from '../../../state/evidence-findings.js';
 import { ReviewRepositoryRevisionProvenance } from '../../../state/evidence-primitives.js';
 import { classifyRepositoryPath } from '../../../state/repository-path.js';
@@ -18,6 +17,7 @@ import {
   type ReviewSubjectScope as ReviewSubjectScopeValue,
 } from '../../../state/evidence-review-subject.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
+import { markdownSectionPathsEqual } from '../../../shared/markdown-sections.js';
 
 /** Boundary-neutral result of the verdict/blocking-issues coherence check. */
 export type ReviewFindingsConsistencyResult =
@@ -76,20 +76,6 @@ export function validateReviewFindingsConsistency(
   return { ok: true };
 }
 
-function sectionPathsEqual(scope: MarkdownSectionPath, anchor: MarkdownSectionPath): boolean {
-  return (
-    scope.length === anchor.length &&
-    scope.every((part, index) => {
-      const candidate = anchor[index];
-      return (
-        candidate?.headingDepth === part.headingDepth &&
-        candidate.siblingIndex === part.siblingIndex &&
-        candidate.headingText === part.headingText
-      );
-    })
-  );
-}
-
 function artifactAnchorIntersectsScope(
   anchor: ArtifactSectionAnchor,
   scope: Extract<ReviewSubjectScopeValue, { readonly kind: 'artifact' }>,
@@ -98,7 +84,7 @@ function artifactAnchorIntersectsScope(
     anchor.artifactKind === scope.artifact.kind &&
     anchor.artifactDigest === scope.artifact.digest &&
     scope.artifact.sectionPaths.some((sectionPath) =>
-      sectionPathsEqual(sectionPath, anchor.sectionPath),
+      markdownSectionPathsEqual(sectionPath, anchor.sectionPath),
     )
   );
 }

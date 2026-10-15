@@ -21,18 +21,18 @@ import type {
 } from '../../../state/evidence.js';
 import {
   appendObligationWithAttempt,
-  artifactReviewSubjectScope,
   createReviewObligation,
   findLatestOpenObligation,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
+import { artifactReviewSubjectScopeFromSections } from '../../review/context/subject-scope.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
 } from '../../review/dispatch/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
-import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
+import { buildFrozenArtifactReviewMaterial } from '../../review/context/reviewer-context.js';
 import {
   PHASE_LABELS,
   buildArchitectureReviewCard,
@@ -303,22 +303,6 @@ function targetPathsMetadata(resolved: readonly string[] | undefined): Record<st
   return resolved && resolved.length > 0 ? { targetPaths: [...resolved] } : {};
 }
 
-function frozenArchitectureReviewMaterial(
-  state: SessionState,
-  artifact: string,
-  subjectDigest: string,
-) {
-  return freezeReviewMaterial(
-    buildFrozenReviewMaterialContent({
-      obligationType: 'architecture',
-      state,
-      artifact,
-      renderPlanClaimDeclarations,
-    }),
-    subjectDigest,
-  );
-}
-
 async function persistAndFormatNonConvergedReview(
   input: ReviewResultContext,
   verdict: LoopVerdict,
@@ -450,6 +434,12 @@ function createNextArchitectureReviewObligation(input: {
     freeze,
   } = input;
   const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
+  const artifactReviewMaterial = buildFrozenArtifactReviewMaterial({
+    obligationType: 'architecture',
+    state,
+    artifact: revision.currentAdr.adrText,
+    renderPlanClaimDeclarations,
+  });
   return createReviewObligation({
     obligationType: 'architecture',
     iteration,
@@ -457,16 +447,12 @@ function createNextArchitectureReviewObligation(input: {
     planVersion: review.expectedPlanVersion,
     now: session.ctx.now(),
     subjectDigest,
-    reviewMaterial: frozenArchitectureReviewMaterial(
-      state,
-      revision.currentAdr.adrText,
-      subjectDigest,
-    ),
+    reviewMaterial: freezeReviewMaterial(artifactReviewMaterial.content, subjectDigest),
     // The (possibly revised) ADR artifact is the review SUBJECT; changedFiles
     // below stay challenge-classification and repository-evidence context only.
-    reviewSubjectScope: artifactReviewSubjectScope(
+    reviewSubjectScope: artifactReviewSubjectScopeFromSections(
       'adr',
-      revision.currentAdr.adrText,
+      artifactReviewMaterial.subjectSectionPaths,
       subjectDigest,
     ),
     policySnapshot: state.policySnapshot,

@@ -32,10 +32,10 @@ import type { ReviewObligation } from '../../../state/evidence.js';
 import type { SessionState } from '../../../state/schema.js';
 import {
   appendObligationWithAttempt,
-  artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
+import { artifactReviewSubjectScopeFromSections } from '../../review/context/subject-scope.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
@@ -58,7 +58,7 @@ import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-a
 import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
-import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
+import { buildFrozenArtifactReviewMaterial } from '../../review/context/reviewer-context.js';
 import {
   buildArchitectureReviewInstruction,
   buildRestartedState,
@@ -314,6 +314,12 @@ async function mintRestartObligation(
     metadata.targetPaths = resolvedTargetPaths;
   }
   const freeze = await freezeContextAuthorityAtHead(session.worktree);
+  const artifactReviewMaterial = buildFrozenArtifactReviewMaterial({
+    obligationType: 'architecture',
+    state: { ...session.state, architecture: nextAdr },
+    artifact: nextAdr.adrText,
+    renderPlanClaimDeclarations,
+  });
   return createReviewObligation({
     obligationType: 'architecture',
     iteration: cycle.iteration,
@@ -323,16 +329,12 @@ async function mintRestartObligation(
     subjectDigest: nextAdr.digest,
     // Frozen review material: the exact ADR artifact plus originating
     // ticket context, canonicalized and digest-bound at creation time.
-    reviewMaterial: freezeReviewMaterial(
-      buildFrozenReviewMaterialContent({
-        obligationType: 'architecture',
-        state: { ...session.state, architecture: nextAdr },
-        artifact: nextAdr.adrText,
-        renderPlanClaimDeclarations,
-      }),
+    reviewMaterial: freezeReviewMaterial(artifactReviewMaterial.content, nextAdr.digest),
+    reviewSubjectScope: artifactReviewSubjectScopeFromSections(
+      'adr',
+      artifactReviewMaterial.subjectSectionPaths,
       nextAdr.digest,
     ),
-    reviewSubjectScope: artifactReviewSubjectScope('adr', nextAdr.adrText, nextAdr.digest),
     policySnapshot: session.state.policySnapshot,
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(session.state),

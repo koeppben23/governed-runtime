@@ -5,7 +5,11 @@
 
 import type { ReviewObligation } from '../../../state/evidence.js';
 import { REVIEW_CHALLENGE_OUTCOMES } from '../../../state/evidence.js';
-import { indexMarkdownSections } from '../../../shared/markdown-sections.js';
+import {
+  indexMarkdownSections,
+  markdownSectionPathsEqual,
+} from '../../../shared/markdown-sections.js';
+import type { MarkdownSectionPath } from '../../../state/evidence-findings.js';
 import type { SessionState } from '../../../state/schema.js';
 import {
   projectImplementationChallengeDetails,
@@ -99,18 +103,34 @@ export function renderReviewChallengeContract(
   ];
 }
 
+/**
+ * Artifact evidence refs offered to the reviewer. The refs are indexed from
+ * the frozen review material — the bytes the reviewer actually reads — and
+ * filtered to the frozen subject-anchor whitelist with the SAME section-path
+ * equality the validator enforces. Invariant: every offered
+ * `plan_adr_section` ref is an acceptable subject anchor; context sections
+ * (originating ticket, presentation wrappers) are visible in the material but
+ * never become subject authority.
+ */
 function artifactEvidence(
   kind: 'plan' | 'adr',
   digest: string,
   markdown: string,
+  allowedSectionPaths: readonly MarkdownSectionPath[],
 ): Record<string, unknown>[] {
-  return indexMarkdownSections(markdown).map((section) => ({
-    kind: 'plan_adr_section',
-    artifactKind: kind,
-    artifactDigest: digest,
-    sectionPath: section.sectionPath,
-    excerptDigest: section.excerptDigest,
-  }));
+  return indexMarkdownSections(markdown)
+    .filter((section) =>
+      allowedSectionPaths.some((allowed) =>
+        markdownSectionPathsEqual(allowed, section.sectionPath),
+      ),
+    )
+    .map((section) => ({
+      kind: 'plan_adr_section',
+      artifactKind: kind,
+      artifactDigest: digest,
+      sectionPath: section.sectionPath,
+      excerptDigest: section.excerptDigest,
+    }));
 }
 
 function evidenceFor(
@@ -120,13 +140,23 @@ function evidenceFor(
   if (obligation.obligationType === 'plan') {
     const scope = obligation.reviewSubjectScope;
     return scope.kind === 'artifact' && scope.artifact.kind === 'plan'
-      ? artifactEvidence('plan', scope.artifact.digest, obligation.reviewMaterial.content)
+      ? artifactEvidence(
+          'plan',
+          scope.artifact.digest,
+          obligation.reviewMaterial.content,
+          scope.artifact.sectionPaths,
+        )
       : undefined;
   }
   if (obligation.obligationType === 'architecture') {
     const scope = obligation.reviewSubjectScope;
     return scope.kind === 'artifact' && scope.artifact.kind === 'adr'
-      ? artifactEvidence('adr', scope.artifact.digest, obligation.reviewMaterial.content)
+      ? artifactEvidence(
+          'adr',
+          scope.artifact.digest,
+          obligation.reviewMaterial.content,
+          scope.artifact.sectionPaths,
+        )
       : undefined;
   }
   if (obligation.obligationType === 'implement') {
