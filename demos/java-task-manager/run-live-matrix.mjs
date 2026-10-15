@@ -70,6 +70,7 @@ import {
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 import { expectRecovery, readAuditEvents, recoveryPersisted } from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
+import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
 
 export {
@@ -1299,6 +1300,7 @@ async function main() {
   const workspaces = path.join(options.root, 'workspaces');
   fs.mkdirSync(evidenceDir, { recursive: true });
   fs.mkdirSync(configDir, { recursive: true });
+  writeIsolatedHostConfig(configDir);
 
   const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: REPO,

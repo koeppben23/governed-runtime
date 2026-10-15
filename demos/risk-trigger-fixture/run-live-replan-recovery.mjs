@@ -41,6 +41,7 @@ import {
 } from '../lib/review-continuation.mjs';
 import { FLOWGUARD_CLI, FLOWGUARD_PACKAGE, productCli } from '../lib/product-cli.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults } from '../lib/results.mjs';
+import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
@@ -197,6 +198,7 @@ async function main() {
   fs.mkdirSync(evidenceDir, { recursive: true });
   const configDir = path.join(options.root, 'config');
   fs.mkdirSync(configDir, { recursive: true });
+  writeIsolatedHostConfig(configDir);
   const checkoutHead = git(REPO, 'rev-parse', 'HEAD');
   let tarball = options.tarball && path.resolve(options.tarball);
   if (!tarball) {

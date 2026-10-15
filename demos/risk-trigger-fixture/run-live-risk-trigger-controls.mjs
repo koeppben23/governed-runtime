@@ -40,6 +40,7 @@ import {
   planGateNotConvergedReason,
 } from '../lib/review-continuation.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
+import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 
 export { assertNoCompletionPackage };
@@ -390,6 +391,7 @@ async function main() {
   const configDir = path.join(options.root, 'config');
   fs.mkdirSync(evidenceDir, { recursive: true });
   fs.mkdirSync(configDir, { recursive: true });
+  writeIsolatedHostConfig(configDir);
 
   const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: REPO,
