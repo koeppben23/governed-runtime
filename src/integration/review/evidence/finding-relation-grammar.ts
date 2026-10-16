@@ -7,37 +7,57 @@
  * MUST receive this grammar so no path can guess the schema that the other path
  * enforces.
  */
-import {
-  SEVERITY_VALUES,
-  CATEGORY_VALUES,
-  REVISION_VALUES,
-  ANCHOR_KINDS,
-} from '../context/reviewer-contract.js';
+import { SEVERITY_VALUES, CATEGORY_VALUES, REVISION_VALUES } from '../context/reviewer-contract.js';
+import type { AdmittedSubjectAnchorKind } from '../../../state/evidence-review-subject.js';
 
-/** Subject anchor shapes that never carry a repository revision. */
-const NON_REPOSITORY_ANCHOR_SHAPES: readonly string[] = [
-  'artifact_section (for plan/ADR section targets):',
-  '{',
-  '  "kind": "artifact_section",',
-  '  "artifactKind": "plan" | "adr",',
-  '  "artifactDigest": "<string>",',
-  '  "sectionPath": [{"headingDepth": <int 1-6>, "siblingIndex": <int >=1>, "headingText": "<string>"}]',
-  '}',
-  '',
-  'content (for external content targets):',
-  '{',
-  '  "kind": "content",',
-  '  "subjectDigest": "<string>",',
-  '  "range": { "startLine": <int >=1>, "endLine": <int >=1 optional> }',
-  '}',
-  '',
-  'implementation (for implementation review subjects — subject identity ONLY,',
-  'never repository evidence: no path, line, revision, or diffDigest):',
-  '{',
-  '  "kind": "implementation",',
-  '  "implementationDigest": "<string>"',
-  '}',
-];
+/**
+ * Shape examples per admissible subject-anchor kind. Only the kind admitted by
+ * the current review scope is rendered, so a reviewer is never shown an anchor
+ * the binding gate would reject as out of scope.
+ */
+function anchorShapeBlocks(
+  revisions: string,
+): Readonly<Record<AdmittedSubjectAnchorKind, readonly string[]>> {
+  return {
+    repository_location: [
+      'repository_location (for file-level targets):',
+      '{',
+      '  "kind": "repository_location",',
+      '  "location": {',
+      '    "path": "<string>",',
+      `    "revision": ${revisions},`,
+      '    "line": <integer optional>,',
+      '    "endLine": <integer optional>',
+      '  }',
+      '}',
+    ],
+    artifact_section: [
+      'artifact_section (for plan/ADR section targets):',
+      '{',
+      '  "kind": "artifact_section",',
+      '  "artifactKind": "plan" | "adr",',
+      '  "artifactDigest": "<string>",',
+      '  "sectionPath": [{"headingDepth": <int 1-6>, "siblingIndex": <int >=1>, "headingText": "<string>"}]',
+      '}',
+    ],
+    content: [
+      'content (for external content targets):',
+      '{',
+      '  "kind": "content",',
+      '  "subjectDigest": "<string>",',
+      '  "range": { "startLine": <int >=1>, "endLine": <int >=1 optional> }',
+      '}',
+    ],
+    implementation: [
+      'implementation (for implementation review subjects — subject identity ONLY,',
+      'never repository evidence: no path, line, revision, or diffDigest):',
+      '{',
+      '  "kind": "implementation",',
+      '  "implementationDigest": "<string>"',
+      '}',
+    ],
+  };
+}
 
 /**
  * Revision rules derived from the revisions this review actually offers (the
@@ -62,6 +82,7 @@ function renderRevisionRules(offered: readonly string[]): string[] {
 
 export function renderFindingRelationGrammar(
   offeredRevisions: readonly ('base' | 'head')[],
+  admittedAnchorKind?: AdmittedSubjectAnchorKind | null,
 ): string {
   const severities = SEVERITY_VALUES.map((s) => `"${s}"`).join(' | ');
   const categories = CATEGORY_VALUES.map((c) => `"${c}"`).join(' | ');
@@ -69,6 +90,31 @@ export function renderFindingRelationGrammar(
   const revisions = (offered.length > 0 ? offered : REVISION_VALUES)
     .map((r) => `"${r}"`)
     .join(' | ');
+  const blocks = anchorShapeBlocks(revisions);
+  // undefined keeps the full vocabulary (callers without obligation scope);
+  // null states explicitly that no anchor kind is admissible.
+  const admittedKinds: readonly AdmittedSubjectAnchorKind[] =
+    admittedAnchorKind === undefined
+      ? (Object.keys(blocks) as AdmittedSubjectAnchorKind[])
+      : admittedAnchorKind === null
+        ? []
+        : [admittedAnchorKind];
+  const anchorSection =
+    admittedKinds.length === 0
+      ? ['### subjectAnchors', '', 'No subject anchor is admissible for the current review scope.']
+      : [
+          '### subjectAnchors',
+          '',
+          `Subject anchors identify what is being criticized. Use ${
+            admittedKinds.length === 1
+              ? `"${admittedKinds[0]}"`
+              : `ONE of: ${admittedKinds.map((k) => `"${k}"`).join(', ')}`
+          }`,
+          '',
+          ...admittedKinds.flatMap((kind, index) =>
+            index === 0 ? [...blocks[kind]] : ['', ...blocks[kind]],
+          ),
+        ];
 
   return [
     '## Finding Output Contract',
@@ -81,29 +127,13 @@ export function renderFindingRelationGrammar(
     '  "message": "<specific defect description>",',
     '  "relation": {',
     '    "subjectAnchors": [ ... ],   // min 1, identifies what is criticized',
-    '    "evidenceLocations": [ ... ]  // optional, repository evidence',
+    '    "evidenceLocations": [ ... ]  // required, may be empty; repository evidence',
     '  }',
     '}',
     '',
-    '### subjectAnchors',
+    ...anchorSection,
     '',
-    `Subject anchors identify what is being criticized. Use ONE of: ${ANCHOR_KINDS.map((k) => `"${k}"`).join(', ')}`,
-    '',
-    'repository_location (for file-level targets):',
-    '{',
-    '  "kind": "repository_location",',
-    '  "location": {',
-    '    "path": "<string>",',
-    `    "revision": ${revisions},`,
-    '    "line": <integer optional>,',
-    '    "endLine": <integer optional>',
-    '  }',
-    '}',
-    '',
-    ...NON_REPOSITORY_ANCHOR_SHAPES,
-
-    '',
-    '### evidenceLocations (optional)',
+    '### evidenceLocations (required, may be empty)',
     '',
     'Array of repository location entries, each with:',
     '{',
@@ -113,7 +143,8 @@ export function renderFindingRelationGrammar(
     '  "endLine": <integer optional>',
     '}',
     '',
-    'evidenceLocations MAY be empty (use [] for no evidence).',
+    'evidenceLocations is REQUIRED on every relation but MAY be empty (use [] for no',
+    'evidence). Omitting the key is a schema violation.',
     'evidenceLocations MAY reference repository locations within the frozen repository',
     'authority available to this review. A cited location does not itself establish',
     'observation: a location is admissible only when its frozen bytes were obtained',

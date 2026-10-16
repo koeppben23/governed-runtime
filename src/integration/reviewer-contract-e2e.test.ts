@@ -161,9 +161,25 @@ describe('reviewer contract E2E (Git fixture)', () => {
     expect(grammar).toContain('never a SHA');
   });
 
-  it('grammar documents evidenceLocations as optional / may be empty', () => {
+  it('grammar documents evidenceLocations as required but possibly empty', () => {
     const grammar = renderFindingRelationGrammar(['base', 'head']);
-    expect(grammar).toContain('evidenceLocations MAY be empty');
+    expect(grammar).toContain('evidenceLocations is REQUIRED');
+    expect(grammar).toContain('MAY be empty');
+  });
+
+  it('grammar renders only the subject-anchor kind admitted by the review scope', () => {
+    const planGrammar = renderFindingRelationGrammar(['head'], 'artifact_section');
+    expect(planGrammar).toContain('"kind": "artifact_section"');
+    expect(planGrammar).not.toContain('"kind": "repository_location"');
+    expect(planGrammar).not.toContain('"kind": "implementation"');
+    expect(planGrammar).not.toContain('"kind": "content"');
+
+    const implementGrammar = renderFindingRelationGrammar(['head'], 'implementation');
+    expect(implementGrammar).toContain('"kind": "implementation"');
+    expect(implementGrammar).not.toContain('"kind": "artifact_section"');
+
+    const unscoped = renderFindingRelationGrammar(['head'], null);
+    expect(unscoped).toContain('No subject anchor is admissible for the current review scope.');
   });
 
   it('grammar renders only the offered revision for a context authority', () => {

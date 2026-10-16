@@ -28,6 +28,7 @@ import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context
 import { buildImplementationAnchorContractLines } from '../evidence/anchor-contract-lines.js';
 import { resolveRepositoryObservationAccess } from '../observations/observation-access.js';
 import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
+import { ADMITTED_SUBJECT_ANCHOR_KIND } from '../../../state/evidence-review-subject.js';
 import {
   buildReviewChallengeContract,
   type ReviewerChallengePromptContract,
@@ -102,6 +103,7 @@ export function canonicalTaskPrompt(
     obligation,
     resolutionTargetIdsOf(challengeContract),
   );
+  const reviewSubjectScope = obligation.reviewSubjectScope;
   return renderReviewerTaskPrompt({
     iteration: obligation.iteration,
     planVersion: obligation.planVersion,
@@ -115,6 +117,11 @@ export function canonicalTaskPrompt(
     proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
     ...(advisoryResolutions.length > 0 ? { challengeResolutions: advisoryResolutions } : {}),
     ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0 ? { retryDiagnostics } : {}),
+    // The relation grammar renders only the subject-anchor kind this review
+    // scope admits, so its example can never contradict the scope binder.
+    ...(reviewSubjectScope !== undefined
+      ? { admittedSubjectAnchorKind: ADMITTED_SUBJECT_ANCHOR_KIND[reviewSubjectScope.kind] }
+      : {}),
     frozenReviewerContext,
     artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
     // Implementation reviews receive the SAME host-enforced anchor contract the

@@ -136,3 +136,26 @@ export const ReviewSubjectScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('unavailable'), reason: z.string().min(1) }).readonly(),
 ]);
 export type ReviewSubjectScope = z.infer<typeof ReviewSubjectScope>;
+
+/** Subject-anchor kind admissible for a review scope. */
+export type AdmittedSubjectAnchorKind =
+  | 'repository_location'
+  | 'artifact_section'
+  | 'implementation'
+  | 'content';
+
+/**
+ * The single subject-anchor kind each review subject scope admits. The scope
+ * validator accepts a relation only when one of its subject anchors uses this
+ * exact kind; the reviewer prompt renders only this kind, so the offered
+ * example can never contradict the binding gate.
+ */
+export const ADMITTED_SUBJECT_ANCHOR_KIND: Readonly<
+  Record<ReviewSubjectScope['kind'], AdmittedSubjectAnchorKind | null>
+> = {
+  repository_change: 'repository_location',
+  artifact: 'artifact_section',
+  implementation: 'implementation',
+  content: 'content',
+  unavailable: null,
+};

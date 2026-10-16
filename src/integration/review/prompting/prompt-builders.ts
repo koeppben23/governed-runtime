@@ -19,6 +19,7 @@ import type { PendingReviewRetryDiagnostic } from '../types.js';
 import { resolveReviewerDiscoverySection, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
 import type { FrozenReviewerContext } from '../../../state/review-continuation.js';
 import type { RepositoryDiscoverySnapshot } from '../../../state/evidence.js';
+import type { AdmittedSubjectAnchorKind } from '../../../state/evidence-review-subject.js';
 import {
   renderReviewChallengeContract,
   type ReviewerChallengePromptContract,
@@ -80,6 +81,12 @@ export interface ReviewerTaskPromptInput {
   readonly observationCapability?: string | undefined;
   readonly observationRevisions?: readonly ('base' | 'head')[];
   readonly retryDiagnostics?: readonly PendingReviewRetryDiagnostic[];
+  /**
+   * Subject-anchor kind admitted by the obligation's review scope. Undefined
+   * keeps the full vocabulary (callers without scope); null states explicitly
+   * that no anchor kind is admissible.
+   */
+  readonly admittedSubjectAnchorKind?: AdmittedSubjectAnchorKind | null;
 }
 
 /**
@@ -257,7 +264,10 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     ...renderReviewerRules(isRepositoryReview, promptType === 'implementation'),
     ...renderFindingsSemanticRule(input),
     ...renderReviewChallengeContract(input.challengeContract, input.obligationId),
-    renderFindingRelationGrammar(observableRevisions(input)),
+    renderFindingRelationGrammar(
+      observableRevisions(input),
+      input.admittedSubjectAnchorKind,
+    ),
     '',
     '## Trusted Runtime Context',
     `Review context: ${context}.`,
