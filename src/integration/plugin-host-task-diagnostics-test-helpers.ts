@@ -7,7 +7,7 @@ import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/e
 import * as fs from 'node:fs/promises';
 import { isTerminalPhase } from '../machine/topology.js';
 import { writeState } from '../adapters/persistence.js';
-import { makeState } from '../fixtures.js';
+import { makeProgressedState, makeState } from '../fixtures.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
 import {
   computeFingerprint,
@@ -441,4 +441,85 @@ export async function seedStrictPlanSession(worktree: string, sessionID: string)
   );
 
   return { sessDir, obligationId };
+}
+
+export async function seedStrictImplementationSession(
+  worktree: string,
+  sessionID: string,
+  options: {
+    requiredChallengeCount?: number;
+    maxReviewerAttempts?: number;
+  } = {},
+) {
+  const now = new Date().toISOString();
+  const fp = await computeFingerprint(worktree);
+  const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const obligationId = '22222222-1111-4111-8111-111111111111';
+  const attemptId = '22222222-2222-4111-8111-111111111111';
+  const reviewMaterial = freezeReviewMaterial('## Implementation\n1. Fix auth', 'impl-digest-1');
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
+
+  const base = makeProgressedState('IMPL_REVIEW');
+  const state = {
+    ...base,
+    binding: await canonicalBinding(worktree, sessionID),
+    plan: {
+      current: planCurrent,
+      history: [],
+      reviewCompletion: 'reviewer_accepted' as const,
+      reviewFindings: [],
+    },
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v7' as const,
+      obligations: [
+        {
+          obligationId,
+          obligationType: 'implement',
+          reviewCycle: 1,
+          requiredChallengeCount: options.requiredChallengeCount ?? 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
+          subjectDigest: 'impl-digest-1',
+          iteration: 0,
+          planVersion: 1,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerAttempts: options.maxReviewerAttempts ?? 1,
+          createdAt: now,
+          pluginHandshakeAt: null,
+          status: 'pending',
+          invocationId: null,
+          blockedCode: null,
+          fulfilledAt: null,
+          consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'implementation',
+            implementationDigest: 'impl-digest-1',
+          },
+          reviewMaterial,
+        },
+      ],
+      invocations: [],
+      attempts: [
+        {
+          attemptId,
+          obligationId,
+          obligationType: 'implement' as const,
+          subjectDigest: 'impl-digest-1',
+          ordinal: 0,
+          status: 'created' as const,
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+          observations: [],
+          createdAt: now,
+        },
+      ],
+      dispatches: [],
+    },
+  } as SessionState;
+
+  await fs.mkdir(sessDir, { recursive: true });
+  await writeState(sessDir, state);
+
+  return { sessDir, obligationId, attemptId, state };
 }

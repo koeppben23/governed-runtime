@@ -505,6 +505,15 @@ export function buildCaptureFailureDiagnostics(
   return [buildCodeOnlyRetryDiagnostic(code)];
 }
 
+/** Diagnostics for a blocked capture-validation result: structured details
+ * travel with the retry when the validator supplied them. */
+export function buildCapturedFindingsDiagnostics(validation: {
+  readonly code: string;
+  readonly details?: Readonly<Record<string, unknown>>;
+}): readonly PendingReviewRetryDiagnostic[] {
+  return buildCaptureFailureDiagnostics(validation.code, validation.details ?? {});
+}
+
 /** Exact retry instruction the host projects after a successful re-arm. */
 export function buildReviewerCaptureRetryOutput(input: {
   readonly code: string;
