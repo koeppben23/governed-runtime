@@ -23,7 +23,7 @@ FlowGuard executes the discovered checks; it does not judge their quality. When 
 1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, and verify a session exists in VALIDATION phase with an approved plan.
    - If not in VALIDATION: report the current phase and stop.
 
-2. Read \`activeChecks\` (equivalently \`remainingChecks\`) and \`verificationCandidates\` from the status response. Each active check corresponds to a discovered verification kind (e.g., \`test\`, \`lint\`, \`typecheck\`, \`build\`). If you see no checks, re-read status WITHOUT focused flags before concluding there are none — focused projections are not the source for checks.
+2. Read \`activeChecks\` and \`verificationCandidates\` from the status response (\`remainingChecks\` is NOT equivalent: it lists only the active checks that have no passing result yet). Each active check corresponds to a discovered verification kind (e.g., \`test\`, \`lint\`, \`typecheck\`, \`build\`). If you see no checks, re-read status WITHOUT focused flags before concluding there are none — focused projections are not the source for checks.
 
 3. For EACH active check kind, call \`flowguard_run_check({ kind: "<kind>" })\`:
    - FlowGuard will execute the discovered command for that kind.

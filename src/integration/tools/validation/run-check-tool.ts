@@ -26,7 +26,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ToolDefinition, ToolResult, WorkspaceToolContext } from '../helpers.js';
-import { formatError } from '../error-format.js';
+import { formatError, formatSessionUnavailable } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
   formatAutoAdvanceBlocked,
@@ -177,6 +177,9 @@ async function validateAndAttest(
   context: WorkspaceToolContext,
 ): Promise<PhaseAResult> {
   const session = await withReadOnlySession(context);
+  if (session.authority.status === 'unavailable') {
+    return formatSessionUnavailable(session.authority);
+  }
   if (!session.state) {
     throw new IntegrationInvariantError(
       'NO_SESSION',

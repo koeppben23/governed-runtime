@@ -16,7 +16,7 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from '../helpers.js';
-import { formatError } from '../error-format.js';
+import { formatError, formatSessionUnavailable } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
 import { withReadOnlySession, enrichWithWorkflowDirective } from '../helpers.js';
 
@@ -348,6 +348,9 @@ export const status: ToolDefinition = {
   async execute(_args, context) {
     try {
       const session = await withReadOnlySession(context);
+      if (session.authority.status === 'unavailable') {
+        return formatSessionUnavailable(session.authority);
+      }
       const presentation: PresentationRenderOptions = {
         glyphProfile: (await readConfig(session.wsDir ?? (context.worktree || context.directory)))
           .presentation.opencode.glyphProfile,

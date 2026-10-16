@@ -15,6 +15,11 @@ import {
   projectEvidenceApprovalBlock,
 } from './status-detail-projections.js';
 import { buildHelpResult } from '../help/help-projection.js';
+import {
+  buildFinishPresentationProjection,
+  buildWhyPresentationProjection,
+} from './status-why-finish.js';
+import { buildFinishCard } from './status-finish.js';
 
 function evidenceState(mode: 'solo' | 'team') {
   const policy = getPolicyPreset(mode);
@@ -36,6 +41,60 @@ function evidenceState(mode: 'solo' | 'team') {
   });
   return { state, policy };
 }
+
+describe('/why and /finish follow the approval preflight', () => {
+  it.each(['solo', 'team'] as const)(
+    '%s: neither /why nor /finish offers approval while the preflight blocks',
+    (mode) => {
+      const { state, policy } = evidenceState(mode);
+      const preflight = evaluateEvidenceApprovalPreflight(state);
+      if (preflight.kind !== 'blocked') throw new Error('expected a controlled preflight block');
+
+      const why = buildWhyPresentationProjection(
+        state,
+        policy,
+        buildBlockedProjection(state, policy),
+      );
+      expect(why.conclusion.kind).toBe('decision_required');
+      if (why.conclusion.kind !== 'decision_required') throw new Error('expected a decision');
+      expect(why.conclusion.question).toContain('state_integrity');
+      expect(why.conclusion.actions.map((action) => action.invocation)).toEqual([
+        '/request-changes',
+        '/reject',
+      ]);
+
+      const finish = buildFinishPresentationProjection(state, buildFinishCard(state, policy));
+      expect(finish.conclusion.kind).toBe('recovery');
+      if (finish.conclusion.kind !== 'recovery') throw new Error('expected recovery');
+      expect(finish.conclusion.message).toContain('state_integrity');
+      expect(finish.conclusion.steps.join('\n')).toContain('different host-session id');
+      expect(JSON.stringify(finish.conclusion)).not.toContain('/approve');
+    },
+  );
+
+  it('keeps recommending approval in /why and /finish when the preflight clears', () => {
+    const { state, policy } = evidenceState('solo');
+    const clear = {
+      ...state,
+      implementationRiskAssessment: {
+        ...state.implementationRiskAssessment!,
+        riskTriggers: ['ceremony_only' as const],
+      },
+    };
+    expect(projectEvidenceApprovalBlock(clear)).toBeNull();
+    const finish = buildFinishPresentationProjection(clear, buildFinishCard(clear, policy));
+    expect(finish.conclusion).toMatchObject({
+      kind: 'next_action',
+      action: { invocation: '/approve' },
+    });
+    const why = buildWhyPresentationProjection(
+      clear,
+      policy,
+      buildBlockedProjection(clear, policy),
+    );
+    expect(JSON.stringify(why.conclusion)).toContain('/approve');
+  });
+});
 
 describe('approval recovery projection parity', () => {
   it.each(['solo', 'team'] as const)(

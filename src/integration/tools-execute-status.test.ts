@@ -941,8 +941,31 @@ describe('status', () => {
       });
       expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
       expect(result.finish).toBeUndefined();
-      expect(result.phase).toBeNull();
-      expect(result.status).toBe('No FlowGuard session found.');
+      // Unreadable is not "no session": the typed authority code is surfaced
+      // instead of a bootstrap hint that would overwrite the evidence.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PARSE_FAILED');
+      expect(result.status).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain('Run /start');
+    });
+
+    it('distinguishes an absent from an unreadable session in plain status', async () => {
+      const absent = parseToolResult(await status.execute({}, ctx));
+      expect(absent.status).toBe('No FlowGuard session found.');
+
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      await fs.writeFile(
+        statePath(resolveSessionDir(fp.fingerprint, ctx.sessionID)),
+        '{ this is not valid json',
+        'utf-8',
+      );
+
+      const unreadable = parseToolResult(await status.execute({}, ctx));
+      expect(unreadable).toMatchObject({ error: true, code: 'PARSE_FAILED' });
+      expect(JSON.stringify(unreadable)).not.toEqual(JSON.stringify(absent));
     });
   });
 

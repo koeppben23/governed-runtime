@@ -13,9 +13,9 @@ Run automated verification checks for the current implementation.
 
 ## Steps
 
-1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, then read \`activeChecks\` (equivalently \`remainingChecks\` in VALIDATION) and \`verificationCandidates\`.
+1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, then read \`activeChecks\` and \`verificationCandidates\` (\`remainingChecks\` is NOT equivalent: it lists only the active checks without a passing result yet).
 2. If \`activeChecks\` is empty AND \`verificationCandidates\` is empty, do not call \`flowguard_run_check\`. Read the canonical \`directive\`: policy may permit a vacuous transition only through \`/validate\`, otherwise it will require Discovery recovery. Report that exact action.
-3. For each kind in \`activeChecks\` (or \`remainingChecks\`), call \`flowguard_run_check({ kind: "<kind>" })\` sequentially. Never run two state-mutating checks concurrently.
+3. For each kind in \`activeChecks\`, call \`flowguard_run_check({ kind: "<kind>" })\` sequentially. Never run two state-mutating checks concurrently.
     - FlowGuard executes the discovered command and returns execution evidence.
     - You may also call \`flowguard_run_check({ kind: "<kind>" })\` directly for any kind in \`verificationCandidates\`; it validates the kind against canonical state, not against the status output.
     - If the response does not transition to a stop phase, call \`flowguard_status\` again before selecting the next check. Treat the status projection, not an earlier check response, as authoritative after another mutation may have run.
