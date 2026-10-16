@@ -70,6 +70,7 @@ export function claimDeclaration(covered) {
     authoritySectionId: 'Invariant',
     claimScope: 'specific_behavior',
     expectedCheckId: 'test',
+    expectedAssertion: { providerId: 'junit', localId: POSITIVE_ASSERTION },
     counterexampleRequirement: {
       kind: 'assertion',
       checkId: 'build',

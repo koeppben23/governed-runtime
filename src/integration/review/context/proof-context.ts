@@ -323,11 +323,16 @@ function renderCriticalClaimRequirement(
 export function buildReviewerProofContext(
   state: SessionState,
   authorities: ReviewerProofGraphAuthorities,
+  options: { readonly includeDeclarationPreview?: boolean } = {},
 ): string[] {
+  // The frozen review material of artifact reviews already carries the claim
+  // declaration section verbatim; the preview is only composed when it would
+  // not be a duplicate (implementation and peer review obligations).
+  const includePreview = options.includeDeclarationPreview !== false;
   return [
     ...renderPersistedProofGraphContext(state.proofGraph),
     ...renderImplementationRiskFocus(state),
-    ...renderDeclarationPreview(state, authorities),
+    ...(includePreview ? renderDeclarationPreview(state, authorities) : []),
     ...renderCoverageGaps(state),
     ...renderCriticalClaimRequirement(state, authorities),
   ];

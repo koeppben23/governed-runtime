@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import { DetectedStackSchema } from './discovery-schemas.js';
+import { DetectedStackSchema, VerificationCandidateSchema } from './discovery-schemas.js';
 
 /**
  * Compact host-owned repository Discovery snapshot bound to a review attempt.
@@ -51,17 +51,10 @@ export const RepositoryDiscoverySnapshot = z
       })
       .strict(),
     detectedStack: DetectedStackSchema.nullable(),
-    verificationCandidates: z.array(
-      z
-        .object({
-          candidateId: z.string().min(1),
-          kind: z.string().min(1),
-          command: z.string().min(1),
-          source: z.string(),
-          confidence: z.string(),
-        })
-        .strict(),
-    ),
+    // The FULL canonical candidates: plan claims bind checks by kind and
+    // candidateId and reviewers must assess capabilities and report specs, so
+    // the snapshot never drops assertion capability or report configuration.
+    verificationCandidates: z.array(VerificationCandidateSchema),
     riskSurfaces: z.array(z.string()),
     warnings: z.array(z.object({ code: z.string(), message: z.string() }).strict()),
     notVerified: z.array(z.string()),

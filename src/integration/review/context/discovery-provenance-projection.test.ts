@@ -94,10 +94,12 @@ function snapshot() {
     verificationCandidates: [
       {
         candidateId: CANDIDATE_ID,
+        assertionCapability: 'unsupported',
         kind: 'test',
         command: 'npm run test --',
         source: 'package.json:scripts.test',
         confidence: 'high',
+        reason: 'repo-native test script',
       },
     ],
     riskSurfaces: [],
@@ -176,10 +178,12 @@ describe('Discovery reviewer verification candidates', () => {
   function candidate(kind: string, index: number) {
     return {
       candidateId: `vc_${String(index).repeat(64)}`,
+      assertionCapability: 'unsupported' as const,
       kind,
       command: `npm run ${kind} --`,
       source: `package.json:scripts.${kind}`,
-      confidence: 'high',
+      confidence: 'high' as const,
+      reason: 'repo-native script',
     };
   }
 
@@ -195,11 +199,35 @@ describe('Discovery reviewer verification candidates', () => {
 
     for (const entry of candidates) {
       expect(section).toContain(
-        `- ${entry.kind}: ${entry.command} (source: ${entry.source}; confidence: high; candidateId: ${entry.candidateId})`,
+        `- ${entry.kind}: ${entry.command} (source: ${entry.source}; confidence: high; candidateId: ${entry.candidateId}; assertionCapability: unsupported)`,
       );
     }
     expect(section.split('\n').filter((line) => line.includes('candidateId: vc_'))).toHaveLength(8);
     expect(section).not.toContain('omitted');
+  });
+
+  it('renders the assertion capability and report spec for a structured candidate', () => {
+    const structured = {
+      candidateId: `vc_${'s'.repeat(64)}`,
+      assertionCapability: 'structured' as const,
+      kind: 'test',
+      command: 'npm run test --',
+      source: 'package.json:scripts.test',
+      confidence: 'high' as const,
+      reason: 'structured surefire reports',
+      assertionReport: {
+        collection: 'snapshot_diff' as const,
+        transport: 'file' as const,
+        format: 'junit_xml' as const,
+        providerId: 'junit',
+        standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+      },
+    };
+    const section = buildRepositoryDiscoverySnapshotSection(
+      RepositoryDiscoverySnapshot.parse({ ...snapshot(), verificationCandidates: [structured] }),
+    );
+    expect(section).toContain('assertionCapability: structured');
+    expect(section).toContain('assertionReport: snapshot_diff/file/junit_xml via junit');
   });
 
   it('keeps the explicit NOT_VERIFIED marker when no candidate is available', () => {

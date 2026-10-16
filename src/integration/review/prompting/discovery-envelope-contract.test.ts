@@ -43,10 +43,12 @@ function snapshot(): RepositoryDiscoverySnapshot {
     verificationCandidates: [
       {
         candidateId: 'vc-1',
+        assertionCapability: 'unsupported',
         kind: 'build',
         command: 'npm run build --',
         source: 'package.json:scripts.build',
         confidence: 'high',
+        reason: 'repo-native build script',
       },
     ],
     riskSurfaces: ['data-access'],

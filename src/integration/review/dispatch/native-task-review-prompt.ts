@@ -114,7 +114,12 @@ export function canonicalTaskPrompt(
     reviewType: reviewerPromptTypeForTask(obligation.obligationType),
     repositoryReview: observationRevisions.length > 0,
     challengeContract: challengeContract ?? undefined,
-    proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
+    proofContext: buildReviewerProofContext(state, proofGraphAuthorities, {
+      // Plan/architecture frozen material embeds the claim declaration section;
+      // implementation/peer reviews do not, so they keep the preview.
+      includeDeclarationPreview:
+        obligation.obligationType !== 'plan' && obligation.obligationType !== 'architecture',
+    }),
     ...(advisoryResolutions.length > 0 ? { challengeResolutions: advisoryResolutions } : {}),
     ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0 ? { retryDiagnostics } : {}),
     // The relation grammar renders only the subject-anchor kind this review

@@ -242,6 +242,14 @@ export interface ReviewFeedbackFindingProjection {
   readonly category: ReviewFindings['blockingIssues'][number]['category'];
   readonly message: string;
   readonly findingId?: string | undefined;
+  /**
+   * Untrusted, bounded relation of the finding: the subject anchors and
+   * repository evidence locations the reviewer bound it to. The revising author
+   * needs them to act on the exact location; this is never an alternative
+   * findings submission surface.
+   */
+  readonly subjectAnchors: ReviewFindings['blockingIssues'][number]['relation']['subjectAnchors'];
+  readonly evidenceLocations: ReviewFindings['blockingIssues'][number]['relation']['evidenceLocations'];
 }
 
 /**

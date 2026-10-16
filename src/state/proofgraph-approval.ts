@@ -13,6 +13,7 @@ import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
 import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 import { CounterexampleRequirement } from './proofgraph.js';
+import { AssertionIdentity } from './assertion-identity.js';
 import {
   isCanonicalPlanCertificateIdentity,
   PlanApprovalCertificate,
@@ -115,6 +116,12 @@ const v2PlanBase = z
     ...preEvidenceClaimDeclaration,
     claimScope: z.enum(['specific_behavior', 'suite']),
     expectedCheckId: z.string().min(1),
+    /**
+     * Optional positive-evidence assertion identity bound to the expected
+     * check: names exactly which executed assertion observes the claim's
+     * positive property. Declared when known; never inferred.
+     */
+    expectedAssertion: AssertionIdentity.optional(),
     counterexampleRequirement: CounterexampleRequirement.optional(),
     structuralSurface: z.string().min(1).optional(),
     mutationProfile: z.string().min(1).optional(),

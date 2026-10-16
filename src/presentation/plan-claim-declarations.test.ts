@@ -46,6 +46,54 @@ const FIXTURE_COUNTEREXAMPLE = {
   },
 };
 
+describe('renderPlanClaimDeclarations - positive assertion binding', () => {
+  function withPositiveAssertion(): PlanClaimDeclarations {
+    const base = declarations(FIXTURE_COUNTEREXAMPLE);
+    return {
+      ...base,
+      claims: [
+        {
+          ...base.claims[0]!,
+          expectedAssertion: {
+            providerId: 'junit',
+            localId: 'fixture.StateNoteTest#rejectsMissingOwnership',
+          },
+        },
+      ],
+    };
+  }
+
+  it('renders the positive assertion identity when the declaration carries it', () => {
+    const text = renderPlanClaimDeclarations(withPositiveAssertion());
+    expect(text).toContain(
+      '  - Positive evidence assertion: providerId: junit; ' +
+        'localId: fixture.StateNoteTest#rejectsMissingOwnership',
+    );
+  });
+
+  it('omits the positive assertion line for declarations without the optional field', () => {
+    // Existing declarations stay valid and render unchanged: the optional
+    // field never synthesizes a binding that was not declared.
+    const text = renderPlanClaimDeclarations(declarations(FIXTURE_COUNTEREXAMPLE));
+    expect(text).not.toContain('Positive evidence assertion');
+    expect(text).toContain('  - Positive evidence check: test');
+  });
+
+  it('round-trips through the canonical declaration schema with and without the field', async () => {
+    const { PlanClaimDeclaration } = await import('../state/proofgraph-approval.js');
+    const withoutField = PlanClaimDeclaration.parse(declarations(FIXTURE_COUNTEREXAMPLE).claims[0]);
+    expect('expectedAssertion' in withoutField).toBe(false);
+    const withField = PlanClaimDeclaration.parse(withPositiveAssertion().claims[0]);
+    expect(withField.expectedAssertion).toEqual({
+      providerId: 'junit',
+      localId: 'fixture.StateNoteTest#rejectsMissingOwnership',
+    });
+    // Canonical digests differ only because the declaration differs.
+    const { canonicalJsonStringify } = await import('../shared/canonical-json.js');
+    expect(canonicalJsonStringify(withField)).not.toEqual(canonicalJsonStringify(withoutField));
+  });
+});
+
 describe('renderPlanClaimDeclarations - evidence roles', () => {
   it('HAPPY: names the positive and the counterexample check by role (FP1)', () => {
     const text = renderPlanClaimDeclarations(declarations(FIXTURE_COUNTEREXAMPLE));
