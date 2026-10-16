@@ -189,6 +189,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a re-armed validation retries on the first host lifecycle event (such as the
   session becoming idle) after its backoff. The phase guidance and the module
   contract now say so.
+
+- **Standalone `/review` never completes without bound reviewer evidence.** A
+  content-free `flowguard_review({ reviewObligationId })` returned early from the
+  content-source check before the explicit obligation id was resolved; with no
+  bound evidence it fell through to an empty findings executor and completed
+  as `PEER_REVIEW_COMPLETE` with a `clean` report while the obligation stayed
+  `pending` with no invocation. An id-only call now resolves the named
+  obligation first: unknown, consumed or blocked obligations fail with
+  `REVIEW_OBLIGATION_NOT_FOUND`, a pending obligation re-emits its dispatch
+  authority (or re-arms an interrupted dispatch), and only a fulfilled
+  obligation proceeds to its bound structured evidence. A named obligation
+  whose evidence does not resolve fails closed with `SUBAGENT_EVIDENCE_MISSING`
+  instead of completing a report. A content-free `/review` without an id is
+  unchanged.
+- **Standalone `unable_to_review` evidence persists.** The recorder consumed a
+  pending peer-review obligation without first recording its invocation lineage
+  and `fulfilledAt`, which the assurance schema requires for consumed
+  obligations, so the write failed with `SCHEMA_VALIDATION_FAILED` and the
+  honest verdict never bound. The obligation is now fulfilled and consumed in
+  the same transition.
+
 - **Risk fixture scopes the head-only observation offer to plan review.** The
   risk-trigger fixture ticket said "Base-revision observation is not available
   to this obligation: do not assert base-vs-head comparisons", and its README

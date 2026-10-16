@@ -134,6 +134,14 @@ async function prepareReviewExecution(
   // the reviewer evidence is missing.
   const structured = prepareStructuredEvidenceSubmission(state, result, exec, materializedContent);
   if (structured) return structured;
+  // A named obligation completes only through its bound reviewer evidence. When
+  // none resolved and no dispatch/block message was produced, completing the
+  // report would record a review that never happened.
+  if (exec.args.reviewObligationId && missingResult.message === null) {
+    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+      obligationId: exec.args.reviewObligationId,
+    });
+  }
   return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
 }
 

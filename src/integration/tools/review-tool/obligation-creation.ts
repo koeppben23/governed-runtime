@@ -224,6 +224,52 @@ async function resolveExplicitObligationIdPath(
   };
 }
 
+/**
+ * A content-free call that names an obligation is a continuation of exactly
+ * that obligation, never a content-free review. Resolved BEFORE the
+ * content-source early exits, so an id-only call can never fall through to a
+ * report without reviewer evidence:
+ * - unknown, foreign, consumed or blocked → REVIEW_OBLIGATION_NOT_FOUND;
+ * - pending (no bound evidence yet) → its dispatch authority / re-arm;
+ * - fulfilled → no message: the bound structured evidence is resolved by the
+ *   caller, which fails closed when it does not resolve.
+ */
+async function resolveIdOnlyContinuation(
+  sessDir: string,
+  state: SessionState,
+  obligationId: string,
+  now: string,
+): Promise<MissingAnalysisObligationResult> {
+  const byId = findReviewObligationById(state.reviewAssurance, obligationId);
+  if (!byId || byId.obligationType !== 'review') {
+    return { message: formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', { obligationId }) };
+  }
+  if (byId.status === 'pending') {
+    return continuePendingReviewObligation(sessDir, state, byId, now);
+  }
+  if (byId.status === 'fulfilled') return { message: null };
+  return { message: formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', { obligationId }) };
+}
+
+/**
+ * Content-source gate: an incomplete source blocks; a content-free source is a
+ * content-free review unless an obligation is named (then its continuation).
+ * Returns null when the call carries content.
+ */
+async function resolveContentFreeCall(
+  sessDir: string,
+  state: SessionState,
+  args: ReviewToolArgs,
+  now: string,
+): Promise<MissingAnalysisObligationResult | null> {
+  const sourceResult = validateReviewContentSource(args);
+  if (sourceResult.kind === 'incomplete') return { message: sourceResult.blockMessage };
+  if (sourceResult.kind !== 'none') return null;
+  return args.reviewObligationId
+    ? resolveIdOnlyContinuation(sessDir, state, args.reviewObligationId, now)
+    : { message: null };
+}
+
 export async function ensureMissingAnalysisObligation(
   sessDir: string,
   state: SessionState,
@@ -231,11 +277,8 @@ export async function ensureMissingAnalysisObligation(
   now: string,
   context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource' | 'preparedContent'>,
 ): Promise<MissingAnalysisObligationResult> {
-  const sourceResult = validateReviewContentSource(args);
-  if (sourceResult.kind === 'none') return { message: null };
-  if (sourceResult.kind === 'incomplete') {
-    return { message: sourceResult.blockMessage };
-  }
+  const contentFree = await resolveContentFreeCall(sessDir, state, args, now);
+  if (contentFree) return contentFree;
 
   if (!hasReviewContentInput(args)) return { message: null };
 
