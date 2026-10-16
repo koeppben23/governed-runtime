@@ -204,6 +204,12 @@ export function normalizePlanClaims(
       authoritySectionId: claim.authoritySectionId,
       claimScope: claim.claimScope,
       expectedCheckId: claim.expectedCheckId,
+      // The declared positive-evidence assertion is persisted verbatim: it is
+      // an explicit declaration (rendered for reviewers), never dropped and
+      // never inferred.
+      ...(claim.expectedAssertion !== undefined
+        ? { expectedAssertion: { ...claim.expectedAssertion } }
+        : {}),
       ...(counterexampleRequirement !== undefined ? { counterexampleRequirement } : {}),
       ...(claim.structuralSurface !== undefined
         ? { structuralSurface: claim.structuralSurface }
