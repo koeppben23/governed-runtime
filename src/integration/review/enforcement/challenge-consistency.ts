@@ -264,9 +264,11 @@ function validateChallengeCountFlexible(
   const allowedRefs = input.allowedEvidenceRefs
     ? new Set(input.allowedEvidenceRefs.map(canonicalJsonStringify))
     : undefined;
-  for (const challenge of challenges) {
+  for (const [challengeIndex, challenge] of challenges.entries()) {
     const result = validateChallenge(input, challenge, allowedRefs);
-    if (!result.ok) return result;
+    // The validated position travels with every per-challenge failure so a
+    // retry can name the exact field path instead of restating the code.
+    if (!result.ok) return { ...result, details: { challengeIndex, ...result.details } };
   }
   return validateResolutionVerdicts(input);
 }

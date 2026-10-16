@@ -611,7 +611,10 @@ async function completeStructuredReview(
       ...captureFailure,
       code: validation.code,
       reason: validation.reason,
-      diagnostics: [buildCodeOnlyRetryDiagnostic(validation.code)],
+      diagnostics: buildCaptureFailureDiagnostics(
+        validation.code,
+        'details' in validation && validation.details !== undefined ? validation.details : {},
+      ),
     });
     return;
   }

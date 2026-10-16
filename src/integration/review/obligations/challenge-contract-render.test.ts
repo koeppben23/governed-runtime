@@ -150,7 +150,7 @@ describe('renderReviewChallengeContract offered evidence refs', () => {
     expect(validate([IMPLEMENTATION_REFS[0]])).toMatchObject({
       ok: false,
       code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-      details: { reason: 'validation_attempt_missing' },
+      details: { challengeIndex: 0, reason: 'validation_attempt_missing' },
     });
   });
 });

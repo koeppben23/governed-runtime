@@ -46,7 +46,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/obligations/assurance.js';
-import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
 import { _resetAgentResolutionCache } from './review/dispatch/agent-resolution.js';
@@ -85,7 +85,14 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
   } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0];
 }
 
-async function seedStrictImplementationSession(worktree: string, sessionID: string) {
+async function seedStrictImplementationSession(
+  worktree: string,
+  sessionID: string,
+  options: {
+    requiredChallengeCount?: number;
+    maxReviewerAttempts?: number;
+  } = {},
+) {
   const now = new Date().toISOString();
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
@@ -111,7 +118,7 @@ async function seedStrictImplementationSession(worktree: string, sessionID: stri
           obligationId,
           obligationType: 'implement',
           reviewCycle: 1,
-          requiredChallengeCount: 0,
+          requiredChallengeCount: options.requiredChallengeCount ?? 0,
           requiredChallengeKind: 'implementation_challenge',
           challengePolicyVersion: 'challenge-policy.v1',
           subjectDigest: 'impl-digest-1',
@@ -119,7 +126,7 @@ async function seedStrictImplementationSession(worktree: string, sessionID: stri
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerAttempts: 1,
+          maxReviewerAttempts: options.maxReviewerAttempts ?? 1,
           createdAt: now,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -1384,6 +1391,174 @@ describe('integration/plugin', () => {
         expect(state?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
         expect(
           state?.reviewAssurance?.attempts.find((a) => a.attemptId === retryAttemptId)?.status,
+        ).toBe('bound');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('re-arms after a challenge without validation-attempt evidence and binds the corrected retry', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictImplementationSession(
+          ws.tmpDir,
+          sessionID,
+          { requiredChallengeCount: 2, maxReviewerAttempts: 2 },
+        );
+        const validationAttemptId = '33333333-3333-4333-8333-333333333333';
+        const executedAt = new Date().toISOString();
+        const seeded = (await readState(sessDir))!;
+        await writeState(sessDir, {
+          ...seeded,
+          implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
+            changedFiles: ['src/example.ts'],
+            domainFiles: ['src/example.ts'],
+            digest: 'impl-digest-1',
+            executedAt,
+          },
+          validationAttempts: [
+            {
+              attemptId: validationAttemptId,
+              scope: 'implementation',
+              implementationId: '00000000-0000-4000-8000-0000000000aa',
+              implementationDigest: 'impl-digest-1',
+              executionObservation: TEST_EXECUTION_OBSERVATION,
+              result: {
+                checkId: 'test',
+                passed: true,
+                detail: 'passed',
+                executedAt,
+                kind: 'test',
+                command: 'npm test',
+                exitCode: 0,
+                executionMs: 1,
+                outputDigest: 'a'.repeat(64),
+                timedOut: false,
+                outcome: 'supported',
+              },
+            },
+          ],
+        } as SessionState);
+
+        const structuredPrompt = vi.fn();
+        const agents = vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: {
+              app: { log: async () => {}, agents },
+              session: { prompt: structuredPrompt },
+            },
+          }),
+        );
+
+        const state = await readState(sessDir);
+        const authority = resolveReviewDispatchAuthority(state!.reviewAssurance!, obligationId);
+        expect(authority.kind).toBe('ok');
+        if (authority.kind !== 'ok') return;
+        const dispatchOutput = {
+          title: 'implement',
+          output: JSON.stringify({
+            phase: 'IMPL_REVIEW',
+            reviewMode: 'subagent',
+            ...reviewObligationResponseFields(authority.authority),
+            reviewDispatch: { required: true },
+          }),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_implement', sessionID, callID: 'c1', args: {} },
+          dispatchOutput,
+        );
+        await dispatchReviewerTask(hooks, sessionID);
+
+        // c1 is a passing implementation challenge with only implementation
+        // evidence; c2 carries a valid current-digest validation attempt.
+        const implementationRef = { kind: 'implementation', implementationDigest: 'impl-digest-1' };
+        const validationRef = { kind: 'validation_attempt', attemptId: validationAttemptId };
+        const invalidChallenge = {
+          clientReference: 'c1',
+          obligationId,
+          kind: 'implementation_challenge',
+          scenario: 'Exercise the missing-owner rejection path.',
+          claim: 'Writes without an owner are rejected.',
+          locations: ['src/example.ts'],
+          outcome: 'pass',
+          evidenceRefs: [implementationRef],
+        };
+        const validChallenge = {
+          clientReference: 'c2',
+          obligationId,
+          kind: 'implementation_challenge',
+          scenario: 'Exercise the blank-owner rejection path.',
+          claim: 'Writes with a blank owner are rejected.',
+          locations: ['src/example.ts'],
+          outcome: 'pass',
+          evidenceRefs: [implementationRef, validationRef],
+        };
+
+        structuredPrompt.mockResolvedValue({
+          data: {
+            info: {
+              structured: nativeFindings(obligationId, {
+                challenges: [invalidChallenge, validChallenge],
+              }),
+            },
+          },
+        });
+        const first = await completeReviewerTask(hooks, sessionID);
+
+        const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
+        const reviewRetry = retry.reviewRetry as Record<string, unknown>;
+        expect(reviewRetry).toMatchObject({
+          code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+          obligationId,
+          retryable: true,
+          diagnostics: [
+            {
+              code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+              reasonKind: 'validation_attempt_missing',
+              data: { path: 'challenges.0.evidenceRefs', required: 'validation_attempt' },
+            },
+          ],
+        });
+        const retryAttemptId = reviewRetry.attemptId as string;
+        expect(retryAttemptId).not.toBe(authority.authority.attempt.attemptId);
+
+        const correctedChallenge = {
+          ...invalidChallenge,
+          evidenceRefs: [implementationRef, validationRef],
+        };
+        structuredPrompt.mockResolvedValue({
+          data: {
+            info: {
+              structured: nativeFindings(obligationId, {
+                challenges: [correctedChallenge, validChallenge],
+              }),
+            },
+          },
+        });
+        const secondTask = await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
+        const secondPrompt = String(secondTask.args.prompt);
+        expect(secondPrompt).toContain('challenges.0.evidenceRefs');
+        expect(secondPrompt).toContain('validation_attempt_missing');
+
+        const second = await completeReviewerTask(hooks, sessionID, 'call-native-2');
+        const completed = JSON.parse(String(second.output)) as Record<string, unknown>;
+        expect(completed.error).toBeUndefined();
+        expect(completed.reviewDispatch).toEqual({
+          required: true,
+          completed: true,
+          verdict: 'accept',
+        });
+
+        const finalState = await readState(sessDir);
+        expect(finalState?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
+        expect(
+          finalState?.reviewAssurance?.attempts.find((a) => a.attemptId === retryAttemptId)?.status,
         ).toBe('bound');
       } finally {
         await ws.cleanup();

@@ -368,7 +368,42 @@ describe('review/enforcement/challenge-consistency', () => {
       expect(result).toMatchObject({
         ok: false,
         code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-        details: { required: 'validation_attempt' },
+        details: { challengeIndex: 0, required: 'validation_attempt' },
+      });
+    });
+
+    it('reports the validated position of the offending challenge, not a restated code', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'changes_requested',
+        requiredChallengeCount: 2,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [
+          {
+            kind: 'implementation_challenge',
+            scenario: 'Exercise the first path.',
+            claim: 'The first path stays rejected.',
+            locations: ['src/a.ts'],
+            outcome: 'fail',
+            evidenceRefs: [{ kind: 'implementation' }],
+          },
+          {
+            kind: 'implementation_challenge',
+            scenario: 'Exercise the second path.',
+            claim: 'The second path stays rejected.',
+            locations: ['src/b.ts'],
+            outcome: 'pass',
+            evidenceRefs: [{ kind: 'implementation' }],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        details: {
+          challengeIndex: 1,
+          reason: 'validation_attempt_missing',
+          required: 'validation_attempt',
+        },
       });
     });
 

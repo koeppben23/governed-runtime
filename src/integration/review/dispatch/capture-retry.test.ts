@@ -187,6 +187,55 @@ describe('retry diagnostic DTOs', () => {
     }
   });
 
+  it('names the offending challenge and its field path for a missing validation attempt', () => {
+    expect(
+      buildCaptureFailureDiagnostics('SUBAGENT_CHALLENGE_EVIDENCE_MISSING', {
+        challengeIndex: 0,
+        kind: 'implementation_challenge',
+        reason: 'validation_attempt_missing',
+        required: 'validation_attempt',
+      }),
+    ).toEqual([
+      {
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        reasonKind: 'validation_attempt_missing',
+        data: { path: 'challenges.0.evidenceRefs', required: 'validation_attempt' },
+      },
+    ]);
+  });
+
+  it('carries the exact validated challenge position, never a reviewer-authored path', () => {
+    expect(
+      buildCaptureFailureDiagnostics('SUBAGENT_CHALLENGE_EVIDENCE_MISSING', {
+        challengeIndex: 2,
+        reason: 'evidence_mismatch',
+      }),
+    ).toEqual([
+      {
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        reasonKind: 'evidence_mismatch',
+        data: { path: 'challenges.2.evidenceRefs' },
+      },
+    ]);
+  });
+
+  it('degrades malformed or unknown challenge details to the code-only diagnostic', () => {
+    for (const details of [
+      {},
+      { reason: 'validation_attempt_missing' },
+      { challengeIndex: 0 },
+      { challengeIndex: -1, reason: 'validation_attempt_missing' },
+      { challengeIndex: 1.5, reason: 'validation_attempt_missing' },
+      { challengeIndex: '0', reason: 'validation_attempt_missing' },
+      { challengeIndex: 0, reason: 'reviewer_invented_reason' },
+    ]) {
+      expect(
+        buildCaptureFailureDiagnostics('SUBAGENT_CHALLENGE_EVIDENCE_MISSING', details),
+        JSON.stringify(details),
+      ).toEqual([{ code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING' }]);
+    }
+  });
+
   it('bounds the transported finding positions', () => {
     const csv = Array.from({ length: 12 }, (_unused, index) => String(index)).join(', ');
     const data = buildCaptureFailureDiagnostics('REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE', {

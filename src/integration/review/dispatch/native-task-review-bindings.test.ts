@@ -189,6 +189,27 @@ describe('native capture — implementation challenge repair loop (#1081/#747)',
     expect(result.kind).toBe('valid');
   });
 
+  it('carries the validated challenge position in the blocked result for a retry', () => {
+    const state = roundTwoState({ priorChallenges: [], resolutions: [] });
+    const prepared = preparedRoundTwo({});
+    const challenges = prepared.challenges as Record<string, unknown>[];
+    challenges[0] = {
+      ...challenges[0],
+      evidenceRefs: [{ kind: 'implementation', implementationDigest: IMPL_DIGEST }],
+    };
+    const result = validateCapturedFindings(state, implementationObligation(), prepared);
+    expect(result.kind).toBe('blocked');
+    if (result.kind !== 'blocked') throw new Error('unreachable');
+    expect(result.code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
+    expect(result).toMatchObject({
+      details: {
+        challengeIndex: 0,
+        reason: 'validation_attempt_missing',
+        required: 'validation_attempt',
+      },
+    });
+  });
+
   it('blocks accept while a prior failing challenge has no author resolution', () => {
     const state = roundTwoState({
       priorChallenges: [implementationChallenge(PRIOR_CHALLENGE, 'fail')],

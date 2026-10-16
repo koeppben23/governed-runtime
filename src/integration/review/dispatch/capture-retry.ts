@@ -181,6 +181,26 @@ function firstFindingIndex(
   return undefined;
 }
 
+/**
+ * Challenge-evidence failure reasons the canonical consistency validator emits.
+ * Only these machine-produced values may reach a recovery instruction.
+ */
+const CHALLENGE_EVIDENCE_REASONS: ReadonlySet<string> = new Set([
+  'validation_attempt_missing',
+  'evidence_missing',
+  'evidence_mismatch',
+  'obligation_mismatch',
+]);
+
+/**
+ * Validator-derived challenge position ONLY: a non-negative integer or
+ * undefined. Anything else degrades to the code-only diagnostic, so no
+ * reviewer-authored value is ever echoed back as a field path.
+ */
+function normalizeChallengeIndex(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
 /** Bounded, structured diagnostic summary derived from the retry diagnostics. */
 function boundedDiagnosticSummary(diagnostics: readonly PendingReviewRetryDiagnostic[]): string[] {
   const entries: string[] = [];
@@ -460,6 +480,26 @@ export function buildCaptureFailureDiagnostics(
     const findingIndex = normalizeFindingIndexes(details.findingIndex);
     if (findingIndex !== undefined) {
       return [{ code, data: { findingIndex } }];
+    }
+  }
+  if (code === 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING') {
+    const challengeIndex = normalizeChallengeIndex(details.challengeIndex);
+    const reason = typeof details.reason === 'string' ? details.reason : undefined;
+    if (
+      challengeIndex !== undefined &&
+      reason !== undefined &&
+      CHALLENGE_EVIDENCE_REASONS.has(reason)
+    ) {
+      return [
+        {
+          code,
+          reasonKind: reason,
+          data: {
+            path: `challenges.${challengeIndex}.evidenceRefs`,
+            ...(reason === 'validation_attempt_missing' ? { required: 'validation_attempt' } : {}),
+          },
+        },
+      ];
     }
   }
   return [buildCodeOnlyRetryDiagnostic(code)];
