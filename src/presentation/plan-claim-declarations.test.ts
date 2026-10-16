@@ -2,20 +2,16 @@
  * @module presentation/plan-claim-declarations.test
  * @description Reviewer-facing plan claim rendering names the evidence ROLE of
  * every check, so a reviewer never infers a role from a check id or an
- * assertion name, and states the separate-attempt contract for evidence roles
- * without implying that execution evidence exists at plan-review time.
- *
- * Regressions for two observed plan-review false positives:
- * - FP1: a counterexample bound to `build` was read as bound to `test`.
- * - FP2: positive and counterexample evidence were assumed to share an attempt
- *   because the two checks run overlapping test suites.
+ * assertion name (FP1: a counterexample bound to `build` was read as bound to
+ * `test`). The shared evidence-role rule is a plan review criterion stated once
+ * in the task contract; claim rendering carries only the concrete bindings.
  *
  * @test-policy HAPPY, BAD, CORNER
  */
 
 import { describe, expect, it } from 'vitest';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
-import { EVIDENCE_ROLES_LINE, renderPlanClaimDeclarations } from './plan-claim-declarations.js';
+import { renderPlanClaimDeclarations } from './plan-claim-declarations.js';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -62,30 +58,25 @@ describe('renderPlanClaimDeclarations - evidence roles', () => {
     expect(text).not.toContain('Counterexample requirement:');
   });
 
-  it('HAPPY: states the separate-attempt role contract without demanding plan-time execution (FP2)', () => {
+  it('HAPPY: carries no per-claim copy of the shared evidence-role rule', () => {
     const text = renderPlanClaimDeclarations(declarations(FIXTURE_COUNTEREXAMPLE));
-    expect(text).toContain(`  - ${EVIDENCE_ROLES_LINE}`);
-    expect(EVIDENCE_ROLES_LINE).toContain(
-      'separate validation attempts with distinct attempt identities',
-    );
-    expect(EVIDENCE_ROLES_LINE).toContain('overlapping underlying test suites do not imply');
-    expect(EVIDENCE_ROLES_LINE).toContain('execution evidence is not required at plan-review time');
+    expect(text).not.toContain('Evidence roles');
+    expect(text).not.toContain('attempt identit');
+    expect(text.split('\n').filter((line) => line.startsWith('  - '))).toHaveLength(8);
   });
 
-  it('CORNER: an aggregate counterexample keeps its role label and the role contract', () => {
+  it('CORNER: an aggregate counterexample keeps its role label', () => {
     const text = renderPlanClaimDeclarations(
       declarations({ kind: 'aggregate_check', checkId: 'build', candidateId: 'vc_build' }),
     );
     expect(text).toContain(
       '  - Counterexample (adversarial) check: build; aggregate candidateId: vc_build',
     );
-    expect(text).toContain(EVIDENCE_ROLES_LINE);
   });
 
-  it('BAD: a claim without a counterexample gets no role contract', () => {
+  it('BAD: a claim without a counterexample renders an explicit none', () => {
     const text = renderPlanClaimDeclarations(declarations());
     expect(text).toContain('  - Counterexample (adversarial) check: none');
-    expect(text).not.toContain(EVIDENCE_ROLES_LINE);
   });
 
   it('BAD: no declarations render the explicit empty marker', () => {

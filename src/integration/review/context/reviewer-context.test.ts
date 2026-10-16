@@ -87,7 +87,7 @@ describe('buildFrozenReviewMaterialContent', () => {
     expect(content).not.toContain('Verification Evidence (host-executed)');
   });
 
-  it('freezes plan claims with explicit evidence roles for new obligations', () => {
+  it('freezes plan claims with role labels and without a per-claim role rule', () => {
     const content = buildFrozenReviewMaterialContent({
       obligationType: 'plan',
       renderPlanClaimDeclarations,
@@ -116,7 +116,7 @@ describe('buildFrozenReviewMaterialContent', () => {
 
     expect(content).toContain('Positive evidence check: test');
     expect(content).toContain('Counterexample (adversarial) check: build;');
-    expect(content).toContain('separate validation attempts with distinct attempt identities');
+    expect(content).not.toContain('Evidence roles');
   });
 });
 

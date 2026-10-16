@@ -521,9 +521,9 @@ describe('integration/review-assurance', () => {
       );
       const fresh = makeObligation();
 
-      expect(REVIEW_CRITERIA_VERSION).toBe('p42-v3');
+      expect(REVIEW_CRITERIA_VERSION).toBe('p42-v4');
       expect(assurance.obligations).toEqual(priorObligations);
-      expect(fresh.criteriaVersion).toBe('p42-v3');
+      expect(fresh.criteriaVersion).toBe('p42-v4');
       expect(fresh.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
     });
   });
