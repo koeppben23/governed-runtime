@@ -13,8 +13,10 @@ import {
   evaluateValidationEvidence,
   hasDetectedStack,
   hasTrustworthyDiscoveryForVerification,
+  missingValidationChecks,
 } from './validation-evidence.js';
-import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
+import { allValidationsPassed } from './guards.js';
+import { makeState, POLICY_SNAPSHOT, VALIDATION_PASSED } from '../fixtures.js';
 
 const SUMMARY: DiscoverySummary = {
   primaryLanguages: ['typescript'],
@@ -374,5 +376,37 @@ describe('machine/validation-evidence', () => {
         ),
       ).toBe(false);
     });
+  });
+});
+
+describe('missingValidationChecks', () => {
+  const passed = (checkId: string) => ({ ...VALIDATION_PASSED[0]!, checkId, kind: checkId });
+  const failed = (checkId: string) => ({ ...passed(checkId), passed: false, timedOut: true });
+
+  it('HAPPY: lists only active checks without a passing result, in active order', () => {
+    const state = makeState('VALIDATION', {
+      activeChecks: ['build', 'test', 'lint'],
+      validation: [passed('build'), failed('test')] as never,
+    });
+    expect(missingValidationChecks(state)).toEqual(['test', 'lint']);
+    expect(allValidationsPassed(state)).toBe(false);
+  });
+
+  it('CORNER: the guard passes exactly when nothing is missing for non-empty active checks', () => {
+    const state = makeState('VALIDATION', {
+      activeChecks: ['build', 'test'],
+      validation: [passed('build'), failed('test'), passed('test')] as never,
+    });
+    expect(missingValidationChecks(state)).toEqual([]);
+    expect(allValidationsPassed(state)).toBe(true);
+  });
+
+  it('EDGE: a passing result for a non-active check never satisfies an active one', () => {
+    const state = makeState('VALIDATION', {
+      activeChecks: ['test'],
+      validation: [passed('lint')] as never,
+    });
+    expect(missingValidationChecks(state)).toEqual(['test']);
+    expect(allValidationsPassed(state)).toBe(false);
   });
 });

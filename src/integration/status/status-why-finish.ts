@@ -18,7 +18,11 @@ import {
 } from '../../machine/workflow-directive.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
-import { projectStatusActionFromCommand } from './status-conclusion.js';
+import {
+  projectApprovalBlockedConclusion,
+  projectStatusActionFromCommand,
+} from './status-conclusion.js';
+import { projectEvidenceApprovalBlock } from './status-detail-projections.js';
 import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
 import type { BlockedProjection, FinishCard } from './status-types.js';
 import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
@@ -67,6 +71,12 @@ export type FinishConclusionProjection =
       readonly action: PresentationAction;
     }
   | {
+      /** The approval preflight refuses approval: its canonical recovery, never /approve. */
+      readonly kind: 'recovery';
+      readonly message: string;
+      readonly steps: readonly string[];
+    }
+  | {
       readonly kind: 'terminal';
       readonly message: string;
     };
@@ -102,17 +112,21 @@ export function buildWhyPresentationProjection(
     blocker,
     evidenceSlots,
     proofSummary: projectProofStatusForState(state),
-    conclusion: buildWhyConclusion(evalResult, directive),
+    conclusion: buildWhyConclusion(state, evalResult, directive),
   };
 }
 
 function buildWhyConclusion(
+  state: SessionState,
   evalResult: ReturnType<typeof evaluate>,
   directive: WorkflowDirective,
 ): WhyConclusionProjection {
   if (directive.kind === 'system_work') {
     return { kind: 'review_pending', message: directiveLabel(directive.code) };
   }
+  // The same preflight full status uses: never offer an approval it refuses.
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  if (approvalBlock) return projectApprovalBlockedConclusion(approvalBlock, directive);
   const command = directive.commands[0];
 
   switch (evalResult.kind) {
@@ -165,6 +179,12 @@ export function buildFinishPresentationProjection(
 
 function buildFinishConclusion(state: SessionState): FinishConclusionProjection {
   const directive = resolveWorkflowDirective(state);
+  // The finish card is BLOCKED while the approval preflight refuses approval;
+  // its conclusion is the preflight's own recovery, never a recommended /approve.
+  const approvalBlock = projectEvidenceApprovalBlock(state);
+  if (approvalBlock) {
+    return { kind: 'recovery', message: approvalBlock.reason, steps: [...approvalBlock.recovery] };
+  }
   const command = directive.commands[0];
 
   if (command !== undefined) {

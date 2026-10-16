@@ -47,6 +47,7 @@ import {
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import type { ToolDefinition } from './tools/helpers.js';
 import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
+import type { ExecuteCheckInput, ExecutionEvidence } from '../verification/executor.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -212,6 +213,56 @@ function timedOutCheck(kind: VerificationCandidateKind) {
   };
 }
 
+/** The default passing executor result for the requested candidate. */
+async function passingExecution(input: ExecuteCheckInput): Promise<ExecutionEvidence> {
+  return {
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  };
+}
+
+/** Repo-native scripts so Discovery plans more than one active check. */
+async function withTwoScriptCandidates(): Promise<void> {
+  await fs.writeFile(
+    `${ws.tmpDir}/package.json`,
+    JSON.stringify({ private: true, scripts: { build: 'tsc -b', lint: 'eslint .' } }),
+    'utf-8',
+  );
+}
+/** Active checks without a passing result in the given persisted results. */
+function openAfter(
+  results: ReadonlyArray<{ checkId: string; passed: boolean }>,
+  active: readonly string[],
+): string[] {
+  return active.filter((id) => !results.some((result) => result.checkId === id && result.passed));
+}
+
+/** Kinds the executor ran since its last mockClear, in order. */
+function executedKinds(): string[] {
+  return vi
+    .mocked(executorMock.executeCheck)
+    .mock.calls.map(([input]) => (input as { kind: string }).kind);
+}
+/** Move a re-armed operation's backoff into the past (no timer wakes it). */
+async function expireBackoff(sessDir: string): Promise<void> {
+  const current = await readState(sessDir);
+  expect(current!.pendingSystemWork).not.toBeNull();
+  await writeState(sessDir, {
+    ...current!,
+    pendingSystemWork: {
+      ...current!.pendingSystemWork!,
+      retryAfter: new Date(Date.now() - 1000).toISOString(),
+    },
+  });
+}
 /** Reach PLAN_REVIEW in team mode (the plan review loop must converge first). */
 async function reachTeamPlanReview(context: TestToolContext = ctx): Promise<void> {
   await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' }, context);
@@ -620,6 +671,71 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck)).toHaveBeenCalledTimes(1);
     });
 
+    it('a retry after a timeout re-executes only the open VALIDATION checks', async () => {
+      await withTwoScriptCandidates();
+      await reachTeamPlanReview();
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      const active = state!.activeChecks;
+      expect(active.length).toBeGreaterThanOrEqual(2);
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'VALIDATION',
+        pendingSystemWork: {
+          kind: 'validation',
+          requestedAt: new Date().toISOString(),
+          attempt: 0,
+          retryAfter: null,
+        },
+        validation: [],
+      });
+      // First check passes (default executor), the second times out.
+      vi.mocked(executorMock.executeCheck)
+        .mockClear()
+        .mockImplementationOnce(passingExecution)
+        .mockImplementationOnce(async (input) => ({
+          ...timedOutCheck(input.kind),
+          command: input.command,
+        }));
+      expect(await resumePendingSystemWork(ctx)).toMatchObject({ kind: 'still_pending' });
+      const open = openAfter((await readState(sessDir))!.validation, active);
+      expect(open).toEqual([active[1]]);
+
+      await expireBackoff(sessDir);
+      vi.mocked(executorMock.executeCheck).mockClear();
+      await resumePendingSystemWork(ctx);
+
+      expect(executedKinds()).toEqual(open);
+      expect(executedKinds()).not.toContain(active[0]);
+    });
+
+    it('a retry after a timeout re-executes only the open IMPL_VALIDATION checks', async () => {
+      await withTwoScriptCandidates();
+      await reachTeamPlanReview();
+      await callOk(decision, { verdict: 'approve', rationale: 'Approved' });
+      const active = (await readState(await getSessDir()))!.activeChecks;
+      expect(active.length).toBeGreaterThanOrEqual(2);
+      vi.mocked(executorMock.executeCheck)
+        .mockClear()
+        .mockImplementationOnce(passingExecution)
+        .mockImplementationOnce(async (input) => ({
+          ...timedOutCheck(input.kind),
+          command: input.command,
+        }));
+      parseToolResult(await implement.execute({}, ctx));
+      const sessDir = await getSessDir();
+      expect((await readState(sessDir))!.phase).toBe('IMPL_VALIDATION');
+
+      const open = openAfter((await readState(sessDir))!.implValidation, active);
+      expect(open).toEqual([active[1]]);
+
+      await expireBackoff(sessDir);
+      vi.mocked(executorMock.executeCheck).mockClear();
+      await resumePendingSystemWork(ctx);
+
+      expect(executedKinds()).toEqual(open);
+      expect(executedKinds()).not.toContain(active[0]);
+    });
     it('never resumes work when the canonical authority reports an unreadable session state', async () => {
       await reachTeamPlanReview();
       const sessDir = await getSessDir();
@@ -637,7 +753,9 @@ describe('automatic validation', () => {
         sessionId: ctx.sessionID,
       });
       expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
-      expect(resumed).toEqual({ kind: 'none' });
+      // Fail-closed, never "no work": the typed unreadable block is surfaced.
+      expect(resumed).toMatchObject({ kind: 'blocked', code: 'SYSTEM_WORK_STATE_UNREADABLE' });
+      expect((resumed as { response: string }).response).toContain('PARSE_FAILED');
       expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
       expect(await fs.readFile(statePath(sessDir), 'utf-8')).toBe(corrupt);
     });
@@ -659,7 +777,10 @@ describe('automatic validation', () => {
         sessionId: ctx.sessionID,
       });
       expect(authority).toMatchObject({ status: 'unavailable', code: 'PARSE_FAILED' });
-      expect(result).toBeNull();
+      expect(JSON.parse(result!)).toMatchObject({
+        error: true,
+        code: 'SYSTEM_WORK_STATE_UNREADABLE',
+      });
       expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
       expect(await fs.readFile(statePath(sessDir), 'utf-8')).toBe(corrupt);
     });

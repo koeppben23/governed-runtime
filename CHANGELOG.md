@@ -159,6 +159,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Unreadable session state is no longer reported as "no session".** The
+  canonical session authority reports an unreadable, unparseable,
+  schema-invalid or mis-bound state as an `unavailable` value, but `/status`,
+  `/continue`, `flowguard_run_check` and automatic validation only checked for
+  a null state: the output was byte-identical to an absent session ("No
+  FlowGuard session found", recommending `/start`), and automatic validation
+  returned "no work" instead of `SYSTEM_WORK_STATE_UNREADABLE`. These surfaces
+  now report the authority's typed code (for example `PARSE_FAILED`), and
+  automatic validation fails closed with `SYSTEM_WORK_STATE_UNREADABLE`.
+  `/help` keeps its orientation output outside a repository.
+- **Automatic validation re-runs only the open checks.** After a technical
+  outcome (for example a timeout) a retry re-executed the whole active check
+  set, including checks with a fresh passing result. It now executes only the
+  checks the phase's evidence authority still reports as open
+  (`missingValidationChecks` for VALIDATION, new in `machine/validation-evidence`
+  and used by the `allValidationsPassed` guard;
+  `evaluateImplValidationEvidence(...).missing` for IMPL_VALIDATION). If all
+  checks are satisfied but the phase was not left, the full set is re-run so the
+  transition is re-evaluated. The `/validate`, `/check` and `/implement`
+  templates no longer call `activeChecks` and `remainingChecks` equivalent.
+- **`/why` and `/finish` no longer recommend a refused approval.** While the
+  evidence-approval preflight blocks, full status already offered only
+  non-approve decisions, but `/why` listed `/approve` as available and `/finish`
+  recommended it as next action on a BLOCKED card. `/why` now uses the same
+  decision projection as full status, and `/finish` concludes with the
+  preflight's own recovery.
+- **Automatic-validation retry timing is stated honestly.** There is no timer:
+  a re-armed validation retries on the first host lifecycle event (such as the
+  session becoming idle) after its backoff. The phase guidance and the module
+  contract now say so.
 - **Risk fixture scopes the head-only observation offer to plan review.** The
   risk-trigger fixture ticket said "Base-revision observation is not available
   to this obligation: do not assert base-vs-head comparisons", and its README

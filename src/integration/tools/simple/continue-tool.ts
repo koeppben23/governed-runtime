@@ -13,7 +13,7 @@
 
 import { formatBlocked } from '../../blocked-result.js';
 import { withReadOnlySession, enrichWithWorkflowDirective } from '../helpers.js';
-import { formatError } from '../error-format.js';
+import { formatError, formatSessionUnavailable } from '../error-format.js';
 import { USER_GATES, TERMINAL } from '../../../machine/topology.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
@@ -110,7 +110,11 @@ export const continue_cmd: ToolDefinition = {
   args: {},
   async execute(_args, context) {
     try {
-      const { state } = (await withReadOnlySession(context)) ?? {};
+      const session = await withReadOnlySession(context);
+      if (session.authority.status === 'unavailable') {
+        return formatSessionUnavailable(session.authority);
+      }
+      const { state } = session;
       if (!state) return formatBlocked('NO_SESSION');
       const { phase } = state;
 

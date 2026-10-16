@@ -76,16 +76,16 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
  5. Only when the returned phase is \`IMPL_VALIDATION\`: call \`flowguard_status\` with NO focused
     flags (no whyBlocked/evidence/context/readiness) to get the full projection, then read
-    \`activeChecks\` (equivalently \`remainingChecks\` in IMPL_VALIDATION) and
-    \`verificationCandidates\`.
-    - If both \`activeChecks\`/\`remainingChecks\` and \`verificationCandidates\` are empty:
+    \`activeChecks\` and \`verificationCandidates\` (\`remainingChecks\` is NOT equivalent: it
+    lists only the active checks without a passing result yet).
+    - If both \`activeChecks\` and \`verificationCandidates\` are empty:
       report no active checks and stop without calling \`flowguard_run_check\`. The MACHINE
       itself decides a vacuous transition — read the canonical \`directive\` and the actual
       phase from the tool response; never claim the IMPL_REVIEW gate is unreachable and never
       invent a transition path.
-    - If \`activeChecks\`/\`remainingChecks\` is non-empty: for each kind, call
+    - If \`activeChecks\` is non-empty: for each kind, call
       \`flowguard_run_check({ kind: "<kind>" })\`.
-    - If \`activeChecks\`/\`remainingChecks\` is empty but \`verificationCandidates\` is non-empty:
+    - If \`activeChecks\` is empty but \`verificationCandidates\` is non-empty:
       for each kind in \`verificationCandidates\`, call
       \`flowguard_run_check({ kind: "<kind>" })\` — it validates the kind against canonical
       state, not against the status output.

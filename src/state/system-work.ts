@@ -11,7 +11,8 @@
  *
  * Retry state: a technical outcome keeps the operation pending and records the
  * attempt count plus a `retryAfter` backoff, so lifecycle events can retry
- * without a tight loop. A new transition re-arms the operation with
+ * without a tight loop. No timer wakes the runtime: the retry happens on the
+ * first host lifecycle event after `retryAfter`. A new transition re-arms the operation with
  * `attempt: 0` and no backoff.
  *
  * @version v2

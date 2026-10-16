@@ -9,7 +9,7 @@
  *
  * Both phases are `system_work` states whose exit is normally driven by
  * explicit `/run_check` calls. This module closes that gap: it executes every
- * active check in order through the production run-check path (candidate
+ * still-open active check in order through the production run-check path (candidate
  * resolution, execution-subject attestation, evidence persistence,
  * phase-aware auto-advance), so the phase exits on the same evidence the
  * explicit surface would have produced. The explicit `/run_check`
@@ -20,6 +20,10 @@
  * automatic attempt — initial or resumed — either leaves validation, durably
  * re-arms the exact pending operation generation with backoff, or blocks. A
  * retry metadata write is therefore never best-effort.
+ *
+ * Liveness: there is no timer. A re-armed operation is resumed only by the next
+ * host session lifecycle event (`session.idle` / idle `session.status`) that
+ * arrives after `retryAfter`; an event inside the backoff window is a no-op.
  *
  * Reentrancy: the runner is guarded per session, never process-globally. Two
  * sessions may validate concurrently; a second re-entrant call for the SAME
@@ -43,6 +47,8 @@ import { formatError } from './error-format.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import type { VerificationCandidateKind } from '../../state/discovery-schemas.js';
 import { IntegrationInvariantError } from '../errors.js';
+import { missingValidationChecks } from '../../machine/validation-evidence.js';
+import { evaluateImplValidationEvidence } from '../../machine/impl-validation-evidence.js';
 
 type ValidationPhase = 'VALIDATION' | 'IMPL_VALIDATION';
 
@@ -132,7 +138,28 @@ export function decidePostCommandAutoValidation(input: {
 interface SessionRead {
   readonly phase: Phase;
   readonly activeChecks: readonly string[];
+  /**
+   * Active checks the phase's evidence authority still reports as open: only
+   * these are re-executed, so a fresh bound PASS is never repeated.
+   */
+  readonly openChecks: readonly string[];
   readonly pendingSystemWork: SystemWorkOperation | null;
+}
+
+/** Open checks of a validation phase, from the phase's canonical evidence authority. */
+function openChecksFor(state: SessionState): readonly string[] {
+  if (state.phase === 'VALIDATION') return missingValidationChecks(state);
+  if (state.phase === 'IMPL_VALIDATION') return evaluateImplValidationEvidence(state).missing;
+  return [];
+}
+
+/**
+ * Checks one automatic attempt executes. With every active check satisfied but
+ * the phase not yet left (an interrupted transition), the full active set is
+ * re-executed so the run-check path re-evaluates and advances the phase.
+ */
+function checksToExecute(session: SessionRead): readonly string[] {
+  return session.openChecks.length > 0 ? session.openChecks : session.activeChecks;
 }
 
 type ReadOutcome =
@@ -149,13 +176,23 @@ type ReadOutcome =
  */
 async function readSession(context: WorkspaceToolContext): Promise<ReadOutcome> {
   try {
-    const { state } = await withReadOnlySession(context);
+    const session = await withReadOnlySession(context);
+    // The canonical authority reports an unreadable state as a VALUE, not a
+    // throw; collapsing it into "no session" would skip the fail-closed path.
+    if (session.authority.status === 'unavailable') {
+      return {
+        kind: 'unreadable',
+        reason: `${session.authority.code}: ${session.authority.reason}`,
+      };
+    }
+    const { state } = session;
     if (!state) return { kind: 'none' };
     return {
       kind: 'ok',
       session: {
         phase: state.phase,
         activeChecks: [...state.activeChecks],
+        openChecks: [...openChecksFor(state)],
         pendingSystemWork: state.pendingSystemWork,
       },
     };
@@ -427,14 +464,15 @@ async function runAutomaticValidationAttempt(
       return { kind: 'none' };
     }
 
+    const checks = checksToExecute(before.session);
     getAdapterLogger().info('tool', 'auto_validation', {
       sessionId: context.sessionID,
       phase,
-      checks: activeChecks.join(','),
+      checks: checks.join(','),
       ...getLogTraceFields(),
     });
 
-    const sequence = await runActiveCheckSequence(context, phase, activeChecks);
+    const sequence = await runActiveCheckSequence(context, phase, checks);
     if (sequence.kind === 'completed' || sequence.kind === 'blocked') return sequence;
     if (sequence.kind === 'empty') return { kind: 'none' };
 
