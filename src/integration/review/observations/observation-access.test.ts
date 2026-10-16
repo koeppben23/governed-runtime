@@ -27,7 +27,10 @@ import {
   mintObservationCapability,
 } from '../obligations/attempt-lifecycle.js';
 import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
-import { resolveRepositoryObservationAccess } from './observation-access.js';
+import {
+  resolveObservationRevisionRequest,
+  resolveRepositoryObservationAccess,
+} from './observation-access.js';
 import { renderRepositoryObservationContract } from '../prompting/observation-contract-prompt.js';
 import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
 import { repositoryDiscoveryContext } from '../../test-helpers.js';
@@ -350,5 +353,93 @@ describe('canonical reviewer Task prompt', () => {
     const prompt = canonicalPrompt('fgc_forged_capability', []);
     expect(prompt).toContain('NO frozen repository observation authority');
     expect(prompt).not.toContain('flowguard_observe_repository({');
+  });
+});
+
+describe('resolveObservationRevisionRequest', () => {
+  it('HAPPY: an offered revision resolves to its frozen target', () => {
+    expect(resolveObservationRevisionRequest(contextObligation(), 'head')).toMatchObject({
+      kind: 'offered',
+      target: { kind: 'commit', objectSha: SHA },
+    });
+    expect(resolveObservationRevisionRequest(candidatePairObligation(), 'base').kind).toBe(
+      'offered',
+    );
+  });
+
+  it('BAD: base on a context authority is not offered and names the offered head', () => {
+    expect(resolveObservationRevisionRequest(contextObligation(), 'base')).toEqual({
+      kind: 'not_offered',
+      offeredRevisions: ['head'],
+    });
+  });
+
+  it('BAD: an obligation without authority has no observable revision at all', () => {
+    for (const revision of ['base', 'head'] as const) {
+      expect(resolveObservationRevisionRequest(artifactOnlyObligation(), revision)).toEqual({
+        kind: 'no_authority',
+      });
+    }
+  });
+});
+
+describe('prompt, grammar, and tool resolution offer the same revisions', () => {
+  function promptFor(obligation: ReviewObligation, capability: string | undefined) {
+    return renderReviewerTaskPrompt({
+      iteration: 0,
+      planVersion: 1,
+      obligationId: obligation.obligationId,
+      mandateDigest: 'mandate-digest',
+      criteriaVersion: 'criteria-v1',
+      subjectLabel: 'the artifact under review',
+      observationCapability: capability,
+      observationRevisions: resolveObservationRevisions(obligation),
+    });
+  }
+
+  it('context authority: only "head" in contract, grammar, and tool resolution', () => {
+    const obligation = contextObligation();
+    const prompt = promptFor(obligation, 'fgc_cap');
+
+    expect(prompt).toContain('Offered revision(s): "head".');
+    expect(prompt).toContain(
+      'Any other revision is rejected as not offered; that rejection says nothing about "head", which stays observable.',
+    );
+    expect(prompt).toContain('"revision": "head",');
+    expect(prompt).toContain('Only "head" is valid for this review.');
+    expect(prompt).not.toContain('"base"');
+    expect(resolveObservationRevisionRequest(obligation, 'base')).toEqual({
+      kind: 'not_offered',
+      offeredRevisions: ['head'],
+    });
+  });
+
+  it('candidate pair: "base" | "head" everywhere, no not-offered rejection', () => {
+    const obligation = candidatePairObligation();
+    const prompt = promptFor(obligation, 'fgc_cap');
+
+    expect(prompt).toContain('Offered revision(s): "base", "head".');
+    expect(prompt).not.toContain('rejected as not offered');
+    expect(prompt).toContain('"revision": "base" | "head",');
+    expect(prompt).toContain('Only "base" | "head" are valid for this review.');
+    for (const revision of ['base', 'head'] as const) {
+      expect(resolveObservationRevisionRequest(obligation, revision).kind).toBe('offered');
+    }
+  });
+
+  it('no authority: no observable revision is claimed anywhere', () => {
+    const obligation = artifactOnlyObligation();
+    const prompt = promptFor(obligation, 'fgc_forged_capability');
+
+    expect(prompt).toContain('NO frozen repository observation authority');
+    expect(prompt).toContain('This review offers no repository revision');
+    expect(prompt).not.toMatch(/Only "(base|head)"/);
+    expect(prompt).not.toContain('Offered revision(s)');
+  });
+
+  it('a capability-less prompt offers no revision even when the obligation has authority', () => {
+    const prompt = promptFor(contextObligation(), undefined);
+    expect(prompt).toContain('This review offers no repository revision');
+    expect(prompt).not.toContain('Only "head" is valid');
   });
 });

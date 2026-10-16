@@ -313,3 +313,70 @@ describe('renderReviewerTaskPrompt plan-review verification authority (p42-v3)',
     expect(implementation).not.toContain('Verification phase: plan review precedes');
   });
 });
+
+describe('renderReviewerTaskPrompt plan evidence roles and blocking bar (p42-v4)', () => {
+  const ROLE_RULE =
+    "- Evidence roles: a claim's positive evidence comes from executions of its positive evidence check and its counterexample evidence from separate executions of its counterexample check, each with its own attempt identity. Different checks may run overlapping test suites; that overlap is allowed and is not a defect. Plan review does not require these executions to exist yet.";
+  const BLOCKING_BAR =
+    'Every blocking issue must let the author act: name the unmet ticket requirement or the concrete plan defect, the exact plan section, the supplied evidence (frozen material, verification candidate, or observed repository bytes) that demonstrates it, and a feasible minimal repair. A fact you could not establish from that evidence is NOT_VERIFIED, not a demonstrated defect. Never fabricate findings: a plan that satisfies the ticket and these criteria is accepted without extra review rounds.';
+
+  function claim(index: number) {
+    return {
+      claimId: `1111111${index}-1111-4111-8111-111111111111`,
+      statement: `Claim ${index} rejects writes without ownership.`,
+      critical: true,
+      authoritySectionId: 'Invariant',
+      claimScope: 'specific_behavior' as const,
+      expectedCheckId: 'test',
+      counterexampleRequirement: {
+        kind: 'assertion' as const,
+        checkId: 'build',
+        assertion: { providerId: 'junit', localId: `fixture.ProbeTest#rejects${index}` },
+      },
+    };
+  }
+
+  function occurrences(text: string, needle: string): number {
+    return text.split(needle).length - 1;
+  }
+
+  it('states the role rule once although claims appear in advisory context and frozen material', () => {
+    const declarations = { flow: 'plan', version: 'v2', claims: [claim(1), claim(2)] } as never;
+    const claims = renderPlanClaimDeclarations(declarations);
+    const content = buildFrozenReviewMaterialContent({
+      obligationType: 'plan',
+      renderPlanClaimDeclarations,
+      state: makeState('PLAN_REVIEW'),
+      artifact: '# Plan\n\nBody.',
+      planClaimDeclarations: declarations,
+    });
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      reviewType: 'plan',
+      proofContext: ['### Plan claim declarations (2)', claims],
+      frozenReviewerContext: {
+        reviewMaterial: {
+          content,
+          materialDigest: 'd'.repeat(64),
+          subjectDigest: 'e'.repeat(64),
+        },
+      },
+    });
+
+    expect(occurrences(prompt, 'Positive evidence check: test')).toBe(4);
+    expect(occurrences(prompt, ROLE_RULE)).toBe(1);
+    expect(occurrences(prompt, 'Evidence roles')).toBe(1);
+    expect(prompt).not.toContain('do not imply that both evidence roles share an attempt');
+  });
+
+  it('carries the plan blocking bar in plan review only', () => {
+    const plan = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType: 'plan' });
+    expect(occurrences(plan, BLOCKING_BAR)).toBe(1);
+
+    for (const reviewType of ['implementation', 'adr', 'content'] as const) {
+      const other = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType });
+      expect(other, reviewType).not.toContain(BLOCKING_BAR);
+      expect(other, reviewType).not.toContain(ROLE_RULE);
+    }
+  });
+});

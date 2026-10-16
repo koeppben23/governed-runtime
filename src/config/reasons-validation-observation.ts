@@ -44,6 +44,17 @@ export const OBSERVATION_VALIDATION_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'REVIEW_OBSERVATION_REVISION_NOT_OFFERED',
+    category: 'state',
+    messageTemplate:
+      'Revision {revision} is not offered for repository observation by obligation {obligationId}; offered revision(s): {offeredRevisions}.',
+    recoverySteps: [
+      'Repeat the observation with an offered revision ({offeredRevisions}) and the same capability and path',
+      'This rejection concerns only revision {revision}: it is not evidence that the offered revision(s) are unavailable',
+      'Do not substitute worktree reads or recalled content for frozen observation',
+    ],
+  },
+  {
     code: 'REVIEW_OBSERVATION_INVALID_ARGS',
     category: 'state',
     messageTemplate: 'flowguard_observe_repository arguments are invalid: {reason}.',

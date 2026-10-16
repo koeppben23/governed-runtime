@@ -142,6 +142,15 @@ function renderObservationContractLines(input: ReviewerTaskPromptInput): string[
   );
 }
 
+/**
+ * Revisions this attempt can actually observe: the obligation's offered
+ * revisions, and only with a capability. The observation contract and the
+ * finding grammar render from this same projection.
+ */
+function observableRevisions(input: ReviewerTaskPromptInput): readonly ('base' | 'head')[] {
+  return input.observationCapability ? (input.observationRevisions ?? []) : [];
+}
+
 function renderAnchorContractLines(input: {
   readonly artifactAnchorContract?: readonly string[] | undefined;
   readonly implementationAnchorContract?: readonly string[] | undefined;
@@ -248,7 +257,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     ...renderReviewerRules(isRepositoryReview, promptType === 'implementation'),
     ...renderFindingsSemanticRule(input),
     ...renderReviewChallengeContract(input.challengeContract, input.obligationId),
-    renderFindingRelationGrammar(),
+    renderFindingRelationGrammar(observableRevisions(input)),
     '',
     '## Trusted Runtime Context',
     `Review context: ${context}.`,
