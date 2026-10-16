@@ -499,7 +499,7 @@ describe('BAD: invalid input returns structured error', () => {
 // ─── CORNER: edge cases ─────────────────────────────────────────────────────────
 
 describe('CORNER: CLI edge cases', () => {
-  it('status on non-existent session returns phase=null with guidance', async () => {
+  it('status outside any resolvable workspace reports the typed authority error, not "no session"', async () => {
     const badCtx = createToolContext({
       worktree: '/tmp/flowguard-cli-nonexistent-000',
       directory: '/tmp/flowguard-cli-nonexistent-000',
@@ -508,8 +508,14 @@ describe('CORNER: CLI edge cases', () => {
     const raw = await status.execute({}, badCtx);
     const result = parseToolResult(raw);
 
-    expect(result.phase).toBeNull();
-    expect(result.status).toBeDefined();
+    // An unresolvable workspace is not an absent session: the authority's typed
+    // code is surfaced instead of bootstrap guidance that would overwrite it.
+    // The concrete code depends on the environment's git availability
+    // (GIT_NOT_FOUND when git cannot be probed, NOT_GIT_REPO in a normal CLI).
+    expect(result.error).toBe(true);
+    expect(result.code).toBeDefined();
+    expect(result.phase).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('No FlowGuard session found');
   });
 
   it('appliedPolicy includes stable fields from state', async () => {
