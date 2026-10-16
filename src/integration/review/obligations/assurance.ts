@@ -43,7 +43,9 @@ import { REVIEWER_AGENT } from '../../../templates/mandates.js';
 // quality checklist and blocking-finding contract. Any semantic criteria change
 // advances this generation; stale obligations fail closed instead of silently
 // reviewing under unstated semantics.
-export const REVIEW_CRITERIA_VERSION = 'p42-v2';
+// p42-v3: plan-review verification authority (persisted verification candidates,
+// executable candidate command) and plan-before-validation phase boundary.
+export const REVIEW_CRITERIA_VERSION = 'p42-v3';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
 

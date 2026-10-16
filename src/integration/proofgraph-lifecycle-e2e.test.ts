@@ -511,7 +511,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
 
     expect(context).toContain('Declared Claims (pre-evidence, advisory)');
     expect(context).toContain(CRITICAL_CLAIM_ID);
-    expect(context).toContain('Expected check: build');
+    expect(context).toContain('Positive evidence check: build');
     // Not yet approved: the reviewer must see that nothing is certificate-bound.
     expect(context).toContain('Plan approval certificate: none recorded');
   });
