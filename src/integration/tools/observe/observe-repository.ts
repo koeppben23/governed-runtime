@@ -36,8 +36,9 @@ import {
   observationCapabilityDigest,
   observationLedgerRoot,
 } from '../../../adapters/persistence-observation-ledger.js';
-import { resolveFrozenRevisionTarget } from '../../../state/evidence.js';
+import type { FrozenRepositoryRevisionTargetValue } from '../../../state/evidence-review-authority.js';
 import { classifyRepositoryPath } from '../../../state/repository-path.js';
+import { resolveObservationRevisionRequest } from '../../review/observations/observation-access.js';
 import { resolveAttemptByCapability } from '../../review/observations/observation-resolution.js';
 import {
   buildObservationToolResponse,
@@ -126,9 +127,7 @@ async function resolveObservationTarget(input: {
   revision: 'base' | 'head';
   fingerprint: string;
   capturedSessionId: string;
-}): Promise<
-  { blocked: string } | { target: NonNullable<ReturnType<typeof resolveFrozenRevisionTarget>> }
-> {
+}): Promise<{ blocked: string } | { target: FrozenRepositoryRevisionTargetValue }> {
   const resolution = await resolveAttemptByCapability({
     workspaceHome: workspacesHome(),
     fingerprint: input.fingerprint,
@@ -151,8 +150,17 @@ async function resolveObservationTarget(input: {
       }),
     };
   }
-  const target = resolveFrozenRevisionTarget(resolution.obligation, input.revision);
-  if (!target) {
+  const request = resolveObservationRevisionRequest(resolution.obligation, input.revision);
+  if (request.kind === 'not_offered') {
+    return {
+      blocked: formatBlocked('REVIEW_OBSERVATION_REVISION_NOT_OFFERED', {
+        revision: input.revision,
+        obligationId: resolution.obligation.obligationId,
+        offeredRevisions: request.offeredRevisions.map((value) => `"${value}"`).join(', '),
+      }),
+    };
+  }
+  if (request.kind === 'no_authority') {
     return {
       blocked: formatBlocked('REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE', {
         revision: input.revision,
@@ -160,16 +168,16 @@ async function resolveObservationTarget(input: {
       }),
     };
   }
-  return { target };
+  return { target: request.target };
 }
 
 export const observe_repository: ToolDefinition = {
   description:
-    'Obtain the exact frozen repository bytes for a revision ("base" | "head") and ' +
-    'repository-relative path, bound to your review attempt via the observation ' +
-    'capability from your review prompt. This is the ONLY sanctioned source for ' +
-    'repository evidenceLocations; ordinary read/glob/grep output is investigation ' +
-    'only and cannot prove repository evidence.',
+    'Obtain the exact frozen repository bytes for a revision offered in your review ' +
+    'prompt ("base" and/or "head") and repository-relative path, bound to your review ' +
+    'attempt via the observation capability from your review prompt. This is the ONLY ' +
+    'sanctioned source for repository evidenceLocations; ordinary read/glob/grep output ' +
+    'is investigation only and cannot prove repository evidence.',
   args: {
     capability: ARGS.shape.capability,
     revision: ARGS.shape.revision,

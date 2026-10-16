@@ -20,7 +20,10 @@ import {
   observationLedgerRoot,
   readObservationCaptures,
 } from '../../adapters/persistence-observation-ledger.js';
-import { freezeReviewMaterial } from '../review/obligations/assurance.js';
+import {
+  artifactReviewSubjectScope,
+  freezeReviewMaterial,
+} from '../review/obligations/assurance.js';
 import {
   buildObservationToolResponse,
   contentDigestOf,
@@ -177,6 +180,63 @@ beforeAll(async () => {
     'utf-8',
   );
   (globalThis as Record<string, unknown>).__OBS_CAPABILITY = attempt.observationCapability;
+
+  // A context authority (plan/architecture) offers exactly "head".
+  const contextObligation = createReviewObligation({
+    obligationType: 'architecture',
+    reviewCycle: 1,
+    repositoryEvidenceFreeze: { kind: 'available' },
+    iteration: 0,
+    planVersion: 1,
+    now: '2026-08-13T10:00:00.000Z',
+    subjectDigest: 'adr-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'adr-digest'),
+    reviewSubjectScope: artifactReviewSubjectScope(
+      'adr',
+      '## Context\nA\n## Decision\nB',
+      'adr-digest',
+    ),
+    repositoryAuthority: {
+      kind: 'context',
+      context: {
+        kind: 'commit',
+        repositoryIdentity: { kind: 'local', rootCommitDigest: 'sha256:' + 'b'.repeat(64) },
+        objectSha: baseSha,
+      },
+    },
+  });
+  const contextAttempt = createReviewAttempt({
+    obligationId: contextObligation.obligationId,
+    obligationType: 'architecture',
+    subjectDigest: contextObligation.subjectDigest,
+    ordinal: 1,
+    origin: { kind: 'initial' },
+    observationCapability: mintObservationCapability(),
+    repositoryDiscovery: attempt.repositoryDiscovery,
+    now: '2026-08-13T10:00:00.000Z',
+  });
+  const contextSessDir = path.join(LEDGER_HOME, 'ab'.repeat(12), 'sessions', 'context-session');
+  fs.mkdirSync(contextSessDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(contextSessDir, 'session-state.json'),
+    JSON.stringify(
+      {
+        ...makeState('ARCH_REVIEW'),
+        reviewAssurance: {
+          assuranceSchemaVersion: 'review-assurance.v7',
+          obligations: [contextObligation],
+          invocations: [],
+          attempts: [contextAttempt],
+          dispatches: [],
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf-8',
+  );
+  (globalThis as Record<string, unknown>).__CTX_CAPABILITY = contextAttempt.observationCapability;
+  (globalThis as Record<string, unknown>).__CTX_OBLIGATION_ID = contextObligation.obligationId;
 });
 
 afterAll(() => {
@@ -313,5 +373,44 @@ describe('observe_repository', () => {
       },
     );
     expect(typeof output).toBe('string');
+  });
+
+  describe('context authority (plan/architecture): only "head" is offered', () => {
+    const CONTEXT = {
+      sessionID: 'context-child-session',
+      messageID: 'm',
+      agent: 'flowguard-reviewer',
+      directory: '',
+      worktree: '',
+      abort: undefined,
+      metadata: () => {},
+    };
+
+    it('HAPPY: the offered "head" delivers frozen context bytes', async () => {
+      const { observe_repository } = await import('./observe/observe-repository.js');
+      const capability = (globalThis as Record<string, unknown>).__CTX_CAPABILITY as string;
+      const output = await observe_repository.execute(
+        { capability, revision: 'head', path: 'src/foo.ts' },
+        { ...CONTEXT, directory: worktree, worktree },
+      );
+      expect((JSON.parse(String(output)) as { content: string }).content).toBe('frozen-content\n');
+    });
+
+    it('BAD: "base" is rejected as not offered and names the offered "head"', async () => {
+      const { observe_repository } = await import('./observe/observe-repository.js');
+      const capability = (globalThis as Record<string, unknown>).__CTX_CAPABILITY as string;
+      const output = await observe_repository.execute(
+        { capability, revision: 'base', path: 'src/foo.ts' },
+        { ...CONTEXT, directory: worktree, worktree },
+      );
+      expect(JSON.parse(String(output))).toEqual({
+        error: true,
+        code: 'REVIEW_OBSERVATION_REVISION_NOT_OFFERED',
+        revision: 'base',
+        obligationId: (globalThis as Record<string, unknown>).__CTX_OBLIGATION_ID,
+        offeredRevisions: '"head"',
+      });
+      expect(String(output)).not.toContain('REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE');
+    });
   });
 });

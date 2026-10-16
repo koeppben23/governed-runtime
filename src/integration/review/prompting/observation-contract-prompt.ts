@@ -26,6 +26,7 @@ export function renderRepositoryObservationContract(
     ];
   }
   const revisionExpression = revisions.length === 1 ? `"${revisions[0]}"` : '<base|head>';
+  const offered = revisions.map((revision) => `"${revision}"`).join(', ');
   return [
     '## Repository Observation Contract',
     '',
@@ -36,6 +37,12 @@ export function renderRepositoryObservationContract(
     '',
     `  flowguard_observe_repository({ capability: "${capability}", revision: ${revisionExpression}, path: "<repository-relative path>" })`,
     '',
+    `Offered revision(s): ${offered}.`,
+    ...(revisions.length === 1
+      ? [
+          `Any other revision is rejected as not offered; that rejection says nothing about ${offered}, which stays observable.`,
+        ]
+      : []),
     'The returned observation is the ONLY admissible basis for citing that',
     'location. Cite { path, revision } exactly as observed. Worktree reads,',
     'recalled content, or citations without a matching observation cannot bind.',

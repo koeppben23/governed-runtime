@@ -23,8 +23,36 @@
  */
 
 import type { ReviewAttempt, ReviewObligation } from '../../../state/evidence.js';
-import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
+import {
+  resolveFrozenRevisionTarget,
+  resolveObservationRevisions,
+  type FrozenRepositoryRevisionTargetValue,
+} from '../../../state/evidence-review-authority.js';
 import type { RepositoryEvidenceFreeze } from '../../../state/evidence-review-freeze.js';
+
+/**
+ * Outcome of one requested observation revision against the obligation's
+ * frozen authority. `not_offered` and `no_authority` are distinct: a revision
+ * outside the offer says nothing about the offered revisions, which stay
+ * observable; only `no_authority` means repository evidence is unavailable.
+ */
+export type ObservationRevisionRequest =
+  | { readonly kind: 'offered'; readonly target: FrozenRepositoryRevisionTargetValue }
+  | { readonly kind: 'not_offered'; readonly offeredRevisions: readonly ('base' | 'head')[] }
+  | { readonly kind: 'no_authority' };
+
+/** Resolve a requested revision through the same SSOT that advertises revisions. */
+export function resolveObservationRevisionRequest(
+  obligation: ReviewObligation,
+  revision: 'base' | 'head',
+): ObservationRevisionRequest {
+  const target = resolveFrozenRevisionTarget(obligation, revision);
+  if (target) return { kind: 'offered', target };
+  const offeredRevisions = resolveObservationRevisions(obligation);
+  return offeredRevisions.length > 0
+    ? { kind: 'not_offered', offeredRevisions }
+    : { kind: 'no_authority' };
+}
 
 export type RepositoryObservationAccessUnavailableReason = 'no_frozen_authority';
 
