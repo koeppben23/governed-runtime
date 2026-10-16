@@ -398,6 +398,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Challenge evidence refs are offered once.** The reviewer challenge
+  contract now lists the offered evidence refs exactly once as a numbered
+  whitelist and the challenge shape example cites exactly one offered ref that
+  fits the challenge kind (first `validation_attempt` for implementation, first
+  `plan_adr_section` for plan/ADR, the `content` ref for content reviews;
+  otherwise the first offered ref). Previously the example embedded the entire
+  whitelist, which read as "cite all refs". Reviewers cite a non-empty subset;
+  a passing implementation challenge must cite at least one
+  `validation_attempt`. Validation is unchanged: refs outside the offer are
+  still rejected, and without offered refs the reviewer still returns
+  `unable_to_review`.
 - **BREAKING — session state v11 and the versioned plan approval certificate.**
   The plan approval certificate is replaced by `plan-approval-certificate.v1`
   with an explicit `explicit_decision` / `policy_auto` attestation bound to the
