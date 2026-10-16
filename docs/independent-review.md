@@ -109,6 +109,12 @@ Any semantic criteria change advances `REVIEW_CRITERIA_VERSION`
 (`src/integration/review/obligations/assurance.ts`); obligations minted under a
 stale generation fail closed as `REVIEW_GENERATION_MISMATCH` and are recovered
 through the documented fresh-review-cycle route.
+Generation `p42-v5` additionally requires both evidence classes for a passing
+implementation challenge (execution evidence on the current digest and the
+current implementation ref as content evidence), scopes the finding-relation
+grammar to the admitted subject-anchor kind, states `evidenceLocations` as
+required-but-may-be-empty, and orders `reviewRetry` handling before any
+completed-review assumption in every review command surface.
 
 Implementation-challenge repair (`changes_requested` with a failing
 `implementation_challenge`) converges through one shared authority
