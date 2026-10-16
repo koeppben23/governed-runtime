@@ -51,14 +51,21 @@ const SEED = path.join(REPO, 'demos', 'java-task-manager', 'seed');
 const FIXTURE = SCRIPT_DIR;
 const SKIP_ASSERTION_ENV = 'FLOWGUARD_LIVE_SKIP_ASSERTION';
 const INVARIANT = 'The module must reject any write that omits the ownership field.';
-export const POSITIVE_ASSERTION = 'fixture.StateNoteTest#storesValidOwnership';
+/**
+ * Retained critical claim statement: runtime rejection behavior only. Retention
+ * of the invariant sentence and the review comment are separate acceptance
+ * criteria confirmed by content/diff inspection, never by an executed check.
+ */
+export const CLAIM_STATEMENT =
+  'ModuleStateStore.write rejects writes with missing or blank ownership values (null, empty, or whitespace-only).';
+export const POSITIVE_ASSERTION = 'fixture.StateNoteTest#rejectsMissingOwnership';
 export const ADVERSARIAL_ASSERTION =
   'fixture.StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership';
 
 /** TRUE when the claim declares the detected trigger; FALSE keeps it uncovered. */
 export function claimDeclaration(covered) {
   return {
-    statement: `src/main/java/fixture/state/ModuleStateStore.java enforces the ownership invariant: ${INVARIANT}`,
+    statement: CLAIM_STATEMENT,
     critical: true,
     authoritySectionId: 'Invariant',
     claimScope: 'specific_behavior',

@@ -12,19 +12,26 @@ holds only the project files, the JUnit assertions and the ticket.
 
 ## Evidence contract
 
-- `StateNoteTest#storesValidOwnership` observes the accept path (valid owner is
-  stored and read back). `StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership`
-  observes rejection of null, empty, and whitespace-only owners — removing the
-  guard or weakening `isBlank()` to `isEmpty()` makes this probe fail.
-- Neither JUnit probe observes the invariant sentence or the review comment.
-  Those are documentation evidence, confirmed by content/diff inspection.
+- `StateNoteTest#rejectsMissingOwnership` is the retained claim's bound positive
+  evidence: null and empty owners are rejected.
+- `StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership` is the bound
+  adversarial counterexample: whitespace-only owners are also rejected —
+  removing the guard or weakening `isBlank()` to `isEmpty()` makes this probe
+  fail (and also the positive assertion when the guard is removed entirely).
+- `StateNoteTest#storesValidOwnership` is a supplementary accept-path
+  observation (valid owner is stored and read back); it is not bound as claim
+  evidence.
+- None of the JUnit probes observes the invariant sentence or the review
+  comment. Those are documentation evidence, confirmed by content/diff
+  inspection.
 - The falsification probe is guarded by `FLOWGUARD_LIVE_SKIP_ASSERTION` as an
   intentional negative-case control hook. A skipped probe is not sufficient
   adversarial evidence: FlowGuard binds skipped assertions as not_verified and
   the demo oracle requires the bound assertion to be passed.
-- `build` (`./mvnw verify`) and `test` (`./mvnw test`) overlap in Maven's test
-  phase; admissible evidence requires distinct attempt identities and evidence
-  roles, not disjoint command implementations.
+- `build` (`./mvnw verify`) and `test` (`./mvnw test`) both run the Maven test
+  phase, so the same JUnit assertions execute under both checks. The required
+  independence is the bound attempt identity and evidence role, not disjoint
+  test sets.
 - `.opencode/flowguard.json` is applied after install and frozen into the
   persisted policy snapshot; it is not part of the seed commit.
 

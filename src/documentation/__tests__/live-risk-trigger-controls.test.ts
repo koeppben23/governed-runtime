@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ADVERSARIAL_ASSERTION,
+  CLAIM_STATEMENT,
   POSITIVE_ASSERTION,
   assertFullEvidence,
   assertInstalledBuildIdentity,
@@ -152,6 +153,20 @@ describe('risk-trigger control oracles', () => {
     expect(coversRiskTriggers).toEqual(['state_integrity']);
     expect(rest).toEqual(uncovered);
     expect(uncovered).not.toHaveProperty('coversRiskTriggers');
+  });
+
+  it('binds the retained claim to rejection-observing assertion identities', () => {
+    expect(claimDeclaration(false).statement).toBe(CLAIM_STATEMENT);
+    expect(CLAIM_STATEMENT).toBe(
+      'ModuleStateStore.write rejects writes with missing or blank ownership values (null, empty, or whitespace-only).',
+    );
+    expect(CLAIM_STATEMENT.toLowerCase()).not.toContain('document');
+    expect(CLAIM_STATEMENT.toLowerCase()).not.toContain('invariant sentence');
+    expect(POSITIVE_ASSERTION).toBe('fixture.StateNoteTest#rejectsMissingOwnership');
+    expect(ADVERSARIAL_ASSERTION).toBe(
+      'fixture.StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership',
+    );
+    expect(POSITIVE_ASSERTION).not.toBe(ADVERSARIAL_ASSERTION);
   });
 
   it('requires the same full PROVEN evidence contract before either approval', () => {
