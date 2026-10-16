@@ -140,17 +140,74 @@ describe('Discovery reviewer provenance projection', () => {
     expect(resolved.context.snapshot.verificationCandidates[0]?.candidateId).toBe(CANDIDATE_ID);
   });
 
-  it('keeps persisted pre-fix snapshots readable when drift digest fields are absent', () => {
-    const legacy = {
-      ...snapshot(),
-      drift: {
-        status: 'clean' as const,
-        drifted: false,
-        changedContributorNames: [],
-        notVerified: [],
+  it('rejects non-canonical persisted snapshots at the schema boundary', () => {
+    const canonical = snapshot();
+    const {
+      currentDigest: _current,
+      persistedDigest: _persisted,
+      ...driftWithoutDigests
+    } = canonical.drift;
+    const { changedContributorNames: _contributors, ...driftWithoutContributors } = canonical.drift;
+    const { candidateId: _candidateId, ...candidateWithoutId } =
+      canonical.verificationCandidates[0]!;
+
+    const rejected: Record<string, unknown> = {
+      'drift digests absent': { ...canonical, drift: driftWithoutDigests },
+      'legacy changedCollectorNames': {
+        ...canonical,
+        drift: { ...driftWithoutContributors, changedCollectorNames: ['code-surface-analysis'] },
+      },
+      'changedContributorNames absent': { ...canonical, drift: driftWithoutContributors },
+      'candidate without candidateId': {
+        ...canonical,
+        verificationCandidates: [candidateWithoutId],
       },
     };
+    for (const [label, input] of Object.entries(rejected)) {
+      expect(RepositoryDiscoverySnapshot.safeParse(input).success, label).toBe(false);
+    }
+    expect(RepositoryDiscoverySnapshot.safeParse(canonical).success).toBe(true);
+  });
+});
 
-    expect(() => RepositoryDiscoverySnapshot.parse(legacy)).not.toThrow();
+describe('Discovery reviewer verification candidates', () => {
+  const KINDS = ['build', 'test', 'lint', 'typecheck', 'format', 'security', 'coverage'] as const;
+
+  function candidate(kind: string, index: number) {
+    return {
+      candidateId: `vc_${String(index).repeat(64)}`,
+      kind,
+      command: `npm run ${kind} --`,
+      source: `package.json:scripts.${kind}`,
+      confidence: 'high',
+    };
+  }
+
+  it('renders every candidate with kind, command and candidateId, without truncation', () => {
+    // Seven canonical kinds plus an alternate `test` profile (vitest/pytest).
+    const candidates = [
+      ...KINDS.map((kind, index) => candidate(kind, index)),
+      { ...candidate('test', 8), source: 'vitest-junit-aggregate' },
+    ];
+    const section = buildRepositoryDiscoverySnapshotSection(
+      RepositoryDiscoverySnapshot.parse({ ...snapshot(), verificationCandidates: candidates }),
+    );
+
+    for (const entry of candidates) {
+      expect(section).toContain(
+        `- ${entry.kind}: ${entry.command} (source: ${entry.source}; confidence: high; candidateId: ${entry.candidateId})`,
+      );
+    }
+    expect(section.split('\n').filter((line) => line.includes('candidateId: vc_'))).toHaveLength(8);
+    expect(section).not.toContain('omitted');
+  });
+
+  it('keeps the explicit NOT_VERIFIED marker when no candidate is available', () => {
+    const section = buildRepositoryDiscoverySnapshotSection(
+      RepositoryDiscoverySnapshot.parse({ ...snapshot(), verificationCandidates: [] }),
+    );
+    expect(section).toContain(
+      '- NOT_VERIFIED: No repo-native verification candidates are available; do not invent them.',
+    );
   });
 });

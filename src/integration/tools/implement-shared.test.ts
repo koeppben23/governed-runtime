@@ -379,6 +379,8 @@ describe('activateImplementationReviewObligation — implementation subject mode
           drift: {
             status: 'not_assessed',
             drifted: false,
+            currentDigest: null,
+            persistedDigest: null,
             changedContributorNames: [],
             notVerified: [],
           },

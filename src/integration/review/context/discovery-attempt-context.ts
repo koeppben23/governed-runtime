@@ -90,7 +90,7 @@ function projectCandidates(
   context: DiscoveryReviewContext,
 ): RepositoryDiscoverySnapshot['verificationCandidates'] {
   return (context.verificationCandidates ?? []).map((candidate) => ({
-    ...(candidate.candidateId ? { candidateId: candidate.candidateId } : {}),
+    candidateId: candidate.candidateId,
     kind: candidate.kind,
     command: candidate.command,
     source: candidate.source,

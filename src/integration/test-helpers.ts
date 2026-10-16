@@ -666,6 +666,8 @@ export function repositoryDiscoveryContext(
       drift: {
         status: 'not_assessed',
         drifted: false,
+        currentDigest: null,
+        persistedDigest: null,
         changedContributorNames: [],
         notVerified: [],
       },

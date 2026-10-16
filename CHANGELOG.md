@@ -159,6 +159,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer Discovery context lists every verification candidate.** The
+  attempt-bound Discovery section rendered only the first six persisted
+  verification candidates and dropped the rest without a note, although plan
+  review must assess checks against the supplied candidates (kind,
+  `candidateId`, executable command). With all seven canonical kinds, or an
+  alternate `test` profile, `coverage`/`security` disappeared silently. Every
+  candidate is now rendered with its `candidateId`; the planner bounds the
+  set. The attempt Discovery snapshot schema is canonical-only:
+  `candidateId`, `changedContributorNames`, and the drift `currentDigest` /
+  `persistedDigest` (string or null) are required, and the legacy
+  `changedCollectorNames` read-time projection is removed (`KNOWN_ISSUES.md`
+  S4). **Upgrade impact:** a persisted attempt snapshot in a superseded shape
+  is rejected at the schema boundary instead of being normalized; current
+  producers have written the canonical shape since before session state
+  `v11`, which already rejects older sessions.
+
 - **Observation rejection names the offered revision.** A plan or
   architecture review (frozen context authority) offers only `head`. A
   reviewer request for `base` was rejected with
