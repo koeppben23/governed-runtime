@@ -733,6 +733,41 @@ describe('read-model schema boundaries', () => {
 });
 
 describe('claim input normalization', () => {
+  it('persists the declared positive-evidence assertion verbatim', () => {
+    // Regression: an explicit field-projection once dropped `expectedAssertion`,
+    // so the persisted declaration silently lost the declared binding.
+    const normalized = normalizePlanClaims([
+      {
+        statement: 'ModuleStateStore.write rejects missing ownership values',
+        critical: true,
+        authoritySectionId: 'step-1',
+        claimScope: 'specific_behavior',
+        expectedCheckId: 'test',
+        expectedAssertion: {
+          providerId: 'junit',
+          localId: 'fixture.StateNoteTest#rejectsMissingOwnership',
+        },
+      },
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    expect(normalized![0]!.expectedAssertion).toEqual({
+      providerId: 'junit',
+      localId: 'fixture.StateNoteTest#rejectsMissingOwnership',
+    });
+    // A declaration without the optional field persists without it.
+    const without = normalizePlanClaims([
+      {
+        statement: 'documented behavior stays stable',
+        critical: false,
+        authoritySectionId: 'step-2',
+        claimScope: 'suite',
+        expectedCheckId: 'test',
+      },
+    ]);
+    expect(without![0]).not.toHaveProperty('expectedAssertion');
+  });
+
   it('projects plan claim inputs onto the declared fields', () => {
     const normalized = normalizePlanClaims([
       {
