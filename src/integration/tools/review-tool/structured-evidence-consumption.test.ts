@@ -248,6 +248,49 @@ describe('verdict-only structured evidence consumption', () => {
     expect(obligation?.status).not.toBe('consumed');
   });
 
+  it('BAD: an id-only call without bound evidence re-emits dispatch and never completes the review', async () => {
+    const obligationId = await startObligation();
+
+    const output = parseToolResult(await review.execute({ reviewObligationId: obligationId }, ctx));
+
+    expect(output.phase).not.toBe('PEER_REVIEW_COMPLETE');
+    expect(output.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(output.reviewDispatch).toEqual({ required: true });
+    const state = (await readState(await currentSessionDir()))!;
+    expect(state.phase).not.toBe('PEER_REVIEW_COMPLETE');
+    expect(state.peerReviewFindings).toHaveLength(0);
+    const obligation = state.reviewAssurance!.obligations.find(
+      (item) => item.obligationId === obligationId,
+    );
+    expect(obligation?.status).toBe('pending');
+    expect(state.reviewAssurance!.invocations).toHaveLength(0);
+  });
+
+  it('BAD: an id-only call for an unknown obligation fails closed', async () => {
+    parseToolResult(await hydrate.execute({ policyMode: 'team', profileId: 'baseline' }, ctx));
+
+    const output = parseToolResult(
+      await review.execute({ reviewObligationId: crypto.randomUUID() }, ctx),
+    );
+
+    expect(output.error).toBe(true);
+    expect(output.code).toBe('REVIEW_OBLIGATION_NOT_FOUND');
+    const state = (await readState(await currentSessionDir()))!;
+    expect(state.phase).not.toBe('PEER_REVIEW_COMPLETE');
+  });
+
+  it('BAD: an id-only re-submission of a consumed obligation cannot complete a second review', async () => {
+    const obligationId = await startObligation();
+    await bindStructuredEvidence(obligationId, buildFindings(obligationId));
+    parseToolResult(await review.execute({ reviewObligationId: obligationId }, ctx));
+
+    const again = parseToolResult(await review.execute({ reviewObligationId: obligationId }, ctx));
+
+    expect(again.error).toBe(true);
+    const state = (await readState(await currentSessionDir()))!;
+    expect(state.peerReviewFindings).toHaveLength(1);
+  });
+
   it('REGRESSION: the missing-evidence fallback logs collected diagnostics before returning', () => {
     const warnings: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
       [];
