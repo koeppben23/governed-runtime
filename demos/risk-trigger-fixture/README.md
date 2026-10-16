@@ -39,8 +39,11 @@ holds only the project files, the JUnit assertions and the ticket.
   repository configuration in `.opencode/flowguard.json` is applied after
   install; it is not part of the seed commit and is not the check authority.
   Surefire reports under `target/` are execution outputs, not configuration
-  authority, and base-revision observation is not available to these
-  obligations.
+  authority.
+- Repository observation is scoped to each review obligation. The plan review
+  obligation offers only the `head` revision (no base-vs-head comparison during
+  plan review); the implementation review carries its own frozen `base`/`head`
+  candidate pair for the diff evidence.
 
 The live runner accepts `--evidence-out <file>` and emits build/pin/model identity,
 per-turn durations, denial counts and the machine-readable denial baseline from

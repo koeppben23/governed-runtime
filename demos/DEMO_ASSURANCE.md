@@ -144,6 +144,17 @@ controlled A/B run with the SAME fixed harness.
   with its occurrence evidence preserved. `FAILED` is reserved for a proven
   wrong denial code, contradictory evidence or an unexpected unknown block.
 
+## Recorded plan-review counter cases
+
+`review-counter-cases/plan-review-false-positives.json` records plan-review
+false positives from live validation runs: the reviewer assertion, its
+classification, and the evidence that refutes it. Repository-checkable
+references (script bodies, test methods, observation authority, fixture
+wording) are verified by `src/documentation/__tests__/review-counter-cases.test.ts`.
+A recorded case is a counter-example, not evidence of corrected reviewer
+behavior: every case stays `NOT_VERIFIED` until a later live run is checked
+against it.
+
 ## Running everything
 
 ```bash

@@ -46,9 +46,12 @@ Only `src/main/java/fixture/state/ModuleStateStore.java` may change during imple
   and assertions; their execution results are later evidence, not a precondition for plan
   approval.
 - Surefire reports under `target/` are outputs of an execution, not a pre-existing configuration
-  authority, and are not part of the frozen review subject. Base-revision observation is not
-  available to this obligation: do not assert base-vs-head comparisons; rely only on evidence
-  whose basis is actually available in the run.
+  authority, and are not part of the frozen review subject.
+- Repository observation is scoped to each review obligation. The plan review obligation offers
+  only the `head` revision, so plan review must not assert base-vs-head comparisons. The later
+  implementation review carries its own frozen `base`/`head` candidate pair: the plan may name the
+  implementation diff as later evidence for the review comment and the retained invariant sentence,
+  without presenting it as already observed.
 - The authoritative risk configuration is the persisted policy snapshot frozen at session start.
   The repository configuration in `.opencode/flowguard.json` is applied after install; it is not
   part of the seed commit and is not the check authority.

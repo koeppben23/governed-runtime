@@ -7,7 +7,9 @@
  * - executed command: the candidate command the planner actually produces
  *   (`npm run <script> --`), derived here from the real planner, never pinned;
  * - script definition: the fixture `package.json` script bodies;
- * - evidence roles: the retained claim's positive and counterexample checks.
+ * - evidence roles: the retained claim's positive and counterexample checks;
+ * - observation scope: the revisions each review obligation can observe,
+ *   derived here from the real revision authority, never pinned.
  *
  * @test-policy HAPPY, BAD
  */
@@ -16,10 +18,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { planVerificationCandidates } from '../../discovery/verification-planner.js';
+import {
+  resolveObservationRevisions,
+  type FrozenRepositoryRevisionTargetValue,
+} from '../../state/evidence-review-authority.js';
 import { claimDeclaration } from '../../../demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs';
 
 const FIXTURE = path.join(__dirname, '../../../demos/risk-trigger-fixture');
 const TICKET = fs.readFileSync(path.join(FIXTURE, 'TICKET.md'), 'utf8');
+const README = fs.readFileSync(path.join(FIXTURE, 'README.md'), 'utf8');
 const SCRIPTS = (
   JSON.parse(fs.readFileSync(path.join(FIXTURE, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
@@ -43,6 +50,18 @@ async function fixtureCandidates() {
 
 /** Collapse markdown line wrapping so prose assertions are layout-independent. */
 const ticketProse = TICKET.replace(/\s+/g, ' ');
+const readmeProse = README.replace(/\s+/g, ' ');
+
+const TARGET: FrozenRepositoryRevisionTargetValue = {
+  kind: 'commit',
+  repositoryIdentity: { kind: 'local', rootCommitDigest: `sha256:${'a'.repeat(64)}` },
+  objectSha: 'b'.repeat(40),
+};
+
+/** Render revisions the way the fixture prose names them: `head` or `base`/`head`. */
+function revisionProse(revisions: readonly string[]): string {
+  return revisions.map((revision) => `\`${revision}\``).join('/');
+}
 
 describe('risk fixture ticket - check authority layers', () => {
   it('HAPPY: names exactly the executed commands the planner produces for build and test', async () => {
@@ -77,5 +96,46 @@ describe('risk fixture ticket - check authority layers', () => {
   it('BAD: never forbids the argument-forwarding separator of the executed command', () => {
     expect(ticketProse).not.toMatch(/append arguments such as `--`/);
     expect(ticketProse).not.toMatch(/`build` \(`\.\/mvnw verify`\)/);
+  });
+});
+
+describe('risk fixture ticket - repository observation scope per obligation', () => {
+  // plan/architecture obligations may only carry a context authority;
+  // implement obligations only a candidate pair (evidence-review-refinements).
+  const planRevisions = resolveObservationRevisions({
+    repositoryAuthority: { kind: 'context', context: TARGET },
+  });
+  const implementationRevisions = resolveObservationRevisions({
+    repositoryAuthority: { kind: 'candidate_pair', base: TARGET, head: TARGET },
+  });
+
+  it('HAPPY: the authority offers head to plan review and base/head to implementation review', () => {
+    expect(planRevisions).toEqual(['head']);
+    expect(implementationRevisions).toEqual(['base', 'head']);
+  });
+
+  it('HAPPY: ticket and README scope the head-only offer to the plan review obligation', () => {
+    for (const prose of [ticketProse, readmeProse]) {
+      expect(prose).toContain('Repository observation is scoped to each review obligation.');
+      expect(prose).toContain(
+        `The plan review obligation offers only the ${revisionProse(planRevisions)} revision`,
+      );
+      expect(prose).toContain(
+        `implementation review carries its own frozen ${revisionProse(implementationRevisions)} candidate pair`,
+      );
+    }
+  });
+
+  it('HAPPY: the plan may name the later implementation diff without presenting it as observed', () => {
+    expect(ticketProse).toContain('the plan may name the implementation diff as later evidence');
+    expect(ticketProse).toContain('without presenting it as already observed');
+  });
+
+  it('BAD: no unscoped statement that base observation is unavailable to the run', () => {
+    for (const prose of [ticketProse, readmeProse]) {
+      expect(prose).not.toMatch(/base-revision observation is not available/i);
+      expect(prose).not.toContain('not available to these obligations');
+      expect(prose).not.toContain('not available to this obligation');
+    }
   });
 });
