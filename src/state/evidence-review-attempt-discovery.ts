@@ -43,25 +43,18 @@ export const RepositoryDiscoverySnapshot = z
         status: z.enum(['clean', 'drifted', 'not_assessed', 'unavailable']),
         drifted: z.boolean(),
         /** Current runtime Discovery digest when the drift authority produced one. */
-        currentDigest: z.string().nullable().optional(),
+        currentDigest: z.string().nullable(),
         /** Persisted comparison digest used by the drift authority. */
-        persistedDigest: z.string().nullable().optional(),
-        changedContributorNames: z.array(z.string()).optional(),
-        // Older persisted attempt snapshots used the collector-only name.
-        // Preserve their advisory context while projecting the broader model.
-        changedCollectorNames: z.array(z.string()).optional(),
+        persistedDigest: z.string().nullable(),
+        changedContributorNames: z.array(z.string()),
         notVerified: z.array(z.string()),
       })
-      .strict()
-      .transform(({ changedCollectorNames, changedContributorNames, ...drift }) => ({
-        ...drift,
-        changedContributorNames: changedContributorNames ?? changedCollectorNames ?? [],
-      })),
+      .strict(),
     detectedStack: DetectedStackSchema.nullable(),
     verificationCandidates: z.array(
       z
         .object({
-          candidateId: z.string().min(1).optional(),
+          candidateId: z.string().min(1),
           kind: z.string().min(1),
           command: z.string().min(1),
           source: z.string(),

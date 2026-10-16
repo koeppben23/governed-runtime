@@ -145,6 +145,8 @@ beforeAll(async () => {
         drift: {
           status: 'clean',
           drifted: false,
+          currentDigest: null,
+          persistedDigest: null,
           changedContributorNames: [],
           notVerified: [],
         },

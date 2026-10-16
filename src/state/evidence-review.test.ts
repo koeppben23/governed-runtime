@@ -1017,6 +1017,8 @@ describe('evidence-review', () => {
             drift: {
               status: 'not_assessed' as const,
               drifted: false,
+              currentDigest: null,
+              persistedDigest: null,
               changedContributorNames: [],
               notVerified: [],
             },
@@ -1182,6 +1184,8 @@ describe('evidence-review', () => {
           drift: {
             status: 'clean',
             drifted: false,
+            currentDigest: null,
+            persistedDigest: null,
             changedContributorNames: [],
             notVerified: [],
           },
