@@ -149,21 +149,34 @@ describe('reviewer contract E2E (Git fixture)', () => {
   });
 
   it('grammar documents all three subject anchor kinds in prompt', () => {
-    const grammar = renderFindingRelationGrammar();
+    const grammar = renderFindingRelationGrammar(['base', 'head']);
     expect(grammar).toContain('repository_location');
     expect(grammar).toContain('artifact_section');
     expect(grammar).toContain('content');
   });
 
   it('grammar documents revision as base|head, never SHA', () => {
-    const grammar = renderFindingRelationGrammar();
+    const grammar = renderFindingRelationGrammar(['base', 'head']);
     expect(grammar).toContain('"base" | "head"');
     expect(grammar).toContain('never a SHA');
   });
 
   it('grammar documents evidenceLocations as optional / may be empty', () => {
-    const grammar = renderFindingRelationGrammar();
+    const grammar = renderFindingRelationGrammar(['base', 'head']);
     expect(grammar).toContain('evidenceLocations MAY be empty');
+  });
+
+  it('grammar renders only the offered revision for a context authority', () => {
+    const grammar = renderFindingRelationGrammar(['head']);
+    expect(grammar).toContain('"revision": "head",');
+    expect(grammar).toContain('Only "head" is valid for this review.');
+    expect(grammar).not.toContain('"base"');
+  });
+
+  it('grammar offers no revision without observation authority', () => {
+    const grammar = renderFindingRelationGrammar([]);
+    expect(grammar).toContain('This review offers no repository revision');
+    expect(grammar).not.toMatch(/Only "(base|head)"/);
   });
 
   it('valid finding with in-scope subject anchor passes Zod', () => {

@@ -159,6 +159,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Observation rejection names the offered revision.** A plan or
+  architecture review (frozen context authority) offers only `head`. A
+  reviewer request for `base` was rejected with
+  `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE`, whose recovery said the
+  obligation "carries no frozen repository authority — repository evidence is
+  unavailable", and every reviewer prompt's finding grammar said
+  `Only "base" | "head" are valid.` A live plan reviewer concluded from three
+  rejected `base` requests that `head` was unavailable too. The tool now
+  returns the new `REVIEW_OBSERVATION_REVISION_NOT_OFFERED` for a revision
+  outside the obligation's offer; it names the offered revision(s) and states
+  that the rejection is not evidence about them.
+  `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE` is returned only when the
+  obligation has no frozen repository authority. The observation contract and
+  the finding grammar render only the revisions this attempt can observe,
+  derived from the same `resolveObservationRevisions` projection the tool
+  uses. No schema, authority, or capture change.
+
 - **Plan-review evidence roles stated once, and a plan blocking-issue bar
   (review criteria `p42-v4`).** The per-claim evidence-role sentence introduced
   with `p42-v3` was repeated for every claim in both the advisory ProofGraph

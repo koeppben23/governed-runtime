@@ -14,10 +14,61 @@ import {
   ANCHOR_KINDS,
 } from '../context/reviewer-contract.js';
 
-export function renderFindingRelationGrammar(): string {
+/** Subject anchor shapes that never carry a repository revision. */
+const NON_REPOSITORY_ANCHOR_SHAPES: readonly string[] = [
+  'artifact_section (for plan/ADR section targets):',
+  '{',
+  '  "kind": "artifact_section",',
+  '  "artifactKind": "plan" | "adr",',
+  '  "artifactDigest": "<string>",',
+  '  "sectionPath": [{"headingDepth": <int 1-6>, "siblingIndex": <int >=1>, "headingText": "<string>"}]',
+  '}',
+  '',
+  'content (for external content targets):',
+  '{',
+  '  "kind": "content",',
+  '  "subjectDigest": "<string>",',
+  '  "range": { "startLine": <int >=1>, "endLine": <int >=1 optional> }',
+  '}',
+  '',
+  'implementation (for implementation review subjects — subject identity ONLY,',
+  'never repository evidence: no path, line, revision, or diffDigest):',
+  '{',
+  '  "kind": "implementation",',
+  '  "implementationDigest": "<string>"',
+  '}',
+];
+
+/**
+ * Revision rules derived from the revisions this review actually offers (the
+ * same `resolveObservationRevisions` projection that the observation contract
+ * and `flowguard_observe_repository` use). Without offered revisions the
+ * schema vocabulary is shown, but no revision is observable.
+ */
+function renderRevisionRules(offered: readonly string[]): string[] {
+  if (offered.length === 0) {
+    return [
+      'This review offers no repository revision: it carries no frozen repository',
+      'observation authority, so no repository location can become evidence.',
+    ];
+  }
+  const list = offered.map((r) => `"${r}"`).join(' | ');
+  return [
+    offered.length === 1
+      ? `Only ${list} is valid for this review.`
+      : `Only ${list} are valid for this review.`,
+  ];
+}
+
+export function renderFindingRelationGrammar(
+  offeredRevisions: readonly ('base' | 'head')[],
+): string {
   const severities = SEVERITY_VALUES.map((s) => `"${s}"`).join(' | ');
   const categories = CATEGORY_VALUES.map((c) => `"${c}"`).join(' | ');
-  const revisions = REVISION_VALUES.map((r) => `"${r}"`).join(' | ');
+  const offered = REVISION_VALUES.filter((r) => offeredRevisions.includes(r));
+  const revisions = (offered.length > 0 ? offered : REVISION_VALUES)
+    .map((r) => `"${r}"`)
+    .join(' | ');
 
   return [
     '## Finding Output Contract',
@@ -49,27 +100,8 @@ export function renderFindingRelationGrammar(): string {
     '  }',
     '}',
     '',
-    'artifact_section (for plan/ADR section targets):',
-    '{',
-    '  "kind": "artifact_section",',
-    '  "artifactKind": "plan" | "adr",',
-    '  "artifactDigest": "<string>",',
-    '  "sectionPath": [{"headingDepth": <int 1-6>, "siblingIndex": <int >=1>, "headingText": "<string>"}]',
-    '}',
-    '',
-    'content (for external content targets):',
-    '{',
-    '  "kind": "content",',
-    '  "subjectDigest": "<string>",',
-    '  "range": { "startLine": <int >=1>, "endLine": <int >=1 optional> }',
-    '}',
-    '',
-    'implementation (for implementation review subjects — subject identity ONLY,',
-    'never repository evidence: no path, line, revision, or diffDigest):',
-    '{',
-    '  "kind": "implementation",',
-    '  "implementationDigest": "<string>"',
-    '}',
+    ...NON_REPOSITORY_ANCHOR_SHAPES,
+
     '',
     '### evidenceLocations (optional)',
     '',
@@ -90,6 +122,6 @@ export function renderFindingRelationGrammar(): string {
     '### Revision Rules',
     '',
     'revision is a frozen alias, never a SHA.',
-    `Only ${revisions} are valid.`,
+    ...renderRevisionRules(offered),
   ].join('\n');
 }

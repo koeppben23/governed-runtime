@@ -235,7 +235,8 @@ real, registered reason.
 | `REVIEW_REPOSITORY_REVISION_UNAVAILABLE` | Finding cites a repository revision unavailable to the reviewed subject | Use only the frozen base or head revision |
 | `REVIEW_IMPLEMENTATION_BASE_FREEZE_FAILED` | Pre-mutation implementation base could not be frozen before IMPLEMENTATION entry | Ensure a git repository with a resolvable identity and at least one commit |
 | `REVIEW_OBSERVATION_CAPABILITY_UNKNOWN` | Observation capability is unknown or its attempt is not usable | Use exactly the observationCapability from the canonical reviewer prompt for this attempt |
-| `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE` | Revision has no frozen repository authority for this obligation | Repository evidence is unavailable; do not substitute worktree reads |
+| `REVIEW_OBSERVATION_AUTHORITY_UNAVAILABLE` | The obligation carries no frozen repository authority, so no revision is observable | Repository evidence is unavailable; do not substitute worktree reads |
+| `REVIEW_OBSERVATION_REVISION_NOT_OFFERED` | The requested revision is not offered by this obligation (for example `base` in a plan or architecture review); the message names the offered revision(s) | Repeat the observation with an offered revision; the rejection says nothing about the offered revisions |
 | `REVIEW_OBSERVATION_INVALID_ARGS` | flowguard_observe_repository arguments are invalid | Provide capability, revision ("base" | "head"), and a repository-relative path |
 | `REVIEW_OBSERVATION_PATH_INVALID` | Observation path is not repository-relative | Use a repository-relative POSIX path |
 | `REVIEW_OBSERVATION_UNAVAILABLE` | Frozen repository object cannot be acquired for observation | Immutable acquisition has no mutable fallback; the location cannot become evidence |
@@ -568,6 +569,7 @@ REVIEW_OBSERVATION_CAPABILITY_UNKNOWN
 REVIEW_OBSERVATION_INVALID_ARGS
 REVIEW_OBSERVATION_OVERSIZED
 REVIEW_OBSERVATION_PATH_INVALID
+REVIEW_OBSERVATION_REVISION_NOT_OFFERED
 REVIEW_OBSERVATION_UNAVAILABLE
 REVIEW_OBSERVATION_UNSUPPORTED_ENTRY
 REVIEW_PLAN_VERSION_MISMATCH
