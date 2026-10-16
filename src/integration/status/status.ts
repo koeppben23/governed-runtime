@@ -48,7 +48,7 @@ import { projectCeremonyEligibility } from '../phase-tool-gate.js';
 import { reducedCeremonyReady } from '../../machine/guards.js';
 import { getReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import { isConverged } from '../../machine/guards.js';
-import { projectStatusConclusion, projectStatusActionFromCommand } from './status-conclusion.js';
+import { projectApprovalBlockedConclusion, projectStatusConclusion } from './status-conclusion.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
 import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
@@ -211,14 +211,9 @@ export function buildStatusProjection(
     implementationRework: projectImplementationRework(state),
     remainingChecks: remainingValidationChecks(state),
     conclusion: approvalBlock
-      ? {
-          kind: 'decision_required',
-          question: approvalBlock.reason,
-          actions: directive.commands
-            .map((command) => projectStatusActionFromCommand(command, 'available'))
-            .filter((action) => action.intent !== 'approve'),
-        }
+      ? projectApprovalBlockedConclusion(approvalBlock, directive)
       : projectStatusConclusion(evalResult, directive),
+
     readiness: approvalBlock ? 'BLOCKED' : deriveReadinessField(evalResult, completeness),
   };
 }

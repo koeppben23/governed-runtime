@@ -139,9 +139,16 @@ function settleBoundEvidence(
     return fulfillObligation(assurance, params.obligationId, invocationId, now);
   }
   // Standalone peer review has exactly one pass: the unreviewable evidence is
-  // consumed and cannot pass review.
+  // consumed and cannot pass review. Consumption presupposes fulfillment: the
+  // obligation records its invocation lineage and fulfilledAt first, in the
+  // same transition, so the persisted state satisfies the assurance invariant.
   if (params.obligationType === 'review') {
-    return consumeReviewObligation(assurance, obligation, now, invocationId);
+    return consumeReviewObligation(
+      fulfillObligation(assurance, params.obligationId, invocationId, now),
+      obligation,
+      now,
+      invocationId,
+    );
   }
   // Implementation review keeps the fulfilled path: the tool layer consumes the
   // bound unable verdict and mints an explicit fresh successor attempt.

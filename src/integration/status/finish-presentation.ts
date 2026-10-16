@@ -223,6 +223,8 @@ function toFinishConclusion(c: FinishConclusionProjection): PresentationConclusi
   switch (c.kind) {
     case 'next_action':
       return { kind: 'next_action', action: { ...c.action } };
+    case 'recovery':
+      return { kind: 'recovery', message: c.message, steps: [...c.steps] };
     case 'terminal':
       return { kind: 'terminal', message: c.message };
   }

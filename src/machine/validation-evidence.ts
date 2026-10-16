@@ -160,3 +160,20 @@ export function evaluateValidationEvidence(state: SessionState): ValidationEvide
 
   return { blocked: true, required, code };
 }
+
+/**
+ * Active checks that have no passing pre-implementation (VALIDATION) result.
+ *
+ * Single authority for "which VALIDATION checks remain": the guard
+ * `allValidationsPassed` is exactly its empty case for a non-empty active-check
+ * list, and automatic validation re-executes only these checks instead of the
+ * whole active set. Pure over SessionState; the empty active-check list stays
+ * governed by `evaluateValidationEvidence`.
+ */
+export function missingValidationChecks(state: SessionState): readonly string[] {
+  const passed = new Set<string>();
+  for (const result of state.validation) {
+    if (result.passed) passed.add(result.checkId);
+  }
+  return state.activeChecks.filter((checkId) => !passed.has(checkId));
+}

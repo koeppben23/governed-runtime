@@ -44,6 +44,9 @@ const mocks = vi.hoisted(() => {
     formatError: vi.fn((err: unknown) =>
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
+    formatSessionUnavailable: vi.fn((authority: { code: string; reason: string }) =>
+      JSON.stringify({ error: true, code: authority.code, message: authority.reason }),
+    ),
     enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => ({
       ...value,
       directive: {
@@ -122,6 +125,7 @@ vi.mock('./helpers.js', () => ({
 
 vi.mock('./error-format.js', () => ({
   formatError: mocks.formatError,
+  formatSessionUnavailable: mocks.formatSessionUnavailable,
 }));
 
 vi.mock('../../machine/commands.js', () => ({
@@ -144,7 +148,7 @@ vi.mock('../../machine/evaluate.js', () => ({
 function setPhase(phase: string) {
   const state = { phase };
   mocks.state = state;
-  mocks.readOnlySession = { state, policy: null };
+  mocks.readOnlySession = { state, policy: null, authority: { status: 'resolved' } };
 }
 
 describe('flowguard_continue (runtime)', () => {
@@ -199,7 +203,11 @@ describe('flowguard_continue (runtime)', () => {
         ],
       },
     };
-    mocks.readOnlySession = { state: mocks.state, policy: null };
+    mocks.readOnlySession = {
+      state: mocks.state,
+      policy: null,
+      authority: { status: 'resolved' },
+    };
     const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
@@ -305,7 +313,7 @@ describe('flowguard_continue (runtime)', () => {
     // /export as an audit package.
     const state = { phase: 'COMPLETE', error: { code: 'ABORTED', message: 'Operator aborted' } };
     mocks.state = state;
-    mocks.readOnlySession = { state, policy: null };
+    mocks.readOnlySession = { state, policy: null, authority: { status: 'resolved' } };
     const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
@@ -313,6 +321,27 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed._continue.action).toBe('terminal');
     expect(parsed.directive.commands).toEqual(['/complete']);
     expect(String(parsed.status).toLowerCase()).toContain('aborted');
+  });
+
+  it('an unreadable session authority is reported under its typed code, not as "no session"', async () => {
+    mocks.readOnlySession = {
+      state: null,
+      policy: null,
+      authority: {
+        status: 'unavailable',
+        code: 'PARSE_FAILED',
+        reason: 'session state could not be parsed',
+      },
+    };
+    const { continue_cmd } = await import('./simple/continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(mocks.formatSessionUnavailable).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'unavailable', code: 'PARSE_FAILED' }),
+    );
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('PARSE_FAILED');
+    expect(parsed.code).not.toBe('NO_SESSION');
   });
 
   // ── ERROR: catch handler ──────────────────────────────────────────────────

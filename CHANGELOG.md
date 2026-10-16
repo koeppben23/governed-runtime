@@ -170,6 +170,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   judged by the trigger and evidence oracles, so a missing trigger on a real
   change stays `FAILED`. An author that stops at `IMPL_REVIEW` now gets the same
   bounded resume as the matrix (`completeImplementationReview`).
+
+- **Unreadable session state is no longer reported as "no session".** The
+  canonical session authority reports an unreadable, unparseable,
+  schema-invalid or mis-bound state as an `unavailable` value, but `/status`,
+  `/continue`, `flowguard_run_check` and automatic validation only checked for
+  a null state: the output was byte-identical to an absent session ("No
+  FlowGuard session found", recommending `/start`), and automatic validation
+  returned "no work" instead of `SYSTEM_WORK_STATE_UNREADABLE`. These surfaces
+  now report the authority's typed code (for example `PARSE_FAILED`), and
+  automatic validation fails closed with `SYSTEM_WORK_STATE_UNREADABLE`.
+  `/help` keeps its orientation output outside a repository.
+- **Automatic validation re-runs only the open checks.** After a technical
+  outcome (for example a timeout) a retry re-executed the whole active check
+  set, including checks with a fresh passing result. It now executes only the
+  checks the phase's evidence authority still reports as open
+  (`missingValidationChecks` for VALIDATION, new in `machine/validation-evidence`
+  and used by the `allValidationsPassed` guard;
+  `evaluateImplValidationEvidence(...).missing` for IMPL_VALIDATION). If all
+  checks are satisfied but the phase was not left, the full set is re-run so the
+  transition is re-evaluated. The `/validate`, `/check` and `/implement`
+  templates no longer call `activeChecks` and `remainingChecks` equivalent.
+- **`/why` and `/finish` no longer recommend a refused approval.** While the
+  evidence-approval preflight blocks, full status already offered only
+  non-approve decisions, but `/why` listed `/approve` as available and `/finish`
+  recommended it as next action on a BLOCKED card. `/why` now uses the same
+  decision projection as full status, and `/finish` concludes with the
+  preflight's own recovery.
+- **Automatic-validation retry timing is stated honestly.** There is no timer:
+  a re-armed validation retries on the first host lifecycle event (such as the
+  session becoming idle) after its backoff. The phase guidance and the module
+  contract now say so.
+
+- **Standalone `/review` never completes without bound reviewer evidence.** A
+  content-free `flowguard_review({ reviewObligationId })` returned early from the
+  content-source check before the explicit obligation id was resolved; with no
+  bound evidence it fell through to an empty findings executor and completed
+  as `PEER_REVIEW_COMPLETE` with a `clean` report while the obligation stayed
+  `pending` with no invocation. An id-only call now resolves the named
+  obligation first: unknown, consumed or blocked obligations fail with
+  `REVIEW_OBLIGATION_NOT_FOUND`, a pending obligation re-emits its dispatch
+  authority (or re-arms an interrupted dispatch), and only a fulfilled
+  obligation proceeds to its bound structured evidence. A named obligation
+  whose evidence does not resolve fails closed with `SUBAGENT_EVIDENCE_MISSING`
+  instead of completing a report. A content-free `/review` without an id is
+  unchanged.
+- **Standalone `unable_to_review` evidence persists.** The recorder consumed a
+  pending peer-review obligation without first recording its invocation lineage
+  and `fulfilledAt`, which the assurance schema requires for consumed
+  obligations, so the write failed with `SCHEMA_VALIDATION_FAILED` and the
+  honest verdict never bound. The obligation is now fulfilled and consumed in
+  the same transition.
+
 - **Risk fixture scopes the head-only observation offer to plan review.** The
   risk-trigger fixture ticket said "Base-revision observation is not available
   to this obligation: do not assert base-vs-head comparisons", and its README

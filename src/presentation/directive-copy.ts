@@ -47,7 +47,8 @@ export const DIRECTIVE_COPY = {
   },
   PLAN_VALIDATION_IN_PROGRESS: {
     label: 'Plan validation in progress.',
-    description: 'No action required; FlowGuard runs the approved validation automatically.',
+    description:
+      'No action required; FlowGuard runs the approved validation automatically. After a technical failure it retries on the next session lifecycle event (such as the session becoming idle) once the backoff has elapsed; it does not wake itself.',
   },
   IMPLEMENTATION_REQUIRED: {
     label: 'Implementation required.',
@@ -59,7 +60,8 @@ export const DIRECTIVE_COPY = {
   },
   IMPLEMENTATION_VALIDATION_IN_PROGRESS: {
     label: 'Implementation validation in progress.',
-    description: 'No action required; FlowGuard re-runs the verification checks automatically.',
+    description:
+      'No action required; FlowGuard re-runs the open verification checks automatically. After a technical failure it retries on the next session lifecycle event (such as the session becoming idle) once the backoff has elapsed; it does not wake itself.',
   },
   IMPLEMENTATION_REVIEW_IN_PROGRESS: {
     label: 'Independent implementation review in progress.',

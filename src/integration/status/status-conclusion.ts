@@ -113,3 +113,22 @@ export function projectStatusActionFromCommand(
     ...(command.intent ? { intent: command.intent } : {}),
   };
 }
+
+/**
+ * Conclusion while the evidence-approval preflight refuses approval: a decision
+ * between the remaining gate commands, never an approve-intent action. Single
+ * source for full status, /why and /finish, so no surface recommends an
+ * approval the runtime will reject.
+ */
+export function projectApprovalBlockedConclusion(
+  approvalBlock: { readonly reason: string },
+  directive: WorkflowDirective,
+): Extract<StatusConclusionProjection, { kind: 'decision_required' }> {
+  return {
+    kind: 'decision_required',
+    question: approvalBlock.reason,
+    actions: directive.commands
+      .map((command) => projectStatusActionFromCommand(command, 'available'))
+      .filter((action) => action.intent !== 'approve'),
+  };
+}
