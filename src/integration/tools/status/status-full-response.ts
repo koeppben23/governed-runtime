@@ -406,7 +406,9 @@ function compactStatusProjection(responseObj: Record<string, unknown>): Record<s
     const rules = record.phaseRelevantRules;
     compact.governanceMandates = {
       ...record,
-      mandatesVerbosity: 'compact',
+      // mandatesVerbosity keeps its canonical vocabulary (explicit | concise |
+      // diagnosticSummary); the projection field marks the compact shape.
+      projection: 'phase-aware-compact',
       ...(typeof rules === 'string' ? { phaseRelevantRulesDigest: hashText(rules) } : {}),
       fullRulesHint:
         'Full profile rules and mandate text are omitted in the compact projection; call flowguard_status without `compact` for the complete text.',

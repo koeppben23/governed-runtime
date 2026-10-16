@@ -22,7 +22,10 @@ import {
   MAX_IMPLEMENT_RECORD_RESUMES,
   needsImplementationResume,
 } from '../../../demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs';
-import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
+import {
+  captureFailureProvenance,
+  finalizeControlRecord,
+} from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { DemoNotVerifiedError, RESULT } from '../../../demos/lib/results.mjs';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
@@ -299,6 +302,50 @@ describe('risk-trigger control oracles', () => {
       expect(() => assertNoCompletionPackage(runner, session)).toThrow(
         /persisted export completion evidence/,
       );
+    });
+  });
+
+  describe('failure-path provenance contract', () => {
+    function capturingRunner() {
+      return {
+        requireBoundState: () => ({
+          state: { phase: 'PLAN_REVIEW', flowguardSessionId: 'fg-session-1' },
+        }),
+        captureProvenance: async (target: Record<string, unknown>) => {
+          target.transcripts = { parent: { file: 'parent.json' }, reviewers: [] };
+        },
+      };
+    }
+
+    it('a failed or not-verified run stays classified when the provenance export succeeds', async () => {
+      for (const result of [RESULT.FAILED, RESULT.NOT_VERIFIED]) {
+        const record: Record<string, unknown> = { name: 'risk-case', result };
+        await captureFailureProvenance(
+          record,
+          { sessionId: 'ses_risk_03', workspace: '/tmp/risk' },
+          capturingRunner(),
+        );
+        expect(record.result).toBe(result);
+        expect(record.transcripts).toBeDefined();
+        expect(record.phase).toBe('PLAN_REVIEW');
+        expect(record.flowguardSessionId).toBe('fg-session-1');
+      }
+    });
+
+    it('a failed export keeps the classification and records the capture error', async () => {
+      const record: Record<string, unknown> = { name: 'risk-case', result: RESULT.NOT_VERIFIED };
+      await captureFailureProvenance(
+        record,
+        { sessionId: 'ses_risk_04', workspace: '/tmp/risk' },
+        {
+          requireBoundState: () => {
+            throw new Error('no persisted state');
+          },
+          captureProvenance: async () => {},
+        },
+      );
+      expect(record.result).toBe(RESULT.NOT_VERIFIED);
+      expect(String(record.transcriptCaptureError)).toContain('no persisted state');
     });
   });
 

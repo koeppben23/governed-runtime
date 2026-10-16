@@ -56,7 +56,7 @@ describe('implementation review acceptance witness', () => {
     expect(implementationReviewAcceptanceProven(withoutStructured)).toBe(false);
 
     const foreignDigest = structuredClone(accepting());
-    foreignDigest.implementation!.digest = 'impl-digest-2';
+    foreignDigest.implementation.digest = 'impl-digest-2';
     expect(implementationReviewAcceptanceProven(foreignDigest)).toBe(false);
 
     expect(implementationReviewAcceptanceProven({})).toBe(false);

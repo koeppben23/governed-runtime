@@ -1227,6 +1227,44 @@ describe('Java Task Manager demo contract', () => {
     expect(unexpectedDenialCodes(terminal)).toEqual(['REVIEW_EVIDENCE_NOT_OBSERVED']);
   });
 
+  it('binds an expected denial to its authority tool at the runner boundary', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-denial-tool-'));
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const wrongTool = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'flowguard_plan',
+          state: {
+            output: JSON.stringify({
+              error: true,
+              code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+            }),
+          },
+        },
+      });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: wrongTool,
+      });
+      const session = { workspace: root, terminal: 'COMPLETE', sessionId: 'ses_parent' };
+      await expect(
+        runner.turn(session, 'approve', 'x', {
+          command: 'approve',
+          expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          expectedDenialTool: 'flowguard_decision',
+        }),
+      ).rejects.toThrow(/observed tool flowguard_plan/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('opts the installed repository config into raw auditor archives', async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-runner-raw-'));
     try {

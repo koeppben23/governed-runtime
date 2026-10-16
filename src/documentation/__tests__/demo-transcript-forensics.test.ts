@@ -35,6 +35,29 @@ function transcript(...lines: string[]): string {
 const denial = (code: string) => ({ error: true, code });
 const success = { phase: 'PLAN', status: 'planning' };
 
+describe('controlled-negative tool authority', () => {
+  const code = 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED';
+  it('proves the risk control only from flowguard_decision', () => {
+    const decision = toolUse('flowguard_decision', compact(denial(code)));
+    expect(() => assertExpectedDenial(decision, code, 'flowguard_decision')).not.toThrow();
+  });
+
+  it.each(['flowguard_plan', 'task'])(
+    'rejects the same code from %s as a control proof',
+    (tool) => {
+      const foreign = toolUse(tool, compact(denial(code)));
+      expect(() => assertExpectedDenial(foreign, code, 'flowguard_decision')).toThrow(
+        /observed tool/,
+      );
+    },
+  );
+
+  it('rejects a foreign-tool envelope entirely: it is not even a denial', () => {
+    const bash = toolUse('bash', compact(denial(code)));
+    expect(() => assertExpectedDenial(bash, code, 'flowguard_decision')).toThrow(/expected denial/);
+  });
+});
+
 describe('governed-origin and occurrence semantics of denials', () => {
   it('never counts a denial envelope emitted by a non-governed tool', () => {
     // A denial code embedded in a foreign tool's output is not a FlowGuard

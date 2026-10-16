@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import {
   Runner,
   assertToolchain,
+  captureFailureProvenance,
   finalizeControlRecord,
   parseArgs,
   readPins,
@@ -252,6 +253,9 @@ async function runCase(runner, name, workspace, covered, context) {
         {
           command: 'approve',
           expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          // The negative control is only proven by the evidence-approval
+          // decision tool; the same code from any other tool is not a control.
+          expectedDenialTool: 'flowguard_decision',
         },
       );
       const after = runner.requireBoundState(session).state;
@@ -314,13 +318,9 @@ async function runCase(runner, name, workspace, covered, context) {
       record.result = RESULT.FAILED;
       record.error = String(error);
     }
-    // Capture provenance even on the failure path: discarded reviewer children
-    // are required evidence for the forensic pass.
-    try {
-      await finalizeControlRecord(record, session, runner, { result: record.result });
-    } catch (captureError) {
-      record.transcriptCaptureError = String(captureError);
-    }
+    // Capture provenance even on the failure path WITHOUT touching the result:
+    // a failed run must never become a passed control.
+    await captureFailureProvenance(record, session, runner);
   } finally {
     if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
     else process.env[SKIP_ASSERTION_ENV] = savedSkip;

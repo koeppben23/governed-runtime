@@ -268,7 +268,8 @@ describe('status compact canonical projection', () => {
     expect(typeof fullMandates.phaseRelevantRules).toBe('string');
     expect('phaseRelevantRules' in compactMandates).toBe(false);
     expect(typeof compactMandates.phaseRelevantRulesDigest).toBe('string');
-    expect(compactMandates.mandatesVerbosity).toBe('compact');
+    expect(compactMandates.mandatesVerbosity).toBe('explicit');
+    expect(compactMandates.projection).toBe('phase-aware-compact');
     expect(String(compactMandates.fullRulesHint)).toContain('without `compact`');
 
     // Routing- and evidence-critical fields survive the compaction.

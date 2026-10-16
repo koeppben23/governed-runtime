@@ -553,11 +553,12 @@ export function analyzeRunRoot(root) {
     const reviewerMs = sumOrNotObserved(
       flowChildren.map(([, child]) => exportedSessionElapsedMs(child.exported)),
     );
-    // Process overhead: flow wall time not attributable to host turns.
-    const overheadMs =
-      typeof flowDurationMs === 'number' && typeof reviewerMs === 'number'
-        ? flowDurationMs - reviewerMs
-        : NOT_OBSERVED;
+    // Process overhead requires a real process-level measurement; the host-turn
+    // sum minus reviewer-child elapsed is NOT that measurement (it also contains
+    // regular agent work outside reviewer children and differently bounded
+    // windows), so it stays NOT_OBSERVED rather than reporting an unproven
+    // time category.
+    const processOverheadMs = NOT_OBSERVED;
     return {
       root: path.basename(path.resolve(root)),
       flow,
@@ -566,7 +567,7 @@ export function analyzeRunRoot(root) {
       hostTurns: flowTurns.length,
       flowDurationMs,
       reviewerMs,
-      processOverheadMs: overheadMs,
+      processOverheadMs,
       turns: flowTurns,
       parent: parent === undefined ? NOT_OBSERVED : analyzeParentExport(parent),
       reviews: reviews.length === 0 ? NOT_OBSERVED : reviews,
@@ -586,7 +587,7 @@ function countDenials(flows, predicate) {
     .length;
 }
 
-/** Group comparable flows (same flow, model, host version, build) and describe them. */
+/** Group comparable flows (same flow, model, host version, harness version, contract version, build). */
 export function summarize(flows) {
   const groups = new Map();
   for (const flow of flows) {
@@ -594,6 +595,8 @@ export function summarize(flows) {
       flow.flow,
       flow.identity.model,
       flow.identity.hostVersion,
+      flow.identity.harnessVersion,
+      flow.identity.contractVersion,
       flow.identity.buildSha,
     ].join('|');
     groups.set(key, [...(groups.get(key) ?? []), flow]);

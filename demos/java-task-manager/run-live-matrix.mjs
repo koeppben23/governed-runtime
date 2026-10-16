@@ -527,6 +527,24 @@ export async function finalizeControlRecord(
   return record;
 }
 
+/**
+ * Capture provenance on a FAILURE path without touching the result
+ * classification: finalizeControlRecord would overwrite it with its default
+ * CONTROL_PASSED. A failed run must never become a passed control.
+ */
+export async function captureFailureProvenance(record, session, runner) {
+  try {
+    if (session.sessionId) record.hostSessionId = session.sessionId;
+    const snapshot = runner.requireBoundState(session);
+    record.phase = snapshot.state.phase;
+    record.flowguardSessionId = snapshot.state.flowguardSessionId;
+    await runner.captureProvenance(record, session);
+  } catch (captureError) {
+    record.transcriptCaptureError = String(captureError);
+  }
+  return record;
+}
+
 /** Sessions whose transcripts belong to one flow's evidence: parent + reviewers. */
 export function transcriptTargets(state) {
   // Every reviewer child is exported: fulfilled invocations AND attempt-bound
@@ -669,7 +687,7 @@ export class Runner {
       phaseAfter: this.currentPhase(session),
     };
     if (options.expectedDenial) {
-      assertExpectedDenial(result.stdout, options.expectedDenial);
+      assertExpectedDenial(result.stdout, options.expectedDenial, options.expectedDenialTool);
       return result;
     }
 
@@ -1511,11 +1529,7 @@ async function main() {
         }
         // Evidence capture must survive the failure path: a failed or
         // discarded reviewer child is exactly what a forensic pass needs.
-        try {
-          await runner.captureProvenance(record, session);
-        } catch (captureError) {
-          record.transcriptCaptureError = String(captureError);
-        }
+        await captureFailureProvenance(record, session, runner);
       }
       fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2));
       fs.writeFileSync(

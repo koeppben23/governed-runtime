@@ -102,7 +102,7 @@ describe('native challenge-evidence retry', () => {
       );
       const validationAttemptId = '33333333-3333-4333-8333-333333333333';
       const executedAt = new Date().toISOString();
-      const seeded = (await readState(sessDir))!;
+      const seeded = await readState(sessDir);
       await writeState(sessDir, {
         ...seeded,
         implementation: {
@@ -150,7 +150,8 @@ describe('native challenge-evidence retry', () => {
       );
 
       const state = await readState(sessDir);
-      const authority = resolveReviewDispatchAuthority(state!.reviewAssurance!, obligationId);
+      if (!state) throw new Error('expected persisted session state');
+      const authority = resolveReviewDispatchAuthority(state.reviewAssurance, obligationId);
       expect(authority.kind).toBe('ok');
       if (authority.kind !== 'ok') return;
       const dispatchOutput = {
