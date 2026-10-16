@@ -368,7 +368,42 @@ describe('review/enforcement/challenge-consistency', () => {
       expect(result).toMatchObject({
         ok: false,
         code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-        details: { required: 'validation_attempt' },
+        details: { challengeIndex: 0, required: 'validation_attempt' },
+      });
+    });
+
+    it('reports the validated position of the offending challenge, not a restated code', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'changes_requested',
+        requiredChallengeCount: 2,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [
+          {
+            kind: 'implementation_challenge',
+            scenario: 'Exercise the first path.',
+            claim: 'The first path stays rejected.',
+            locations: ['src/a.ts'],
+            outcome: 'fail',
+            evidenceRefs: [{ kind: 'implementation' }],
+          },
+          {
+            kind: 'implementation_challenge',
+            scenario: 'Exercise the second path.',
+            claim: 'The second path stays rejected.',
+            locations: ['src/b.ts'],
+            outcome: 'pass',
+            evidenceRefs: [{ kind: 'implementation' }],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        details: {
+          challengeIndex: 1,
+          reason: 'validation_attempt_missing',
+          required: 'validation_attempt',
+        },
       });
     });
 
@@ -383,6 +418,54 @@ describe('review/enforcement/challenge-consistency', () => {
               kind: 'implementation_challenge',
               outcome: 'fail',
               evidenceRefs: [{ kind: 'implementation' }],
+            },
+          ],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('requires content evidence for a passing implementation challenge', () => {
+      // Execution evidence alone (a validation attempt) never proves the
+      // claimed content property: the current implementation ref is required.
+      const result = validateChallengeConsistency({
+        overallVerdict: 'changes_requested',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [
+          {
+            kind: 'implementation_challenge',
+            outcome: 'pass',
+            evidenceRefs: [
+              { kind: 'validation_attempt', attemptId: '22222222-2222-4222-8222-222222222222' },
+            ],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        details: {
+          challengeIndex: 0,
+          reason: 'implementation_reference_missing',
+          required: 'implementation',
+        },
+      });
+    });
+
+    it('accepts a passing implementation challenge that cites both evidence classes', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [
+            {
+              kind: 'implementation_challenge',
+              outcome: 'pass',
+              evidenceRefs: [
+                { kind: 'implementation', implementationDigest: 'a'.repeat(64) },
+                { kind: 'validation_attempt', attemptId: '22222222-2222-4222-8222-222222222222' },
+              ],
             },
           ],
         }),

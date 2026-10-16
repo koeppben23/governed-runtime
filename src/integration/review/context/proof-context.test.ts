@@ -106,6 +106,17 @@ describe('renderDeclarationPreview', () => {
     expect(text).toContain('Positive evidence check: build');
   });
 
+  it('omits the advisory preview when the frozen material carries the declarations', () => {
+    // Plan/architecture artifact reviews embed the declarations section in
+    // their frozen review material; the preview would be a verbatim duplicate.
+    const withoutPreview = rawBuildReviewerProofContext(planState, authorities, {
+      includeDeclarationPreview: false,
+    }).join('\n');
+    expect(withoutPreview).not.toContain('Plan claim declarations (1)');
+    const withPreview = rawBuildReviewerProofContext(planState, authorities).join('\n');
+    expect(withPreview).toContain('Plan claim declarations (1)');
+  });
+
   it('marks declarations as not certificate-bound before approval', () => {
     expect(renderDeclarationPreview(planState).join('\n')).toContain(
       'Plan approval certificate: none recorded',

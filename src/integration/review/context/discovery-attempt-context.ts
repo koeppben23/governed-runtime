@@ -89,13 +89,9 @@ function projectDrift(
 function projectCandidates(
   context: DiscoveryReviewContext,
 ): RepositoryDiscoverySnapshot['verificationCandidates'] {
-  return (context.verificationCandidates ?? []).map((candidate) => ({
-    candidateId: candidate.candidateId,
-    kind: candidate.kind,
-    command: candidate.command,
-    source: candidate.source,
-    confidence: candidate.confidence,
-  }));
+  // The full canonical candidate travels: capability and assertion-report
+  // configuration are required reviewer context for check assessment.
+  return (context.verificationCandidates ?? []).map((candidate) => ({ ...candidate }));
 }
 
 function projectSnapshot(

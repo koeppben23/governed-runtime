@@ -280,6 +280,7 @@ export function validateCapturedFindings(
       kind: 'blocked' as const,
       code: challenge.code,
       reason: JSON.stringify(challenge.details),
+      details: challenge.details,
     };
   }
   return { kind: 'valid' as const, findings };

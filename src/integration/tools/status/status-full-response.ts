@@ -14,6 +14,7 @@ import type { FlowGuardPolicy } from '../../../config/policy.js';
 import type { EvalResult } from '../../../machine/evaluate.js';
 import type { CompletenessReport } from '../../../audit/completeness.js';
 import { renderPhaseAwareMandates } from '../../../rendering/mandates-renderer.js';
+import { hashText } from '../../../shared/hashing.js';
 import { readDiscovery } from '../../../adapters/persistence-discovery.js';
 import {
   extractDiscoveryHealth,
@@ -171,6 +172,13 @@ export interface FullStatusInput {
   readonly discoveryDrift: DiscoveryDriftStatusProjection;
   readonly presentation: PresentationRenderOptions;
   readonly runtimeCandidates?: readonly ResolvedVerificationCandidate[];
+  /**
+   * Omit the repeated profile-rule and mandate text bodies from the response,
+   * replacing them with digests plus an explicit full-retrieval hint. The full
+   * projection remains the default and is always retrievable via a non-compact
+   * call.
+   */
+  readonly compact?: boolean;
 }
 
 export async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatusContext> {
@@ -369,10 +377,43 @@ export function buildFullStatusResponse(input: FullStatusInput): string {
     build: buildIdentityField(),
   };
 
-  const enriched = enrichWithWorkflowDirective(responseObj, state);
+  const projectionResponse =
+    input.compact === true ? compactStatusProjection(responseObj) : responseObj;
+  const enriched = enrichWithWorkflowDirective(projectionResponse, state);
 
   return JSON.stringify({
     ...enriched,
+    ...(input.compact === true ? { compact: true } : {}),
     presentation: { markdown: presentationMarkdown },
   });
+}
+
+/**
+ * Digest-addressed compact projection: the routing- and evidence-critical
+ * fields stay; the repeated profile-rule and mandate text bodies are replaced
+ * by their digests with an explicit retrieval hint. The full projection is
+ * never synthesised from this shape.
+ */
+function compactStatusProjection(responseObj: Record<string, unknown>): Record<string, unknown> {
+  const compact: Record<string, unknown> = { ...responseObj };
+  if (typeof compact.profileRules === 'string') {
+    compact.profileRulesDigest = hashText(compact.profileRules);
+    delete compact.profileRules;
+  }
+  const mandates = compact.governanceMandates;
+  if (mandates !== null && typeof mandates === 'object') {
+    const record = mandates as Record<string, unknown>;
+    const rules = record.phaseRelevantRules;
+    compact.governanceMandates = {
+      ...record,
+      // mandatesVerbosity keeps its canonical vocabulary (explicit | concise |
+      // diagnosticSummary); the projection field marks the compact shape.
+      projection: 'phase-aware-compact',
+      ...(typeof rules === 'string' ? { phaseRelevantRulesDigest: hashText(rules) } : {}),
+      fullRulesHint:
+        'Full profile rules and mandate text are omitted in the compact projection; call flowguard_status without `compact` for the complete text.',
+    };
+    delete (compact.governanceMandates as Record<string, unknown>).phaseRelevantRules;
+  }
+  return compact;
 }

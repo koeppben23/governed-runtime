@@ -46,7 +46,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/obligations/assurance.js';
-import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
 import { _resetAgentResolutionCache } from './review/dispatch/agent-resolution.js';
@@ -55,6 +55,7 @@ import {
   reviewObligationResponseFields,
 } from './review/dispatch/dispatch-authority.js';
 import {
+  seedStrictImplementationSession,
   seedStrictPlanSession,
   unobservedEvidenceFindings,
   withRepositoryHeadAuthority,
@@ -83,80 +84,6 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
     serverUrl: new URL('http://localhost:3000'),
     ...overrides,
   } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0];
-}
-
-async function seedStrictImplementationSession(worktree: string, sessionID: string) {
-  const now = new Date().toISOString();
-  const fp = await computeFingerprint(worktree);
-  const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
-  const obligationId = '22222222-1111-4111-8111-111111111111';
-  const attemptId = '22222222-2222-4111-8111-111111111111';
-  const reviewMaterial = freezeReviewMaterial('## Implementation\n1. Fix auth', 'impl-digest-1');
-  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
-
-  const base = makeProgressedState('IMPL_REVIEW');
-  const state = {
-    ...base,
-    binding: await canonicalBinding(worktree, sessionID),
-    plan: {
-      current: planCurrent,
-      history: [],
-      reviewCompletion: 'reviewer_accepted' as const,
-      reviewFindings: [],
-    },
-    reviewAssurance: {
-      assuranceSchemaVersion: 'review-assurance.v7' as const,
-      obligations: [
-        {
-          obligationId,
-          obligationType: 'implement',
-          reviewCycle: 1,
-          requiredChallengeCount: 0,
-          requiredChallengeKind: 'implementation_challenge',
-          challengePolicyVersion: 'challenge-policy.v1',
-          subjectDigest: 'impl-digest-1',
-          iteration: 0,
-          planVersion: 1,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerAttempts: 1,
-          createdAt: now,
-          pluginHandshakeAt: null,
-          status: 'pending',
-          invocationId: null,
-          blockedCode: null,
-          fulfilledAt: null,
-          consumedAt: null,
-          reviewSubjectScope: {
-            kind: 'implementation',
-            implementationDigest: 'impl-digest-1',
-          },
-          reviewMaterial,
-        },
-      ],
-      invocations: [],
-      attempts: [
-        {
-          attemptId,
-          obligationId,
-          obligationType: 'implement' as const,
-          subjectDigest: 'impl-digest-1',
-          ordinal: 0,
-          status: 'created' as const,
-          origin: { kind: 'initial' } as const,
-          repositoryDiscovery: { kind: 'not_applicable' } as const,
-          observations: [],
-          createdAt: now,
-        },
-      ],
-      dispatches: [],
-    },
-  } as SessionState;
-
-  await fs.mkdir(sessDir, { recursive: true });
-  await writeState(sessDir, state);
-
-  return { sessDir, obligationId, attemptId, state };
 }
 
 function strictPlanReviewRequiredOutput(
@@ -1389,7 +1316,6 @@ describe('integration/plugin', () => {
         await ws.cleanup();
       }
     });
-
     it('blocks a second malformed capture when the re-arm budget is exhausted', async () => {
       const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession((obligationId) => {
         const malformed = nativeFindings(obligationId);

@@ -1131,7 +1131,6 @@ describe('plan', () => {
       expect(state!.phase).toBe('PLAN_REVIEW');
       expect(state!.reviewDecision).toBeNull();
     });
-
     it('TEAM: force-converged card binds reviewer findings to the prior plan revision (F1)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
@@ -1410,9 +1409,10 @@ describe('plan', () => {
       expect(result.reviewCard).toContain('## Proposed Plan');
       expect(result.reviewCard).toContain('Implement payment validation');
       expect(result.reviewCard).toContain('Plan decision required.');
-      expect(result.presentation).toEqual({ markdown: result.reviewCard });
+      // Single-source card: with the default glyph profile the host-visible
+      // markdown is identical to the canonical card, so it is not re-sent.
+      expect(result.presentation).toBeUndefined();
     });
-
     it('converged PLAN_REVIEW reviewCard contains recommended commands', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);

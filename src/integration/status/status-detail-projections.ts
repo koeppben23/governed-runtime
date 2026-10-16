@@ -261,6 +261,8 @@ function projectReviewFeedbackFindings(
     category: finding.category,
     message: finding.message,
     ...(finding.findingId ? { findingId: finding.findingId } : {}),
+    subjectAnchors: finding.relation.subjectAnchors,
+    evidenceLocations: finding.relation.evidenceLocations,
   }));
 }
 

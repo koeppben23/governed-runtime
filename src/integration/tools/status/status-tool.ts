@@ -91,6 +91,7 @@ interface StatusArgs {
   finish?: boolean;
   proofGraph?: boolean;
   reviewFeedback?: boolean;
+  compact?: boolean;
 }
 
 /**
@@ -344,6 +345,14 @@ export const status: ToolDefinition = {
         'Return the advisory ProofGraph summary: per-claim verification states, ' +
           'freshness, and critical gaps. Read-only; never approves or gates.',
       ),
+    compact: z
+      .boolean()
+      .optional()
+      .describe(
+        'Return the compact canonical projection: routing- and evidence-critical ' +
+          'fields plus digest-addressed profile rules and mandates. The full ' +
+          'projection (complete rule and mandate text) stays the default.',
+      ),
   },
   async execute(_args, context) {
     try {
@@ -411,6 +420,7 @@ export const status: ToolDefinition = {
         discoveryDrift,
         presentation,
         runtimeCandidates,
+        compact: args.compact === true,
       });
     } catch (err) {
       if (err instanceof ActorClaimError) {

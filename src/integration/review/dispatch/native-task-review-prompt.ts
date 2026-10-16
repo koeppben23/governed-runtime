@@ -17,7 +17,11 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../../../state/evidence.js';
-import { verifyFrozenMaterialForObligation } from '../../../state/review-continuation.js';
+import {
+  verifyFrozenMaterialForObligation,
+  type FrozenMaterialVerificationResult,
+  type FrozenReviewerContext,
+} from '../../../state/review-continuation.js';
 import {
   renderReviewerTaskPrompt,
   type AdvisoryChallengeResolution,
@@ -28,6 +32,10 @@ import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context
 import { buildImplementationAnchorContractLines } from '../evidence/anchor-contract-lines.js';
 import { resolveRepositoryObservationAccess } from '../observations/observation-access.js';
 import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
+import {
+  ADMITTED_SUBJECT_ANCHOR_KIND,
+  type AdmittedSubjectAnchorKind,
+} from '../../../state/evidence-review-subject.js';
 import {
   buildReviewChallengeContract,
   type ReviewerChallengePromptContract,
@@ -79,6 +87,38 @@ function subjectLabel(type: ReviewObligationType): string {
   }
 }
 
+/** Plan/architecture frozen material embeds the claim declarations section. */
+function keepsDeclarationPreview(obligation: ReviewObligation): boolean {
+  return obligation.obligationType !== 'plan' && obligation.obligationType !== 'architecture';
+}
+
+/** The relation grammar renders only the anchor kind the review scope admits. */
+function admittedAnchorKindOf(
+  obligation: ReviewObligation,
+): AdmittedSubjectAnchorKind | null | undefined {
+  const scope = obligation.reviewSubjectScope;
+  return scope !== undefined ? ADMITTED_SUBJECT_ANCHOR_KIND[scope.kind] : undefined;
+}
+
+/** Frozen reviewer context: the verified context or the raw frozen material. */
+function frozenReviewerContextOf(
+  material: Extract<FrozenMaterialVerificationResult, { readonly kind: 'ok' }>,
+  obligation: ReviewObligation,
+): FrozenReviewerContext | undefined {
+  return (
+    material.context ??
+    (obligation.reviewMaterial ? { reviewMaterial: obligation.reviewMaterial } : undefined)
+  );
+}
+
+function artifactScopeOf(
+  obligation: ReviewObligation,
+): Extract<ReviewObligation['reviewSubjectScope'], { readonly kind: 'artifact' }> | undefined {
+  return obligation.reviewSubjectScope?.kind === 'artifact'
+    ? obligation.reviewSubjectScope
+    : undefined;
+}
+
 export function canonicalTaskPrompt(
   state: PersistedState,
   obligation: ReviewObligation,
@@ -90,11 +130,8 @@ export function canonicalTaskPrompt(
   if (material.kind === 'blocked') {
     throw buildEnforcementError(material.code, material.reason);
   }
-  const frozenReviewerContext =
-    material.context ??
-    (obligation.reviewMaterial ? { reviewMaterial: obligation.reviewMaterial } : undefined);
-  const artifactScope =
-    obligation.reviewSubjectScope?.kind === 'artifact' ? obligation.reviewSubjectScope : undefined;
+  const frozenReviewerContext = frozenReviewerContextOf(material, obligation);
+  const artifactScope = artifactScopeOf(obligation);
   const observationRevisions = resolveObservationRevisions(obligation);
   const challengeContract = buildReviewChallengeContract(state, obligation);
   const advisoryResolutions = advisoryResolutionBindings(
@@ -102,6 +139,7 @@ export function canonicalTaskPrompt(
     obligation,
     resolutionTargetIdsOf(challengeContract),
   );
+  const admittedSubjectAnchorKind = admittedAnchorKindOf(obligation);
   return renderReviewerTaskPrompt({
     iteration: obligation.iteration,
     planVersion: obligation.planVersion,
@@ -112,9 +150,12 @@ export function canonicalTaskPrompt(
     reviewType: reviewerPromptTypeForTask(obligation.obligationType),
     repositoryReview: observationRevisions.length > 0,
     challengeContract: challengeContract ?? undefined,
-    proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
+    proofContext: buildReviewerProofContext(state, proofGraphAuthorities, {
+      includeDeclarationPreview: keepsDeclarationPreview(obligation),
+    }),
     ...(advisoryResolutions.length > 0 ? { challengeResolutions: advisoryResolutions } : {}),
     ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0 ? { retryDiagnostics } : {}),
+    ...(admittedSubjectAnchorKind !== undefined ? { admittedSubjectAnchorKind } : {}),
     frozenReviewerContext,
     artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
     // Implementation reviews receive the SAME host-enforced anchor contract the

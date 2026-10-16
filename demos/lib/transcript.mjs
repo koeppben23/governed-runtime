@@ -95,10 +95,15 @@ export function transcriptTrust(output) {
   };
 }
 
-/** Ordered denial occurrences with the tool that produced them (when named). */
+/**
+ * Ordered denial occurrences from GOVERNED tool outputs only: an error envelope
+ * emitted by a non-FlowGuard tool is never a FlowGuard denial and can never
+ * certify a controlled negative.
+ */
 export function toolDenialEvents(output) {
   const denials = [];
   for (const event of toolUseEvents(output)) {
+    if (!isGovernedTool(event.tool)) continue;
     if (event.payload.kind !== 'json') continue;
     const value = event.payload.value;
     if (value && value.error === true && typeof value.code === 'string') {
@@ -106,6 +111,15 @@ export function toolDenialEvents(output) {
     }
   }
   return denials;
+}
+
+/** Per-OCCURRENCE denial counts keyed by code (never per affected turn). */
+export function toolDenialOccurrenceCounts(output) {
+  const counts = {};
+  for (const denial of toolDenialEvents(output)) {
+    counts[denial.code] = (counts[denial.code] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export function toolDenialCodes(output) {
@@ -265,6 +279,11 @@ export function captureRetryCodes(output) {
   return codes;
 }
 
+/** Authorized re-arm envelopes: retryable with explicit obligation and attempt identity. */
+export function authorizedRetryEvents(output) {
+  return captureRetryEvents(output).filter((event) => authorizedRearm(event));
+}
+
 function authorizedRearm(event) {
   if (event.retryable !== true) return false;
   return (
@@ -307,8 +326,14 @@ export function structuredRearmSupersedesTerminal(output, code) {
   });
 }
 
-/** The controlled negative probe: exactly the expected denial, provably nothing else. */
-export function assertExpectedDenial(output, expectedCode) {
+/**
+ * The controlled negative probe: exactly the expected denial from the exact
+ * AUTHORITY tool, provably nothing else. `expectedTool` binds the control to
+ * the tool whose decision the probe intends to prove (e.g. the risk control is
+ * only proven by flowguard_decision, never by any other governed tool that
+ * happens to carry the same code).
+ */
+export function assertExpectedDenial(output, expectedCode, expectedTool) {
   const trust = transcriptTrust(output);
   if (!trust.readable) {
     throw new Error(
@@ -320,6 +345,14 @@ export function assertExpectedDenial(output, expectedCode) {
   const codes = toolDenialCodes(output);
   if (!codes.includes(expectedCode)) {
     throw new Error(`expected denial ${expectedCode}, observed [${codes.join(', ') || 'none'}]`);
+  }
+  if (expectedTool !== undefined) {
+    const denialTool = deniedToolForCode(output, expectedCode);
+    if (denialTool !== expectedTool) {
+      throw new Error(
+        `expected denial ${expectedCode} from ${expectedTool}, observed tool ${String(denialTool)}`,
+      );
+    }
   }
   const unexpected = codes.filter((code) => code !== expectedCode);
   if (unexpected.length > 0) {

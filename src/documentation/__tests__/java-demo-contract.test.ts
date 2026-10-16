@@ -17,6 +17,7 @@ import {
   enableRawArchiveInRepoConfig,
   unexpectedDenialCodes,
   captureRetryCodes,
+  freshRearmWitness,
   planReviewSameTurnCorrection,
   planReviewCorrectionProven,
   planCorrectionGateDecision,
@@ -33,6 +34,39 @@ import {
   withRawExportGrant,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
+
+describe('structured re-arm recovery witness', () => {
+  const event = {
+    code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+    obligationId: 'ob-1',
+    attemptId: 'att-2',
+  };
+  function state(attemptStatus: string, obligationId = 'ob-1') {
+    return {
+      reviewAssurance: {
+        obligations: [{ obligationId: 'ob-1', status: 'pending' }],
+        attempts: [
+          { attemptId: 'att-2', obligationId, status: attemptStatus },
+          { attemptId: 'att-1', obligationId: 'ob-1', status: 'stale' },
+        ],
+      },
+    };
+  }
+
+  it('credits a re-arm only with a fresh created or bound attempt on the same obligation', () => {
+    expect(freshRearmWitness(event, state('created'))).toBe(true);
+    expect(freshRearmWitness(event, state('bound'))).toBe(true);
+  });
+
+  it('never credits a retry envelope that references a spent or unknown attempt', () => {
+    expect(freshRearmWitness(event, state('stale'))).toBe(false);
+    expect(freshRearmWitness(event, state('created', 'ob-other'))).toBe(false);
+    expect(freshRearmWitness(event, { reviewAssurance: { obligations: [], attempts: [] } })).toBe(
+      false,
+    );
+    expect(freshRearmWitness(event, null)).toBe(false);
+  });
+});
 
 const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -143,7 +177,10 @@ describe('Java Task Manager demo contract', () => {
     const toolLine = (code: string) =>
       JSON.stringify({
         type: 'tool_use',
-        part: { state: { output: JSON.stringify({ error: true, code }) } },
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ error: true, code }) },
+        },
       });
     const expected = toolLine('ARCHITECTURE_CLAIM_INVALID');
     expect(() => assertExpectedDenial(expected, 'ARCHITECTURE_CLAIM_INVALID')).not.toThrow();
@@ -269,6 +306,7 @@ describe('Java Task Manager demo contract', () => {
     const terminalLine = JSON.stringify({
       type: 'tool_use',
       part: {
+        tool: 'flowguard_plan',
         state: {
           output: JSON.stringify({ error: true, code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
         },
@@ -328,7 +366,10 @@ describe('Java Task Manager demo contract', () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-terminal-order-'));
     const blockLine = JSON.stringify({
       type: 'tool_use',
-      part: { state: { output: JSON.stringify({ error: true, code: 'ARCHIVE_FAILED' }) } },
+      part: {
+        tool: 'flowguard_archive',
+        state: { output: JSON.stringify({ error: true, code: 'ARCHIVE_FAILED' }) },
+      },
     });
     try {
       await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
@@ -720,7 +761,10 @@ describe('Java Task Manager demo contract', () => {
     const toolLine = (code: string) =>
       JSON.stringify({
         type: 'tool_use',
-        part: { state: { output: JSON.stringify({ error: true, code }) } },
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ error: true, code }) },
+        },
       });
     const recoverable = [
       toolLine('PROOFGRAPH_CLAIM_NOT_DECLARED'),
@@ -999,18 +1043,23 @@ describe('Java Task Manager demo contract', () => {
       });
       await runner.approve(session, 'approve-plan', 'PLAN_REVIEW');
       expect(session.pendingReviewRecovery).toBeNull();
+      // The retryable envelope alone is an observation: this fixture persists
+      // no fresh attempt, so no in-turn re-arm proof is credited. Only the
+      // gate-proven supersession counts as recovery.
       expect(session.recoveredDenials).toEqual([
-        {
-          step: 'plan',
-          codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
-          evidence: 'structured_rearm',
-        },
         {
           step: 'plan',
           codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
           evidence: 'structured_rearm_after_terminal_failure',
         },
       ]);
+      expect(
+        (
+          session as {
+            retryHints?: Array<{ reason?: string }>;
+          }
+        ).retryHints?.some((hint) => hint.reason === 'stale_rearm_attempt'),
+      ).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1161,6 +1210,7 @@ describe('Java Task Manager demo contract', () => {
     const terminal = JSON.stringify({
       type: 'tool_use',
       part: {
+        tool: 'task',
         state: {
           output: JSON.stringify({
             error: true,
@@ -1175,6 +1225,44 @@ describe('Java Task Manager demo contract', () => {
     expect(unexpectedDenialCodes(rearm)).toEqual([]);
     expect(captureRetryCodes(terminal)).toEqual([]);
     expect(unexpectedDenialCodes(terminal)).toEqual(['REVIEW_EVIDENCE_NOT_OBSERVED']);
+  });
+
+  it('binds an expected denial to its authority tool at the runner boundary', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-denial-tool-'));
+    try {
+      await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
+      const wrongTool = JSON.stringify({
+        type: 'tool_use',
+        part: {
+          tool: 'flowguard_plan',
+          state: {
+            output: JSON.stringify({
+              error: true,
+              code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+            }),
+          },
+        },
+      });
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: wrongTool,
+      });
+      const session = { workspace: root, terminal: 'COMPLETE', sessionId: 'ses_parent' };
+      await expect(
+        runner.turn(session, 'approve', 'x', {
+          command: 'approve',
+          expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          expectedDenialTool: 'flowguard_decision',
+        }),
+      ).rejects.toThrow(/observed tool flowguard_plan/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it('opts the installed repository config into raw auditor archives', async () => {
@@ -1202,7 +1290,7 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
-  it('collects the parent and reviewer-child transcripts for one flow', () => {
+  it('collects the parent and every reviewer-child transcript, including discarded attempts', () => {
     const state = {
       binding: { hostSessionId: 'ses_parent', worktree: REPO_ROOT },
       reviewAssurance: {
@@ -1211,11 +1299,16 @@ describe('Java Task Manager demo contract', () => {
           { childSessionId: 'ses_reviewer_1' },
           { childSessionId: 'ses_parent' },
         ],
+        attempts: [
+          { childSessionId: 'ses_stale_1', status: 'stale' },
+          { childSessionId: 'ses_reviewer_1', status: 'bound' },
+          { childSessionId: undefined, status: 'created' },
+        ],
       },
     };
     expect(transcriptTargets(state)).toEqual({
       parent: 'ses_parent',
-      reviewers: ['ses_reviewer_1'],
+      reviewers: ['ses_reviewer_1', 'ses_stale_1'],
     });
   });
 

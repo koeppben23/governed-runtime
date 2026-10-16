@@ -109,6 +109,12 @@ Any semantic criteria change advances `REVIEW_CRITERIA_VERSION`
 (`src/integration/review/obligations/assurance.ts`); obligations minted under a
 stale generation fail closed as `REVIEW_GENERATION_MISMATCH` and are recovered
 through the documented fresh-review-cycle route.
+Generation `p42-v5` additionally requires both evidence classes for a passing
+implementation challenge (execution evidence on the current digest and the
+current implementation ref as content evidence), scopes the finding-relation
+grammar to the admitted subject-anchor kind, states `evidenceLocations` as
+required-but-may-be-empty, and orders `reviewRetry` handling before any
+completed-review assumption in every review command surface.
 
 Implementation-challenge repair (`changes_requested` with a failing
 `implementation_challenge`) converges through one shared authority
@@ -487,9 +493,16 @@ obligation-scoping applies to **every** challenge-bearing obligation type —
 plan/architecture `design_challenge`, implement `implementation_challenge`, and
 peer review `content_challenge` — not to implementation alone. For
 implementation challenges the allowed set additionally binds an `outcome='pass'`
-challenge to a validation attempt for the **current** implementation digest — a
-stale, failed, foreign, or wrong-obligation reference is rejected with
-`SUBAGENT_CHALLENGE_EVIDENCE_MISSING`. The binding is resolved from the persisted
+challenge to **both evidence classes**: execution evidence — a successful
+validation attempt for the **current** implementation digest — and content
+evidence — the current implementation ref, whose diff grounds the claimed
+property (an unchanged documentation sentence is content evidence, never a test
+run). A stale, failed, foreign, or wrong-obligation reference is rejected with
+`SUBAGENT_CHALLENGE_EVIDENCE_MISSING`; a missing execution or content class is
+rejected with the same code and a precise `reasonKind`
+(`validation_attempt_missing` / `implementation_reference_missing`) that names
+the offending challenge position and required reference kind for the retry. The
+binding is resolved from the persisted
 assurance state by `resolveStructuredFindings`
 (`src/integration/review/validation/review-validation-structured-evidence.ts`,
 which applies `validateChallengeConsistency`); the `/plan`, `/architecture`, and

@@ -29,6 +29,11 @@ export function renderPlanClaimDeclarations(
         `  - Authority section: ${claim.authoritySectionId}`,
         `  - Claim scope: ${claim.claimScope}`,
         `  - Positive evidence check: ${claim.expectedCheckId}`,
+        ...(claim.expectedAssertion
+          ? [
+              `  - Positive evidence assertion: providerId: ${claim.expectedAssertion.providerId}; localId: ${claim.expectedAssertion.localId}`,
+            ]
+          : []),
         `  - Counterexample (adversarial) check: ${counterexampleText}`,
         `  - Structural surface: ${claim.structuralSurface ?? 'none'}`,
         `  - Mutation profile: ${claim.mutationProfile ?? 'none'}`,

@@ -1,3 +1,4 @@
+import { hashText } from '../shared/hashing.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -248,6 +249,47 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
 // =============================================================================
 // Tool: status
 // =============================================================================
+
+describe('status compact canonical projection', () => {
+  it('omits the repeated rule and mandate bodies and replaces them with digests', async () => {
+    await hydrateSession({ policyMode: 'team' });
+    const full = parseToolResult<Record<string, unknown>>(await status.execute({}, ctx));
+    const compact = parseToolResult<Record<string, unknown>>(
+      await status.execute({ compact: true }, ctx),
+    );
+
+    expect(typeof full.profileRules).toBe('string');
+    expect('profileRules' in compact).toBe(false);
+    expect(typeof compact.profileRulesDigest).toBe('string');
+    expect(compact.profileRulesDigest).toBe(hashText(full.profileRules as string));
+
+    const fullMandates = full.governanceMandates as Record<string, unknown>;
+    const compactMandates = compact.governanceMandates as Record<string, unknown>;
+    expect(typeof fullMandates.phaseRelevantRules).toBe('string');
+    expect('phaseRelevantRules' in compactMandates).toBe(false);
+    expect(typeof compactMandates.phaseRelevantRulesDigest).toBe('string');
+    expect(compactMandates.mandatesVerbosity).toBe('explicit');
+    expect(compactMandates.projection).toBe('phase-aware-compact');
+    expect(String(compactMandates.fullRulesHint)).toContain('without `compact`');
+
+    // Routing- and evidence-critical fields survive the compaction.
+    expect(compact.phase).toBe(full.phase);
+    expect(compact.status).toEqual(full.status);
+    expect(compact.directive).toEqual(full.directive);
+    expect(compact.verificationCandidates).toEqual(full.verificationCandidates);
+    expect(compact.detectedStack).toEqual(full.detectedStack);
+    expect(compact.compact).toBe(true);
+  });
+
+  it('keeps the full projection as the default and unchanged', async () => {
+    await hydrateSession({ policyMode: 'team' });
+    const full = parseToolResult<Record<string, unknown>>(await status.execute({}, ctx));
+    expect('compact' in full).toBe(false);
+    expect(typeof full.profileRules).toBe('string');
+    const mandates = full.governanceMandates as Record<string, unknown>;
+    expect(typeof mandates.phaseRelevantRules).toBe('string');
+  });
+});
 
 describe('status', () => {
   describe('HAPPY', () => {

@@ -198,6 +198,14 @@ output carries identifiers, codes, labels and numbers only.
 - Phases come only from observed governed payloads of the same turn; model
   steps only from transcript step events; reviewer Task and structured
   follow-up are split at FlowGuard's follow-up prompt in the host export.
+- Every reviewer child is exported, including dispatched attempts that ended
+  stale/failed and never fulfilled; a flow that fails still captures its
+  transcripts on the failure path. `denialCounts` are per-OCCURRENCE and only
+  for GOVERNED tool outputs — a denial envelope from a foreign tool is never a
+  control proof.
+- Measurements record the harness version and the product ProofGraph contract
+  version, and report host-turn wall time, reviewer-child elapsed time, model
+  spans, and process overhead separately.
 - Comparable runs share flow, model, host version and build. p95 is
   `insufficient_sample` below 20 runs, `exploratory` from 20 to 99 and
   `descriptive` from 100; individual values and the median are always shown.

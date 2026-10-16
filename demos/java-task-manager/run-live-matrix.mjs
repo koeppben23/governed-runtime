@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { exportHostTranscript } from './live-host-export.mjs';
 import {
   assertExpectedDenial,
+  authorizedRetryEvents,
   captureRetryCodes,
   captureRetryEvents,
   captureRetryHints,
@@ -64,17 +65,25 @@ import {
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
   toolDenialEvents,
+  toolDenialOccurrenceCounts,
   toolUseEvents,
   transcriptTrust,
 } from '../lib/transcript.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
-import { expectRecovery, readAuditEvents, recoveryPersisted } from '../lib/recovery-state.mjs';
+import {
+  expectRecovery,
+  implementationReviewAcceptanceProven,
+  readAuditEvents,
+  recoveryPersisted,
+} from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
+import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
 
 export {
   assertExpectedDenial,
+  authorizedRetryEvents,
   captureRetryCodes,
   captureRetryEvents,
   captureRetryHints,
@@ -86,11 +95,29 @@ export {
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
   toolDenialEvents,
+  toolDenialOccurrenceCounts,
   transcriptTrust,
 };
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
+
+/**
+ * The product's canonical ProofGraph contract version, read from the product
+ * source the same way the pinned toolchain reads its pins. Recorded so every
+ * measurement names the product contract it was produced under.
+ */
+export function readContractVersion() {
+  try {
+    const source = fs.readFileSync(
+      path.join(REPO, 'src', 'state', 'proofgraph-contract.ts'),
+      'utf8',
+    );
+    return /PROOFGRAPH_CONTRACT_VERSION\s*=\s*'([^']+)'/.exec(source)?.[1] ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 export const DEFAULT_FLOWS = [
   'architecture',
@@ -377,6 +404,24 @@ export function planReviewCorrectionProven(state) {
 }
 
 /**
+ * A structured re-arm credits recovery only when the persisted authority proves
+ * a FRESH attempt: the re-armed attempt must exist under the same obligation
+ * with status `created` (awaiting the reviewer Task) or `bound` (it carried a
+ * review). A retryable envelope that references a spent/stale attempt (observed
+ * live) is an observation only and never proves recovery.
+ */
+export function freshRearmWitness(event, state) {
+  const assurance = state?.reviewAssurance;
+  const obligation = (assurance?.obligations ?? []).find(
+    (item) => item.obligationId === event.obligationId,
+  );
+  if (!obligation) return false;
+  const attempt = (assurance?.attempts ?? []).find((item) => item.attemptId === event.attemptId);
+  if (!attempt || attempt.obligationId !== event.obligationId) return false;
+  return attempt.status === 'created' || attempt.status === 'bound';
+}
+
+/**
  * Terminal decision for a tracked same-turn `PLAN_REVIEW_IN_PROGRESS`
  * correction at the next expected PLAN_REVIEW step. A governed review
  * exhaustion is a NOT_VERIFIED outcome (never a raw harness crash); proven
@@ -482,15 +527,36 @@ export async function finalizeControlRecord(
   return record;
 }
 
+/**
+ * Capture provenance on a FAILURE path without touching the result
+ * classification: finalizeControlRecord would overwrite it with its default
+ * CONTROL_PASSED. A failed run must never become a passed control.
+ */
+export async function captureFailureProvenance(record, session, runner) {
+  try {
+    if (session.sessionId) record.hostSessionId = session.sessionId;
+    const snapshot = runner.requireBoundState(session);
+    record.phase = snapshot.state.phase;
+    record.flowguardSessionId = snapshot.state.flowguardSessionId;
+    await runner.captureProvenance(record, session);
+  } catch (captureError) {
+    record.transcriptCaptureError = String(captureError);
+  }
+  return record;
+}
+
 /** Sessions whose transcripts belong to one flow's evidence: parent + reviewers. */
 export function transcriptTargets(state) {
-  const reviewers = [
-    ...new Set(
-      (state.reviewAssurance?.invocations ?? [])
-        .map((invocation) => invocation.childSessionId)
-        .filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0),
-    ),
-  ].filter((sessionId) => sessionId !== state.binding?.hostSessionId);
+  // Every reviewer child is exported: fulfilled invocations AND attempt-bound
+  // children (dispatched reviews that ended stale/failed and never fulfilled).
+  // A discarded child is exactly the evidence a forensic pass must see.
+  const childSessionIds = [
+    ...(state.reviewAssurance?.invocations ?? []).map((invocation) => invocation.childSessionId),
+    ...(state.reviewAssurance?.attempts ?? []).map((attempt) => attempt.childSessionId),
+  ].filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0);
+  const reviewers = [...new Set(childSessionIds)].filter(
+    (sessionId) => sessionId !== state.binding?.hostSessionId,
+  );
   return { parent: state.binding?.hostSessionId ?? null, reviewers };
 }
 
@@ -577,6 +643,7 @@ export class Runner {
       exitCode: result.code,
       durationMs: result.durationMs,
       denialCodes: toolDenialCodes(output),
+      denialOccurrences: toolDenialEvents(output).map((denial) => denial.code),
     });
     const sessionIds = [
       ...new Set(
@@ -620,7 +687,7 @@ export class Runner {
       phaseAfter: this.currentPhase(session),
     };
     if (options.expectedDenial) {
-      assertExpectedDenial(result.stdout, options.expectedDenial);
+      assertExpectedDenial(result.stdout, options.expectedDenial, options.expectedDenialTool);
       return result;
     }
 
@@ -679,8 +746,33 @@ export class Runner {
     // requires an independent persisted proof from the next required step.
     const sameTurnRecovered = operationRecovered;
     const unprovenOccurrences = [...new Set(proofs.unproven.map((proof) => proof.code))];
-    const retryRecovered = captureRetryCodes(result.stdout);
+    // The retry envelope itself only exists for retryable capture failures.
+    const allRetryEvents = authorizedRetryEvents(result.stdout);
+    let rearmState = null;
+    try {
+      rearmState = this.requireBoundState(session).state;
+    } catch {
+      rearmState = null;
+    }
+    const retryRecovered = [
+      ...new Set(
+        allRetryEvents
+          .filter((event) => freshRearmWitness(event, rearmState))
+          .map((event) => event.code),
+      ),
+    ];
+    const staleRearms = allRetryEvents.filter((event) => !freshRearmWitness(event, rearmState));
     const retryHints = captureRetryHints(result.stdout);
+    if (staleRearms.length > 0) {
+      session.retryHints = [
+        ...(session.retryHints ?? []),
+        { step: label, events: staleRearms, reason: 'stale_rearm_attempt' },
+      ];
+      this.log(
+        `${label}: structured re-arm referenced a spent or unknown attempt ` +
+          `[${[...new Set(staleRearms.map((event) => event.code))].join(', ')}]; no recovery proof credited`,
+      );
+    }
     if (retryHints.length > 0) {
       session.retryHints = [...(session.retryHints ?? []), { step: label, events: retryHints }];
       this.log(
@@ -908,8 +1000,11 @@ export class Runner {
       const proven =
         expectedPhase === 'PLAN_REVIEW'
           ? planReviewCorrectionProven(snapshot.state)
-          : expectedPhase === 'ARCH_REVIEW' &&
-            snapshot.state.architecture?.reviewCompletion === 'reviewer_accepted';
+          : expectedPhase === 'ARCH_REVIEW'
+            ? snapshot.state.architecture?.reviewCompletion === 'reviewer_accepted'
+            : expectedPhase === 'EVIDENCE_REVIEW'
+              ? implementationReviewAcceptanceProven(snapshot.state)
+              : false;
       if (!proven) {
         throw new Error(
           `${label}: superseded reviewer block(s) [${session.pendingReviewRecovery.codes.join(', ')}] were not proven by a converged review; stopping the flow`,
@@ -1313,6 +1408,8 @@ async function main() {
       {
         startedAt: new Date().toISOString(),
         model: options.model,
+        harnessVersion: HARNESS_VERSION,
+        contractVersion: readContractVersion(),
         pins,
         checkoutHead,
         tarball,
@@ -1356,8 +1453,8 @@ async function main() {
       const record = { name, workspace: flow.workspace, result: RESULT.FAILED };
       runner.flows.push(record);
       runner.log(`START ${name}`);
+      const session = { workspace: flow.workspace, terminal: flow.terminal };
       try {
-        const session = { workspace: flow.workspace, terminal: flow.terminal };
         await runner.turn(session, `${name}-01-start`, '/start');
         const installed = runner.installedBuild(flow.workspace);
         record.installedBuild = installed;
@@ -1430,6 +1527,9 @@ async function main() {
           record.error = String(error);
           runner.log(`BLOCKED ${name}: ${error}`);
         }
+        // Evidence capture must survive the failure path: a failed or
+        // discarded reviewer child is exactly what a forensic pass needs.
+        await captureFailureProvenance(record, session, runner);
       }
       fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2));
       fs.writeFileSync(

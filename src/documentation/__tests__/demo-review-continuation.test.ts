@@ -149,6 +149,23 @@ describe('demo review continuation classification', () => {
       ).toBe(PLAN_GATE.TRANSPORT_RETRY);
     });
 
+    it('never inherits a superseded fulfilled invocation after a re-arm', () => {
+      // An F12 re-arm resets the obligation to pending with invocationId null
+      // while keeping the predecessor invocation in the ledger. That stale
+      // fulfilled invocation is NOT the re-armed attempt's bound verdict.
+      expect(
+        classifyPlanGate(
+          planState({
+            obligation: { id: 'ob-7', status: 'pending', invocationId: null },
+            invocations: [boundInvocation],
+            attempts: [{ obligationId: 'ob-7', attemptId: 'att-7', status: 'stale' }],
+            findings: 0,
+            iteration: 1,
+          }),
+        ),
+      ).toBe(PLAN_GATE.TRANSPORT_RETRY);
+    });
+
     it('ignores stale findings from previous review cycles', () => {
       expect(
         classifyPlanGate(

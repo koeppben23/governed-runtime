@@ -42,7 +42,7 @@ import {
   persistAuthorizedReviewDispatch,
 } from './durable-dispatch.js';
 import {
-  buildCaptureFailureDiagnostics,
+  buildCapturedFindingsDiagnostics,
   buildCodeOnlyRetryDiagnostic,
   buildReviewerCaptureRetryOutput,
   captureFailureBlockDetail,
@@ -379,7 +379,7 @@ async function writeBindingFailure(
       ...input,
       code: result.code,
       reason: JSON.stringify(result.details),
-      diagnostics: buildCaptureFailureDiagnostics(result.code, result.details),
+      diagnostics: buildCapturedFindingsDiagnostics(result),
     });
     return;
   }
@@ -611,7 +611,7 @@ async function completeStructuredReview(
       ...captureFailure,
       code: validation.code,
       reason: validation.reason,
-      diagnostics: [buildCodeOnlyRetryDiagnostic(validation.code)],
+      diagnostics: buildCapturedFindingsDiagnostics(validation),
     });
     return;
   }

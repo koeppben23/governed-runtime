@@ -26,11 +26,13 @@ import { fileURLToPath } from 'node:url';
 import {
   Runner,
   assertToolchain,
+  captureFailureProvenance,
   finalizeControlRecord,
   parseArgs,
   readPins,
   sha256,
   verifyChecksumSidecar,
+  readContractVersion,
   DENIAL_BASELINE,
 } from '../java-task-manager/run-live-matrix.mjs';
 import { assertNoCompletionPackage, assertProofEvidence } from '../lib/control-oracles.mjs';
@@ -42,6 +44,7 @@ import {
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
+import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 
 export { assertNoCompletionPackage };
 
@@ -70,6 +73,7 @@ export function claimDeclaration(covered) {
     authoritySectionId: 'Invariant',
     claimScope: 'specific_behavior',
     expectedCheckId: 'test',
+    expectedAssertion: { providerId: 'junit', localId: POSITIVE_ASSERTION },
     counterexampleRequirement: {
       kind: 'assertion',
       checkId: 'build',
@@ -249,6 +253,9 @@ async function runCase(runner, name, workspace, covered, context) {
         {
           command: 'approve',
           expectedDenial: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED',
+          // The negative control is only proven by the evidence-approval
+          // decision tool; the same code from any other tool is not a control.
+          expectedDenialTool: 'flowguard_decision',
         },
       );
       const after = runner.requireBoundState(session).state;
@@ -311,16 +318,21 @@ async function runCase(runner, name, workspace, covered, context) {
       record.result = RESULT.FAILED;
       record.error = String(error);
     }
+    // Capture provenance even on the failure path WITHOUT touching the result:
+    // a failed run must never become a passed control.
+    await captureFailureProvenance(record, session, runner);
   } finally {
     if (savedSkip === undefined) delete process.env[SKIP_ASSERTION_ENV];
     else process.env[SKIP_ASSERTION_ENV] = savedSkip;
   }
   record.turns = runner.turnObservations.filter((turn) => turn.label.startsWith(`${name}-`));
+  // OCCURRENCE-level counts: a code denied twice in one turn counts twice.
   record.denialCounts = Object.fromEntries(
-    [...new Set(record.turns.flatMap((turn) => turn.denialCodes))].map((code) => [
+    [...new Set(record.turns.flatMap((turn) => turn.denialOccurrences ?? []))].map((code) => [
       code,
       record.turns.reduce(
-        (count, turn) => count + turn.denialCodes.filter((value) => value === code).length,
+        (count, turn) =>
+          count + (turn.denialOccurrences ?? []).filter((value) => value === code).length,
         0,
       ),
     ]),
@@ -471,6 +483,8 @@ async function main() {
       {
         startedAt: new Date().toISOString(),
         model: options.model,
+        harnessVersion: HARNESS_VERSION,
+        contractVersion: readContractVersion(),
         pins,
         checkoutHead,
         tarball,

@@ -52,12 +52,25 @@ function occurrences(text: string, needle: string): number {
 }
 
 describe('renderReviewChallengeContract offered evidence refs', () => {
-  it.each([
-    ['implementation_challenge', IMPLEMENTATION_REFS, IMPLEMENTATION_REFS[1]],
-    ['design_challenge', PLAN_REFS, PLAN_REFS[0]],
-    ['content_challenge', CONTENT_REFS, CONTENT_REFS[0]],
-  ] as const)(
-    'lists every offered ref once and cites exactly one fitting ref for %s',
+  const cases: ReadonlyArray<
+    readonly [
+      NonNullable<ReviewerChallengePromptContract['requiredChallengeKind']>,
+      readonly Record<string, unknown>[],
+      readonly Record<string, unknown>[],
+    ]
+  > = [
+    // A passing implementation challenge needs BOTH evidence classes, so its
+    // shape example cites the fitting execution ref AND the content ref.
+    [
+      'implementation_challenge',
+      IMPLEMENTATION_REFS,
+      [IMPLEMENTATION_REFS[1]!, IMPLEMENTATION_REFS[0]!],
+    ],
+    ['design_challenge', PLAN_REFS, [PLAN_REFS[0]!]],
+    ['content_challenge', CONTENT_REFS, [CONTENT_REFS[0]!]],
+  ];
+  it.each(cases)(
+    'lists every offered ref once and cites the fitting example refs for %s',
     (kind, refs, expectedExample) => {
       const { lines, text, example } = render({
         requiredChallengeCount: 1,
@@ -65,20 +78,20 @@ describe('renderReviewChallengeContract offered evidence refs', () => {
         evidenceRefs: refs,
       });
 
-      expect(example.evidenceRefs).toEqual([expectedExample]);
+      expect(example.evidenceRefs).toEqual(expectedExample);
       expect(text).toContain(`- Offered evidenceRefs (${refs.length}): the only admissible refs.`);
       refs.forEach((ref, index) => {
         expect(lines).toContain(`  ${index + 1}. ${JSON.stringify(ref)}`);
-        const expectedCount = ref === expectedExample ? 2 : 1;
+        const expectedCount = expectedExample.includes(ref) ? 2 : 1;
         expect(occurrences(text, JSON.stringify(ref))).toBe(expectedCount);
       });
       expect(text).not.toContain('No usable evidence reference was supplied');
     },
   );
 
-  it('states the validation_attempt requirement for passing implementation challenges only', () => {
+  it('states both evidence classes for passing implementation challenges only', () => {
     const rule =
-      '- An implementation_challenge with outcome "pass" MUST cite at least one validation_attempt ref.';
+      '- An implementation_challenge with outcome "pass" MUST cite BOTH evidence classes:';
     expect(
       render({
         requiredChallengeCount: 1,
@@ -150,7 +163,12 @@ describe('renderReviewChallengeContract offered evidence refs', () => {
     expect(validate([IMPLEMENTATION_REFS[0]])).toMatchObject({
       ok: false,
       code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-      details: { reason: 'validation_attempt_missing' },
+      details: { challengeIndex: 0, reason: 'validation_attempt_missing' },
+    });
+    expect(validate([IMPLEMENTATION_REFS[1]])).toMatchObject({
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+      details: { challengeIndex: 0, reason: 'implementation_reference_missing' },
     });
   });
 });

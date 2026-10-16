@@ -159,6 +159,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Review capture diagnostics, recovery fidelity, and runtime efficiency
+  (review criteria `p42-v5`).** A reviewer capture that violates the challenge
+  evidence contract now reaches the retry with the exact validated position and
+  missing evidence class: `validateChallengeConsistency` reports the
+  `challengeIndex`, the native capture boundary carries the structured
+  details instead of stringifying them, and the retry diagnostic names
+  `challenges.<i>.evidenceRefs` with `reasonKind` `validation_attempt_missing`
+  or `implementation_reference_missing` and the required reference type —
+  bounded to machine-produced values. A passing `implementation_challenge` now
+  requires BOTH evidence classes: execution evidence (a successful
+  validation attempt on the current implementation digest) and content evidence
+  (the current implementation ref, whose diff grounds changed/unchanged
+  content); a validation attempt alone never proves unobserved content. The
+  shared review loop, the standalone `/review` command, `/check`, and the
+  Claude plugin surface handle a `reviewRetry` envelope before any
+  dispatch-shape/completion assumption, so a re-armed retry is invoked instead
+  of being read as a broken dispatch. The finding-relation grammar states
+  `evidenceLocations` as required-but-may-be-empty (matching the schema) and
+  renders only the subject-anchor kind the review scope admits. The demo
+  harness binds structured re-arm recovery credit to a fresh persisted attempt
+  (a retryable envelope referencing a spent attempt is an observation), proves
+  implementation-review recovery through the consumed acceptance bound to its
+  own invocation, exports discarded reviewer children, counts governed denial
+  occurrences (not affected turns), never counts a foreign tool's error
+  envelope as a control proof, and records harness and contract versions with
+  separate host-turn, reviewer-child, model-span, and process-overhead
+  timings. The compact `flowguard_status({ compact: true })` projection keeps
+  routing and evidence-critical fields plus Discovery context while replacing
+  the repeated profile-rule and mandate bodies with digests (the full
+  projection stays the default); plan/review commands use it. Reviewer prompts
+  embed the claim declarations once (the frozen material already carries
+  them), include the positive assertion binding when declared, and require
+  prose-complete conclusions with a single structured serialization path.
+  Discovery snapshots persist the full canonical verification candidates
+  (capability and report spec included). **Upgrade impact:** obligations
+  minted under `p42-v4` fail closed and recover through a fresh obligation;
+  persisted Discovery snapshots in the superseded compact candidate shape are
+  rejected at the schema boundary (`KNOWN_ISSUES.md` S5).
+
 - **Risk controls classify an unrecorded implementation as `NOT_VERIFIED`.** In
   the `eff9cc1e` validation arm, `risk-uncovered` ended `FAILED` with
   `state_integrity trigger not detected: []` although the `/implement` turn had

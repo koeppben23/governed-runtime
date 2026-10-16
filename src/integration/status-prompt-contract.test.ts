@@ -25,7 +25,8 @@ vi.mock('../adapters/git', async (importOriginal) => {
   };
 });
 
-type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness' | 'reviewFeedback';
+type CallShape =
+  'compact' | 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness' | 'reviewFeedback';
 
 interface StatusContractEntry {
   readonly label: string;
@@ -46,12 +47,12 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
   {
     label: '/plan',
     phases: ['TICKET', 'PLAN'],
-    callShape: 'full',
+    callShape: 'compact',
     requiredTopLevel: [
       'phase',
       'hasTicket',
       'verificationCandidates',
-      'profileRules',
+      'profileRulesDigest',
       'detectedStack',
       'discoveryHealth',
       'discoveryDrift',
@@ -60,11 +61,11 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
   {
     label: '/implement',
     phases: ['IMPLEMENTATION'],
-    callShape: 'full',
+    callShape: 'compact',
     requiredTopLevel: [
       'phase',
       'hasPlan',
-      'profileRules',
+      'profileRulesDigest',
       'detectedStack',
       'verificationCandidates',
       'validationResults',
@@ -73,7 +74,7 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
   {
     label: '/validate',
     phases: ['VALIDATION'],
-    callShape: 'full',
+    callShape: 'compact',
     requiredTopLevel: ['phase', 'activeChecks', 'verificationCandidates'],
     phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
   },
@@ -86,7 +87,7 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
   {
     label: '/review',
     phases: ['READY'],
-    callShape: 'full',
+    callShape: 'compact',
     requiredTopLevel: [
       'phase',
       'discoveryHealth',
@@ -98,7 +99,7 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
   {
     label: '/architecture',
     phases: ['READY', 'ARCHITECTURE'],
-    callShape: 'full',
+    callShape: 'compact',
     requiredTopLevel: [
       'phase',
       'detectedStack',
@@ -136,7 +137,7 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
 const CHECK_ENTRY: StatusContractEntry = {
   label: '/check',
   phases: ['VALIDATION'],
-  callShape: 'full',
+  callShape: 'compact',
   requiredTopLevel: ['activeChecks', 'verificationCandidates'],
   phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
 };

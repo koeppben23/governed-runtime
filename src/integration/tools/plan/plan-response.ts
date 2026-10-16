@@ -36,6 +36,7 @@ import {
   buildPlanReviewCard,
   renderPlanClaimDeclarations,
 } from '../../../presentation/index.js';
+import { differencedCardPresentation } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
@@ -357,7 +358,6 @@ async function convergedPlanReviewCardResponse(
   );
   const taskTitle = firstLine(finalState.ticket?.text);
   const reviewCardInput = convergedReviewCardInput(input, taskTitle, reviewedIdentity);
-  // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   const reviewCard = buildPlanReviewCard(reviewCardInput);
   const presentationMarkdown = buildPlanReviewCard(reviewCardInput, {
     glyphProfile: (await readConfig(scope.worktree)).presentation.opencode.glyphProfile,
@@ -381,7 +381,7 @@ async function convergedPlanReviewCardResponse(
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
     reviewCard,
-    presentation: { markdown: presentationMarkdown },
+    presentation: differencedCardPresentation(presentationMarkdown, reviewCard),
     _audit: { transitions },
   };
   if (artifactErr) response.artifactWarning = artifactErr;

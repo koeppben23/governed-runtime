@@ -314,6 +314,15 @@ describe('renderReviewerTaskPrompt plan-review verification authority (p42-v3)',
   });
 });
 
+describe('renderReviewerTaskPrompt output boundary', () => {
+  it('requires prose-complete conclusions and forbids a serialized JSON duplicate', () => {
+    const prompt = renderReviewerTaskPrompt(BASE_INPUT);
+    expect(prompt).toContain('### Output Boundary');
+    expect(prompt).toContain('Do NOT emit a serialized ReviewerFindingsInput');
+    expect(prompt).toContain('serialization must be derivable from it without inventing or');
+  });
+});
+
 describe('renderReviewerTaskPrompt plan evidence roles and blocking bar (p42-v4)', () => {
   const ROLE_RULE =
     "- Evidence roles: a claim's positive evidence comes from executions of its positive evidence check and its counterexample evidence from separate executions of its counterexample check, each with its own attempt identity. Different checks may run overlapping test suites; that overlap is allowed and is not a defect. Plan review does not require these executions to exist yet.";
