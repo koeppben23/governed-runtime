@@ -54,6 +54,45 @@ function renderResolutionTargets(targets: readonly ReviewerChallengeResolutionTa
   ];
 }
 
+type ChallengeKind = ReviewerChallengePromptContract['requiredChallengeKind'];
+
+/** Evidence ref kind that fits each challenge kind best for the shape example. */
+const EXAMPLE_REF_KIND: Readonly<Record<NonNullable<ChallengeKind>, string>> = {
+  implementation_challenge: 'validation_attempt',
+  design_challenge: 'plan_adr_section',
+  content_challenge: 'content',
+};
+
+/**
+ * Exactly one offered ref for the shape example: the first ref of the kind
+ * fitting the challenge kind, otherwise the first offered ref. Never a
+ * synthesized ref; without offered refs the example cites none.
+ */
+function exampleEvidenceRefs(
+  evidenceRefs: readonly Record<string, unknown>[],
+  kind: ChallengeKind,
+): readonly Record<string, unknown>[] {
+  const preferred = kind ? EXAMPLE_REF_KIND[kind] : undefined;
+  const example = evidenceRefs.find((ref) => ref.kind === preferred) ?? evidenceRefs[0];
+  return example ? [example] : [];
+}
+
+function renderOfferedEvidenceRefs(
+  evidenceRefs: readonly Record<string, unknown>[],
+  kind: ChallengeKind,
+): string[] {
+  if (evidenceRefs.length === 0) return [];
+  return [
+    `- Offered evidenceRefs (${evidenceRefs.length}): the only admissible refs. Cite a non-empty subset that supports each challenge; the example below shows one of them, not the required selection.`,
+    ...evidenceRefs.map((ref, index) => `  ${index + 1}. ${JSON.stringify(ref)}`),
+    ...(kind === 'implementation_challenge'
+      ? [
+          '- An implementation_challenge with outcome "pass" MUST cite at least one validation_attempt ref.',
+        ]
+      : []),
+  ];
+}
+
 export function renderReviewChallengeContract(
   contract: ReviewerChallengePromptContract | undefined,
   obligationId: string,
@@ -74,12 +113,13 @@ export function renderReviewChallengeContract(
     claim: '<reviewed claim>',
     locations: ['<concrete file or artifact location>'],
     kind,
-    evidenceRefs,
+    evidenceRefs: exampleEvidenceRefs(evidenceRefs, kind),
   };
   return [
     `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${kind} challenge(s).`,
     '- When provided, clientReference MUST be fresh and unique (e.g. "c1", "c2"); use the exact obligationId below.',
-    '- Copy evidenceRefs exactly from the contract below. Do not invent or alter a digest, sectionPath, or attemptId.',
+    '- Copy each cited evidenceRef exactly from the offered list. Do not invent or alter a digest, sectionPath, or attemptId.',
+    ...renderOfferedEvidenceRefs(evidenceRefs, kind),
     ...(resolutionTargets.length === 0
       ? [
           '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
