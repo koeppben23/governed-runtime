@@ -159,6 +159,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Risk fixture scopes the head-only observation offer to plan review.** The
+  risk-trigger fixture ticket said "Base-revision observation is not available
+  to this obligation: do not assert base-vs-head comparisons", and its README
+  said the same of "these obligations". A live plan reviewer concluded that a
+  later baseline/implementation diff could not be produced anywhere in the run,
+  although the implementation review carries its own frozen `base`/`head`
+  candidate pair. Both texts now scope the `head`-only offer to the plan review
+  obligation and allow the plan to name the implementation diff as later
+  evidence without presenting it as observed; the fixture contract test derives
+  the offered revisions from `resolveObservationRevisions`. The two remaining
+  false-positive classes of the `1ed7c479` validation run (a build check read as
+  unable to observe test assertions, and this phase/observation confusion) plus
+  a self-declared minor issue bound as blocking are recorded in
+  `demos/review-counter-cases/plan-review-false-positives.json`, with a schema
+  test that verifies their repository-checkable refutations; their reviewer
+  behavior stays `NOT_VERIFIED`.
+
 - **Reviewer Discovery context lists every verification candidate.** The
   attempt-bound Discovery section rendered only the first six persisted
   verification candidates and dropped the rest without a note, although plan
