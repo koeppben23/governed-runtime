@@ -64,14 +64,21 @@ const EXAMPLE_REF_KIND: Readonly<Record<NonNullable<ChallengeKind>, string>> = {
 };
 
 /**
- * Exactly one offered ref for the shape example: the first ref of the kind
- * fitting the challenge kind, otherwise the first offered ref. Never a
- * synthesized ref; without offered refs the example cites none.
+ * Shape example refs for one offered set: an implementation_challenge cites
+ * BOTH evidence classes (execution + content) because a passing challenge
+ * requires both; every other kind cites exactly one fitting offered ref.
+ * Never a synthesized ref; without offered refs the example cites none.
  */
 function exampleEvidenceRefs(
   evidenceRefs: readonly Record<string, unknown>[],
   kind: ChallengeKind,
 ): readonly Record<string, unknown>[] {
+  if (kind === 'implementation_challenge') {
+    const execution = evidenceRefs.find((ref) => ref.kind === 'validation_attempt');
+    const content = evidenceRefs.find((ref) => ref.kind === 'implementation');
+    const both = [execution, content].filter((ref) => ref !== undefined);
+    if (both.length > 0) return both;
+  }
   const preferred = kind ? EXAMPLE_REF_KIND[kind] : undefined;
   const example = evidenceRefs.find((ref) => ref.kind === preferred) ?? evidenceRefs[0];
   return example ? [example] : [];
@@ -87,7 +94,10 @@ function renderOfferedEvidenceRefs(
     ...evidenceRefs.map((ref, index) => `  ${index + 1}. ${JSON.stringify(ref)}`),
     ...(kind === 'implementation_challenge'
       ? [
-          '- An implementation_challenge with outcome "pass" MUST cite at least one validation_attempt ref.',
+          '- An implementation_challenge with outcome "pass" MUST cite BOTH evidence classes:',
+          '  (1) execution evidence — at least one successful validation_attempt ref on the current implementation digest;',
+          '  (2) content evidence — the current implementation ref (its diffDigest grounds changed/unchanged content).',
+          '  A validation_attempt alone never proves unobserved content; the implementation ref alone never proves execution.',
         ]
       : []),
   ];

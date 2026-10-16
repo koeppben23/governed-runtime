@@ -187,10 +187,17 @@ function firstFindingIndex(
  */
 const CHALLENGE_EVIDENCE_REASONS: ReadonlySet<string> = new Set([
   'validation_attempt_missing',
+  'implementation_reference_missing',
   'evidence_missing',
   'evidence_mismatch',
   'obligation_mismatch',
 ]);
+
+/** Required reference kind named by each missing-evidence reason. */
+const REQUIRED_REF_BY_REASON: Readonly<Record<string, string>> = {
+  validation_attempt_missing: 'validation_attempt',
+  implementation_reference_missing: 'implementation',
+};
 
 /**
  * Validator-derived challenge position ONLY: a non-negative integer or
@@ -490,13 +497,14 @@ export function buildCaptureFailureDiagnostics(
       reason !== undefined &&
       CHALLENGE_EVIDENCE_REASONS.has(reason)
     ) {
+      const required = REQUIRED_REF_BY_REASON[reason];
       return [
         {
           code,
           reasonKind: reason,
           data: {
             path: `challenges.${challengeIndex}.evidenceRefs`,
-            ...(reason === 'validation_attempt_missing' ? { required: 'validation_attempt' } : {}),
+            ...(required !== undefined ? { required } : {}),
           },
         },
       ];

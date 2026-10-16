@@ -424,6 +424,54 @@ describe('review/enforcement/challenge-consistency', () => {
       ).toEqual({ ok: true });
     });
 
+    it('requires content evidence for a passing implementation challenge', () => {
+      // Execution evidence alone (a validation attempt) never proves the
+      // claimed content property: the current implementation ref is required.
+      const result = validateChallengeConsistency({
+        overallVerdict: 'changes_requested',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [
+          {
+            kind: 'implementation_challenge',
+            outcome: 'pass',
+            evidenceRefs: [
+              { kind: 'validation_attempt', attemptId: '22222222-2222-4222-8222-222222222222' },
+            ],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        details: {
+          challengeIndex: 0,
+          reason: 'implementation_reference_missing',
+          required: 'implementation',
+        },
+      });
+    });
+
+    it('accepts a passing implementation challenge that cites both evidence classes', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [
+            {
+              kind: 'implementation_challenge',
+              outcome: 'pass',
+              evidenceRefs: [
+                { kind: 'implementation', implementationDigest: 'a'.repeat(64) },
+                { kind: 'validation_attempt', attemptId: '22222222-2222-4222-8222-222222222222' },
+              ],
+            },
+          ],
+        }),
+      ).toEqual({ ok: true });
+    });
+
     it('rejects accept when a required implementation challenge outcome is fail', () => {
       const result = validateChallengeConsistency({
         overallVerdict: 'accept',

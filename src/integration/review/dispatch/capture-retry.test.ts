@@ -219,6 +219,22 @@ describe('retry diagnostic DTOs', () => {
     ]);
   });
 
+  it('names the missing content evidence class for a passing challenge', () => {
+    expect(
+      buildCaptureFailureDiagnostics('SUBAGENT_CHALLENGE_EVIDENCE_MISSING', {
+        challengeIndex: 1,
+        reason: 'implementation_reference_missing',
+        required: 'implementation',
+      }),
+    ).toEqual([
+      {
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        reasonKind: 'implementation_reference_missing',
+        data: { path: 'challenges.1.evidenceRefs', required: 'implementation' },
+      },
+    ]);
+  });
+
   it('degrades malformed or unknown challenge details to the code-only diagnostic', () => {
     for (const details of [
       {},

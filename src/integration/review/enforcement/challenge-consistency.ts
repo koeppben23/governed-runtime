@@ -92,13 +92,24 @@ export type ChallengeConsistencyResult =
 type Challenge = NonNullable<ChallengeConsistencyInput['challenges']>[number];
 
 function hasValidationAttemptReference(challenge: Challenge): boolean {
+  return hasEvidenceReferenceKind(challenge, 'validation_attempt');
+}
+
+function hasImplementationReference(challenge: Challenge): boolean {
+  return hasEvidenceReferenceKind(challenge, 'implementation');
+}
+
+function hasEvidenceReferenceKind(
+  challenge: Challenge,
+  kind: 'validation_attempt' | 'implementation',
+): boolean {
   return (
     challenge.evidenceRefs?.some(
       (reference) =>
         typeof reference === 'object' &&
         reference !== null &&
         'kind' in reference &&
-        reference.kind === 'validation_attempt',
+        reference.kind === kind,
     ) === true
   );
 }
@@ -182,6 +193,33 @@ function implementationPassEvidenceFailure(
   return null;
 }
 
+/**
+ * A passing implementation challenge needs BOTH evidence classes: execution
+ * evidence (a validation attempt on the current digest) proves the check ran,
+ * content evidence (the current implementation ref) grounds the claimed
+ * property. An execution reference alone never proves unobserved content.
+ */
+function implementationPassContentFailure(
+  challenge: Challenge,
+): ChallengeConsistencyFailure | null {
+  if (
+    challenge.kind === 'implementation_challenge' &&
+    challenge.outcome === 'pass' &&
+    !hasImplementationReference(challenge)
+  ) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+      details: {
+        kind: challenge.kind,
+        reason: 'implementation_reference_missing',
+        required: 'implementation',
+      },
+    };
+  }
+  return null;
+}
+
 function implementationUnresolvedFailure(
   input: ChallengeConsistencyInput,
   challenge: Challenge,
@@ -229,6 +267,7 @@ function validateChallenge(
     evidenceMissingFailure(challenge) ??
     evidenceMismatchFailure(challenge, allowedRefs) ??
     implementationPassEvidenceFailure(challenge) ??
+    implementationPassContentFailure(challenge) ??
     implementationUnresolvedFailure(input, challenge) ??
     contradictedFailure(input, challenge) ?? { ok: true }
   );
