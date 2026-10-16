@@ -143,6 +143,13 @@ controlled A/B run with the SAME fixed harness.
   guards `COMMAND_NOT_ALLOWED` / `WRONG_PHASE` — is `NOT_VERIFIED`
   with its occurrence evidence preserved. `FAILED` is reserved for a proven
   wrong denial code, contradictory evidence or an unexpected unknown block.
+- An `/implement` turn that records no implementation (for example because the
+  host auto-rejected the author's edit) is incomplete author work: the risk
+  controls re-enter `/implement` at most once and then report `NOT_VERIFIED`.
+  Only a recorded implementation is judged by the trigger and evidence oracles,
+  so a missing `state_integrity` trigger on a real change stays `FAILED`. An
+  author that stops at `IMPL_REVIEW` uses the same bounded resume as the
+  matrix (`completeImplementationReview`).
 
 ## Recorded plan-review counter cases
 

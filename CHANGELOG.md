@@ -159,6 +159,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Risk controls classify an unrecorded implementation as `NOT_VERIFIED`.** In
+  the `eff9cc1e` validation arm, `risk-uncovered` ended `FAILED` with
+  `state_integrity trigger not detected: []` although the `/implement` turn had
+  recorded no implementation at all (the author's edit was auto-rejected by the
+  host). The trigger oracle could not tell "no implementation" from "trigger
+  misclassified", and the plain error outranked `NOT_VERIFIED` in the aggregate
+  exit. The risk runner now re-enters `/implement` at most once while nothing is
+  recorded and then reports `NOT_VERIFIED`; only a recorded implementation is
+  judged by the trigger and evidence oracles, so a missing trigger on a real
+  change stays `FAILED`. An author that stops at `IMPL_REVIEW` now gets the same
+  bounded resume as the matrix (`completeImplementationReview`).
+
 - **Unreadable session state is no longer reported as "no session".** The
   canonical session authority reports an unreadable, unparseable,
   schema-invalid or mis-bound state as an `unavailable` value, but `/status`,
