@@ -52,18 +52,18 @@ function invocationsFor(state, obligation) {
 
 /**
  * A bound verdict is a persisted host-orchestrated invocation for the CURRENT
- * obligation (linked by `obligation.invocationId` or already fulfilled). This
+ * obligation, linked by `obligation.invocationId`. A re-armed obligation
+ * (`invocationId` reset to null) never inherits the verdict of a superseded
+ * predecessor invocation; only the current attempt's own binding counts. This
  * never relies on findings counters, which can carry stale data across cycles.
  */
 export function boundPlanVerdict(state, obligation) {
   const invocations = invocationsFor(state, obligation);
   if (invocations.length === 0) return null;
-  if (obligation.invocationId != null) {
-    return (
-      invocations.find((invocation) => invocation.invocationId === obligation.invocationId) ?? null
-    );
-  }
-  return invocations.find((invocation) => invocation.fulfilledAt != null) ?? null;
+  if (obligation.invocationId == null) return null;
+  return (
+    invocations.find((invocation) => invocation.invocationId === obligation.invocationId) ?? null
+  );
 }
 
 function latestInvocation(state, obligation) {

@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { exportHostTranscript } from './live-host-export.mjs';
 import {
   assertExpectedDenial,
+  authorizedRetryEvents,
   captureRetryCodes,
   captureRetryEvents,
   captureRetryHints,
@@ -68,13 +69,19 @@ import {
   transcriptTrust,
 } from '../lib/transcript.mjs';
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
-import { expectRecovery, readAuditEvents, recoveryPersisted } from '../lib/recovery-state.mjs';
+import {
+  expectRecovery,
+  implementationReviewAcceptanceProven,
+  readAuditEvents,
+  recoveryPersisted,
+} from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
 
 export {
   assertExpectedDenial,
+  authorizedRetryEvents,
   captureRetryCodes,
   captureRetryEvents,
   captureRetryHints,
@@ -374,6 +381,24 @@ export function planReviewCorrectionProven(state) {
     selfReview.verdict === 'accept' &&
     iterationConsistent
   );
+}
+
+/**
+ * A structured re-arm credits recovery only when the persisted authority proves
+ * a FRESH attempt: the re-armed attempt must exist under the same obligation
+ * with status `created` (awaiting the reviewer Task) or `bound` (it carried a
+ * review). A retryable envelope that references a spent/stale attempt (observed
+ * live) is an observation only and never proves recovery.
+ */
+export function freshRearmWitness(event, state) {
+  const assurance = state?.reviewAssurance;
+  const obligation = (assurance?.obligations ?? []).find(
+    (item) => item.obligationId === event.obligationId,
+  );
+  if (!obligation) return false;
+  const attempt = (assurance?.attempts ?? []).find((item) => item.attemptId === event.attemptId);
+  if (!attempt || attempt.obligationId !== event.obligationId) return false;
+  return attempt.status === 'created' || attempt.status === 'bound';
 }
 
 /**
@@ -679,8 +704,33 @@ export class Runner {
     // requires an independent persisted proof from the next required step.
     const sameTurnRecovered = operationRecovered;
     const unprovenOccurrences = [...new Set(proofs.unproven.map((proof) => proof.code))];
-    const retryRecovered = captureRetryCodes(result.stdout);
+    // The retry envelope itself only exists for retryable capture failures.
+    const allRetryEvents = authorizedRetryEvents(result.stdout);
+    let rearmState = null;
+    try {
+      rearmState = this.requireBoundState(session).state;
+    } catch {
+      rearmState = null;
+    }
+    const retryRecovered = [
+      ...new Set(
+        allRetryEvents
+          .filter((event) => freshRearmWitness(event, rearmState))
+          .map((event) => event.code),
+      ),
+    ];
+    const staleRearms = allRetryEvents.filter((event) => !freshRearmWitness(event, rearmState));
     const retryHints = captureRetryHints(result.stdout);
+    if (staleRearms.length > 0) {
+      session.retryHints = [
+        ...(session.retryHints ?? []),
+        { step: label, events: staleRearms, reason: 'stale_rearm_attempt' },
+      ];
+      this.log(
+        `${label}: structured re-arm referenced a spent or unknown attempt ` +
+          `[${[...new Set(staleRearms.map((event) => event.code))].join(', ')}]; no recovery proof credited`,
+      );
+    }
     if (retryHints.length > 0) {
       session.retryHints = [...(session.retryHints ?? []), { step: label, events: retryHints }];
       this.log(
@@ -908,8 +958,11 @@ export class Runner {
       const proven =
         expectedPhase === 'PLAN_REVIEW'
           ? planReviewCorrectionProven(snapshot.state)
-          : expectedPhase === 'ARCH_REVIEW' &&
-            snapshot.state.architecture?.reviewCompletion === 'reviewer_accepted';
+          : expectedPhase === 'ARCH_REVIEW'
+            ? snapshot.state.architecture?.reviewCompletion === 'reviewer_accepted'
+            : expectedPhase === 'EVIDENCE_REVIEW'
+              ? implementationReviewAcceptanceProven(snapshot.state)
+              : false;
       if (!proven) {
         throw new Error(
           `${label}: superseded reviewer block(s) [${session.pendingReviewRecovery.codes.join(', ')}] were not proven by a converged review; stopping the flow`,

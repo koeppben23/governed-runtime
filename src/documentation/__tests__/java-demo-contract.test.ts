@@ -17,6 +17,7 @@ import {
   enableRawArchiveInRepoConfig,
   unexpectedDenialCodes,
   captureRetryCodes,
+  freshRearmWitness,
   planReviewSameTurnCorrection,
   planReviewCorrectionProven,
   planCorrectionGateDecision,
@@ -33,6 +34,39 @@ import {
   withRawExportGrant,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
+
+describe('structured re-arm recovery witness', () => {
+  const event = {
+    code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+    obligationId: 'ob-1',
+    attemptId: 'att-2',
+  };
+  function state(attemptStatus: string, obligationId = 'ob-1') {
+    return {
+      reviewAssurance: {
+        obligations: [{ obligationId: 'ob-1', status: 'pending' }],
+        attempts: [
+          { attemptId: 'att-2', obligationId, status: attemptStatus },
+          { attemptId: 'att-1', obligationId: 'ob-1', status: 'stale' },
+        ],
+      },
+    };
+  }
+
+  it('credits a re-arm only with a fresh created or bound attempt on the same obligation', () => {
+    expect(freshRearmWitness(event, state('created'))).toBe(true);
+    expect(freshRearmWitness(event, state('bound'))).toBe(true);
+  });
+
+  it('never credits a retry envelope that references a spent or unknown attempt', () => {
+    expect(freshRearmWitness(event, state('stale'))).toBe(false);
+    expect(freshRearmWitness(event, state('created', 'ob-other'))).toBe(false);
+    expect(freshRearmWitness(event, { reviewAssurance: { obligations: [], attempts: [] } })).toBe(
+      false,
+    );
+    expect(freshRearmWitness(event, null)).toBe(false);
+  });
+});
 
 const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -999,18 +1033,23 @@ describe('Java Task Manager demo contract', () => {
       });
       await runner.approve(session, 'approve-plan', 'PLAN_REVIEW');
       expect(session.pendingReviewRecovery).toBeNull();
+      // The retryable envelope alone is an observation: this fixture persists
+      // no fresh attempt, so no in-turn re-arm proof is credited. Only the
+      // gate-proven supersession counts as recovery.
       expect(session.recoveredDenials).toEqual([
-        {
-          step: 'plan',
-          codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
-          evidence: 'structured_rearm',
-        },
         {
           step: 'plan',
           codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
           evidence: 'structured_rearm_after_terminal_failure',
         },
       ]);
+      expect(
+        (
+          session as {
+            retryHints?: Array<{ reason?: string }>;
+          }
+        ).retryHints?.some((hint) => hint.reason === 'stale_rearm_attempt'),
+      ).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

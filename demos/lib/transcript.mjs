@@ -265,6 +265,11 @@ export function captureRetryCodes(output) {
   return codes;
 }
 
+/** Authorized re-arm envelopes: retryable with explicit obligation and attempt identity. */
+export function authorizedRetryEvents(output) {
+  return captureRetryEvents(output).filter((event) => authorizedRearm(event));
+}
+
 function authorizedRearm(event) {
   if (event.retryable !== true) return false;
   return (

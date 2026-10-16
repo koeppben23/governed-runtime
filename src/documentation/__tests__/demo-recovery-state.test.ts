@@ -1,8 +1,67 @@
 /** Operation-scoped persistence witnesses; unrelated changes must stay unproven. */
 import { describe, expect, it } from 'vitest';
-import { expectRecovery, recoveryPersisted } from '../../../demos/lib/recovery-state.mjs';
+import {
+  expectRecovery,
+  implementationReviewAcceptanceProven,
+  recoveryPersisted,
+} from '../../../demos/lib/recovery-state.mjs';
 import { hashText } from '../../shared/hashing.js';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
+
+describe('implementation review acceptance witness', () => {
+  const digest = 'impl-digest-1';
+  function accepting() {
+    return {
+      phase: 'EVIDENCE_REVIEW',
+      implementation: { digest },
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId: 'ob-1',
+            obligationType: 'implement',
+            subjectDigest: digest,
+            status: 'consumed',
+            consumedAt: '2026-10-16T00:00:00.000Z',
+            invocationId: 'inv-1',
+          },
+        ],
+        invocations: [
+          {
+            invocationId: 'inv-1',
+            obligationId: 'ob-1',
+            attemptId: 'att-1',
+            consumedByObligationId: 'ob-1',
+            capturedVerdict: 'accept',
+            structuredOutputUsed: true,
+          },
+        ],
+        attempts: [{ attemptId: 'att-1', obligationId: 'ob-1', subjectDigest: digest }],
+      },
+    };
+  }
+
+  it('proves an implementation recovery only through the bound, consumed acceptance', () => {
+    expect(implementationReviewAcceptanceProven(accepting())).toBe(true);
+
+    const wrongVerdict = structuredClone(accepting());
+    wrongVerdict.reviewAssurance.invocations[0]!.capturedVerdict = 'changes_requested';
+    expect(implementationReviewAcceptanceProven(wrongVerdict)).toBe(false);
+
+    const notConsumed = structuredClone(accepting());
+    notConsumed.reviewAssurance.obligations[0]!.status = 'fulfilled';
+    expect(implementationReviewAcceptanceProven(notConsumed)).toBe(false);
+
+    const withoutStructured = structuredClone(accepting());
+    withoutStructured.reviewAssurance.invocations[0]!.structuredOutputUsed = false;
+    expect(implementationReviewAcceptanceProven(withoutStructured)).toBe(false);
+
+    const foreignDigest = structuredClone(accepting());
+    foreignDigest.implementation!.digest = 'impl-digest-2';
+    expect(implementationReviewAcceptanceProven(foreignDigest)).toBe(false);
+
+    expect(implementationReviewAcceptanceProven({})).toBe(false);
+  });
+});
 
 describe('operation-scoped recovery witnesses', () => {
   it('accepts the authorized approval of the exact reviewed plan and obligation', () => {

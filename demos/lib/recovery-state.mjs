@@ -68,8 +68,27 @@ function ticketContentDigest(text) {
   return createHash('sha256').update(text, 'utf-8').digest('hex');
 }
 
+/**
+ * Persisted proof that the CURRENT implementation review completed: an
+ * implementation obligation was consumed by an accept invocation bound to its
+ * own invocationId and attempt over the current implementation digest. This is
+ * the implementation-recovery completion condition (plan reviews prove
+ * reviewer_accepted, implementation reviews prove bound acceptance).
+ */
+export function implementationReviewAcceptanceProven(state) {
+  const digest = state?.implementation?.digest;
+  if (typeof digest !== 'string' || digest.length === 0) return false;
+  return acceptingReview(state, 'implement', digest) !== null;
+}
+
 /** Freeze the affected subject and the exact authorized NEXT operation. */
-export function expectRecovery(state, tools, terminal, deniedIdentities = [], auditSequenceFloor = 0) {
+export function expectRecovery(
+  state,
+  tools,
+  terminal,
+  deniedIdentities = [],
+  auditSequenceFloor = 0,
+) {
   const actor = identity(state);
   if (tools.length === 1 && tools[0] === 'flowguard_continue' && state?.phase === 'READY') {
     const command =
