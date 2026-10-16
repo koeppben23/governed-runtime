@@ -37,6 +37,20 @@ describe('review generation authority', () => {
     ).toBe(false);
   });
 
+  it('rejects p42-v2 obligations after the plan-review verification authority change', () => {
+    // The plan criteria now bind check authority to the persisted verification
+    // candidates and separate plan review from later validation. Obligations
+    // minted under p42-v2 must not dispatch under the new semantics; recovery
+    // is a fresh obligation, never re-stamping the old one.
+    expect(REVIEW_CRITERIA_VERSION).toBe('p42-v3');
+    expect(
+      isCurrentReviewGeneration({
+        criteriaVersion: 'p42-v2',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+      }),
+    ).toBe(false);
+  });
+
   it('rejects a stale mandate digest', () => {
     expect(
       isCurrentReviewGeneration({

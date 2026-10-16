@@ -86,6 +86,38 @@ describe('buildFrozenReviewMaterialContent', () => {
 
     expect(content).not.toContain('Verification Evidence (host-executed)');
   });
+
+  it('freezes plan claims with explicit evidence roles for new obligations', () => {
+    const content = buildFrozenReviewMaterialContent({
+      obligationType: 'plan',
+      renderPlanClaimDeclarations,
+      state: makeState('PLAN_REVIEW'),
+      artifact: '# Plan\n\nBody.',
+      planClaimDeclarations: {
+        flow: 'plan',
+        version: 'v2',
+        claims: [
+          {
+            claimId: '11111111-1111-4111-8111-111111111111',
+            statement: 'The store rejects writes without ownership.',
+            critical: true,
+            authoritySectionId: 'Invariant',
+            claimScope: 'specific_behavior',
+            expectedCheckId: 'test',
+            counterexampleRequirement: {
+              kind: 'assertion',
+              checkId: 'build',
+              assertion: { providerId: 'junit', localId: 'fixture.ProbeTest#rejects' },
+            },
+          },
+        ],
+      } as never,
+    });
+
+    expect(content).toContain('Positive evidence check: test');
+    expect(content).toContain('Counterexample (adversarial) check: build;');
+    expect(content).toContain('separate validation attempts with distinct attempt identities');
+  });
 });
 
 describe('buildFrozenArtifactReviewMaterial', () => {
