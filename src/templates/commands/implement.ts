@@ -74,8 +74,9 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 3: Post-Implementation Validation
 
- 5. Only when the returned phase is \`IMPL_VALIDATION\`: call \`flowguard_status\` with NO focused
-    flags (no whyBlocked/evidence/context/readiness) to get the full projection, then read
+ 5. Only when the returned phase is \`IMPL_VALIDATION\`: call \`flowguard_status({ compact: true })\`
+    so the compact canonical projection is returned (full rule/mandate text bodies are
+    digest-addressed; call without \`compact\` only when the complete text is required), then read
     \`activeChecks\` and \`verificationCandidates\` (\`remainingChecks\` is NOT equivalent: it
     lists only the active checks without a passing result yet).
     - If both \`activeChecks\` and \`verificationCandidates\` are empty:
@@ -159,7 +160,7 @@ Happy path (checks exist):
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (satisfy approved outcomes, contracts, authority decisions, scope, and acceptance criteria using the smallest correct implementation mechanics)
 3. \`flowguard_implement({})\` → returns phase: IMPL_VALIDATION
-4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
+4. \`flowguard_status({ compact: true })\` → read \`activeChecks\`
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
 6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
 
@@ -178,7 +179,7 @@ Revision path (when review returns changes_requested):
 1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\` → routes back to IMPLEMENTATION
 2. (fix code based on blockingIssues)
 3. \`flowguard_implement({})\` → dispatch on the returned phase (step 4)
-4. While still IMPL_VALIDATION: \`flowguard_status\` (unfocused) → read \`activeChecks\`
+4. While still IMPL_VALIDATION: \`flowguard_status({ compact: true })\` → read \`activeChecks\`
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
 6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 

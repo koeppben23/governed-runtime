@@ -13,11 +13,14 @@
  * Rendered as 3-space-indented sub-bullets to match the existing Phase 1
  * `flowguard_status` step in each template.
  */
-export const DISCOVERY_REVIEW_CAPTURE = `   - Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness)
-     so the FULL projection is returned. Focused projections omit \`discoveryHealth\`,
-     \`discoveryDrift\`, and \`detectedStack\` — capture Discovery from the unfocused status,
-     and never conclude Discovery is unavailable from a focused call; re-read status
-     WITHOUT focused flags first.
+export const DISCOVERY_REVIEW_CAPTURE = `   - Call \`flowguard_status({ compact: true })\` so the compact canonical projection is
+     returned. It carries the routing fields and the Discovery context (\`discoveryHealth\`,
+     \`discoveryDrift\`, \`detectedStack\`, \`verificationCandidates\`); the full profile-rule
+     and mandate text bodies are omitted and digest-addressed (\`profileRulesDigest\`,
+     \`governanceMandates.phaseRelevantRulesDigest\`). Call \`flowguard_status\` without
+     \`compact\` only when the complete rule text is required; never conclude those texts
+     are empty. Focused projections (whyBlocked/evidence/context/readiness) still omit
+     Discovery: re-read with \`{ compact: true }\` first.
    - Capture the compact Discovery context from the status response: Discovery
      \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
      and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.

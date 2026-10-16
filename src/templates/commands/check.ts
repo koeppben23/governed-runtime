@@ -13,7 +13,7 @@ Run automated verification checks for the current implementation.
 
 ## Steps
 
-1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, then read \`activeChecks\` and \`verificationCandidates\` (\`remainingChecks\` is NOT equivalent: it lists only the active checks without a passing result yet).
+1. Call \`flowguard_status({ compact: true })\` so the compact canonical projection is returned (full rule/mandate text bodies are digest-addressed; call without \`compact\` only when the complete text is required), then read \`activeChecks\` and \`verificationCandidates\` (\`remainingChecks\` is NOT equivalent: it lists only the active checks without a passing result yet).
 2. If \`activeChecks\` is empty AND \`verificationCandidates\` is empty, do not call \`flowguard_run_check\`. Read the canonical \`directive\`: policy may permit a vacuous transition only through \`/validate\`, otherwise it will require Discovery recovery. Report that exact action.
 3. For each kind in \`activeChecks\`, call \`flowguard_run_check({ kind: "<kind>" })\` sequentially. Never run two state-mutating checks concurrently.
     - FlowGuard executes the discovered command and returns execution evidence.

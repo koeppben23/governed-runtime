@@ -15,10 +15,12 @@ Start the peer review flow for the current FlowGuard session.
 
 1. Call \`flowguard_status\` to verify a session exists in READY phase.
     - If not in READY: report the current phase and stop.
-    - Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness)
-      so the FULL projection is returned. Focused projections omit \`discoveryHealth\`,
-      \`discoveryDrift\`, and \`detectedStack\`; never conclude Discovery is unavailable from a
-      focused call — re-read status WITHOUT focused flags first.
+    - Call \`flowguard_status({ compact: true })\` so the compact canonical projection is
+      returned: routing fields plus the Discovery context. The full profile-rule and mandate
+      text bodies are omitted and digest-addressed; call \`flowguard_status\` without
+      \`compact\` when the complete rule text is required, and never conclude those texts are
+      empty. Focused projections (whyBlocked/evidence/context/readiness) still omit Discovery —
+      re-read with \`{ compact: true }\` first.
     - Capture the compact Discovery context from the status response: Discovery
       \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
       and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.

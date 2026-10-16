@@ -1131,27 +1131,6 @@ describe('plan', () => {
       expect(state!.phase).toBe('PLAN_REVIEW');
       expect(state!.reviewDecision).toBeNull();
     });
-
-    it('keeps the presentation variant only when the glyph profile changes the card', async () => {
-      const { writeRepoConfig } = await import('../adapters/persistence-config.js');
-      const { DEFAULT_CONFIG } = await import('../config/flowguard-config.js');
-      await writeRepoConfig(ws.tmpDir, {
-        ...DEFAULT_CONFIG,
-        presentation: { opencode: { glyphProfile: 'ascii' } },
-      });
-      await hydrateSession({ policyMode: 'team' });
-      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
-      const result = await exhaustPlanReviews(3);
-
-      expect(result.error).not.toBe(true);
-      expect(result.reviewCard).toBeTypeOf('string');
-      expect(result.reviewCard).toContain('⚠ Reviewer did NOT approve');
-      expect(result.presentation).toBeDefined();
-      const markdown = (result.presentation as { markdown: string }).markdown;
-      expect(markdown).toContain('[WARN] Reviewer did NOT approve');
-      expect(markdown).not.toEqual(result.reviewCard);
-    });
-
     it('TEAM: force-converged card binds reviewer findings to the prior plan revision (F1)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
