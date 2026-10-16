@@ -139,10 +139,7 @@ export type ReviewSubjectScope = z.infer<typeof ReviewSubjectScope>;
 
 /** Subject-anchor kind admissible for a review scope. */
 export type AdmittedSubjectAnchorKind =
-  | 'repository_location'
-  | 'artifact_section'
-  | 'implementation'
-  | 'content';
+  'repository_location' | 'artifact_section' | 'implementation' | 'content';
 
 /**
  * The single subject-anchor kind each review subject scope admits. The scope

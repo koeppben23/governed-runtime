@@ -264,10 +264,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     ...renderReviewerRules(isRepositoryReview, promptType === 'implementation'),
     ...renderFindingsSemanticRule(input),
     ...renderReviewChallengeContract(input.challengeContract, input.obligationId),
-    renderFindingRelationGrammar(
-      observableRevisions(input),
-      input.admittedSubjectAnchorKind,
-    ),
+    renderFindingRelationGrammar(observableRevisions(input), input.admittedSubjectAnchorKind),
     '',
     '## Trusted Runtime Context',
     `Review context: ${context}.`,
