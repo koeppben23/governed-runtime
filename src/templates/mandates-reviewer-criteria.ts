@@ -12,7 +12,8 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Correctness: technical claims, authority boundaries, and assumptions are sound.
 - Feasibility: referenced files/APIs exist and the plan can be implemented.
 - Edge cases: unhappy paths and fail-closed behavior are concrete.
-- Verification: checks are testable and sourced from repo scripts/contracts.
+- Verification authority: Assess checks against the persisted verification candidates supplied to this review, including their kind, candidateId, and executable command. The executable command is the selected candidate command; repository script bodies describe its implementation but do not replace that command. Do not infer unobserved candidate identities or commands. If the evidence needed to establish a claimed check authority is unavailable, treat that authority as NOT_VERIFIED rather than assuming it.
+- Verification phase: plan review precedes baseline and implementation validation. Assess whether the planned checks, assertions, and evidence strategy are executable and sufficient. Do not require results of future validation as already-existing evidence, and do not claim that unobserved results exist.
 - Claim/evidence fit: every declared ProofGraph claim is no broader than the observable evidence named for it. A claim about an internal side effect, ordering constraint, or forbidden call requires evidence that directly observes that property; an external outcome alone is insufficient.
 - Shape: prefer deep modules and vertical tracer-bullet slices over shallow pass-throughs and horizontal layer-by-layer builds.
 - Root cause: for a bug fix, the plan targets the shared cause (all affected callers), not just the symptom path named by the ticket.`,

@@ -159,6 +159,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Plan-review verification authority and phase (review criteria
+  `p42-v3`).** The plan-review criteria no longer say checks are "sourced from
+  repo scripts/contracts". Check authority is the persisted verification
+  candidates supplied to the review (kind, candidateId, executable command);
+  the executable command is the selected candidate command (for npm scripts
+  `npm run <script> --`), and repository script bodies only describe its
+  implementation. Unobservable claimed check authority is `NOT_VERIFIED`, never
+  assumed. Plan review now explicitly precedes baseline and implementation
+  validation: reviewers judge whether planned checks and assertions are
+  executable and sufficient and must not require future validation results as
+  existing evidence. Reviewer-facing plan claims name evidence roles
+  (`Positive evidence check`, `Counterexample (adversarial) check`) and state
+  that both roles bind separate validation attempts with distinct identities,
+  enforced at evidence binding. The risk-trigger fixture ticket now separates
+  check selection, executed command, script definition and evidence roles.
+  **Upgrade impact:** review obligations minted under `p42-v2` are no longer the
+  current review generation and are not dispatched (fail-closed); recovery is a
+  fresh review obligation under the current contract, never re-stamping the old
+  one. Persisted historical evidence and frozen review material are unchanged.
+  The reviewer mandate digest and installed agent templates are unchanged.
+
 - **Risk-adaptive implementation review and a convergent challenge-repair loop
   (#1081).** The implementation reviewer criteria now carry the bounded
   five-point quality checklist (acceptance/correctness, architecture fit,

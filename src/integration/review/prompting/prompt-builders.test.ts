@@ -287,3 +287,29 @@ describe('native implementation review execution-continuity semantics', () => {
     expect(prompt).not.toContain(CONTINUITY_RULE);
   });
 });
+
+describe('renderReviewerTaskPrompt plan-review verification authority (p42-v3)', () => {
+  it('projects the verification authority and phase boundary into plan review only', () => {
+    const plan = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType: 'plan' });
+    expect(plan).toContain(
+      'Verification authority: Assess checks against the persisted verification candidates supplied to this review',
+    );
+    expect(plan).toContain(
+      'The executable command is the selected candidate command; repository script bodies describe its implementation but do not replace that command.',
+    );
+    expect(plan).toContain('treat that authority as NOT_VERIFIED rather than assuming it');
+    expect(plan).toContain(
+      'Verification phase: plan review precedes baseline and implementation validation.',
+    );
+    expect(plan).toContain(
+      'Do not require results of future validation as already-existing evidence',
+    );
+    expect(plan).not.toContain('sourced from repo scripts/contracts');
+
+    const implementation = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      reviewType: 'implementation',
+    });
+    expect(implementation).not.toContain('Verification phase: plan review precedes');
+  });
+});
