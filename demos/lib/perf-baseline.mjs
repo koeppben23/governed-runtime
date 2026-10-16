@@ -496,11 +496,22 @@ function flowIdentity(metadata, record) {
   return {
     model: safeString(metadata?.model) ?? NOT_OBSERVED,
     hostVersion: safeString(metadata?.pins?.opencode) ?? NOT_OBSERVED,
+    harnessVersion: safeString(metadata?.harnessVersion) ?? NOT_OBSERVED,
+    contractVersion: safeString(metadata?.contractVersion) ?? NOT_OBSERVED,
     buildSha:
       safeString(record?.installedBuild?.gitSha) ??
       safeString(metadata?.checkoutHead) ??
       NOT_OBSERVED,
   };
+}
+
+/** Reviewer-child wall time (session info.time span) for one exported child. */
+function exportedSessionElapsedMs(exported) {
+  const created = exported?.info?.time?.created;
+  const updated = exported?.info?.time?.updated;
+  return typeof created === 'number' && typeof updated === 'number' && updated >= created
+    ? updated - created
+    : NOT_OBSERVED;
 }
 
 function sumOrNotObserved(values) {
@@ -538,13 +549,24 @@ export function analyzeRunRoot(root) {
       ([, child]) => hostSessionId !== undefined && child.parentId === hostSessionId,
     );
     const reviews = flowChildren.map(([, child]) => analyzeReviewerExport(child.exported));
+    const flowDurationMs = sumOrNotObserved(flowTurns.map((turn) => turn.durationMs));
+    const reviewerMs = sumOrNotObserved(
+      flowChildren.map(([, child]) => exportedSessionElapsedMs(child.exported)),
+    );
+    // Process overhead: flow wall time not attributable to host turns.
+    const overheadMs =
+      typeof flowDurationMs === 'number' && typeof reviewerMs === 'number'
+        ? flowDurationMs - reviewerMs
+        : NOT_OBSERVED;
     return {
       root: path.basename(path.resolve(root)),
       flow,
       result: safeString(record?.result) ?? NOT_OBSERVED,
       identity: flowIdentity(metadata, record),
       hostTurns: flowTurns.length,
-      flowDurationMs: sumOrNotObserved(flowTurns.map((turn) => turn.durationMs)),
+      flowDurationMs,
+      reviewerMs,
+      processOverheadMs: overheadMs,
       turns: flowTurns,
       parent: parent === undefined ? NOT_OBSERVED : analyzeParentExport(parent),
       reviews: reviews.length === 0 ? NOT_OBSERVED : reviews,
@@ -588,6 +610,8 @@ export function summarize(flows) {
     ),
     flowDurationMs: describeSample(group.map((flow) => flow.flowDurationMs)),
     flowDurationNotObserved: group.filter((flow) => flow.flowDurationMs === NOT_OBSERVED).length,
+    reviewerMs: describeSample(group.map((flow) => flow.reviewerMs)),
+    processOverheadMs: describeSample(group.map((flow) => flow.processOverheadMs)),
     hostTurns: describeSample(group.map((flow) => flow.hostTurns)),
     denials: {
       controlled_negative: countDenials(group, (d) => d.class === 'controlled_negative'),
@@ -618,13 +642,13 @@ export function renderMarkdown(report) {
     'Identifiers, codes, and numbers only. `NOT_OBSERVED` means the run root does not',
     'contain the evidence; nothing is estimated.',
     '',
-    '| Flow | Model | Build | Runs | Median flow ms | p95 | Median host turns | Avoidable call-shape denials | Attributed denials |',
-    '| --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: |',
+    '| Flow | Model | Build | Runs | Median flow ms | p95 | Median host turns | Median reviewer ms | Median overhead ms | Avoidable call-shape denials | Attributed denials |',
+    '| --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |',
   ];
   for (const group of report.summary) {
     const p95 = group.flowDurationMs.p95;
     lines.push(
-      `| ${group.flow} | ${group.identity.model} | ${String(group.identity.buildSha).slice(0, 12)} | ${group.runs} | ${cell(group.flowDurationMs.median)} | ${p95.value === undefined ? p95.tier : `${cell(p95.value)} (${p95.tier})`} | ${cell(group.hostTurns.median)} | ${group.denials.avoidable_call_shape} | ${group.denials.attributed} |`,
+      `| ${group.flow} | ${group.identity.model} | ${String(group.identity.buildSha).slice(0, 12)} | ${group.runs} | ${cell(group.flowDurationMs.median)} | ${p95.value === undefined ? p95.tier : `${cell(p95.value)} (${p95.tier})`} | ${cell(group.hostTurns.median)} | ${cell(group.reviewerMs.median)} | ${cell(group.processOverheadMs.median)} | ${group.denials.avoidable_call_shape} | ${group.denials.attributed} |`,
     );
   }
   return `${lines.join('\n')}\n`;

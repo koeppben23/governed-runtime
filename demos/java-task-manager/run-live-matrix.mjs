@@ -65,6 +65,7 @@ import {
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
   toolDenialEvents,
+  toolDenialOccurrenceCounts,
   toolUseEvents,
   transcriptTrust,
 } from '../lib/transcript.mjs';
@@ -76,6 +77,7 @@ import {
   recoveryPersisted,
 } from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
+import { HARNESS_VERSION } from '../lib/harness-version.mjs';
 import { writeIsolatedHostConfig } from '../lib/host-config.mjs';
 import { PLAN_GATE, classifyPlanGate } from '../lib/review-continuation.mjs';
 
@@ -93,11 +95,29 @@ export {
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
   toolDenialEvents,
+  toolDenialOccurrenceCounts,
   transcriptTrust,
 };
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(SCRIPT_DIR, '..', '..');
+
+/**
+ * The product's canonical ProofGraph contract version, read from the product
+ * source the same way the pinned toolchain reads its pins. Recorded so every
+ * measurement names the product contract it was produced under.
+ */
+export function readContractVersion() {
+  try {
+    const source = fs.readFileSync(
+      path.join(REPO, 'src', 'state', 'proofgraph-contract.ts'),
+      'utf8',
+    );
+    return /PROOFGRAPH_CONTRACT_VERSION\s*=\s*'([^']+)'/.exec(source)?.[1] ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 export const DEFAULT_FLOWS = [
   'architecture',
@@ -509,13 +529,16 @@ export async function finalizeControlRecord(
 
 /** Sessions whose transcripts belong to one flow's evidence: parent + reviewers. */
 export function transcriptTargets(state) {
-  const reviewers = [
-    ...new Set(
-      (state.reviewAssurance?.invocations ?? [])
-        .map((invocation) => invocation.childSessionId)
-        .filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0),
-    ),
-  ].filter((sessionId) => sessionId !== state.binding?.hostSessionId);
+  // Every reviewer child is exported: fulfilled invocations AND attempt-bound
+  // children (dispatched reviews that ended stale/failed and never fulfilled).
+  // A discarded child is exactly the evidence a forensic pass must see.
+  const childSessionIds = [
+    ...(state.reviewAssurance?.invocations ?? []).map((invocation) => invocation.childSessionId),
+    ...(state.reviewAssurance?.attempts ?? []).map((attempt) => attempt.childSessionId),
+  ].filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0);
+  const reviewers = [...new Set(childSessionIds)].filter(
+    (sessionId) => sessionId !== state.binding?.hostSessionId,
+  );
   return { parent: state.binding?.hostSessionId ?? null, reviewers };
 }
 
@@ -602,6 +625,7 @@ export class Runner {
       exitCode: result.code,
       durationMs: result.durationMs,
       denialCodes: toolDenialCodes(output),
+      denialOccurrences: toolDenialEvents(output).map((denial) => denial.code),
     });
     const sessionIds = [
       ...new Set(
@@ -1366,6 +1390,8 @@ async function main() {
       {
         startedAt: new Date().toISOString(),
         model: options.model,
+        harnessVersion: HARNESS_VERSION,
+        contractVersion: readContractVersion(),
         pins,
         checkoutHead,
         tarball,
@@ -1409,8 +1435,8 @@ async function main() {
       const record = { name, workspace: flow.workspace, result: RESULT.FAILED };
       runner.flows.push(record);
       runner.log(`START ${name}`);
+      const session = { workspace: flow.workspace, terminal: flow.terminal };
       try {
-        const session = { workspace: flow.workspace, terminal: flow.terminal };
         await runner.turn(session, `${name}-01-start`, '/start');
         const installed = runner.installedBuild(flow.workspace);
         record.installedBuild = installed;
@@ -1482,6 +1508,13 @@ async function main() {
           record.result = RESULT.FAILED;
           record.error = String(error);
           runner.log(`BLOCKED ${name}: ${error}`);
+        }
+        // Evidence capture must survive the failure path: a failed or
+        // discarded reviewer child is exactly what a forensic pass needs.
+        try {
+          await runner.captureProvenance(record, session);
+        } catch (captureError) {
+          record.transcriptCaptureError = String(captureError);
         }
       }
       fs.writeFileSync(path.join(evidenceDir, 'flows.json'), JSON.stringify(runner.flows, null, 2));

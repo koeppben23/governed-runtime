@@ -16,6 +16,8 @@ import {
   sameTurnRecoveryProofs,
   structuredRearmSupersedesTerminal,
   toolDenialCodes,
+  toolDenialEvents,
+  toolDenialOccurrenceCounts,
   transcriptTrust,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 
@@ -32,6 +34,44 @@ function transcript(...lines: string[]): string {
 
 const denial = (code: string) => ({ error: true, code });
 const success = { phase: 'PLAN', status: 'planning' };
+
+describe('governed-origin and occurrence semantics of denials', () => {
+  it('never counts a denial envelope emitted by a non-governed tool', () => {
+    // A denial code embedded in a foreign tool's output is not a FlowGuard
+    // denial: it can never certify a controlled negative.
+    const foreign = toolUse(
+      'bash',
+      compact({ error: true, code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED' }),
+    );
+    expect(toolDenialEvents(foreign)).toEqual([]);
+    expect(toolDenialCodes(foreign)).toEqual([]);
+    expect(() => assertExpectedDenial(foreign, 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED')).toThrow(
+      /expected denial/,
+    );
+    // The same envelope from a governed tool is a real denial.
+    const governed = toolUse(
+      'flowguard_plan',
+      compact({ error: true, code: 'PROOFGRAPH_RISK_TRIGGER_UNCOVERED' }),
+    );
+    expect(toolDenialCodes(governed)).toEqual(['PROOFGRAPH_RISK_TRIGGER_UNCOVERED']);
+  });
+
+  it('counts denial occurrences, never affected turns', () => {
+    const out = transcript(
+      toolUse('flowguard_plan', compact(denial('REVIEW_EVIDENCE_NOT_OBSERVED'))),
+      toolUse('flowguard_plan', compact(denial('REVIEW_EVIDENCE_NOT_OBSERVED'))),
+      toolUse('flowguard_plan', compact(denial('REVIEW_ATTEMPT_UNAVAILABLE'))),
+    );
+    expect(toolDenialCodes(out)).toEqual([
+      'REVIEW_EVIDENCE_NOT_OBSERVED',
+      'REVIEW_ATTEMPT_UNAVAILABLE',
+    ]);
+    expect(toolDenialOccurrenceCounts(out)).toEqual({
+      REVIEW_EVIDENCE_NOT_OBSERVED: 2,
+      REVIEW_ATTEMPT_UNAVAILABLE: 1,
+    });
+  });
+});
 
 describe('demo transcript forensics', () => {
   describe('HAPPY — structured envelopes regardless of formatting', () => {

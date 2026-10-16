@@ -95,10 +95,15 @@ export function transcriptTrust(output) {
   };
 }
 
-/** Ordered denial occurrences with the tool that produced them (when named). */
+/**
+ * Ordered denial occurrences from GOVERNED tool outputs only: an error envelope
+ * emitted by a non-FlowGuard tool is never a FlowGuard denial and can never
+ * certify a controlled negative.
+ */
 export function toolDenialEvents(output) {
   const denials = [];
   for (const event of toolUseEvents(output)) {
+    if (!isGovernedTool(event.tool)) continue;
     if (event.payload.kind !== 'json') continue;
     const value = event.payload.value;
     if (value && value.error === true && typeof value.code === 'string') {
@@ -106,6 +111,15 @@ export function toolDenialEvents(output) {
     }
   }
   return denials;
+}
+
+/** Per-OCCURRENCE denial counts keyed by code (never per affected turn). */
+export function toolDenialOccurrenceCounts(output) {
+  const counts = {};
+  for (const denial of toolDenialEvents(output)) {
+    counts[denial.code] = (counts[denial.code] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export function toolDenialCodes(output) {

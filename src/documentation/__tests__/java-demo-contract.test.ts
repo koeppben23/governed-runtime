@@ -177,7 +177,10 @@ describe('Java Task Manager demo contract', () => {
     const toolLine = (code: string) =>
       JSON.stringify({
         type: 'tool_use',
-        part: { state: { output: JSON.stringify({ error: true, code }) } },
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ error: true, code }) },
+        },
       });
     const expected = toolLine('ARCHITECTURE_CLAIM_INVALID');
     expect(() => assertExpectedDenial(expected, 'ARCHITECTURE_CLAIM_INVALID')).not.toThrow();
@@ -303,6 +306,7 @@ describe('Java Task Manager demo contract', () => {
     const terminalLine = JSON.stringify({
       type: 'tool_use',
       part: {
+        tool: 'flowguard_plan',
         state: {
           output: JSON.stringify({ error: true, code: 'REVIEW_EVIDENCE_NOT_OBSERVED' }),
         },
@@ -362,7 +366,10 @@ describe('Java Task Manager demo contract', () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-terminal-order-'));
     const blockLine = JSON.stringify({
       type: 'tool_use',
-      part: { state: { output: JSON.stringify({ error: true, code: 'ARCHIVE_FAILED' }) } },
+      part: {
+        tool: 'flowguard_archive',
+        state: { output: JSON.stringify({ error: true, code: 'ARCHIVE_FAILED' }) },
+      },
     });
     try {
       await fs.mkdir(path.join(root, 'evidence'), { recursive: true });
@@ -754,7 +761,10 @@ describe('Java Task Manager demo contract', () => {
     const toolLine = (code: string) =>
       JSON.stringify({
         type: 'tool_use',
-        part: { state: { output: JSON.stringify({ error: true, code }) } },
+        part: {
+          tool: 'flowguard_plan',
+          state: { output: JSON.stringify({ error: true, code }) },
+        },
       });
     const recoverable = [
       toolLine('PROOFGRAPH_CLAIM_NOT_DECLARED'),
@@ -1200,6 +1210,7 @@ describe('Java Task Manager demo contract', () => {
     const terminal = JSON.stringify({
       type: 'tool_use',
       part: {
+        tool: 'task',
         state: {
           output: JSON.stringify({
             error: true,
@@ -1241,7 +1252,7 @@ describe('Java Task Manager demo contract', () => {
     }
   });
 
-  it('collects the parent and reviewer-child transcripts for one flow', () => {
+  it('collects the parent and every reviewer-child transcript, including discarded attempts', () => {
     const state = {
       binding: { hostSessionId: 'ses_parent', worktree: REPO_ROOT },
       reviewAssurance: {
@@ -1250,11 +1261,16 @@ describe('Java Task Manager demo contract', () => {
           { childSessionId: 'ses_reviewer_1' },
           { childSessionId: 'ses_parent' },
         ],
+        attempts: [
+          { childSessionId: 'ses_stale_1', status: 'stale' },
+          { childSessionId: 'ses_reviewer_1', status: 'bound' },
+          { childSessionId: undefined, status: 'created' },
+        ],
       },
     };
     expect(transcriptTargets(state)).toEqual({
       parent: 'ses_parent',
-      reviewers: ['ses_reviewer_1'],
+      reviewers: ['ses_reviewer_1', 'ses_stale_1'],
     });
   });
 
