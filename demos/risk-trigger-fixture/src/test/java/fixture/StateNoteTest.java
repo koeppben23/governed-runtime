@@ -3,15 +3,24 @@ package fixture;
 import fixture.state.ModuleStateStore;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * Positive runtime assertion for the retained ownership claim: a valid owner is
- * accepted, stored, and read back. This observes the accept path only;
- * rejection of missing or blank ownership is observed by
- * StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership. It asserts
- * nothing about the invariant documentation text.
+ * Behavior fixtures for the retained runtime claim. `rejectsMissingOwnership` is
+ * the claim's bound positive evidence: writes with a missing owner (null or
+ * empty) are rejected. `storesValidOwnership` is a supplementary accept-path
+ * observation. Whitespace-only rejection and the skip control live in
+ * StateNoteFalsificationProbeTest. None of these observe the invariant sentence
+ * or the review comment.
  */
 class StateNoteTest {
+    @Test
+    void rejectsMissingOwnership() throws Exception {
+        ModuleStateStore store = new ModuleStateStore();
+        assertThrows(IllegalArgumentException.class, () -> store.write(null));
+        assertThrows(IllegalArgumentException.class, () -> store.write(""));
+    }
+
     @Test
     void storesValidOwnership() throws Exception {
         ModuleStateStore store = new ModuleStateStore();

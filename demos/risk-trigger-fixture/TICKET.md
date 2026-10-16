@@ -10,11 +10,12 @@ unchanged:
 
 Only `src/main/java/fixture/state/ModuleStateStore.java` may change during implementation. The
 pre-existing JUnit fixtures observe the runtime behavior through real Maven/Surefire execution:
-`StateNoteTest#storesValidOwnership` observes the accept path, and
-`StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership` observes rejection of null,
-empty, and whitespace-only owners. Neither observes the invariant sentence or the review
-comment; retention of the invariant sentence and the content of the review comment are
-confirmed by content/diff inspection, never by an executed check.
+`StateNoteTest#rejectsMissingOwnership` is the retained claim's positive evidence (null and empty
+owners are rejected), `StateNoteTest#storesValidOwnership` is a supplementary accept-path
+observation, and `StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership` is the
+adversarial counterexample (whitespace-only owners are also rejected). None of them observes the
+invariant sentence or the review comment; retention of the invariant sentence and the content of
+the review comment are confirmed by content/diff inspection, never by an executed check.
 
 The falsification probe carries a `FLOWGUARD_LIVE_SKIP_ASSERTION` control hook. A skipped probe
 is not sufficient adversarial evidence — FlowGuard classifies skipped assertions as
