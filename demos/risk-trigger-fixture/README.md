@@ -13,17 +13,20 @@ holds only the project files, the JUnit assertions and the ticket.
 ## Evidence contract
 
 - `StateNoteTest#rejectsMissingOwnership` is the retained claim's bound positive
-  evidence: null and empty owners are rejected.
-- `StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership` is the bound
-  adversarial counterexample: whitespace-only owners are also rejected —
-  removing the guard or weakening `isBlank()` to `isEmpty()` makes this probe
-  fail (and also the positive assertion when the guard is removed entirely).
+  evidence and covers the FULL claimed property: null, empty, and
+  whitespace-only owners are rejected.
+- `StateNoteFalsificationProbeTest#rejectsMissingOrBlankOwnership` is the
+  independent adversarial counterexample over the same rejection property.
+  Overlapping test inputs are intentional: admissible evidence requires
+  distinct check attempts and evidence roles, not disjoint test inputs.
+  Removing the guard makes BOTH rejection assertions fail; weakening
+  `isBlank()` to `isEmpty()` makes them fail on the whitespace-only inputs.
 - `StateNoteTest#storesValidOwnership` is a supplementary accept-path
   observation (valid owner is stored and read back); it is not bound as claim
   evidence.
 - None of the JUnit probes observes the invariant sentence or the review
-  comment. Those are documentation evidence, confirmed by content/diff
-  inspection.
+  comment. Those are documentation evidence, confirmed by actual content/diff
+  evidence.
 - The falsification probe is guarded by `FLOWGUARD_LIVE_SKIP_ASSERTION` as an
   intentional negative-case control hook. A skipped probe is not sufficient
   adversarial evidence: FlowGuard binds skipped assertions as not_verified and
@@ -31,9 +34,13 @@ holds only the project files, the JUnit assertions and the ticket.
 - `build` (`./mvnw verify`) and `test` (`./mvnw test`) both run the Maven test
   phase, so the same JUnit assertions execute under both checks. The required
   independence is the bound attempt identity and evidence role, not disjoint
-  test sets.
-- `.opencode/flowguard.json` is applied after install and frozen into the
-  persisted policy snapshot; it is not part of the seed commit.
+  test sets; use the detected commands exactly as configured.
+- The authoritative risk configuration is the persisted policy snapshot. The
+  repository configuration in `.opencode/flowguard.json` is applied after
+  install; it is not part of the seed commit and is not the check authority.
+  Surefire reports under `target/` are execution outputs, not configuration
+  authority, and base-revision observation is not available to these
+  obligations.
 
 The live runner accepts `--evidence-out <file>` and emits build/pin/model identity,
 per-turn durations, denial counts and the machine-readable denial baseline from
