@@ -31,6 +31,10 @@ import {
 } from '../obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { hashFindings } from '../findings-hash.js';
+import {
+  hashCanonicalContentSubject,
+  hashCanonicalReviewContent,
+} from '../../../shared/review-subject.js';
 import type { ReviewerSuccessResult } from '../types.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';
@@ -76,6 +80,52 @@ function writeDeps(
   };
 }
 
+/** Schema-valid standalone peer review obligation with its initial attempt. */
+function peerReviewAssurance() {
+  const content = 'frozen review material line 1\nline 2\n';
+  const materialDigest = hashCanonicalReviewContent(content);
+  const subjectDigest = hashCanonicalContentSubject(materialDigest);
+  const obligation = createReviewObligation({
+    obligationType: 'review',
+    reviewCycle: null,
+    iteration: 1,
+    planVersion: 1,
+    now: NOW,
+    subjectDigest,
+    reviewMaterial: { content, materialDigest, subjectDigest },
+    reviewSubject: {
+      kind: 'content',
+      source: { kind: 'inline', mediaType: 'text' },
+      materialDigest,
+      subjectDigest,
+      lineCount: 2,
+    },
+    reviewSubjectScope: { kind: 'content', subjectDigest, lineCount: 2 },
+  });
+  const minted = appendObligationWithAttempt(ensureReviewAssurance(undefined), obligation, NOW);
+  return {
+    obligation,
+    attempt: minted.assurance.attempts.find((attempt) => attempt.attemptId === minted.attemptId)!,
+    assurance: minted.assurance,
+  };
+}
+
+/**
+ * Mirrors the persistence boundary: a schema-invalid state is never written
+ * and the previously persisted state stays authoritative.
+ */
+function validatingWriteDeps(stateRef: { current: SessionState }): DispatchLedgerWriteDeps {
+  return {
+    updateReviewAssurance: vi.fn(async (_sessDir, update) => {
+      const next = update(stateRef.current, NOW);
+      const parsed = SessionState.safeParse(next);
+      if (!parsed.success) {
+        throw new Error(`SCHEMA_VALIDATION_FAILED: ${parsed.error.issues[0]?.message ?? ''}`);
+      }
+      stateRef.current = next;
+    }),
+  };
+}
 function persistAuthorizedSdkDispatch(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
@@ -859,10 +909,11 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(SessionState.safeParse(stateRef.current).success).toBe(true);
   });
 
-  it('HAPPY: consumes unable peer-review evidence instead of marking its obligation fulfilled', async () => {
-    const { obligation, attempt, assurance } = baseAssurance('review');
+  it('HAPPY: consumes unable peer-review evidence with its invocation lineage as schema-valid state', async () => {
+    const { obligation, attempt, assurance } = peerReviewAssurance();
     const stateRef = { current: makeState('PEER_REVIEW', { reviewAssurance: assurance }) };
-    const deps = writeDeps(stateRef);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+    const deps = validatingWriteDeps(stateRef);
     await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
       attemptId: attempt.attemptId,
       obligationId: obligation.obligationId,
@@ -879,8 +930,42 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
 
     expect(result).toBe('fulfilled');
     const after = stateRef.current.reviewAssurance!;
-    expect(after.obligations[0]).toMatchObject({ status: 'consumed', fulfilledAt: null });
+    // Consumption presupposes fulfillment: the assurance refinement rejects a
+    // consumed obligation without invocation lineage and fulfilledAt, so the
+    // validating writer would keep the previous pending state.
+    expect(after.obligations[0]).toMatchObject({
+      status: 'consumed',
+      consumedAt: NOW,
+      fulfilledAt: NOW,
+      invocationId: after.invocations[0]!.invocationId,
+    });
     expect(after.invocations[0]?.consumedByObligationId).toBe(obligation.obligationId);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('HAPPY: accept peer-review evidence fulfills its obligation as schema-valid state', async () => {
+    const { obligation, attempt, assurance } = peerReviewAssurance();
+    const stateRef = { current: makeState('PEER_REVIEW', { reviewAssurance: assurance }) };
+    const deps = validatingWriteDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const result = await recordEvidenceOrBlockReuse(
+      deps as never,
+      SESS_DIR,
+      recordingParams(attempt.attemptId, obligation.obligationId, 'review', 'accept'),
+    );
+
+    expect(result).toBe('fulfilled');
+    expect(stateRef.current.reviewAssurance!.obligations[0]).toMatchObject({
+      status: 'fulfilled',
+      fulfilledAt: NOW,
+    });
   });
 
   it('HAPPY: closes an unable plan obligation as blocked with its bound invocation retained', async () => {
