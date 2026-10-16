@@ -16,10 +16,14 @@ import {
   assertNoCompletionPackage,
   assertRetainedClaim,
   assertStateIntegrityTrigger,
+  assertImplementationRecorded,
   claimDeclaration,
+  driveImplementation,
+  MAX_IMPLEMENT_RECORD_RESUMES,
+  needsImplementationResume,
 } from '../../../demos/risk-trigger-fixture/run-live-risk-trigger-controls.mjs';
 import { finalizeControlRecord } from '../../../demos/java-task-manager/run-live-matrix.mjs';
-import { RESULT } from '../../../demos/lib/results.mjs';
+import { DemoNotVerifiedError, RESULT } from '../../../demos/lib/results.mjs';
 
 const CLAIM_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -336,5 +340,81 @@ describe('risk-trigger control oracles', () => {
       expect(passed).toBe(0);
       expect(record.error).toContain('parent transcript export failed');
     });
+  });
+});
+
+/**
+ * Fake runner over a scripted sequence of persisted states: each turn advances
+ * to the next state. Records the turn labels and the IMPL_REVIEW resume call.
+ */
+function scriptedRunner(states: Array<Record<string, unknown>>) {
+  let index = 0;
+  const turns: string[] = [];
+  const reviewResumes: string[] = [];
+  return {
+    turns,
+    reviewResumes,
+    async turn(_session: unknown, label: string) {
+      turns.push(label);
+      index = Math.min(index + 1, states.length - 1);
+    },
+    requireBoundState() {
+      return { state: states[index] };
+    },
+    async completeImplementationReview(_session: unknown, label: string) {
+      reviewResumes.push(label);
+    },
+  };
+}
+
+const IMPLEMENTED = {
+  phase: 'EVIDENCE_REVIEW',
+  implementation: { digest: 'd'.repeat(64) },
+  implementationRiskAssessment: { riskTriggers: ['state_integrity'] },
+};
+const NOT_IMPLEMENTED = { phase: 'IMPLEMENTATION', implementation: null };
+
+describe('risk-trigger implementation turn classification', () => {
+  it('HAPPY: a recorded implementation proceeds to the shared IMPL_REVIEW resume', async () => {
+    const runner = scriptedRunner([{ phase: 'PLAN_REVIEW' }, IMPLEMENTED]);
+    await driveImplementation(runner, {}, 'risk-covered');
+    expect(runner.turns).toEqual(['risk-covered-05-implement']);
+    expect(runner.reviewResumes).toEqual(['risk-covered-05-implement']);
+  });
+
+  it('CORNER: an implement turn without a recorded implementation is re-entered once', async () => {
+    const runner = scriptedRunner([{ phase: 'PLAN_REVIEW' }, NOT_IMPLEMENTED, IMPLEMENTED]);
+    await driveImplementation(runner, {}, 'risk-uncovered');
+    expect(MAX_IMPLEMENT_RECORD_RESUMES).toBe(1);
+    expect(runner.turns).toEqual([
+      'risk-uncovered-05-implement',
+      'risk-uncovered-05-implement-resume-1',
+    ]);
+    expect(runner.reviewResumes).toEqual(['risk-uncovered-05-implement-resume-1']);
+  });
+
+  it('BAD: no recorded implementation after the bounded re-entry is NOT_VERIFIED, never FAILED', async () => {
+    const runner = scriptedRunner([{ phase: 'PLAN_REVIEW' }, NOT_IMPLEMENTED, NOT_IMPLEMENTED]);
+    const outcome = driveImplementation(runner, {}, 'risk-uncovered');
+    await expect(outcome).rejects.toBeInstanceOf(DemoNotVerifiedError);
+    await expect(outcome).rejects.toThrow(
+      /no implementation was recorded \(phase IMPLEMENTATION\)/,
+    );
+    expect(runner.turns).toHaveLength(1 + MAX_IMPLEMENT_RECORD_RESUMES);
+    expect(runner.reviewResumes).toEqual([]);
+  });
+
+  it('EDGE: only an unrecorded IMPLEMENTATION phase is resumable; a misclassified trigger stays FAILED', () => {
+    expect(needsImplementationResume(NOT_IMPLEMENTED)).toBe(true);
+    expect(needsImplementationResume(IMPLEMENTED)).toBe(false);
+    expect(needsImplementationResume({ phase: 'IMPL_VALIDATION', implementation: null })).toBe(
+      false,
+    );
+    expect(assertImplementationRecorded(IMPLEMENTED, 'x')).toEqual(IMPLEMENTED.implementation);
+    expect(() => assertImplementationRecorded(NOT_IMPLEMENTED, 'x')).toThrow(DemoNotVerifiedError);
+    // A recorded change whose trigger is missing is a product/oracle contradiction.
+    const misclassified = { ...IMPLEMENTED, implementationRiskAssessment: { riskTriggers: [] } };
+    expect(() => assertStateIntegrityTrigger(misclassified)).toThrow(/not detected/);
+    expect(() => assertStateIntegrityTrigger(misclassified)).not.toThrow(DemoNotVerifiedError);
   });
 });
