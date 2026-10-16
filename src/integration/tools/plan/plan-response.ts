@@ -381,7 +381,11 @@ async function convergedPlanReviewCardResponse(
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
     reviewCard,
-    presentation: { markdown: presentationMarkdown },
+    // The canonical reviewCard is always transmitted; the host-visible markdown
+    // variant is only added when the configured glyph profile changes it.
+    ...(presentationMarkdown === reviewCard
+      ? {}
+      : { presentation: { markdown: presentationMarkdown } }),
     _audit: { transitions },
   };
   if (artifactErr) response.artifactWarning = artifactErr;

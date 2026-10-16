@@ -268,11 +268,14 @@ async function attachReviewCard(input: {
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);
-  resp.presentation = {
-    markdown: buildArchitectureReviewCard(reviewCardInput, {
-      glyphProfile: (await readConfig(session.worktree)).presentation.opencode.glyphProfile,
-    }),
-  };
+  const presentationMarkdown = buildArchitectureReviewCard(reviewCardInput, {
+    glyphProfile: (await readConfig(session.worktree)).presentation.opencode.glyphProfile,
+  });
+  // The canonical reviewCard is always transmitted; the host-visible markdown
+  // variant is only added when the configured glyph profile changes it.
+  if (presentationMarkdown !== resp.reviewCard) {
+    resp.presentation = { markdown: presentationMarkdown };
+  }
   const serializedState = JSON.stringify(finalState, null, 2) + '\n';
   const artifactErr = await materializeReviewCardArtifact(
     session.sessDir,

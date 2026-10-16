@@ -1132,6 +1132,26 @@ describe('plan', () => {
       expect(state!.reviewDecision).toBeNull();
     });
 
+    it('keeps the presentation variant only when the glyph profile changes the card', async () => {
+      const { writeRepoConfig } = await import('../adapters/persistence-config.js');
+      const { DEFAULT_CONFIG } = await import('../config/flowguard-config.js');
+      await writeRepoConfig(ws.tmpDir, {
+        ...DEFAULT_CONFIG,
+        presentation: { opencode: { glyphProfile: 'ascii' } },
+      });
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      const result = await exhaustPlanReviews(3);
+
+      expect(result.error).not.toBe(true);
+      expect(result.reviewCard).toBeTypeOf('string');
+      expect(result.reviewCard).toContain('⚠ Reviewer did NOT approve');
+      expect(result.presentation).toBeDefined();
+      const markdown = (result.presentation as { markdown: string }).markdown;
+      expect(markdown).toContain('[WARN] Reviewer did NOT approve');
+      expect(markdown).not.toEqual(result.reviewCard);
+    });
+
     it('TEAM: force-converged card binds reviewer findings to the prior plan revision (F1)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
@@ -1410,9 +1430,10 @@ describe('plan', () => {
       expect(result.reviewCard).toContain('## Proposed Plan');
       expect(result.reviewCard).toContain('Implement payment validation');
       expect(result.reviewCard).toContain('Plan decision required.');
-      expect(result.presentation).toEqual({ markdown: result.reviewCard });
+      // Single-source card: with the default glyph profile the host-visible
+      // markdown is identical to the canonical card, so it is not re-sent.
+      expect(result.presentation).toBeUndefined();
     });
-
     it('converged PLAN_REVIEW reviewCard contains recommended commands', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);
