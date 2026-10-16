@@ -42,13 +42,32 @@ describe('review generation authority', () => {
     // candidates and separate plan review from later validation. Obligations
     // minted under p42-v2 must not dispatch under the new semantics; recovery
     // is a fresh obligation, never re-stamping the old one.
-    expect(REVIEW_CRITERIA_VERSION).toBe('p42-v3');
+    expect(REVIEW_CRITERIA_VERSION).not.toBe('p42-v2');
     expect(
       isCurrentReviewGeneration({
         criteriaVersion: 'p42-v2',
         mandateDigest: REVIEW_MANDATE_DIGEST,
       }),
     ).toBe(false);
+  });
+
+  it('rejects p42-v3 obligations after the plan evidence-role and blocking-bar change', () => {
+    // The plan criteria now state the evidence-role rule once (overlapping
+    // suites of different checks are admissible) and carry the blocking-issue
+    // bar. Obligations minted under p42-v3 fail closed.
+    expect(REVIEW_CRITERIA_VERSION).toBe('p42-v4');
+    expect(
+      isCurrentReviewGeneration({
+        criteriaVersion: 'p42-v3',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+      }),
+    ).toBe(false);
+    expect(
+      isCurrentReviewGeneration({
+        criteriaVersion: 'p42-v4',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+      }),
+    ).toBe(true);
   });
 
   it('rejects a stale mandate digest', () => {

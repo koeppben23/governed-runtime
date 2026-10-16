@@ -175,8 +175,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the finding grammar render only the revisions this attempt can observe,
   derived from the same `resolveObservationRevisions` projection the tool
   uses. No schema, authority, or capture change.
-- **Plan-review verification authority and phase (review criteria
-  `p42-v3`).** The plan-review criteria no longer say checks are "sourced from
+
+- **Plan-review evidence roles stated once, and a plan blocking-issue bar
+  (review criteria `p42-v4`).** The per-claim evidence-role sentence introduced
+  with `p42-v3` was repeated for every claim in both the advisory ProofGraph
+  context and the frozen review material, and its negated wording ("do not
+  imply ... share an attempt") was read by a live plan reviewer as forbidding
+  overlapping test suites. Claim rendering now carries only the concrete
+  positive and counterexample bindings; the plan criteria state the rule once
+  and affirmatively: positive and counterexample evidence come from separate
+  executions of their respective checks, each with its own attempt identity,
+  and different checks may run overlapping test suites. (Binding the same
+  check to both roles remains an `evidence_role_collision`.) Plan review now
+  carries the same kind of actionable blocking-issue bar as implementation
+  review: unmet requirement or concrete plan defect, exact plan section,
+  supplied evidence, feasible minimal repair; an unestablished fact is
+  `NOT_VERIFIED`, not a demonstrated defect. **Upgrade impact:** review
+  obligations minted under `p42-v3` are no longer the current review
+  generation and are not dispatched (fail-closed); recovery is a fresh review
+  obligation, never re-stamping the old one. The reviewer mandate digest and
+  installed agent templates are unchanged.
+
+- **Plan-review verification authority and phase (review criteria `p42-v3`,
+  #1120).** The plan-review criteria no longer say checks are "sourced from
   repo scripts/contracts". Check authority is the persisted verification
   candidates supplied to the review (kind, candidateId, executable command);
   the executable command is the selected candidate command (for npm scripts
@@ -186,10 +207,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation: reviewers judge whether planned checks and assertions are
   executable and sufficient and must not require future validation results as
   existing evidence. Reviewer-facing plan claims name evidence roles
-  (`Positive evidence check`, `Counterexample (adversarial) check`) and state
-  that both roles bind separate validation attempts with distinct identities,
-  enforced at evidence binding. The risk-trigger fixture ticket now separates
-  check selection, executed command, script definition and evidence roles.
+  (`Positive evidence check`, `Counterexample (adversarial) check`). The
+  risk-trigger fixture ticket now separates check selection, executed command,
+  script definition and evidence roles.
   **Upgrade impact:** review obligations minted under `p42-v2` are no longer the
   current review generation and are not dispatched (fail-closed); recovery is a
   fresh review obligation under the current contract, never re-stamping the old
