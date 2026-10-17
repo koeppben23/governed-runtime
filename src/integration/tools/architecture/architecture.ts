@@ -29,8 +29,8 @@ export const architecture: ToolDefinition = {
   description:
     'Submit an Architecture Decision Record (ADR) OR record the independent reviewer verdict. Two modes:\n' +
     'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
-    "Mode B (review verdict): provide reviewVerdict only ('accept' or 'changes_requested'). " +
-    "If 'changes_requested', also provide revised adrText.\n" +
+    "Mode B (review verdict): approve with reviewVerdict ('accept') alone; revise with " +
+    "'changes_requested' plus the revised adrText and claims, WITHOUT title.\n" +
     `Review is performed by the ${REVIEWER_SUBAGENT_TYPE} and the host captures its structured findings. ` +
     'FlowGuard resolves those captured findings automatically — submit the verdict only and never reviewer findings. ' +
     'There is no self-review fallback and reviewer unavailability always fails closed. ' +
