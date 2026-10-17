@@ -25,6 +25,7 @@ import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceBlocked, AutoAdvanceOverflow } from '../../../rails/types.js';
 import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
+import { differencedCardPresentation } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
@@ -395,7 +396,7 @@ function formatReviewCompletionResponse(input: {
     enrichWithWorkflowDirective(
       {
         reviewCard,
-        presentation: { markdown: presentationMarkdown },
+        presentation: differencedCardPresentation(presentationMarkdown, reviewCard),
         phase: finalState.phase,
         ...(artifactWarning && { artifactWarning }),
         status: 'Review flow complete. Report generated.',

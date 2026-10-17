@@ -12,11 +12,13 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   FOLLOWUP_PROMPT_SENTINEL,
   NOT_OBSERVED,
   analyzeRunRoot,
+  analyzeTurnDenials,
   classifyDenial,
   assertOutsideRoots,
   buildReport,
@@ -106,8 +108,12 @@ function writeFixtureRoot(): void {
         installedBuild: { gitSha: 'feedbeefcafe0000' },
         recoveredDenials: [
           {
+            status: 'proven',
             step: 'development-03-implement',
             codes: ['INVALID_IMPLEMENT_TOOL_SEQUENCE'],
+            denials: [
+              { index: 1, code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE', tool: 'flowguard_implement' },
+            ],
             evidence: 'next_step_operation_transition:development-04-validate',
           },
         ],
@@ -136,9 +142,12 @@ function writeFixtureRoot(): void {
     jsonl([
       STEP,
       toolUse('flowguard_status', { phase: 'PLAN' }),
-      toolUse('flowguard_plan', denial('INVALID_PLAN_TOOL_SEQUENCE')),
+      toolUse('flowguard_plan', {
+        ...denial('INVALID_PLAN_TOOL_SEQUENCE'),
+        subjectDigest: 'plan-a',
+      }),
       STEP,
-      toolUse('flowguard_plan', { phase: 'PLAN_REVIEW' }),
+      toolUse('flowguard_plan', { phase: 'PLAN_REVIEW', subjectDigest: 'plan-a' }),
     ]),
   );
   // No step events at all; the denial is recovered only by the runner's next step.
@@ -207,6 +216,20 @@ function writeFixtureRoot(): void {
       .map((entry) => JSON.stringify(entry))
       .join('\n'),
   );
+  const recordsFile = path.join(root, 'evidence/flows.json');
+  const records = JSON.parse(fs.readFileSync(recordsFile, 'utf8'));
+  const refs = [PARENT, CHILD, CHILD_NO_FOLLOWUP].map((sessionId) => {
+    const file = `development-host-${sessionId}.json`;
+    return {
+      sessionId,
+      file,
+      sha256: createHash('sha256')
+        .update(fs.readFileSync(path.join(root, 'evidence', file)))
+        .digest('hex'),
+    };
+  });
+  records[0].transcripts = { parent: refs[0], reviewers: refs.slice(1) };
+  fs.writeFileSync(recordsFile, JSON.stringify(records));
 }
 
 function flow(name: string) {
@@ -258,7 +281,88 @@ describe('demo perf baseline - denial attribution', () => {
   it('BAD: a later success shared by two denials of the same tool is not attributed', () => {
     const [first, second] = turn('development', 'development-04-validate').denials;
     expect(first).toMatchObject({ code: 'WRONG_PHASE', attribution: NOT_OBSERVED });
-    expect(second).toMatchObject({ code: 'COMMAND_NOT_ALLOWED', attribution: 'attributed' });
+    expect(second).toMatchObject({ code: 'COMMAND_NOT_ALLOWED', attribution: NOT_OBSERVED });
+  });
+
+  it('does not attribute tool-only success or success for another operation', () => {
+    write(
+      'evidence/development-02-plan.jsonl',
+      jsonl([
+        toolUse('flowguard_plan', {
+          ...denial('INVALID_PLAN_TOOL_SEQUENCE'),
+          subjectDigest: 'plan-a',
+        }),
+        toolUse('flowguard_plan', { phase: 'PLAN_REVIEW', subjectDigest: 'plan-b' }),
+      ]),
+    );
+    expect(turn('development', 'development-02-plan').denials[0]).toMatchObject({
+      attribution: NOT_OBSERVED,
+    });
+  });
+
+  it('never credits a pending observation as a next-step proof', () => {
+    const file = path.join(root, 'evidence/flows.json');
+    const records = JSON.parse(fs.readFileSync(file, 'utf8'));
+    records[0].recoveredDenials[0].status = 'pending_verification';
+    fs.writeFileSync(file, JSON.stringify(records));
+    expect(turn('development', 'development-03-implement').denials[0]).toMatchObject({
+      attribution: NOT_OBSERVED,
+    });
+  });
+
+  it('charges overlapping operation-recovery spans only once', () => {
+    const denials = analyzeTurnDenials({
+      output: jsonl([
+        toolUse('flowguard_plan', { ...denial('WRONG_PHASE'), subjectDigest: 'plan-a' }),
+        toolUse('flowguard_architecture', { ...denial('WRONG_PHASE'), subjectDigest: 'adr-a' }),
+        STEP,
+        toolUse('flowguard_plan', { subjectDigest: 'plan-a' }),
+        toolUse('flowguard_architecture', { subjectDigest: 'adr-a' }),
+      ]),
+      flow: 'development',
+      step: 'shared',
+      record: undefined,
+    });
+    expect(denials).toMatchObject([
+      { extraToolCalls: 2, extraModelSteps: 1 },
+      { extraToolCalls: 1, extraModelSteps: 0 },
+    ]);
+  });
+
+  it('charges a shared proven recovery turn once across denial occurrences', () => {
+    const record = {
+      recoveredDenials: [
+        {
+          status: 'proven',
+          step: 'shared',
+          codes: ['WRONG_PHASE'],
+          evidence: 'next_step_operation_transition:approve',
+          denials: [1, 2].map((index) => ({ index, code: 'WRONG_PHASE', tool: 'flowguard_plan' })),
+        },
+      ],
+    };
+    const denials = analyzeTurnDenials({
+      output: jsonl([
+        toolUse('flowguard_plan', denial('WRONG_PHASE')),
+        toolUse('flowguard_plan', denial('WRONG_PHASE')),
+      ]),
+      flow: 'development',
+      step: 'shared',
+      record,
+    });
+    expect(denials).toMatchObject([{ extraHostTurns: 1 }, { extraHostTurns: 0 }]);
+    record.recoveredDenials[0]!.denials[1]!.index = 99;
+    expect(
+      analyzeTurnDenials({
+        output: jsonl([
+          toolUse('flowguard_plan', denial('WRONG_PHASE')),
+          toolUse('flowguard_plan', denial('WRONG_PHASE')),
+        ]),
+        flow: 'development',
+        step: 'shared',
+        record,
+      })[1],
+    ).toMatchObject({ attribution: NOT_OBSERVED });
   });
 
   it('BAD: an unrecovered denial never gains an attributed follow-up cost', () => {
@@ -366,6 +470,23 @@ describe('demo perf baseline - durations, exports and runtime logs', () => {
     expect(negative.parent).toBe(NOT_OBSERVED);
     expect(negative.reviews).toBe(NOT_OBSERVED);
     expect(negative.runtimeLatency).toBe(NOT_OBSERVED);
+  });
+
+  it('ignores unregistered attempt files and refuses modified manifest-bound exports', () => {
+    write(
+      `evidence/development-attempt-99-host-${CHILD}.json`,
+      JSON.stringify({
+        info: { id: CHILD, parentID: PARENT },
+        messages: [],
+      }),
+    );
+    expect(
+      (flow('development').reviews as Json[]).find((review) => review.sessionId === CHILD)?.task,
+    ).toMatchObject({ modelActions: 1 });
+    fs.appendFileSync(path.join(root, `evidence/development-host-${CHILD}.json`), ' ');
+    expect((flow('development').reviews as Json[]).map((review) => review.sessionId)).not.toContain(
+      CHILD,
+    );
   });
 
   it('HAPPY: attributes FlowGuard latency logs to the flow via host and child sessions', () => {

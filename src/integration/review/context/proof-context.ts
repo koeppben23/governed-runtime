@@ -325,9 +325,9 @@ export function buildReviewerProofContext(
   authorities: ReviewerProofGraphAuthorities,
   options: { readonly includeDeclarationPreview?: boolean } = {},
 ): string[] {
-  // The frozen review material of artifact reviews already carries the claim
-  // declaration section verbatim; the preview is only composed when it would
-  // not be a duplicate (implementation and peer review obligations).
+  // Only frozen PLAN material already carries the claim declarations. ADR
+  // material contains the ticket and ADR body, so architecture declarations
+  // still need this preview, including their evidence requirements/assumptions.
   const includePreview = options.includeDeclarationPreview !== false;
   return [
     ...renderPersistedProofGraphContext(state.proofGraph),

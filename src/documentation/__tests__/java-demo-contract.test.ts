@@ -66,6 +66,50 @@ describe('structured re-arm recovery witness', () => {
     );
     expect(freshRearmWitness(event, null)).toBe(false);
   });
+
+  it('records a fresh re-arm as pending verification rather than recovered review', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-rearm-telemetry-'));
+    try {
+      await fs.mkdir(path.join(root, 'evidence'));
+      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+      runner.requireBoundState = () => ({ state: state('created'), sessionDir: root });
+      runner.hostStep = async () => ({
+        code: 0,
+        stderr: '',
+        timedOut: false,
+        durationMs: 0,
+        sessionIds: ['ses_parent'],
+        stdout: JSON.stringify({
+          type: 'tool_use',
+          part: {
+            tool: 'task',
+            state: {
+              output: JSON.stringify({
+                reviewDispatch: { required: true, completed: false },
+                reviewRetry: { ...event, retryable: true },
+              }),
+            },
+          },
+        }),
+      });
+      const session: {
+        workspace: string;
+        recoveredDenials?: unknown[];
+        recoveryObservations?: unknown[];
+      } = { workspace: root };
+      await runner.turn(session, 'plan-rearm', 'x');
+      expect(session.recoveredDenials).toEqual([]);
+      expect(session.recoveryObservations).toContainEqual({
+        step: 'plan-rearm',
+        status: 'pending_verification',
+        codes: [event.code],
+        evidence: 'structured_rearm',
+        events: [{ index: 1, ...event, retryable: true }],
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 const execFile = promisify(execFileCallback);
@@ -550,12 +594,17 @@ describe('Java Task Manager demo contract', () => {
       const session: {
         workspace: string;
         recoveredDenials?: Array<Record<string, unknown>>;
+        recoveryObservations?: Array<Record<string, unknown>>;
         awaitingRecovery?: { step: string; codes: string[] };
       } = { workspace: root };
       await runner.turn(session, 'plan-b', 'x');
-      expect(session.recoveredDenials).toEqual([
-        { step: 'plan-b', codes: ['REVISED_PLAN_REQUIRED'], evidence: 'later_tool_success' },
-      ]);
+      expect(session.recoveredDenials).toEqual([]);
+      expect(session.recoveryObservations).toContainEqual({
+        step: 'plan-b',
+        status: 'pending_verification',
+        codes: ['REVISED_PLAN_REQUIRED'],
+        evidence: 'later_tool_success',
+      });
       expect(session.awaitingRecovery).toMatchObject({
         step: 'plan-b',
         codes: ['REVISED_PLAN_REQUIRED'],
@@ -934,6 +983,7 @@ describe('Java Task Manager demo contract', () => {
           step: 'plan-2',
           codes: ['PLAN_REVIEW_IN_PROGRESS'],
           evidence: 'same_turn_correction_and_reviewer_accepted',
+          status: 'proven',
         },
       ]);
     } finally {
@@ -1051,6 +1101,7 @@ describe('Java Task Manager demo contract', () => {
           step: 'plan',
           codes: ['REVIEW_EVIDENCE_NOT_OBSERVED'],
           evidence: 'structured_rearm_after_terminal_failure',
+          status: 'proven',
         },
       ]);
       expect(

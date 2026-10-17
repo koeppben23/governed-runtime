@@ -159,6 +159,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve separately declared architecture claims, review evidence and assumptions
+  in native reviewer prompts; route every Task return through terminal/retry/completed
+  handling before requiring completion evidence. Standalone peer-review cards omit
+  identical duplicate presentation Markdown while preserving distinct glyph variants.
+- Re-export each live-demo transcript target on every capture attempt, keep earlier
+  exports as immutable numbered attempt evidence, retain successful partial manifests
+  and failed bytes, and continue other reviewer exports after a target fails. Receipts
+  record integrity but are never reuse authority, because a continued host session
+  can leave older bytes valid yet stale. Harness v2 separates observed/pending recovery
+  from proven recovery and attributes costs only to bound occurrences without charging
+  overlapping spans or shared recovery turns twice. Export metrics read digest-bound
+  manifest entries. See `demos/DEMO_ASSURANCE.md` for the evidence limits.
+
 - **Review capture diagnostics, recovery fidelity, and runtime efficiency
   (review criteria `p42-v5`).** A reviewer capture that violates the challenge
   evidence contract now reaches the retry with the exact validated position and

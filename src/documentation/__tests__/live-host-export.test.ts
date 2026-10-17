@@ -5,6 +5,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   exportHostTranscript,
@@ -85,7 +86,97 @@ describe('live host transcript export', () => {
     expect(await fs.readFile(path.join(root, 'architecture-host-ses_parent.json'), 'utf8')).toBe(
       truncated,
     );
-    await expect(capture()).rejects.toThrow(/already exists/);
+    await fs.writeFile(payload, JSON.stringify(value));
+    const retried = await capture();
+    expect(path.basename(retried)).toBe('architecture-attempt-2-host-ses_parent.json');
+    expect(await fs.readFile(path.join(root, 'architecture-host-ses_parent.json'), 'utf8')).toBe(
+      truncated,
+    );
+    const receipt = JSON.parse(await fs.readFile(`${retried}.receipt.json`, 'utf8'));
+    expect(receipt).toMatchObject({ version: 'host-transcript.v1', attempt: 2 });
+    expect(receipt.sha256).toBe(
+      createHash('sha256')
+        .update(await fs.readFile(retried))
+        .digest('hex'),
+    );
+  });
+
+  it('exports a continued host session fresh instead of reusing earlier bytes', async () => {
+    const firstValue = transcript();
+    await fs.writeFile(payload, JSON.stringify(firstValue));
+    const first = await capture();
+    expect(path.basename(first)).toBe('architecture-host-ses_parent.json');
+
+    const continued = transcript();
+    continued.messages.push({
+      info: { id: 'msg_2', sessionID: 'ses_parent', role: 'assistant' },
+      parts: [
+        {
+          id: 'prt_2',
+          sessionID: 'ses_parent',
+          messageID: 'msg_2',
+          type: 'text',
+          text: 'continued host session',
+        },
+      ],
+    });
+    await fs.writeFile(payload, JSON.stringify(continued));
+    const second = await capture();
+
+    expect(path.basename(second)).toBe('architecture-attempt-2-host-ses_parent.json');
+    expect(JSON.parse(await fs.readFile(second, 'utf8')).messages).toHaveLength(2);
+    expect(JSON.parse(await fs.readFile(first, 'utf8')).messages).toHaveLength(1);
+    expect(JSON.parse(await fs.readFile(`${second}.receipt.json`, 'utf8'))).toMatchObject({
+      attempt: 2,
+      sha256: createHash('sha256')
+        .update(await fs.readFile(second))
+        .digest('hex'),
+    });
+  });
+
+  it('keeps prior exports immutable and never reuses tampered bytes', async () => {
+    await fs.writeFile(payload, JSON.stringify(transcript()));
+    const first = await capture();
+    await fs.appendFile(first, ' ');
+    const next = await capture();
+    expect(next).not.toBe(first);
+    expect(await fs.readFile(first, 'utf8')).toBe(`${JSON.stringify(transcript())} `);
+    expect(JSON.parse(await fs.readFile(next, 'utf8')).messages).toHaveLength(1);
+    expect(path.basename(await capture())).toBe('architecture-attempt-3-host-ses_parent.json');
+  });
+
+  it('never falls back to an earlier export when the fresh probe fails binding', async () => {
+    await fs.writeFile(payload, JSON.stringify(transcript('ses_child', 'ses_parent')));
+    const first = await capture('ses_child', 'ses_parent');
+    await expect(capture('ses_child', 'ses_foreign')).rejects.toThrow(/parent identity/);
+    const foreign = path.join(root, 'foreign');
+    await fs.mkdir(foreign);
+    await expect(
+      exportHostTranscript({
+        label: 'architecture',
+        sessionId: 'ses_child',
+        parentSessionId: 'ses_parent',
+        workspace: foreign,
+        evidenceDir: root,
+        configDir: root,
+        command: process.execPath,
+        argsPrefix: [cli, payload, '0'],
+      }),
+    ).rejects.toThrow(/worktree mismatch/);
+    for (const attempt of [2, 3]) {
+      await expect(
+        fs.access(path.join(root, `architecture-attempt-${attempt}-host-ses_child.json`)),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(
+          path.join(root, `architecture-attempt-${attempt}-host-ses_child.json.receipt.json`),
+        ),
+      ).rejects.toThrow();
+    }
+    expect(path.basename(await capture('ses_child', 'ses_parent'))).toBe(
+      'architecture-attempt-4-host-ses_child.json',
+    );
+    expect(JSON.parse(await fs.readFile(first, 'utf8')).info.parentID).toBe('ses_parent');
   });
 
   it('accepts a child export only with its expected parent identity', async () => {
@@ -168,12 +259,14 @@ describe('live host transcript export', () => {
     ).toThrow(/worktree mismatch/);
   });
 
-  it('uses flow names and child lineage and registers no provenance on export failure', async () => {
+  it('retains successful targets and attempts later children after an export failure', async () => {
     const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
     vi.spyOn(runner, 'requireBoundState').mockReturnValue({
       state: {
         binding: { hostSessionId: 'ses_parent' },
-        reviewAssurance: { invocations: [{ childSessionId: 'ses_child' }] },
+        reviewAssurance: {
+          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({ childSessionId })),
+        },
       },
       sessionDir: root,
     });
@@ -183,15 +276,107 @@ describe('live host transcript export', () => {
       file: 'parent.json',
       sha256: 'a'.repeat(64),
     });
+    exported.mockResolvedValueOnce({ sessionId: 'ses_a', file: 'a.json', sha256: 'b'.repeat(64) });
     exported.mockRejectedValueOnce(new Error('invalid host transcript JSON'));
+    exported.mockResolvedValueOnce({ sessionId: 'ses_c', file: 'c.json', sha256: 'c'.repeat(64) });
     const build = vi.spyOn(runner, 'installedBuild');
-    const flow: { name: string; transcripts?: unknown } = { name: 'architecture' };
+    const flow: { name: string; transcripts?: unknown; transcriptErrors?: unknown } = {
+      name: 'architecture',
+    };
     await expect(
       runner.captureProvenance(flow, { sessionId: 'ses_parent', workspace: root }),
     ).rejects.toThrow(/invalid host transcript JSON/);
-    expect(exported).toHaveBeenNthCalledWith(1, 'architecture', 'ses_parent', root);
-    expect(exported).toHaveBeenNthCalledWith(2, 'architecture', 'ses_child', root, 'ses_parent');
-    expect(flow.transcripts).toBeUndefined();
+    expect(exported).toHaveBeenNthCalledWith(1, 'architecture', 'ses_parent', root, undefined);
+    expect(exported).toHaveBeenNthCalledWith(4, 'architecture', 'ses_c', root, 'ses_parent');
+    expect(flow.transcripts).toMatchObject({
+      parent: { sessionId: 'ses_parent' },
+      reviewers: [{ sessionId: 'ses_a' }, { sessionId: 'ses_c' }],
+    });
+    expect(flow.transcriptErrors).toEqual([
+      { sessionId: 'ses_b', reason: 'invalid host transcript JSON' },
+    ]);
     expect(build).not.toHaveBeenCalled();
+  });
+
+  it('resumes a partial parent/A/B/C capture without overwriting successful targets', async () => {
+    const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
+    vi.spyOn(runner, 'requireBoundState').mockReturnValue({
+      state: {
+        binding: { hostSessionId: 'ses_parent' },
+        reviewAssurance: {
+          invocations: ['ses_a', 'ses_b', 'ses_c'].map((childSessionId) => ({ childSessionId })),
+        },
+      },
+      sessionDir: root,
+    });
+    vi.spyOn(runner, 'installedBuild').mockReturnValue({ gitSha: 'test-build' });
+    let failB = true;
+    vi.spyOn(runner, 'exportTranscript').mockImplementation(
+      async (label, sessionId, workspace, parentSessionId) => {
+        await fs.writeFile(
+          payload,
+          failB && sessionId === 'ses_b'
+            ? '{truncated'
+            : JSON.stringify(transcript(sessionId, parentSessionId)),
+        );
+        const file = await exportHostTranscript({
+          label,
+          sessionId,
+          workspace,
+          parentSessionId,
+          evidenceDir: root,
+          configDir: root,
+          command: process.execPath,
+          argsPrefix: [cli, payload, '0'],
+        });
+        return {
+          sessionId,
+          file: path.basename(file),
+          sha256: createHash('sha256')
+            .update(await fs.readFile(file))
+            .digest('hex'),
+        };
+      },
+    );
+    const flow: {
+      name: string;
+      result: string;
+      transcripts?: { parent?: unknown; reviewers: unknown[] };
+      transcriptErrors?: unknown[];
+    } = { name: 'architecture', result: 'FAILED' };
+    const session = { sessionId: 'ses_parent', workspace: root };
+    await expect(runner.captureProvenance(flow, session)).rejects.toThrow(/ses_b/);
+    expect(flow.transcripts).toMatchObject({
+      parent: { file: 'architecture-host-ses_parent.json' },
+      reviewers: [
+        { file: 'architecture-host-ses_a.json' },
+        { file: 'architecture-host-ses_c.json' },
+      ],
+    });
+    failB = false;
+    await runner.captureProvenance(flow, session);
+    expect(flow.result).toBe('FAILED');
+    // A retry re-exports every target so the manifest can never pair a stale
+    // parent with a fresh child. Earlier exports remain on disk untouched.
+    expect(flow.transcripts).toMatchObject({
+      parent: { file: 'architecture-attempt-2-host-ses_parent.json' },
+      reviewers: [
+        { file: 'architecture-attempt-2-host-ses_a.json' },
+        { file: 'architecture-attempt-2-host-ses_b.json' },
+        { file: 'architecture-attempt-2-host-ses_c.json' },
+      ],
+    });
+    expect(flow.transcriptErrors).toEqual([]);
+    for (const sessionId of ['ses_parent', 'ses_a', 'ses_b', 'ses_c']) {
+      await expect(
+        fs.access(path.join(root, `architecture-host-${sessionId}.json`)),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(path.join(root, `architecture-attempt-2-host-${sessionId}.json`)),
+      ).resolves.toBeUndefined();
+    }
+    expect(await fs.readFile(path.join(root, 'architecture-host-ses_b.json'), 'utf8')).toBe(
+      '{truncated',
+    );
   });
 });

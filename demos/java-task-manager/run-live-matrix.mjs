@@ -716,10 +716,12 @@ export class Runner {
       }
       session.recoveredDenials = session.recoveredDenials ?? [];
       session.recoveredDenials.push({
+        status: 'proven',
         step: pending.step,
         codes: pending.codes,
         evidence: `next_step_operation_transition:${label}`,
         expected: pending.expected,
+        denials: pending.denials,
       });
       this.log(
         `${pending.step}: recovered by the authorized ${command} operation on its bound subject`,
@@ -727,6 +729,15 @@ export class Runner {
       session.awaitingRecovery = null;
     }
     const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
+    session.recoveryObservations = session.recoveryObservations ?? [];
+    session.recoveryObservations.push(
+      ...toolDenialEvents(result.stdout).map((event) => ({
+        step: label,
+        status: 'observed',
+        code: event.code,
+        denialIndex: event.index,
+      })),
+    );
     const proofs = sameTurnRecoveryProofs(result.stdout);
     const recoverableProofs = proofs.recovered.filter((proof) => isRecoverableFamily(proof.code));
     const operationRecovered = [
@@ -782,6 +793,7 @@ export class Runner {
     session.recoveredDenials = session.recoveredDenials ?? [];
     if (operationRecovered.length > 0) {
       session.recoveredDenials.push({
+        status: 'proven',
         step: label,
         codes: operationRecovered,
         evidence: 'same_turn_operation_recovery',
@@ -791,7 +803,8 @@ export class Runner {
       );
     }
     if (laterSuccessOnly.length > 0) {
-      session.recoveredDenials.push({
+      session.recoveryObservations.push({
+        status: 'pending_verification',
         step: label,
         codes: laterSuccessOnly,
         evidence: 'later_tool_success',
@@ -802,12 +815,16 @@ export class Runner {
       );
     }
     if (retryRecovered.length > 0) {
-      session.recoveredDenials.push({
+      session.recoveryObservations.push({
+        status: 'pending_verification',
         step: label,
         codes: retryRecovered,
         evidence: 'structured_rearm',
+        events: allRetryEvents.filter((event) => freshRearmWitness(event, rearmState)),
       });
-      this.log(`${label}: recovered via structured re-arm [${retryRecovered.join(', ')}]`);
+      this.log(
+        `${label}: fresh structured re-arm authorized [${retryRecovered.join(', ')}]; review acceptance still requires verification`,
+      );
     }
     let pendingCodes = [
       ...new Set([
@@ -854,6 +871,7 @@ export class Runner {
         recoveryPersisted(expected, snapshot.state, command, readAuditEvents(snapshot.sessionDir))
       ) {
         session.recoveredDenials.push({
+          status: 'proven',
           step: label,
           codes: ['TICKET_SOURCE_CONFLICT'],
           evidence: 'ticket_adoption',
@@ -869,6 +887,9 @@ export class Runner {
       session.awaitingRecovery = {
         step: label,
         codes: pendingCodes,
+        denials: toolDenialEvents(result.stdout).filter((event) =>
+          pendingCodes.includes(event.code),
+        ),
         expected: expectRecovery(
           this.requireBoundState(session).state,
           [
@@ -1012,6 +1033,7 @@ export class Runner {
       }
       session.recoveredDenials = session.recoveredDenials ?? [];
       session.recoveredDenials.push({
+        status: 'proven',
         step: session.pendingReviewRecovery.steps.join(', '),
         codes: session.pendingReviewRecovery.codes,
         evidence: 'structured_rearm_after_terminal_failure',
@@ -1036,6 +1058,7 @@ export class Runner {
       }
       session.recoveredDenials = session.recoveredDenials ?? [];
       session.recoveredDenials.push({
+        status: 'proven',
         step: session.pendingPlanReviewCorrection.steps.join(', '),
         codes: [PLAN_REVIEW_CORRECTION_CODE],
         evidence: 'same_turn_correction_and_reviewer_accepted',
@@ -1140,19 +1163,43 @@ export class Runner {
 
   async captureProvenance(flow, session) {
     flow.retryHints = session.retryHints ?? [];
+    flow.recoveryObservations = session.recoveryObservations ?? [];
+    flow.recoveredDenials = session.recoveredDenials ?? [];
     const snapshot = this.requireBoundState(session);
     const targets = transcriptTargets(snapshot.state);
     if (targets.parent !== session.sessionId) {
       throw new Error(`${flow}: persisted host binding is not the observed session`);
     }
-    const parent = await this.exportTranscript(flow.name, targets.parent, session.workspace);
-    const reviewers = [];
-    for (const childSessionId of targets.reviewers) {
-      reviewers.push(
-        await this.exportTranscript(flow.name, childSessionId, session.workspace, targets.parent),
+    flow.transcripts = { reviewers: [] };
+    flow.transcriptErrors = [];
+    flow.transcriptCaptureAttempts = flow.transcriptCaptureAttempts ?? [];
+    for (const sessionId of [targets.parent, ...targets.reviewers]) {
+      try {
+        const exported = await this.exportTranscript(
+          flow.name,
+          sessionId,
+          session.workspace,
+          sessionId === targets.parent ? undefined : targets.parent,
+        );
+        if (sessionId === targets.parent) flow.transcripts.parent = exported;
+        else flow.transcripts.reviewers.push(exported);
+        flow.transcriptCaptureAttempts.push({ sessionId, status: 'validated', ...exported });
+      } catch (error) {
+        const failure = { sessionId, reason: error.message };
+        flow.transcriptErrors.push(failure);
+        flow.transcriptCaptureAttempts.push({ ...failure, status: 'failed' });
+      }
+    }
+    if (flow.transcriptErrors.length > 0) {
+      throw Object.assign(
+        new Error(
+          flow.transcriptErrors.map((entry) => `${entry.sessionId}: ${entry.reason}`).join('; '),
+        ),
+        {
+          code: 'HOST_TRANSCRIPT_CAPTURE_FAILED',
+        },
       );
     }
-    flow.transcripts = { parent, reviewers };
     flow.installedBuild = this.installedBuild(session.workspace);
   }
 

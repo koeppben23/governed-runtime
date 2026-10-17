@@ -42,6 +42,7 @@ import {
   DENIAL_BASELINE,
   NEXT_STEP_RECOVERY_CODES,
   PLAN_REVIEW_CORRECTION_CODE,
+  sha256,
 } from '../java-task-manager/run-live-matrix.mjs';
 
 export const NOT_OBSERVED = 'NOT_OBSERVED';
@@ -164,31 +165,37 @@ function observedPhaseAt(output, index) {
   return phase;
 }
 
-function countStepStarts(events, fromIndex, toIndex) {
-  let steps = 0;
-  for (let position = fromIndex; position < toIndex - 1; position += 1) {
-    if (events[position]?.type === 'step_start') steps += 1;
-  }
-  return steps;
-}
-
-function nextStepRecovered(record, step, code) {
-  return (record?.recoveredDenials ?? []).some(
+function nextStepRecovered(record, step, denial) {
+  return (record?.recoveredDenials ?? []).find(
     (entry) =>
+      entry.status === 'proven' &&
       entry?.step === step &&
       Array.isArray(entry.codes) &&
-      entry.codes.includes(code) &&
+      entry.codes.includes(denial.code) &&
+      Array.isArray(entry.denials) &&
+      entry.denials.some(
+        (event) =>
+          event.index === denial.index && event.code === denial.code && event.tool === denial.tool,
+      ) &&
       typeof entry.evidence === 'string' &&
       entry.evidence.startsWith('next_step_operation_transition:'),
   );
 }
 
 /** Per-occurrence denial facts with causal attribution only where it is proven. */
-export function analyzeTurnDenials({ output, flow, step, record }) {
+export function analyzeTurnDenials({
+  output,
+  flow,
+  step,
+  record,
+  chargedRecoveryTurns = new Set(),
+}) {
   const events = eventsOf(output);
   const hasStepEvents = events.some((event) => event.type === 'step_start');
   const denials = toolDenialEvents(output);
   const { recovered } = sameTurnRecoveryProofs(output);
+  const chargedToolEvents = new Set();
+  const chargedModelEvents = new Set();
   return denials.map((denial) => {
     const base = {
       code: denial.code,
@@ -199,7 +206,10 @@ export function analyzeTurnDenials({ output, flow, step, record }) {
       class: classifyDenial({ code: denial.code, flow, step }),
     };
     const proof = recovered.find(
-      (candidate) => candidate.denialIndex === denial.index && candidate.code === denial.code,
+      (candidate) =>
+        candidate.binding === 'operation' &&
+        candidate.denialIndex === denial.index &&
+        candidate.code === denial.code,
     );
     if (proof !== undefined) {
       const competing = denials.some(
@@ -211,28 +221,43 @@ export function analyzeTurnDenials({ output, flow, step, record }) {
       );
       if (competing) return { ...base, recovery: 'same_turn', attribution: NOT_OBSERVED };
       const between = toolUseEvents(output).filter(
-        (event) => event.index > denial.index && event.index <= proof.successIndex,
-      ).length;
+        (event) =>
+          event.index > denial.index &&
+          event.index <= proof.successIndex &&
+          !chargedToolEvents.has(event.index),
+      );
+      between.forEach((event) => chargedToolEvents.add(event.index));
+      const modelSteps = events.flatMap((event, index) =>
+        event.type === 'step_start' &&
+        index >= denial.index &&
+        index < proof.successIndex - 1 &&
+        !chargedModelEvents.has(index)
+          ? [index]
+          : [],
+      );
+      modelSteps.forEach((index) => chargedModelEvents.add(index));
       return {
         ...base,
         recovery: 'same_turn',
         attribution: 'attributed',
         binding: proof.binding,
-        extraToolCalls: between,
-        extraModelSteps: hasStepEvents
-          ? countStepStarts(events, denial.index, proof.successIndex)
-          : NOT_OBSERVED,
+        extraToolCalls: between.length,
+        extraModelSteps: hasStepEvents ? modelSteps.length : NOT_OBSERVED,
         extraHostTurns: 0,
       };
     }
-    if (nextStepRecovered(record, step, denial.code)) {
+    const nextStep = nextStepRecovered(record, step, denial);
+    if (nextStep) {
+      const costKey = `${flow}:${nextStep.evidence}`;
+      const alreadyCharged = chargedRecoveryTurns.has(costKey);
+      chargedRecoveryTurns.add(costKey);
       return {
         ...base,
         recovery: 'next_turn',
         attribution: 'attributed',
         extraToolCalls: NOT_OBSERVED,
         extraModelSteps: NOT_OBSERVED,
-        extraHostTurns: 1,
+        extraHostTurns: alreadyCharged ? 0 : 1,
       };
     }
     return { ...base, recovery: NOT_OBSERVED, attribution: NOT_OBSERVED };
@@ -449,7 +474,7 @@ function turnDuration(record, label, driverTurns) {
   return { durationMs: NOT_OBSERVED, durationSource: NOT_OBSERVED };
 }
 
-function analyzeTurn({ evidenceDir, file, records, driverTurns }) {
+function analyzeTurn({ evidenceDir, file, records, driverTurns, chargedRecoveryTurns }) {
   const step = path.basename(file, '.jsonl');
   const flow = flowForLabel(records, step);
   const record = records.find((candidate) => candidate.name === flow);
@@ -473,21 +498,31 @@ function analyzeTurn({ evidenceDir, file, records, driverTurns }) {
     modelSteps: hasStepEvents
       ? events.filter((event) => event.type === 'step_start').length
       : NOT_OBSERVED,
-    denials: analyzeTurnDenials({ output, flow, step, record }),
+    denials: analyzeTurnDenials({ output, flow, step, record, chargedRecoveryTurns }),
   };
 }
 
-function exportsBySession(evidenceDir) {
+function exportsBySession(evidenceDir, records) {
   const parents = new Map();
   const children = new Map();
-  for (const file of fs.readdirSync(evidenceDir)) {
-    if (!/-host-[A-Za-z0-9_-]+\.json$/.test(file)) continue;
-    const exported = readJson(path.join(evidenceDir, file));
-    const id = safeString(exported?.info?.id);
-    if (id === undefined) continue;
-    const parentId = safeString(exported.info.parentID);
-    if (parentId === undefined) parents.set(id, exported);
-    else children.set(id, { parentId, exported });
+  for (const record of records) {
+    const refs = [record.transcripts?.parent, ...(record.transcripts?.reviewers ?? [])];
+    for (const ref of refs) {
+      if (typeof ref?.file !== 'string' || path.basename(ref.file) !== ref.file) continue;
+      const file = path.join(evidenceDir, ref.file);
+      if (!fs.existsSync(file) || sha256(file) !== ref.sha256) continue;
+      const exported = readJson(file);
+      const id = safeString(exported?.info?.id);
+      if (id === undefined || id !== ref.sessionId) continue;
+      const parentId = safeString(exported.info.parentID);
+      if (
+        ref === record.transcripts?.parent &&
+        id === record.hostSessionId &&
+        parentId === undefined
+      )
+        parents.set(id, exported);
+      else if (parentId === record.hostSessionId) children.set(id, { parentId, exported });
+    }
   }
   return { parents, children };
 }
@@ -530,12 +565,13 @@ export function analyzeRunRoot(root) {
   const driverTurns = fs.existsSync(driverLog)
     ? parseDriverLog(fs.readFileSync(driverLog, 'utf8'))
     : new Map();
+  const chargedRecoveryTurns = new Set();
   const turns = fs
     .readdirSync(evidenceDir)
     .filter((file) => file.endsWith('.jsonl'))
     .sort()
-    .map((file) => analyzeTurn({ evidenceDir, file, records, driverTurns }));
-  const { parents, children } = exportsBySession(evidenceDir);
+    .map((file) => analyzeTurn({ evidenceDir, file, records, driverTurns, chargedRecoveryTurns }));
+  const { parents, children } = exportsBySession(evidenceDir, records);
   const runtime = collectRuntimeLatency(root);
   const flowNames = [
     ...new Set([...records.map((record) => record.name), ...turns.map((turn) => turn.flow)]),
