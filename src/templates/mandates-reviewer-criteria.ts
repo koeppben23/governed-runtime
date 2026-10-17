@@ -73,13 +73,19 @@ Return unable_to_review only when honest falsification is impossible because req
 
 The task prompt supplies the current obligation, frozen subject, review criteria, evidence bindings, challenge contract, and output-serialization requirements. Follow those task-local contracts exactly.`;
 
+/**
+ * The reviewer agent's host-enforced step budget. Exported so the native
+ * transport can verify a host stop at exactly this limit instead of guessing.
+ */
+export const REVIEWER_STEP_LIMIT = 10;
+
 export function renderReviewerPrompt(_reviewType: ReviewerPromptType = 'all'): string {
   return `\
 ---
 description: Independent reviewer for FlowGuard plan, implementation, architecture, and content review.
 mode: subagent
 hidden: true
-steps: 10
+steps: ${REVIEWER_STEP_LIMIT}
 permission:
   flowguard_*: deny
   mcp__flowguard__*: deny

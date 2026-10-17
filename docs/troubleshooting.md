@@ -268,6 +268,7 @@ real, registered reason.
 | `REVIEW_ATTEMPT_NOT_FOUND` | Attempt referenced by invocation was not found in assurance state | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt |
 | `REVIEW_ASSURANCE_UNAVAILABLE` | Review assurance state missing; cannot reject an incoherent attempt | Ensure the session has an active review obligation with an attempt |
 | `REVIEW_ATTEMPT_UNAVAILABLE` | No attempt can currently bind reviewer evidence; the frozen material is intact | Re-run the originating command for the same frozen subject; an obligation with no bindable attempt is closed deterministically so the next submission mints a fresh obligation |
+| `REVIEWER_STEP_BUDGET_EXHAUSTED` | The reviewer child reached its configured host step budget before structured findings could be captured | A fresh reviewer attempt on the same frozen obligation is re-armed automatically; invoke the reviewer Task again. If the attempt budget is exhausted, re-run the originating command |
 | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` | Reviewer child session completed without host-owned execution provenance | Re-run the originating FlowGuard command; do not reuse the prior reviewer output or submit copied findings |
 | `REVIEW_DISPATCH_PERSISTENCE_FAILED` | Durable reviewer dispatch could not be persisted before the host release; reviewer NOT executed | Retry the originating command; ensure the session state is writable; do not submit fabricated findings |
 | `REVIEW_SUBJECT_CHANGED_WHILE_PENDING` | Submitted artifact revision does not match the frozen subject of the pending review obligation | Submit the same revision to continue the active review, or wait for the obligation to settle before reviewing a changed revision |
@@ -535,6 +536,7 @@ REGULATED_ACTOR_UNKNOWN
 RESTART_CYCLE_ITERATION_MISMATCH
 REVIEWER_CONTEXT_UNAVAILABLE
 REVIEWER_INVOCATION_EXHAUSTED
+REVIEWER_STEP_BUDGET_EXHAUSTED
 REVIEWER_UNAVAILABLE_STRICT
 REVIEW_ASSURANCE_STATE_UNAVAILABLE
 REVIEW_ASSURANCE_UNAVAILABLE
