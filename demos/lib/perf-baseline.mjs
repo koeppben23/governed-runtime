@@ -659,7 +659,12 @@ export function summarize(flows) {
       wait_state: countDenials(group, (d) => d.class === 'wait_state'),
       unexpected: countDenials(group, (d) => d.class === 'unexpected'),
       attributed: countDenials(group, (d) => d.attribution === 'attributed'),
-      notAttributed: countDenials(group, (d) => d.attribution === NOT_OBSERVED),
+      // Controlled negatives are EXPECTED to have no recovery attribution; they
+      // are reported by class, never as unattributed cost.
+      notAttributed: countDenials(
+        group,
+        (d) => d.class !== 'controlled_negative' && d.attribution === NOT_OBSERVED,
+      ),
     },
   }));
 }

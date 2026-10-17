@@ -25,6 +25,7 @@ import {
   describeSample,
   parseDriverLog,
   renderMarkdown,
+  summarize,
 } from '../../../demos/lib/perf-baseline.mjs';
 
 const SECRET_PROMPT = 'SECRET-PROMPT-CONTENT do not leak';
@@ -541,5 +542,55 @@ describe('demo perf baseline - statistics, output, and write safety', () => {
       'utf8',
     );
     expect(source).toContain(`'${FOLLOWUP_PROMPT_SENTINEL}'`);
+  });
+});
+
+describe('summary attribution', () => {
+  const identity = {
+    model: 'test/model',
+    hostVersion: '1.19.0',
+    harnessVersion: 'demo-harness.v2',
+    contractVersion: 'contract.v2',
+    buildSha: 'b'.repeat(40),
+  };
+  function flowWith(denials: readonly Record<string, unknown>[]) {
+    return {
+      flow: 'architecture-negative',
+      identity,
+      result: 'FAILED',
+      flowDurationMs: 1,
+      reviewerMs: 1,
+      processOverheadMs: NOT_OBSERVED,
+      hostTurns: 1,
+      turns: [{ denials }],
+    };
+  }
+
+  it('reports controlled negatives by class, never as unattributed cost', () => {
+    const controlled = {
+      code: 'ARCHITECTURE_CLAIM_INVALID',
+      class: 'controlled_negative',
+      attribution: NOT_OBSERVED,
+    };
+    const unattributed = {
+      code: 'WRONG_PHASE',
+      class: 'governance_feedback',
+      attribution: NOT_OBSERVED,
+    };
+    const groups = summarize([flowWith([controlled, unattributed])]);
+    expect(groups).toHaveLength(1);
+    const group = groups[0];
+    if (!group) throw new Error('expected one summary group');
+    expect(group.denials.controlled_negative).toBe(1);
+    expect(group.denials.notAttributed).toBe(1);
+  });
+
+  it('groups only measurements with identical identity versions', () => {
+    const otherHarness = structuredClone(flowWith([]));
+    otherHarness.identity.harnessVersion = 'demo-harness.v1';
+    const otherContract = structuredClone(flowWith([]));
+    otherContract.identity.contractVersion = 'contract.v1';
+    expect(summarize([flowWith([]), otherHarness, otherContract])).toHaveLength(3);
+    expect(summarize([flowWith([]), structuredClone(flowWith([]))])).toHaveLength(1);
   });
 });
