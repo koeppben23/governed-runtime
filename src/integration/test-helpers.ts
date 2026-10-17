@@ -57,6 +57,14 @@ export function createBootableHostClient(overrides?: {
     session: {
       create: async () => ({}),
       prompt: async () => ({}),
+      // A normally concluded child stays below the reviewer step budget; tests
+      // that exercise a host stop override this with the exact limit shape.
+      messages: async () => ({
+        data: [
+          { info: { role: 'user' } },
+          { info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text' }] },
+        ],
+      }),
       ...(overrides?.session ?? {}),
     },
     app: {

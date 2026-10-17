@@ -115,6 +115,18 @@ export const REVIEW_VALIDATION_REASONS = [
   },
 
   {
+    code: 'REVIEWER_STEP_BUDGET_UNVERIFIABLE',
+    category: 'state',
+    messageTemplate:
+      'The reviewer host step-budget state could not be verified from host-recorded messages ({detail}); the review cannot be accepted or retried automatically.',
+    recoverySteps: [
+      'Required host evidence is unavailable: do NOT treat the reviewer result as a completed review and do NOT consume it as findings authority',
+      'Re-run the originating FlowGuard command to re-arm a fresh reviewer attempt on the same frozen obligation when host evidence is available again',
+      'If the host cannot expose its recorded messages, report the blocker instead of accepting an unverified review',
+    ],
+  },
+
+  {
     code: 'REVIEW_ATTEMPT_UNAVAILABLE',
     category: 'state',
     messageTemplate:

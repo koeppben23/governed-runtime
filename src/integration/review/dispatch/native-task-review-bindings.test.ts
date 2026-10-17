@@ -382,7 +382,15 @@ describe('native capture - structured follow-up timing diagnostics', () => {
       orchestratorDeps: {
         client: {
           app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
-          session: { prompt: vi.fn(async () => ({ data: { info: {} } })) },
+          session: {
+            prompt: vi.fn(async () => ({ data: { info: {} } })),
+            messages: vi.fn(async () => ({
+              data: [
+                { info: { role: 'user' } },
+                { info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text' }] },
+              ],
+            })),
+          },
         },
       },
       log: { info, warn: vi.fn() },

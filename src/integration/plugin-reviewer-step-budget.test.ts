@@ -111,17 +111,26 @@ describe('native reviewer step-budget recovery', () => {
       const healthyTranscript = {
         data: [{ info: { role: 'user' } }, step('tool-calls', true), step('stop', false)],
       };
-      const messages = vi.fn(async () => exhaustedTranscript as never);
       const structuredPrompt = vi.fn(async () => ({
         data: { info: { structured: nativeFindings(obligationId) } },
       }));
       const agents = vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] }));
+      // The generated SDK client reads `_client` through `this`; a detached
+      // `messages` method must throw, exactly like the real host client.
+      const sessionClient = {
+        _client: { transport: 'host' },
+        transcript: exhaustedTranscript as unknown,
+        async messages(this: { _client?: unknown; transcript: unknown }) {
+          if (this._client === undefined) {
+            throw new TypeError("Cannot read properties of undefined (reading '_client')");
+          }
+          return this.transcript as never;
+        },
+        prompt: structuredPrompt,
+      };
       const hooks = await FlowGuardAuditPlugin(
         mockInput(ws.tmpDir, {
-          client: {
-            app: { log: async () => {}, agents },
-            session: { prompt: structuredPrompt, messages },
-          },
+          client: { app: { log: async () => {}, agents }, session: sessionClient },
         }),
       );
 
@@ -157,7 +166,7 @@ describe('native reviewer step-budget recovery', () => {
       // The exhausted child was never serialized; the retry gets a fresh attempt.
       expect(structuredPrompt).not.toHaveBeenCalled();
 
-      messages.mockImplementation(async () => healthyTranscript as never);
+      sessionClient.transcript = healthyTranscript;
       const retryAttemptId = String((retry.reviewRetry as Record<string, unknown>).attemptId);
       await dispatchReviewerTask(hooks, sessionID, 'call-step-budget-2');
       const second = await completeReviewerTask(hooks, sessionID, 'call-step-budget-2');
@@ -172,6 +181,73 @@ describe('native reviewer step-budget recovery', () => {
       expect(
         state?.reviewAssurance?.attempts.find((a) => a.attemptId === retryAttemptId)?.status,
       ).toBe('bound');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('fails closed when required host messages evidence is unavailable', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const { sessDir, obligationId } = await seedStrictImplementationSession(
+        ws.tmpDir,
+        sessionID,
+        { maxReviewerAttempts: 2 },
+      );
+      const structuredPrompt = vi.fn(async () => ({
+        data: { info: { structured: nativeFindings(obligationId) } },
+      }));
+      const agents = vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] }));
+      const hooks = await FlowGuardAuditPlugin(
+        mockInput(ws.tmpDir, {
+          client: {
+            app: { log: async () => {}, agents },
+            session: { prompt: structuredPrompt },
+          },
+        }),
+      );
+
+      const authority = resolveReviewDispatchAuthority(
+        (await readState(sessDir))!.reviewAssurance,
+        obligationId,
+      );
+      expect(authority.kind).toBe('ok');
+      if (authority.kind !== 'ok') return;
+      await hooks['tool.execute.after']!(
+        { tool: 'flowguard_implement', sessionID, callID: 'c1', args: {} },
+        {
+          title: 'implement',
+          output: JSON.stringify({
+            phase: 'IMPL_REVIEW',
+            reviewMode: 'subagent',
+            ...reviewObligationResponseFields(authority.authority),
+            reviewDispatch: { required: true },
+          }),
+          metadata: {},
+        },
+      );
+      await dispatchReviewerTask(hooks, sessionID);
+      const completed = await completeReviewerTask(hooks, sessionID);
+      const blocked = JSON.parse(String(completed.output)) as Record<string, unknown>;
+
+      expect(blocked).toMatchObject({ error: true, code: 'REVIEWER_STEP_BUDGET_UNVERIFIABLE' });
+      expect(blocked.reviewRetry).toBeUndefined();
+      // The serialization prompt is what could turn an unknown review into a
+      // bound one; it must never run without verified host evidence.
+      expect(structuredPrompt).not.toHaveBeenCalled();
+
+      const state = await readState(sessDir);
+      expect(state?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+      expect(
+        (state?.reviewAssurance?.attempts ?? []).filter((attempt) => attempt.status === 'bound'),
+      ).toHaveLength(0);
+      expect(state?.reviewAssurance?.obligations[0]?.status).toBe('pending');
+      // The abandoned attempt is staled atomically, so a manual re-run can
+      // re-arm the same frozen obligation instead of dead-ending.
+      const attempts = state?.reviewAssurance?.attempts ?? [];
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]?.status).toBe('stale');
     } finally {
       await ws.cleanup();
     }

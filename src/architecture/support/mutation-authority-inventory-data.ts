@@ -1913,6 +1913,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.integration], critical: true },
   ),
   candidate(
+    'src/integration/review/dispatch/structured-followup.ts',
+    'Host step-budget verification and same-child structured reviewer findings serialization',
+    'base',
+    [
+      'src/integration/review/dispatch/reviewer-step-budget.test.ts',
+      'src/integration/plugin.test.ts',
+    ],
+    'F2 live: the host step-budget proof must keep the SDK session receiver and fail closed when required host evidence is unavailable. New detection authority; admission requires a profile full run meeting the per-target threshold.',
+    { source: [SOURCE.integration], critical: true },
+  ),
+  candidate(
     'src/integration/blocked-result.ts',
     'Canonical blocked tool-result envelope and bounded failure diagnostics',
     'base',

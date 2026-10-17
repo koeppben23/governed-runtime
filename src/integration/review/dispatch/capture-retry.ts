@@ -34,6 +34,7 @@ type PipelineFailureCode =
   | 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE'
   | 'REVIEW_EVIDENCE_NOT_OBSERVED'
   | 'REVIEWER_STEP_BUDGET_EXHAUSTED'
+  | 'REVIEWER_STEP_BUDGET_UNVERIFIABLE'
   | 'SUBAGENT_UNABLE_TO_REVIEW';
 
 /** Every reviewer capture/binding failure code the after-hook can receive. */
@@ -84,6 +85,7 @@ const CLASSIFICATION = {
   REVIEW_MATERIAL_INTEGRITY_FAILED: 'terminal',
   REVIEW_ASSURANCE_STATE_UNAVAILABLE: 'terminal',
   REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE: 'terminal',
+  REVIEWER_STEP_BUDGET_UNVERIFIABLE: 'terminal',
   SUBAGENT_UNABLE_TO_REVIEW: 'terminal',
 } as const satisfies Readonly<Record<ReviewerCaptureFailureCode, 'retryable' | 'terminal'>>;
 

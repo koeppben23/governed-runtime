@@ -47,13 +47,25 @@ type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']
 
 export type ReviewerStepBudgetState = 'exhausted' | 'ambiguous' | 'not_exhausted';
 
+/** Why the host step-budget state could not be established. */
+export type ReviewerStepBudgetDetail =
+  'messages_unavailable' | 'messages_error' | 'unreadable_messages' | 'limit_without_host_stop';
+
+export interface ReviewerStepBudgetDetection {
+  readonly state: ReviewerStepBudgetState;
+  readonly detail?: ReviewerStepBudgetDetail;
+}
+
 /**
  * Verify a HOST-enforced reviewer step-budget stop before the structured
  * follow-up runs. Proof requires all of: the child's assistant-step count
  * equals the configured reviewer step limit, the last host-recorded step
- * finished with `stop`, and it made no tool call. Anything unreadable or
- * mismatched is ambiguous (the caller keeps the normal capture path); only a
- * verified host stop becomes a retryable transport failure.
+ * finished with `stop`, and it made no tool call.
+ *
+ * Only a child below the limit proceeds on the normal capture path. A verified
+ * host stop is retryable on the same frozen obligation. Anything ambiguous is
+ * NEVER treated as a completed review and NEVER retried automatically: the
+ * caller fails closed because required host evidence is unavailable.
  */
 type SessionMessage = {
   readonly info?: { readonly role?: string; readonly finish?: string };
@@ -74,21 +86,29 @@ function stoppedWithoutToolCall(message: SessionMessage | undefined): boolean {
 export async function detectReviewerStepBudgetExhaustion(
   client: OrchestratorClient,
   childSessionId: string,
-): Promise<ReviewerStepBudgetState> {
-  const messages = client.session.messages;
-  if (typeof messages !== 'function') return 'ambiguous';
-  let response: Awaited<ReturnType<NonNullable<typeof messages>>>;
-  try {
-    response = await messages({ path: { id: childSessionId } });
-  } catch {
-    return 'ambiguous';
+): Promise<ReviewerStepBudgetDetection> {
+  // Keep the SDK receiver: the generated client methods read `this._client`.
+  const session = client.session;
+  if (typeof session.messages !== 'function') {
+    return { state: 'ambiguous', detail: 'messages_unavailable' };
   }
-  if (response?.error !== undefined || !Array.isArray(response?.data)) return 'ambiguous';
+  let response: Awaited<ReturnType<NonNullable<typeof session.messages>>>;
+  try {
+    response = await session.messages({ path: { id: childSessionId } });
+  } catch {
+    return { state: 'ambiguous', detail: 'messages_error' };
+  }
+  if (response?.error !== undefined) return { state: 'ambiguous', detail: 'messages_error' };
+  if (!Array.isArray(response?.data)) {
+    return { state: 'ambiguous', detail: 'unreadable_messages' };
+  }
   const assistants = assistantMessages(response.data);
   // A child below the limit still has steps to serialize findings; a child
   // above it proves the limit did not stop it.
-  if (assistants.length !== REVIEWER_STEP_LIMIT) return 'not_exhausted';
-  return stoppedWithoutToolCall(assistants.at(-1)) ? 'exhausted' : 'ambiguous';
+  if (assistants.length !== REVIEWER_STEP_LIMIT) return { state: 'not_exhausted' };
+  return stoppedWithoutToolCall(assistants.at(-1))
+    ? { state: 'exhausted' }
+    : { state: 'ambiguous', detail: 'limit_without_host_stop' };
 }
 
 function serializationPrompt(obligationId: string): string {

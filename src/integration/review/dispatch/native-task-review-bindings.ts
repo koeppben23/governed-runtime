@@ -191,13 +191,33 @@ export async function capturePreparedFindings(
     runtime.orchestratorDeps.client,
     childSessionId,
   );
-  if (stepBudget === 'exhausted') {
+  if (stepBudget.state === 'exhausted') {
     return {
       kind: 'blocked',
       code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
       reason:
         'The host stopped the reviewer at its configured step budget before structured findings ' +
         'could be captured; a fresh reviewer attempt must be re-armed on the same frozen obligation.',
+    };
+  }
+  if (stepBudget.state === 'ambiguous') {
+    // Required host evidence is unavailable. Never let the serialization prompt
+    // turn a truncated/unknown review into a completed one.
+    try {
+      runtime.log.warn('orchestrator', 'reviewer step-budget evidence unavailable', {
+        obligationId: obligation.obligationId,
+        childSessionId,
+        detail: stepBudget.detail,
+      });
+    } catch {
+      // Logging is diagnostic only; the fail-closed decision below stands.
+    }
+    return {
+      kind: 'blocked',
+      code: 'REVIEWER_STEP_BUDGET_UNVERIFIABLE',
+      reason:
+        'The host-recorded step-budget state of the reviewer child is unavailable or ambiguous ' +
+        `(${stepBudget.detail ?? 'unknown'}); the review cannot be accepted as completed.`,
     };
   }
 
