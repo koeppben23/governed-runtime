@@ -92,27 +92,60 @@ describe('live host transcript export', () => {
     expect(await fs.readFile(path.join(root, 'architecture-host-ses_parent.json'), 'utf8')).toBe(
       truncated,
     );
-    expect(
-      JSON.parse(await fs.readFile(`${retried}.receipt.json`, 'utf8')).rejectedAttempts,
-    ).toHaveLength(1);
+    const receipt = JSON.parse(await fs.readFile(`${retried}.receipt.json`, 'utf8'));
+    expect(receipt).toMatchObject({ version: 'host-transcript.v1', attempt: 2 });
+    expect(receipt.sha256).toBe(
+      createHash('sha256')
+        .update(await fs.readFile(retried))
+        .digest('hex'),
+    );
   });
 
-  it('reuses only receipt-bound bytes and preserves tampered exports on retry', async () => {
+  it('exports a continued host session fresh instead of reusing earlier bytes', async () => {
+    const firstValue = transcript();
+    await fs.writeFile(payload, JSON.stringify(firstValue));
+    const first = await capture();
+    expect(path.basename(first)).toBe('architecture-host-ses_parent.json');
+
+    const continued = transcript();
+    continued.messages.push({
+      info: { id: 'msg_2', sessionID: 'ses_parent', role: 'assistant' },
+      parts: [
+        {
+          id: 'prt_2',
+          sessionID: 'ses_parent',
+          messageID: 'msg_2',
+          type: 'text',
+          text: 'continued host session',
+        },
+      ],
+    });
+    await fs.writeFile(payload, JSON.stringify(continued));
+    const second = await capture();
+
+    expect(path.basename(second)).toBe('architecture-attempt-2-host-ses_parent.json');
+    expect(JSON.parse(await fs.readFile(second, 'utf8')).messages).toHaveLength(2);
+    expect(JSON.parse(await fs.readFile(first, 'utf8')).messages).toHaveLength(1);
+    expect(JSON.parse(await fs.readFile(`${second}.receipt.json`, 'utf8'))).toMatchObject({
+      attempt: 2,
+      sha256: createHash('sha256')
+        .update(await fs.readFile(second))
+        .digest('hex'),
+    });
+  });
+
+  it('keeps prior exports immutable and never reuses tampered bytes', async () => {
     await fs.writeFile(payload, JSON.stringify(transcript()));
     const first = await capture();
-    await fs.rm(payload);
-    expect(await capture()).toBe(first);
     await fs.appendFile(first, ' ');
-    await fs.writeFile(payload, JSON.stringify(transcript()));
     const next = await capture();
     expect(next).not.toBe(first);
     expect(await fs.readFile(first, 'utf8')).toBe(`${JSON.stringify(transcript())} `);
-    expect(
-      JSON.parse(await fs.readFile(`${next}.receipt.json`, 'utf8')).rejectedAttempts[0].reason,
-    ).toMatch(/digest/);
+    expect(JSON.parse(await fs.readFile(next, 'utf8')).messages).toHaveLength(1);
+    expect(path.basename(await capture())).toBe('architecture-attempt-3-host-ses_parent.json');
   });
 
-  it('does not reuse a valid receipt for the wrong lineage or workspace', async () => {
+  it('never falls back to an earlier export when the fresh probe fails binding', async () => {
     await fs.writeFile(payload, JSON.stringify(transcript('ses_child', 'ses_parent')));
     const first = await capture('ses_child', 'ses_parent');
     await expect(capture('ses_child', 'ses_foreign')).rejects.toThrow(/parent identity/);
@@ -130,6 +163,19 @@ describe('live host transcript export', () => {
         argsPrefix: [cli, payload, '0'],
       }),
     ).rejects.toThrow(/worktree mismatch/);
+    for (const attempt of [2, 3]) {
+      await expect(
+        fs.access(path.join(root, `architecture-attempt-${attempt}-host-ses_child.json`)),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(
+          path.join(root, `architecture-attempt-${attempt}-host-ses_child.json.receipt.json`),
+        ),
+      ).rejects.toThrow();
+    }
+    expect(path.basename(await capture('ses_child', 'ses_parent'))).toBe(
+      'architecture-attempt-4-host-ses_child.json',
+    );
     expect(JSON.parse(await fs.readFile(first, 'utf8')).info.parentID).toBe('ses_parent');
   });
 
@@ -300,21 +346,35 @@ describe('live host transcript export', () => {
     } = { name: 'architecture', result: 'FAILED' };
     const session = { sessionId: 'ses_parent', workspace: root };
     await expect(runner.captureProvenance(flow, session)).rejects.toThrow(/ses_b/);
-    const partial = structuredClone(flow.transcripts);
-    expect(partial?.reviewers).toHaveLength(2);
+    expect(flow.transcripts).toMatchObject({
+      parent: { file: 'architecture-host-ses_parent.json' },
+      reviewers: [
+        { file: 'architecture-host-ses_a.json' },
+        { file: 'architecture-host-ses_c.json' },
+      ],
+    });
     failB = false;
     await runner.captureProvenance(flow, session);
     expect(flow.result).toBe('FAILED');
-    expect(flow.transcripts?.parent).toEqual(partial?.parent);
-    expect(flow.transcripts?.reviewers).toEqual([
-      partial?.reviewers[0],
-      expect.objectContaining({
-        sessionId: 'ses_b',
-        file: 'architecture-attempt-2-host-ses_b.json',
-      }),
-      partial?.reviewers[1],
-    ]);
+    // A retry re-exports every target so the manifest can never pair a stale
+    // parent with a fresh child. Earlier exports remain on disk untouched.
+    expect(flow.transcripts).toMatchObject({
+      parent: { file: 'architecture-attempt-2-host-ses_parent.json' },
+      reviewers: [
+        { file: 'architecture-attempt-2-host-ses_a.json' },
+        { file: 'architecture-attempt-2-host-ses_b.json' },
+        { file: 'architecture-attempt-2-host-ses_c.json' },
+      ],
+    });
     expect(flow.transcriptErrors).toEqual([]);
+    for (const sessionId of ['ses_parent', 'ses_a', 'ses_b', 'ses_c']) {
+      await expect(
+        fs.access(path.join(root, `architecture-host-${sessionId}.json`)),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(path.join(root, `architecture-attempt-2-host-${sessionId}.json`)),
+      ).resolves.toBeUndefined();
+    }
     expect(await fs.readFile(path.join(root, 'architecture-host-ses_b.json'), 'utf8')).toBe(
       '{truncated',
     );

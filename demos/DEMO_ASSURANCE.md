@@ -18,11 +18,14 @@ reviewer prompt context and installed Task-return guidance.
 - Transcript capture attempts every parent/reviewer target independently and keeps
   a partial `transcripts` manifest, current `transcriptErrors` and cumulative
   `transcriptCaptureAttempts`. PASS still requires all targets to validate.
-  Successful exports receive a SHA-256 receipt. Resume revalidates those bytes,
-  session, parent and canonical workspace before reuse. Missing/invalid receipts,
-  truncated JSON and modified bytes are retained; retries use numbered attempt
-  paths and record rejected predecessors in the new receipt. Failure-path capture
-  never changes the original FAILED/NOT_VERIFIED result.
+  Successful exports receive a SHA-256 receipt, but receipts are audit records,
+  not reuse authority: byte integrity, session, parent and workspace validation
+  cannot prove the host session has not continued since that export. Every
+  capture attempt therefore re-exports every target to a new numbered path, and
+  the manifest records only those fresh exports. Earlier exports (including
+  truncated JSON and modified bytes) remain on disk untouched as immutable
+  attempt evidence. Failure-path capture never changes the original
+  FAILED/NOT_VERIFIED result.
 - `recoveryObservations` separates `observed` denials and
   `pending_verification` tool-only successes/re-arm authorizations from
   `recoveredDenials` with `status: proven`. A fresh re-arm is not a completed review.

@@ -16,28 +16,18 @@ function transcriptDigest(content) {
   return createHash('sha256').update(content).digest('hex');
 }
 
-function captureTarget(evidenceDir, label, binding) {
-  const rejectedAttempts = [];
+/**
+ * Select the next immutable attempt path. A prior export can be byte-valid,
+ * correctly bound and still stale because the host session may have continued
+ * after it was written, so it is never reused as the current export.
+ */
+function nextCaptureTarget(evidenceDir, label, sessionId) {
   for (let attempt = 1; ; attempt += 1) {
     const prefix = attempt === 1 ? label : `${label}-attempt-${attempt}`;
-    const file = path.join(evidenceDir, `${prefix}-host-${binding.sessionId}.json`);
+    const file = path.join(evidenceDir, `${prefix}-host-${sessionId}.json`);
     const receiptFile = `${file}.receipt.json`;
     if (!fs.existsSync(file) && !fs.existsSync(receiptFile)) {
-      return { file, receiptFile, rejectedAttempts, reused: false };
-    }
-    try {
-      const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
-      const content = fs.readFileSync(file);
-      if (
-        receipt.version !== 'host-transcript.v1' ||
-        receipt.sha256 !== transcriptDigest(content)
-      ) {
-        throw new TranscriptCaptureError('transcript receipt digest or version mismatch');
-      }
-      validateHostTranscript(content.toString('utf8'), binding);
-      return { file, receiptFile, rejectedAttempts, reused: true };
-    } catch (error) {
-      rejectedAttempts.push({ file: path.basename(file), reason: error.message });
+      return { file, receiptFile, attempt };
     }
   }
 }
@@ -134,8 +124,11 @@ function executeExport(command, args, { workspace, env, stdoutFd, timeoutMs }) {
 
 /**
  * Capture stdout directly to a file descriptor, avoiding an undrained pipe when
- * the host exits after a large write. Preserve failed bytes for diagnosis and
- * return a file only after process, JSON, structure and binding validation.
+ * the host exits after a large write. Every call performs a fresh export to the
+ * next numbered path; earlier exports stay untouched as attempt evidence. This
+ * is required because a valid receipt protects byte integrity, not freshness:
+ * the host session may have recorded more messages since that export. Return a
+ * file only after process, JSON, structure and binding validation.
  */
 export async function exportHostTranscript({
   label,
@@ -157,13 +150,7 @@ export async function exportHostTranscript({
       'host transcript label and session ID must be safe filename components',
     );
   }
-  const binding = { sessionId, workspace, parentSessionId };
-  const { file, receiptFile, rejectedAttempts, reused } = captureTarget(
-    evidenceDir,
-    label,
-    binding,
-  );
-  if (reused) return file;
+  const { file, receiptFile, attempt } = nextCaptureTarget(evidenceDir, label, sessionId);
   const stdoutFd = fs.openSync(file, 'wx');
   let result;
   try {
@@ -192,8 +179,8 @@ export async function exportHostTranscript({
     JSON.stringify(
       {
         version: 'host-transcript.v1',
+        attempt,
         sha256: transcriptDigest(fs.readFileSync(file)),
-        rejectedAttempts,
       },
       null,
       2,

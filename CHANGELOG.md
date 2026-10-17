@@ -163,9 +163,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in native reviewer prompts; route every Task return through terminal/retry/completed
   handling before requiring completion evidence. Standalone peer-review cards omit
   identical duplicate presentation Markdown while preserving distinct glyph variants.
-- Resume live-demo transcript capture per target using validated SHA-256 receipts,
-  retain successful partial manifests and failed attempt bytes, and continue other
-  reviewer exports after a target fails. Harness v2 separates observed/pending recovery
+- Re-export each live-demo transcript target on every capture attempt, keep earlier
+  exports as immutable numbered attempt evidence, retain successful partial manifests
+  and failed bytes, and continue other reviewer exports after a target fails. Receipts
+  record integrity but are never reuse authority, because a continued host session
+  can leave older bytes valid yet stale. Harness v2 separates observed/pending recovery
   from proven recovery and attributes costs only to bound occurrences without charging
   overlapping spans or shared recovery turns twice. Export metrics read digest-bound
   manifest entries. See `demos/DEMO_ASSURANCE.md` for the evidence limits.
