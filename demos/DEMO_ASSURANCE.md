@@ -5,6 +5,21 @@ This document records the forensic review of the live-demo harness beginning on
 The product ProofGraph/gate semantics are untouched. The v2 follow-up also fixes
 reviewer prompt context and installed Task-return guidance.
 
+## Re-arm lifecycle telemetry (harness v5)
+
+- A structured re-arm is authorized exactly once per freshly minted
+  `dispatch_rearm` attempt. The persisted lifecycle is explicit:
+  `rearm_authorized` (created), `rearm_proven` (bound), or
+  `rearm_attempt_failed` (the authorized attempt was staled later).
+- An attempt that was fresh at dispatch and failed afterwards is not
+  retroactively "spent/unknown": the failed record keeps its
+  `childSessionId`, the denial that ended the attempt (`failureCode`), the
+  attempt/obligation capture state, and the step. Unknown attempts, foreign
+  obligations, non-re-arm origins, and replayed envelopes remain stale
+  (`retryHints`) and never credit recovery.
+- Terminal blocks remain recorded on the flow record; a failed re-arm does not
+  hide them.
+
 ## Ticket recovery and audit witnesses (harness v4)
 
 - The `71690ff6` live validation reproduced a corrected
@@ -28,7 +43,7 @@ reviewer prompt context and installed Task-return guidance.
   workflow gates retain their canonical authority. The regression tests exercise
   real audit files through `Runner.turn` with a mocked host process; they do not
   constitute a new provider-backed live validation.
-- New measurements record `demo-harness.v4`. Keep v3 and earlier measurements
+- New measurements record `demo-harness.v5`. Keep v4 and earlier measurements
   separate and preserve their original evidence roots. After installing this
   harness, re-run affected flows in a fresh root; do not relabel old results.
 

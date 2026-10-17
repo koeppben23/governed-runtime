@@ -414,15 +414,77 @@ export function planReviewCorrectionProven(state) {
  * review). A retryable envelope that references a spent/stale attempt (observed
  * live) is an observation only and never proves recovery.
  */
-export function freshRearmWitness(event, state) {
+/**
+ * Classify one authorized retry envelope against the persisted re-arm lineage.
+ * A re-arm is authorized exactly once per freshly minted `dispatch_rearm`
+ * attempt. If that attempt is stale by the time the turn ends, it was still a
+ * valid authorization; it FAILED later. Only unknown attempts, foreign
+ * obligations, non-rearm origins, or replayed envelopes are stale/unknown.
+ */
+export function classifyRearmEvent(event, state, seenAttemptIds) {
   const assurance = state?.reviewAssurance;
   const obligation = (assurance?.obligations ?? []).find(
     (item) => item.obligationId === event.obligationId,
   );
-  if (!obligation) return false;
+  if (!obligation) return { kind: 'stale', reason: 'obligation_unknown' };
   const attempt = (assurance?.attempts ?? []).find((item) => item.attemptId === event.attemptId);
-  if (!attempt || attempt.obligationId !== event.obligationId) return false;
-  return attempt.status === 'created' || attempt.status === 'bound';
+  if (!attempt || attempt.obligationId !== event.obligationId) {
+    return { kind: 'stale', reason: 'attempt_unknown' };
+  }
+  if (attempt.origin?.kind !== 'dispatch_rearm') {
+    return { kind: 'stale', reason: 'not_rearm_origin' };
+  }
+  if (seenAttemptIds?.has(event.attemptId) === true) {
+    return { kind: 'stale', reason: 'rearm_already_observed' };
+  }
+  seenAttemptIds?.add(event.attemptId);
+  return { kind: 'authorized', attempt };
+}
+
+/**
+ * Advance one structured re-arm observation to `rearm_proven` (attempt bound)
+ * or `rearm_attempt_failed` (attempt staled after its authorization). The
+ * failed record keeps the child session, the denial that ended the attempt, and
+ * the capture/obligation state. Returns true when it changed the observation.
+ */
+export function settleRearmObservation(observation, state, options = {}) {
+  const attempts = state?.reviewAssurance?.attempts ?? [];
+  const obligations = state?.reviewAssurance?.obligations ?? [];
+  const events = Array.isArray(observation.events) ? observation.events : [];
+  const denials = Array.isArray(options.denials) ? options.denials : [];
+  let changed = false;
+  for (const event of events) {
+    const attempt = attempts.find(
+      (item) =>
+        item.attemptId === event.attemptId && item.obligationId === observation.obligationId,
+    );
+    if (!attempt) continue;
+    if (attempt.status === 'bound') {
+      observation.status = 'proven';
+      observation.lifecycle = 'rearm_proven';
+      observation.provenStep = options.label;
+      observation.provenBy = 'attempt_bound';
+      changed = true;
+      continue;
+    }
+    if (attempt.status !== 'stale') continue;
+    const candidates =
+      observation.step === options.step
+        ? denials.filter(
+            (denial) => denial.index > (event.index ?? -1) && denial.code !== event.code,
+          )
+        : denials.filter((denial) => denial.code !== event.code);
+    const obligation = obligations.find((item) => item.obligationId === observation.obligationId);
+    observation.status = 'failed';
+    observation.lifecycle = 'rearm_attempt_failed';
+    observation.failedStep = options.label;
+    observation.failureCode = candidates[0]?.code ?? obligation?.blockedCode ?? null;
+    observation.childSessionId = attempt.childSessionId ?? observation.childSessionId ?? null;
+    observation.captureStatus = 'attempt_stale';
+    observation.obligationStatus = obligation?.status ?? null;
+    changed = true;
+  }
+  return changed;
 }
 
 /**
@@ -818,14 +880,16 @@ export class Runner {
     } catch {
       rearmState = null;
     }
-    const retryRecovered = [
-      ...new Set(
-        allRetryEvents
-          .filter((event) => freshRearmWitness(event, rearmState))
-          .map((event) => event.code),
-      ),
-    ];
-    const staleRearms = allRetryEvents.filter((event) => !freshRearmWitness(event, rearmState));
+    session.rearmAttemptsSeen = session.rearmAttemptsSeen ?? new Set();
+    const authorizedRearms = [];
+    const staleRearms = [];
+    for (const event of allRetryEvents) {
+      const classified = classifyRearmEvent(event, rearmState, session.rearmAttemptsSeen);
+      if (classified.kind === 'authorized')
+        authorizedRearms.push({ event, attempt: classified.attempt });
+      else staleRearms.push(event);
+    }
+    const retryRecovered = [...new Set(authorizedRearms.map(({ event }) => event.code))];
     const retryHints = captureRetryHints(result.stdout);
     if (staleRearms.length > 0) {
       session.retryHints = [
@@ -895,19 +959,26 @@ export class Runner {
           `[${resolvedLaterSuccess.join(', ')}]; the next required step must prove a persisted transition`,
       );
     }
-    if (retryRecovered.length > 0) {
+    for (const { event, attempt } of authorizedRearms) {
+      const bound = attempt.status === 'bound';
       session.recoveryObservations.push({
-        status: 'pending_verification',
+        status: bound ? 'proven' : 'pending_verification',
+        lifecycle: bound ? 'rearm_proven' : 'rearm_authorized',
         step: label,
-        codes: retryRecovered,
+        codes: [event.code],
         evidence: 'structured_rearm',
-        events: allRetryEvents.filter((event) => freshRearmWitness(event, rearmState)),
+        obligationId: event.obligationId,
+        attemptId: event.attemptId,
+        childSessionId: attempt.childSessionId ?? null,
+        events: [event],
+        ...(bound ? { provenStep: label, provenBy: 'attempt_bound' } : {}),
       });
       this.log(
-        `${label}: fresh structured re-arm authorized [${retryRecovered.join(', ')}]; review acceptance still requires verification`,
+        `${label}: structured re-arm authorized [${event.code}] on ${event.obligationId} ` +
+          `(attempt ${event.attemptId}); ${bound ? 'attempt bound' : 'review acceptance still requires verification'}`,
       );
     }
-    this.settleStructuredRearms(session, label);
+    this.settleStructuredRearms(session, label, toolDenialEvents(result.stdout));
     let pendingCodes = [
       ...new Set([
         ...recoverable.filter(
@@ -1158,8 +1229,8 @@ export class Runner {
     session.awaitingRecovery = null;
   }
 
-  /** Pending structured re-arms become proven only when their attempt is bound. */
-  settleStructuredRearms(session, label) {
+  /** Advance structured re-arms to proven or failed from the persisted attempt. */
+  settleStructuredRearms(session, label, denials = []) {
     const pending = (session.recoveryObservations ?? []).filter(
       (observation) =>
         observation.evidence === 'structured_rearm' &&
@@ -1172,19 +1243,8 @@ export class Runner {
     } catch {
       return;
     }
-    const attempts = state.reviewAssurance?.attempts ?? [];
     for (const observation of pending) {
-      const events = Array.isArray(observation.events) ? observation.events : [];
-      if (events.length === 0) continue;
-      const bound = events.every((event) =>
-        attempts.some(
-          (attempt) => attempt.attemptId === event.attemptId && attempt.status === 'bound',
-        ),
-      );
-      if (!bound) continue;
-      observation.status = 'proven';
-      observation.provenStep = label;
-      observation.provenBy = 'attempt_bound';
+      settleRearmObservation(observation, state, { label, step: label, denials });
     }
   }
 

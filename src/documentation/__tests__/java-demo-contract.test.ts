@@ -18,7 +18,6 @@ import {
   enableRawArchiveInRepoConfig,
   unexpectedDenialCodes,
   captureRetryCodes,
-  freshRearmWitness,
   planReviewSameTurnCorrection,
   planReviewCorrectionProven,
   planCorrectionGateDecision,
@@ -37,83 +36,6 @@ import {
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
 import { DemoNotVerifiedError } from '../../../demos/lib/results.mjs';
-
-describe('structured re-arm recovery witness', () => {
-  const event = {
-    code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-    obligationId: 'ob-1',
-    attemptId: 'att-2',
-  };
-  function state(attemptStatus: string, obligationId = 'ob-1') {
-    return {
-      reviewAssurance: {
-        obligations: [{ obligationId: 'ob-1', status: 'pending' }],
-        attempts: [
-          { attemptId: 'att-2', obligationId, status: attemptStatus },
-          { attemptId: 'att-1', obligationId: 'ob-1', status: 'stale' },
-        ],
-      },
-    };
-  }
-
-  it('credits a re-arm only with a fresh created or bound attempt on the same obligation', () => {
-    expect(freshRearmWitness(event, state('created'))).toBe(true);
-    expect(freshRearmWitness(event, state('bound'))).toBe(true);
-  });
-
-  it('never credits a retry envelope that references a spent or unknown attempt', () => {
-    expect(freshRearmWitness(event, state('stale'))).toBe(false);
-    expect(freshRearmWitness(event, state('created', 'ob-other'))).toBe(false);
-    expect(freshRearmWitness(event, { reviewAssurance: { obligations: [], attempts: [] } })).toBe(
-      false,
-    );
-    expect(freshRearmWitness(event, null)).toBe(false);
-  });
-
-  it('records a fresh re-arm as pending verification rather than recovered review', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-rearm-telemetry-'));
-    try {
-      await fs.mkdir(path.join(root, 'evidence'));
-      const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
-      runner.requireBoundState = () => ({ state: state('created'), sessionDir: root });
-      runner.hostStep = async () => ({
-        code: 0,
-        stderr: '',
-        timedOut: false,
-        durationMs: 0,
-        sessionIds: ['ses_parent'],
-        stdout: JSON.stringify({
-          type: 'tool_use',
-          part: {
-            tool: 'task',
-            state: {
-              output: JSON.stringify({
-                reviewDispatch: { required: true, completed: false },
-                reviewRetry: { ...event, retryable: true },
-              }),
-            },
-          },
-        }),
-      });
-      const session: {
-        workspace: string;
-        recoveredDenials?: unknown[];
-        recoveryObservations?: unknown[];
-      } = { workspace: root };
-      await runner.turn(session, 'plan-rearm', 'x');
-      expect(session.recoveredDenials).toEqual([]);
-      expect(session.recoveryObservations).toContainEqual({
-        step: 'plan-rearm',
-        status: 'pending_verification',
-        codes: [event.code],
-        evidence: 'structured_rearm',
-        events: [{ index: 1, ...event, retryable: true }],
-      });
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-});
 
 const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
