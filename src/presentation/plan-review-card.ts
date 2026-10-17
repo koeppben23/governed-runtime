@@ -151,6 +151,25 @@ function buildPlanWarningNotices(input: PlanReviewCardInput): PresentationSectio
       details: [],
     });
   }
+  // An exhausted review never adopts the accompanying revision: the reviewed
+  // digest equals the current digest, and the shown plan is the approvable one.
+  if (
+    input.forcedConvergence &&
+    input.reviewedDigest !== undefined &&
+    input.reviewedDigest === input.currentPlanDigest
+  ) {
+    notices.push({
+      kind: 'notice',
+      level: 'warning',
+      message: 'The revision submitted with the final verdict was NOT adopted.',
+      additionalMessages: [
+        'Only the independently reviewed plan shown here is current and approvable.',
+        'Use /override-approve to accept it despite the open findings, /request-changes to ' +
+          'start a new revision, or /reject to decline it.',
+      ],
+      details: [],
+    });
+  }
   if (
     input.reviewedDigest &&
     input.currentPlanDigest &&

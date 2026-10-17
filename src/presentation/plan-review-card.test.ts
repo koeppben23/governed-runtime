@@ -187,6 +187,21 @@ describe('buildPlanReviewCard', () => {
     expect(card).toContain('**Reviewed obligation:** `00000000-0000-4000-8000-000000000001`');
   });
 
+  it('warns that the exhausting revision was not adopted', () => {
+    const card = buildPlanReviewCard({
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      directive: planDecisionDirective,
+      forcedConvergence: true,
+      reviewedDigest: 'reviewed-digest',
+      currentPlanDigest: 'reviewed-digest',
+    });
+    expect(card).toContain('The revision submitted with the final verdict was NOT adopted.');
+    expect(card).toContain('Only the independently reviewed plan shown here is current');
+    expect(card).toContain('/override-approve');
+  });
+
   it('warns explicitly when the displayed findings apply to a prior plan revision', () => {
     const card = buildPlanReviewCard({
       planText: 'Plan.',

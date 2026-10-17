@@ -41,6 +41,44 @@ import {
   refineAssuranceInvocationDispatchLinkage,
 } from './evidence-review-ledger-refinements.js';
 
+/**
+ * Disposition of a revision submitted together with the `changes_requested`
+ * verdict that exhausts the review budget. The un-reviewed draft is NOT
+ * adopted: the last independently reviewed artifact remains the current
+ * authority, and only that artifact may be approved (with or without override).
+ */
+export interface DiscardedReviewDraft {
+  readonly reason: 'review_exhausted';
+  readonly note: string;
+  readonly recovery: readonly string[];
+}
+
+/**
+ * True when a `changes_requested` verdict consumes the last allowed review
+ * iteration: the accompanying revision was never reviewed and must not become
+ * the current approval authority.
+ */
+export function reviewExhaustsBudget(
+  verdict: string | undefined,
+  iteration: number,
+  maxIterations: number,
+): boolean {
+  return verdict === 'changes_requested' && iteration + 1 >= maxIterations;
+}
+
+/** Canonical user-facing disposition for a discarded exhaustion draft. */
+export const DISCARDED_REVIEW_DRAFT: DiscardedReviewDraft = Object.freeze({
+  reason: 'review_exhausted' as const,
+  note:
+    'The revision submitted with this verdict was NOT adopted. Only the last independently ' +
+    'reviewed artifact is current and approvable.',
+  recovery: Object.freeze([
+    'Approve the reviewed artifact despite its open findings: /override-approve',
+    'Start a new revision: /request-changes',
+    'Decline the reviewed artifact: /reject',
+  ]),
+});
+
 export const ReviewAttemptStatusValues = ['created', 'rejected', 'bound', 'stale'] as const;
 
 const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);

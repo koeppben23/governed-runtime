@@ -81,6 +81,8 @@ export type AdrRevision = {
   currentAdr: NonNullable<SessionState['architecture']>;
   prevDigest: string;
   revisionDelta: RevisionDelta;
+  /** Present when the submitted revision was not adopted (review exhaustion). */
+  discardedDraft?: import('../../../state/evidence-review.js').DiscardedReviewDraft;
 };
 
 export type AdvancedArchitectureState = Extract<AutoAdvanceResult, { kind: 'advanced' }>;
@@ -138,7 +140,11 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
   const status =
     completion === 'review_exhausted'
       ? `${reviewLabel} reached the iteration limit (${iteration}/${session.policy.reviewBudget.architecture}) ` +
-        'without reviewer approval. Human approval is required.'
+        'without reviewer approval.' +
+        (revision.discardedDraft !== undefined
+          ? ' The submitted revision was NOT adopted; the last independently reviewed ADR remains current.'
+          : '') +
+        ' Human approval is required.'
       : `${reviewLabel} accepted the ADR at iteration ${iteration}. Human approval is required.`;
   const resp: Record<string, unknown> = {
     phase: advanced.state.phase,
@@ -146,6 +152,9 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
     selfReviewIteration: iteration,
+    ...(revision.discardedDraft !== undefined
+      ? { revisionNotAdopted: revision.discardedDraft }
+      : {}),
     _audit: { transitions: advanced.transitions },
   };
   attachLatestReview(resp, review, iteration);
@@ -233,6 +242,7 @@ async function attachReviewCard(input: {
     adrDigest: revision.currentAdr.digest,
     adrText: revision.currentAdr.adrText,
     iteration,
+    ...(revision.discardedDraft !== undefined ? { revisionNotAdopted: true } : {}),
     ...(typeof latestReview?.overallVerdict === 'string'
       ? { overallVerdict: latestReview.overallVerdict }
       : {}),
