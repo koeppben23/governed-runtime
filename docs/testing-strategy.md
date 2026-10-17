@@ -170,7 +170,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 135 security-critical
+The `mutation` job runs StrykerJS mutation testing against 136 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -357,7 +357,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-135 files are mutated in the base profile, covering the fail-closed governance
+136 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -382,7 +382,7 @@ above is the classification authority):
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                               | 6       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
 | v11 admission candidates (approval, claims, policy, paths, report isolation)                                                                                                                      | 12      | full-profile admission pending  |
-| **Total**                                                                                                                                                                                         | **135** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                                         | **136** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -583,6 +583,10 @@ capture/binding and settlement audit intents),
 The 2026-10-10 Run-10 diagnostics work additionally stages
 `src/integration/review/dispatch/native-task-review.ts` (native reviewer Task
 transport and capture-failure block composition).
+The 2026-10-17 F2 step-budget fix additionally stages
+`src/integration/review/dispatch/structured-followup.ts` (host step-budget
+verification from recorded session messages and same-child findings
+serialization).
 They carry no provenance until a freeze-commit full run meets the per-target
 threshold; a targeted diagnostic run is not admission evidence.
 

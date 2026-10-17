@@ -881,7 +881,15 @@ describe('integration/plugin', () => {
           directory: ws.tmpDir,
           client: {
             app: { log: async () => {}, agents },
-            session: { prompt: structuredPrompt },
+            session: {
+              prompt: structuredPrompt,
+              messages: async () => ({
+                data: [
+                  { info: { role: 'user' } },
+                  { info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text' }] },
+                ],
+              }),
+            },
           },
         }),
       );

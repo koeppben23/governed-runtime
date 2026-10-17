@@ -159,6 +159,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer step-budget detection reaches the real host client (F2).** The SDK
+  session's `messages()` method was called without its receiver, so the pinned
+  host path could never establish a host-enforced step stop and silently ran the
+  structured serialization follow-up against a truncated review. The method is
+  now invoked on its session object (keeping `this._client`), and the real
+  ten-step child transcript is a regression fixture.
+- **Unverifiable host step-budget evidence fails closed.** `exhausted`,
+  `not_exhausted`, and `ambiguous` remain distinct; only `not_exhausted`
+  proceeds to serialization. A verified host stop re-arms a fresh attempt on the
+  same frozen obligation and never binds an `accept`. An ambiguous state is now
+  terminal (`REVIEWER_STEP_BUDGET_UNVERIFIABLE`): it is logged, never retried
+  automatically, never serialized, and never consumed as reviewer findings; the
+  demo harness classifies it as `NOT_VERIFIED`. Reason register: 339/126.
+
 - **Demo harness v4 binds ticket recovery and audited refusals end to end.**
   Both `TICKET_SOURCE_CONFLICT` and `TICKET_SOURCE_ORIGIN_CONFLICT` now require
   their observed code in the bound adoption audit sequence, fixing the live

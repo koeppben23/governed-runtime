@@ -143,6 +143,7 @@
     "src/integration/review/obligations/assurance.ts",
     "src/integration/tools/implementation-review-activation.ts",
     "src/integration/review/dispatch/native-task-review-bindings.ts",
+    "src/integration/review/dispatch/structured-followup.ts",
     "src/integration/blocked-result.ts",
     "src/integration/status/status.ts",
     "src/integration/review/dispatch/native-task-review.ts"
