@@ -1162,8 +1162,12 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
-      // The exhausted gate accepts only the explicit override intent; a plain
-      // approve must fail closed before any evidence resolution.
+      // A self-initiated call records nothing and names the user's override path.
+      const selfDecision = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Self-initiated' }, ctx),
+      );
+      expect(selfDecision.code).toBe('HUMAN_DECISION_REQUIRED');
+      expect(String(selfDecision.agentInstruction)).toContain('/override-approve');
       recordUserDecision('approve');
       const decisionResult = parseToolResult(
         await decision.execute(

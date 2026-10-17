@@ -368,6 +368,12 @@ export const NEXT_STEP_RECOVERY_CODES = new Set(['CONTINUE_AMBIGUOUS']);
  */
 export const PLAN_REVIEW_CORRECTION_CODE = 'PLAN_REVIEW_IN_PROGRESS';
 
+/** Ticket source-shape denials whose correction is proven by ticket adoption. */
+export const TICKET_SOURCE_CONFLICT_CODES = new Set([
+  'TICKET_SOURCE_CONFLICT',
+  'TICKET_SOURCE_ORIGIN_CONFLICT',
+]);
+
 /**
  * Bounded resume budget for an author that ends the /implement turn at
  * IMPL_REVIEW without the reviewer dispatch. Each resume is a canonical
@@ -926,13 +932,13 @@ export class Runner {
     // ticket identity and the audit sequence (denial -> successful ticket call
     // with a transition -> READY/TICKET selection). A bare later tool success
     // without that witness stays an observation and cannot settle the denial.
-    if (pendingCodes.includes('TICKET_SOURCE_CONFLICT')) {
+    if (pendingCodes.some((code) => TICKET_SOURCE_CONFLICT_CODES.has(code))) {
       const snapshot = this.requireBoundState(session);
       const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
       const deniedTools = [
         ...new Set(
           toolDenialEvents(result.stdout)
-            .filter((event) => event.code === 'TICKET_SOURCE_CONFLICT')
+            .filter((event) => TICKET_SOURCE_CONFLICT_CODES.has(event.code))
             .map((event) => event.tool),
         ),
       ];
@@ -952,14 +958,16 @@ export class Runner {
         session.recoveredDenials.push({
           status: 'proven',
           step: label,
-          codes: ['TICKET_SOURCE_CONFLICT'],
+          codes: [...new Set(toolDenialCodes(result.stdout))].filter((code) =>
+            TICKET_SOURCE_CONFLICT_CODES.has(code),
+          ),
           evidence: 'ticket_adoption',
           expected,
         });
         this.log(
           `${label}: recovered via bound ticket adoption (digest ${expected.digest.slice(0, 12)}…)`,
         );
-        pendingCodes = pendingCodes.filter((code) => code !== 'TICKET_SOURCE_CONFLICT');
+        pendingCodes = pendingCodes.filter((code) => !TICKET_SOURCE_CONFLICT_CODES.has(code));
       }
     }
     if (pendingCodes.length > 0) {

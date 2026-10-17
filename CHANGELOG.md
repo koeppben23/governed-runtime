@@ -159,6 +159,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The ticket input-origin conflict has its own message (F8).** `ticketSource`
+  reads the ticket from the worktree; an explicit non-workspace `inputOrigin`
+  alongside it is now rejected as `TICKET_SOURCE_ORIGIN_CONFLICT` with a message
+  that names the actual conflict (and the `text` conflict keeps its own
+  `TICKET_SOURCE_CONFLICT` message). The demo harness treats the new code as the
+  same recoverable ticket-source family, still settled only by a bound ticket
+  adoption witness.
+- **The agent can no longer mistake itself for the user at a decision gate
+  (F9).** The shared review-loop template states that `flowguard_decision`
+  records the USER's decision and must never be called by the agent; the user
+  invokes it only through `/approve`, `/request-changes`, `/reject`, or
+  `/override-approve`. A self-initiated call is refused with
+  `HUMAN_DECISION_REQUIRED` plus an `agentInstruction` that names the user
+  command — and at an exhausted review gate names `/override-approve` with a
+  durable rationale. Template hashes regenerated; no gate or validator change.
+
 - **Stale reviewer attempts keep their child provenance (F6).** The atomic
   abandon/re-arm mutation now writes the failing reviewer child session onto the
   staled attempt when the native Task release already bound it. Exact

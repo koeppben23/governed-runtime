@@ -26,6 +26,7 @@ import type { SessionState } from '../../../state/schema.js';
 import type { RailResult } from '../../../rails/types.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import { TOOL_FLOWGUARD_DECISION } from '../../tool-names.js';
+import { requiresGovernanceOverride } from '../../../machine/workflow-directive.js';
 
 // Rails
 import { executeReviewDecision } from '../../../rails/review-decision.js';
@@ -54,10 +55,22 @@ import {
 // flowguard_decision — Human Verdict at User Gates
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The agent never owns a user gate. When it calls the decision tool on its own,
+ * the refusal names the command the USER must run and, at an exhausted review
+ * gate, the only admissible override path.
+ */
+function decisionOriginAgentInstruction(state: SessionState): string {
+  return requiresGovernanceOverride(state)
+    ? 'Do not call flowguard_decision yourself. The independent review is exhausted: present the governance override option and ask the user to run /override-approve with a durable rationale, or /request-changes to revise the artifact.'
+    : 'Do not call flowguard_decision yourself. Ask the user to run /approve, /request-changes, or /reject; only the user may decide this gate.';
+}
+
 function requireHumanDecisionIntent(input: {
   readonly sessionId: string;
   readonly verdict: ReviewVerdict;
   readonly requireHumanGates: boolean;
+  readonly state: SessionState;
 }): string | null {
   if (!input.requireHumanGates) return null;
   // Non-destructive gate: a valid intent is left in place so that a decision
@@ -70,9 +83,11 @@ function requireHumanDecisionIntent(input: {
     verdict: input.verdict,
   });
   if (gate.ok) return null;
-  return formatBlocked('HUMAN_DECISION_REQUIRED', {
-    reason: gate.reason,
-  });
+  return formatBlocked(
+    'HUMAN_DECISION_REQUIRED',
+    { reason: gate.reason },
+    { agentInstruction: decisionOriginAgentInstruction(input.state) },
+  );
 }
 
 type DecisionFinalization = Awaited<ReturnType<typeof finalizeDecision>>;
@@ -281,6 +296,7 @@ export const decision: ToolDefinition = {
         sessionId: context.sessionID,
         verdict: args.verdict,
         requireHumanGates,
+        state: probe.state,
       });
       if (humanOriginBlocked) {
         getAdapterLogger().warn('tool', 'decision_origin_missing', {

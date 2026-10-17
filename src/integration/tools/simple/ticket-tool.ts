@@ -183,7 +183,7 @@ export const ticket: ToolDefinition = {
           context,
           async ({ worktree, sessDir, state, ctx }): Promise<ToolResult> => {
             const resolved = resolveCanonicalTicketSource(worktree, args);
-            if (resolved.kind === 'blocked') return formatBlocked(resolved.code);
+            if (resolved.kind === 'blocked') return formatBlocked(resolved.code, resolved.vars);
             // Hosts that do not apply the declared arg defaults deliver
             // `source` as undefined; resolve the documented default here so the
             // value never reaches state validation unset.
@@ -247,7 +247,7 @@ type ResolvedTicketSource =
       readonly inputOrigin: InputOrigin | undefined;
       readonly references: ExternalReference[] | undefined;
     }
-  | { readonly kind: 'blocked'; readonly code: string };
+  | { readonly kind: 'blocked'; readonly code: string; readonly vars?: Record<string, string> };
 
 /**
  * Resolve the exactly-one canonical content source. Mutual exclusivity is
@@ -285,7 +285,11 @@ function adoptRepositoryTicketFile(worktree: string, args: TicketArgs): Resolved
   const ticketSource = args.ticketSource;
   if (ticketSource === undefined) return { kind: 'blocked', code: 'EMPTY_TICKET' };
   if (args.inputOrigin !== undefined && args.inputOrigin !== 'workspace') {
-    return { kind: 'blocked', code: 'TICKET_SOURCE_CONFLICT' };
+    return {
+      kind: 'blocked',
+      code: 'TICKET_SOURCE_ORIGIN_CONFLICT',
+      vars: { inputOrigin: args.inputOrigin },
+    };
   }
   const adopted = readRepositoryTicketFile(worktree, ticketSource.path);
   if (adopted.kind === 'error') {
