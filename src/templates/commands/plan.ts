@@ -148,6 +148,7 @@ ${SHARED_REVIEW_LOOP({
 - Declare structured \`claims\` on every plan submission and revision; a plan that asserts critical behavior without a claim leaves the ProofGraph contract empty.
 - Never declare a claim the plan does not assert, never make a claim broader than its bound observable evidence, and never name a check that is not active in this session.
 - A critical claim blocks the final evidence approval while its declared evidence is missing, stale, or contradicted. Declare \`critical: true\` only for behavior that genuinely must hold, and always with a structurally bindable counterexample check.
+- A counterexample is sufficient only when it is designed as a targeted falsification: it must exercise a concrete violating variant and show the selected check detects it. A second green execution of the same behavior is not a counterexample. A build/aggregate check may fill the counterexample role when the claimed property is checkable and a targeted faulty variant is provably rejected by that check; different check identities and separate attempts remain required, but different assertion identities are not.
 - Always complete the independent review before proceeding (use plugin findings or the reviewer subagent).
 - When revising a plan, include the COMPLETE plan text (not a diff).
 - Cite Source for each verification check, or state NOT_VERIFIED with recovery steps.
