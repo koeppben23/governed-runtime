@@ -5,6 +5,33 @@ This document records the forensic review of the live-demo harness beginning on
 The product ProofGraph/gate semantics are untouched. The v2 follow-up also fixes
 reviewer prompt context and installed Task-return guidance.
 
+## Ticket recovery and audit witnesses (harness v4)
+
+- The `71690ff6` live validation reproduced a corrected
+  `TICKET_SOURCE_ORIGIN_CONFLICT` being left pending: the runner recognized the
+  code, but its audit witness recognized only `TICKET_SOURCE_CONFLICT`.
+  Both current codes now share one recovery-family definition. The witness
+  freezes the observed denial codes and requires each code in the same-session,
+  current-turn audit sequence: denial, successful ticket adoption, then
+  `READY -> TICKET`. Ticket text must still hash to the bound digest. A different
+  conflict code or a historical transition cannot substitute for this proof.
+- Missing, empty, truncated or non-object audit evidence raises
+  `DemoNotVerifiedError`; it is never converted into an empty successful history.
+  Every `HUMAN_DECISION_REQUIRED` occurrence requires a unique, failed
+  `flowguard_decision` audit record bound to its host call ID, FlowGuard/host
+  session and finite start/end interval. An incomplete sequence or unavailable
+  timestamp stays `NOT_VERIFIED`. The checked interval begins at call start,
+  not tool completion; earlier review progress in the turn is allowed. A state
+  write or transition in the refused-call window or later in that turn is a
+  contract failure (`FAILED`), even if a terminal phase was reached meanwhile.
+- These are external projection witnesses. Product audit-chain verification and
+  workflow gates retain their canonical authority. The regression tests exercise
+  real audit files through `Runner.turn` with a mocked host process; they do not
+  constitute a new provider-backed live validation.
+- New measurements record `demo-harness.v4`. Keep v3 and earlier measurements
+  separate and preserve their original evidence roots. After installing this
+  harness, re-run affected flows in a fresh root; do not relabel old results.
+
 ## Review-context and capture follow-up (harness v2)
 
 - Architecture reviewer prompts retain separately submitted claim IDs, statements,
@@ -34,7 +61,7 @@ reviewer prompt context and installed Task-return guidance.
   witnesses; overlapping call/model spans and shared recovery turns are charged
   once. Export metrics use digest-checked manifest references, never arbitrary
   attempt files. Old unqualified recovery entries are not credited.
-- Measurements record `demo-harness.v3`; do not combine them with v1/v2 samples.
+- Harness v3 measurements record `demo-harness.v3`; do not combine them with v1/v2 samples.
   v3 adds: an audited no-mutation `HUMAN_DECISION_REQUIRED` refusal is tolerated
   instead of failing the flow; a wait-state guard is settled only by same-turn
   same-operation review progress; reviewer children bound through attempt

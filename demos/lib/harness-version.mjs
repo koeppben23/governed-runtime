@@ -3,4 +3,4 @@
  * attributed to the exact harness that produced it (the product build identity
  * travels separately via installedBuild/checkoutHead).
  */
-export const HARNESS_VERSION = 'demo-harness.v3';
+export const HARNESS_VERSION = 'demo-harness.v4';

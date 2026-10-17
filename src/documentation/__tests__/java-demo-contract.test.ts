@@ -338,6 +338,14 @@ describe('Java Task Manager demo contract', () => {
     const calls: Array<{ label: string; prompt?: string; options?: { expectedDenial?: string } }> =
       [];
     try {
+      await fs.writeFile(
+        path.join(root, 'audit.jsonl'),
+        JSON.stringify({
+          event: 'tool_call:flowguard_hydrate',
+          auditSequence: 1,
+          detail: { tool: 'flowguard_hydrate', success: true },
+        }) + '\n',
+      );
       const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
       runner.turn = async (_session, label, prompt, options = {}) => {
         calls.push({ label, prompt, options });
@@ -1263,6 +1271,14 @@ describe('Java Task Manager demo contract', () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-negative-exhausted-'));
     const calls: Array<{ label: string; options?: { expectedDenial?: string } }> = [];
     try {
+      await fs.writeFile(
+        path.join(root, 'audit.jsonl'),
+        JSON.stringify({
+          event: 'tool_call:flowguard_hydrate',
+          auditSequence: 1,
+          detail: { tool: 'flowguard_hydrate', success: true },
+        }) + '\n',
+      );
       const runner = new Runner(root, { model: 'test/model', flows: [] }, root);
       runner.turn = async (_session, label, _prompt, options = {}) => {
         calls.push({ label, options });
