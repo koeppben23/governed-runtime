@@ -173,6 +173,23 @@ describe('ticket-adoption recovery witnesses', () => {
     expect(recoveryPersisted(expected, adoptedTicket, 'task', adoptionAudit)).toBe(true);
   });
 
+  it('settles the input-origin conflict through the same adoption witness only', () => {
+    const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
+    const originAudit = adoptionAudit.map((event, index) =>
+      index === 0
+        ? {
+            ...event,
+            detail: { ...event.detail, errorCode: 'TICKET_SOURCE_ORIGIN_CONFLICT' },
+          }
+        : event,
+    );
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', originAudit)).toBe(true);
+    const foreignAudit = adoptionAudit.map((event, index) =>
+      index === 0 ? { ...event, detail: { ...event.detail, errorCode: 'SOMETHING_ELSE' } } : event,
+    );
+    expect(recoveryPersisted(expected, adoptedTicket, 'task', foreignAudit)).toBe(false);
+  });
+
   it('rejects content that does not hash to the expected ticket digest', () => {
     const expected = expectRecovery(adoptedTicket, ['flowguard_ticket'], 'COMPLETE');
     const tampered = structuredClone(adoptedTicket);

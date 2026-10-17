@@ -75,6 +75,7 @@ import {
   implementationReviewAcceptanceProven,
   readAuditEvents,
   recoveryPersisted,
+  TICKET_SOURCE_CONFLICT_CODES,
   WAIT_STATE_RECOVERY_CODES,
 } from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
@@ -367,12 +368,6 @@ export const NEXT_STEP_RECOVERY_CODES = new Set(['CONTINUE_AMBIGUOUS']);
  * plan approval step.
  */
 export const PLAN_REVIEW_CORRECTION_CODE = 'PLAN_REVIEW_IN_PROGRESS';
-
-/** Ticket source-shape denials whose correction is proven by ticket adoption. */
-export const TICKET_SOURCE_CONFLICT_CODES = new Set([
-  'TICKET_SOURCE_CONFLICT',
-  'TICKET_SOURCE_ORIGIN_CONFLICT',
-]);
 
 /**
  * Bounded resume budget for an author that ends the /implement turn at

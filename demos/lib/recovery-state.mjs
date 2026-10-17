@@ -12,6 +12,16 @@ function identity(state) {
 }
 
 /**
+ * Ticket source-shape denials. Both are settled ONLY by the same bound ticket
+ * adoption witness (persisted digest + audit transition after the denial); the
+ * family never widens what counts as proof.
+ */
+export const TICKET_SOURCE_CONFLICT_CODES = new Set([
+  'TICKET_SOURCE_CONFLICT',
+  'TICKET_SOURCE_ORIGIN_CONFLICT',
+]);
+
+/**
  * Wait-state guards admit nothing on their own: a correction is proven only by
  * the SAME operation succeeding AND the persisted review projection advancing in
  * that turn. `PLAN_REVIEW_IN_PROGRESS` keeps its dedicated plan-gate proof as
@@ -220,7 +230,7 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
       event?.event === 'tool_call:flowguard_ticket' &&
       event.detail?.tool === 'flowguard_ticket' &&
       event.detail?.success === false &&
-      event.detail?.errorCode === 'TICKET_SOURCE_CONFLICT',
+      TICKET_SOURCE_CONFLICT_CODES.has(event.detail?.errorCode),
   );
   if (denialIndex === -1) return false;
   const successIndex = scoped.findIndex(
