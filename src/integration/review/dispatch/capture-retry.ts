@@ -147,6 +147,8 @@ const FINDING_INDEX_FAILURE_CODES: ReadonlySet<string> = new Set([
 
 /** Max finding positions transported per diagnostic; bounds the transported list. */
 const MAX_FINDING_INDEX_POSITIONS = 8;
+/** Max frozen subject paths transported per diagnostic; bounds the transported list. */
+const MAX_ALLOWED_SUBJECT_PATHS = 20;
 
 function boundCaptureReason(reason: string): string {
   const firstLine = reason.split('\n')[0]?.trim() ?? '';
@@ -476,6 +478,35 @@ function isEvidenceLocationFailure(value: unknown): value is EvidenceLocationFai
  * anchor failures carry the validator-derived finding positions. Any malformed
  * or unexpected details shape degrades to the code-only diagnostic.
  */
+/**
+ * Out-of-scope findings transport the validator-derived positions and the
+ * frozen allowed subject paths. Both are bounded; absent values degrade to the
+ * code-only diagnostic.
+ */
+function outOfScopeDiagnostic(
+  code: string,
+  details: Readonly<Record<string, unknown>>,
+): readonly PendingReviewRetryDiagnostic[] | null {
+  if (code !== 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE') return null;
+  const findingIndex = normalizeFindingIndexes(details.findingIndex);
+  const allowed = Array.isArray(details.allowedSubjectPaths)
+    ? details.allowedSubjectPaths.filter(
+        (path): path is string => typeof path === 'string' && path.length > 0,
+      )
+    : [];
+  const bounded = [...new Set(allowed)].slice(0, MAX_ALLOWED_SUBJECT_PATHS);
+  if (findingIndex === undefined && bounded.length === 0) return null;
+  return [
+    {
+      code,
+      data: {
+        ...(findingIndex !== undefined ? { findingIndex } : {}),
+        ...(bounded.length > 0 ? { allowedSubjectPaths: JSON.stringify(bounded) } : {}),
+      },
+    },
+  ];
+}
+
 export function buildCaptureFailureDiagnostics(
   code: string,
   details: Readonly<Record<string, unknown>>,
@@ -487,34 +518,44 @@ export function buildCaptureFailureDiagnostics(
       return buildBindingRetryDiagnostics('REVIEW_EVIDENCE_NOT_OBSERVED', valid);
     }
   }
+  const outOfScope = outOfScopeDiagnostic(code, details);
+  if (outOfScope !== null) return outOfScope;
   if (FINDING_INDEX_FAILURE_CODES.has(code)) {
     const findingIndex = normalizeFindingIndexes(details.findingIndex);
     if (findingIndex !== undefined) {
       return [{ code, data: { findingIndex } }];
     }
   }
-  if (code === 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING') {
-    const challengeIndex = normalizeChallengeIndex(details.challengeIndex);
-    const reason = typeof details.reason === 'string' ? details.reason : undefined;
-    if (
-      challengeIndex !== undefined &&
-      reason !== undefined &&
-      CHALLENGE_EVIDENCE_REASONS.has(reason)
-    ) {
-      const required = REQUIRED_REF_BY_REASON[reason];
-      return [
-        {
-          code,
-          reasonKind: reason,
-          data: {
-            path: `challenges.${challengeIndex}.evidenceRefs`,
-            ...(required !== undefined ? { required } : {}),
-          },
-        },
-      ];
-    }
-  }
+  const challengeEvidence = challengeEvidenceDiagnostic(code, details);
+  if (challengeEvidence !== null) return challengeEvidence;
   return [buildCodeOnlyRetryDiagnostic(code)];
+}
+
+function challengeEvidenceDiagnostic(
+  code: string,
+  details: Readonly<Record<string, unknown>>,
+): readonly PendingReviewRetryDiagnostic[] | null {
+  if (code !== 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING') return null;
+  const challengeIndex = normalizeChallengeIndex(details.challengeIndex);
+  const reason = typeof details.reason === 'string' ? details.reason : undefined;
+  if (
+    challengeIndex === undefined ||
+    reason === undefined ||
+    !CHALLENGE_EVIDENCE_REASONS.has(reason)
+  ) {
+    return null;
+  }
+  const required = REQUIRED_REF_BY_REASON[reason];
+  return [
+    {
+      code,
+      reasonKind: reason,
+      data: {
+        path: `challenges.${challengeIndex}.evidenceRefs`,
+        ...(required !== undefined ? { required } : {}),
+      },
+    },
+  ];
 }
 
 /** Diagnostics for a blocked capture-validation result: structured details

@@ -13,6 +13,7 @@ import {
   TERMINAL_REVIEWER_CAPTURE_CODES,
   buildBindingRetryDiagnostics,
   buildCaptureFailureDiagnostics,
+  buildCapturedFindingsDiagnostics,
   buildCodeOnlyRetryDiagnostic,
   buildReviewerCaptureRetryOutput,
   buildStructuredFindingsContractDiagnostics,
@@ -57,6 +58,23 @@ describe('reviewer capture retry classification', () => {
 });
 
 describe('retry diagnostic DTOs', () => {
+  it('transports the frozen allowed subject paths for an out-of-scope finding', () => {
+    expect(
+      buildCapturedFindingsDiagnostics({
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+        details: {
+          findingIndex: '1, 2',
+          allowedSubjectPaths: ['src/a.ts', 'src/b.ts', 'src/a.ts'],
+        },
+      }),
+    ).toEqual([
+      {
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+        data: { findingIndex: '1, 2', allowedSubjectPaths: '["src/a.ts","src/b.ts"]' },
+      },
+    ]);
+  });
+
   it('builds a code-only diagnostic without any free reason', () => {
     expect(buildCodeOnlyRetryDiagnostic('HOST_STRUCTURED_OUTPUT_REQUIRED')).toEqual({
       code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',

@@ -53,6 +53,19 @@ describe('reviewer retry diagnostic prompt rendering', () => {
     );
   });
 
+  it('renders the frozen allowed subject paths as quoted data after the warning', () => {
+    const allowed = [MALICIOUS_PATH, 'src/a.ts'];
+    const prompt = render([
+      {
+        code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+        data: { findingIndex: '0', allowedSubjectPaths: JSON.stringify(allowed) },
+      },
+    ]);
+    expect(prompt).toContain(UNTRUSTED_WARNING);
+    expect(prompt).toContain(`- allowedSubjectPaths=${JSON.stringify(JSON.stringify(allowed))}`);
+    expect(prompt.indexOf(UNTRUSTED_WARNING)).toBeLessThan(prompt.indexOf('allowedSubjectPaths'));
+  });
+
   it('renders an instruction-like path only as a quoted data value after the warning', () => {
     const prompt = render([
       {

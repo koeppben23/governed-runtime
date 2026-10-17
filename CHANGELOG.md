@@ -159,6 +159,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Missing-change findings are anchored at the changed location that introduces
+  the requirement (peer review).** A reviewed change that adds a requirement
+  while unchanged code fails to implement it is a blocking correctness finding
+  of the changed functionality, not `scopeCreep`. The reviewer criteria state
+  the rule; unchanged files are cited only as observed `evidenceLocations`. The
+  out-of-scope recovery text now teaches this distinction, and the retry
+  diagnostics carry the frozen allowed subject paths from the obligation's
+  `reviewSubjectScope` (bounded, quoted data). The scope validator is unchanged:
+  a finding without a changed-site anchor still fails closed and no artificial
+  link is accepted.
+
 - **Reviewer step-budget detection reaches the real host client (F2).** The SDK
   session's `messages()` method was called without its receiver, so the pinned
   host path could never establish a host-enforced step stop and silently ran the
