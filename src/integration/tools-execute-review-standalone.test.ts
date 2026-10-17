@@ -1591,48 +1591,61 @@ describe('review (standalone flow)', () => {
         expect(ReviewInvocationEvidence.safeParse(inv).success).toBe(true);
       });
 
-      it('reviewCard is present in successful /review response', async () => {
-        const result = await submitContentReview({ prNumber: 49, inputOrigin: 'pr' }, 'accept');
-        expect(result.error).toBeUndefined();
-        expect(result.reviewCard).toBeDefined();
-        expect(typeof result.reviewCard).toBe('string');
-        const card = result.reviewCard as string;
-        expect(card).toContain('# FlowGuard Review Report');
-        expect(card).toContain('Peer review complete');
-        expect(result.presentation).toEqual({ markdown: card });
+      it.each(['unicode', 'ascii'])(
+        'reviewCard is canonical and presentation is deduplicated (%s)',
+        async (glyphProfile) => {
+          await fs.mkdir(`${ws.tmpDir}/.opencode`, { recursive: true });
+          await fs.writeFile(
+            `${ws.tmpDir}/.opencode/flowguard.json`,
+            JSON.stringify({ schemaVersion: 'v1', presentation: { opencode: { glyphProfile } } }),
+          );
+          const result = await submitContentReview({ prNumber: 49, inputOrigin: 'pr' }, 'accept', {
+            unknowns: ['Check the deployment environment.'],
+          });
+          expect(result.error).toBeUndefined();
+          expect(result.reviewCard).toBeDefined();
+          expect(typeof result.reviewCard).toBe('string');
+          const card = result.reviewCard as string;
+          expect(card).toContain('# FlowGuard Review Report');
+          expect(card).toContain('Peer review complete');
+          // This terminal card has no profile-dependent structural glyphs, so
+          // both profiles render identical bytes and must send the card once.
+          expect(result.presentation).toBeUndefined();
 
-        const { computeFingerprint, sessionDir: resolveSessionDir } =
-          await import('../adapters/workspace/index.js');
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-        const artifactsDir = `${sessDir}/artifacts`;
-        const files = await fs.readdir(artifactsDir);
-        const cardFile = files.find(
-          (f) => f.startsWith('review-report-card.') && f.endsWith('.md'),
-        );
-        expect(cardFile).toBeDefined();
-        const content = await fs.readFile(`${artifactsDir}/${cardFile}`, 'utf-8');
-        expect(content).toContain('# FlowGuard Review Report');
+          const { computeFingerprint, sessionDir: resolveSessionDir } =
+            await import('../adapters/workspace/index.js');
+          const fp = await computeFingerprint(ws.tmpDir);
+          const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+          const artifactsDir = `${sessDir}/artifacts`;
+          const files = await fs.readdir(artifactsDir);
+          const cardFile = files.find(
+            (f) => f.startsWith('review-report-card.') && f.endsWith('.md'),
+          );
+          expect(cardFile).toBeDefined();
+          const content = await fs.readFile(`${artifactsDir}/${cardFile}`, 'utf-8');
+          expect(content).toContain('# FlowGuard Review Report');
+          expect(content).toBe(`${card}\n`);
 
-        const reportRaw = await fs.readFile(`${sessDir}/review-report.json`, 'utf-8');
-        const report = JSON.parse(reportRaw) as Record<string, unknown>;
-        expect(report.phase).toBe('PEER_REVIEW_COMPLETE');
-        expect(report.completeness).toBeUndefined();
-        const persistedCoverage = report.peerReviewCoverage as Record<string, unknown>;
-        expect(persistedCoverage).toEqual(result.peerReviewCoverage);
-        expect(persistedCoverage).toEqual({
-          targetResolved: true,
-          targetFrozen: true,
-          repositoryIdentityVerified: true,
-          baseSha: 'b'.repeat(40),
-          headSha: 'a'.repeat(40),
-          changedPathCount: 3,
-          objectivesCovered: 3,
-          objectivesTotal: 3,
-          reviewAssurance: 'structured_high',
-          missingVerification: [],
-        });
-      });
+          const reportRaw = await fs.readFile(`${sessDir}/review-report.json`, 'utf-8');
+          const report = JSON.parse(reportRaw) as Record<string, unknown>;
+          expect(report.phase).toBe('PEER_REVIEW_COMPLETE');
+          expect(report.completeness).toBeUndefined();
+          const persistedCoverage = report.peerReviewCoverage as Record<string, unknown>;
+          expect(persistedCoverage).toEqual(result.peerReviewCoverage);
+          expect(persistedCoverage).toEqual({
+            targetResolved: true,
+            targetFrozen: true,
+            repositoryIdentityVerified: true,
+            baseSha: 'b'.repeat(40),
+            headSha: 'a'.repeat(40),
+            changedPathCount: 3,
+            objectivesCovered: 3,
+            objectivesTotal: 3,
+            reviewAssurance: 'structured_high',
+            missingVerification: [],
+          });
+        },
+      );
     });
   });
 

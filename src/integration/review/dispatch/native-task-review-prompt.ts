@@ -87,9 +87,9 @@ function subjectLabel(type: ReviewObligationType): string {
   }
 }
 
-/** Plan/architecture frozen material embeds the claim declarations section. */
+/** Only plan frozen material already embeds the claim declarations section. */
 function keepsDeclarationPreview(obligation: ReviewObligation): boolean {
-  return obligation.obligationType !== 'plan' && obligation.obligationType !== 'architecture';
+  return obligation.obligationType !== 'plan';
 }
 
 /** The relation grammar renders only the anchor kind the review scope admits. */

@@ -1,9 +1,38 @@
 # Demo Assurance — forensic controls
 
-This document records the forensic review of the live-demo harness on
-`fix/1078-evidence-approval-preconditions` (`57063abe`) and the corrections in
-this change. The product ProofGraph/gate semantics are untouched; only the
-demonstration, recovery and evidence-classification machinery changed.
+This document records the forensic review of the live-demo harness beginning on
+`fix/1078-evidence-approval-preconditions` (`57063abe`) and subsequent corrections.
+The product ProofGraph/gate semantics are untouched. The v2 follow-up also fixes
+reviewer prompt context and installed Task-return guidance.
+
+## Review-context and capture follow-up (harness v2)
+
+- Architecture reviewer prompts retain separately submitted claim IDs, statements,
+  required review evidence and assumptions. A real MADR pipeline regression checks
+  that each declaration appears once; the nine development/risk controls do not
+  themselves exercise architecture review.
+- Every native Task return is routed again through terminal, authorized retry and
+  completed branches. Only completed dispatches require `reviewExecution`;
+  retry envelopes need neither `reviewExecution` nor `reviewInvocation` and
+  authorize a fresh Task, not acceptance.
+- Transcript capture attempts every parent/reviewer target independently and keeps
+  a partial `transcripts` manifest, current `transcriptErrors` and cumulative
+  `transcriptCaptureAttempts`. PASS still requires all targets to validate.
+  Successful exports receive a SHA-256 receipt. Resume revalidates those bytes,
+  session, parent and canonical workspace before reuse. Missing/invalid receipts,
+  truncated JSON and modified bytes are retained; retries use numbered attempt
+  paths and record rejected predecessors in the new receipt. Failure-path capture
+  never changes the original FAILED/NOT_VERIFIED result.
+- `recoveryObservations` separates `observed` denials and
+  `pending_verification` tool-only successes/re-arm authorizations from
+  `recoveredDenials` with `status: proven`. A fresh re-arm is not a completed review.
+  Next-step proofs carry the exact denial occurrences. The performance reader
+  requires operation-bound same-turn proofs or proven occurrence-bound next-step
+  witnesses; overlapping call/model spans and shared recovery turns are charged
+  once. Export metrics use digest-checked manifest references, never arbitrary
+  attempt files. Old unqualified recovery entries are not credited.
+- Measurements record `demo-harness.v2`; do not combine them with v1 samples.
+  These regression checks do not constitute a new full live-matrix run.
 
 ## Confirmed harness findings (F1–F10)
 
