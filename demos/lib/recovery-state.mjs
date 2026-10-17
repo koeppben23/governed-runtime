@@ -13,6 +13,16 @@ function identity(state) {
 }
 
 /**
+ * Ticket source-shape denials. Both are settled ONLY by the same bound ticket
+ * adoption witness (persisted digest + audit transition after the denial); the
+ * family never widens what counts as proof.
+ */
+export const TICKET_SOURCE_CONFLICT_CODES = new Set([
+  'TICKET_SOURCE_CONFLICT',
+  'TICKET_SOURCE_ORIGIN_CONFLICT',
+]);
+
+/**
  * Wait-state guards admit nothing on their own: a correction is proven only by
  * the SAME operation succeeding AND the persisted review projection advancing in
  * that turn. `PLAN_REVIEW_IN_PROGRESS` keeps its dedicated plan-gate proof as
@@ -21,12 +31,6 @@ function identity(state) {
 export const WAIT_STATE_RECOVERY_CODES = new Set([
   'ADR_REVIEW_IN_PROGRESS',
   'PLAN_REVIEW_IN_PROGRESS',
-]);
-
-/** Current ticket-source denials that require the same adoption witness. */
-export const TICKET_SOURCE_CONFLICT_CODES = new Set([
-  'TICKET_SOURCE_CONFLICT',
-  'TICKET_SOURCE_ORIGIN_CONFLICT',
 ]);
 
 /**
