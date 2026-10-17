@@ -525,6 +525,8 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
+      expect(String(result.agentInstruction)).toContain('Do not call flowguard_decision yourself.');
+      expect(String(result.agentInstruction)).toContain('/approve');
     });
 
     it('blocks mismatched user-command intent verdict', async () => {

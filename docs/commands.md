@@ -52,6 +52,11 @@ The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool i
 | `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                      |
 | `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                             |
 
+Agents never call `flowguard_decision` on their own: the tool records the USER's
+verdict intent from the commands above. A self-initiated call is refused with
+`HUMAN_DECISION_REQUIRED`, and the refusal's `agentInstruction` names the command
+the user must run — `/override-approve` when the independent review is exhausted.
+
 All other commands map directly after replacing command hyphens with underscores
 (`/plan` → `flowguard_plan`, `/architecture` → `flowguard_architecture`).
 
@@ -217,6 +222,10 @@ Record the task description. Starts the development flow from READY or updates t
 Exactly one content source must be provided: `text` and `ticketSource` together are rejected with
 `TICKET_SOURCE_CONFLICT`, neither is rejected as `EMPTY_TICKET`, and a bare file path, URL or issue
 ID passed as `text` is rejected with `TICKET_REFERENCE_WITHOUT_CONTENT`.
+
+A `ticketSource` already binds the content to a worktree file, so an explicit
+non-workspace `inputOrigin` alongside it is rejected with
+`TICKET_SOURCE_ORIGIN_CONFLICT`; the runtime derives the origin as `workspace`.
 
 **External import contract (read-side):** the agent adopts title, description and — only when the
 FIELD NAME explicitly denotes a risk class (`Risk`, `Risk Class`, `Risikoklasse`) with an exact

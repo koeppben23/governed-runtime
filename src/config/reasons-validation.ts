@@ -169,6 +169,18 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'TICKET_SOURCE_ORIGIN_CONFLICT',
+    category: 'input',
+    messageTemplate:
+      'ticketSource reads the ticket from the worktree, so inputOrigin {inputOrigin} conflicts with it; omit inputOrigin (it is derived as workspace) or pass the content as text',
+    recoverySteps: [
+      'Omit inputOrigin when using ticketSource; the runtime records the origin as workspace',
+      'Use text with the complete content when the ticket comes from a manual, external, or mixed source',
+      'Never label a file-backed ticket with a foreign inputOrigin',
+    ],
+  },
+
+  {
     code: 'TICKET_RISK_DECLARATION_INVALID',
     category: 'admissibility',
     messageTemplate:

@@ -276,7 +276,9 @@ describe('ticket content adoption (real worktree)', () => {
       },
       se.tc,
     );
-    expect(String(result)).toContain('TICKET_SOURCE_CONFLICT');
+    expect(String(result)).toContain('TICKET_SOURCE_ORIGIN_CONFLICT');
+    expect(String(result)).toContain('inputOrigin');
+    expect(String(result)).not.toContain('ticketSource and text are mutually exclusive');
     expect((await readState(se.sDir))!.ticket).toBeNull();
   });
 
