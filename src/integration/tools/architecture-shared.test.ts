@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   hasText,
+  validateArchitectureCallShape,
   validateInitialSubmissionGate,
   buildArchitectureReviewInstruction,
 } from './architecture/architecture-shared.js';
@@ -115,6 +116,40 @@ describe('hasText', () => {
     expect(hasText(42)).toBe(false);
     expect(hasText(null)).toBe(false);
     expect(hasText(undefined)).toBe(false);
+  });
+});
+
+// ─── validateArchitectureCallShape ────────────────────────────────────────────
+
+describe('validateArchitectureCallShape — recovery-named call forms', () => {
+  it('accepts the canonical revision form: verdict + revised body + claims, no title', () => {
+    expect(
+      validateArchitectureCallShape({
+        reviewVerdict: 'changes_requested',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        claims: [],
+      }),
+    ).toBeNull();
+  });
+
+  it('accepts the canonical initial submission and approval forms', () => {
+    expect(
+      validateArchitectureCallShape({
+        title: 'ADR-001',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        claims: [],
+      }),
+    ).toBeNull();
+    expect(validateArchitectureCallShape({ reviewVerdict: 'accept' })).toBeNull();
+  });
+
+  it('still rejects title combined with a verdict', () => {
+    const blocked = validateArchitectureCallShape({
+      title: 'ADR-001',
+      reviewVerdict: 'changes_requested',
+      adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+    });
+    expect(blocked).toContain('ADR_SUBMISSION_MIXED_INPUTS');
   });
 });
 

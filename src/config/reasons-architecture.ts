@@ -21,9 +21,9 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Invalid flowguard_architecture call sequence: ADR submission and review verdict inputs must be separate calls.',
     recoverySteps: [
-      'Submit the ADR first with flowguard_architecture({ title, adrText, claims }) — no verdict inputs',
-      'Do not include reviewVerdict in the ADR submission call',
-      'During an active ADR review loop, submit only reviewVerdict and revised adrText when changes are requested',
+      'Initial submission: flowguard_architecture({ title, adrText, claims }) — no reviewVerdict',
+      'Revision after changes_requested: flowguard_architecture({ reviewVerdict: "changes_requested", adrText, claims }) — WITHOUT title',
+      'Approval: flowguard_architecture({ reviewVerdict: "accept" }) — without adrText or title',
     ],
     quickFixCommand: '/architecture',
   },
@@ -32,10 +32,11 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
     code: 'ADR_SUBMISSION_MIXED_INPUTS',
     category: 'precondition',
     messageTemplate:
-      'ADR submission included a review verdict. Submission and verdict are separate calls.',
+      'ADR submission metadata (title) and a review verdict must not be combined in one call. Start with title; revise or approve with a verdict.',
     recoverySteps: [
-      'Submit the ADR with flowguard_architecture({ title, adrText, claims }) — no verdict inputs',
-      'Submit the review verdict separately: flowguard_architecture({ reviewVerdict })',
+      'Initial submission: flowguard_architecture({ title, adrText, claims }) — no reviewVerdict',
+      'Revision after changes_requested: flowguard_architecture({ reviewVerdict: "changes_requested", adrText, claims }) — WITHOUT title',
+      'Approval: flowguard_architecture({ reviewVerdict: "accept" }) — without adrText or title',
     ],
     quickFixCommand: '/architecture',
   },
@@ -70,10 +71,11 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
     code: 'ADR_REVIEW_IN_PROGRESS',
     category: 'precondition',
     messageTemplate:
-      'The ADR review loop is already active. Submit a review verdict to continue it, not a new ADR.',
+      'The ADR review loop is already active. Continue it with a verdict — approve with the verdict alone, or revise with the verdict plus the revised ADR body. Do not submit a new ADR.',
     recoverySteps: [
-      'The review loop is active — send reviewVerdict to continue it',
-      'Call flowguard_architecture({ reviewVerdict: "accept"|"changes_requested" })',
+      'Approval: flowguard_architecture({ reviewVerdict: "accept" }) — without adrText or title',
+      'Revision: flowguard_architecture({ reviewVerdict: "changes_requested", adrText, claims }) — WITHOUT title',
+      'Do not resubmit a new ADR while the review loop is active',
     ],
     quickFixCommand: '/architecture',
   },

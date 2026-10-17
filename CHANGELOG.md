@@ -159,6 +159,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Architecture ADR recovery guidance names the working call forms.**
+  `ADR_SUBMISSION_MIXED_INPUTS` now states that the prohibition is `title`
+  combined with a review verdict — never a revised body together with a verdict.
+  `ADR_SUBMISSION_MIXED_INPUTS`, `ADR_REVIEW_IN_PROGRESS`, `EMPTY_ADR_TEXT` and
+  the tool description name the three canonical forms: initial
+  `{ title, adrText, claims }`, revision
+  `{ reviewVerdict: "changes_requested", adrText, claims }` **without** `title`,
+  and approval `{ reviewVerdict: "accept" }`. A live architecture review loop
+  had required three rejected calls per revision (in 2/2 revisions) because the
+  previous recovery text split `reviewVerdict` and `adrText` into separate
+  calls; the shape gate itself was already correct.
+
 - Preserve separately declared architecture claims, review evidence and assumptions
   in native reviewer prompts; route every Task return through terminal/retry/completed
   handling before requiring completion evidence. Standalone peer-review cards omit
