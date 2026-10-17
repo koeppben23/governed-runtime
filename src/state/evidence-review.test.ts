@@ -4,7 +4,12 @@
  * Extracted from evidence-split.test.ts.
  */
 import { describe, it, expect } from 'vitest';
-import { ReviewObligation, ReviewAssuranceState } from './evidence-review.js';
+import {
+  ReviewObligation,
+  ReviewAssuranceState,
+  reviewExhaustsBudget,
+  DISCARDED_REVIEW_DRAFT,
+} from './evidence-review.js';
 import { Finding, RepositoryLocation } from './evidence-findings.js';
 import {
   ChallengeResolution,
@@ -1681,5 +1686,21 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
         'only implement obligations may carry an implementation reviewSubjectScope',
       );
     }
+  });
+});
+
+describe('review exhaustion draft disposition', () => {
+  it('treats only changes_requested on the last allowed iteration as budget-exhausting', () => {
+    expect(reviewExhaustsBudget('changes_requested', 2, 3)).toBe(true);
+    expect(reviewExhaustsBudget('changes_requested', 1, 3)).toBe(false);
+    expect(reviewExhaustsBudget('accept', 2, 3)).toBe(false);
+    expect(reviewExhaustsBudget('changes_requested', 3, 3)).toBe(true);
+  });
+
+  it('carries the canonical non-adoption note and recovery', () => {
+    expect(DISCARDED_REVIEW_DRAFT.reason).toBe('review_exhausted');
+    expect(DISCARDED_REVIEW_DRAFT.note).toContain('NOT adopted');
+    expect(DISCARDED_REVIEW_DRAFT.recovery.join(' ')).toContain('/override-approve');
+    expect(Object.isFrozen(DISCARDED_REVIEW_DRAFT)).toBe(true);
   });
 });

@@ -159,6 +159,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An exhausted review no longer adopts the un-reviewed revision.** When the
+  `changes_requested` verdict consumes the last allowed review iteration, the
+  accompanying plan/ADR revision was previously written as the current artifact
+  even though no reviewer ever saw it; the governance override then failed
+  closed with `*_OVERRIDE_SUBJECT_MISMATCH`, making the offered
+  `/override-approve` path a dead end (observed live in a plan and an ADR
+  exhaustion). The exhausting revision is now explicitly **not adopted**: the
+  last independently reviewed artifact, its claim declarations, and its lineage
+  remain current, the negative verdict and the exhaustion are persisted, and the
+  response/card state that the draft was not adopted. The explicit human
+  override approves exactly the reviewed digest; the strict
+  `*_OVERRIDE_SUBJECT_MISMATCH` check is unchanged, so a genuinely divergent
+  subject stays blocked. No revision is silently discarded: the disposition
+  names `/override-approve`, `/request-changes`, and `/reject`.
+
 - **Demo harness negative-probe precision and measurement honesty.** The
   architecture-negative scenario now verifies its pristine precondition
   immediately before the controlled probe: architecture work performed in the
