@@ -159,6 +159,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Demo harness v5 records the real re-arm lifecycle.** A structured re-arm
+  that was fresh at dispatch and whose attempt failed later is now recorded as
+  `rearm_attempt_failed` with its child session, ending denial, and
+  capture/obligation state instead of the misleading "spent or unknown"
+  classification. Bound attempts are `rearm_proven`; created attempts remain
+  `rearm_authorized`. Only unknown, foreign, non-re-arm, or replayed envelopes
+  stay stale. Terminal blocks remain visible. Harness identity:
+  `demo-harness.v5`.
+
 - **Missing-change findings are anchored at the changed location that introduces
   the requirement (peer review).** A reviewed change that adds a requirement
   while unchanged code fails to implement it is a blocking correctness finding
