@@ -159,6 +159,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Demo harness v4 binds ticket recovery and audited refusals end to end.**
+  Both `TICKET_SOURCE_CONFLICT` and `TICKET_SOURCE_ORIGIN_CONFLICT` now require
+  their observed code in the bound adoption audit sequence, fixing the live
+  `71690ff6` case where a corrected file-backed ticket still stopped the next
+  plan turn. Unavailable audit data no longer becomes an empty history.
+  A tolerated `HUMAN_DECISION_REQUIRED` refusal requires the exact host call,
+  session, contiguous audit sequence and start/end interval; writes before tool
+  completion are no longer overlooked. Unprovable evidence is `NOT_VERIFIED`;
+  witnessed mutation remains `FAILED`, including after a terminal transition.
+  Earlier review progress remains legal. Product gates and audit-chain
+  verification are unchanged. See `demos/DEMO_ASSURANCE.md` for evidence limits.
+
 - **The ticket input-origin conflict has its own message (F8).** `ticketSource`
   reads the ticket from the worktree; an explicit non-workspace `inputOrigin`
   alongside it is now rejected as `TICKET_SOURCE_ORIGIN_CONFLICT` with a message

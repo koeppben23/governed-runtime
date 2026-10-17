@@ -73,6 +73,8 @@ export function toolUseEvents(output) {
       // Completion instant of the tool call; witnesses that must not precede a
       // later persisted mutation (e.g. an audited refusal) bind to it.
       at: event.part?.state?.time?.end ?? event.timestamp ?? null,
+      startedAt: event.part?.state?.time?.start,
+      callId: event.part?.callID,
       payload: parseHostPayload(event.part?.state?.output),
     });
   }

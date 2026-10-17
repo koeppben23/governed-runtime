@@ -72,6 +72,7 @@ import {
 import { DemoNotVerifiedError, RESULT, exitCodeForResults, resultLine } from '../lib/results.mjs';
 import {
   expectRecovery,
+  assertHumanDecisionRefusalUnchanged,
   implementationReviewAcceptanceProven,
   readAuditEvents,
   recoveryPersisted,
@@ -945,6 +946,9 @@ export class Runner {
           .filter((proof) => proof.binding === 'tool')
           .map((proof) => proof.denialIdentity),
         auditFloorBefore,
+        toolDenialEvents(result.stdout)
+          .filter((event) => event.tool === 'flowguard_ticket')
+          .map((event) => event.code),
       );
       if (
         expected.kind === 'ticket_adoption' &&
@@ -985,6 +989,8 @@ export class Runner {
           recoverableProofs
             .filter((proof) => proof.binding === 'tool')
             .map((proof) => proof.denialIdentity),
+          auditFloorBefore,
+          pendingCodes,
         ),
       };
       this.log(
@@ -1020,35 +1026,39 @@ export class Runner {
       );
     }
 
-    const deniedCodes = unexpectedDenialCodes(result.stdout).filter(
-      (code) =>
-        !(planReviewDenied && code === PLAN_REVIEW_CORRECTION_CODE) &&
-        !supersededTerminals.includes(code),
+    const deniedEvents = toolDenialEvents(result.stdout).filter(
+      (event) =>
+        !isRecoverableFamily(event.code) &&
+        !(planReviewDenied && event.code === PLAN_REVIEW_CORRECTION_CODE) &&
+        !supersededTerminals.includes(event.code),
     );
     const unexpected = [];
-    for (const code of deniedCodes) {
-      if (code !== 'HUMAN_DECISION_REQUIRED') {
+    for (const denial of deniedEvents) {
+      const code = denial.code;
+      if (code !== 'HUMAN_DECISION_REQUIRED' || denial.tool !== 'flowguard_decision') {
         unexpected.push(code);
         continue;
       }
       // The agent may not decide on the user's behalf. The refusal is tolerated
-      // ONLY when the audit trail proves the refused call itself persisted no
-      // state write and no transition; otherwise it stays a real block.
-      const denial = toolDenialEvents(result.stdout).find(
-        (event) => event.code === 'HUMAN_DECISION_REQUIRED',
+      // ONLY with a readable audit witness for THIS call and its full interval.
+      // Check every occurrence; a previous refusal cannot excuse a later one.
+      const snapshot = this.requireBoundState(session);
+      const call = toolUseEvents(result.stdout).find((event) => event.index === denial.index);
+      assertHumanDecisionRefusalUnchanged(
+        snapshot.state,
+        call,
+        auditFloorBefore,
+        readAuditEvents(snapshot.sessionDir),
       );
-      if (denial?.at == null || this.auditMutatedSince(session, Number(denial.at))) {
-        unexpected.push(code);
-        continue;
-      }
       session.governedRefusals = session.governedRefusals ?? [];
       session.governedRefusals.push({
         step: label,
         code,
-        evidence: 'audit_no_turn_mutation',
+        callId: call.callId,
+        evidence: 'audit_no_refused_call_mutation',
       });
       this.log(
-        `${label}: HUMAN_DECISION_REQUIRED refused the in-session decision; audit shows no persisted mutation in this turn — continuing the governed exhausted-review branch`,
+        `${label}: HUMAN_DECISION_REQUIRED refused the in-session decision; the current call's audit window proves no mutation — continuing the governed review branch`,
       );
     }
     if (unexpected.length > 0) {
@@ -1116,22 +1126,6 @@ export class Runner {
         ? state.architecture.reviewFindings.length
         : 0,
     };
-  }
-
-  /** True when a state write or transition was persisted at/after `epochMs`. */
-  auditMutatedSince(session, epochMs) {
-    try {
-      return readAuditEvents(this.requireBoundState(session).sessionDir).some((event) => {
-        const at = Date.parse(String(event?.occurredAt ?? ''));
-        return (
-          Number.isFinite(at) &&
-          at >= epochMs &&
-          (event?.event === 'state_write' || String(event?.event ?? '').startsWith('transition:'))
-        );
-      });
-    } catch {
-      return true;
-    }
   }
 
   /**

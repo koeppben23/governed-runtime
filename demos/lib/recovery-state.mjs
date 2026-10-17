@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DemoNotVerifiedError } from './results.mjs';
 
 function identity(state) {
   return {
@@ -39,14 +40,107 @@ export const WAIT_STATE_RECOVERY_CODES = new Set([
  * exercises separately.
  */
 export function readAuditEvents(sessionDir) {
+  let events;
   try {
-    return fs
+    events = fs
       .readFileSync(path.join(sessionDir, 'audit.jsonl'), 'utf8')
       .split('\n')
       .filter((line) => line.trim().length > 0)
       .map((line) => JSON.parse(line));
-  } catch {
-    return [];
+  } catch (error) {
+    throw new DemoNotVerifiedError(`audit evidence unavailable in ${sessionDir}: ${error.message}`);
+  }
+  if (
+    events.length === 0 ||
+    events.some((event) => !event || typeof event !== 'object' || Array.isArray(event))
+  ) {
+    throw new DemoNotVerifiedError(`audit evidence must contain event objects in ${sessionDir}`);
+  }
+  return events;
+}
+
+/**
+ * Prove one refused host decision call, not absence of writes in an arbitrary
+ * audit suffix. Unavailable/ambiguous evidence is NOT_VERIFIED; a witnessed
+ * mutation is a contract failure, including when the session is now terminal.
+ * This checks an external projection, not the product's cryptographic chain.
+ */
+export function assertHumanDecisionRefusalUnchanged(state, call, auditSequenceFloor, events) {
+  const actor = identity(state);
+  if (
+    typeof actor.flowguardSessionId !== 'string' ||
+    actor.flowguardSessionId.length === 0 ||
+    typeof actor.hostSessionId !== 'string' ||
+    actor.hostSessionId.length === 0 ||
+    call?.tool !== 'flowguard_decision' ||
+    typeof call.callId !== 'string' ||
+    call.callId.length === 0 ||
+    !Number.isFinite(call.startedAt) ||
+    !Number.isFinite(call.at) ||
+    call.startedAt < 0 ||
+    call.at < call.startedAt ||
+    !Number.isSafeInteger(auditSequenceFloor) ||
+    auditSequenceFloor < 0
+  ) {
+    throw new DemoNotVerifiedError('HUMAN_DECISION_REQUIRED has no bound decision-call interval');
+  }
+  if (
+    events.length === 0 ||
+    events.length <= auditSequenceFloor ||
+    events.some(
+      (event, index) =>
+        event?.auditSequence !== index + 1 ||
+        event.flowguardSessionId !== actor.flowguardSessionId ||
+        (event.hostSessionId !== undefined && event.hostSessionId !== actor.hostSessionId) ||
+        typeof event.occurredAt !== 'string' ||
+        !Number.isFinite(Date.parse(event.occurredAt)) ||
+        typeof event.event !== 'string' ||
+        !event.detail ||
+        typeof event.detail !== 'object' ||
+        Array.isArray(event.detail),
+    )
+  ) {
+    throw new DemoNotVerifiedError(
+      'HUMAN_DECISION_REQUIRED has no complete session-bound audit window',
+    );
+  }
+  const matches = events.filter(
+    (event) =>
+      event.auditSequence > auditSequenceFloor &&
+      event.event === 'tool_call:flowguard_decision' &&
+      event.hostSessionId === actor.hostSessionId &&
+      event.detail.tool === call.tool &&
+      event.detail.argsSummary?.sessionID === actor.hostSessionId &&
+      event.detail.argsSummary?.callID === call.callId &&
+      event.detail.success === false &&
+      event.detail.errorCode === 'HUMAN_DECISION_REQUIRED' &&
+      event.detail.transitionCount === 0 &&
+      Date.parse(event.occurredAt) >= call.startedAt &&
+      Date.parse(event.occurredAt) <= call.at,
+  );
+  if (matches.length !== 1) {
+    throw new DemoNotVerifiedError(
+      'HUMAN_DECISION_REQUIRED has no unique current-call audit refusal',
+    );
+  }
+  if (
+    events.some(
+      (event) =>
+        event.auditSequence > auditSequenceFloor &&
+        (Date.parse(event.occurredAt) >= call.startedAt ||
+          event.auditSequence > matches[0].auditSequence) &&
+        (event.event === 'state_write' || event.event.startsWith('transition:')),
+    )
+  ) {
+    throw new RefusedDecisionMutationError();
+  }
+}
+
+class RefusedDecisionMutationError extends Error {
+  constructor() {
+    super('HUMAN_DECISION_REQUIRED audit window contains a persisted mutation');
+    this.name = 'RefusedDecisionMutationError';
+    this.code = 'DEMO_REFUSED_DECISION_MUTATION';
   }
 }
 
@@ -109,6 +203,7 @@ export function expectRecovery(
   terminal,
   deniedIdentities = [],
   auditSequenceFloor = 0,
+  denialCodes = [],
 ) {
   const actor = identity(state);
   if (tools.length === 1 && tools[0] === 'flowguard_continue' && state?.phase === 'READY') {
@@ -123,11 +218,15 @@ export function expectRecovery(
     return { kind: 'flow_selection', ...actor, command };
   }
   if (tools.length === 1 && tools[0] === 'flowguard_ticket') {
-    // A TICKET_SOURCE_CONFLICT correction is the adoption of the actual ticket.
+    // A ticket-source correction is the adoption of the actual ticket.
     // The identity is the persisted ticket digest; conflicts or a missing
     // persisted ticket stay unproven. The audit-side transition witness is
     // checked by recoveryPersisted, never here.
-    if (deniedIdentities.some((entry) => entry.conflicts.length > 0)) {
+    if (
+      denialCodes.length === 0 ||
+      denialCodes.some((code) => !TICKET_SOURCE_CONFLICT_CODES.has(code)) ||
+      deniedIdentities.some((entry) => entry.conflicts.length > 0)
+    ) {
       return { kind: 'unproven', ...actor };
     }
     const ticket = state?.ticket;
@@ -147,6 +246,7 @@ export function expectRecovery(
       digest: ticket.digest,
       source: typeof ticket.source === 'string' ? ticket.source : null,
       auditSequenceFloor,
+      denialCodes: [...new Set(denialCodes)],
     };
   }
   const kind =
@@ -201,7 +301,7 @@ export function expectRecovery(
  * must equal the expected digest AND the SHA-256 of the stored content, so a
  * tampered ticket text can never inherit a trusted digest. The audit trail
  * must show the operational sequence that corrected THIS denial - a failed
- * `flowguard_ticket` call with TICKET_SOURCE_CONFLICT, followed by a
+ * `flowguard_ticket` call with each observed ticket-source denial code, followed by a
  * successful `flowguard_ticket` call that itself records a transition,
  * followed by the canonical `READY -> TICKET` selection - restricted to the
  * current recovery turn (`auditSequenceFloor`) and the verified FlowGuard
@@ -215,22 +315,32 @@ function ticketAdoptionPersisted(expected, state, auditEvents) {
   if (typeof ticket.text !== 'string' || ticket.text.length === 0) return false;
   if (ticketContentDigest(ticket.text) !== expected.digest) return false;
 
-  const floor =
-    typeof expected.auditSequenceFloor === 'number' && Number.isFinite(expected.auditSequenceFloor)
-      ? expected.auditSequenceFloor
-      : 0;
+  const floor = expected.auditSequenceFloor;
+  if (
+    !Number.isSafeInteger(floor) ||
+    floor < 0 ||
+    !Array.isArray(expected.denialCodes) ||
+    expected.denialCodes.length === 0 ||
+    expected.denialCodes.some((code) => !TICKET_SOURCE_CONFLICT_CODES.has(code))
+  )
+    return false;
   const scoped = auditEvents.filter(
     (event) =>
-      (Number(event?.auditSequence) || 0) > floor &&
+      Number.isSafeInteger(event?.auditSequence) &&
+      event.auditSequence > floor &&
       event?.flowguardSessionId === expected.flowguardSessionId,
   );
 
+  return expected.denialCodes.every((code) => ticketAdoptionAfterDenial(scoped, code));
+}
+
+function ticketAdoptionAfterDenial(scoped, code) {
   const denialIndex = scoped.findIndex(
     (event) =>
       event?.event === 'tool_call:flowguard_ticket' &&
       event.detail?.tool === 'flowguard_ticket' &&
       event.detail?.success === false &&
-      TICKET_SOURCE_CONFLICT_CODES.has(event.detail?.errorCode),
+      event.detail?.errorCode === code,
   );
   if (denialIndex === -1) return false;
   const successIndex = scoped.findIndex(
