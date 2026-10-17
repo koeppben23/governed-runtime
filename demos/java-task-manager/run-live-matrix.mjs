@@ -475,10 +475,37 @@ export function enableRawArchiveInRepoConfig(workspace) {
   fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 
-export function assertArchitectureProbeNotPersisted(state) {
-  if (state.architecture !== null) {
-    throw new Error('the rejected architecture probe declaration was persisted');
+/**
+ * Negative-probe precondition: the controlled probe is only meaningful on a
+ * pristine READY session with no architecture record. If the agent already
+ * performed architecture work (observed live: the whole flow ran inside the
+ * /start turn), the scenario is no longer clean -> NOT_VERIFIED.
+ */
+export function assertArchitectureProbePrecondition(state) {
+  if (state.architecture !== null || state.phase !== 'READY') {
+    throw new DemoNotVerifiedError(
+      'the agent performed architecture work before the controlled probe; ' +
+        'the negative-probe precondition is violated (the scenario is not clean); ' +
+        'the proof is NOT_VERIFIED',
+    );
   }
+}
+
+/**
+ * Step-local mutation check: the rejected probe call must not change the
+ * architecture digest or the phase, and must not write state or run a
+ * transition in the audit trail (which would also catch an intermediate
+ * mutation that was reverted before the post-state was read).
+ */
+export function architectureProbeMutated(before, after, auditEvents) {
+  const beforeDigest = before.architecture?.digest ?? null;
+  const afterDigest = after.architecture?.digest ?? null;
+  if (beforeDigest !== afterDigest) return true;
+  if (before.phase !== after.phase) return true;
+  return auditEvents.some(
+    (event) =>
+      event?.event === 'state_write' || String(event?.event ?? '').startsWith('transition:'),
+  );
 }
 
 export function canonicalPath(target) {
@@ -586,7 +613,7 @@ function readState(configDir, sessionId) {
 }
 
 /** Highest persisted audit sequence before the current turn (0 without a trail). */
-function lastAuditSequence(configDir, sessionId) {
+export function lastAuditSequence(configDir, sessionId) {
   const found = sessionStateDir(configDir, sessionId);
   if (!found) return 0;
   return readAuditEvents(found.sessionDir).reduce(
@@ -1168,7 +1195,7 @@ export class Runner {
     const snapshot = this.requireBoundState(session);
     const targets = transcriptTargets(snapshot.state);
     if (targets.parent !== session.sessionId) {
-      throw new Error(`${flow}: persisted host binding is not the observed session`);
+      throw new Error(`${flow.name}: persisted host binding is not the observed session`);
     }
     flow.transcripts = { reviewers: [] };
     flow.transcriptErrors = [];
@@ -1349,14 +1376,24 @@ export async function runFlows(runner) {
       run: async (session) => {
         // Controlled negative step: the exact typed denial must be observed and
         // nothing may be persisted before the allowed recovery continues.
+        const preProbe = runner.requireBoundState(session);
+        assertArchitectureProbePrecondition(preProbe.state);
+        const probeAuditFloor = lastAuditSequence(runner.configDir, session.sessionId);
         await runner.turn(
           session,
           'architecture-negative-02-probe',
           'Call flowguard_architecture exactly once with a minimal ADR (title Negative-Path Probe, adrText with the sections ## Context, ## Decision, ## Consequences) and EXACTLY this intentionally invalid plan-shaped claims array: [{"statement":"probe plan-shaped claim","claimScope":"specific_behavior","expectedCheckId":"probe","critical":true}]. Report the typed rejection code, do not resubmit in this step, and stop.',
           { expectedDenial: CONTROLLED_NEGATIVE_STEPS.get('architecture-negative-02-probe') },
         );
-        const probed = runner.requireBoundState(session);
-        assertArchitectureProbeNotPersisted(probed.state);
+        const postProbe = runner.requireBoundState(session);
+        const probeAuditEvents = readAuditEvents(postProbe.sessionDir).filter(
+          (event) => (Number(event?.auditSequence) || 0) > probeAuditFloor,
+        );
+        if (architectureProbeMutated(preProbe.state, postProbe.state, probeAuditEvents)) {
+          throw new Error(
+            'the rejected architecture probe mutated persisted state; stopping the flow',
+          );
+        }
         await runner.turn(
           session,
           'architecture-negative-03-recovery',

@@ -159,6 +159,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Demo harness negative-probe precision and measurement honesty.** The
+  architecture-negative scenario now verifies its pristine precondition
+  immediately before the controlled probe: architecture work performed in the
+  `/start` turn (observed live) is `NOT_VERIFIED` instead of a misleading
+  product-`FAILED`. A real mutation by the rejected probe call stays fail-closed
+  via a step-local comparison of the architecture digest, the phase, and audit
+  `state_write`/`transition` events (which also catches an intermediate
+  mutation that was reverted). `captureProvenance` error messages name the flow
+  instead of stringifying the record, and the perf baseline reports controlled
+  negatives by class instead of counting them as unattributed cost.
+  `KNOWN_ISSUES.md` records that the `/start` command boundary is guidance, not
+  enforcement (tools are released by phase, not by the running command).
+
 - **Architecture ADR recovery guidance names the working call forms.**
   `ADR_SUBMISSION_MIXED_INPUTS` now states that the prohibition is `title`
   combined with a review verdict — never a revised body together with a verdict.

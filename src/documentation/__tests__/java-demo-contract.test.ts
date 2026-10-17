@@ -13,7 +13,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FLOWS,
   Runner,
-  assertArchitectureProbeNotPersisted,
+  architectureProbeMutated,
+  assertArchitectureProbePrecondition,
   enableRawArchiveInRepoConfig,
   unexpectedDenialCodes,
   captureRetryCodes,
@@ -34,6 +35,7 @@ import {
   withRawExportGrant,
 } from '../../../demos/java-task-manager/run-live-matrix.mjs';
 import { approvedPlan, reviewedPlan } from '../demo-recovery-test-helpers.js';
+import { DemoNotVerifiedError } from '../../../demos/lib/results.mjs';
 
 describe('structured re-arm recovery witness', () => {
   const event = {
@@ -236,8 +238,42 @@ describe('Java Task Manager demo contract', () => {
       ),
     ).toThrow(/unexpected denial/);
 
-    expect(() => assertArchitectureProbeNotPersisted({ architecture: null })).not.toThrow();
-    expect(() => assertArchitectureProbeNotPersisted({ architecture: {} })).toThrow(/persisted/);
+    // Clean precondition: pristine READY session without an architecture record.
+    expect(() =>
+      assertArchitectureProbePrecondition({ architecture: null, phase: 'READY' }),
+    ).not.toThrow();
+    // A pre-existing architecture record (agent ran the flow in the start turn)
+    // is NOT_VERIFIED, never a product FAILED.
+    expect(() =>
+      assertArchitectureProbePrecondition({ architecture: { digest: 'adr' }, phase: 'READY' }),
+    ).toThrow(/precondition is violated/);
+    try {
+      assertArchitectureProbePrecondition({ architecture: { digest: 'adr' }, phase: 'READY' });
+      expect.unreachable('expected the precondition to fail closed');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DemoNotVerifiedError);
+    }
+    expect(() =>
+      assertArchitectureProbePrecondition({ architecture: null, phase: 'ARCHITECTURE' }),
+    ).toThrow(/precondition is violated/);
+
+    // Step-local mutation: digest/phase drift or an audit state_write/transition
+    // is the probe having changed state (FAILED), even if it was reverted.
+    const before = { architecture: null, phase: 'READY' };
+    expect(architectureProbeMutated(before, before, [])).toBe(false);
+    expect(
+      architectureProbeMutated(before, { architecture: { digest: 'adr' }, phase: 'READY' }, []),
+    ).toBe(true);
+    expect(
+      architectureProbeMutated(before, { architecture: null, phase: 'ARCHITECTURE' }, []),
+    ).toBe(true);
+    expect(architectureProbeMutated(before, before, [{ event: 'state_write' }])).toBe(true);
+    expect(
+      architectureProbeMutated(before, before, [{ event: 'transition:ARCHITECTURE_SELECTED' }]),
+    ).toBe(true);
+    expect(
+      architectureProbeMutated(before, before, [{ event: 'tool_call:flowguard_architecture' }]),
+    ).toBe(false);
   });
 
   it('initializes the runner with the workspace root and wires every flow entry', async () => {
@@ -306,7 +342,10 @@ describe('Java Task Manager demo contract', () => {
         calls.push({ label, prompt, options });
         return { code: 0, stdout: '', stderr: '', timedOut: false, durationMs: 0, sessionIds: [] };
       };
-      runner.requireBoundState = () => ({ state: { architecture: null }, sessionDir: root });
+      runner.requireBoundState = () => ({
+        state: { architecture: null, phase: 'READY' },
+        sessionDir: root,
+      });
       runner.approve = async (_session, label, phase) => {
         expect(phase).toBe('ARCH_REVIEW');
         calls.push({ label });
@@ -335,9 +374,33 @@ describe('Java Task Manager demo contract', () => {
       expect(calls[1]!.prompt).toContain('full fresh independent review');
       expect(calls[1]!.prompt).toContain('Do not use a governance override');
       calls.length = 0;
-      runner.requireBoundState = () => ({ state: { architecture: {} }, sessionDir: root });
+      // Unclean precondition (agent ran architecture work before the probe):
+      // NOT_VERIFIED, and the probe turn is never executed.
+      runner.requireBoundState = () => ({
+        state: { architecture: { digest: 'adr-from-start-turn' }, phase: 'READY' },
+        sessionDir: root,
+      });
       await expect(flow.run({ workspace: flow.workspace })).rejects.toThrow(
-        /probe declaration was persisted/,
+        /precondition is violated/,
+      );
+      expect(calls.map((call) => call.label)).toEqual([]);
+
+      // A real mutation by the rejected probe call stays FAILED.
+      calls.length = 0;
+      let probeBound = true;
+      runner.requireBoundState = () => ({
+        state: probeBound
+          ? { architecture: null, phase: 'READY' }
+          : { architecture: { digest: 'mutated-by-probe' }, phase: 'ARCHITECTURE' },
+        sessionDir: root,
+      });
+      runner.turn = async (_session, label, prompt, options = {}) => {
+        calls.push({ label, prompt, options });
+        if (label === 'architecture-negative-02-probe') probeBound = false;
+        return { code: 0, stdout: '', stderr: '', timedOut: false, durationMs: 0, sessionIds: [] };
+      };
+      await expect(flow.run({ workspace: flow.workspace })).rejects.toThrow(
+        /probe mutated persisted state/,
       );
       expect(calls.map((call) => call.label)).toEqual(['architecture-negative-02-probe']);
     } finally {
@@ -1211,7 +1274,7 @@ describe('Java Task Manager demo contract', () => {
         calls.some((call) => call.label === 'architecture-negative-03-recovery');
       runner.requireBoundState = () => ({
         state: {
-          phase: 'ARCH_REVIEW',
+          phase: recoveryDone() ? 'ARCH_REVIEW' : 'READY',
           architecture: recoveryDone()
             ? { reviewCompletion: 'review_exhausted', status: 'proposed' }
             : null,
