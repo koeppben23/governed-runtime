@@ -12,6 +12,17 @@ function identity(state) {
 }
 
 /**
+ * Wait-state guards admit nothing on their own: a correction is proven only by
+ * the SAME operation succeeding AND the persisted review projection advancing in
+ * that turn. `PLAN_REVIEW_IN_PROGRESS` keeps its dedicated plan-gate proof as
+ * well; a bare retry never settles either code.
+ */
+export const WAIT_STATE_RECOVERY_CODES = new Set([
+  'ADR_REVIEW_IN_PROGRESS',
+  'PLAN_REVIEW_IN_PROGRESS',
+]);
+
+/**
  * Demo-side reader for the session audit trail. The witness itself is a plain
  * sequence check over the persisted events; the product's canonical verifier
  * remains the authority for archive and chain validation, which this runner

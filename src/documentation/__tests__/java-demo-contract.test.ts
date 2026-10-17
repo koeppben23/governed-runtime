@@ -29,6 +29,7 @@ import {
   readPins,
   runFlows,
   sha256,
+  taskChildSessionIds,
   transcriptTargets,
   verificationFlowFor,
   verifyChecksumSidecar,
@@ -1414,16 +1415,50 @@ describe('Java Task Manager demo contract', () => {
           { childSessionId: 'ses_parent' },
         ],
         attempts: [
-          { childSessionId: 'ses_stale_1', status: 'stale' },
+          {
+            childSessionId: 'ses_stale_1',
+            status: 'stale',
+            observations: [{ observedBySessionId: 'ses_observed_1' }],
+          },
           { childSessionId: 'ses_reviewer_1', status: 'bound' },
           { childSessionId: undefined, status: 'created' },
         ],
       },
     };
-    expect(transcriptTargets(state)).toEqual({
+    expect(transcriptTargets(state, ['ses_task_1'])).toEqual({
       parent: 'ses_parent',
-      reviewers: ['ses_reviewer_1', 'ses_stale_1'],
+      reviewers: ['ses_reviewer_1', 'ses_stale_1', 'ses_observed_1', 'ses_task_1'],
     });
+  });
+
+  it('reads reviewer children only from Task metadata bound to this parent', () => {
+    const turn = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'task',
+        state: {
+          metadata: {
+            parentSessionId: 'ses_parent',
+            sessionId: 'ses_child_1',
+            flowguardReviewExecution: { childSessionId: 'ses_child_1' },
+          },
+        },
+      },
+    });
+    const foreign = JSON.stringify({
+      type: 'tool_use',
+      part: {
+        tool: 'task',
+        state: {
+          metadata: {
+            parentSessionId: 'ses_other',
+            sessionId: 'ses_child_foreign',
+            flowguardReviewExecution: { childSessionId: 'ses_child_foreign' },
+          },
+        },
+      },
+    });
+    expect(taskChildSessionIds(`${turn}\n${foreign}`, 'ses_parent')).toEqual(['ses_child_1']);
   });
 
   it('keeps the ticket and runbook explicit about the complete regression fix', async () => {

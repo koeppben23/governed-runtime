@@ -404,7 +404,24 @@ describe('demo perf baseline - denial attribution', () => {
         flow: 'architecture-negative',
         step: 'architecture-negative-02-probe',
       }),
-    ).toBe('unexpected');
+    ).toBe('governance_gate_refusal');
+  });
+
+  it('HAPPY: governed refusals carry their own classes instead of "unexpected"', () => {
+    expect(
+      classifyDenial({
+        code: 'GOVERNANCE_OVERRIDE_REQUIRED',
+        flow: 'architecture-negative',
+        step: 'architecture-negative-03-recovery',
+      }),
+    ).toBe('governance_gate_refusal');
+    expect(
+      classifyDenial({
+        code: 'HUMAN_DECISION_REQUIRED',
+        flow: 'architecture-negative',
+        step: 'architecture-negative-03-recovery',
+      }),
+    ).toBe('human_decision_refusal');
   });
 
   it('HAPPY: only the declared (step, code) pair is a controlled negative', () => {
@@ -549,7 +566,7 @@ describe('summary attribution', () => {
   const identity = {
     model: 'test/model',
     hostVersion: '1.19.0',
-    harnessVersion: 'demo-harness.v2',
+    harnessVersion: 'demo-harness.v3',
     contractVersion: 'contract.v2',
     buildSha: 'b'.repeat(40),
   };

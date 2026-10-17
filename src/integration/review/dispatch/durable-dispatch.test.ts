@@ -572,6 +572,32 @@ describe('abandonAndRearmByHostCall', () => {
     expect(SessionState.safeParse(stateRef.current).success).toBe(true);
   });
 
+  it('PROVENANCE: writes the failing child onto the staled attempt in the same re-arm mutation', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+
+    const outcome = await abandonAndRearmByHostCall(deps, SESS_DIR, CHILD, NOW, {
+      code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+      diagnostics: [],
+      childSessionId: 'child-failing-task',
+    });
+
+    expect(outcome.kind).toBe('rearmed');
+    if (outcome.kind !== 'rearmed') return;
+    const after = stateRef.current.reviewAssurance!;
+    const stale = after.attempts.find((candidate) => candidate.attemptId === attempt.attemptId);
+    expect(stale?.status).toBe('stale');
+    expect(stale?.childSessionId).toBe('child-failing-task');
+    // The stale child stays attributable but never becomes the re-armed attempt.
+    expect(
+      after.attempts.find((candidate) => candidate.attemptId === outcome.attempt.attemptId)
+        ?.childSessionId,
+    ).toBeUndefined();
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
   it('BUDGET: refuses a second re-arm yet still stales A2 and blocks', async () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };

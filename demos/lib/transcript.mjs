@@ -70,6 +70,9 @@ export function toolUseEvents(output) {
     events.push({
       index,
       tool: typeof event.part?.tool === 'string' ? event.part.tool : undefined,
+      // Completion instant of the tool call; witnesses that must not precede a
+      // later persisted mutation (e.g. an audited refusal) bind to it.
+      at: event.part?.state?.time?.end ?? event.timestamp ?? null,
       payload: parseHostPayload(event.part?.state?.output),
     });
   }
@@ -107,7 +110,7 @@ export function toolDenialEvents(output) {
     if (event.payload.kind !== 'json') continue;
     const value = event.payload.value;
     if (value && value.error === true && typeof value.code === 'string') {
-      denials.push({ index: event.index, tool: event.tool, code: value.code });
+      denials.push({ index: event.index, tool: event.tool, code: value.code, at: event.at });
     }
   }
   return denials;

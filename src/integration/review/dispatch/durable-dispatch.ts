@@ -48,6 +48,13 @@ export interface DispatchLedgerWriteDeps {
 export interface CaptureClosureAuditInput {
   readonly code: string;
   readonly diagnostics: readonly PendingReviewRetryDiagnostic[];
+  /**
+   * Child session that produced the failed capture, when the native Task
+   * release already bound it. It is written to the staled attempt in the SAME
+   * mutation that abandons the dispatch, so the discarded reviewer transcript
+   * stays attributable. It never authorizes evidence on its own.
+   */
+  readonly childSessionId?: string;
 }
 
 export interface AuthorizedReviewDispatchInput {
@@ -232,11 +239,15 @@ export async function abandonAndRearmByHostCall(
       );
       if (attempt === undefined || attempt.status !== 'created') return state;
 
-      const staled = updateAttemptStatus(
-        abandonReviewDispatch(assurance, hostCallId),
+      const staled = bindStaleChildSession(
+        updateAttemptStatus(
+          abandonReviewDispatch(assurance, hostCallId),
+          attempt.attemptId,
+          'stale',
+          now,
+        ),
         attempt.attemptId,
-        'stale',
-        now,
+        captureFailure?.childSessionId,
       );
       const spent = (staled.attempts ?? []).find(
         (candidate) => candidate.attemptId === attempt.attemptId,
@@ -273,6 +284,27 @@ export async function abandonAndRearmByHostCall(
     closureAuditIntents(() => outcome, captureFailure, now),
   );
   return outcome;
+}
+
+/**
+ * Persist the failing child session on the attempt that this exact host call is
+ * staling. The mutation never overwrites a different already-bound child (that
+ * would rewrite provenance); it only fills the lineage gap the retry left.
+ */
+function bindStaleChildSession(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  attemptId: string,
+  childSessionId: string | undefined,
+): ReturnType<typeof ensureReviewAssurance> {
+  if (childSessionId === undefined) return assurance;
+  return {
+    ...assurance,
+    attempts: (assurance.attempts ?? []).map((candidate) =>
+      candidate.attemptId === attemptId && candidate.childSessionId === undefined
+        ? { ...candidate, childSessionId }
+        : candidate,
+    ),
+  };
 }
 
 /**
