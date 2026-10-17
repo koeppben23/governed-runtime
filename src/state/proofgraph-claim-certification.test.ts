@@ -14,6 +14,7 @@ const declaration: PlanClaimDeclaration = {
   authoritySectionId: 'state',
   claimScope: 'specific_behavior',
   expectedCheckId: 'test',
+  expectedAssertion: { providerId: 'junit', localId: 'fixture.Store#rejectsInvalidState' },
   structuralSurface: 'config-defaults',
   mutationProfile: 'proofgraph-gate',
   counterexampleRequirement: {
@@ -39,6 +40,7 @@ function materialized(): DeclaredClaim {
     certifiedPlan: {
       authoritySectionId: declaration.authoritySectionId,
       expectedCheckId: declaration.expectedCheckId,
+      expectedAssertion: declaration.expectedAssertion,
       structuralSurface: declaration.structuralSurface,
       mutationProfile: declaration.mutationProfile,
       digest: certifiedClaimDigest(declaration),
@@ -63,6 +65,19 @@ describe('certified claim semantics', () => {
       }),
     ).not.toBe(certifiedClaimDigest(declaration));
   });
+  it('detects the declared positive assertion drift even with a copied digest', () => {
+    const claim = materialized();
+    expect(
+      materializedClaimDigest({
+        ...claim,
+        certifiedPlan: {
+          ...claim.certifiedPlan!,
+          expectedAssertion: { providerId: 'junit', localId: 'other#test' },
+        },
+      }),
+    ).not.toBe(certifiedClaimDigest(declaration));
+  });
+
   it('detects removed adversarial requirements despite an unchanged certified digest', () => {
     const claim = materialized();
     expect(

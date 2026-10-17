@@ -34,6 +34,9 @@ function certifiedPlanOrigin(declaration: PlanClaimDeclaration) {
   return {
     authoritySectionId: declaration.authoritySectionId,
     expectedCheckId: declaration.expectedCheckId,
+    ...(declaration.expectedAssertion !== undefined
+      ? { expectedAssertion: { ...declaration.expectedAssertion } }
+      : {}),
     ...(declaration.structuralSurface !== undefined
       ? { structuralSurface: declaration.structuralSurface }
       : {}),

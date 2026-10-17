@@ -142,6 +142,7 @@ const proofClaimBase = {
     .object({
       authoritySectionId: z.string().min(1),
       expectedCheckId: z.string().min(1),
+      expectedAssertion: AssertionIdentity.optional(),
       structuralSurface: z.string().min(1).optional(),
       mutationProfile: z.string().min(1).optional(),
       digest: z.string().regex(/^[a-f0-9]{64}$/),

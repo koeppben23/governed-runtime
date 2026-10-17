@@ -1,6 +1,7 @@
 /** Canonical certified claim semantics, shared by materialization and approval. */
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
+import type { AssertionIdentity } from './assertion-identity.js';
 import type { DeclaredClaim, RequiredEvidence } from './proofgraph.js';
 
 /** Structural input port: no dependency back on the certificate authority. */
@@ -11,6 +12,7 @@ type ClaimCertificationInput = Pick<
   readonly claimScope: NonNullable<DeclaredClaim['claimScope']>;
   readonly authoritySectionId: string;
   readonly expectedCheckId: string;
+  readonly expectedAssertion?: AssertionIdentity | undefined;
   readonly structuralSurface?: string | undefined;
   readonly mutationProfile?: string | undefined;
 };
@@ -46,6 +48,7 @@ function semanticDigest(claim: {
   readonly claimScope?: string | undefined;
   readonly authoritySectionId: string;
   readonly expectedCheckId: string;
+  readonly expectedAssertion?: AssertionIdentity | undefined;
   readonly structuralSurface?: string | undefined;
   readonly mutationProfile?: string | undefined;
   readonly counterexampleRequirement?: DeclaredClaim['counterexampleRequirement'];
@@ -57,6 +60,11 @@ function semanticDigest(claim: {
       ...claim,
       statement: claim.statement,
       counterexampleRequirement: claim.counterexampleRequirement ?? null,
+      // Optional declaration fields hash only when declared, so declarations
+      // without them keep their canonical digest.
+      ...(claim.expectedAssertion !== undefined
+        ? { expectedAssertion: claim.expectedAssertion }
+        : {}),
       structuralSurface: claim.structuralSurface ?? null,
       mutationProfile: claim.mutationProfile ?? null,
       coversRiskTriggers: [...(claim.coversRiskTriggers ?? [])].sort(),
@@ -89,6 +97,9 @@ export function materializedClaimDigest(claim: DeclaredClaim): string | null {
     claimScope: claim.claimScope,
     authoritySectionId: origin.authoritySectionId,
     expectedCheckId: origin.expectedCheckId,
+    ...(origin.expectedAssertion !== undefined
+      ? { expectedAssertion: origin.expectedAssertion }
+      : {}),
     structuralSurface: origin.structuralSurface,
     mutationProfile: origin.mutationProfile,
     counterexampleRequirement: claim.counterexampleRequirement,
