@@ -104,6 +104,17 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
+    code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+    category: 'state',
+    messageTemplate:
+      'The reviewer child reached its configured host step budget before structured findings could be captured.',
+    recoverySteps: [
+      'A fresh reviewer attempt on the same frozen review obligation was re-armed automatically. Invoke the reviewer Task again.',
+      'If the attempt budget is exhausted, report the blocker and re-run the originating command to mint a fresh obligation.',
+    ],
+  },
+
+  {
     code: 'REVIEW_ATTEMPT_UNAVAILABLE',
     category: 'state',
     messageTemplate:

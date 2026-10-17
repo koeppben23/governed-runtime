@@ -19,6 +19,7 @@ import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import type { OrchestratorClient, PendingReviewRetryDiagnostic } from '../types.js';
+import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
 import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
 import {
   buildStructuredFindingsContractDiagnostics,
@@ -43,6 +44,52 @@ type BlockedFollowup = Extract<StructuredFollowupResult, { readonly kind: 'block
 type ParsedFollowup =
   { readonly kind: 'ok'; readonly findings: Record<string, unknown> } | BlockedFollowup;
 type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
+
+export type ReviewerStepBudgetState = 'exhausted' | 'ambiguous' | 'not_exhausted';
+
+/**
+ * Verify a HOST-enforced reviewer step-budget stop before the structured
+ * follow-up runs. Proof requires all of: the child's assistant-step count
+ * equals the configured reviewer step limit, the last host-recorded step
+ * finished with `stop`, and it made no tool call. Anything unreadable or
+ * mismatched is ambiguous (the caller keeps the normal capture path); only a
+ * verified host stop becomes a retryable transport failure.
+ */
+type SessionMessage = {
+  readonly info?: { readonly role?: string; readonly finish?: string };
+  readonly parts?: readonly { readonly type?: string }[];
+};
+
+function assistantMessages(data: readonly SessionMessage[]): readonly SessionMessage[] {
+  return data.filter((entry) => entry.info?.role === 'assistant');
+}
+
+/** Host-recorded stop of the last assistant step, without further tool work. */
+function stoppedWithoutToolCall(message: SessionMessage | undefined): boolean {
+  if (message?.info?.finish !== 'stop') return false;
+  const parts = Array.isArray(message.parts) ? message.parts : [];
+  return !parts.some((part) => part?.type === 'tool');
+}
+
+export async function detectReviewerStepBudgetExhaustion(
+  client: OrchestratorClient,
+  childSessionId: string,
+): Promise<ReviewerStepBudgetState> {
+  const messages = client.session.messages;
+  if (typeof messages !== 'function') return 'ambiguous';
+  let response: Awaited<ReturnType<NonNullable<typeof messages>>>;
+  try {
+    response = await messages({ path: { id: childSessionId } });
+  } catch {
+    return 'ambiguous';
+  }
+  if (response?.error !== undefined || !Array.isArray(response?.data)) return 'ambiguous';
+  const assistants = assistantMessages(response.data);
+  // A child below the limit still has steps to serialize findings; a child
+  // above it proves the limit did not stop it.
+  if (assistants.length !== REVIEWER_STEP_LIMIT) return 'not_exhausted';
+  return stoppedWithoutToolCall(assistants.at(-1)) ? 'exhausted' : 'ambiguous';
+}
 
 function serializationPrompt(obligationId: string): string {
   return [

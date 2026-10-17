@@ -109,6 +109,16 @@ export interface OrchestratorClient {
     agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
   };
   session: {
+    /** Host-recorded session messages; used to verify a host step-budget stop. */
+    messages?(opts: { path: { id: string } }): Promise<{
+      data?:
+        | Array<{
+            info?: { role?: string; finish?: string };
+            parts?: Array<{ type?: string }>;
+          }>
+        | undefined;
+      error?: unknown;
+    }>;
     prompt(opts: {
       path: { id: string };
       body: {

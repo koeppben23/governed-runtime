@@ -159,6 +159,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A host-enforced reviewer step-budget stop is retried, not consumed as a
+  review verdict.** When the reviewer child reached its configured host step
+  limit (`steps: ${REVIEWER_STEP_LIMIT}` in the reviewer agent template), the
+  structured follow-up still ran and the honest `unable_to_review` verdict
+  consumed the obligation, forbidding a retry — a pure capacity limit became a
+  governance dead end (observed live: 10/10 steps, host recorded `finish:
+stop`, reviewer child reported it could not complete the falsification).
+  The native transport now verifies the host stop **before** the structured
+  follow-up from the recorded child messages: exactly the configured step
+  count, last step `finish: stop`, and no tool call. A verified stop re-arms a
+  fresh attempt on the same frozen obligation through the existing bounded
+  re-arm budget (`REVIEWER_STEP_BUDGET_EXHAUSTED`, retryable); the discarded
+  child remains untouched. Anything unreadable or mismatched stays on the
+  normal capture path — no invented retry success. The step limit is exported
+  from the canonical reviewer template as `REVIEWER_STEP_LIMIT`.
+
 - **Demo harness negative-probe precision and measurement honesty.** The
   architecture-negative scenario now verifies its pristine precondition
   immediately before the controlled probe: architecture work performed in the

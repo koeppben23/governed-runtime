@@ -116,6 +116,13 @@ grammar to the admitted subject-anchor kind, states `evidenceLocations` as
 required-but-may-be-empty, and orders `reviewRetry` handling before any
 completed-review assumption in every review command surface.
 
+A reviewer child that the host stops at its configured step budget is not a
+substantive verdict: the native transport verifies the host stop (configured
+step count, last step `finish: stop`, no tool call) from the recorded child
+messages before the structured follow-up and re-arms a fresh attempt on the
+same frozen obligation. Unreadable or ambiguous termination keeps the normal
+capture path.
+
 Implementation-challenge repair (`changes_requested` with a failing
 `implementation_challenge`) converges through one shared authority
 (`src/state/implementation-review-findings.ts`): the native reviewer prompt

@@ -21,6 +21,7 @@ import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-record
 import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
 import {
   captureStructuredFindingsFromVisibleChild,
+  detectReviewerStepBudgetExhaustion,
   type StructuredFollowupTiming,
 } from './structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
@@ -183,6 +184,23 @@ export async function capturePreparedFindings(
       readonly fulfilledAt: string;
     }
 > {
+  // Host-enforced step-budget stop: the follow-up cannot recover a review the
+  // child never concluded. The caller routes the retryable code through the
+  // existing bounded re-arm path on the same frozen obligation.
+  const stepBudget = await detectReviewerStepBudgetExhaustion(
+    runtime.orchestratorDeps.client,
+    childSessionId,
+  );
+  if (stepBudget === 'exhausted') {
+    return {
+      kind: 'blocked',
+      code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+      reason:
+        'The host stopped the reviewer at its configured step budget before structured findings ' +
+        'could be captured; a fresh reviewer attempt must be re-armed on the same frozen obligation.',
+    };
+  }
+
   const structured = await captureStructuredFindingsFromVisibleChild(
     runtime.orchestratorDeps.client,
     { childSessionId, obligationId: obligation.obligationId },
