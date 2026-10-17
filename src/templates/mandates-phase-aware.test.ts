@@ -272,6 +272,8 @@ describe('phase-aware mandates rendering', () => {
   it('keeps permanent reviewer instructions compact and projects criteria into task contracts', () => {
     expect(renderReviewerPrompt('plan')).toBe(renderReviewerPrompt('implementation'));
     expect(renderReviewerCriteria('plan')).toContain('### For Plans');
+    expect(renderReviewerCriteria('plan')).toContain('Counterexample sufficiency');
+    expect(renderReviewerCriteria('plan')).toContain('targeted faulty variant');
     expect(renderReviewerCriteria('implementation')).toContain('### For Implementations');
     expect(renderReviewerCriteria('adr')).toContain('### For Architecture Decisions');
     expect(REVIEWER_AGENT).not.toContain('### For Plans');

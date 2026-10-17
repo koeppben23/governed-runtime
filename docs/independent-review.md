@@ -109,6 +109,16 @@ Any semantic criteria change advances `REVIEW_CRITERIA_VERSION`
 (`src/integration/review/obligations/assurance.ts`); obligations minted under a
 stale generation fail closed as `REVIEW_GENERATION_MISMATCH` and are recovered
 through the documented fresh-review-cycle route.
+Generation `p42-v6` states the counterexample sufficiency rule once: a
+counterexample must be a targeted falsification — exercise a concrete violating
+variant and show the bound check detects it; a second successful execution
+without such a mechanism does not prove the claim. A build/aggregate check can
+fill the counterexample role for a checkable invariant when a targeted faulty
+variant is provably rejected by it. Different check identities and separate
+attempt identities remain required; different assertion identities do not, so
+the same regression assertion may serve as the falsification witness when it
+fails on the targeted faulty variant.
+
 Generation `p42-v5` additionally requires both evidence classes for a passing
 implementation challenge (execution evidence on the current digest and the
 current implementation ref as content evidence), scopes the finding-relation

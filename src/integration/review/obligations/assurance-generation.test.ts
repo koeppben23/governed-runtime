@@ -55,7 +55,7 @@ describe('review generation authority', () => {
     // The plan criteria now state the evidence-role rule once (overlapping
     // suites of different checks are admissible) and carry the blocking-issue
     // bar. Obligations minted under p42-v3 fail closed.
-    expect(REVIEW_CRITERIA_VERSION).toBe('p42-v5');
+    expect(REVIEW_CRITERIA_VERSION).toBe('p42-v6');
     expect(
       isCurrentReviewGeneration({
         criteriaVersion: 'p42-v3',
@@ -64,7 +64,7 @@ describe('review generation authority', () => {
     ).toBe(false);
     expect(
       isCurrentReviewGeneration({
-        criteriaVersion: 'p42-v5',
+        criteriaVersion: 'p42-v6',
         mandateDigest: REVIEW_MANDATE_DIGEST,
       }),
     ).toBe(true);

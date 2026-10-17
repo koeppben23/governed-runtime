@@ -159,6 +159,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Counterexample sufficiency is stated once (review criteria `p42-v6`).** A
+  counterexample must be a targeted falsification: it exercises a concrete
+  violating variant and demonstrates that the bound check detects it. A second
+  successful execution of the same behavior, without such a mechanism, does not
+  prove the claim. A build or aggregate check may fill the counterexample role
+  when the claimed property is checkable and a targeted faulty variant is
+  provably rejected by it — for example the same regression assertion that
+  passes on the original implementation and fails on a targeted mutation.
+  Different check identities and separate attempt identities remain required;
+  different assertion identities do not. This addresses the live class in which
+  equivalently built plans were accepted or rejected inconsistently over `build`
+  as the counterexample (5 of 8 plan `changes_requested` in the last four runs;
+  direct cause of one plan-review exhaustion). Generation `p42-v6`: obligations
+  minted under `p42-v5` fail closed and recover through a fresh obligation. No
+  structural rule, validator, or gate change.
+
 - **A host-enforced reviewer step-budget stop is retried, not consumed as a
   review verdict.** When the reviewer child reached its configured host step
   limit (`steps: ${REVIEWER_STEP_LIMIT}` in the reviewer agent template), the

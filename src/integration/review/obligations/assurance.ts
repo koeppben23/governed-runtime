@@ -45,13 +45,17 @@ import { REVIEWER_AGENT } from '../../../templates/mandates.js';
 // reviewing under unstated semantics.
 // p42-v3: plan-review verification authority (persisted verification candidates,
 // executable candidate command) and plan-before-validation phase boundary.
+// p42-v6: counterexample sufficiency — a counterexample must be a targeted
+// falsification (concrete violating variant detected by the bound check), not a
+// second green execution; different check/attempt identities stay required,
+// assertion-identity inequality is not.
 // p42-v5: implementation challenges separate execution evidence (current-digest
 // validation attempt) from content evidence (current implementation ref); a
 // passing challenge requires both. Finding-relation grammar scope + retry
 // ordering corrections ride the same criteria generation.
 // p42-v4: plan evidence-role rule stated once in the criteria (overlapping
 // suites of different checks are admissible) and the plan blocking-issue bar.
-export const REVIEW_CRITERIA_VERSION = 'p42-v5';
+export const REVIEW_CRITERIA_VERSION = 'p42-v6';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
 
