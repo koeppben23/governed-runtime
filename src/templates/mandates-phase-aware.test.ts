@@ -276,6 +276,9 @@ describe('phase-aware mandates rendering', () => {
     expect(renderReviewerCriteria('plan')).toContain('targeted faulty variant');
     expect(renderReviewerCriteria('implementation')).toContain('### For Implementations');
     expect(renderReviewerCriteria('adr')).toContain('### For Architecture Decisions');
+    expect(renderReviewerCriteria('content')).toContain('Missing-change rule');
+    expect(renderReviewerCriteria('content')).toContain('only as observed evidenceLocations');
+    expect(renderReviewerCriteria('content')).toContain('belongs in scopeCreep');
     expect(REVIEWER_AGENT).not.toContain('### For Plans');
     expect(REVIEWER_AGENT).not.toContain('### For Implementations');
     expect(REVIEWER_AGENT).not.toContain('### For Architecture Decisions');

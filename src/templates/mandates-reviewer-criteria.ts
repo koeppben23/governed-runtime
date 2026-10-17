@@ -44,6 +44,7 @@ Every blocking issue must let the author act: name the violated approved obligat
   content: `### Content Review (for /review flow)
 - Analyze only the supplied frozen subject and its allowed repository evidence.
 - Compliance defects are correctness findings; missing validation is completeness.
+- Missing-change rule: when the reviewed change introduces a requirement (for example a new field) but the surrounding code does not implement it, that is a blocking correctness finding of the changed functionality. Anchor the finding at the exact CHANGED code location that introduces the requirement, and cite the unchanged files that show the missing processing only as observed evidenceLocations. Do not invent a link to a changed location: a finding with no changed-site anchor is genuinely out of scope and belongs in scopeCreep.
 - Security findings require a concrete attack path, not theoretical hardening.
 - Report high-conviction findings with structured subject/evidence anchors and a concrete remedy; avoid style preferences.
 - Preserve reviewMode, attestation.toolObligationId, overallVerdict, missingVerification, scopeCreep, and unknowns exactly as the task contract requires.`,

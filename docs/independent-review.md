@@ -467,6 +467,16 @@ Each `Finding` requires `severity`, `category`, `message`, and `relation`.
 anchors. `relation.evidenceLocations` is required but may be empty. The legacy
 free-text `location` field is not accepted.
 
+For a review over changed repository files, a **missing-change finding** — the
+reviewed change introduces a requirement (for example a new `dueDate` field)
+that surrounding unchanged code does not implement — is a blocking correctness
+finding of the changed functionality. It must anchor at the exact changed
+location that introduces the requirement; the unchanged files that demonstrate
+the missing processing are cited only as observed `evidenceLocations`. This is
+not `scopeCreep`. The scope gate lists the frozen allowed subject paths in the
+retry diagnostics. A finding with no changed-site anchor is genuinely out of
+scope: never invent a link to the reviewed change.
+
 > **Attestation in subagent mode:** the canonical `ReviewFindings.attestation`
 > is optional at the record level (human/self-review shapes do not carry it),
 > while the reviewer-facing `ReviewerFindingsInput` requires exactly

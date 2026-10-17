@@ -24,7 +24,73 @@ const repositoryRelation = {
   evidenceLocations: [{ path: 'docs/evidence.md', revision: 'base' as const, line: 2 }],
 };
 
+const DUE_DATE_RELATION = {
+  subjectAnchors: [
+    {
+      kind: 'repository_location' as const,
+      location: {
+        path: 'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
+        revision: 'head' as const,
+      },
+    },
+  ],
+  evidenceLocations: [
+    {
+      path: 'src/main/java/com/example/taskmanager/service/TaskService.java',
+      revision: 'head' as const,
+    },
+  ],
+};
+
 describe('review/enforcement/findings-consistency', () => {
+  it('PASS: a missing-change finding is anchored at the changed file and cites unchanged files as evidence', () => {
+    const changedOnly = {
+      kind: 'repository_change' as const,
+      paths: [
+        'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
+        'src/main/java/com/example/taskmanager/model/Task.java',
+      ],
+      revisions: ['base', 'head'] as const,
+    };
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation: DUE_DATE_RELATION }],
+        reviewSubjectScope: changedOnly,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('BAD: an unchanged-file anchor stays out of scope even with valid evidence', () => {
+    const changedOnly = {
+      kind: 'repository_change' as const,
+      paths: [
+        'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
+        'src/main/java/com/example/taskmanager/model/Task.java',
+      ],
+      revisions: ['base', 'head'] as const,
+    };
+    const relation = {
+      subjectAnchors: [
+        {
+          kind: 'repository_location' as const,
+          location: {
+            path: 'src/main/java/com/example/taskmanager/service/TaskService.java',
+            revision: 'head' as const,
+          },
+        },
+      ],
+      evidenceLocations: DUE_DATE_RELATION.evidenceLocations,
+    };
+    expect(
+      validateReviewFindingsScope({
+        findings: [{ relation }],
+        reviewSubjectScope: changedOnly,
+        repositoryRevisionProvenance: REPOSITORY_PROVENANCE,
+      }),
+    ).toMatchObject({ ok: false, code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE' });
+  });
+
   it('rejects accept with blocking findings', () => {
     expect(
       validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 1 }),
