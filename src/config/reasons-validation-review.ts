@@ -260,6 +260,7 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'Provide the full ADR body in MADR format',
       'Must include ## Context, ## Decision, and ## Consequences sections',
+      'When revising after changes_requested, send the revised body in the same call: flowguard_architecture({ reviewVerdict: "changes_requested", adrText, claims }) — WITHOUT title',
     ],
   },
 

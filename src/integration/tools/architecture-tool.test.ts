@@ -515,6 +515,47 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
+  it('accepts the recovery-named revision form during the active review loop', async () => {
+    // Live regression: after changes_requested, the ONLY working form is
+    // { reviewVerdict: "changes_requested", adrText, claims } — WITHOUT title.
+    // The recovery guidance names exactly this call.
+    mocks.state = makeState('ARCHITECTURE', {
+      architecture: {
+        id: 'ADR-001',
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        digest: 'digest-adr',
+        status: 'proposed',
+        reviewFindings: [],
+        reviewCompletion: 'pending',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      selfReview: {
+        iteration: 0,
+        reviewCycle: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-adr',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    const { architecture } = await import('./architecture/architecture.js');
+    const res = await architecture.execute(
+      {
+        reviewVerdict: 'changes_requested',
+        adrText: '## Context\nA2\n\n## Decision\nB\n\n## Consequences\nC',
+        claims: [],
+      },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.code).not.toBe('ADR_REVIEW_IN_PROGRESS');
+    expect(parsed.code).not.toBe('EMPTY_ADR_TEXT');
+    expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
+  });
+
   it('blocks ADR resubmission during active review loop', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
