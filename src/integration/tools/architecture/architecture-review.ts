@@ -5,6 +5,7 @@
  * @version v1
  */
 
+import { DISCARDED_REVIEW_DRAFT, reviewExhaustsBudget } from '../../../state/evidence-review.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { ToolContext } from '../helpers.js';
 import { formatBlocked, unableReviewDiagnostics } from '../../blocked-result.js';
@@ -182,6 +183,24 @@ function validateResolvedFindings(
   return null;
 }
 
+/**
+ * True when this verdict consumes the last allowed architecture review
+ * iteration. The accompanying ADR revision was never reviewed and must not
+ * become the current approval authority.
+ */
+function adrReviewExhaustsBudget(
+  session: ArchitectureSession,
+  verdict: LoopVerdict | undefined,
+): boolean {
+  const selfReview = session.state.selfReview;
+  if (!selfReview) return false;
+  return reviewExhaustsBudget(
+    verdict,
+    selfReview.iteration,
+    session.policy.reviewBudget.architecture,
+  );
+}
+
 function applyAdrRevision(
   args: ArchitectureArgs,
   session: ArchitectureSession,
@@ -201,6 +220,17 @@ function applyAdrRevision(
   const missingSections = validateAdrSections(revisedText);
   if (missingSections.length > 0) {
     return formatBlocked('MISSING_ADR_SECTIONS', { sections: missingSections.join(', ') });
+  }
+
+  // Review exhaustion: record the negative verdict, but never adopt the
+  // un-reviewed revision. The reviewed ADR (and its claims) stays current.
+  if (adrReviewExhaustsBudget(session, verdict)) {
+    return {
+      currentAdr,
+      prevDigest,
+      revisionDelta: 'none',
+      discardedDraft: DISCARDED_REVIEW_DRAFT,
+    };
   }
 
   const revisedDigest = ctx.digest(revisedText);
@@ -266,16 +296,19 @@ function buildReviewedState(
     review.evidenceInvocationId,
   );
 
+  const discarded = revision.discardedDraft !== undefined;
   return {
     ...state,
     architecture: {
       ...revision.currentAdr,
-      reviewCompletion: resolveArchitectureReviewCompletion(
-        iteration,
-        policy.reviewBudget.architecture,
-        revision.revisionDelta,
-        args.reviewVerdict as LoopVerdict,
-      ),
+      reviewCompletion: discarded
+        ? 'review_exhausted'
+        : resolveArchitectureReviewCompletion(
+            iteration,
+            policy.reviewBudget.architecture,
+            revision.revisionDelta,
+            args.reviewVerdict as LoopVerdict,
+          ),
       reviewFindings: newReviewFindings,
     },
     selfReview: {

@@ -164,7 +164,10 @@ stateDiagram-v2
 - An exhausted review loop turns the gate into a **governance override gate**:
   plain `/approve` is blocked (`GOVERNANCE_OVERRIDE_REQUIRED`) and the only
   approval path is `/override-approve`, which records the override and binds the
-  exact reviewed subject digest
+  exact reviewed subject digest. The revision submitted together with the
+  budget-exhausting `changes_requested` verdict is **not adopted**: the last
+  independently reviewed artifact stays current, and the override can only
+  approve that reviewed digest — never an un-reviewed draft
 - Four-eyes principle in regulated mode (reviewer must differ from session initiator)
 - Examples: PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW
 

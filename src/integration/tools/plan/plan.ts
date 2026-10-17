@@ -68,6 +68,7 @@ import {
 } from './plan-submission-state.js';
 import {
   applyPlanRevision,
+  planReviewExhaustsBudget,
   blockedInvalidPlanFindings,
   buildReviewedPlanState,
   consumePlanObligation,
@@ -285,7 +286,10 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
   );
   if (blocked) return blocked;
 
-  if (hasFreshRevisionClaims(scope)) {
+  // An exhausting verdict must be recorded even if the un-reviewed draft's
+  // claims would be rejected: the draft is never adopted, but dropping the
+  // verdict would leave the bounded review loop without its terminal state.
+  if (shouldAdmitRevision(scope)) {
     const admission = admitPlanRevision(scope);
     if (typeof admission === 'string') return admission;
     scope = admission;
@@ -310,6 +314,10 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
 }
 
 // ---- tool definition ----
+
+function shouldAdmitRevision(scope: PlanExecutionScope): boolean {
+  return !planReviewExhaustsBudget(scope) && hasFreshRevisionClaims(scope);
+}
 
 function admitPlanRevision(scope: PlanExecutionScope): PlanExecutionScope | string {
   const admission = classifyPlanClaimSubmission(scope.args, scope.state, scope.ctx.digest);

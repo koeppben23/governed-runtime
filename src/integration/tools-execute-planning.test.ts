@@ -1131,7 +1131,7 @@ describe('plan', () => {
       expect(state!.phase).toBe('PLAN_REVIEW');
       expect(state!.reviewDecision).toBeNull();
     });
-    it('TEAM: force-converged card binds reviewer findings to the prior plan revision (F1)', async () => {
+    it('TEAM: the exhausting revision is not adopted; the reviewed plan stays current (F1)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
 
@@ -1143,12 +1143,18 @@ describe('plan', () => {
         (o) => o.obligationType === 'plan' && o.iteration === 2 && o.planVersion === 3,
       );
       expect(reviewed).toBeDefined();
+      // The last reviewed revision remains the current authority: the draft
+      // submitted with the exhausting verdict was never reviewed and is not
+      // adopted (no new plan version, no history entry).
+      expect(reviewed!.subjectDigest).toBe(state!.plan!.current.digest);
+      expect(state!.plan!.current.planVersion).toBe(reviewed!.planVersion);
+      expect(state!.selfReview!.currDigest).toBe(state!.plan!.current.digest);
+      // Adopted lineage stops at the reviewed version: no entry for the draft.
+      expect(state!.plan!.history).toHaveLength(state!.plan!.current.planVersion - 1);
 
       const card = String(result.reviewCard);
-      expect(card).toContain('⚠ These reviewer findings apply to a prior plan revision.');
-      expect(card).toContain(`Reviewed digest: \`${reviewed!.subjectDigest}\``);
-      expect(card).toContain(`Current digest:  \`${state!.plan!.current.digest}\``);
-      expect(reviewed!.subjectDigest).not.toBe(state!.plan!.current.digest);
+      expect(card).toContain('The revision submitted with the final verdict was NOT adopted.');
+      expect(card).not.toContain('apply to a prior plan revision');
     });
 
     it('TEAM: plain approve of the force-converged plan requires the governance override verdict (CE5/P2)', async () => {
@@ -1172,16 +1178,17 @@ describe('plan', () => {
       expect(state!.plan?.approvalCertificate).toBeUndefined();
     });
 
-    it('TEAM: human governance override of the force-converged plan blocks when the last review covered a prior plan version (CE5/P2)', async () => {
+    it('TEAM: human governance override approves the last REVIEWED plan when the budget is exhausted (CE5/P2)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
-      // The last independent review covered the PRIOR plan revision; the final
-      // revision was never reviewed. Resolution binds the exact
-      // subjectDigest+planVersion+claimDeclarationsDigest tuple, so no
-      // current-version evidence exists — even the override must fail closed:
-      // plan review evidence must be bindable for an override.
+      // The exhausting revision was not adopted, so the reviewed subject IS the
+      // current plan: the explicit human override binds exactly that reviewed
+      // digest and never an un-reviewed revision.
+      const reviewedState = await readState(await currentSessionDir());
+      const reviewedDigest = reviewedState!.plan!.current.digest;
+
       recordUserDecision('approve_with_governance_override');
       const decisionResult = parseToolResult(
         await decision.execute(
@@ -1192,11 +1199,10 @@ describe('plan', () => {
           ctx,
         ),
       );
-      expect(decisionResult.error).toBe(true);
-      expect(decisionResult.code).toBe('PLAN_REVIEW_EVIDENCE_REQUIRED');
+      expect(decisionResult.error).toBeUndefined();
       const state = await readState(await currentSessionDir());
-      expect(state!.phase).toBe('PLAN_REVIEW');
-      expect(state!.plan?.approvalCertificate).toBeUndefined();
+      expect(state!.plan?.approvalCertificate).toBeDefined();
+      expect(state!.plan!.current.digest).toBe(reviewedDigest);
     });
 
     it('TEAM: human changes_requested sends the force-converged plan back to PLAN', async () => {
@@ -1268,10 +1274,10 @@ describe('plan', () => {
         code: 'GOVERNANCE_OVERRIDE_REQUIRED',
       });
 
-      // The governance override can never bypass evidence binding: this
-      // fixture's exhausted review loop does not bind the final revision, so
-      // the override is fail-closed too. The coherent-evidence override path
-      // is covered by the review-decision rail tests.
+      // The explicit override approves the last REVIEWED plan; the exhausting
+      // revision was not adopted, so no un-reviewed artifact is ever released.
+      const reviewedState = await readState(await currentSessionDir());
+      const reviewedDigest = reviewedState!.plan!.current.digest;
       recordUserDecision('approve_with_governance_override');
       const override = parseToolResult(
         await decision.execute(
@@ -1279,12 +1285,10 @@ describe('plan', () => {
           ctx,
         ),
       );
-      expect(override).toMatchObject({
-        error: true,
-        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
-      });
+      expect(override.error).toBeUndefined();
       const state = await readState(await currentSessionDir());
-      expect(state!.phase).toBe('PLAN_REVIEW');
+      expect(state!.plan?.approvalCertificate).toBeDefined();
+      expect(state!.plan!.current.digest).toBe(reviewedDigest);
     });
   });
 
