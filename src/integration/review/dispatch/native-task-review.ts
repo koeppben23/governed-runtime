@@ -11,7 +11,6 @@
  * native-task-review-bindings.ts.
  */
 
-import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import { readState } from '../../../adapters/persistence.js';
 import {
   buildEnforcementError,
@@ -19,8 +18,7 @@ import {
   unableReviewDiagnostics,
 } from '../../blocked-result.js';
 
-import type { SessionEnforcementState, PendingReviewRetryDiagnostic } from '../types.js';
-import type { OrchestratorDeps } from '../pipeline-types.js';
+import type { PendingReviewRetryDiagnostic } from '../types.js';
 import type {
   ToolHookAfterInput,
   ToolHookAfterOutput,
@@ -28,7 +26,7 @@ import type {
   ToolHookBeforeOutput,
 } from '../../types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import type { ReviewObligation, ReviewObligationType } from '../../../state/evidence.js';
+import type { ReviewObligation } from '../../../state/evidence.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 import { hashText } from '../../../shared/hashing.js';
 import { ensureReviewAssurance, hasReleasedDispatch } from '../../../state/review-dispatch.js';
@@ -36,23 +34,24 @@ import { findBindableAttempt } from '../../../state/review-continuation.js';
 import { isCurrentReviewGeneration } from '../obligations/assurance.js';
 import type { ReviewerProofGraphAuthorities } from '../context/proof-context.js';
 import { canonicalTaskPrompt } from './native-task-review-prompt.js';
-import {
-  abandonAndRearmByHostCall,
-  abandonReviewDispatchByHostCall,
-  persistAuthorizedReviewDispatch,
-} from './durable-dispatch.js';
+import { persistAuthorizedReviewDispatch } from './durable-dispatch.js';
 import {
   buildCapturedFindingsDiagnostics,
   buildCodeOnlyRetryDiagnostic,
-  buildReviewerCaptureRetryOutput,
   captureFailureBlockDetail,
-  classifyReviewerCaptureFailure,
   transportRecoveryInstruction,
 } from './capture-retry.js';
-import { registerPendingReviewForAttempt } from '../enforcement/enforcement.js';
-import { reviewableToolForObligationType } from '../obligations/obligation-tools.js';
+import {
+  abandonAndBlock,
+  abandonOrRetryCaptureFailure,
+  type CaptureFailureContext,
+} from './capture-failure-routing.js';
 import { projectReviewExecution } from './review-execution-projection.js';
-import type { PersistedState, NativeReviewLineage } from './native-task-review-types.js';
+import type {
+  NativeReviewTransportRuntime,
+  PersistedState,
+  NativeReviewLineage,
+} from './native-task-review-types.js';
 import {
   bindNativeReviewEvidence,
   capturePreparedFindings,
@@ -70,18 +69,6 @@ const TASK_DESCRIPTION = 'FlowGuard independent review';
  * review/ must not import plugin-* (FG-QUAL-002); the host caller passes its
  * full runtime, which satisfies this subset structurally.
  */
-export interface NativeReviewTransportRuntime {
-  readonly ws: {
-    getEnforcementState(sessionId: string): SessionEnforcementState;
-    resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
-  };
-  readonly orchestratorDeps: OrchestratorDeps;
-  readonly log: {
-    info(service: string, message: string, extra?: Record<string, unknown>): void;
-    warn(service: string, message: string, extra?: Record<string, unknown>): void;
-  };
-  readonly logError: (message: string, err: unknown) => void;
-}
 
 /**
  * Injected plugin-lifecycle audit reconciliation. The host composition layer
@@ -95,17 +82,6 @@ export type NativeReviewAuditReconciler = (
 >;
 
 type BindableAttempt = NonNullable<ReturnType<typeof findBindableAttempt>>;
-
-interface BlockOutputInput {
-  readonly runtime: NativeReviewTransportRuntime;
-  readonly sessDir: string;
-  readonly callId: string;
-  readonly output: ToolHookAfterOutput;
-  readonly code: string;
-  readonly reason: string;
-  readonly obligationId: string;
-  readonly diagnostics?: readonly PendingReviewRetryDiagnostic[];
-}
 
 export function isNativeReviewerTaskBefore(output: unknown): boolean {
   const args = (output as ToolHookBeforeOutput | undefined)?.args;
@@ -274,33 +250,6 @@ function taskChildSessionId(output: ToolHookAfterOutput): string | null {
     : null;
 }
 
-async function abandonAndBlock(input: BlockOutputInput): Promise<void> {
-  await abandonReviewDispatchByHostCall(
-    input.runtime.orchestratorDeps,
-    input.sessDir,
-    input.callId,
-  );
-  input.output.output = strictBlockedOutput(
-    input.code,
-    captureFailureBlockDetail({
-      obligationId: input.obligationId,
-      reason: input.reason,
-      ...(input.diagnostics !== undefined ? { diagnostics: input.diagnostics } : {}),
-    }),
-  );
-}
-
-interface CaptureFailureContext extends Omit<BlockOutputInput, 'code' | 'reason'> {
-  readonly sessionId: string;
-  readonly obligationType: ReviewObligationType;
-}
-
-type CaptureFailureInput = CaptureFailureContext & {
-  readonly code: string;
-  readonly reason: string;
-  readonly diagnostics: readonly PendingReviewRetryDiagnostic[];
-};
-
 interface StructuredReviewInput {
   readonly sessionId: string;
   readonly callId: string;
@@ -317,66 +266,16 @@ interface StructuredReviewInput {
  * fresh attempt on the same frozen obligation (bounded by the obligation
  * budget). A refused re-arm also fails closed with the original capture code.
  */
-async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise<void> {
-  const decision = classifyReviewerCaptureFailure(input.code);
-  if (!decision.retryable) {
-    await abandonAndBlock(input);
-    return;
-  }
-  const rearm = await abandonAndRearmByHostCall(
-    input.runtime.orchestratorDeps,
-    input.sessDir,
-    input.callId,
-    undefined,
-    { code: input.code, diagnostics: input.diagnostics },
-  );
-  if (rearm.kind !== 'rearmed') {
-    const blockedReason =
-      rearm.kind === 'blocked'
-        ? rearm.cause === 'budget_exhausted'
-          ? `FlowGuard closed the broken review obligation because the re-arm budget is exhausted (${rearm.reason}). Re-run the originating command to mint a fresh obligation.`
-          : `FlowGuard could not re-arm a fresh reviewer attempt: ${rearm.reason}.`
-        : 'FlowGuard found no exact abandoned dispatch lineage to re-arm.';
-    await abandonAndBlock({
-      ...input,
-      // The actionable recovery cause leads even when the capture detail is truncated.
-      reason: `${blockedReason} Previous capture failure: ${input.reason}`,
-    });
-    return;
-  }
-  const reviewTool = reviewableToolForObligationType(input.obligationType);
-  if (!reviewTool) {
-    await abandonAndBlock({
-      ...input,
-      reason: `${input.reason} No reviewable tool owns obligation type ${input.obligationType}.`,
-    });
-    return;
-  }
-  registerPendingReviewForAttempt(
-    input.runtime.ws.getEnforcementState(input.sessionId),
-    reviewTool,
-    {
-      attemptId: rearm.attempt.attemptId,
-      obligationId: rearm.obligationId,
-      retryDiagnostics: input.diagnostics,
-    },
-    new Date().toISOString(),
-  );
-  input.output.output = buildReviewerCaptureRetryOutput({
-    code: input.code,
-    obligationId: rearm.obligationId,
-    attemptId: rearm.attempt.attemptId,
-    diagnostics: input.diagnostics,
-  });
-}
 
 async function writeBindingFailure(
   input: CaptureFailureContext,
   result: Exclude<Awaited<ReturnType<typeof bindNativeReviewEvidence>>, 'fulfilled'>,
+  childSessionId: string,
 ): Promise<void> {
   if (typeof result === 'object') {
     await abandonOrRetryCaptureFailure({
       ...input,
+      childSessionId,
       code: result.code,
       reason: JSON.stringify(result.details),
       diagnostics: buildCapturedFindingsDiagnostics(result),
@@ -595,6 +494,7 @@ async function completeStructuredReview(
   if (captured.kind === 'blocked') {
     await abandonOrRetryCaptureFailure({
       ...captureFailure,
+      childSessionId,
       code: captured.code,
       reason: captured.reason,
       diagnostics: captured.diagnostics ?? [buildCodeOnlyRetryDiagnostic(captured.code)],
@@ -609,6 +509,7 @@ async function completeStructuredReview(
   if (validation.kind === 'blocked') {
     await abandonOrRetryCaptureFailure({
       ...captureFailure,
+      childSessionId,
       code: validation.code,
       reason: validation.reason,
       diagnostics: buildCapturedFindingsDiagnostics(validation),
@@ -628,7 +529,7 @@ async function completeStructuredReview(
     phase: refreshedState.phase,
   });
   if (result !== 'fulfilled') {
-    await writeBindingFailure(captureFailure, result);
+    await writeBindingFailure(captureFailure, result, childSessionId);
     return;
   }
   if (validation.findings.overallVerdict === 'unable_to_review') {

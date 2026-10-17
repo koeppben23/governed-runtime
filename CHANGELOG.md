@@ -159,6 +159,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stale reviewer attempts keep their child provenance (F6).** The atomic
+  abandon/re-arm mutation now writes the failing reviewer child session onto the
+  staled attempt when the native Task release already bound it. Exact
+  dispatch/attempt lineage still gates the write, an existing different child is
+  never overwritten, and the stale attempt remains non-evidence-authorizing. The
+  harness additionally exports children discovered through attempt observations.
+- **Demo harness v3 review/recovery fidelity (F4, F5, F7).** An in-session
+  `HUMAN_DECISION_REQUIRED` refusal is tolerated only when the turn's audit trail
+  proves no state write and no transition; otherwise the flow still stops. A
+  wait-state guard (`ADR_REVIEW_IN_PROGRESS`) counts as corrected only when the
+  same operation succeeds and the persisted review projection advanced in that
+  turn. An `expectedDenial` step now settles a carried recovery instead of
+  silently skipping it. Fresh `structured_rearm` observations become `proven`
+  once their attempt is bound. The latency baseline classifies
+  `GOVERNANCE_OVERRIDE_REQUIRED` and `HUMAN_DECISION_REQUIRED` as their own
+  refusal classes instead of `unexpected`. Harness identity is
+  `demo-harness.v3`; v1/v2 samples are not combined with v3.
+
 - **Counterexample sufficiency is stated once (review criteria `p42-v6`).** A
   counterexample must be a targeted falsification: it exercises a concrete
   violating variant and demonstrates that the bound check detects it. A second

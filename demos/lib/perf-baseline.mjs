@@ -41,9 +41,9 @@ import {
   CONTROLLED_NEGATIVE_STEPS,
   DENIAL_BASELINE,
   NEXT_STEP_RECOVERY_CODES,
-  PLAN_REVIEW_CORRECTION_CODE,
   sha256,
 } from '../java-task-manager/run-live-matrix.mjs';
+import { WAIT_STATE_RECOVERY_CODES } from './recovery-state.mjs';
 
 export const NOT_OBSERVED = 'NOT_OBSERVED';
 
@@ -55,7 +55,7 @@ export const NOT_OBSERVED = 'NOT_OBSERVED';
  * A denial inside a negative flow but outside a declared control step, or with
  * a different code than the control declares, is classified by its own code.
  */
-export const WAIT_STATE_CODES = new Set(['ADR_REVIEW_IN_PROGRESS', PLAN_REVIEW_CORRECTION_CODE]);
+export const WAIT_STATE_CODES = WAIT_STATE_RECOVERY_CODES;
 export const CALL_SHAPE_CODES = new Set([
   'INVALID_PLAN_TOOL_SEQUENCE',
   'INVALID_IMPLEMENT_TOOL_SEQUENCE',
@@ -69,6 +69,14 @@ export const CALL_SHAPE_CODES = new Set([
   'EMPTY_ADR_TEXT',
   ...NEXT_STEP_RECOVERY_CODES,
 ]);
+/**
+ * Governed refusals that are expected outcomes of the exhausted-review branch:
+ * the plain approval/decision is refused, and the user must use the override
+ * (or decide) through the dedicated command. They are not harness defects and
+ * not recoverable inside the session.
+ */
+export const OVERRIDE_GATE_CODES = new Set(['GOVERNANCE_OVERRIDE_REQUIRED']);
+export const HUMAN_DECISION_CODES = new Set(['HUMAN_DECISION_REQUIRED']);
 export const GOVERNANCE_FEEDBACK_CODES = new Set([
   'PROOFGRAPH_CLAIM_NOT_DECLARED',
   'PROOFGRAPH_CLAIM_UNSATISFIABLE',
@@ -148,6 +156,8 @@ export function classifyDenial({ code, flow, step }) {
     return 'controlled_negative';
   }
   if (WAIT_STATE_CODES.has(code)) return 'wait_state';
+  if (OVERRIDE_GATE_CODES.has(code)) return 'governance_gate_refusal';
+  if (HUMAN_DECISION_CODES.has(code)) return 'human_decision_refusal';
   if (CALL_SHAPE_CODES.has(code)) return 'avoidable_call_shape';
   if (GOVERNANCE_FEEDBACK_CODES.has(code)) return 'governance_feedback';
   return 'unexpected';
@@ -656,6 +666,8 @@ export function summarize(flows) {
       controlled_negative: countDenials(group, (d) => d.class === 'controlled_negative'),
       avoidable_call_shape: countDenials(group, (d) => d.class === 'avoidable_call_shape'),
       governance_feedback: countDenials(group, (d) => d.class === 'governance_feedback'),
+      governance_gate_refusal: countDenials(group, (d) => d.class === 'governance_gate_refusal'),
+      human_decision_refusal: countDenials(group, (d) => d.class === 'human_decision_refusal'),
       wait_state: countDenials(group, (d) => d.class === 'wait_state'),
       unexpected: countDenials(group, (d) => d.class === 'unexpected'),
       attributed: countDenials(group, (d) => d.attribution === 'attributed'),

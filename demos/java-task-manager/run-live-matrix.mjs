@@ -75,6 +75,7 @@ import {
   implementationReviewAcceptanceProven,
   readAuditEvents,
   recoveryPersisted,
+  WAIT_STATE_RECOVERY_CODES,
 } from '../lib/recovery-state.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { HARNESS_VERSION } from '../lib/harness-version.mjs';
@@ -572,14 +573,49 @@ export async function captureFailureProvenance(record, session, runner) {
   return record;
 }
 
+/**
+ * Reviewer children named by the parent's own Task tool metadata. Only children
+ * whose metadata declares THIS parent are returned; a foreign child is ignored.
+ */
+export function taskChildSessionIds(output, parentSessionId) {
+  const ids = [];
+  for (const event of eventsOf(output)) {
+    const part = event.part ?? {};
+    if (event.type !== 'tool_use' || part.tool !== 'task') continue;
+    const metadata = part.state?.metadata ?? {};
+    const execution = metadata.flowguardReviewExecution ?? {};
+    if (
+      metadata.parentSessionId !== parentSessionId &&
+      execution.parentSessionId !== parentSessionId
+    ) {
+      continue;
+    }
+    for (const candidate of [metadata.sessionId, execution.childSessionId]) {
+      if (
+        typeof candidate === 'string' &&
+        candidate.startsWith('ses_') &&
+        candidate !== parentSessionId
+      ) {
+        ids.push(candidate);
+      }
+    }
+  }
+  return [...new Set(ids)];
+}
+
 /** Sessions whose transcripts belong to one flow's evidence: parent + reviewers. */
-export function transcriptTargets(state) {
-  // Every reviewer child is exported: fulfilled invocations AND attempt-bound
-  // children (dispatched reviews that ended stale/failed and never fulfilled).
-  // A discarded child is exactly the evidence a forensic pass must see.
+export function transcriptTargets(state, observedChildSessionIds = []) {
+  // Every reviewer child is exported: fulfilled invocations, attempt-bound
+  // children, observation-bound children, and children named by the parent's
+  // Task metadata. A discarded child is exactly the evidence a forensic pass
+  // must see.
   const childSessionIds = [
     ...(state.reviewAssurance?.invocations ?? []).map((invocation) => invocation.childSessionId),
     ...(state.reviewAssurance?.attempts ?? []).map((attempt) => attempt.childSessionId),
+    ...(state.reviewAssurance?.attempts ?? []).flatMap((attempt) =>
+      (attempt.observations ?? []).map((observation) => observation?.observedBySessionId),
+    ),
+    ...observedChildSessionIds,
   ].filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0);
   const reviewers = [...new Set(childSessionIds)].filter(
     (sessionId) => sessionId !== state.binding?.hostSessionId,
@@ -686,6 +722,7 @@ export class Runner {
   async turn(session, label, prompt, options = {}) {
     const phaseBefore = this.currentPhase(session);
     const digestBefore = this.currentStateDigest(session);
+    const reviewProgressBefore = session.sessionId ? this.reviewProgress(session) : null;
     // Recovery witnesses must be bound to events appended by THIS turn; a
     // historical sequence may never confirm a later operation.
     const auditFloorBefore = session.sessionId
@@ -715,6 +752,11 @@ export class Runner {
     };
     if (options.expectedDenial) {
       assertExpectedDenial(result.stdout, options.expectedDenial, options.expectedDenialTool);
+      this.settleAwaitingRecovery(
+        session,
+        label,
+        options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1],
+      );
       return result;
     }
 
@@ -731,30 +773,11 @@ export class Runner {
           `${trust.unreadable.length} unreadable governed tool output(s)); the proof is NOT_VERIFIED`,
       );
     }
-    if (session.awaitingRecovery) {
-      const pending = session.awaitingRecovery;
-      const command = options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1];
-      const after = this.requireBoundState(session).state;
-      if (!recoveryPersisted(pending.expected, after, command)) {
-        throw new DemoNotVerifiedError(
-          `${label}: pending recovery [${pending.codes.join(', ')}] was not demonstrated ` +
-            'by the authorized affected-operation transition; stopping the flow',
-        );
-      }
-      session.recoveredDenials = session.recoveredDenials ?? [];
-      session.recoveredDenials.push({
-        status: 'proven',
-        step: pending.step,
-        codes: pending.codes,
-        evidence: `next_step_operation_transition:${label}`,
-        expected: pending.expected,
-        denials: pending.denials,
-      });
-      this.log(
-        `${pending.step}: recovered by the authorized ${command} operation on its bound subject`,
-      );
-      session.awaitingRecovery = null;
-    }
+    this.settleAwaitingRecovery(
+      session,
+      label,
+      options.command ?? /^\/([a-z-]+)/.exec(prompt ?? '')?.[1],
+    );
     const recoverable = [...new Set(toolDenialCodes(result.stdout).filter(isRecoverableFamily))];
     session.recoveryObservations = session.recoveryObservations ?? [];
     session.recoveryObservations.push(
@@ -818,6 +841,34 @@ export class Runner {
       );
     }
     session.recoveredDenials = session.recoveredDenials ?? [];
+    // A wait-state guard is corrected only by the SAME operation making actual
+    // progress: a later same-tool success AND an advanced persisted review
+    // projection in this turn. A bare later success stays an observation.
+    const waitStateProgress = new Set();
+    if (laterSuccessOnly.length > 0 && reviewProgressBefore !== null) {
+      const progressAfter = this.reviewProgress(session);
+      for (const code of laterSuccessOnly) {
+        if (!WAIT_STATE_RECOVERY_CODES.has(code) || progressAfter === null) continue;
+        const advanced =
+          code === 'ADR_REVIEW_IN_PROGRESS'
+            ? progressAfter.archIterations > reviewProgressBefore.archIterations ||
+              progressAfter.archFindings > reviewProgressBefore.archFindings
+            : progressAfter.planIteration > reviewProgressBefore.planIteration;
+        if (advanced) waitStateProgress.add(code);
+      }
+    }
+    if (waitStateProgress.size > 0) {
+      session.recoveredDenials.push({
+        status: 'proven',
+        step: label,
+        codes: [...waitStateProgress],
+        evidence: 'same_turn_wait_state_progress',
+      });
+      this.log(
+        `${label}: recovered via same-turn wait-state progress [${[...waitStateProgress].join(', ')}]`,
+      );
+    }
+    const resolvedLaterSuccess = laterSuccessOnly.filter((code) => !waitStateProgress.has(code));
     if (operationRecovered.length > 0) {
       session.recoveredDenials.push({
         status: 'proven',
@@ -829,16 +880,16 @@ export class Runner {
         `${label}: recovered via same-turn operation recovery [${operationRecovered.join(', ')}]`,
       );
     }
-    if (laterSuccessOnly.length > 0) {
+    if (resolvedLaterSuccess.length > 0) {
       session.recoveryObservations.push({
         status: 'pending_verification',
         step: label,
-        codes: laterSuccessOnly,
+        codes: resolvedLaterSuccess,
         evidence: 'later_tool_success',
       });
       this.log(
         `${label}: later success of the same tool recorded without an operation binding ` +
-          `[${laterSuccessOnly.join(', ')}]; the next required step must prove a persisted transition`,
+          `[${resolvedLaterSuccess.join(', ')}]; the next required step must prove a persisted transition`,
       );
     }
     if (retryRecovered.length > 0) {
@@ -853,12 +904,13 @@ export class Runner {
         `${label}: fresh structured re-arm authorized [${retryRecovered.join(', ')}]; review acceptance still requires verification`,
       );
     }
+    this.settleStructuredRearms(session, label);
     let pendingCodes = [
       ...new Set([
         ...recoverable.filter(
           (code) => NEXT_STEP_RECOVERY_CODES.has(code) && !sameTurnRecovered.includes(code),
         ),
-        ...laterSuccessOnly,
+        ...resolvedLaterSuccess,
       ]),
     ];
     const unproven = unprovenOccurrences.filter(
@@ -965,11 +1017,37 @@ export class Runner {
       );
     }
 
-    const unexpected = unexpectedDenialCodes(result.stdout).filter(
+    const deniedCodes = unexpectedDenialCodes(result.stdout).filter(
       (code) =>
         !(planReviewDenied && code === PLAN_REVIEW_CORRECTION_CODE) &&
         !supersededTerminals.includes(code),
     );
+    const unexpected = [];
+    for (const code of deniedCodes) {
+      if (code !== 'HUMAN_DECISION_REQUIRED') {
+        unexpected.push(code);
+        continue;
+      }
+      // The agent may not decide on the user's behalf. The refusal is tolerated
+      // ONLY when the audit trail proves the refused call itself persisted no
+      // state write and no transition; otherwise it stays a real block.
+      const denial = toolDenialEvents(result.stdout).find(
+        (event) => event.code === 'HUMAN_DECISION_REQUIRED',
+      );
+      if (denial?.at == null || this.auditMutatedSince(session, Number(denial.at))) {
+        unexpected.push(code);
+        continue;
+      }
+      session.governedRefusals = session.governedRefusals ?? [];
+      session.governedRefusals.push({
+        step: label,
+        code,
+        evidence: 'audit_no_turn_mutation',
+      });
+      this.log(
+        `${label}: HUMAN_DECISION_REQUIRED refused the in-session decision; audit shows no persisted mutation in this turn — continuing the governed exhausted-review branch`,
+      );
+    }
     if (unexpected.length > 0) {
       // The persisted terminal phase is FlowGuard's outcome authority: when the
       // session already reached it, the transport-level block is recorded — never
@@ -1016,6 +1094,100 @@ export class Runner {
       }
     }
     return result;
+  }
+
+  /** Persisted review-progress counters used to prove same-turn wait-state correction. */
+  reviewProgress(session) {
+    let state;
+    try {
+      state = this.requireBoundState(session).state;
+    } catch {
+      return null;
+    }
+    return {
+      planIteration: Number(state?.selfReview?.iteration ?? 0),
+      archIterations: (state?.reviewAssurance?.obligations ?? []).filter(
+        (item) => item?.obligationType === 'architecture',
+      ).length,
+      archFindings: Array.isArray(state?.architecture?.reviewFindings)
+        ? state.architecture.reviewFindings.length
+        : 0,
+    };
+  }
+
+  /** True when a state write or transition was persisted at/after `epochMs`. */
+  auditMutatedSince(session, epochMs) {
+    try {
+      return readAuditEvents(this.requireBoundState(session).sessionDir).some((event) => {
+        const at = Date.parse(String(event?.occurredAt ?? ''));
+        return (
+          Number.isFinite(at) &&
+          at >= epochMs &&
+          (event?.event === 'state_write' || String(event?.event ?? '').startsWith('transition:'))
+        );
+      });
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Resolve a carried recovery against the operation this turn performed. A
+   * turn that cannot demonstrate the bound transition stops the flow.
+   */
+  settleAwaitingRecovery(session, label, command) {
+    if (!session.awaitingRecovery) return;
+    const pending = session.awaitingRecovery;
+    const after = this.requireBoundState(session).state;
+    if (!recoveryPersisted(pending.expected, after, command)) {
+      throw new DemoNotVerifiedError(
+        `${label}: pending recovery [${pending.codes.join(', ')}] was not demonstrated ` +
+          'by the authorized affected-operation transition; stopping the flow',
+      );
+    }
+    session.recoveredDenials = session.recoveredDenials ?? [];
+    session.recoveredDenials.push({
+      status: 'proven',
+      step: pending.step,
+      codes: pending.codes,
+      evidence: `next_step_operation_transition:${label}`,
+      expected: pending.expected,
+      denials: pending.denials,
+    });
+    this.log(
+      `${pending.step}: recovered by the authorized ${command} operation on its bound subject`,
+    );
+    session.awaitingRecovery = null;
+  }
+
+  /** Pending structured re-arms become proven only when their attempt is bound. */
+  settleStructuredRearms(session, label) {
+    const pending = (session.recoveryObservations ?? []).filter(
+      (observation) =>
+        observation.evidence === 'structured_rearm' &&
+        observation.status === 'pending_verification',
+    );
+    if (pending.length === 0) return;
+    let state;
+    try {
+      state = this.requireBoundState(session).state;
+    } catch {
+      return;
+    }
+    const attempts = state.reviewAssurance?.attempts ?? [];
+    for (const observation of pending) {
+      const events = Array.isArray(observation.events) ? observation.events : [];
+      if (events.length === 0) continue;
+      const bound = events.every((event) =>
+        attempts.some(
+          (attempt) => attempt.attemptId === event.attemptId && attempt.status === 'bound',
+        ),
+      );
+      if (!bound) continue;
+      observation.status = 'proven';
+      observation.provenStep = label;
+      observation.provenBy = 'attempt_bound';
+    }
   }
 
   /** Best-effort persisted phase; `null` when the state is unreadable. */
@@ -1126,6 +1298,7 @@ export class Runner {
       }
       const stepLabel = `${label}-resume-${attempt}`;
       const digestBefore = this.currentStateDigest(session);
+      const reviewProgressBefore = session.sessionId ? this.reviewProgress(session) : null;
       await this.turn(session, stepLabel, '/implement');
       const digestAfter = this.currentStateDigest(session);
       if (digestAfter === null || digestAfter === digestBefore) {
@@ -1176,6 +1349,26 @@ export class Runner {
     return JSON.parse(fs.readFileSync(buildInfoPath, 'utf8'));
   }
 
+  /** Child sessions the parent's Task metadata names for THIS parent. */
+  observedTaskChildren(session) {
+    if (!session.sessionId || !fs.existsSync(this.evidenceDir)) return [];
+    const children = [];
+    for (const name of fs.readdirSync(this.evidenceDir)) {
+      if (!name.endsWith('.jsonl')) continue;
+      try {
+        children.push(
+          ...taskChildSessionIds(
+            fs.readFileSync(path.join(this.evidenceDir, name), 'utf8'),
+            session.sessionId,
+          ),
+        );
+      } catch {
+        continue;
+      }
+    }
+    return children;
+  }
+
   async exportTranscript(label, sessionId, workspace, parentSessionId) {
     const file = await exportHostTranscript({
       label,
@@ -1190,10 +1383,12 @@ export class Runner {
 
   async captureProvenance(flow, session) {
     flow.retryHints = session.retryHints ?? [];
+    this.settleStructuredRearms(session, 'final');
     flow.recoveryObservations = session.recoveryObservations ?? [];
+    flow.governedRefusals = session.governedRefusals ?? [];
     flow.recoveredDenials = session.recoveredDenials ?? [];
     const snapshot = this.requireBoundState(session);
-    const targets = transcriptTargets(snapshot.state);
+    const targets = transcriptTargets(snapshot.state, this.observedTaskChildren(session));
     if (targets.parent !== session.sessionId) {
       throw new Error(`${flow.name}: persisted host binding is not the observed session`);
     }

@@ -89,6 +89,13 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     dir: 'integration/review/dispatch',
     description: 'Reviewer/task resolution, dispatch, and orchestration',
     targetProductionFiles: 13,
+    budgetExceptions: [
+      {
+        file: 'integration/review/dispatch/capture-failure-routing.ts',
+        reason:
+          'Extracted routing unit: it keeps native-task-review.ts inside the 650-LOC production budget while owning retry-vs-terminal capture routing and stale-child persistence.',
+      },
+    ],
   },
   {
     id: 'review/obligations',
@@ -366,6 +373,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/evidence/audit-events.ts', owner: 'review-evidence' },
   { file: 'integration/review/obligations/challenge-contract.ts', owner: 'review-obligations' },
   { file: 'integration/review/obligations/challenge-history.ts', owner: 'review-obligations' },
+  { file: 'integration/review/dispatch/capture-failure-routing.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/child-session-instruction.ts', owner: 'review-dispatch' },
   { file: 'integration/review/context/discovery-attempt-context.ts', owner: 'review-context' },
   { file: 'integration/review/context/discovery-context-loader.ts', owner: 'review-context' },

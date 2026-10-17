@@ -4,8 +4,11 @@
  */
 
 import type { readState } from '../../../adapters/persistence.js';
+import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { findBindableAttempt } from '../../../state/review-continuation.js';
+import type { SessionEnforcementState } from '../types.js';
+import type { OrchestratorDeps } from '../pipeline-types.js';
 
 /** Every blocked code the same-child structured follow-up can return. */
 export type StructuredFollowupFailureCode =
@@ -23,4 +26,22 @@ export interface NativeReviewLineage {
   readonly obligation: ReviewObligation;
   readonly attempt: BindableAttempt;
   readonly dispatch: NonNullable<PersistedState['reviewAssurance']>['dispatches'][number];
+}
+
+/**
+ * Structural host runtime the native Task transport needs. review/ must not
+ * import plugin-* (FG-QUAL-002); the host caller passes its full runtime, which
+ * satisfies this subset structurally.
+ */
+export interface NativeReviewTransportRuntime {
+  readonly ws: {
+    getEnforcementState(sessionId: string): SessionEnforcementState;
+    resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
+  };
+  readonly orchestratorDeps: OrchestratorDeps;
+  readonly log: {
+    info(service: string, message: string, extra?: Record<string, unknown>): void;
+    warn(service: string, message: string, extra?: Record<string, unknown>): void;
+  };
+  readonly logError: (message: string, err: unknown) => void;
 }

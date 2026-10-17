@@ -34,7 +34,12 @@ reviewer prompt context and installed Task-return guidance.
   witnesses; overlapping call/model spans and shared recovery turns are charged
   once. Export metrics use digest-checked manifest references, never arbitrary
   attempt files. Old unqualified recovery entries are not credited.
-- Measurements record `demo-harness.v2`; do not combine them with v1 samples.
+- Measurements record `demo-harness.v3`; do not combine them with v1/v2 samples.
+  v3 adds: an audited no-mutation `HUMAN_DECISION_REQUIRED` refusal is tolerated
+  instead of failing the flow; a wait-state guard is settled only by same-turn
+  same-operation review progress; reviewer children bound through attempt
+  observations are exported; and a fresh `structured_rearm` observation becomes
+  `proven` when its attempt is bound. Product identity still travels separately.
   These regression checks do not constitute a new full live-matrix run.
 
 ## Confirmed harness findings (F1–F10)

@@ -69,7 +69,14 @@ describe('structured review authority hard cut', () => {
     expect(persistIndex, 'the dispatch must be persisted').toBeGreaterThan(-1);
     expect(releaseIndex, 'the Task args must be overwritten before release').toBeGreaterThan(-1);
     expect(persistIndex, 'no host release without a durable dispatch').toBeLessThan(releaseIndex);
-    expect(native).toContain('abandonReviewDispatchByHostCall');
+    const routing = readFileSync(
+      join(SRC, 'integration/review/dispatch/capture-failure-routing.ts'),
+      'utf8',
+    );
+    // The terminal closure authority moved with the extracted routing unit; the
+    // native path must delegate every capture failure to it.
+    expect(routing).toContain('abandonReviewDispatchByHostCall');
+    expect(native).toContain('abandonOrRetryCaptureFailure');
   });
 
   it('never autospawns an invisible SDK reviewer and exposes no spawn capability', () => {
