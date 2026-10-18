@@ -5,6 +5,22 @@ This document records the forensic review of the live-demo harness beginning on
 The product ProofGraph/gate semantics are untouched. The v2 follow-up also fixes
 reviewer prompt context and installed Task-return guidance.
 
+## DREP A/B benchmark (harness v6)
+
+- `run-live-matrix.mjs` accepts `--review-navigation off|on` and `--pair-id`.
+  The flag is passed to the host as `FLOWGUARD_REVIEW_NAVIGATION`; metadata and
+  every flow record keep the variant and pair identity.
+- `review-navigation-benchmark.mjs` verifies the variant from the first user
+  message of each reviewer child (the static instruction), attributes
+  `timeToValidReview` only to bound, non-`unable_to_review` invocations, and
+  reports missing data as `NOT_VERIFIED` rather than zero seconds. Invalid
+  reviews keep their elapsed time in a separate column.
+- Pairing is by `pairId` and review type; the report states the paired median
+  delta and relative improvement. p90 remains `insufficient_sample` at pilot
+  sample sizes.
+- The quality gate is an external result (`--quality-result`); absent means
+  `NOT_VERIFIED`.
+
 ## Re-arm lifecycle telemetry (harness v5)
 
 - A structured re-arm is authorized exactly once per freshly minted
@@ -43,7 +59,7 @@ reviewer prompt context and installed Task-return guidance.
   workflow gates retain their canonical authority. The regression tests exercise
   real audit files through `Runner.turn` with a mocked host process; they do not
   constitute a new provider-backed live validation.
-- New measurements record `demo-harness.v5`. Keep v4 and earlier measurements
+- New measurements record `demo-harness.v6`. Keep v5 and earlier measurements
   separate and preserve their original evidence roots. After installing this
   harness, re-run affected flows in a fresh root; do not relabel old results.
 
