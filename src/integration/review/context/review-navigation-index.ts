@@ -24,10 +24,10 @@ import type { VerificationCandidate } from '../../../state/discovery-schemas.js'
 import { hashCanonicalReviewContent } from '../../../shared/review-subject.js';
 import { NO_TICKET_MATERIAL_TEXT, REVIEW_MATERIAL_SECTIONS } from './reviewer-context.js';
 
-export const REVIEW_NAVIGATION_VERSION = 'review-navigation.v1';
+const REVIEW_NAVIGATION_VERSION = 'review-navigation.v1';
 
 /** Section headings whose syntactic list items are navigable requirements. */
-export const NAVIGATION_REQUIREMENT_HEADINGS: ReadonlySet<string> = new Set([
+const NAVIGATION_REQUIREMENT_HEADINGS: ReadonlySet<string> = new Set([
   'acceptance criteria',
   'required change',
   'required changes',
