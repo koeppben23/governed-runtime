@@ -9,7 +9,7 @@
  * independently closed (the reviewer is told to omit verdicts it must provide).
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import { ARCHITECTURE_DECISION, PLAN_RECORD, makeState } from '../../../fixtures.js';
 import { validateAdrSections } from '../../../state/evidence-architecture.js';
@@ -141,6 +141,42 @@ function attemptFixture(): ReviewAttempt {
     repositoryDiscovery: { kind: 'not_applicable' },
   } as unknown as ReviewAttempt;
 }
+
+describe('canonicalTaskPrompt — DREP experimental mode', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('keeps the off prompt free of navigation and fails closed on invalid values', () => {
+    vi.stubEnv('FLOWGUARD_REVIEW_NAVIGATION', 'off');
+    const off = canonicalTaskPrompt(
+      stateWith(true),
+      obligation(),
+      attemptFixture(),
+      PROOF_GRAPH_STUB,
+    );
+    expect(off).not.toContain('Review Navigation');
+    expect(off).not.toContain('review-navigation.v1');
+    expect(off).toContain('frozen implementation material');
+
+    vi.stubEnv('FLOWGUARD_REVIEW_NAVIGATION', 'on');
+    const on = canonicalTaskPrompt(
+      stateWith(true),
+      obligation(),
+      attemptFixture(),
+      PROOF_GRAPH_STUB,
+    );
+    expect(on).toContain('### Review Navigation (host instruction)');
+    expect(on).toContain('NOT_AVAILABLE: ticket_section_missing.');
+    expect(on).toContain('frozen implementation material');
+    expect(on).not.toContain('review-navigation.v1');
+
+    vi.stubEnv('FLOWGUARD_REVIEW_NAVIGATION', 'enabled');
+    expect(() =>
+      canonicalTaskPrompt(stateWith(true), obligation(), attemptFixture(), PROOF_GRAPH_STUB),
+    ).toThrowError(/must be exactly "on" or "off"/);
+  });
+});
 
 describe('canonicalTaskPrompt — separately declared architecture claims', () => {
   it('keeps plan declarations exactly once in their frozen material', () => {

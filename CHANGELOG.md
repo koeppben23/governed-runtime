@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Experimental deterministic review navigation index (DREP v1, default
+  off).** With `FLOWGUARD_REVIEW_NAVIGATION=on`, plan and implementation
+  reviewer prompts receive a canonical-JSON navigation projection derived only
+  from the verified frozen material, the frozen subject scope, and the
+  attempt-bound Discovery candidates. It exposes exact ticket requirement spans,
+  advisory file hints, and candidate/recorded-result presence; it never binds
+  evidence, never asserts a passing/current/proven result, and never substitutes
+  for repository observation. The static instruction is trusted; the index is
+  untrusted data behind the marker; the full raw material remains authoritative.
+  Invalid flag values fail with `CONFIGURATION_INVALID`; there is no silent
+  fallback. The flag is experiment-only and off by default; no state, schema,
+  criteria, challenge, observation, step-limit, or model configuration changed.
+
 - **ISO/IEC 27001:2022 evidence-to-control mapping (#1083).** New opt-in,
   read-only companion report `flowguard inspect --session <id>
 --iso27001-mapping <file>` links organization-owned policy requirements to

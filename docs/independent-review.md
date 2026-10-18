@@ -462,6 +462,22 @@ Independent subagent review is mandatory in every policy mode. It is not configu
 }
 ```
 
+### Experimental review navigation index (DREP v1)
+
+With `FLOWGUARD_REVIEW_NAVIGATION=on` (unset/off by default), plan and
+implementation reviewer prompts receive a deterministic navigation projection of
+the already frozen material: syntactically extracted ticket requirement excerpts
+with exact UTF-16 source spans, advisory repository path hints, and candidate /
+recorded-result presence only. The projection never binds evidence, never claims
+an execution passed, and never replaces `flowguard_observe_repository`.
+
+The index is canonical JSON rendered behind the untrusted-material marker; the
+host instruction that explains it stays before the marker. The complete raw
+material remains authoritative and is delimited with its material digest. Any
+other value than `on` or `off` is rejected with `CONFIGURATION_INVALID`; there is
+no silent fallback. The mode is fixed for a host process, so an attempt and its
+re-arms compose the same prompt variant.
+
 Each `Finding` requires `severity`, `category`, `message`, and `relation`.
 `relation.subjectAnchors` is a non-empty array of structured repository or artifact
 anchors. `relation.evidenceLocations` is required but may be empty. The legacy
