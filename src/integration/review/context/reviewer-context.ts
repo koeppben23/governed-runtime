@@ -18,11 +18,32 @@ import { stateVerificationEvidence } from '../shared-helpers.js';
  * remain unfrozen working-tree content and are deliberately not part of the
  * review material.
  */
+/**
+ * Host-owned section headings. Both the material builder and the deterministic
+ * navigation index read these constants, so the two views of the frozen
+ * material can never drift apart.
+ */
+export const REVIEW_MATERIAL_SECTIONS = {
+  ticket: 'Ticket Under Review (originating request)',
+  planArtifact: 'Plan Artifact',
+  planClaims: 'Plan Claim Declarations Under Review',
+  approvedPlan: 'Approved Plan (identity and content)',
+  changedFiles: 'Changed Files',
+  verificationEvidence: 'Verification Evidence (host-executed)',
+  implementationMetadata: 'Implementation Subject Metadata',
+  implementationArtifact: 'Implementation Artifact',
+} as const;
+
+/**
+ * Canonical material value for "no ticket was recorded". It is a deliberate
+ * presentation state, not a malformed ticket: the navigation index reports it
+ * as a coverage note instead of failing.
+ */
+export const NO_TICKET_MATERIAL_TEXT = 'No ticket recorded for this session.';
+
 function ticketProjection(state: SessionState): unknown {
   const ticket = state.ticket;
-  return ticket
-    ? { digest: ticket.digest, text: ticket.text }
-    : 'No ticket recorded for this session.';
+  return ticket ? { digest: ticket.digest, text: ticket.text } : NO_TICKET_MATERIAL_TEXT;
 }
 
 function section(heading: string, content: string): string[] {
@@ -65,13 +86,13 @@ export function buildFrozenArtifactReviewMaterial(
   input: FrozenReviewMaterialInput & { readonly obligationType: 'plan' | 'architecture' },
 ): FrozenArtifactReviewMaterial {
   const ticket = section(
-    'Ticket Under Review (originating request)',
+    REVIEW_MATERIAL_SECTIONS.ticket,
     canonicalJsonStringify(ticketProjection(input.state)),
   );
   if (input.obligationType === 'plan') {
-    const wrapperHeading = '## Plan Artifact';
+    const wrapperHeading = `## ${REVIEW_MATERIAL_SECTIONS.planArtifact}`;
     const claims = section(
-      'Plan Claim Declarations Under Review',
+      REVIEW_MATERIAL_SECTIONS.planClaims,
       input.renderPlanClaimDeclarations(
         input.planClaimDeclarations ?? input.state.plan?.claimDeclarations,
       ),
@@ -155,7 +176,7 @@ export function buildFrozenReviewMaterialContent(input: {
   }
 
   const ticket = section(
-    'Ticket Under Review (originating request)',
+    REVIEW_MATERIAL_SECTIONS.ticket,
     canonicalJsonStringify(ticketProjection(input.state)),
   );
   const plan = input.state.plan?.current;
@@ -163,20 +184,20 @@ export function buildFrozenReviewMaterialContent(input: {
   return [
     ...ticket,
     ...section(
-      'Approved Plan (identity and content)',
+      REVIEW_MATERIAL_SECTIONS.approvedPlan,
       canonicalJsonStringify(
         plan ? { digest: plan.digest, planVersion: plan.planVersion, body: plan.body } : null,
       ),
     ),
-    ...section('Changed Files', canonicalJsonStringify(changedFiles)),
+    ...section(REVIEW_MATERIAL_SECTIONS.changedFiles, canonicalJsonStringify(changedFiles)),
     ...section(
-      'Verification Evidence (host-executed)',
+      REVIEW_MATERIAL_SECTIONS.verificationEvidence,
       canonicalJsonStringify(stateVerificationEvidence(input.state)),
     ),
     ...section(
-      'Implementation Subject Metadata',
+      REVIEW_MATERIAL_SECTIONS.implementationMetadata,
       canonicalJsonStringify(input.state.implementation),
     ),
-    ...section('Implementation Artifact', input.artifact),
+    ...section(REVIEW_MATERIAL_SECTIONS.implementationArtifact, input.artifact),
   ].join('\n');
 }

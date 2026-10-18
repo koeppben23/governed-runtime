@@ -108,6 +108,13 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     dir: 'integration/review/context',
     description: 'Reviewer, discovery, proof, and subject context',
     targetProductionFiles: 8,
+    budgetExceptions: [
+      {
+        file: 'integration/review/context/review-navigation-index.ts',
+        reason:
+          'Deterministic advisory navigation projection over verified frozen review material; kept as its own pure module so the reviewer context builders stay within budget and the projection has one testable authority.',
+      },
+    ],
   },
   {
     id: 'review/observations',
@@ -463,6 +470,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   { file: 'integration/review/validation/review-validation.ts', owner: 'review-validation' },
   { file: 'integration/review/evidence/reviewed-digest.ts', owner: 'review-evidence' },
+  { file: 'integration/review/context/review-navigation-index.ts', owner: 'review-context' },
   { file: 'integration/review/context/reviewer-context.ts', owner: 'review-context' },
   { file: 'integration/review/context/reviewer-contract.ts', owner: 'review-context' },
   { file: 'integration/review/evidence/reviewer-evidence-recorder.ts', owner: 'review-evidence' },
