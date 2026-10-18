@@ -677,3 +677,20 @@ is unchanged (no state write); valid and claim-free submissions still work.
 - Do not add exploit procedures or sensitive operational detail to this file.
 - If a static finding is disproven, update the status and link the evidence.
 - Trust-boundary changes under `src/rails/`, `src/integration/review/`, `src/adapters/`, or `src/audit/proofgraph/` get a dated section here; findings stay `Tracked`/`Open` until the carrying PR merges.
+
+## 2026-10-18 Review reliability forensics (DREP validation)
+
+The DREP validation exposed three failed demo runs with the experiment flag
+off. They were classified from the persisted mutation episodes, session state,
+turn transcripts, and audit trails; the performance experiment is stopped.
+
+| ID   | Severity | Status  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MUT4 | HIGH     | Open    | A host `edit` call that ends with a tool error can leave its authorized mutation episode in `dispatch_authorized` with no completion outcome. The next `flowguard_implement` correctly fails closed with `MUTATION_EPISODE_UNRESOLVED`, but the session has no working recovery path (the host call already returned), and `flowguard_status.whyBlocked` reports `blocked:false` with `/implement` as the next command. Fix direction: finalize the mutation episode on the tool-error/completion path (or deterministically reconcile an orphaned episode) and project the open episode in `whyBlocked`. Observed in `development-05-implement` on 2026-10-18; no DREP relation. |
+| ARC1 | LOW      | Tracked | The demo architecture flow treats a turn that produces no `flowguard_architecture` submission (phase remains `READY`, no ADR, no denial) as a hard `FAILED` gate mismatch. The product state is coherent; this is an agent non-action. The harness should classify the missing submission as `NOT_VERIFIED` (or resume the step) instead of a product failure. Observed in `architecture-03-approve` on 2026-10-18.                                                                                                                                                                                                                                                               |
+
+The third failed run (`risk-uncovered-05-implement`) is **not a defect**: the
+reviewer returned an `implementation_challenge` with `outcome: not_verified`,
+the agent called `flowguard_implement` without resolving it, and FlowGuard
+correctly refused with `SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED`. It stays a
+valid governance control.
