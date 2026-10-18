@@ -95,6 +95,11 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
         reason:
           'Extracted routing unit: it keeps native-task-review.ts inside the 650-LOC production budget while owning retry-vs-terminal capture routing and stale-child persistence.',
       },
+      {
+        file: 'integration/review/dispatch/review-navigation-mode.ts',
+        reason:
+          'Transient DREP experiment flag resolver: strict configuration validation with no state or governance authority; kept out of the prompt builders for one testable decision point.',
+      },
     ],
   },
   {
@@ -409,6 +414,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/context/frozen-reviewer-context.ts', owner: 'review-context' },
 
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/review-navigation-mode.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-prompt.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-types.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review.ts', owner: 'review-dispatch' },

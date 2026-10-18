@@ -44,6 +44,8 @@ import {
   buildReviewerProofContext,
   type ReviewerProofGraphAuthorities,
 } from '../context/proof-context.js';
+import { buildReviewNavigationIndex } from '../context/review-navigation-index.js';
+import { resolveReviewNavigationMode } from './review-navigation-mode.js';
 import type { PersistedState } from './native-task-review-types.js';
 
 function resolutionTargetIdsOf(
@@ -119,6 +121,36 @@ function artifactScopeOf(
     : undefined;
 }
 
+function planTargetPaths(obligation: ReviewObligation): readonly string[] | undefined {
+  const value = obligation.metadata?.targetPaths;
+  if (!Array.isArray(value)) return undefined;
+  const paths = value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  return paths.length > 0 ? paths : undefined;
+}
+
+function buildPromptNavigation(
+  obligation: ReviewObligation,
+  attempt: ReviewAttempt,
+  frozenReviewerContext: FrozenReviewerContext | undefined,
+): ReturnType<typeof buildReviewNavigationIndex> | undefined {
+  if (resolveReviewNavigationMode() !== 'on') return undefined;
+  if (obligation.obligationType !== 'plan' && obligation.obligationType !== 'implement') {
+    return undefined;
+  }
+  if (frozenReviewerContext?.reviewMaterial === undefined) return undefined;
+  return buildReviewNavigationIndex({
+    obligationId: obligation.obligationId,
+    subjectDigest: obligation.subjectDigest,
+    reviewMaterial: frozenReviewerContext.reviewMaterial,
+    reviewSubjectScope: obligation.reviewSubjectScope,
+    targetPaths: planTargetPaths(obligation),
+    discoverySnapshot:
+      attempt.repositoryDiscovery.kind === 'repository'
+        ? attempt.repositoryDiscovery.snapshot
+        : null,
+  });
+}
+
 export function canonicalTaskPrompt(
   state: PersistedState,
   obligation: ReviewObligation,
@@ -140,6 +172,7 @@ export function canonicalTaskPrompt(
     resolutionTargetIdsOf(challengeContract),
   );
   const admittedSubjectAnchorKind = admittedAnchorKindOf(obligation);
+  const reviewNavigation = buildPromptNavigation(obligation, attempt, frozenReviewerContext);
   return renderReviewerTaskPrompt({
     iteration: obligation.iteration,
     planVersion: obligation.planVersion,
@@ -171,5 +204,6 @@ export function canonicalTaskPrompt(
         : null,
     observationCapability: attempt.observationCapability,
     observationRevisions,
+    ...(reviewNavigation !== undefined ? { reviewNavigation } : {}),
   });
 }

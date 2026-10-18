@@ -68,6 +68,7 @@ export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
   'review/obligations -> review/context',
   'review/observations -> review/enforcement',
   'review/observations -> review/obligations',
+  'review/prompting -> review/context',
   'review/prompting -> review/enforcement',
   'review/prompting -> review/evidence',
   'review/prompting -> review/obligations',

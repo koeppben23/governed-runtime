@@ -212,6 +212,8 @@ export function parseArgs(argv) {
     else if (flag === '--evidence-out') options.evidenceOut = path.resolve(next());
     else if (flag === '--model') options.model = next();
     else if (flag === '--tarball') options.tarball = next();
+    else if (flag === '--review-navigation') options.reviewNavigation = next();
+    else if (flag === '--pair-id') options.pairId = next();
     else if (flag === '--product-sha') options.productSha = next();
     else if (flag === '--flows')
       options.flows = next()
@@ -224,6 +226,10 @@ export function parseArgs(argv) {
   options.root = path.resolve(options.root);
   options.model ??= 'deepseek/deepseek-flash';
   options.flows ??= DEFAULT_FLOWS;
+  options.reviewNavigation ??= 'off';
+  if (options.reviewNavigation !== 'on' && options.reviewNavigation !== 'off') {
+    throw new Error('--review-navigation must be exactly "on" or "off"');
+  }
   for (const flow of options.flows) {
     if (!DEFAULT_FLOWS.includes(flow)) throw new Error(`unknown flow: ${flow}`);
   }
@@ -759,7 +765,11 @@ export class Runner {
     const stderrFd = fs.openSync(stderrPath, 'w');
     const result = await run('opencode', args, {
       cwd: workspace,
-      env: { OPENCODE_CONFIG_DIR: this.configDir, OPENCODE_DISABLE_AUTOUPDATE: '1' },
+      env: {
+        OPENCODE_CONFIG_DIR: this.configDir,
+        OPENCODE_DISABLE_AUTOUPDATE: '1',
+        FLOWGUARD_REVIEW_NAVIGATION: this.options.reviewNavigation,
+      },
       stdout: stdoutFd,
       stderr: stderrFd,
       timeoutMs,
@@ -1755,6 +1765,8 @@ async function main() {
         tarballSha256: sha256(tarball),
         sidecarSha256: sha256(sidecar),
         flows: options.flows,
+        reviewNavigation: options.reviewNavigation,
+        pairId: options.pairId ?? null,
       },
       null,
       2,
@@ -1788,7 +1800,13 @@ async function main() {
     const flows = await runFlows(runner);
     for (const name of options.flows) {
       const flow = flows[name];
-      const record = { name, workspace: flow.workspace, result: RESULT.FAILED };
+      const record = {
+        name,
+        workspace: flow.workspace,
+        result: RESULT.FAILED,
+        reviewNavigation: options.reviewNavigation,
+        pairId: options.pairId ?? null,
+      };
       runner.flows.push(record);
       runner.log(`START ${name}`);
       const session = { workspace: flow.workspace, terminal: flow.terminal };
