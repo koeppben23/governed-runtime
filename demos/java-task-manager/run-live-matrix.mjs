@@ -212,6 +212,7 @@ export function parseArgs(argv) {
     else if (flag === '--evidence-out') options.evidenceOut = path.resolve(next());
     else if (flag === '--model') options.model = next();
     else if (flag === '--tarball') options.tarball = next();
+    else if (flag === '--reviewer-step-limit') options.reviewerStepLimit = next();
     else if (flag === '--product-sha') options.productSha = next();
     else if (flag === '--flows')
       options.flows = next()
@@ -224,6 +225,10 @@ export function parseArgs(argv) {
   options.root = path.resolve(options.root);
   options.model ??= 'deepseek/deepseek-flash';
   options.flows ??= DEFAULT_FLOWS;
+  options.reviewerStepLimit ??= '10';
+  if (!['10', '12', '14'].includes(options.reviewerStepLimit)) {
+    throw new Error('--reviewer-step-limit must be exactly 10, 12, or 14');
+  }
   for (const flow of options.flows) {
     if (!DEFAULT_FLOWS.includes(flow)) throw new Error(`unknown flow: ${flow}`);
   }
@@ -759,7 +764,11 @@ export class Runner {
     const stderrFd = fs.openSync(stderrPath, 'w');
     const result = await run('opencode', args, {
       cwd: workspace,
-      env: { OPENCODE_CONFIG_DIR: this.configDir, OPENCODE_DISABLE_AUTOUPDATE: '1' },
+      env: {
+        OPENCODE_CONFIG_DIR: this.configDir,
+        OPENCODE_DISABLE_AUTOUPDATE: '1',
+        FLOWGUARD_REVIEWER_STEP_LIMIT: this.options.reviewerStepLimit,
+      },
       stdout: stdoutFd,
       stderr: stderrFd,
       timeoutMs,
@@ -1718,8 +1727,22 @@ export async function withRawExportGrant(configDir, task) {
   }
 }
 
+function verifyInstalledReviewerStepLimit(workspace, expected) {
+  const file = path.join(workspace, '.opencode', 'agents', 'flowguard-reviewer.md');
+  if (!fs.existsSync(file)) {
+    throw new Error(`installed reviewer agent missing: ${file}`);
+  }
+  const match = /^steps:\s*(\d+)$/m.exec(fs.readFileSync(file, 'utf8'));
+  if (match === null || Number(match[1]) !== expected) {
+    throw new Error(
+      `installed reviewer step limit ${match?.[1] ?? 'missing'} != requested ${expected}`,
+    );
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  process.env.FLOWGUARD_REVIEWER_STEP_LIMIT = options.reviewerStepLimit;
   const pins = readPins();
   console.log(`Pins: opencode ${pins.opencode}, node ${pins.node}`);
   assertToolchain(pins);
@@ -1755,6 +1778,7 @@ async function main() {
         tarballSha256: sha256(tarball),
         sidecarSha256: sha256(sidecar),
         flows: options.flows,
+        reviewerStepLimit: Number(options.reviewerStepLimit),
       },
       null,
       2,
@@ -1769,6 +1793,11 @@ async function main() {
       stdio: 'inherit',
     },
   );
+  verifyInstalledReviewerStepLimit(
+    path.join(workspaces, 'java-task-manager'),
+    Number(options.reviewerStepLimit),
+  );
+
   // The installer writes allowRawExport=false into the repo config, which
   // restricts the effective policy; the documented raw-auditor flow needs the
   // repo opt-in as well as the isolated global grant.
@@ -1788,7 +1817,12 @@ async function main() {
     const flows = await runFlows(runner);
     for (const name of options.flows) {
       const flow = flows[name];
-      const record = { name, workspace: flow.workspace, result: RESULT.FAILED };
+      const record = {
+        name,
+        workspace: flow.workspace,
+        result: RESULT.FAILED,
+        reviewerStepLimit: Number(options.reviewerStepLimit),
+      };
       runner.flows.push(record);
       runner.log(`START ${name}`);
       const session = { workspace: flow.workspace, terminal: flow.terminal };

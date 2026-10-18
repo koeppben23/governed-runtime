@@ -78,8 +78,33 @@ The task prompt supplies the current obligation, frozen subject, review criteria
 /**
  * The reviewer agent's host-enforced step budget. Exported so the native
  * transport can verify a host stop at exactly this limit instead of guessing.
+ *
+ * This branch is an isolated experiment: the installed reviewer agent and the
+ * native step-budget detector must resolve the same limit. Unknown values fail
+ * closed instead of silently falling back to 10.
  */
-export const REVIEWER_STEP_LIMIT = 10;
+export const REVIEWER_STEP_LIMIT_ENV = 'FLOWGUARD_REVIEWER_STEP_LIMIT';
+export const REVIEWER_STEP_LIMIT_VALUES = [10, 12, 14] as const;
+
+export class ReviewerStepLimitConfigurationError extends Error {
+  readonly code = 'CONFIGURATION_INVALID';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReviewerStepLimitConfigurationError';
+  }
+}
+
+export function resolveReviewerStepLimit(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[REVIEWER_STEP_LIMIT_ENV];
+  if (raw === undefined) return 10;
+  if (raw === '10' || raw === '12' || raw === '14') return Number(raw);
+  throw new ReviewerStepLimitConfigurationError(
+    `${REVIEWER_STEP_LIMIT_ENV} must be one of 10, 12, or 14 when set; refusing to silently fall back to 10.`,
+  );
+}
+
+export const REVIEWER_STEP_LIMIT = resolveReviewerStepLimit();
 
 export function renderReviewerPrompt(_reviewType: ReviewerPromptType = 'all'): string {
   return `\

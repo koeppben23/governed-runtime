@@ -255,6 +255,18 @@ accepts multiple roots:
 node demos/lib/review-latency.mjs --root <run-root> [--root ...] --json out.json --md out.md
 ```
 
+## Reviewer step-budget experiment (isolated branch)
+
+This branch compares the host-enforced reviewer step budget at 10, 12, and 14.
+`FLOWGUARD_REVIEWER_STEP_LIMIT` is accepted only as exactly `10`, `12`, or `14`
+and must resolve identically in the installed reviewer agent and the native
+step-budget detector. The demo runner exposes
+`--reviewer-step-limit 10|12|14`, records the choice in metadata and flow
+records, and verifies the installed `.opencode/agents/flowguard-reviewer.md`
+contains the requested `steps:` value before any review starts. Invalid values
+fail closed. This is an experiment: it is not merged to develop until a
+comparable series shows a reliability benefit.
+
 ## Running everything
 
 ```bash
