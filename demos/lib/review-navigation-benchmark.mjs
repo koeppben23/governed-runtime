@@ -94,8 +94,9 @@ export function analyzeReviewerChild(input) {
         entry.attemptId === invocation?.attemptId ||
         (invocation === undefined && entry.childSessionId === transcript.sessionId),
     ) ?? null;
+  const obligationId = invocation?.obligationId ?? attempt?.obligationId ?? null;
   const obligation = (state?.reviewAssurance?.obligations ?? []).find(
-    (entry) => entry.obligationId === (invocation?.obligationId ?? attempt?.obligationId),
+    (entry) => entry.obligationId === obligationId,
   );
   const type = invocation?.obligationType ?? attempt?.obligationType ?? null;
   const verdict = invocation?.capturedVerdict ?? null;
@@ -108,6 +109,29 @@ export function analyzeReviewerChild(input) {
   const validMs = valid
     ? Math.max(0, Date.parse(invocation.fulfilledAt) - Date.parse(invocation.invokedAt))
     : null;
+  const obligationAttempts = (state?.reviewAssurance?.attempts ?? []).filter(
+    (entry) => entry.obligationId === obligationId,
+  );
+  const obligationInvocations = (state?.reviewAssurance?.invocations ?? []).filter(
+    (entry) => entry.obligationId === obligationId,
+  );
+  const starts = [
+    ...obligationAttempts.map((entry) => Date.parse(entry.createdAt)),
+    ...obligationInvocations.map((entry) => Date.parse(entry.invokedAt)),
+  ].filter((value) => Number.isFinite(value));
+  const obligationStartMs = starts.length === 0 ? null : Math.min(...starts);
+  const fulfilledAtMs = valid ? Date.parse(invocation.fulfilledAt) : null;
+  const endToEndMs =
+    valid && obligationStartMs !== null && Number.isFinite(fulfilledAtMs)
+      ? Math.max(0, fulfilledAtMs - obligationStartMs)
+      : null;
+  const rearmAttemptIds = [
+    ...new Set(
+      obligationAttempts
+        .filter((entry) => entry.origin?.kind === 'dispatch_rearm')
+        .map((entry) => entry.attemptId),
+    ),
+  ];
 
   let tokens = 0;
   let cost = 0;
@@ -128,9 +152,12 @@ export function analyzeReviewerChild(input) {
     flow: flow.name,
     variant,
     childSessionId: transcript.sessionId,
+    obligationId,
     type,
     valid,
     validMs,
+    endToEndMs,
+    fulfilledAtMs,
     elapsedMs,
     verdict,
     variantApplied,
@@ -145,11 +172,7 @@ export function analyzeReviewerChild(input) {
     tokens: messages ? tokens : null,
     cost: messages ? Number(cost.toFixed(6)) : null,
     obligationStatus: obligation?.status ?? null,
-    rearmCount: (state?.reviewAssurance?.attempts ?? []).filter(
-      (entry) =>
-        entry.obligationId === (invocation?.obligationId ?? attempt?.obligationId) &&
-        entry.origin?.kind === 'dispatch_rearm',
-    ).length,
+    rearmAttemptIds,
   };
 }
 
@@ -206,6 +229,11 @@ export function summarize(roots, qualityResult) {
       const group = entries.filter((entry) => entry.type === type && entry.variant === variant);
       const valid = group.filter((entry) => entry.valid);
       const invalid = group.filter((entry) => !entry.valid);
+      const rearmKeys = new Set(
+        group.flatMap((entry) =>
+          entry.rearmAttemptIds.map((attemptId) => `${entry.obligationId}:${attemptId}`),
+        ),
+      );
       summary.push({
         type,
         variant,
@@ -215,6 +243,7 @@ export function summarize(roots, qualityResult) {
         variantMismatches: group.filter((entry) => entry.variantMismatch).length,
         indexPresent: group.filter((entry) => entry.indexPresent).length,
         medianValidMs: median(valid.map((entry) => entry.validMs)),
+        medianEndToEndMs: median(valid.map((entry) => entry.endToEndMs)),
         medianInvalidElapsedMs: median(invalid.map((entry) => entry.elapsedMs)),
         medianSteps: median(group.map((entry) => entry.steps)),
         medianObservations: median(group.map((entry) => entry.observations)),
@@ -222,11 +251,12 @@ export function summarize(roots, qualityResult) {
         medianCost: median(group.map((entry) => entry.cost)),
         medianPromptChars: median(group.map((entry) => entry.promptChars)),
         medianIndexChars: median(group.map((entry) => entry.indexChars)),
-        rearmCount: group.reduce((total, entry) => total + entry.rearmCount, 0),
+        rearmCount: rearmKeys.size,
         notVerified:
           group.length === 0 ||
           group.some((entry) => entry.variantMismatch) ||
-          group.some((entry) => entry.validMs === null && entry.elapsedMs === null),
+          group.some((entry) => entry.valid && entry.endToEndMs === null) ||
+          group.some((entry) => !entry.valid && entry.elapsedMs === null),
       });
     }
   }
@@ -236,19 +266,24 @@ export function summarize(roots, qualityResult) {
       (candidate) => candidate.pairId === root.pairId && candidate.buildSha === root.buildSha,
     );
     for (const type of types) {
-      const off = pairRoots
-        .find((candidate) => candidate.variant === 'off')
-        ?.entries.find((entry) => entry.type === type && entry.valid);
-      const on = pairRoots
-        .find((candidate) => candidate.variant === 'on')
-        ?.entries.find((entry) => entry.type === type && entry.valid);
+      const selectValid = (variant) =>
+        pairRoots
+          .find((candidate) => candidate.variant === variant)
+          ?.entries.filter(
+            (entry) => entry.type === type && entry.valid && entry.endToEndMs !== null,
+          )
+          .sort((left, right) => (right.fulfilledAtMs ?? 0) - (left.fulfilledAtMs ?? 0))[0];
+      const off = selectValid('off');
+      const on = selectValid('on');
       if (off === undefined || on === undefined) continue;
       pairs.push({
         pairId: root.pairId,
         type,
-        offMs: off.validMs,
-        onMs: on.validMs,
-        deltaMs: on.validMs - off.validMs,
+        offEndToEndMs: off.endToEndMs,
+        onEndToEndMs: on.endToEndMs,
+        offValidMs: off.validMs,
+        onValidMs: on.validMs,
+        deltaMs: on.endToEndMs - off.endToEndMs,
       });
     }
   }
@@ -268,7 +303,9 @@ export function summarize(roots, qualityResult) {
               ? NOT_VERIFIED
               : median(
                   pairsOfType.map((pair) =>
-                    pair.offMs > 0 ? (pair.offMs - pair.onMs) / pair.offMs : null,
+                    pair.offEndToEndMs > 0
+                      ? (pair.offEndToEndMs - pair.onEndToEndMs) / pair.offEndToEndMs
+                      : null,
                   ),
                 ),
         },
@@ -292,19 +329,19 @@ function renderMarkdown(result) {
     '',
     'Only measured values are shown; missing data is `NOT_VERIFIED`, never zero.',
     '',
-    '| Type | Variant | Children | Valid | Invalid | Median valid ms | Median invalid elapsed ms | Steps | Observations | Tokens | Variant mismatches |',
-    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| Type | Variant | Children | Valid | Invalid | Median valid ms | Median end-to-end ms | Median invalid elapsed ms | Steps | Observations | Tokens | Re-arms (unique) | Variant mismatches |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
   ];
   for (const row of result.summary) {
     lines.push(
-      `| ${row.type} | ${row.variant} | ${row.children} | ${row.valid} | ${row.invalid} | ${row.medianValidMs} | ${row.medianInvalidElapsedMs} | ${row.medianSteps} | ${row.medianObservations} | ${row.medianTokens} | ${row.variantMismatches} |`,
+      `| ${row.type} | ${row.variant} | ${row.children} | ${row.valid} | ${row.invalid} | ${row.medianValidMs} | ${row.medianEndToEndMs} | ${row.medianInvalidElapsedMs} | ${row.medianSteps} | ${row.medianObservations} | ${row.medianTokens} | ${row.rearmCount} | ${row.variantMismatches} |`,
     );
   }
   lines.push('', '## Paired delta', '');
   for (const type of ['plan', 'implement']) {
     const pair = result.pairSummary[type];
     lines.push(
-      `- ${type}: ${pair.pairs} pairs; median delta ${pair.medianDeltaMs} ms; relative improvement ${pair.relativeImprovement}`,
+      `- ${type}: ${pair.pairs} pairs; median end-to-end delta ${pair.medianDeltaMs} ms; relative improvement ${pair.relativeImprovement}`,
     );
   }
   lines.push('', '## Quality gate', '', `- ${String(result.qualityGate)}`, '');

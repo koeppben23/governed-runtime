@@ -95,6 +95,7 @@ async function rootFixture(input: {
               obligationType: 'plan',
               status: input.valid === false ? 'stale' : 'bound',
               origin: { kind: 'initial' },
+              createdAt: new Date(Date.parse(NOW) - 500).toISOString(),
             },
           ],
           invocations: [
@@ -134,7 +135,8 @@ describe('review-navigation A/B benchmark', () => {
       steps: 1,
       observations: 1,
       tokens: 120,
-      rearmCount: 0,
+      rearmAttemptIds: [],
+      endToEndMs: 3000,
     });
   });
 
@@ -171,6 +173,84 @@ describe('review-navigation A/B benchmark', () => {
     const row = summary.summary.find((item) => item.type === 'plan' && item.variant === 'on');
     expect(row?.medianValidMs).toBe('NOT_VERIFIED');
     expect(row?.medianInvalidElapsedMs).toBe(1000);
+  });
+
+  it('counts a re-arm once per obligation even when several children reference it', () => {
+    const entry = (childSessionId: string) => ({
+      childSessionId,
+      obligationId: 'ob-1',
+      type: 'plan',
+      variant: 'off',
+      valid: true,
+      validMs: 1000,
+      endToEndMs: 2000,
+      fulfilledAtMs: 2000,
+      elapsedMs: 1000,
+      variantMismatch: false,
+      rearmAttemptIds: ['att-rearm'],
+      steps: 1,
+      observations: 1,
+      tokens: 1,
+      cost: 0.1,
+      promptChars: 10,
+      indexChars: null,
+    });
+    const summary = summarize([
+      {
+        root: 'root',
+        pairId: 'p1',
+        buildSha: 'build',
+        variant: 'off',
+        notVerified: [],
+        entries: [entry('c1'), entry('c2')],
+      },
+    ]);
+    const row = summary.summary.find((item) => item.type === 'plan' && item.variant === 'off');
+    expect(row?.rearmCount).toBe(1);
+  });
+
+  it('pairs the final valid review by end-to-end time, not isolated attempt time', () => {
+    const entry = (variant: 'off' | 'on', endToEndMs: number) => ({
+      childSessionId: `c-${variant}`,
+      obligationId: 'ob-1',
+      type: 'plan',
+      variant,
+      valid: true,
+      validMs: 1000,
+      endToEndMs,
+      fulfilledAtMs: 5000,
+      elapsedMs: 1000,
+      variantMismatch: false,
+      rearmAttemptIds: [],
+      steps: 1,
+      observations: 1,
+      tokens: 1,
+      cost: 0.1,
+      promptChars: 10,
+      indexChars: null,
+    });
+    const summary = summarize([
+      {
+        root: 'off',
+        pairId: 'p1',
+        buildSha: 'build',
+        variant: 'off',
+        notVerified: [],
+        entries: [entry('off', 3000)],
+      },
+      {
+        root: 'on',
+        pairId: 'p1',
+        buildSha: 'build',
+        variant: 'on',
+        notVerified: [],
+        entries: [entry('on', 2000)],
+      },
+    ]);
+    expect(summary.pairs).toEqual([
+      expect.objectContaining({ pairId: 'p1', type: 'plan', deltaMs: -1000 }),
+    ]);
+    expect(summary.pairSummary.plan?.relativeImprovement).toBeCloseTo(1 / 3);
   });
 
   it('reports missing state as NOT_VERIFIED instead of fabricating a run', async () => {
