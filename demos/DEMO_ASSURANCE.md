@@ -241,6 +241,20 @@ A recorded case is a counter-example, not evidence of corrected reviewer
 behavior: every case stays `NOT_VERIFIED` until a later live run is checked
 against it.
 
+## End-to-end review latency (independent measurement)
+
+`demos/lib/review-latency.mjs` measures one persisted review obligation from its
+first attempt to the terminal outcome, including every discarded attempt and
+re-arm. It reads the parent session state selected by `flows.json`, reports
+unique re-arm attempt IDs per obligation, and treats a bound `unable_to_review`
+as invalid. Missing timings and missing state are `NOT_VERIFIED`; they are never
+zero-second successes. The analyzer is independent of any prompt variant and
+accepts multiple roots:
+
+```
+node demos/lib/review-latency.mjs --root <run-root> [--root ...] --json out.json --md out.md
+```
+
 ## Running everything
 
 ```bash
