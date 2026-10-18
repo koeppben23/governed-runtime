@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **DREP A/B benchmark (harness v6).** The live runner can select the
+  review-navigation prompt variant per root (`--review-navigation off|on`,
+  `--pair-id`) and records it in metadata and flow records. The paired analyzer
+  verifies the variant from the reviewer child's actual prompt, attributes
+  time-to-valid-review only to bound, usable reviews, reports elapsed time of
+  invalid reviews separately, and emits `NOT_VERIFIED` for missing data. No
+  product default changed; the experiment flag is off.
+
 - **Experimental deterministic review navigation index (DREP v1, default
   off).** With `FLOWGUARD_REVIEW_NAVIGATION=on`, plan and implementation
   reviewer prompts receive a canonical-JSON navigation projection derived only
