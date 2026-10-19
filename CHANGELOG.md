@@ -159,6 +159,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer recovery after an exhausted re-arm budget is stated and executable.**
+  In the 2026-10-19 GUI run two token-truncated plan reviews exhausted the
+  re-arm budget. Three outputs then misdescribed the persisted state:
+  - The re-armed reviewer prompt said "FlowGuard rejected the previous
+    structured output". A completion failure (`REVIEWER_OUTPUT_TRUNCATED`,
+    `REVIEWER_TASK_INCOMPLETE`, `REVIEWER_STEP_BUDGET_EXHAUSTED`) never
+    produced structured output. The prompt now reports "Prior Reviewer Task
+    Not Completed" with the code, and contract errors keep their
+    rejected-output section.
+  - The closure output listed "A fresh reviewer attempt … was re-armed
+    automatically. Invoke the reviewer Task again." These codes are only
+    surfaced as a blocked result when no attempt was authorized. Their
+    recovery now says not to invoke the Task again and to re-run the
+    originating command (for `/plan`: submit the current plan again).
+  - `reviewRecovery: "retry_transport"` on a closed obligation said "the
+    review authority must be restored or the session aborted". It now states
+    that a transport retry never reopens a closed obligation and that
+    submitting the artifact again mints a fresh obligation.
+
+  A new end-to-end test drives a real `/plan` submission through two
+  truncated native reviewer Tasks. It proves that neither another Task nor
+  `retry_transport` adds an attempt to the closed obligation. It also proves
+  that resubmitting the unchanged plan mints exactly one fresh obligation with
+  the regular budget and releases a reviewer Task again. The completion-code
+  vocabulary moved to `review/types.ts` so the prompt and the classifier share
+  it. No state, audit, or reason-code shape changed.
+
 - **A truncated or unfinished reviewer task is never serialized or accepted.**
   The structured follow-up ("serialize the findings you concluded") ran
   whenever the reviewer child had fewer assistant steps than the step limit.

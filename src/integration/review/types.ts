@@ -27,6 +27,28 @@ export type ReviewableTool =
 export type PendingReviewTool = ReviewableTool;
 
 /**
+ * Reviewer task completion failure codes: the reviewer child ended without a
+ * proven final review answer, so no structured output was ever produced or
+ * evaluated. Canonical here so the retry prompt (prompting zone) and the
+ * completion classifier (dispatch zone) share one vocabulary.
+ */
+export const REVIEWER_COMPLETION_FAILURE_CODES = [
+  'REVIEWER_COMPLETION_UNVERIFIABLE',
+  'REVIEWER_TASK_ABORTED',
+  'REVIEWER_OUTPUT_TRUNCATED',
+  'REVIEWER_STEP_BUDGET_EXHAUSTED',
+  'REVIEWER_TASK_INCOMPLETE',
+] as const;
+
+export type ReviewerCompletionFailureCode = (typeof REVIEWER_COMPLETION_FAILURE_CODES)[number];
+
+export function isReviewerCompletionFailureCode(
+  code: string,
+): code is ReviewerCompletionFailureCode {
+  return (REVIEWER_COMPLETION_FAILURE_CODES as readonly string[]).includes(code);
+}
+
+/**
  * Host-classified retry diagnostic for a re-armed reviewer attempt.
  *
  * `code` is the host validation failure code; `reasonKind` is the host

@@ -22,9 +22,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it, vi } from 'vitest';
 import { classifyReviewerTaskMessages, readReviewerTaskCompletion } from './structured-followup.js';
-import type { ReviewerCompletionFailureCode } from './native-task-review-types.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
-import type { OrchestratorClient } from '../types.js';
+import type { OrchestratorClient, ReviewerCompletionFailureCode } from '../types.js';
 
 type Part = Record<string, unknown>;
 

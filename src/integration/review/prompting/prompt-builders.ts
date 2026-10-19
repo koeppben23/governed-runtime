@@ -15,7 +15,7 @@ import {
 import { renderFindingRelationGrammar } from '../evidence/finding-relation-grammar.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from '../enforcement/types.js';
-import type { PendingReviewRetryDiagnostic } from '../types.js';
+import { isReviewerCompletionFailureCode, type PendingReviewRetryDiagnostic } from '../types.js';
 import { resolveReviewerDiscoverySection, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
 import type { FrozenReviewerContext } from '../../../state/review-continuation.js';
 import type { RepositoryDiscoverySnapshot } from '../../../state/evidence.js';
@@ -179,6 +179,26 @@ const RETRY_DIAGNOSTIC_UNTRUSTED_WARNING =
 
 function retryContract(diagnostics: readonly PendingReviewRetryDiagnostic[] | undefined): string[] {
   if (!diagnostics || diagnostics.length === 0) return [];
+  // A completion failure means the prior task produced NO structured output:
+  // telling the reviewer its output was "rejected" misstates the cause.
+  const completion = diagnostics.filter((d) => isReviewerCompletionFailureCode(d.code));
+  const contract = diagnostics.filter((d) => !isReviewerCompletionFailureCode(d.code));
+  const lines: string[] = [];
+  if (completion.length > 0) {
+    lines.push(
+      '### Prior Reviewer Task Not Completed',
+      'The previous reviewer task for this obligation ended before a final review answer; no structured output was produced or evaluated.',
+      ...completion.map((diagnostic) => `- Code: ${diagnostic.code}`),
+    );
+  }
+  if (contract.length > 0) lines.push(...rejectedOutputContract(contract));
+  lines.push(
+    'Return a fresh complete result. The frozen subject and evidence bindings are unchanged.',
+  );
+  return lines;
+}
+
+function rejectedOutputContract(diagnostics: readonly PendingReviewRetryDiagnostic[]): string[] {
   const lines = [
     '### Prior Output Rejected — Contract Errors',
     'FlowGuard rejected the previous structured output for this obligation.',
@@ -199,9 +219,6 @@ function retryContract(diagnostics: readonly PendingReviewRetryDiagnostic[] | un
       lines.push(`- ${key}=${JSON.stringify(value)}`);
     }
   }
-  lines.push(
-    'Return a fresh complete result. The frozen subject and evidence bindings are unchanged.',
-  );
   return lines;
 }
 

@@ -19,10 +19,13 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
-import type { OrchestratorClient, PendingReviewRetryDiagnostic } from '../types.js';
+import type {
+  OrchestratorClient,
+  PendingReviewRetryDiagnostic,
+  ReviewerCompletionFailureCode,
+} from '../types.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
 import type {
-  ReviewerCompletionFailureCode,
   ReviewerTaskCompletion,
   StructuredFollowupFailureCode,
 } from './native-task-review-types.js';
