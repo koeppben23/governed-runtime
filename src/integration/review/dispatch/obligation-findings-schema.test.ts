@@ -3,9 +3,9 @@
  * @description Parity of the obligation-bound structured-output schema with the
  * production capture chain.
  *
- * The same-child follow-up sends `buildObligationFindingsJsonSchema`; the host
- * validates the reviewer's JSON against it and may correct it in the same child.
- * The schema must therefore:
+ * The same-child follow-up sends `buildObligationFindingsJsonSchema` to the
+ * model as the StructuredOutput tool schema (the pinned host does not validate
+ * against it; the capture gate is the enforcement). The schema must still:
  * 1. never reject an answer the production chain accepts
  *    (raw -> prepareReviewerFindingsForValidation -> validateCapturedFindings);
  * 2. always be a subset of the static `REVIEW_FINDINGS_JSON_SCHEMA`;

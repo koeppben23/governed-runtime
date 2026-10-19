@@ -1,20 +1,22 @@
 /**
  * @module integration/plugin-reviewer-bound-schema.test
- * @description Success proof for the obligation-bound structured-output schema.
+ * @description Wiring and boundary of the obligation-bound structured-output
+ * schema on the full native reviewer path.
  *
- * The fake host behaves like OpenCode's `format: json_schema` with
- * `retryCount: 1`: it validates the model output against the schema FlowGuard
- * sent and, on a violation, asks the same child once more. The reviewer's first
- * draft carries a wrong `iteration` (an exact-equality attestation fact).
+ * The pinned OpenCode host passes the `format.schema` to the model as the
+ * StructuredOutput tool's parameter schema but does NOT validate the answer
+ * against it (the AI SDK `jsonSchema()` wrapper is created without a
+ * validator; proven by `opencode-reviewer-structured-live.smoke.test.ts`). The
+ * obligation-bound schema is therefore guidance for the model only; the
+ * FlowGuard capture gate remains the sole enforcement. This test pins both:
  *
- * - Static schema (previous behavior): the draft is schema-valid, passes the
- *   host, and the capture gate rejects it as terminal SUBAGENT_MANDATE_MISMATCH.
- * - Obligation-bound schema: the host rejects the draft, the same child's
- *   corrected serialization binds - no fresh reviewer attempt.
+ * - the follow-up prompt receives the obligation-bound schema (`const`
+ *   iteration, planVersion and attestation obligation id), never the static one;
+ * - a `const`-violating answer that the host returns unchanged is rejected by
+ *   the capture gate and never binds.
  *
  * @test-policy HAPPY, BAD
  */
-import { Ajv } from 'ajv';
 import * as crypto from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlowGuardAuditPlugin } from './plugin.js';
@@ -27,10 +29,7 @@ import {
 } from './review/dispatch/dispatch-authority.js';
 import { seedStrictPlanSession } from './plugin-host-task-diagnostics-test-helpers.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './review/evidence/findings-schema.js';
-import { prepareReviewerFindingsForValidation } from './review/enforcement/prepare-findings.js';
-import { validateCapturedFindings } from './review/dispatch/native-task-review-bindings.js';
 
-const ajv = new Ajv({ strict: false, allErrors: true });
 const CHILD_SESSION_ID = 'child-session-bound-schema';
 
 function findings(obligationId: string, iteration: number): Record<string, unknown> {
@@ -49,31 +48,27 @@ function findings(obligationId: string, iteration: number): Record<string, unkno
   };
 }
 
-/** OpenCode-like json_schema follow-up: validate, retry once in the same child. */
-function schemaEnforcingHost(drafts: Record<string, unknown>[]) {
-  const consumed: Record<string, unknown>[] = [];
-  const prompt = vi.fn(
-    async (opts: {
-      body: { format?: { schema: Record<string, unknown>; retryCount?: number } };
-    }) => {
-      const format = opts.body.format!;
-      const validate = ajv.compile(format.schema);
-      for (let attempt = 0; attempt <= (format.retryCount ?? 0); attempt += 1) {
-        const draft = drafts[attempt]!;
-        consumed.push(draft);
-        if (validate(draft)) return { data: { info: { structured: draft } } };
-      }
-      return { data: { info: { error: { name: 'StructuredOutputError' } } } };
-    },
-  );
-  return { prompt, consumed };
+type SentSchema = {
+  properties: Record<string, { const?: unknown; properties?: Record<string, { const?: unknown }> }>;
+};
+
+/** Pinned-host behavior: the schema is forwarded, the answer is not validated. */
+function nonValidatingHost(answer: (obligationId: string) => Record<string, unknown>) {
+  const sent: SentSchema[] = [];
+  let obligationId = '';
+  const prompt = vi.fn(async (opts: { body: { format?: { schema: Record<string, unknown> } } }) => {
+    sent.push(opts.body.format!.schema as unknown as SentSchema);
+    return { data: { info: { structured: answer(obligationId) } } };
+  });
+  return { prompt, sent, bind: (id: string) => (obligationId = id) };
 }
 
-async function runPlanReview(drafts: (obligationId: string) => Record<string, unknown>[]) {
+async function runPlanReview(answer: (obligationId: string) => Record<string, unknown>) {
   const ws = await createTestWorkspace();
   const sessionID = crypto.randomUUID();
   const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-  const host = schemaEnforcingHost(drafts(obligationId));
+  const host = nonValidatingHost(answer);
+  host.bind(obligationId);
   const hooks = await FlowGuardAuditPlugin({
     project: {} as unknown,
     client: {
@@ -132,79 +127,48 @@ async function runPlanReview(drafts: (obligationId: string) => Record<string, un
   return {
     ws,
     obligationId,
-    before,
+    obligation: before.reviewAssurance!.obligations[0]!,
     after: (await readState(sessDir))!,
     host,
     result: JSON.parse(String(output.output)) as Record<string, unknown>,
   };
 }
 
-describe('obligation-bound structured-output schema (same-child correction)', () => {
+describe('obligation-bound structured-output schema (native path)', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
   });
 
-  it('BAD under the static schema: the wrong-iteration draft passes the host and fails the gate terminally', async () => {
-    const ws = await createTestWorkspace();
+  it('HAPPY: the follow-up sends the obligation-bound schema and a valid answer binds', async () => {
+    const run = await runPlanReview((id) => findings(id, 0));
     try {
-      const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, crypto.randomUUID());
-      const state = (await readState(sessDir))!;
-      const obligation = state.reviewAssurance!.obligations[0]!;
-      const draft = findings(obligationId, obligation.iteration + 1);
-      expect(ajv.validate(REVIEW_FINDINGS_JSON_SCHEMA as object, draft)).toBe(true);
-      const prepared = prepareReviewerFindingsForValidation({
-        rawFindings: draft,
-        obligationId,
-        hostConstants: {
-          mandateDigest: obligation.mandateDigest,
-          criteriaVersion: obligation.criteriaVersion,
-        },
-        hostProvenance: { childSessionId: CHILD_SESSION_ID, reviewedAt: new Date().toISOString() },
-      });
-      expect(prepared.ok).toBe(true);
-      if (!prepared.ok) return;
-      expect(validateCapturedFindings(state, obligation, prepared.findings)).toMatchObject({
-        kind: 'blocked',
-        code: 'SUBAGENT_MANDATE_MISMATCH',
-      });
-    } finally {
-      await ws.cleanup();
-    }
-  });
-
-  it('HAPPY: the host rejects the draft and the same child binds the correction', async () => {
-    const run = await runPlanReview((obligationId) => [
-      findings(obligationId, 1),
-      findings(obligationId, 0),
-    ]);
-    try {
+      expect(run.host.prompt).toHaveBeenCalledTimes(1);
+      const sent = run.host.sent[0]!;
+      expect(sent).not.toBe(REVIEW_FINDINGS_JSON_SCHEMA);
+      expect(sent.properties.iteration?.const).toBe(run.obligation.iteration);
+      expect(sent.properties.planVersion?.const).toBe(run.obligation.planVersion);
+      expect(sent.properties.attestation?.properties?.toolObligationId?.const).toBe(
+        run.obligationId,
+      );
       expect(run.result.reviewDispatch).toEqual({
         required: true,
         completed: true,
         verdict: 'accept',
       });
-      // One follow-up prompt, two serializations inside it: no fresh attempt.
-      expect(run.host.prompt).toHaveBeenCalledTimes(1);
-      expect(run.host.consumed).toHaveLength(2);
-      const assurance = run.after.reviewAssurance!;
-      expect(assurance.attempts).toHaveLength(1);
-      expect(assurance.attempts[0]?.status).toBe('bound');
-      expect(assurance.obligations[0]?.status).toBe('fulfilled');
-      expect(assurance.invocations).toHaveLength(1);
     } finally {
       await run.ws.cleanup();
     }
   });
 
-  it('BAD: a persistently wrong draft still fails closed and never binds', async () => {
-    const run = await runPlanReview((obligationId) => [
-      findings(obligationId, 1),
-      findings(obligationId, 2),
-    ]);
+  it('BAD: a const-violating answer returned unchanged by the host never binds', async () => {
+    const run = await runPlanReview((id) => findings(id, 1));
     try {
-      expect(run.result.reviewDispatch).not.toMatchObject({ completed: true });
-      expect(run.after.reviewAssurance!.invocations).toHaveLength(0);
-      expect(run.after.reviewAssurance!.obligations[0]?.status).not.toBe('fulfilled');
+      expect(run.host.prompt).toHaveBeenCalledTimes(1);
+      expect(run.result).toMatchObject({ error: true, code: 'SUBAGENT_MANDATE_MISMATCH' });
+      const assurance = run.after.reviewAssurance!;
+      expect(assurance.invocations).toHaveLength(0);
+      expect(assurance.obligations[0]?.status).not.toBe('fulfilled');
+      expect(assurance.attempts.filter((attempt) => attempt.status === 'bound')).toHaveLength(0);
     } finally {
       await run.ws.cleanup();
     }

@@ -790,9 +790,14 @@ stop`, reviewer child reported it could not complete the falsification).
   from the same persisted snapshot as the capture gate (`obligationCaptureContract`):
   those facts are `const`, the challenge item admits only the required kind, and
   evidence refs must be one of the offered refs as a whole object, so
-  digest/section cross-combinations are not expressible. The host's existing
-  schema retry (`retryCount: 1`) can therefore correct them in the same child.
-  Nothing the gate accepts in more than one form is narrowed (host-stamped
+  digest/section cross-combinations are not expressible. The schema reaches
+  the model as the StructuredOutput tool's parameter schema, so the model is
+  told the exact admissible values. The pinned OpenCode host (1.19.0) does
+  **not** validate the answer against it (it wraps the schema with the AI SDK
+  `jsonSchema()` without a validator; pinned by the live smoke), so there is no
+  host-side correction: the FlowGuard capture gate stays the only enforcement
+  and still rejects a violating answer. Nothing the gate accepts in more than
+  one form is narrowed (host-stamped
   challenge `obligationId`, subject anchors, evidence locations, challenge count
   and verdict, resolution verdicts), and every validator still runs. A ref added
   after the dispatch is logged as contract growth. `ajv` is a new

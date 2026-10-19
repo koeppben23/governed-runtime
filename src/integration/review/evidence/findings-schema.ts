@@ -454,8 +454,10 @@ function requiredChallengeItems(
  * same-child structured follow-up.
  *
  * It narrows ONLY fields whose admissible values the capture gate already fixes
- * by exact equality, so the host's schema-internal retry can correct them in
- * the same child instead of a full reviewer re-run:
+ * by exact equality, so the model is told the exact admissible values. The
+ * pinned OpenCode host forwards the schema as the StructuredOutput tool
+ * parameters but does NOT validate the answer against it (AI SDK `jsonSchema()`
+ * without a validator); the capture gate stays the only enforcement:
  * - `iteration`, `planVersion`, `attestation.toolObligationId` (attestation
  *   mismatch is terminal `SUBAGENT_MANDATE_MISMATCH` at the gate);
  * - with a positive challenge count: the challenge kind and the offered

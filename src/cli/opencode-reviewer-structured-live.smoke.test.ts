@@ -75,7 +75,7 @@ const OBLIGATION_SCHEMA = buildObligationFindingsJsonSchema({
   allowedEvidenceRefs: undefined,
 });
 
-/** First structured answer: schema-valid statically, violates the obligation `const`. */
+/** Structured answer that is statically valid but violates the obligation `const`. */
 const WRONG_ITERATION = { ...FINDINGS, iteration: FINDINGS.iteration + 1 };
 
 let tmpRoot: string;
@@ -90,6 +90,8 @@ interface ServeHandle {
 
 /** Deterministic OpenAI-compatible capture: answers structured-output tool calls. */
 let structuredCalls = 0;
+/** Parameter schema of the structured-output tool as the host sent it to the model. */
+const structuredToolParameters: unknown[] = [];
 
 function createCaptureServer(captured: Record<string, unknown>[]): ReturnType<typeof createServer> {
   return createServer(async (request: IncomingMessage, response: ServerResponse) => {
@@ -145,11 +147,13 @@ function createCaptureServer(captured: Record<string, unknown>[]): ReturnType<ty
       return;
     }
     structuredCalls += 1;
-    const answer = structuredCalls === 1 ? WRONG_ITERATION : FINDINGS;
+    structuredToolParameters.push(
+      (structuredTool as { function?: { parameters?: unknown } }).function?.parameters,
+    );
     const toolCall = {
       id: `call_structured_${structuredCalls}`,
       type: 'function',
-      function: { name: toolName, arguments: JSON.stringify(answer) },
+      function: { name: toolName, arguments: JSON.stringify(WRONG_ITERATION) },
     };
     // OpenCode streams chat completions; a non-streaming reply would leave the
     // host waiting. Mirror the OpenAI SSE shape (same as the boundary E2E).
@@ -412,10 +416,26 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
       expect(Object.prototype.hasOwnProperty.call(info!, 'structured_output')).toBe(false);
       const parsed = ReviewerFindingsInput.safeParse(info!.structured);
       expect(parsed.success, JSON.stringify(parsed.success ? {} : parsed.error.issues)).toBe(true);
-      // Host-side enforcement of the obligation-bound schema: the wrong first
-      // answer was not returned; the host retried in the same child.
-      expect((info!.structured as { iteration?: number }).iteration).toBe(FINDINGS.iteration);
-      expect(structuredCalls).toBeGreaterThanOrEqual(2);
+      // The obligation-bound schema reaches the model intact: the `const`
+      // facts are part of the StructuredOutput tool parameters.
+      expect(structuredCalls).toBe(1);
+      const sent = structuredToolParameters[0] as {
+        properties?: Record<
+          string,
+          { const?: unknown; properties?: Record<string, { const?: unknown }> }
+        >;
+      };
+      expect(sent?.properties?.iteration?.const).toBe(FINDINGS.iteration);
+      expect(sent?.properties?.planVersion?.const).toBe(FINDINGS.planVersion);
+      expect(sent?.properties?.attestation?.properties?.toolObligationId?.const).toBe(
+        FINDINGS.attestation.toolObligationId,
+      );
+      // Pinned host behavior: no host-side validation or retry against the
+      // schema. The const-violating answer is returned unchanged, so only the
+      // FlowGuard capture gate can reject it.
+      expect((info!.structured as { iteration?: number }).iteration).toBe(
+        WRONG_ITERATION.iteration,
+      );
     },
     EXEC_TIMEOUT_MS,
   );
