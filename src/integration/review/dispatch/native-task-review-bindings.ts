@@ -25,6 +25,10 @@ import {
   type StructuredFollowupTiming,
 } from './structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
+import {
+  buildObligationFindingsJsonSchema,
+  type ObligationFindingsSchemaContract,
+} from '../evidence/findings-schema.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import type { PendingReviewRetryDiagnostic, ReviewerSuccessResult } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
@@ -167,10 +171,85 @@ function logStructuredFollowupTiming(
     // Diagnostics only.
   }
 }
+/**
+ * The exact-equality facts of the capture gate, derived ONCE per capture from
+ * the same persisted snapshot that `validateCapturedFindings` validates
+ * against. The structured follow-up schema and the gate therefore cannot
+ * enforce different contracts.
+ */
+export function obligationCaptureContract(
+  state: PersistedState,
+  obligation: ReviewObligation,
+): ObligationFindingsSchemaContract {
+  return {
+    obligationId: obligation.obligationId,
+    iteration: obligation.iteration,
+    planVersion: obligation.planVersion,
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind,
+    allowedEvidenceRefs: buildReviewChallengeContract(state, obligation)?.evidenceRefs,
+  };
+}
+
+/**
+ * Offered challenge refs only grow after dispatch (validation attempts are
+ * append-only and every other ref is frozen with the obligation), so the gate
+ * and the schema never reject a ref the reviewer child was offered. A ref that
+ * appeared after the dispatch is surfaced as a diagnostic: the child could not
+ * have seen it.
+ */
+export function refsAddedAfterDispatch(
+  state: PersistedState,
+  allowedEvidenceRefs: readonly Record<string, unknown>[] | undefined,
+  dispatchAuthorizedAt: string,
+): readonly string[] {
+  const authorizedAt = Date.parse(dispatchAuthorizedAt);
+  const attemptIds = new Set(
+    (allowedEvidenceRefs ?? [])
+      .filter((ref) => ref.kind === 'validation_attempt')
+      .map((ref) => String(ref.attemptId)),
+  );
+  return state.validationAttempts
+    .filter(
+      (attempt) =>
+        attemptIds.has(attempt.attemptId) && Date.parse(attempt.result.executedAt) > authorizedAt,
+    )
+    .map((attempt) => attempt.attemptId);
+}
+
+/** Diagnostic only: surface refs the reviewer child could not have been offered. */
+export function logContractGrowthAfterDispatch(
+  runtime: NativeReviewRuntimePort,
+  state: PersistedState,
+  input: {
+    readonly obligationId: string;
+    readonly childSessionId: string;
+    readonly contract: ObligationFindingsSchemaContract;
+    readonly dispatchAuthorizedAt: string;
+  },
+): void {
+  const lateRefs = refsAddedAfterDispatch(
+    state,
+    input.contract.allowedEvidenceRefs,
+    input.dispatchAuthorizedAt,
+  );
+  if (lateRefs.length === 0) return;
+  try {
+    runtime.log.warn('orchestrator', 'reviewer challenge contract grew after dispatch', {
+      obligationId: input.obligationId,
+      childSessionId: input.childSessionId,
+      attemptIds: lateRefs.join(','),
+    });
+  } catch {
+    // Diagnostic only.
+  }
+}
+
 export async function capturePreparedFindings(
   runtime: NativeReviewRuntimePort,
   obligation: ReviewObligation,
   childSessionId: string,
+  contract: ObligationFindingsSchemaContract,
 ): Promise<
   | {
       readonly kind: 'blocked';
@@ -213,7 +292,11 @@ export async function capturePreparedFindings(
 
   const structured = await captureStructuredFindingsFromVisibleChild(
     runtime.orchestratorDeps.client,
-    { childSessionId, obligationId: obligation.obligationId },
+    {
+      childSessionId,
+      obligationId: obligation.obligationId,
+      schema: buildObligationFindingsJsonSchema(contract),
+    },
     (timing) =>
       logStructuredFollowupTiming(runtime, obligation.obligationId, childSessionId, timing),
   );
@@ -283,7 +366,7 @@ export function validateCapturedFindings(
       reason: 'Reviewer attestation mismatch.',
     };
   }
-  const allowedEvidenceRefs = buildReviewChallengeContract(state, obligation)?.evidenceRefs;
+  const { allowedEvidenceRefs } = obligationCaptureContract(state, obligation);
   const resolutionVerdicts = findings.challengeResolutionVerdicts;
   const challenge = validateChallengeConsistency({
     overallVerdict: findings.overallVerdict,

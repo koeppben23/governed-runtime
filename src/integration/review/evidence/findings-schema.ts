@@ -400,3 +400,114 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
   ],
   additionalProperties: false,
 } as const;
+
+/**
+ * Obligation facts the capture gate checks by EXACT equality. Derived by the
+ * caller from the same state snapshot the capture validator uses.
+ */
+export interface ObligationFindingsSchemaContract {
+  readonly obligationId: string;
+  readonly iteration: number;
+  readonly planVersion: number;
+  readonly requiredChallengeCount: number;
+  readonly requiredChallengeKind: (typeof CHALLENGE_KINDS)[number] | undefined;
+  /** Offered challenge evidence refs; undefined when the contract offers none. */
+  readonly allowedEvidenceRefs: readonly Record<string, unknown>[] | undefined;
+}
+
+type JsonSchemaNode = Record<string, unknown>;
+
+function withConst(node: unknown, value: string | number): JsonSchemaNode {
+  return { ...(node as JsonSchemaNode), const: value };
+}
+
+/**
+ * Challenge item schema for an obligation that requires challenges: only the
+ * required kind is admissible (the capture gate rejects any other kind as
+ * SUBAGENT_CHALLENGE_KIND_INCOHERENT whenever the count is positive), and every
+ * evidence ref must be one of the offered refs as a COMPLETE object (the gate
+ * compares canonical whole objects), so digest/section cross-combinations are
+ * not expressible.
+ */
+function requiredChallengeItems(
+  kind: (typeof CHALLENGE_KINDS)[number],
+  allowedEvidenceRefs: readonly Record<string, unknown>[] | undefined,
+): JsonSchemaNode {
+  const variant = buildChallengeVariant(kind) as JsonSchemaNode;
+  if (allowedEvidenceRefs === undefined) return variant;
+  const properties = variant.properties as JsonSchemaNode;
+  const evidenceRefs = properties.evidenceRefs as JsonSchemaNode;
+  return {
+    ...variant,
+    properties: {
+      ...properties,
+      evidenceRefs: {
+        ...evidenceRefs,
+        items: { allOf: [evidenceRefs.items, { enum: [...allowedEvidenceRefs] }] },
+      },
+    },
+  };
+}
+
+/**
+ * Obligation-bound specialization of {@link REVIEW_FINDINGS_JSON_SCHEMA} for the
+ * same-child structured follow-up.
+ *
+ * It narrows ONLY fields whose admissible values the capture gate already fixes
+ * by exact equality, so the host's schema-internal retry can correct them in
+ * the same child instead of a full reviewer re-run:
+ * - `iteration`, `planVersion`, `attestation.toolObligationId` (attestation
+ *   mismatch is terminal `SUBAGENT_MANDATE_MISMATCH` at the gate);
+ * - with a positive challenge count: the challenge kind and the offered
+ *   evidence refs (with offered refs but none admissible, no challenge can
+ *   pass the gate, so the list must be empty).
+ *
+ * Deliberately NOT narrowed (the gate accepts more than one value or the host
+ * overwrites them): `challenges[].obligationId` (host-stamped), subject anchors
+ * (scope accepts a relation when ANY anchor is in scope), evidence locations
+ * (observation binding), challenge count and verdict (`unable_to_review` may
+ * carry fewer challenges), resolution verdicts. Every other node is the static
+ * schema, so the result is always a subset of it. The schema is an early input
+ * check only; every validator still runs unchanged.
+ */
+export function buildObligationFindingsJsonSchema(
+  contract: ObligationFindingsSchemaContract,
+): JsonSchemaNode {
+  const base = REVIEW_FINDINGS_JSON_SCHEMA as unknown as JsonSchemaNode;
+  const properties = base.properties as JsonSchemaNode;
+  const attestation = properties.attestation as JsonSchemaNode;
+  const attestationProperties = attestation.properties as JsonSchemaNode;
+  const challengesRequired =
+    contract.requiredChallengeCount > 0 && contract.requiredChallengeKind !== undefined;
+  const noAdmissibleRef = contract.allowedEvidenceRefs?.length === 0;
+  const challenges: JsonSchemaNode = !challengesRequired
+    ? (properties.challenges as JsonSchemaNode)
+    : noAdmissibleRef
+      ? { type: 'array', maxItems: 0 }
+      : {
+          type: 'array',
+          items: requiredChallengeItems(
+            contract.requiredChallengeKind,
+            contract.allowedEvidenceRefs,
+          ),
+        };
+  return {
+    ...base,
+    properties: {
+      ...properties,
+      iteration: withConst(properties.iteration, contract.iteration),
+      planVersion: withConst(properties.planVersion, contract.planVersion),
+      challenges,
+      attestation: {
+        ...attestation,
+        properties: {
+          ...attestationProperties,
+          toolObligationId: withConst(
+            attestationProperties.toolObligationId,
+            contract.obligationId,
+          ),
+        },
+      },
+    },
+  };
+}

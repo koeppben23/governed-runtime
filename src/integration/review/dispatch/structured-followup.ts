@@ -17,7 +17,6 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import type { OrchestratorClient, PendingReviewRetryDiagnostic } from '../types.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
@@ -381,7 +380,12 @@ function reportTiming(
 /** Serialize findings from an existing visible reviewer child. Never creates a child. */
 export async function captureStructuredFindingsFromVisibleChild(
   client: OrchestratorClient,
-  input: { readonly childSessionId: string; readonly obligationId: string },
+  input: {
+    readonly childSessionId: string;
+    readonly obligationId: string;
+    /** Obligation-bound specialization of the static findings schema. */
+    readonly schema: Record<string, unknown>;
+  },
   observeTiming?: StructuredFollowupTimingObserver,
 ): Promise<StructuredFollowupResult> {
   const agent = await resolveAgent(client);
@@ -400,7 +404,7 @@ export async function captureStructuredFindingsFromVisibleChild(
       body: {
         agent,
         parts: [{ type: 'text', text: serializationPrompt(input.obligationId) }],
-        format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
+        format: { type: 'json_schema', schema: input.schema, retryCount: 1 },
       },
     });
     promptOutcome = 'responded';

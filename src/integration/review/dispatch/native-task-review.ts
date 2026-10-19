@@ -55,6 +55,8 @@ import type {
 import {
   bindNativeReviewEvidence,
   capturePreparedFindings,
+  logContractGrowthAfterDispatch,
+  obligationCaptureContract,
   persistReviewerObservations,
   resolveNativeReviewLineage,
   validateCapturedFindings,
@@ -467,6 +469,26 @@ async function fulfillNativeReviewTask(
   });
 }
 
+/**
+ * One contract per capture, derived from the snapshot the gate validates
+ * against, shapes the structured follow-up schema.
+ */
+function captureBound(
+  runtime: NativeReviewTransportRuntime,
+  state: NonNullable<Awaited<ReturnType<typeof readState>>>,
+  lineage: StructuredReviewInput['lineage'],
+  childSessionId: string,
+) {
+  const contract = obligationCaptureContract(state, lineage.obligation);
+  logContractGrowthAfterDispatch(runtime, state, {
+    obligationId: lineage.obligation.obligationId,
+    childSessionId,
+    contract,
+    dispatchAuthorizedAt: lineage.dispatch.dispatchAuthorizedAt,
+  });
+  return capturePreparedFindings(runtime, lineage.obligation, childSessionId, contract);
+}
+
 async function completeStructuredReview(
   runtime: NativeReviewTransportRuntime,
   input: StructuredReviewInput,
@@ -490,7 +512,7 @@ async function completeStructuredReview(
     return;
   }
 
-  const captured = await capturePreparedFindings(runtime, lineage.obligation, childSessionId);
+  const captured = await captureBound(runtime, refreshedState, lineage, childSessionId);
   if (captured.kind === 'blocked') {
     await abandonOrRetryCaptureFailure({
       ...captureFailure,

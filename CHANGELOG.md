@@ -780,6 +780,23 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Reviewer structured output is constrained to the obligation.** The
+  same-child serialization follow-up sent the static findings schema, so
+  exact-equality facts of the capture gate were only checked after the host
+  accepted the output: a wrong `iteration`, `planVersion` or attestation
+  obligation id became a terminal `SUBAGENT_MANDATE_MISMATCH`, and a challenge
+  of the wrong kind or with a ref that was not offered forced a full reviewer
+  re-run. The follow-up now sends `buildObligationFindingsJsonSchema`, derived
+  from the same persisted snapshot as the capture gate (`obligationCaptureContract`):
+  those facts are `const`, the challenge item admits only the required kind, and
+  evidence refs must be one of the offered refs as a whole object, so
+  digest/section cross-combinations are not expressible. The host's existing
+  schema retry (`retryCount: 1`) can therefore correct them in the same child.
+  Nothing the gate accepts in more than one form is narrowed (host-stamped
+  challenge `obligationId`, subject anchors, evidence locations, challenge count
+  and verdict, resolution verdicts), and every validator still runs. A ref added
+  after the dispatch is logged as contract growth. `ajv` is a new
+  devDependency for the schema/validator parity tests.
 - **Challenge evidence refs are offered once.** The reviewer challenge
   contract now lists the offered evidence refs exactly once as a numbered
   whitelist and the challenge shape example cites exactly one offered ref that
