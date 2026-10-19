@@ -16,8 +16,10 @@ import type { EvidenceLocationFailure } from '../observations/observation-bindin
 import type { ReviewObligationType } from '../../../state/evidence.js';
 import { REASON_MANDATE_MISSING, REASON_MANDATE_MISMATCH } from '../shared-helpers.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
-import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
-import type { ReviewerCompletionFailureCode } from './structured-followup.js';
+import type {
+  ReviewerCompletionFailureCode,
+  StructuredFollowupFailureCode,
+} from './native-task-review-types.js';
 
 /**
  * Codes emitted by the reviewers' binding boundary. The union is DERIVED from

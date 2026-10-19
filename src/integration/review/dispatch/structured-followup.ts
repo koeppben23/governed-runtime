@@ -21,7 +21,11 @@ import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import type { OrchestratorClient, PendingReviewRetryDiagnostic } from '../types.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
-import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
+import type {
+  ReviewerCompletionFailureCode,
+  ReviewerTaskCompletion,
+  StructuredFollowupFailureCode,
+} from './native-task-review-types.js';
 import {
   buildStructuredFindingsContractDiagnostics,
   structuredFindingsContractReason,
@@ -77,22 +81,6 @@ type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']
  * A completed task is a NECESSARY condition only: findings, scope, observation
  * and challenge validation still decide whether the review binds.
  */
-export type ReviewerCompletionFailureCode =
-  | 'REVIEWER_COMPLETION_UNVERIFIABLE'
-  | 'REVIEWER_TASK_ABORTED'
-  | 'REVIEWER_OUTPUT_TRUNCATED'
-  | 'REVIEWER_STEP_BUDGET_EXHAUSTED'
-  | 'REVIEWER_TASK_INCOMPLETE';
-
-export type ReviewerTaskCompletion =
-  | { readonly kind: 'completed'; readonly steps: number }
-  | {
-      readonly kind: 'incomplete';
-      readonly code: ReviewerCompletionFailureCode;
-      /** Host facts behind the decision, e.g. `steps=5; finish=length; error=none`. */
-      readonly detail: string;
-    };
-
 type MessagePart = { readonly type?: unknown; readonly text?: unknown } & Record<string, unknown>;
 
 type SessionMessage = {
@@ -201,10 +189,15 @@ export function classifyReviewerTaskMessages(
       reason: 'messages unreadable',
     });
   }
-  const assistants = (data as SessionMessage[]).filter(
-    (entry) => typeof entry === 'object' && entry !== null && entry.info?.role === 'assistant',
+  const entries = data as SessionMessage[];
+  const isAssistantEntry = (entry: SessionMessage): boolean =>
+    typeof entry === 'object' && entry !== null && entry.info?.role === 'assistant';
+  const assistants = entries.filter(isAssistantEntry);
+  const lastIndex = entries.reduce(
+    (found, entry, index) => (isAssistantEntry(entry) ? index : found),
+    -1,
   );
-  const last = assistants.at(-1);
+  const last = lastIndex === -1 ? undefined : entries[lastIndex];
   if (!last) {
     return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
       steps: 0,
@@ -214,6 +207,13 @@ export function classifyReviewerTaskMessages(
     });
   }
   const facts = { steps: assistants.length, finish: last.info?.finish, error: errorName(last) };
+  const trailing = entries.slice(lastIndex + 1);
+  if (trailing.length > 0) {
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      ...facts,
+      reason: 'unexpected host message after the final assistant step',
+    });
+  }
   return classifyHostSignal(facts) ?? classifyLastStep(last, facts, stepLimit);
 }
 /** Read the child's host-recorded messages and classify its completion. */

@@ -21,11 +21,8 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it, vi } from 'vitest';
-import {
-  classifyReviewerTaskMessages,
-  readReviewerTaskCompletion,
-  type ReviewerCompletionFailureCode,
-} from './structured-followup.js';
+import { classifyReviewerTaskMessages, readReviewerTaskCompletion } from './structured-followup.js';
+import type { ReviewerCompletionFailureCode } from './native-task-review-types.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
 import type { OrchestratorClient } from '../types.js';
 
@@ -98,6 +95,22 @@ describe('reviewer task completion - classification order', () => {
       kind: 'completed',
       steps: 2,
     });
+  });
+
+  it('BAD: any host message after the final assistant step makes completion unverifiable', () => {
+    const completed = transcript([toolStep(), step('stop', [ANSWER])]);
+    for (const trailing of [
+      { info: {} },
+      { info: { role: 'user' }, parts: [{ type: 'text' }] },
+      { corrupt: true },
+    ]) {
+      expect(classifyReviewerTaskMessages([...completed, trailing])).toEqual({
+        kind: 'incomplete',
+        code: 'REVIEWER_COMPLETION_UNVERIFIABLE',
+        detail:
+          'steps=2; finish=stop; error=none; unexpected host message after the final assistant step',
+      });
+    }
   });
 
   it('BAD: an abort is terminal even when the output is also truncated', () => {
