@@ -21,7 +21,7 @@ import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-record
 import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
 import {
   captureStructuredFindingsFromVisibleChild,
-  detectReviewerStepBudgetExhaustion,
+  readReviewerTaskCompletion,
   type StructuredFollowupTiming,
 } from './structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
@@ -184,40 +184,30 @@ export async function capturePreparedFindings(
       readonly fulfilledAt: string;
     }
 > {
-  // Host-enforced step-budget stop: the follow-up cannot recover a review the
-  // child never concluded. The caller routes the retryable code through the
-  // existing bounded re-arm path on the same frozen obligation.
-  const stepBudget = await detectReviewerStepBudgetExhaustion(
+  // Completion gate for EVERY obligation type (plan, architecture, implement,
+  // review): the serialization prompt may only run after the host-recorded
+  // messages prove the reviewer finished its task normally. A truncated,
+  // aborted, step-limited or unprovable task is never serialized; the caller
+  // routes the code through the bounded re-arm (retryable) or blocks (terminal).
+  const completion = await readReviewerTaskCompletion(
     runtime.orchestratorDeps.client,
     childSessionId,
   );
-  if (stepBudget.state === 'exhausted') {
-    return {
-      kind: 'blocked',
-      code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
-      reason:
-        'The host stopped the reviewer at its configured step budget before structured findings ' +
-        'could be captured; a fresh reviewer attempt must be re-armed on the same frozen obligation.',
-    };
-  }
-  if (stepBudget.state === 'ambiguous') {
-    // Required host evidence is unavailable. Never let the serialization prompt
-    // turn a truncated/unknown review into a completed one.
+  if (completion.kind === 'incomplete') {
     try {
-      runtime.log.warn('orchestrator', 'reviewer step-budget evidence unavailable', {
+      runtime.log.warn('orchestrator', 'reviewer task not completed; serialization refused', {
         obligationId: obligation.obligationId,
         childSessionId,
-        detail: stepBudget.detail,
+        code: completion.code,
+        detail: completion.detail,
       });
     } catch {
       // Logging is diagnostic only; the fail-closed decision below stands.
     }
     return {
       kind: 'blocked',
-      code: 'REVIEWER_STEP_BUDGET_UNVERIFIABLE',
-      reason:
-        'The host-recorded step-budget state of the reviewer child is unavailable or ambiguous ' +
-        `(${stepBudget.detail ?? 'unknown'}); the review cannot be accepted as completed.`,
+      code: completion.code,
+      reason: `Reviewer task not completed (${completion.detail}); its output is never serialized or accepted.`,
     };
   }
 

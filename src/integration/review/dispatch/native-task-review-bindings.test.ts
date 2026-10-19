@@ -11,6 +11,7 @@
  * requires (or accept findings consumption later rejects).
  */
 
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import { makeState } from '../../../fixtures.js';
@@ -387,7 +388,10 @@ describe('native capture - structured follow-up timing diagnostics', () => {
             messages: vi.fn(async () => ({
               data: [
                 { info: { role: 'user' } },
-                { info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text' }] },
+                {
+                  info: { role: 'assistant', finish: 'stop' },
+                  parts: [{ type: 'text', text: 'Final review answer.' }],
+                },
               ],
             })),
           },
@@ -434,4 +438,43 @@ describe('native capture - structured follow-up timing diagnostics', () => {
     expect(observed).toEqual(reference);
     expect(throwing).toHaveBeenCalled();
   });
+});
+
+describe('native capture - reviewer task completion gate for every obligation type', () => {
+  const OCT19 = JSON.parse(
+    readFileSync(
+      new URL(
+        './__fixtures__/reviewer-plan-2026-10-19-pre-followup-redacted.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ) as unknown;
+
+  afterEach(() => {
+    _resetAgentResolutionCache();
+  });
+
+  it.each(['plan', 'architecture', 'implement', 'review'] as const)(
+    '%s: the truncated 2026-10-19 child is never serialized',
+    async (obligationType) => {
+      const prompt = vi.fn(async () => ({ data: { info: { structured: {} } } }));
+      const runtime = {
+        orchestratorDeps: {
+          client: {
+            app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
+            session: { prompt, messages: vi.fn(async () => OCT19) },
+          },
+        },
+        log: { info: vi.fn(), warn: vi.fn() },
+        logError: vi.fn(),
+      } as unknown as NativeReviewRuntimePort;
+      const obligation = { obligationId: OBLIGATION_ID, obligationType } as ReviewObligation;
+
+      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1');
+
+      expect(captured).toMatchObject({ kind: 'blocked', code: 'REVIEWER_OUTPUT_TRUNCATED' });
+      expect(prompt).not.toHaveBeenCalled();
+    },
+  );
 });

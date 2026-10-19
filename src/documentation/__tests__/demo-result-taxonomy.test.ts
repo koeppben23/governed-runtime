@@ -80,7 +80,14 @@ describe('demo result taxonomy', () => {
       ).toBe('not_verified');
       expect(classifyUnexpectedBlock(['SUBAGENT_UNABLE_TO_REVIEW'])).toBe('not_verified');
       expect(classifyUnexpectedBlock(['REVIEWER_STEP_BUDGET_EXHAUSTED'])).toBe('not_verified');
-      expect(classifyUnexpectedBlock(['REVIEWER_STEP_BUDGET_UNVERIFIABLE'])).toBe('not_verified');
+      for (const code of [
+        'REVIEWER_OUTPUT_TRUNCATED',
+        'REVIEWER_TASK_INCOMPLETE',
+        'REVIEWER_TASK_ABORTED',
+        'REVIEWER_COMPLETION_UNVERIFIABLE',
+      ]) {
+        expect(classifyUnexpectedBlock([code]), code).toBe('not_verified');
+      }
       expect(classifyUnexpectedBlock(['SUBAGENT_FINDINGS_VERDICT_MISMATCH'])).toBe('not_verified');
       expect(classifyUnexpectedBlock(['ARCHIVE_FAILED'])).toBe('failed');
       expect(classifyUnexpectedBlock(['ARCHIVE_FAILED', 'REVIEW_EVIDENCE_NOT_OBSERVED'])).toBe(

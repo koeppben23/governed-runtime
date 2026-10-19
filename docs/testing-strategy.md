@@ -584,8 +584,8 @@ The 2026-10-10 Run-10 diagnostics work additionally stages
 `src/integration/review/dispatch/native-task-review.ts` (native reviewer Task
 transport and capture-failure block composition).
 The 2026-10-17 F2 step-budget fix additionally stages
-`src/integration/review/dispatch/structured-followup.ts` (host step-budget
-verification from recorded session messages and same-child findings
+`src/integration/review/dispatch/structured-followup.ts` (host-evidenced
+reviewer task completion from recorded session messages and same-child findings
 serialization).
 They carry no provenance until a freeze-commit full run meets the per-target
 threshold; a targeted diagnostic run is not admission evidence.

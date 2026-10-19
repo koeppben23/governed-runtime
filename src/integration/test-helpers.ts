@@ -62,7 +62,10 @@ export function createBootableHostClient(overrides?: {
       messages: async () => ({
         data: [
           { info: { role: 'user' } },
-          { info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text' }] },
+          {
+            info: { role: 'assistant', finish: 'stop' },
+            parts: [{ type: 'text', text: 'Final review answer.' }],
+          },
         ],
       }),
       ...(overrides?.session ?? {}),

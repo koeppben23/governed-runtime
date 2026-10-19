@@ -53,7 +53,23 @@ describe('reviewer capture retry classification', () => {
     expect(retryable.size).toBe(RETRYABLE_REVIEWER_CAPTURE_CODES.length);
     expect(terminal.size).toBe(TERMINAL_REVIEWER_CAPTURE_CODES.length);
     for (const code of retryable) expect(terminal.has(code), code).toBe(false);
-    expect(retryable.size + terminal.size).toBe(33);
+    expect(retryable.size + terminal.size).toBe(36);
+  });
+
+  it('classifies reviewer task completion failures: proven truncation retries, abort never', () => {
+    for (const code of [
+      'REVIEWER_OUTPUT_TRUNCATED',
+      'REVIEWER_TASK_INCOMPLETE',
+      'REVIEWER_STEP_BUDGET_EXHAUSTED',
+    ]) {
+      expect(classifyReviewerCaptureFailure(code), code).toEqual({ retryable: true, code });
+    }
+    for (const code of ['REVIEWER_TASK_ABORTED', 'REVIEWER_COMPLETION_UNVERIFIABLE']) {
+      expect(classifyReviewerCaptureFailure(code), code).toEqual({ retryable: false, code });
+    }
+    expect(classifyReviewerCaptureFailure('REVIEWER_STEP_BUDGET_UNVERIFIABLE').retryable).toBe(
+      false,
+    );
   });
 });
 

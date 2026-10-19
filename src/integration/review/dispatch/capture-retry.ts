@@ -17,6 +17,7 @@ import type { ReviewObligationType } from '../../../state/evidence.js';
 import { REASON_MANDATE_MISSING, REASON_MANDATE_MISMATCH } from '../shared-helpers.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
 import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
+import type { ReviewerCompletionFailureCode } from './structured-followup.js';
 
 /**
  * Codes emitted by the reviewers' binding boundary. The union is DERIVED from
@@ -33,14 +34,13 @@ type PipelineFailureCode =
   | 'REVIEW_ASSURANCE_STATE_UNAVAILABLE'
   | 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE'
   | 'REVIEW_EVIDENCE_NOT_OBSERVED'
-  | 'REVIEWER_STEP_BUDGET_EXHAUSTED'
-  | 'REVIEWER_STEP_BUDGET_UNVERIFIABLE'
   | 'SUBAGENT_UNABLE_TO_REVIEW';
 
 /** Every reviewer capture/binding failure code the after-hook can receive. */
 export type ReviewerCaptureFailureCode =
   | ChallengeConsistencyCode
   | StructuredFollowupFailureCode
+  | ReviewerCompletionFailureCode
   | ReviewFindingsScopeFailureCode
   | AttestationFailureCode
   | RecorderFailureCode
@@ -57,6 +57,9 @@ const CLASSIFICATION = {
   HOST_STRUCTURED_OUTPUT_REQUIRED: 'retryable',
   REVIEW_EVIDENCE_NOT_OBSERVED: 'retryable',
   REVIEWER_STEP_BUDGET_EXHAUSTED: 'retryable',
+  // Proven truncation / missing final answer: an honest fresh review may finish.
+  REVIEWER_OUTPUT_TRUNCATED: 'retryable',
+  REVIEWER_TASK_INCOMPLETE: 'retryable',
   SUBAGENT_CHALLENGE_CONTRADICTED: 'retryable',
   SUBAGENT_CHALLENGE_COUNT_INCOHERENT: 'retryable',
   SUBAGENT_CHALLENGE_EVIDENCE_MISSING: 'retryable',
@@ -85,7 +88,9 @@ const CLASSIFICATION = {
   REVIEW_MATERIAL_INTEGRITY_FAILED: 'terminal',
   REVIEW_ASSURANCE_STATE_UNAVAILABLE: 'terminal',
   REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE: 'terminal',
-  REVIEWER_STEP_BUDGET_UNVERIFIABLE: 'terminal',
+  // An abort may be intentional (user stop): never restarted automatically.
+  REVIEWER_TASK_ABORTED: 'terminal',
+  REVIEWER_COMPLETION_UNVERIFIABLE: 'terminal',
   SUBAGENT_UNABLE_TO_REVIEW: 'terminal',
 } as const satisfies Readonly<Record<ReviewerCaptureFailureCode, 'retryable' | 'terminal'>>;
 
