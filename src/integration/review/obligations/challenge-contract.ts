@@ -90,8 +90,10 @@ function renderOfferedEvidenceRefs(
 ): string[] {
   if (evidenceRefs.length === 0) return [];
   return [
-    `- Offered evidenceRefs (${evidenceRefs.length}): the only admissible refs. Cite a non-empty subset that supports each challenge; the example below shows one of them, not the required selection.`,
-    ...evidenceRefs.map((ref, index) => `  ${index + 1}. ${JSON.stringify(ref)}`),
+    `- Offered evidenceRefs (${evidenceRefs.length}): the only admissible refs, numbered Ref 1 to Ref ${evidenceRefs.length}. Cite a non-empty subset that supports each challenge; the example below shows one of them, not the required selection.`,
+    ...evidenceRefs.map((ref, index) => `  Ref ${index + 1}: ${JSON.stringify(ref)}`),
+    '- In your review prose, cite offered refs only by number (e.g. "Ref 2"); never restate their digests, section paths, attempt IDs, or objects.',
+    '- The structured serialization expands each cited number to the exact offered object. Never invent or alter a digest, sectionPath, or attemptId.',
     ...(kind === 'implementation_challenge'
       ? [
           '- An implementation_challenge with outcome "pass" MUST cite BOTH evidence classes:',
@@ -128,7 +130,6 @@ export function renderReviewChallengeContract(
   return [
     `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${kind} challenge(s).`,
     '- When provided, clientReference MUST be fresh and unique (e.g. "c1", "c2"); use the exact obligationId below.',
-    '- Copy each cited evidenceRef exactly from the offered list. Do not invent or alter a digest, sectionPath, or attemptId.',
     ...renderOfferedEvidenceRefs(evidenceRefs, kind),
     ...(resolutionTargets.length === 0
       ? [
@@ -136,6 +137,7 @@ export function renderReviewChallengeContract(
         ]
       : []),
     '- Required field: outcome. Select it yourself only after completing the falsification attempt; there is no default outcome.',
+    '- A falsification attempt that finds no violation is a complete, valid result: record the outcome stating that the claim held. The required challenge count is never a request to find or invent a defect.',
     ...(kind
       ? [
           `- Allowed ${kind} outcome values (exact strings, no others): ${REVIEW_CHALLENGE_OUTCOMES[

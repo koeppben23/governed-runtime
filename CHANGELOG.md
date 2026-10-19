@@ -807,6 +807,33 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Compact reviewer output contract (review criteria `p42-v7`).** The
+  2026-10-19 GUI runs (build `6a4ff271`, OpenCode 1.19.3, `deepseek-flash`)
+  ended both plan reviews at the shared 32,000-token output limit. One child
+  was cut mid-way through restating offered evidence-ref objects in prose; the
+  other re-examined settled points until the limit. The criteria, evidence
+  requirements, and validators are unchanged. The task-prompt contract changes:
+  - Offered challenge evidence refs are numbered `Ref 1`…`Ref N` in offer
+    order. The prose cites them only by number and never restates digests,
+    section paths, attempt IDs, or ref objects.
+  - The same-child serialization prompt expands each cited number to the
+    exact offered object. An unexpanded number fails the canonical findings
+    contract and is a retryable `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`.
+  - The output boundary asks for compact, complete prose: verdict first, then
+    each finding by severity, category, subject, `path:line` evidence, and
+    smallest repair, then each challenge.
+  - A falsification that finds no violation is stated as a complete, valid
+    result. The required challenge count is never a request to find a defect.
+  - A working instruction asks the reviewer not to reconsider an assessed
+    point without new evidence, a concrete contradiction, or an unresolved
+    requirement. Such evidence always reopens a conclusion, and required
+    falsification checks are never shortened.
+
+  `REVIEW_CRITERIA_VERSION` advances to `p42-v7`, so obligations minted under
+  `p42-v6` fail closed and are recovered through the documented fresh-review
+  route. The reviewer mandate digest is unchanged: no installed template
+  changed. Whether this reduces truncation is not yet measured.
+
 - **Repository observations state their citable line count.** The evidence
   binder rejects a `line`/`endLine` beyond the observed file's line count
   (for example line 57 of a 48-line `pom.xml`), which forced a full reviewer
