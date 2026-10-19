@@ -780,6 +780,21 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Repository observations state their citable line count.** The evidence
+  binder rejects a `line`/`endLine` beyond the observed file's line count
+  (for example line 57 of a 48-line `pom.xml`), which forced a full reviewer
+  re-run, but the observation response never told the reviewer that bound.
+  `flowguard_observe_repository` now returns `lineCount` for UTF-8 text
+  (`lineCountOfUtf8`, the exact count the binder enforces; binary content has
+  none), and the observation contract tells the reviewer to cite only within
+  `1..lineCount`. The tool and the parent replay build the response through the
+  same function, so `responseDigest` covers the field. **Upgrade impact:** a
+  capture recorded with the previous response shape (for example during an
+  upgrade while a review is running) no longer matches the canonical response
+  and is dropped at replay, never reinterpreted; observations already bound
+  stay unchanged. Replay drops are now logged per reason, and a response
+  mismatch is logged with its locations, so a later
+  `REVIEW_EVIDENCE_NOT_OBSERVED` has a visible cause.
 - **Reviewer structured output is constrained to the obligation.** The
   same-child serialization follow-up sent the static findings schema, so
   exact-equality facts of the capture gate were only checked after the host
