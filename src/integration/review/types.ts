@@ -32,7 +32,7 @@ export type PendingReviewTool = ReviewableTool;
  * evaluated. Canonical here so the retry prompt (prompting zone) and the
  * completion classifier (dispatch zone) share one vocabulary.
  */
-export const REVIEWER_COMPLETION_FAILURE_CODES = [
+const REVIEWER_COMPLETION_FAILURE_CODES = [
   'REVIEWER_COMPLETION_UNVERIFIABLE',
   'REVIEWER_TASK_ABORTED',
   'REVIEWER_OUTPUT_TRUNCATED',
