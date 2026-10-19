@@ -159,6 +159,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A truncated or unfinished reviewer task is never serialized or accepted.**
+  The structured follow-up ("serialize the findings you concluded") ran
+  whenever the reviewer child had fewer assistant steps than the step limit.
+  In a real OpenCode plan review (2026-10-19) the child ended after five steps
+  with `finish: "length"`, 32,000 reasoning tokens and no final answer; the
+  follow-up still produced a bindable `accept`. The native reviewer transport
+  now proves completion from the host-recorded messages before any
+  serialization, for every obligation type (plan, architecture,
+  implementation, peer review), evaluated on the last assistant step in a
+  fixed order: an aborted task (`MessageAbortedError`) is
+  `REVIEWER_TASK_ABORTED` and is never restarted automatically; a
+  token-truncated task (`finish: "length"` / `MessageOutputLengthError`) is
+  `REVIEWER_OUTPUT_TRUNCATED`; a `stop` without a non-blank final answer is
+  `REVIEWER_TASK_INCOMPLETE`; the host step-budget stop stays
+  `REVIEWER_STEP_BUDGET_EXHAUSTED`; any other host error, more steps than the
+  limit, a tool call or a missing `stop` in the last step is
+  `REVIEWER_COMPLETION_UNVERIFIABLE`. Truncated, incomplete and step-limited
+  tasks re-arm a fresh attempt on the same frozen obligation within
+  `maxReviewerAttempts`; aborted and unverifiable ones fail closed. A normal
+  completion is only a precondition: findings, scope, observation and
+  challenge validation still decide binding. **Upgrade impact:**
+  `REVIEWER_STEP_BUDGET_UNVERIFIABLE` is replaced by
+  `REVIEWER_COMPLETION_UNVERIFIABLE` (no alias). A run that previously ended
+  `COMPLETE` on a truncated review now ends with a reviewer retry or a block;
+  that is the correct detection of the truncation, not a new failure.
 - **Demo harness v5 records the real re-arm lifecycle.** A structured re-arm
   that was fresh at dispatch and whose attempt failed later is now recorded as
   `rearm_attempt_failed` with its child session, ending denial, and

@@ -115,12 +115,45 @@ export const REVIEW_VALIDATION_REASONS = [
   },
 
   {
-    code: 'REVIEWER_STEP_BUDGET_UNVERIFIABLE',
+    code: 'REVIEWER_OUTPUT_TRUNCATED',
     category: 'state',
     messageTemplate:
-      'The reviewer host step-budget state could not be verified from host-recorded messages ({detail}); the review cannot be accepted or retried automatically.',
+      'The reviewer child stopped at the host output limit before a final review answer; the truncated review is never serialized or accepted: {reason}',
     recoverySteps: [
-      'Required host evidence is unavailable: do NOT treat the reviewer result as a completed review and do NOT consume it as findings authority',
+      'A fresh reviewer attempt on the same frozen review obligation was re-armed automatically. Invoke the reviewer Task again.',
+      'If the attempt budget is exhausted, report the blocker and re-run the originating command to mint a fresh obligation.',
+    ],
+  },
+
+  {
+    code: 'REVIEWER_TASK_INCOMPLETE',
+    category: 'state',
+    messageTemplate:
+      'The reviewer child finished without a final review answer; an unanswered review is never serialized or accepted: {reason}',
+    recoverySteps: [
+      'A fresh reviewer attempt on the same frozen review obligation was re-armed automatically. Invoke the reviewer Task again.',
+      'If the attempt budget is exhausted, report the blocker and re-run the originating command to mint a fresh obligation.',
+    ],
+  },
+
+  {
+    code: 'REVIEWER_TASK_ABORTED',
+    category: 'state',
+    messageTemplate:
+      'The reviewer task was aborted before it completed; an aborted review is never serialized, accepted, or restarted automatically: {reason}',
+    recoverySteps: [
+      'If the abort was intended, no action is required: the review obligation stays unfulfilled',
+      'To review again, re-run the originating FlowGuard command; it re-arms a fresh reviewer attempt on the same frozen obligation',
+    ],
+  },
+
+  {
+    code: 'REVIEWER_COMPLETION_UNVERIFIABLE',
+    category: 'state',
+    messageTemplate:
+      'The reviewer task completion could not be verified from host-recorded messages; the review cannot be accepted or retried automatically: {reason}',
+    recoverySteps: [
+      'Required host evidence is unavailable or contradictory: do NOT treat the reviewer result as a completed review and do NOT consume it as findings authority',
       'Re-run the originating FlowGuard command to re-arm a fresh reviewer attempt on the same frozen obligation when host evidence is available again',
       'If the host cannot expose its recorded messages, report the blocker instead of accepting an unverified review',
     ],

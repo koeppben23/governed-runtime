@@ -886,7 +886,10 @@ describe('integration/plugin', () => {
               messages: async () => ({
                 data: [
                   { info: { role: 'user' } },
-                  { info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text' }] },
+                  {
+                    info: { role: 'assistant', finish: 'stop' },
+                    parts: [{ type: 'text', text: 'Final review answer.' }],
+                  },
                 ],
               }),
             },

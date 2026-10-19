@@ -109,12 +109,12 @@ export interface OrchestratorClient {
     agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
   };
   session: {
-    /** Host-recorded session messages; used to verify a host step-budget stop. */
+    /** Host-recorded session messages; used to verify reviewer task completion. */
     messages?(opts: { path: { id: string } }): Promise<{
       data?:
         | Array<{
-            info?: { role?: string; finish?: string };
-            parts?: Array<{ type?: string }>;
+            info?: { role?: string; finish?: string; error?: unknown };
+            parts?: Array<{ type?: string; text?: string; synthetic?: boolean; ignored?: boolean }>;
           }>
         | undefined;
       error?: unknown;

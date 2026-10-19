@@ -11,7 +11,8 @@
  *
  * The Task text is never findings authority. Only `info.structured` from this
  * follow-up, validated against ReviewerFindingsInput, can proceed to evidence
- * binding.
+ * binding. The follow-up runs only after `readReviewerTaskCompletion` proved from
+ * host-recorded messages that the reviewer finished its task normally.
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
@@ -20,7 +21,11 @@ import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import type { OrchestratorClient, PendingReviewRetryDiagnostic } from '../types.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
-import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
+import type {
+  ReviewerCompletionFailureCode,
+  ReviewerTaskCompletion,
+  StructuredFollowupFailureCode,
+} from './native-task-review-types.js';
 import {
   buildStructuredFindingsContractDiagnostics,
   structuredFindingsContractReason,
@@ -45,70 +50,207 @@ type ParsedFollowup =
   { readonly kind: 'ok'; readonly findings: Record<string, unknown> } | BlockedFollowup;
 type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
 
-export type ReviewerStepBudgetState = 'exhausted' | 'ambiguous' | 'not_exhausted';
+/**
+ * Reviewer task completion: host-evidenced completion of a native reviewer Task
+ * BEFORE any structured serialization.
+ *
+ * The same-child structured follow-up serializes "the findings you concluded";
+ * it can turn ANY child transcript into a formally bindable verdict. It may
+ * therefore only run after the host-recorded messages prove that the reviewer
+ * finished its task normally. A host-terminated, token-truncated, aborted or
+ * otherwise unprovable task is never serialized, regardless of how plausible a
+ * later verdict would look.
+ *
+ * Classification is a pure function over the host-recorded `session.messages`
+ * data and is evaluated on the LAST assistant step. The first matching rule
+ * wins; the order is part of the contract:
+ *
+ * 1. unreadable messages / no assistant step   -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
+ * 2. `MessageAbortedError`                      -> REVIEWER_TASK_ABORTED (terminal; never auto-restart)
+ * 3. `finish: "length"` / `MessageOutputLengthError`
+ *                                               -> REVIEWER_OUTPUT_TRUNCATED (retryable)
+ * 4. any other host error                       -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
+ * 5. more assistant steps than the limit        -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
+ * 6. exactly the limit, `stop`, no tool call    -> REVIEWER_STEP_BUDGET_EXHAUSTED (retryable)
+ * 7. tool call in the last step, or `finish` missing / not `stop`
+ *                                               -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
+ * 8. `stop` without a non-blank, non-synthetic text part
+ *                                               -> REVIEWER_TASK_INCOMPLETE (retryable)
+ * 9. `stop` with final text below the limit     -> completed (serialization may run)
+ *
+ * A completed task is a NECESSARY condition only: findings, scope, observation
+ * and challenge validation still decide whether the review binds.
+ */
+type MessagePart = { readonly type?: unknown; readonly text?: unknown } & Record<string, unknown>;
 
-/** Why the host step-budget state could not be established. */
-export type ReviewerStepBudgetDetail =
-  'messages_unavailable' | 'messages_error' | 'unreadable_messages' | 'limit_without_host_stop';
+type SessionMessage = {
+  readonly info?: {
+    readonly role?: unknown;
+    readonly finish?: unknown;
+    readonly error?: unknown;
+  };
+  readonly parts?: unknown;
+};
 
-export interface ReviewerStepBudgetDetection {
-  readonly state: ReviewerStepBudgetState;
-  readonly detail?: ReviewerStepBudgetDetail;
+function partsOf(message: SessionMessage): readonly MessagePart[] {
+  const parts = Array.isArray(message.parts) ? (message.parts as unknown[]) : [];
+  return parts.filter((part): part is MessagePart => typeof part === 'object' && part !== null);
+}
+
+function errorName(message: SessionMessage): string | null {
+  const error = message.info?.error;
+  if (error === undefined || error === null) return null;
+  if (typeof error === 'object' && typeof (error as { name?: unknown }).name === 'string') {
+    return (error as { name: string }).name;
+  }
+  return 'unknown';
+}
+
+/** Final reviewer prose: a real (not synthetic/ignored) text part that is not blank. */
+function hasFinalText(parts: readonly MessagePart[]): boolean {
+  return parts.some(
+    (part) =>
+      part.type === 'text' &&
+      typeof part.text === 'string' &&
+      part.text.trim().length > 0 &&
+      part.synthetic !== true &&
+      part.ignored !== true,
+  );
+}
+
+function incomplete(
+  code: ReviewerCompletionFailureCode,
+  facts: { steps: number; finish: unknown; error: string | null; reason?: string },
+): ReviewerTaskCompletion {
+  const finish = typeof facts.finish === 'string' ? facts.finish : 'missing';
+  const detail = [
+    `steps=${facts.steps}`,
+    `finish=${finish}`,
+    `error=${facts.error ?? 'none'}`,
+    ...(facts.reason ? [facts.reason] : []),
+  ].join('; ');
+  return { kind: 'incomplete', code, detail };
+}
+
+/** Host-signal rules 2-4: abort, truncation, other host error (in this order). */
+function classifyHostSignal(facts: {
+  steps: number;
+  finish: unknown;
+  error: string | null;
+}): ReviewerTaskCompletion | null {
+  if (facts.error === 'MessageAbortedError') return incomplete('REVIEWER_TASK_ABORTED', facts);
+  if (facts.finish === 'length' || facts.error === 'MessageOutputLengthError') {
+    return incomplete('REVIEWER_OUTPUT_TRUNCATED', facts);
+  }
+  if (facts.error !== null) return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', facts);
+  return null;
+}
+
+/** Step/shape rules 5-9 for a last step without a host error. */
+function classifyLastStep(
+  last: SessionMessage,
+  facts: { steps: number; finish: unknown; error: string | null },
+  stepLimit: number,
+): ReviewerTaskCompletion {
+  const parts = partsOf(last);
+  const toolCall = parts.some((part) => part.type === 'tool');
+  if (facts.steps > stepLimit) {
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      ...facts,
+      reason: `more assistant steps than the configured limit ${stepLimit}`,
+    });
+  }
+  if (facts.steps === stepLimit && facts.finish === 'stop' && !toolCall) {
+    return incomplete('REVIEWER_STEP_BUDGET_EXHAUSTED', facts);
+  }
+  if (toolCall || facts.finish !== 'stop') {
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      ...facts,
+      reason: toolCall ? 'tool call in the last step' : 'no host stop',
+    });
+  }
+  if (!hasFinalText(parts)) return incomplete('REVIEWER_TASK_INCOMPLETE', facts);
+  return { kind: 'completed', steps: facts.steps };
 }
 
 /**
- * Verify a HOST-enforced reviewer step-budget stop before the structured
- * follow-up runs. Proof requires all of: the child's assistant-step count
- * equals the configured reviewer step limit, the last host-recorded step
- * finished with `stop`, and it made no tool call.
- *
- * Only a child below the limit proceeds on the normal capture path. A verified
- * host stop is retryable on the same frozen obligation. Anything ambiguous is
- * NEVER treated as a completed review and NEVER retried automatically: the
- * caller fails closed because required host evidence is unavailable.
+ * Classify host-recorded child messages (`session.messages` response `data`).
+ * Pure and total: any shape that cannot prove completion is incomplete.
  */
-type SessionMessage = {
-  readonly info?: { readonly role?: string; readonly finish?: string };
-  readonly parts?: readonly { readonly type?: string }[];
-};
-
-function assistantMessages(data: readonly SessionMessage[]): readonly SessionMessage[] {
-  return data.filter((entry) => entry.info?.role === 'assistant');
+export function classifyReviewerTaskMessages(
+  data: unknown,
+  stepLimit: number = REVIEWER_STEP_LIMIT,
+): ReviewerTaskCompletion {
+  if (!Array.isArray(data)) {
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      steps: 0,
+      finish: undefined,
+      error: null,
+      reason: 'messages unreadable',
+    });
+  }
+  const entries = data as SessionMessage[];
+  const isAssistantEntry = (entry: SessionMessage): boolean =>
+    typeof entry === 'object' && entry !== null && entry.info?.role === 'assistant';
+  const assistants = entries.filter(isAssistantEntry);
+  const lastIndex = entries.reduce(
+    (found, entry, index) => (isAssistantEntry(entry) ? index : found),
+    -1,
+  );
+  const last = lastIndex === -1 ? undefined : entries[lastIndex];
+  if (!last) {
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      steps: 0,
+      finish: undefined,
+      error: null,
+      reason: 'no assistant step',
+    });
+  }
+  const facts = { steps: assistants.length, finish: last.info?.finish, error: errorName(last) };
+  const trailing = entries.slice(lastIndex + 1);
+  if (trailing.length > 0) {
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      ...facts,
+      reason: 'unexpected host message after the final assistant step',
+    });
+  }
+  return classifyHostSignal(facts) ?? classifyLastStep(last, facts, stepLimit);
 }
-
-/** Host-recorded stop of the last assistant step, without further tool work. */
-function stoppedWithoutToolCall(message: SessionMessage | undefined): boolean {
-  if (message?.info?.finish !== 'stop') return false;
-  const parts = Array.isArray(message.parts) ? message.parts : [];
-  return !parts.some((part) => part?.type === 'tool');
-}
-
-export async function detectReviewerStepBudgetExhaustion(
+/** Read the child's host-recorded messages and classify its completion. */
+export async function readReviewerTaskCompletion(
   client: OrchestratorClient,
   childSessionId: string,
-): Promise<ReviewerStepBudgetDetection> {
+): Promise<ReviewerTaskCompletion> {
   // Keep the SDK receiver: the generated client methods read `this._client`.
   const session = client.session;
   if (typeof session.messages !== 'function') {
-    return { state: 'ambiguous', detail: 'messages_unavailable' };
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      steps: 0,
+      finish: undefined,
+      error: null,
+      reason: 'messages unavailable',
+    });
   }
   let response: Awaited<ReturnType<NonNullable<typeof session.messages>>>;
   try {
     response = await session.messages({ path: { id: childSessionId } });
   } catch {
-    return { state: 'ambiguous', detail: 'messages_error' };
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      steps: 0,
+      finish: undefined,
+      error: null,
+      reason: 'messages error',
+    });
   }
-  if (response?.error !== undefined) return { state: 'ambiguous', detail: 'messages_error' };
-  if (!Array.isArray(response?.data)) {
-    return { state: 'ambiguous', detail: 'unreadable_messages' };
+  if (response?.error !== undefined) {
+    return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+      steps: 0,
+      finish: undefined,
+      error: null,
+      reason: 'messages error',
+    });
   }
-  const assistants = assistantMessages(response.data);
-  // A child below the limit still has steps to serialize findings; a child
-  // above it proves the limit did not stop it.
-  if (assistants.length !== REVIEWER_STEP_LIMIT) return { state: 'not_exhausted' };
-  return stoppedWithoutToolCall(assistants.at(-1))
-    ? { state: 'exhausted' }
-    : { state: 'ambiguous', detail: 'limit_without_host_stop' };
+  return classifyReviewerTaskMessages(response?.data);
 }
 
 function serializationPrompt(obligationId: string): string {

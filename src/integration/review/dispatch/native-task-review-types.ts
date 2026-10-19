@@ -10,6 +10,27 @@ import type { findBindableAttempt } from '../../../state/review-continuation.js'
 import type { SessionEnforcementState } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 
+/**
+ * Reviewer task completion failure codes. This union lives with the shared
+ * native-transport types so the capture-retry classifier never has to import
+ * from the structured follow-up implementation (which imports capture-retry).
+ */
+export type ReviewerCompletionFailureCode =
+  | 'REVIEWER_COMPLETION_UNVERIFIABLE'
+  | 'REVIEWER_TASK_ABORTED'
+  | 'REVIEWER_OUTPUT_TRUNCATED'
+  | 'REVIEWER_STEP_BUDGET_EXHAUSTED'
+  | 'REVIEWER_TASK_INCOMPLETE';
+
+export type ReviewerTaskCompletion =
+  | { readonly kind: 'completed'; readonly steps: number }
+  | {
+      readonly kind: 'incomplete';
+      readonly code: ReviewerCompletionFailureCode;
+      /** Host facts behind the decision, e.g. `steps=5; finish=length; error=none`. */
+      readonly detail: string;
+    };
+
 /** Every blocked code the same-child structured follow-up can return. */
 export type StructuredFollowupFailureCode =
   | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'

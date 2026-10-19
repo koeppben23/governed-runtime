@@ -1,0 +1,230 @@
+{
+  "data": [
+    {
+      "info": {
+        "role": "user"
+      },
+      "parts": [
+        {
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "total": 11098,
+          "input": 9289,
+          "output": 126,
+          "reasoning": 1555,
+          "cache": {
+            "write": 0,
+            "read": 128
+          }
+        }
+      },
+      "parts": [
+        {
+          "type": "step-start"
+        },
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "step-finish"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "total": 13022,
+          "input": 1114,
+          "output": 849,
+          "reasoning": 51,
+          "cache": {
+            "write": 0,
+            "read": 11008
+          }
+        }
+      },
+      "parts": [
+        {
+          "type": "step-start"
+        },
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "step-finish"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "total": 22405,
+          "input": 6378,
+          "output": 913,
+          "reasoning": 2186,
+          "cache": {
+            "write": 0,
+            "read": 12928
+          }
+        }
+      },
+      "parts": [
+        {
+          "type": "step-start"
+        },
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "step-finish"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "total": 30224,
+          "input": 5319,
+          "output": 229,
+          "reasoning": 2276,
+          "cache": {
+            "write": 0,
+            "read": 22400
+          }
+        }
+      },
+      "parts": [
+        {
+          "type": "step-start"
+        },
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "step-finish"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "length",
+        "tokens": {
+          "total": 63544,
+          "input": 1336,
+          "output": 0,
+          "reasoning": 32000,
+          "cache": {
+            "write": 0,
+            "read": 30208
+          }
+        }
+      },
+      "parts": [
+        {
+          "type": "step-start"
+        },
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "step-finish"
+        }
+      ]
+    }
+  ]
+}
