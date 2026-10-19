@@ -807,6 +807,43 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Repository observations state their citable line count.** The evidence
+  binder rejects a `line`/`endLine` beyond the observed file's line count
+  (for example line 57 of a 48-line `pom.xml`), which forced a full reviewer
+  re-run, but the observation response never told the reviewer that bound.
+  `flowguard_observe_repository` now returns `lineCount` for UTF-8 text
+  (`lineCountOfUtf8`, the exact count the binder enforces; binary content has
+  none), and the observation contract tells the reviewer to cite only within
+  `1..lineCount`. The tool and the parent replay build the response through the
+  same function, so `responseDigest` covers the field. **Upgrade impact:** a
+  capture recorded with the previous response shape (for example during an
+  upgrade while a review is running) no longer matches the canonical response
+  and is dropped at replay, never reinterpreted; observations already bound
+  stay unchanged. Replay drops are now logged per reason, and a response
+  mismatch is logged with its locations, so a later
+  `REVIEW_EVIDENCE_NOT_OBSERVED` has a visible cause.
+- **Reviewer structured output is constrained to the obligation.** The
+  same-child serialization follow-up sent the static findings schema, so
+  exact-equality facts of the capture gate were only checked after the host
+  accepted the output: a wrong `iteration`, `planVersion` or attestation
+  obligation id became a terminal `SUBAGENT_MANDATE_MISMATCH`, and a challenge
+  of the wrong kind or with a ref that was not offered forced a full reviewer
+  re-run. The follow-up now sends `buildObligationFindingsJsonSchema`, derived
+  from the same persisted snapshot as the capture gate (`obligationCaptureContract`):
+  those facts are `const`, the challenge item admits only the required kind, and
+  evidence refs must be one of the offered refs as a whole object, so
+  digest/section cross-combinations are not expressible. The schema reaches
+  the model as the StructuredOutput tool's parameter schema, so the model is
+  told the exact admissible values. The pinned OpenCode host (1.19.0) does
+  **not** validate the answer against it (it wraps the schema with the AI SDK
+  `jsonSchema()` without a validator; pinned by the live smoke), so there is no
+  host-side correction: the FlowGuard capture gate stays the only enforcement
+  and still rejects a violating answer. Nothing the gate accepts in more than
+  one form is narrowed (host-stamped
+  challenge `obligationId`, subject anchors, evidence locations, challenge count
+  and verdict, resolution verdicts), and every validator still runs. A ref added
+  after the dispatch is logged as contract growth. `ajv` is a new
+  devDependency for the schema/validator parity tests.
 - **Challenge evidence refs are offered once.** The reviewer challenge
   contract now lists the offered evidence refs exactly once as a numbered
   whitelist and the challenge shape example cites exactly one offered ref that

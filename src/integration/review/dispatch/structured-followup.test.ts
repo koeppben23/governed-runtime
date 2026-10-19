@@ -18,10 +18,12 @@ import {
   type StructuredFollowupTiming,
 } from './structured-followup.js';
 import type { OrchestratorClient } from '../types.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 
 const INPUT = {
   childSessionId: 'ses_child_timing',
   obligationId: '44444444-4444-4444-8444-444444444444',
+  schema: REVIEW_FINDINGS_JSON_SCHEMA as unknown as Record<string, unknown>,
 };
 
 function client(options: {
