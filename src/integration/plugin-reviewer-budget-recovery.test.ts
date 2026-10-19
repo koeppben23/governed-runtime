@@ -31,6 +31,8 @@ import {
 } from './test-helpers.js';
 import { hydrate, plan, ticket } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
+import { verifyChain } from '../audit/integrity.js';
 import { _resetAgentResolutionCache } from './review/dispatch/agent-resolution.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
@@ -151,32 +153,39 @@ async function runReviewerTask(hooks: Hooks, callID: string) {
   };
 }
 
+/**
+ * Real `/plan` submission, then truncated reviewer Tasks until FlowGuard stops
+ * re-arming (bounded): the 2026-10-19 GUI sequence up to the budget closure.
+ */
+async function driveToBudgetClosure() {
+  await hydrate.execute({ policyMode: 'solo' }, ctx);
+  await ticket.execute({ text: 'Fix the update path', source: 'user' }, ctx);
+  const submittedRaw = String(
+    await plan.execute({ planText: PLAN_TEXT, targetPaths: ['docs/test.md'] }, ctx),
+  );
+  const submitted = parseToolResult(submittedRaw);
+  const closedObligationId = (submitted.reviewObligation as { obligationId: string }).obligationId;
+
+  const structuredPrompt = vi.fn(async () => ({ data: {} }));
+  const hooks = await bootPlugin(structuredPrompt);
+  await registerPlanResponse(hooks, submittedRaw, 'plan-1');
+
+  const runs: Awaited<ReturnType<typeof runReviewerTask>>[] = [];
+  for (let i = 1; i <= 5; i++) {
+    const run = await runReviewerTask(hooks, `task-${i}`);
+    runs.push(run);
+    if (run.result.reviewRetry === undefined) break;
+    expect(run.result.reviewRetry).toMatchObject({
+      code: 'REVIEWER_OUTPUT_TRUNCATED',
+      retryable: true,
+    });
+  }
+  return { closedObligationId, structuredPrompt, hooks, runs };
+}
+
 describe('reviewer re-arm budget exhaustion: executable recovery', () => {
   it('closes without claiming a fresh attempt, and a resubmitted unchanged plan is the only legal path', async () => {
-    await hydrate.execute({ policyMode: 'solo' }, ctx);
-    await ticket.execute({ text: 'Fix the update path', source: 'user' }, ctx);
-    const submittedRaw = String(
-      await plan.execute({ planText: PLAN_TEXT, targetPaths: ['docs/test.md'] }, ctx),
-    );
-    const submitted = parseToolResult(submittedRaw);
-    const closedObligationId = (submitted.reviewObligation as { obligationId: string })
-      .obligationId;
-
-    const structuredPrompt = vi.fn(async () => ({ data: {} }));
-    const hooks = await bootPlugin(structuredPrompt);
-    await registerPlanResponse(hooks, submittedRaw, 'plan-1');
-
-    // Run reviewer Tasks until FlowGuard stops re-arming (bounded).
-    const runs: Awaited<ReturnType<typeof runReviewerTask>>[] = [];
-    for (let i = 1; i <= 5; i++) {
-      const run = await runReviewerTask(hooks, `task-${i}`);
-      runs.push(run);
-      if (run.result.reviewRetry === undefined) break;
-      expect(run.result.reviewRetry).toMatchObject({
-        code: 'REVIEWER_OUTPUT_TRUNCATED',
-        retryable: true,
-      });
-    }
+    const { closedObligationId, structuredPrompt, hooks, runs } = await driveToBudgetClosure();
     // At least one re-arm happened, so the retry prompt is really exercised.
     expect(runs.length).toBeGreaterThan(1);
     const closure = runs.at(-1)!.result;
@@ -265,5 +274,67 @@ describe('reviewer re-arm budget exhaustion: executable recovery', () => {
       (d) => d.obligationId === fresh.obligationId,
     );
     expect(dispatched).toHaveLength(1);
+  });
+
+  it('keeps the closure audit intent durable and chains it at the next mutating FlowGuard tool', async () => {
+    const { closedObligationId, hooks } = await driveToBudgetClosure();
+    const sessDir = await sessionDir();
+    const isClosure = (event: string, detail: unknown): boolean =>
+      event === 'review:obligation_blocked' &&
+      (detail as { obligationId?: unknown } | undefined)?.obligationId === closedObligationId;
+
+    // The semantic closure intent is committed with the blocked obligation.
+    const closed = (await readState(sessDir))!;
+    const intents = closed.pendingAuditOperations.filter(
+      (op) => op.kind === 'semantic' && isClosure(op.semantic.event, op.semantic.detail),
+    );
+    expect(intents).toHaveLength(1);
+    const intent = intents[0]!;
+    expect(intent.status).not.toBe('reconciled');
+    expect(intent.kind === 'semantic' && intent.semantic.detail).toMatchObject({
+      blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      captureCode: 'REVIEWER_OUTPUT_TRUNCATED',
+    });
+    // Outbox latency: nothing has drained it yet, so a raw trail export at this
+    // point lacks the event (the GUI-run observation).
+    const trailAtClosure = await readAuditTrail(sessDir);
+    expect(trailAtClosure.filter((e) => isClosure(e.event, e.detail))).toHaveLength(0);
+
+    // A denied host mutation appends its own denial but neither drains nor
+    // drops the pending intent.
+    await expect(
+      hooks['tool.execute.before']!(
+        { tool: 'bash', sessionID: ctx.sessionID, callID: 'bash-denied' },
+        { args: { command: 'echo blocked' } },
+      ),
+    ).rejects.toThrow();
+    const afterDenial = (await readState(sessDir))!;
+    expect(
+      afterDenial.pendingAuditOperations.find((op) => op.operationId === intent.operationId)
+        ?.status,
+    ).toBe(intent.status);
+    expect(
+      (await readAuditTrail(sessDir)).filter((e) => e.event === 'enforcement:denied').length,
+    ).toBeGreaterThan(0);
+
+    // The next mutating FlowGuard tool reconciles the outbox before it runs.
+    await hooks['tool.execute.before']!(
+      { tool: 'flowguard_plan', sessionID: ctx.sessionID, callID: 'plan-resubmit' },
+      { args: { planText: PLAN_TEXT, targetPaths: ['docs/test.md'] } },
+    );
+    const trail = await readAuditTrail(sessDir);
+    const chained = trail.filter((e) => isClosure(e.event, e.detail));
+    expect(chained).toHaveLength(1);
+    expect(chained[0]!.detail).toMatchObject({
+      obligationId: closedObligationId,
+      blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      captureCode: 'REVIEWER_OUTPUT_TRUNCATED',
+    });
+    expect(verifyChain(trail as unknown as Record<string, unknown>[]).valid).toBe(true);
+    expect(
+      (await readState(sessDir))!.pendingAuditOperations.find(
+        (op) => op.operationId === intent.operationId,
+      )?.status,
+    ).toBe('reconciled');
   });
 });
