@@ -159,6 +159,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer recovery after an exhausted re-arm budget is stated and executable.**
+  In the 2026-10-19 GUI run two token-truncated plan reviews exhausted the
+  re-arm budget. Three outputs then misdescribed the persisted state:
+  - The re-armed reviewer prompt said "FlowGuard rejected the previous
+    structured output". A completion failure (`REVIEWER_OUTPUT_TRUNCATED`,
+    `REVIEWER_TASK_INCOMPLETE`, `REVIEWER_STEP_BUDGET_EXHAUSTED`) never
+    produced structured output. The prompt now reports "Prior Reviewer Task
+    Not Completed" with the code, and contract errors keep their
+    rejected-output section.
+  - The closure output listed "A fresh reviewer attempt … was re-armed
+    automatically. Invoke the reviewer Task again." These codes are only
+    surfaced as a blocked result when no attempt was authorized. Their
+    recovery now says not to invoke the Task again and to re-run the
+    originating command (for `/plan`: submit the current plan again).
+  - `reviewRecovery: "retry_transport"` on a closed obligation said "the
+    review authority must be restored or the session aborted". It now states
+    that a transport retry never reopens a closed obligation and that
+    submitting the artifact again mints a fresh obligation.
+
+  A new end-to-end test drives a real `/plan` submission through two
+  truncated native reviewer Tasks. It proves that neither another Task nor
+  `retry_transport` adds an attempt to the closed obligation. It also proves
+  that resubmitting the unchanged plan mints exactly one fresh obligation with
+  the regular budget and releases a reviewer Task again. The completion-code
+  vocabulary moved to `review/types.ts` so the prompt and the classifier share
+  it. No state, audit, or reason-code shape changed.
+
 - **A truncated or unfinished reviewer task is never serialized or accepted.**
   The structured follow-up ("serialize the findings you concluded") ran
   whenever the reviewer child had fewer assistant steps than the step limit.
@@ -780,6 +807,101 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Compact reviewer output contract (review criteria `p42-v7`).** The
+  2026-10-19 GUI runs (build `6a4ff271`, OpenCode 1.19.3, `deepseek-flash`)
+  ended both plan reviews at the shared 32,000-token output limit. One child
+  was cut mid-way through restating offered evidence-ref objects in prose; the
+  other re-examined settled points until the limit. The criteria, evidence
+  requirements, and validators are unchanged. The task-prompt contract changes:
+  - Offered challenge evidence refs are numbered `Ref 1`…`Ref N` in offer
+    order. The prose cites them only by number and never restates digests,
+    section paths, attempt IDs, or ref objects.
+  - The same-child serialization prompt expands each cited number to the
+    exact offered object. An unexpanded number fails the canonical findings
+    contract and is a retryable `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`.
+  - The output boundary asks for compact, complete prose: verdict first, then
+    each finding by severity, category, subject, `path:line` evidence, and
+    smallest repair, then each challenge.
+  - A falsification that finds no violation is stated as a complete, valid
+    result. The required challenge count is never a request to find a defect.
+  - A working instruction asks the reviewer not to reconsider an assessed
+    point without new evidence, a concrete contradiction, or an unresolved
+    requirement. Such evidence always reopens a conclusion, and required
+    falsification checks are never shortened.
+
+  `REVIEW_CRITERIA_VERSION` advances to `p42-v7`, so obligations minted under
+  `p42-v6` fail closed and are recovered through the documented fresh-review
+  route. The reviewer mandate digest is unchanged: no installed template
+  changed. Whether this reduces truncation is not yet measured.
+
+- **Reviewer output-token baseline and fixed reference suite.** Added a
+  versioned 15-case reference suite (`demos/reviewer-reference-suite/`) that
+  separates termination from evaluation and includes the R-A adjudication, the
+  B counterexample calibration, and explicit subject-fidelity exclusions. The
+  selected productive baseline is the OpenCode host setting
+  `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536` with 32K as fallback; FlowGuard
+  does not set the host-process variable automatically. Evidence: 65K
+  single-review matrix 9/9 expected, full-loop B 3/3 bound `changes_requested`,
+  and targeted full-loop R 3/3 `accept` (3/4 including the earlier R-B false
+  positive); 32K bound full-loop B in only 1/2 comparable runs and produced a
+  real single-call truncation at 32,000 reasoning tokens. This is a conditional
+  baseline, not a statistical validation; the R-B false positive remains a
+  monitored residual risk. The suite-only step-budget override is gated by
+  `FLOWGUARD_REFERENCE_SUITE=1`; the product reviewer step limit remains 10, and
+  no prompt, criteria, model, or governance gate changed.
+
+- **Automatic reviewer output cap on OpenCode.** The resolved
+  `reviewer.outputTokenMax` (default `65536`) is now applied by the FlowGuard
+  OpenCode plugin's `chat.params` hook to the `flowguard-reviewer` agent only; the
+  parent and other agents keep the host default. A fresh install writes the
+  default, existing configs resolve it without migration, and explicit values
+  are preserved. A model limit below the configured cap, an unknown model limit,
+  or an unreadable/invalid config fails the reviewer request closed before the
+  provider call and blocks the obligation terminally instead of re-arming.
+  `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback when the
+  plugin hook is not active. The hook changes only the provider request's output
+  ceiling; OpenCode's internal compaction reservation is unchanged. The final
+  provider-request capture and GUI acceptance are recorded in the reviewer
+  reference suite. No reviewer prompt, criteria, model, reasoning, step-budget,
+  or governance-gate change.
+
+- **Repository observations state their citable line count.** The evidence
+  binder rejects a `line`/`endLine` beyond the observed file's line count
+  (for example line 57 of a 48-line `pom.xml`), which forced a full reviewer
+  re-run, but the observation response never told the reviewer that bound.
+  `flowguard_observe_repository` now returns `lineCount` for UTF-8 text
+  (`lineCountOfUtf8`, the exact count the binder enforces; binary content has
+  none), and the observation contract tells the reviewer to cite only within
+  `1..lineCount`. The tool and the parent replay build the response through the
+  same function, so `responseDigest` covers the field. **Upgrade impact:** a
+  capture recorded with the previous response shape (for example during an
+  upgrade while a review is running) no longer matches the canonical response
+  and is dropped at replay, never reinterpreted; observations already bound
+  stay unchanged. Replay drops are now logged per reason, and a response
+  mismatch is logged with its locations, so a later
+  `REVIEW_EVIDENCE_NOT_OBSERVED` has a visible cause.
+- **Reviewer structured output is constrained to the obligation.** The
+  same-child serialization follow-up sent the static findings schema, so
+  exact-equality facts of the capture gate were only checked after the host
+  accepted the output: a wrong `iteration`, `planVersion` or attestation
+  obligation id became a terminal `SUBAGENT_MANDATE_MISMATCH`, and a challenge
+  of the wrong kind or with a ref that was not offered forced a full reviewer
+  re-run. The follow-up now sends `buildObligationFindingsJsonSchema`, derived
+  from the same persisted snapshot as the capture gate (`obligationCaptureContract`):
+  those facts are `const`, the challenge item admits only the required kind, and
+  evidence refs must be one of the offered refs as a whole object, so
+  digest/section cross-combinations are not expressible. The schema reaches
+  the model as the StructuredOutput tool's parameter schema, so the model is
+  told the exact admissible values. The pinned OpenCode host (1.19.0) does
+  **not** validate the answer against it (it wraps the schema with the AI SDK
+  `jsonSchema()` without a validator; pinned by the live smoke), so there is no
+  host-side correction: the FlowGuard capture gate stays the only enforcement
+  and still rejects a violating answer. Nothing the gate accepts in more than
+  one form is narrowed (host-stamped
+  challenge `obligationId`, subject anchors, evidence locations, challenge count
+  and verdict, resolution verdicts), and every validator still runs. A ref added
+  after the dispatch is logged as contract growth. `ajv` is a new
+  devDependency for the schema/validator parity tests.
 - **Challenge evidence refs are offered once.** The reviewer challenge
   contract now lists the offered evidence refs exactly once as a numbered
   whitelist and the challenge shape example cites exactly one offered ref that

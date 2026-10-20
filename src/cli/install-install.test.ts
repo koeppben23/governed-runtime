@@ -416,7 +416,18 @@ describe('cli/install', () => {
       const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('team');
     });
-
+    it('install writes the default reviewer cap and preserves an explicit one', async () => {
+      const args = repoArgs({ coreTarball: await createMockTarball() });
+      expect((await install(args)).errors).toEqual([]);
+      const configPath = path.join(tmpDir, '.opencode', 'flowguard.json');
+      const raw = JSON.parse(await fs.readFile(configPath, 'utf8')) as Record<string, unknown>;
+      const { readConfig } = await import('../adapters/persistence-config.js');
+      expect((await readConfig(tmpDir)).reviewer.outputTokenMax).toBe(65_536);
+      raw.reviewer = { outputTokenMax: 32_000 };
+      await fs.writeFile(configPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+      expect((await install({ ...args, force: true })).errors).toEqual([]);
+      expect((await readConfig(tmpDir)).reviewer.outputTokenMax).toBe(32_000);
+    });
     it('copies tarball to vendor directory', async () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));

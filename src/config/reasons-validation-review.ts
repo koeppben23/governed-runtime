@@ -109,8 +109,8 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child reached its configured host step budget before structured findings could be captured.',
     recoverySteps: [
-      'A fresh reviewer attempt on the same frozen review obligation was re-armed automatically. Invoke the reviewer Task again.',
-      'If the attempt budget is exhausted, report the blocker and re-run the originating command to mint a fresh obligation.',
+      'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer Task again for it, and never submit or copy reviewer findings.',
+      'Report this blocker and stop. Recovery is the next run of the originating FlowGuard command (for /plan: submit the current plan again): it re-arms a still-pending obligation within its attempt budget, or mints a fresh review obligation when the exhausted budget closed this one.',
     ],
   },
 
@@ -120,8 +120,8 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child stopped at the host output limit before a final review answer; the truncated review is never serialized or accepted: {reason}',
     recoverySteps: [
-      'A fresh reviewer attempt on the same frozen review obligation was re-armed automatically. Invoke the reviewer Task again.',
-      'If the attempt budget is exhausted, report the blocker and re-run the originating command to mint a fresh obligation.',
+      'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer Task again for it, and never submit or copy reviewer findings.',
+      'Report this blocker and stop. Recovery is the next run of the originating FlowGuard command (for /plan: submit the current plan again): it re-arms a still-pending obligation within its attempt budget, or mints a fresh review obligation when the exhausted budget closed this one.',
     ],
   },
 
@@ -131,8 +131,8 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child finished without a final review answer; an unanswered review is never serialized or accepted: {reason}',
     recoverySteps: [
-      'A fresh reviewer attempt on the same frozen review obligation was re-armed automatically. Invoke the reviewer Task again.',
-      'If the attempt budget is exhausted, report the blocker and re-run the originating command to mint a fresh obligation.',
+      'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer Task again for it, and never submit or copy reviewer findings.',
+      'Report this blocker and stop. Recovery is the next run of the originating FlowGuard command (for /plan: submit the current plan again): it re-arms a still-pending obligation within its attempt budget, or mints a fresh review obligation when the exhausted budget closed this one.',
     ],
   },
 

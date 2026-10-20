@@ -246,10 +246,13 @@ export async function createPluginLogger(
 ): Promise<{
   log: ReturnType<typeof createLogger>;
   config: FlowGuardConfig;
+  /** Original config-read failure; logging falls back, the reviewer cap does not. */
+  configReadError?: unknown;
   disposeLogging?: () => Promise<void>;
 }> {
-  // Read config once at plugin init. Failures fall back to defaults — never block.
+  // Read config once at plugin init. Logging falls back to defaults — never block.
   let config: FlowGuardConfig;
+  let configReadError: unknown;
   try {
     if (workspaceDir || worktree) {
       config = await readConfig(worktree);
@@ -257,6 +260,7 @@ export async function createPluginLogger(
       config = DEFAULT_CONFIG;
     }
   } catch (err) {
+    configReadError = err;
     console.warn(
       '[flowguard] failed to read plugin log config, using defaults:',
       err instanceof Error ? err.message : String(err),
@@ -307,6 +311,7 @@ export async function createPluginLogger(
   return {
     log,
     config,
+    ...(configReadError !== undefined ? { configReadError } : {}),
     disposeLogging: async () => {
       reloader?.detach();
       // Flush + release the OTLP exporter so batched records are not lost on

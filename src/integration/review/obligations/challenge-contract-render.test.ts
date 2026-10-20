@@ -2,8 +2,11 @@
  * @module integration/review/challenge-contract-render.test
  * @description Reviewer-facing projection of the offered challenge evidence refs.
  *
- * The offered refs are rendered exactly once as a numbered whitelist; the
- * shape example cites exactly one offered ref that fits the challenge kind.
+ * The offered refs are rendered exactly once as a numbered whitelist (Ref 1 to
+ * Ref N, in offer order); prose cites them by number and the structured
+ * serialization expands the number to the exact offered object. The shape
+ * example cites exactly one offered ref that fits the challenge kind. A
+ * falsification that finds no violation is stated as a valid result.
  * The validator is unchanged: any non-empty subset of offered refs binds, a
  * ref outside the offer is rejected.
  */
@@ -79,15 +82,50 @@ describe('renderReviewChallengeContract offered evidence refs', () => {
       });
 
       expect(example.evidenceRefs).toEqual(expectedExample);
-      expect(text).toContain(`- Offered evidenceRefs (${refs.length}): the only admissible refs.`);
+      expect(text).toContain(
+        `- Offered evidenceRefs (${refs.length}): the only admissible refs, numbered Ref 1 to Ref ${refs.length}.`,
+      );
       refs.forEach((ref, index) => {
-        expect(lines).toContain(`  ${index + 1}. ${JSON.stringify(ref)}`);
+        expect(lines).toContain(`  Ref ${index + 1}: ${JSON.stringify(ref)}`);
         const expectedCount = expectedExample.includes(ref) ? 2 : 1;
         expect(occurrences(text, JSON.stringify(ref))).toBe(expectedCount);
       });
       expect(text).not.toContain('No usable evidence reference was supplied');
     },
   );
+
+  it('tells the prose to cite refs by number and the serialization to expand them', () => {
+    const { lines, text } = render({
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'design_challenge',
+      evidenceRefs: PLAN_REFS,
+    });
+    const cite =
+      '- In your review prose, cite offered refs only by number (e.g. "Ref 2"); never restate their digests, section paths, attempt IDs, or objects.';
+    const expand =
+      '- The structured serialization expands each cited number to the exact offered object. Never invent or alter a digest, sectionPath, or attemptId.';
+    expect(lines).toContain(cite);
+    expect(lines).toContain(expand);
+    // The number is a presentation of the offer order, never a new identity.
+    PLAN_REFS.forEach((ref, index) => {
+      const line = lines.find((item) => item.startsWith(`  Ref ${index + 1}: `))!;
+      expect(JSON.parse(line.slice(`  Ref ${index + 1}: `.length))).toEqual(ref);
+    });
+    expect(text).not.toContain('Copy each cited evidenceRef exactly');
+  });
+
+  it('states a no-violation falsification as a valid result next to the outcome rule', () => {
+    const { lines } = render({
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'design_challenge',
+      evidenceRefs: PLAN_REFS,
+    });
+    const outcome = lines.findIndex((line) => line.startsWith('- Required field: outcome.'));
+    expect(outcome).toBeGreaterThan(-1);
+    expect(lines[outcome + 1]).toBe(
+      '- A falsification attempt that finds no violation is a complete, valid result: record the outcome stating that the claim held. The required challenge count is never a request to find or invent a defect.',
+    );
+  });
 
   it('states both evidence classes for passing implementation challenges only', () => {
     const rule =
@@ -125,6 +163,7 @@ describe('renderReviewChallengeContract offered evidence refs', () => {
     });
     expect(example.evidenceRefs).toEqual([]);
     expect(text).not.toContain('Offered evidenceRefs');
+    expect(text).not.toContain('cite offered refs only by number');
     expect(text).toContain('No usable evidence reference was supplied; return unable_to_review.');
   });
 

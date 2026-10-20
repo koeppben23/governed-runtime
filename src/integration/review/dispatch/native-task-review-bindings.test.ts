@@ -34,6 +34,14 @@ import {
 const NOW = '2026-07-26T00:00:00.000Z';
 const IMPL_DIGEST = 'impl-digest';
 const ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
+const CONTRACT = {
+  obligationId: '11111111-1111-4111-8111-111111111111',
+  iteration: 0,
+  planVersion: 1,
+  requiredChallengeCount: 0,
+  requiredChallengeKind: undefined,
+  allowedEvidenceRefs: undefined,
+} as const;
 const PRIOR_CHALLENGE = '11111111-1111-4111-8111-111111111111';
 const LATE_CHALLENGE = '99999999-9999-4999-8999-999999999999';
 const FRESH_CHALLENGE = '22222222-2222-4222-8222-222222222222';
@@ -406,7 +414,7 @@ describe('native capture - structured follow-up timing diagnostics', () => {
 
   it('logs one allowlisted timing line per follow-up, without content', async () => {
     const info = vi.fn();
-    await capturePreparedFindings(runtimeWith(info), obligation, 'ses_child_1');
+    await capturePreparedFindings(runtimeWith(info), obligation, 'ses_child_1', CONTRACT);
     const timingCalls = info.mock.calls.filter(
       ([, message]) => message === 'review structured followup timing',
     );
@@ -428,12 +436,14 @@ describe('native capture - structured follow-up timing diagnostics', () => {
       runtimeWith(throwing),
       obligation,
       'ses_child_1',
+      CONTRACT,
     );
     _resetAgentResolutionCache();
     const reference = await capturePreparedFindings(
       runtimeWith(vi.fn()),
       obligation,
       'ses_child_1',
+      CONTRACT,
     );
     expect(observed).toEqual(reference);
     expect(throwing).toHaveBeenCalled();
@@ -471,7 +481,7 @@ describe('native capture - reviewer task completion gate for every obligation ty
       } as unknown as NativeReviewRuntimePort;
       const obligation = { obligationId: OBLIGATION_ID, obligationType } as ReviewObligation;
 
-      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1');
+      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1', CONTRACT);
 
       expect(captured).toMatchObject({ kind: 'blocked', code: 'REVIEWER_OUTPUT_TRUNCATED' });
       expect(prompt).not.toHaveBeenCalled();

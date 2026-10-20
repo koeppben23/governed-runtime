@@ -109,6 +109,53 @@ Any semantic criteria change advances `REVIEW_CRITERIA_VERSION`
 (`src/integration/review/obligations/assurance.ts`); obligations minted under a
 stale generation fail closed as `REVIEW_GENERATION_MISMATCH` and are recovered
 through the documented fresh-review-cycle route.
+Generation `p42-v7` compacts the reviewer output contract without changing
+criteria, evidence requirements, or validators:
+
+- The prompt numbers the offered challenge evidence refs `Ref 1` to `Ref N`
+  in offer order. The review prose cites them only by number and never
+  restates digests, section paths, attempt IDs, or ref objects.
+- The same-child structured serialization expands each cited number to the
+  exact offered object. The number is a presentation of the frozen offer,
+  never an identity: an unexpanded number fails the canonical findings
+  contract and is retried.
+- The prose leads with the verdict and names each finding by severity,
+  category, subject (Ref number or anchor), `path:line` evidence locations,
+  and the defect with its smallest repair.
+- A falsification attempt that finds no violation is stated as a complete,
+  valid result; the required challenge count is never a request to find a
+  defect.
+- A working instruction asks the reviewer not to re-examine a settled point
+  without new evidence, a contradiction, or an unresolved requirement. New
+  evidence always reopens a conclusion, and required falsification checks are
+  never shortened.
+
+### Reviewer output cap
+
+On OpenCode, the FlowGuard plugin applies the resolved
+`reviewer.outputTokenMax` from `flowguard.json` to the `flowguard-reviewer`
+agent through the official `chat.params` hook. The parent and other agents are
+unchanged. The plugin reads the config at startup; a config or model-limit
+mismatch fails the reviewer request closed before the provider call instead of
+silently lowering the cap. `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a
+host-wide fallback for hosts where the plugin hook is not active. The hook
+changes the request output ceiling only; OpenCode's internal compaction
+reservation is not changed. The final provider-request capture in the reference
+suite is the acceptance authority because a later plugin can still overwrite
+`maxOutputTokens`.
+
+### Reviewer authority boundaries and reference suite
+
+The deterministic ProofGraph core, the independent reviewer, and the
+deterministic governance gate keep separate responsibilities; see
+[ADR-008](./decisions/008-reviewer-authority-boundaries.md). Reviewer quality is
+measured by the fixed reference suite in
+[`demos/reviewer-reference-suite/`](../demos/reviewer-reference-suite/README.md),
+which separates plan review from implementation review and keeps formal
+ProofGraph claim states distinct from reviewer verdicts. Termination and
+evaluation are measured separately: a change from `finish: "length"` to
+`finish: "stop"` is not by itself a successful review.
+
 Generation `p42-v6` states the counterexample sufficiency rule once: a
 counterexample must be a targeted falsification — exercise a concrete violating
 variant and show the bound check detects it; a second successful execution
@@ -178,7 +225,7 @@ The reviewer is a host-visible native Task child, never a hidden SDK session:
 1. The parent agent calls the host `task` tool with `subagent_type: "flowguard-reviewer"`, following the `reviewDispatch` / `reviewInvocation` instruction (`action: "call_task"`) in the FlowGuard tool response.
 2. The plugin `tool.execute.before` hook authorizes the exact current pending obligation/attempt, persists a durable dispatch under the host `callID`, and overwrites the Task arguments with the canonical frozen reviewer prompt (the parent-supplied prompt is transport filler only).
 3. The host runs the visible, navigable `flowguard-reviewer` child Task session.
-4. The plugin `tool.execute.after` hook resolves the durable dispatch lineage by `callID`, requires the authoritative child session ID from Task metadata, replays the reviewer observations, and sends a schema-constrained serialization request (`format: json_schema`) to that SAME child session.
+4. The plugin `tool.execute.after` hook resolves the durable dispatch lineage by `callID`, requires the authoritative child session ID from Task metadata, replays the reviewer observations, proves from the host-recorded messages that the reviewer finished its task normally (a truncated, aborted, step-limited or unprovable task is never serialized), and sends a schema-constrained serialization request (`format: json_schema`) to that SAME child session. The schema is obligation-bound: it fixes the attestation identity, `iteration`, `planVersion` and, when challenges are required, the challenge kind and the offered evidence refs (whole objects), so the model is given the exact admissible values. The pinned OpenCode host forwards this schema to the model as the StructuredOutput tool parameters but does not validate the answer against it; the capture gate below remains the only enforcement. It narrows nothing the capture gate accepts in more than one form (subject anchors, evidence locations, challenge count, verdict) and never replaces the validators.
 5. The structured payload is validated against `ReviewerFindingsInput`, host provenance and attestation are stamped, and the canonical `ReviewFindings` is bound to the obligation.
 6. Only after a successful binding does the hook replace the Task output with the completed dispatch signal (`reviewDispatch.completed: true` and the bound verdict).
 

@@ -7,6 +7,10 @@
  * duration and rethrows the original error unchanged; a failing observer never
  * alters the follow-up result.
  *
+ * Ref expansion (p42-v7): the review prose cites offered refs by number; the
+ * serialization prompt expands each number to the exact offered object, and an
+ * unexpanded number never passes the canonical findings contract.
+ *
  * @test-policy HAPPY, BAD, EDGE
  */
 
@@ -18,10 +22,13 @@ import {
   type StructuredFollowupTiming,
 } from './structured-followup.js';
 import type { OrchestratorClient } from '../types.js';
+import { classifyReviewerCaptureFailure } from './capture-retry.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 
 const INPUT = {
   childSessionId: 'ses_child_timing',
   obligationId: '44444444-4444-4444-8444-444444444444',
+  schema: REVIEW_FINDINGS_JSON_SCHEMA as unknown as Record<string, unknown>,
 };
 
 function client(options: {
@@ -114,4 +121,91 @@ describe('structured follow-up diagnostic timing', () => {
       ),
     ).rejects.toBe(failure);
   });
+});
+
+function findingsWithChallengeRefs(evidenceRefs: readonly unknown[]): Record<string, unknown> {
+  return {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    challenges: [
+      {
+        clientReference: 'c1',
+        obligationId: INPUT.obligationId,
+        kind: 'design_challenge',
+        scenario: 'Remove the guard and run the build.',
+        claim: 'The build detects the missing guard.',
+        locations: ['plan § Verification'],
+        outcome: 'supported',
+        evidenceRefs,
+      },
+    ],
+    attestation: { toolObligationId: INPUT.obligationId },
+  };
+}
+
+describe('structured follow-up ref expansion (p42-v7)', () => {
+  afterEach(() => {
+    _resetAgentResolutionCache();
+  });
+
+  it('HAPPY: the serialization prompt expands cited Ref numbers to the exact offered objects', async () => {
+    const host = client({});
+    await captureStructuredFindingsFromVisibleChild(host, INPUT);
+    const sent = vi.mocked(host.session.prompt).mock.calls[0]?.[0] as unknown as {
+      body: { parts: { text: string }[] };
+    };
+    const text = sent.body.parts[0]!.text;
+    expect(text).toContain(
+      'Expand every cited offered-ref number ("Ref N") to the exact object listed as Ref N in the offered evidenceRefs of this review; never synthesize, alter, or cite a ref that was not offered.',
+    );
+    expect(text).toContain('This prompt is serialization only; it is not a second review.');
+  });
+
+  it('HAPPY (control): the same findings with an expanded offered ref object pass the contract', async () => {
+    const expanded = {
+      kind: 'plan_adr_section',
+      artifactKind: 'plan',
+      artifactDigest: 'a'.repeat(64),
+      sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
+      excerptDigest: 'b'.repeat(64),
+    };
+    const result = await captureStructuredFindingsFromVisibleChild(
+      client({
+        prompt: async () => ({
+          data: { info: { structured: findingsWithChallengeRefs([expanded]) } },
+        }),
+      }),
+      INPUT,
+    );
+    expect(result.kind).toBe('ok');
+  });
+
+  it.each([['Ref 4'], [4]])(
+    'BAD: an unexpanded ref number (%j) fails the canonical contract as a retryable violation',
+    async (unexpanded) => {
+      const result = await captureStructuredFindingsFromVisibleChild(
+        client({
+          prompt: async () => ({
+            data: { info: { structured: findingsWithChallengeRefs([unexpanded]) } },
+          }),
+        }),
+        INPUT,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      });
+      expect(classifyReviewerCaptureFailure(result.kind === 'blocked' ? result.code : '')).toEqual({
+        retryable: true,
+        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      });
+    },
+  );
 });

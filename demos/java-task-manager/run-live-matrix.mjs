@@ -798,6 +798,7 @@ export class Runner {
       ? lastAuditSequence(this.configDir, session.sessionId)
       : 0;
     const args = ['run', '--dir', session.workspace, '-m', this.options.model, '--format', 'json'];
+    if (this.options.variant) args.push('--variant', this.options.variant);
     if (session.sessionId) args.push('--session', session.sessionId);
     if (options.command) args.push('--command', options.command);
     if (prompt) args.push(prompt);

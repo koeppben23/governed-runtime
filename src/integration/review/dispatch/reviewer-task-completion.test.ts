@@ -22,9 +22,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it, vi } from 'vitest';
 import { classifyReviewerTaskMessages, readReviewerTaskCompletion } from './structured-followup.js';
-import type { ReviewerCompletionFailureCode } from './native-task-review-types.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
-import type { OrchestratorClient } from '../types.js';
+import type { OrchestratorClient, ReviewerCompletionFailureCode } from '../types.js';
 
 type Part = Record<string, unknown>;
 
@@ -86,6 +85,50 @@ describe('reviewer task completion - real host fixtures', () => {
 
   it('CORNER: the yPE7Qr child stays a host step-budget stop', () => {
     expect(codeOf(YPE7QR.data)).toBe('REVIEWER_STEP_BUDGET_EXHAUSTED');
+  });
+});
+
+describe('reviewer task completion - suite step-budget override', () => {
+  it('HAPPY: the gated suite override changes the classified step limit', () => {
+    vi.stubEnv('FLOWGUARD_REFERENCE_SUITE', '1');
+    vi.stubEnv('FLOWGUARD_REVIEWER_STEPS', '15');
+    try {
+      const atLimit = Array.from({ length: 15 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(atLimit))).toBe('REVIEWER_STEP_BUDGET_EXHAUSTED');
+      const over = Array.from({ length: 16 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(over))).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('HAPPY: the override is ignored without the reference-suite gate', () => {
+    vi.stubEnv('FLOWGUARD_REVIEWER_STEPS', '15');
+    try {
+      const atLimit = Array.from({ length: 10 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(atLimit))).toBe('REVIEWER_STEP_BUDGET_EXHAUSTED');
+      const over = Array.from({ length: 11 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(over))).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('BAD: an invalid gated override fails closed', () => {
+    vi.stubEnv('FLOWGUARD_REFERENCE_SUITE', '1');
+    try {
+      for (const value of ['0', '21', '1.5', 'abc', '-1']) {
+        vi.stubEnv('FLOWGUARD_REVIEWER_STEPS', value);
+        const result = classifyReviewerTaskMessages(transcript([step('stop', [ANSWER])]));
+        expect(result.kind).toBe('incomplete');
+        if (result.kind === 'incomplete') {
+          expect(result.code).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+          expect(result.detail).toContain('invalid FLOWGUARD_REVIEWER_STEPS');
+        }
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

@@ -4,6 +4,8 @@
  * data under the rejected-output heading. Reviewer/repository-controlled values
  * (paths, revisions, line numbers) can never become instructions in the prompt:
  * they appear only as JSON-quoted data values behind an untrusted-data warning.
+ * A reviewer task that never produced a final answer is reported as an
+ * unfinished task, never as rejected structured output.
  *
  * @test-policy HAPPY, BAD, EDGE
  */
@@ -91,5 +93,39 @@ describe('reviewer retry diagnostic prompt rendering', () => {
   it('renders no retry section for absent or empty diagnostics', () => {
     expect(render(undefined)).not.toContain('Prior Output Rejected');
     expect(render([])).not.toContain('Prior Output Rejected');
+    expect(render(undefined)).not.toContain('Prior Reviewer Task Not Completed');
+    expect(render([])).not.toContain('Prior Reviewer Task Not Completed');
+  });
+
+  it.each([
+    'REVIEWER_OUTPUT_TRUNCATED',
+    'REVIEWER_TASK_INCOMPLETE',
+    'REVIEWER_STEP_BUDGET_EXHAUSTED',
+  ])('reports %s as an unfinished task, never as rejected structured output', (code) => {
+    const prompt = render([{ code }]);
+    expect(prompt).toContain('### Prior Reviewer Task Not Completed');
+    expect(prompt).toContain(
+      'The previous reviewer task for this obligation ended before a final review answer; no structured output was produced or evaluated.',
+    );
+    expect(prompt).toContain(`- Code: ${code}`);
+    expect(prompt).not.toContain('Prior Output Rejected');
+    expect(prompt).not.toContain('rejected the previous structured output');
+    expect(prompt).toContain(
+      'Return a fresh complete result. The frozen subject and evidence bindings are unchanged.',
+    );
+  });
+
+  it('keeps contract diagnostics under the rejected-output heading next to a completion code', () => {
+    const prompt = render([
+      { code: 'REVIEWER_OUTPUT_TRUNCATED' },
+      { code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' },
+    ]);
+    const completion = prompt.indexOf('Prior Reviewer Task Not Completed');
+    const rejected = prompt.indexOf('Prior Output Rejected');
+    expect(completion).toBeGreaterThan(-1);
+    expect(rejected).toBeGreaterThan(completion);
+    expect(prompt.indexOf('- Code: REVIEWER_OUTPUT_TRUNCATED')).toBeLessThan(rejected);
+    expect(prompt.indexOf('- Code: HOST_STRUCTURED_OUTPUT_REQUIRED')).toBeGreaterThan(rejected);
+    expect(prompt.split('Return a fresh complete result.').length - 1).toBe(1);
   });
 });

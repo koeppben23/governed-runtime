@@ -64,7 +64,26 @@ export async function replayAndPersistObservations(
       sessionId: input.sessionId,
       attemptId: input.attemptId,
       dropped: replay.dropped,
+      reasons: replay.dropReasons,
     });
+  }
+  if (replay.responseMismatches.length > 0) {
+    // Visible cause for a later REVIEW_EVIDENCE_NOT_OBSERVED: the captured
+    // payload is not the current canonical observation response (for example a
+    // capture recorded before an observation-response format change). It is
+    // never reinterpreted as authority.
+    deps.log.warn(
+      'review',
+      'observation capture response differs from the current canonical observation response',
+      {
+        sessionId: input.sessionId,
+        attemptId: input.attemptId,
+        locations: replay.responseMismatches
+          .slice(0, 8)
+          .map((entry) => `${entry.revision}:${entry.path}`)
+          .join(', '),
+      },
+    );
   }
   if (replay.observations.length === 0) return;
   try {

@@ -7,20 +7,12 @@ import type { readState } from '../../../adapters/persistence.js';
 import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { findBindableAttempt } from '../../../state/review-continuation.js';
-import type { SessionEnforcementState } from '../types.js';
+import type {
+  ReviewerCompletionFailureCode,
+  ReviewerOutputCapFailure,
+  SessionEnforcementState,
+} from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
-
-/**
- * Reviewer task completion failure codes. This union lives with the shared
- * native-transport types so the capture-retry classifier never has to import
- * from the structured follow-up implementation (which imports capture-retry).
- */
-export type ReviewerCompletionFailureCode =
-  | 'REVIEWER_COMPLETION_UNVERIFIABLE'
-  | 'REVIEWER_TASK_ABORTED'
-  | 'REVIEWER_OUTPUT_TRUNCATED'
-  | 'REVIEWER_STEP_BUDGET_EXHAUSTED'
-  | 'REVIEWER_TASK_INCOMPLETE';
 
 export type ReviewerTaskCompletion =
   | { readonly kind: 'completed'; readonly steps: number }
@@ -60,6 +52,8 @@ export interface NativeReviewTransportRuntime {
     resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   };
   readonly orchestratorDeps: OrchestratorDeps;
+  /** Bounded reviewer output-cap failures, keyed by reviewer child session. */
+  readonly reviewerOutputCapFailures: Map<string, ReviewerOutputCapFailure>;
   readonly log: {
     info(service: string, message: string, extra?: Record<string, unknown>): void;
     warn(service: string, message: string, extra?: Record<string, unknown>): void;

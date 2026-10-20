@@ -16,6 +16,7 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { HttpTimestampAuthorityProvider } from '../audit/rfc-3161-http-provider.js';
 import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import type { FlowGuardConfig } from '../config/flowguard-config.js';
 import { repoConfigPath } from '../adapters/persistence.js';
 import { toAdapterLogger } from '../logging/adapter-logger.js';
 import { serializeError } from '../logging/error-serialize.js';
@@ -42,6 +43,11 @@ import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { renderPlanClaimDeclarations } from '../presentation/index.js';
 import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
+import {
+  createReviewerOutputCapHook,
+  type ReviewerOutputCapFailure,
+} from './reviewer-output-cap.js';
+import { createReviewerOutputCapFailurePersister } from './reviewer-output-cap-failure.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -63,7 +69,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   await resolveWorkspaceFingerprint(ws);
 
-  const { log, config, disposeLogging } = await createPluginLogger(
+  const { log, config, configReadError, disposeLogging } = await createPluginLogger(
     client,
     ws.cachedWsDir,
     auditWorktree,
@@ -99,41 +105,15 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   await initializeHostAdapter(adapter, log, disposeLogging);
 
-  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient);
-  const toolTraceIds = new Map<string, string>();
-  const toolLatencyStarts = new Map<string, number>();
-  const activeCommandScopes = new Map<string, ActiveCommandScope>();
-  const checkReworkContinuations = new Set<string>();
-  const auditDeps = createAuditDeps(
-    ws,
-    log,
-    logError,
-    config.policy.defaultMode,
-    resolveSessionPolicy,
-  );
-
-  const riskDeps: RiskEnforcementDeps = {
-    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
-    getWorktreeRoot: () => auditWorktree,
-  };
-
-  const discoveryHealthDeps: DiscoveryHealthEnforcementDeps = {
-    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
-    getWorkspaceDir: () => ws.cachedWsDir,
-  };
-
-  const hooks = createFlowGuardPluginHooks({
+  const hooks = createFlowGuardHooks({
     ws,
     log,
     adapterLog,
-    riskDeps,
-    discoveryHealthDeps,
-    orchestratorDeps,
-    auditDeps,
-    toolTraceIds,
-    toolLatencyStarts,
-    activeCommandScopes,
-    checkReworkContinuations,
+    config,
+    configReadError,
+    client: typedClient,
+    auditWorktree,
+    resolveSessionPolicy,
     logError,
   });
 
@@ -228,6 +208,106 @@ function createAuditDeps(
     tsaProvider: new HttpTimestampAuthorityProvider(),
     timestampVerifier: new PkijsTimestampVerifier(),
   };
+}
+
+interface CreateFlowGuardHooksInput {
+  readonly ws: PluginWorkspaceRuntime;
+  readonly log: PluginLogger;
+  readonly adapterLog: FlowGuardPluginRuntime['adapterLog'];
+  readonly config: FlowGuardConfig;
+  readonly configReadError?: unknown;
+  readonly client: OrchestratorClient;
+  readonly auditWorktree: string | undefined;
+  readonly resolveSessionPolicy: (
+    sessDir: string | null,
+  ) => Promise<{ policy: FlowGuardPolicy; state: SessionState | null }>;
+  readonly logError: (message: string, err: unknown) => void;
+}
+
+function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnType<Plugin>> {
+  const {
+    ws,
+    log,
+    adapterLog,
+    config,
+    configReadError,
+    client,
+    auditWorktree,
+    resolveSessionPolicy,
+    logError,
+  } = input;
+  const orchestratorDeps = createOrchestratorDeps(ws, log, client);
+  const toolTraceIds = new Map<string, string>();
+  const toolLatencyStarts = new Map<string, number>();
+  const activeCommandScopes = new Map<string, ActiveCommandScope>();
+  const checkReworkContinuations = new Set<string>();
+  const reviewerOutputCapFailures = new Map<string, ReviewerOutputCapFailure>();
+  const auditDeps = createAuditDeps(
+    ws,
+    log,
+    logError,
+    config.policy.defaultMode,
+    resolveSessionPolicy,
+  );
+  const riskDeps: RiskEnforcementDeps = {
+    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
+    getWorktreeRoot: () => auditWorktree,
+  };
+  const discoveryHealthDeps: DiscoveryHealthEnforcementDeps = {
+    resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
+    getWorkspaceDir: () => ws.cachedWsDir,
+  };
+  const hooks = createFlowGuardPluginHooks({
+    ws,
+    log,
+    adapterLog,
+    riskDeps,
+    discoveryHealthDeps,
+    orchestratorDeps,
+    auditDeps,
+    toolTraceIds,
+    toolLatencyStarts,
+    activeCommandScopes,
+    checkReworkContinuations,
+    reviewerOutputCapFailures,
+    logError,
+  });
+  attachReviewerOutputCapHook(hooks, {
+    config,
+    configReadError,
+    log,
+    failures: reviewerOutputCapFailures,
+    client,
+    ws,
+    orchestratorDeps,
+  });
+  return hooks;
+}
+
+function attachReviewerOutputCapHook(
+  hooks: Awaited<ReturnType<Plugin>>,
+  deps: {
+    readonly config: FlowGuardConfig;
+    readonly configReadError?: unknown;
+    readonly log: PluginLogger;
+    readonly failures: Map<string, ReviewerOutputCapFailure>;
+    readonly client: OrchestratorClient;
+    readonly ws: PluginWorkspaceRuntime;
+    readonly orchestratorDeps: OrchestratorDeps;
+  },
+): void {
+  hooks['chat.params'] = createReviewerOutputCapHook({
+    config: deps.config,
+    configReadError: deps.configReadError,
+    log: deps.log,
+    failures: deps.failures,
+    persistFailure: createReviewerOutputCapFailurePersister({
+      client: deps.client,
+      ws: deps.ws,
+      orchestratorDeps: deps.orchestratorDeps,
+      log: deps.log,
+    }),
+  });
 }
 
 function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<ReturnType<Plugin>> {
