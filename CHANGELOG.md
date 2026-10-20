@@ -834,6 +834,22 @@ stop`, reviewer child reported it could not complete the falsification).
   route. The reviewer mandate digest is unchanged: no installed template
   changed. Whether this reduces truncation is not yet measured.
 
+- **Reviewer output-token baseline and fixed reference suite.** Added a
+  versioned 15-case reference suite (`demos/reviewer-reference-suite/`) that
+  separates termination from evaluation and includes the R-A adjudication, the
+  B counterexample calibration, and explicit subject-fidelity exclusions. The
+  selected productive baseline is the OpenCode host setting
+  `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536` with 32K as fallback; FlowGuard
+  does not set the host-process variable automatically. Evidence: 65K
+  single-review matrix 9/9 expected, full-loop B 3/3 bound `changes_requested`,
+  and targeted full-loop R 3/3 `accept` (3/4 including the earlier R-B false
+  positive); 32K bound full-loop B in only 1/2 comparable runs and produced a
+  real single-call truncation at 32,000 reasoning tokens. This is a conditional
+  baseline, not a statistical validation; the R-B false positive remains a
+  monitored residual risk. The suite-only step-budget override is gated by
+  `FLOWGUARD_REFERENCE_SUITE=1`; the product reviewer step limit remains 10, and
+  no prompt, criteria, model, or governance gate changed.
+
 - **Repository observations state their citable line count.** The evidence
   binder rejects a `line`/`endLine` beyond the observed file's line count
   (for example line 57 of a 48-line `pom.xml`), which forced a full reviewer
