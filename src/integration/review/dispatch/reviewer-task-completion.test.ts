@@ -88,6 +88,50 @@ describe('reviewer task completion - real host fixtures', () => {
   });
 });
 
+describe('reviewer task completion - suite step-budget override', () => {
+  it('HAPPY: the gated suite override changes the classified step limit', () => {
+    vi.stubEnv('FLOWGUARD_REFERENCE_SUITE', '1');
+    vi.stubEnv('FLOWGUARD_REVIEWER_STEPS', '15');
+    try {
+      const atLimit = Array.from({ length: 15 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(atLimit))).toBe('REVIEWER_STEP_BUDGET_EXHAUSTED');
+      const over = Array.from({ length: 16 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(over))).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('HAPPY: the override is ignored without the reference-suite gate', () => {
+    vi.stubEnv('FLOWGUARD_REVIEWER_STEPS', '15');
+    try {
+      const atLimit = Array.from({ length: 10 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(atLimit))).toBe('REVIEWER_STEP_BUDGET_EXHAUSTED');
+      const over = Array.from({ length: 11 }, () => step('stop', [ANSWER]));
+      expect(codeOf(transcript(over))).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('BAD: an invalid gated override fails closed', () => {
+    vi.stubEnv('FLOWGUARD_REFERENCE_SUITE', '1');
+    try {
+      for (const value of ['0', '21', '1.5', 'abc', '-1']) {
+        vi.stubEnv('FLOWGUARD_REVIEWER_STEPS', value);
+        const result = classifyReviewerTaskMessages(transcript([step('stop', [ANSWER])]));
+        expect(result.kind).toBe('incomplete');
+        if (result.kind === 'incomplete') {
+          expect(result.code).toBe('REVIEWER_COMPLETION_UNVERIFIABLE');
+          expect(result.detail).toContain('invalid FLOWGUARD_REVIEWER_STEPS');
+        }
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('reviewer task completion - classification order', () => {
   it('HAPPY: stop with a final answer below the limit is the only completion', () => {
     expect(classifyReviewerTaskMessages(transcript([toolStep(), step('stop', [ANSWER])]))).toEqual({
