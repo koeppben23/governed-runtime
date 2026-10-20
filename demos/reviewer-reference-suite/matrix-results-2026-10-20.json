@@ -1,0 +1,478 @@
+{
+  "schemaVersion": "reviewer-stability-matrix-results.v1",
+  "createdAt": "2026-10-20T09:11:41.456Z",
+  "matrixRunRoot": "/tmp/flowguard-review-stability-matrix-20261020T082849",
+  "matrixManifestSha256": "f42c5c2bddb4da7ea604e8f32a312b075f577596441b96c6ee4aa52403da3850",
+  "fullLoopRunRoot": "/tmp/flowguard-review-full-loop-baseline-20261020T102602",
+  "fullLoopManifestSha256": "8359b49e7c0f9176a75146e01c182816e1891ff44ca3a9cc335723e60cc8aa13",
+  "arms": {
+    "32000": {
+      "R": [
+        {
+          "runId": "plan-r-reproduction-plan-32000-r1",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 1,
+          "steps": 6,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-reproduction-plan-32000-r2",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 1,
+          "steps": 7,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-reproduction-plan-32000-r3",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "fail",
+          "retries": 0,
+          "steps": 8,
+          "failure": null
+        }
+      ],
+      "B": [
+        {
+          "runId": "plan-b-second-green-counterexample-32000-r1",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 6,
+          "failure": null
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-32000-r2",
+          "completion": "unverifiable",
+          "verdict": null,
+          "evaluation": "not_assessed",
+          "retries": 1,
+          "steps": 3,
+          "failure": "DemoNotVerifiedError: plan-b-second-green-counterexample-32000-r2-03-plan: review-stage evidence is incomplete (REVIEWER_OUTPUT_TRUNCATED); the positive proof is NOT_VERIFIED"
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-32000-r3",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 7,
+          "failure": null
+        }
+      ],
+      "Rplus": [
+        {
+          "runId": "plan-r-plus-explicit-red-green-32000-r1",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 9,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-plus-explicit-red-green-32000-r2",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 1,
+          "steps": 6,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-plus-explicit-red-green-32000-r3",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 7,
+          "failure": null
+        }
+      ]
+    },
+    "65536": {
+      "R": [
+        {
+          "runId": "plan-r-reproduction-plan-65536-r1",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 9,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-reproduction-plan-65536-r2",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 9,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-reproduction-plan-65536-r3",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 6,
+          "failure": null
+        }
+      ],
+      "B": [
+        {
+          "runId": "plan-b-second-green-counterexample-65536-r1",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 6,
+          "failure": null
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-65536-r2",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 5,
+          "failure": null
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-65536-r3",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 6,
+          "failure": null
+        }
+      ],
+      "Rplus": [
+        {
+          "runId": "plan-r-plus-explicit-red-green-65536-r1",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 6,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-plus-explicit-red-green-65536-r2",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 12,
+          "failure": null
+        },
+        {
+          "runId": "plan-r-plus-explicit-red-green-65536-r3",
+          "completion": "completed",
+          "verdict": "accept",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 10,
+          "failure": null
+        }
+      ]
+    }
+  },
+  "fullLoop": {
+    "arm": 32000,
+    "reviewerSteps": 10,
+    "case": "plan-r-reproduction-plan",
+    "runs": [
+      {
+        "runId": "plan-r-reproduction-plan-32000-r1",
+        "completion": "completed",
+        "verdict": "accept",
+        "evaluation": "pass",
+        "retries": 0,
+        "steps": 9,
+        "failure": null,
+        "transport": {
+          "reviewerAttempts": 1,
+          "authorizedRearms": 0,
+          "source": "driver-log summary"
+        }
+      },
+      {
+        "runId": "plan-r-reproduction-plan-32000-r2",
+        "completion": "completed",
+        "verdict": "accept",
+        "evaluation": "pass",
+        "retries": 2,
+        "steps": 7,
+        "failure": null,
+        "transport": {
+          "reviewerAttempts": 3,
+          "authorizedRearms": 2,
+          "source": "driver-log summary"
+        }
+      },
+      {
+        "runId": "plan-r-reproduction-plan-32000-r3",
+        "completion": "completed",
+        "verdict": "accept",
+        "evaluation": "pass",
+        "retries": 1,
+        "steps": 5,
+        "failure": null,
+        "transport": {
+          "reviewerAttempts": 2,
+          "authorizedRearms": 1,
+          "source": "driver-log summary"
+        }
+      }
+    ],
+    "authorizedRearms": {
+      "r1": 0,
+      "r2": 2,
+      "r3": 1
+    }
+  },
+  "notes": [
+    "Matrix 32K: 7/9 expected verdicts over all nine attempts; 8/9 bound. R block is the R-B counterexample interpretation (false positive under R-A); B truncation has no bound verdict.",
+    "Matrix 65K: 9/9 expected verdicts, 0 transport failures, 0 retries.",
+    "Full-loop 32K R: 3/3 accept; authorized re-arms in r2/r3 appear in the driver log and are reflected in the normalized retry counts; the final verdict bound correctly.",
+    "Full-loop B: 32K bound the correct changes_requested in 1/2 comparable runs (r2; r1 truncated at the 32K cap); r3 is excluded as subject-fidelity/parent revision. 65K bound 3/3, with one authorized step-budget re-arm in r2.",
+    "Full-loop 65K R: targeted 3-repetition run 3/3 accept; combined with the earlier single smoke, 3/4 accept. The isolated R-B false positive remains a documented conditional-baseline risk.",
+    "B 32K truncating per-call reasoning: 32,000 tokens (finish length, output 0); the 36,889 figure is the sum across three assistant calls.",
+    "Retry accounting: completion.retries is normalized to max(frozen reviewer attempts - 1, transport.authorizedRearms), and transport.reviewerAttempts to at least authorizedRearms + 1. Historical records without a transport object remain driver-log-authoritative. The 65K R 3-rep r1 shows retries=1 with authorizedRearms=0 (host-task capture retry, not a governed re-arm); reason classification remains an open harness refinement.",
+    "A was excluded from the matrix after remaining step-budget limited at 10 and 15 steps; retained as a termination probe.",
+    "Decision status: 65K is the selected productive baseline, conditional on monitoring; 32K remains the fallback. Effective host setting: OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536 (host-process-wide, not a FlowGuard config field). Monitor reasoning, truncations, re-arms, and runtime."
+  ],
+  "exclusions": ["subject_fidelity_mismatch", "reviewer_completion_failure"],
+  "fullLoopB": {
+    "runRoot": "/tmp/flowguard-review-full-loop-b-20261020T112328",
+    "arms": {
+      "32000": [
+        {
+          "runId": "plan-b-second-green-counterexample-32000-r1",
+          "completion": "unverifiable",
+          "verdict": null,
+          "evaluation": "not_assessed",
+          "retries": 0,
+          "steps": 0,
+          "transport": null,
+          "failure": "REVIEWER_OUTPUT_TRUNCATED at the 32K cap; persisted plan then differs from the frozen subject after the parent revision"
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-32000-r2",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 7,
+          "transport": {
+            "reviewerAttempts": 1,
+            "reviewerTranscripts": 2,
+            "authorizedRearms": 0,
+            "rearmCodes": [],
+            "truncations": 0,
+            "stepBudgetAborts": 0,
+            "totalInputTokens": 92823,
+            "totalOutputTokens": 8042,
+            "totalReasoningTokens": 69831
+          },
+          "failure": null
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-32000-r3",
+          "completion": "unverifiable",
+          "verdict": null,
+          "evaluation": "not_assessed",
+          "retries": 0,
+          "steps": 0,
+          "transport": null,
+          "failure": "persisted plan differs from the frozen subject; run not comparable"
+        }
+      ],
+      "65536": [
+        {
+          "runId": "plan-b-second-green-counterexample-65536-r1",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 9,
+          "transport": {
+            "reviewerAttempts": 1,
+            "reviewerTranscripts": 2,
+            "authorizedRearms": 0,
+            "rearmCodes": [],
+            "truncations": 0,
+            "stepBudgetAborts": 0,
+            "totalInputTokens": 99642,
+            "totalOutputTokens": 8735,
+            "totalReasoningTokens": 64227
+          },
+          "failure": null
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-65536-r2",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 1,
+          "steps": 5,
+          "transport": {
+            "reviewerAttempts": 2,
+            "reviewerTranscripts": 3,
+            "authorizedRearms": 1,
+            "rearmCodes": ["REVIEWER_STEP_BUDGET_EXHAUSTED"],
+            "truncations": 0,
+            "stepBudgetAborts": 1,
+            "totalInputTokens": 108259,
+            "totalOutputTokens": 11872,
+            "totalReasoningTokens": 115105
+          },
+          "failure": null
+        },
+        {
+          "runId": "plan-b-second-green-counterexample-65536-r3",
+          "completion": "completed",
+          "verdict": "changes_requested",
+          "evaluation": "pass",
+          "retries": 0,
+          "steps": 6,
+          "transport": {
+            "reviewerAttempts": 1,
+            "reviewerTranscripts": 2,
+            "authorizedRearms": 0,
+            "rearmCodes": [],
+            "truncations": 0,
+            "stepBudgetAborts": 0,
+            "totalInputTokens": 108338,
+            "totalOutputTokens": 8501,
+            "totalReasoningTokens": 62911
+          },
+          "failure": null
+        }
+      ]
+    },
+    "summary": {
+      "32000": "1/2 comparable bound changes_requested; r2 pass; r1 REVIEWER_OUTPUT_TRUNCATED (counted token failure); r3 excluded from the token-failure rate: subject-fidelity/parent revision, not comparable.",
+      "65536": "3/3 bound changes_requested; r2 one authorized step-budget re-arm; no truncations."
+    }
+  },
+  "fullLoopR65kSmoke": {
+    "runRoot": "/tmp/flowguard-review-full-loop-r-65k-20261020T140502",
+    "manifestSha256": "567e0a5f852073669ffcb334701560267825ae4fc8fb10a94179c7f3276bec62",
+    "runs": [
+      {
+        "runId": "plan-r-reproduction-plan-65536-r1",
+        "completion": "completed",
+        "verdict": "changes_requested",
+        "evaluation": "fail",
+        "retries": 0,
+        "steps": 5,
+        "transport": {
+          "reviewerAttempts": 1,
+          "reviewerTranscripts": 3,
+          "authorizedRearms": 0,
+          "rearmCodes": [],
+          "truncations": 0,
+          "stepBudgetAborts": 0,
+          "totalInputTokens": 110231,
+          "totalOutputTokens": 7914,
+          "totalReasoningTokens": 96251
+        },
+        "failure": null,
+        "blockingIssues": [
+          {
+            "category": "correctness",
+            "severity": "major",
+            "reason": "Verification only plans a green `npm run test --` on the fixed tree and a green `npm run build --`; the declared `test` counterexample is never executed against the concrete faulty variant (TaskService.updateTask without the guard, TaskService.java:45-53), so the plan never shows that the activated test at TaskControllerTest.java:109-128 detects the 500/NPE violation. Minimal repair: add a counterexample execution that activates the test, temporarily omits or reverts the guard, runs `npm run test --`, records the expected failure of `update_taskNotFound_returns404`, restores the guard, and then runs the positive checks in a separate attempt."
+          }
+        ]
+      }
+    ]
+  },
+  "fullLoopR65k3Rep": {
+    "runRoot": "/tmp/flowguard-review-full-loop-r-65k-3rep-20261020T142113",
+    "manifestSha256": "32a4a50da1ea0558bdcd4cec69b4814cda8a56918368adbcad478c667d03d30f",
+    "runs": [
+      {
+        "runId": "plan-r-reproduction-plan-65536-r1",
+        "completion": "completed",
+        "verdict": "accept",
+        "evaluation": "pass",
+        "retries": 1,
+        "steps": 6,
+        "transport": {
+          "reviewerAttempts": 2,
+          "reviewerTranscripts": 2,
+          "authorizedRearms": 0,
+          "rearmCodes": [],
+          "truncations": 0,
+          "stepBudgetAborts": 0,
+          "totalInputTokens": 67337,
+          "totalOutputTokens": 6710,
+          "totalReasoningTokens": 58131
+        },
+        "failure": null,
+        "blockingIssues": []
+      },
+      {
+        "runId": "plan-r-reproduction-plan-65536-r2",
+        "completion": "completed",
+        "verdict": "accept",
+        "evaluation": "pass",
+        "retries": 0,
+        "steps": 6,
+        "transport": {
+          "reviewerAttempts": 1,
+          "reviewerTranscripts": 1,
+          "authorizedRearms": 0,
+          "rearmCodes": [],
+          "truncations": 0,
+          "stepBudgetAborts": 0,
+          "totalInputTokens": 55245,
+          "totalOutputTokens": 3965,
+          "totalReasoningTokens": 34863
+        },
+        "failure": null,
+        "blockingIssues": []
+      },
+      {
+        "runId": "plan-r-reproduction-plan-65536-r3",
+        "completion": "completed",
+        "verdict": "accept",
+        "evaluation": "pass",
+        "retries": 0,
+        "steps": 5,
+        "transport": {
+          "reviewerAttempts": 1,
+          "reviewerTranscripts": 1,
+          "authorizedRearms": 0,
+          "rearmCodes": [],
+          "truncations": 0,
+          "stepBudgetAborts": 0,
+          "totalInputTokens": 53329,
+          "totalOutputTokens": 4346,
+          "totalReasoningTokens": 49981
+        },
+        "failure": null,
+        "blockingIssues": []
+      }
+    ]
+  },
+  "subjectFidelityExclusions": [
+    {
+      "runId": "plan-b-second-green-counterexample-32000-r3",
+      "arm": 32000,
+      "classification": "harness/parent_revision",
+      "includedInTokenFailureRate": false,
+      "reason": "Persisted plan differs from the frozen subject. The run is not comparable; it is not evidence about the 32K output cap."
+    }
+  ]
+}
