@@ -34,6 +34,7 @@ evidence and finishes the review it started.
 | `run-record.example.json`           | Example of the per-run record schema                                                                                              |
 | `observe-chat-params.mjs`           | Test-only OpenCode plugin that records prepared `chat.params`; never installed as a product plugin                                |
 | `run-live.mjs`                      | Real FlowGuard/OpenCode plan-review runner and run-record writer                                                                  |
+| `capture-provider-proxy.mjs`        | Test-only forwarding proxy that logs only the reviewer request cap and correlation metadata for the GUI acceptance                |
 
 ## Gold-standard types
 
@@ -117,32 +118,25 @@ different corpus digests are not comparable.
 
 ## Token comparison
 
-The only experimental variable is the OpenCode output-token cap. In OpenCode
-v1.19.3, `ProviderTransform.maxOutputTokens` computes:
+The experimental variable is `reviewer.outputTokenMax` in the installed
+`flowguard.json`. The FlowGuard OpenCode plugin applies that value to the
+`flowguard-reviewer` agent only; the parent and other agents keep the host
+default. The suite sets the config per arm and deliberately removes any inherited
+`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` before launching the host.
 
-```text
-min(model.limit.output, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX)
-```
-
-The default cap is 32,000. Model/provider configuration must stay identical in
-both arms; do **not** change `provider.<id>.models.<model>.limit.output` to try
-to raise the cap.
-
-| Arm | Host environment                               |
-| --- | ---------------------------------------------- |
-| A   | `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=32000` |
-| B   | `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536` |
+| Arm | Installed config                 |
+| --- | -------------------------------- |
+| A   | `reviewer.outputTokenMax: 32000` |
+| B   | `reviewer.outputTokenMax: 65536` |
 
 Hard preconditions:
 
-- The actual host model catalog must report `model.limit.output >= 65536`.
-- The variable must be set in the real OpenCode host process.
+- Arm B requires `model.limit.output >= 65536`; the plugin fails closed instead of
+  clamping.
+- The installed reviewer agent must use `reasoningEffort: none`.
 - The review message must use the selected variant `max`.
-- The installed reviewer agent must use `reasoningEffort: none`, the supported
-  OpenCode structured-review transport.
 - The resolved provider reasoning options must be identical in both arms.
-- Invalid values (`0`, negative, non-integer) are rejected before launch because
-  OpenCode falls back to the 32,000 default.
+- The parent model must stay identical in both arms.
 
 The runner does **not** pin a `model:` in the reviewer agent frontmatter. It
 installs the OpenCode default `FLOWGUARD_REVIEWER_EFFORT=none`, passes the parent
@@ -160,11 +154,11 @@ The runner records the installed frontmatter (`reviewerModel`, `reviewerEffort`)
 the prepared params of every observed model call, and the review-vs-serialization
 reasoning tokens from the child transcript. The variant name `max` is not assumed
 to be a literal `reasoningEffort: "max"` in the follow-up; the invariant is that
-the two phases keep their supported modes in both arms and only the output cap
-differs.
+the two phases keep their supported modes and only the output cap differs.
 
-The same variable also affects compaction reservation (`session/overflow.ts`).
-Record compaction/overflow events as part of the intervention.
+The hook changes the provider request's output ceiling only. OpenCode's internal
+compaction reservation is not changed by `reviewer.outputTokenMax`; record
+compaction/overflow events as part of the intervention.
 
 ## Instrumentation: separate layers
 
@@ -199,7 +193,9 @@ does not become an unintended confounder.
 
 The final matrix used the R/B/R+ cases, 15 steps for the isolated reviewer,
 fresh host configuration per repetition, and three repetitions per arm. A was
-excluded after remaining step-budget limited at 10 and 15 steps.
+excluded after remaining step-budget limited at 10 and 15 steps. Those historical
+runs selected the cap through the host environment; the current production path
+and runner use `reviewer.outputTokenMax` in the installed FlowGuard config.
 
 | Case                            | 32K                                                    | 65K                   |
 | ------------------------------- | ------------------------------------------------------ | --------------------- |
@@ -236,10 +232,11 @@ reviewer output cap; 32K remains the fallback.** The residual R-B false positive
 and the 32K B truncation are documented risks, not reasons to keep 32K as the
 default.
 
-The effective host setting is `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536`
-(OpenCode host process, not a `flowguard.json` field). It applies to the whole
-host process, not only the reviewer; monitor reasoning tokens, truncations,
-re-arms, and runtime.
+The effective setting is `reviewer.outputTokenMax: 65536` in `flowguard.json`.
+The FlowGuard plugin applies it to the reviewer at startup; restart OpenCode after
+changing it. `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide
+fallback when the plugin hook is not active, not the production path. Monitor
+reasoning tokens, truncations, re-arms, and runtime.
 
 ## Staged execution
 
@@ -313,8 +310,9 @@ node demos/reviewer-reference-suite/run-live.mjs \
   --repetitions 3
 ```
 
-Then repeat with `--arm 65536` and a fresh root. Stage 2 uses the same command
-with `--case plan-a-targeted-falsification` and
+Then repeat with `--arm 65536` and a fresh root. The runner writes the arm into
+the installed `reviewer.outputTokenMax`; it does not set the host-wide env cap.
+Stage 2 uses the same command with `--case plan-a-targeted-falsification` and
 `--case plan-b-second-green-counterexample`.
 
 The runner writes one `*.record.json` per run and an aggregate
@@ -322,6 +320,36 @@ The runner writes one `*.record.json` per run and an aggregate
 host transcripts. The runner does not converge a plan revision loop: a
 `changes_requested` verdict is a measurement result, not a request to author a
 new plan.
+
+## GUI acceptance
+
+The final acceptance is one fresh install from the branch tarball, a normal
+desktop start **without** `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`, and a complete
+`/plan` review. Use the local forwarding proxy to prove the final provider
+request without logging prompts or sensitive content:
+
+```sh
+node demos/reviewer-reference-suite/capture-provider-proxy.mjs \
+  --port 8787 --upstream https://api.deepseek.com --log /tmp/provider-cap.jsonl
+```
+
+Point the OpenCode provider `baseURL` at `http://127.0.0.1:8787/v1` for the
+acceptance workspace. The proxy forwards requests unchanged and writes only:
+timestamp, request id, model, `maxTokens` (read from `max_tokens` or
+`max_output_tokens`), stream flag, path, status, and duration. It never logs messages, tool arguments, headers, or
+credentials.
+
+Acceptance evidence:
+
+- the proxy log contains a `flowguard-reviewer` request with `maxTokens: 65536`;
+- the FlowGuard log contains `reviewer output cap applied` for the same reviewer
+  session/time;
+- the `/plan` review binds `accept` and the plan gate proceeds;
+- no prompt or sensitive content is attached to the PR.
+
+A GUI run is manual; the automated capture smoke and the config-mode full-loop
+run remain the reproducible gates. The PR is not merged until the GUI evidence
+is recorded.
 
 ## Decision
 

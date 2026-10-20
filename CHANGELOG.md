@@ -850,6 +850,21 @@ stop`, reviewer child reported it could not complete the falsification).
   `FLOWGUARD_REFERENCE_SUITE=1`; the product reviewer step limit remains 10, and
   no prompt, criteria, model, or governance gate changed.
 
+- **Automatic reviewer output cap on OpenCode.** The resolved
+  `reviewer.outputTokenMax` (default `65536`) is now applied by the FlowGuard
+  OpenCode plugin's `chat.params` hook to the `flowguard-reviewer` agent only; the
+  parent and other agents keep the host default. A fresh install writes the
+  default, existing configs resolve it without migration, and explicit values
+  are preserved. A model limit below the configured cap, an unknown model limit,
+  or an unreadable/invalid config fails the reviewer request closed before the
+  provider call and blocks the obligation terminally instead of re-arming.
+  `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback when the
+  plugin hook is not active. The hook changes only the provider request's output
+  ceiling; OpenCode's internal compaction reservation is unchanged. The final
+  provider-request capture and GUI acceptance are recorded in the reviewer
+  reference suite. No reviewer prompt, criteria, model, reasoning, step-budget,
+  or governance-gate change.
+
 - **Repository observations state their citable line count.** The evidence
   binder rejects a `line`/`endLine` beyond the observed file's line count
   (for example line 57 of a 48-line `pom.xml`), which forced a full reviewer

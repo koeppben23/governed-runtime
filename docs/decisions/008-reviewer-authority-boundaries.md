@@ -84,11 +84,19 @@ with an expected failure) is **not** adopted by this ADR. It would be a separate
 decision requiring reference-suite evidence that the semantic reviewer cannot
 apply the rule reliably.
 
-The operational output-token baseline is **65K**, set on the OpenCode host with
-`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536`; 32K remains the fallback. This is
-a host-process setting, not a prompt, criteria, or governance change. It is a
-**conditional baseline**: the reference suite shows 65K full-loop B 3/3 and
-targeted full-loop R 3/3, but the combined 65K full-loop R evidence is 3/4
+The operational output-token baseline is **65K**, configured as
+`reviewer.outputTokenMax` in `flowguard.json` and applied by the FlowGuard
+OpenCode plugin's `chat.params` hook to the `flowguard-reviewer` agent only.
+
+`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536` remains a host-wide fallback when
+the plugin hook is not active. The configuration is not a prompt, criteria, or
+governance change. The hook fails the reviewer request closed when the model's
+output limit is below the configured cap; it never silently clamps. It changes
+the request cap only and does not alter OpenCode's internal compaction
+reservation.
+
+This is a **conditional baseline**: the reference suite shows 65K full-loop B 3/3
+and targeted full-loop R 3/3, but the combined 65K full-loop R evidence is 3/4
 because one run retained the R-B counterexample interpretation. The residual
 semantic risk is monitored, not declared closed.
 
