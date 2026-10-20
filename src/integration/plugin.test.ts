@@ -869,7 +869,10 @@ describe('integration/plugin', () => {
       };
     }
 
-    async function bootNativeReviewSession(buildStructured?: (obligationId: string) => unknown) {
+    async function bootNativeReviewSession(
+      buildStructured?: (obligationId: string) => unknown,
+      options: { resolveParent?: boolean } = {},
+    ) {
       const ws = await createTestWorkspace();
       const sessionID = crypto.randomUUID();
       const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
@@ -883,9 +886,13 @@ describe('integration/plugin', () => {
           client: {
             app: { log: async () => {}, agents },
             session: {
-              get: async ({ path: { id } }: { path: { id: string } }) => ({
-                data: { id, parentID: sessionID },
-              }),
+              ...(options.resolveParent === false
+                ? {}
+                : {
+                    get: async ({ path: { id } }: { path: { id: string } }) => ({
+                      data: { id, parentID: sessionID },
+                    }),
+                  }),
               prompt: structuredPrompt,
               messages: async () => ({
                 data: [
@@ -1062,6 +1069,50 @@ describe('integration/plugin', () => {
         await expect(dispatchReviewerTask(hooks, sessionID, 'call-native-2')).rejects.toThrow(
           /REVIEW_ATTEMPT_UNAVAILABLE|SUBAGENT_REVIEW_NOT_INVOKED/,
         );
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('falls back to the after-hook when the reviewer parent cannot be resolved', async () => {
+      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession(undefined, {
+        resolveParent: false,
+      });
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const params = {
+          temperature: 0.2,
+          topP: 0.9,
+          topK: 40,
+          maxOutputTokens: 32_000,
+          options: {},
+        };
+        await expect(
+          hooks['chat.params']!(
+            {
+              sessionID: CHILD_SESSION_ID,
+              agent: 'flowguard-reviewer',
+              model: {
+                id: 'probe',
+                providerID: 'probe',
+                limit: { context: 1_000_000, output: 32_768 },
+              },
+              provider: {},
+              message: {},
+            } as never,
+            params as never,
+          ),
+        ).rejects.toMatchObject({ code: 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL' });
+
+        const output = await completeReviewerTask(hooks, sessionID);
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.code).toBe('REVIEWER_OUTPUT_CAP_INVALID');
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('blocked');
+        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
+          'REVIEWER_OUTPUT_CAP_INVALID',
+        );
+        expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
       } finally {
         await ws.cleanup();
       }
