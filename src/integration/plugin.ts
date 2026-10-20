@@ -42,6 +42,10 @@ import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { renderPlanClaimDeclarations } from '../presentation/index.js';
 import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
+import {
+  createReviewerOutputCapHook,
+  type ReviewerOutputCapFailure,
+} from './reviewer-output-cap.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -63,7 +67,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   await resolveWorkspaceFingerprint(ws);
 
-  const { log, config, disposeLogging } = await createPluginLogger(
+  const { log, config, configReadError, disposeLogging } = await createPluginLogger(
     client,
     ws.cachedWsDir,
     auditWorktree,
@@ -104,6 +108,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   const toolLatencyStarts = new Map<string, number>();
   const activeCommandScopes = new Map<string, ActiveCommandScope>();
   const checkReworkContinuations = new Set<string>();
+  const reviewerOutputCapFailures = new Map<string, ReviewerOutputCapFailure>();
   const auditDeps = createAuditDeps(
     ws,
     log,
@@ -134,8 +139,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     toolLatencyStarts,
     activeCommandScopes,
     checkReworkContinuations,
+    reviewerOutputCapFailures,
     logError,
   });
+
+  attachReviewerOutputCapHook(hooks, config, configReadError, log, reviewerOutputCapFailures);
 
   hooks.dispose = async () => {
     try {
@@ -228,6 +236,21 @@ function createAuditDeps(
     tsaProvider: new HttpTimestampAuthorityProvider(),
     timestampVerifier: new PkijsTimestampVerifier(),
   };
+}
+
+function attachReviewerOutputCapHook(
+  hooks: Awaited<ReturnType<Plugin>>,
+  config: Parameters<typeof createReviewerOutputCapHook>[0]['config'],
+  configReadError: unknown,
+  log: PluginLogger,
+  failures: Map<string, ReviewerOutputCapFailure>,
+): void {
+  hooks['chat.params'] = createReviewerOutputCapHook({
+    config,
+    configReadError,
+    log,
+    failures,
+  });
 }
 
 function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<ReturnType<Plugin>> {

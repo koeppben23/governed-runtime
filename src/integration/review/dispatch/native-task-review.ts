@@ -450,6 +450,21 @@ async function fulfillNativeReviewTask(
     return;
   }
 
+  const outputCapFailure = runtime.reviewerOutputCapFailures.get(childSessionId);
+  if (outputCapFailure) {
+    runtime.reviewerOutputCapFailures.delete(childSessionId);
+    await abandonAndBlock({
+      runtime,
+      sessDir,
+      callId,
+      output: hookOutput,
+      code: 'REVIEWER_OUTPUT_CAP_INVALID',
+      reason: `${outputCapFailure.code}: ${outputCapFailure.reason}`,
+      obligationId: lineage.obligation.obligationId,
+    });
+    return;
+  }
+
   await completeStructuredReview(runtime, {
     sessionId,
     callId,

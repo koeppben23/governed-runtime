@@ -19,6 +19,7 @@ import type { DiscoveryHealthEnforcementDeps } from './plugin-discovery-health.j
 import type { OrchestratorDeps } from './plugin-orchestrator.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { ToolHookBeforeInput, ToolHookAfterInput } from './types.js';
+import type { ReviewerOutputCapFailure } from './reviewer-output-cap.js';
 
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
@@ -56,6 +57,12 @@ export interface FlowGuardPluginRuntime {
   readonly toolLatencyStarts: Map<string, number>;
   readonly activeCommandScopes: Map<string, ActiveCommandScope>;
   readonly checkReworkContinuations: Set<string>;
+  /**
+   * Reviewer output-cap failures keyed by the reviewer child session. The
+   * chat.params hook writes before it aborts the model request; the native Task
+   * after-hook consumes the entry and blocks terminally instead of re-arming.
+   */
+  readonly reviewerOutputCapFailures: Map<string, ReviewerOutputCapFailure>;
   readonly logError: (message: string, err: unknown) => void;
 }
 

@@ -250,6 +250,7 @@ describe('integration/plugin', () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks).sort();
       expect(keys).toEqual([
+        'chat.params',
         'command.execute.before',
         'dispose',
         'event',
@@ -1005,6 +1006,50 @@ describe('integration/plugin', () => {
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
         expect(blocked.code).toBe('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
+        expect(state?.reviewAssurance?.invocations).toEqual([]);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks a reviewer whose configured output cap exceeds the model limit without re-arming', async () => {
+      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession();
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const params = {
+          temperature: 0.2,
+          topP: 0.9,
+          topK: 40,
+          maxOutputTokens: 32_000,
+          options: {},
+        };
+        await expect(
+          hooks['chat.params']!(
+            {
+              sessionID: CHILD_SESSION_ID,
+              agent: 'flowguard-reviewer',
+              model: {
+                id: 'probe',
+                providerID: 'probe',
+                limit: { context: 1_000_000, output: 32_768 },
+              },
+              provider: {},
+              message: {},
+            } as never,
+            params as never,
+          ),
+        ).rejects.toMatchObject({ code: 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL' });
+        expect(params.maxOutputTokens).toBe(32_000);
+
+        const output = await completeReviewerTask(hooks, sessionID);
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('REVIEWER_OUTPUT_CAP_INVALID');
+        expect(String(blocked.message)).toContain('reviewer.outputTokenMax=65536');
+        expect(String(blocked.message)).toContain('32768');
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
