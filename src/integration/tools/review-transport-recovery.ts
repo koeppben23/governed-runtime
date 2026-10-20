@@ -13,6 +13,8 @@
  *                             obligation/subject (spent attempt staled; works
  *                             for a still-created interrupted release AND for
  *                             an already-staled spent attempt)
+ *   blocked                -> fail closed; a closed obligation is recovered by a
+ *                             fresh submission of the originating command
  *   everything else        -> fail closed; no synthetic reconstruction of
  *                             review authority from persisted material
  *
@@ -163,6 +165,14 @@ export async function handleReviewTransportRecovery(
       obligationId: continuation.obligation.obligationId,
       reason:
         'reviewer evidence is already bound; submit the reviewer verdict instead of a transport retry',
+    });
+  }
+  if (continuation.kind === 'blocked') {
+    // A closed obligation is terminal by design: the recovery is a fresh
+    // submission of the artifact, never a restored or reconstructed authority.
+    return formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: continuation.obligation.obligationId,
+      reason: `the review obligation is closed (${continuation.obligation.blockedCode ?? 'blocked'}) and a transport retry never reopens it; re-run the originating command to submit the artifact again, which mints a fresh review obligation`,
     });
   }
   const obligationId = 'obligation' in continuation ? continuation.obligation.obligationId : null;

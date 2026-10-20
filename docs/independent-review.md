@@ -109,6 +109,39 @@ Any semantic criteria change advances `REVIEW_CRITERIA_VERSION`
 (`src/integration/review/obligations/assurance.ts`); obligations minted under a
 stale generation fail closed as `REVIEW_GENERATION_MISMATCH` and are recovered
 through the documented fresh-review-cycle route.
+Generation `p42-v7` compacts the reviewer output contract without changing
+criteria, evidence requirements, or validators:
+
+- The prompt numbers the offered challenge evidence refs `Ref 1` to `Ref N`
+  in offer order. The review prose cites them only by number and never
+  restates digests, section paths, attempt IDs, or ref objects.
+- The same-child structured serialization expands each cited number to the
+  exact offered object. The number is a presentation of the frozen offer,
+  never an identity: an unexpanded number fails the canonical findings
+  contract and is retried.
+- The prose leads with the verdict and names each finding by severity,
+  category, subject (Ref number or anchor), `path:line` evidence locations,
+  and the defect with its smallest repair.
+- A falsification attempt that finds no violation is stated as a complete,
+  valid result; the required challenge count is never a request to find a
+  defect.
+- A working instruction asks the reviewer not to re-examine a settled point
+  without new evidence, a contradiction, or an unresolved requirement. New
+  evidence always reopens a conclusion, and required falsification checks are
+  never shortened.
+
+### Reviewer authority boundaries and reference suite
+
+The deterministic ProofGraph core, the independent reviewer, and the
+deterministic governance gate keep separate responsibilities; see
+[ADR-008](./decisions/008-reviewer-authority-boundaries.md). Reviewer quality is
+measured by the fixed reference suite in
+[`demos/reviewer-reference-suite/`](../demos/reviewer-reference-suite/README.md),
+which separates plan review from implementation review and keeps formal
+ProofGraph claim states distinct from reviewer verdicts. Termination and
+evaluation are measured separately: a change from `finish: "length"` to
+`finish: "stop"` is not by itself a successful review.
+
 Generation `p42-v6` states the counterexample sufficiency rule once: a
 counterexample must be a targeted falsification — exercise a concrete violating
 variant and show the bound check detects it; a second successful execution

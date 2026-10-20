@@ -55,7 +55,7 @@ describe('review generation authority', () => {
     // The plan criteria now state the evidence-role rule once (overlapping
     // suites of different checks are admissible) and carry the blocking-issue
     // bar. Obligations minted under p42-v3 fail closed.
-    expect(REVIEW_CRITERIA_VERSION).toBe('p42-v6');
+    expect(REVIEW_CRITERIA_VERSION).toBe('p42-v7');
     expect(
       isCurrentReviewGeneration({
         criteriaVersion: 'p42-v3',
@@ -64,10 +64,23 @@ describe('review generation authority', () => {
     ).toBe(false);
     expect(
       isCurrentReviewGeneration({
-        criteriaVersion: 'p42-v6',
+        criteriaVersion: 'p42-v7',
         mandateDigest: REVIEW_MANDATE_DIGEST,
       }),
     ).toBe(true);
+  });
+
+  it('rejects p42-v6 obligations after the compact reviewer output contract', () => {
+    // Offered refs are now cited by number in prose and expanded by the
+    // same-child serialization; an obligation minted under the previous
+    // output contract must not dispatch under the new one.
+    expect(REVIEW_CRITERIA_VERSION).not.toBe('p42-v6');
+    expect(
+      isCurrentReviewGeneration({
+        criteriaVersion: 'p42-v6',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+      }),
+    ).toBe(false);
   });
 
   it('rejects a stale mandate digest', () => {
