@@ -13,8 +13,13 @@
 
 import type { ToolHookAfterOutput } from '../../types.js';
 import type { ReviewObligationType } from '../../../state/evidence.js';
-import type { PendingReviewRetryDiagnostic } from '../types.js';
+import type {
+  PendingReviewRetryDiagnostic,
+  ReviewerOutputCapFailure,
+  SessionEnforcementState,
+} from '../types.js';
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
+import type { OrchestratorDeps } from '../pipeline-types.js';
 import { strictBlockedOutput } from '../../blocked-result.js';
 import { abandonAndRearmByHostCall, abandonReviewDispatchByHostCall } from './durable-dispatch.js';
 import {
@@ -120,4 +125,41 @@ export async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): 
     attemptId: rearm.attempt.attemptId,
     diagnostics: input.diagnostics,
   });
+}
+
+export interface ReviewerOutputCapObligationInput {
+  readonly sessDir: string;
+  readonly parentSessionId: string;
+  readonly phase: string;
+  readonly obligationId: string;
+  readonly failure: ReviewerOutputCapFailure;
+  readonly output: { output: string };
+}
+
+/** Block the obligation and append the canonical audit event. */
+export async function blockReviewerOutputCapObligation(
+  orchestratorDeps: Pick<OrchestratorDeps, 'blockReviewOutcome'>,
+  input: ReviewerOutputCapObligationInput,
+): Promise<void> {
+  await orchestratorDeps.blockReviewOutcome(
+    {
+      sessDir: input.sessDir,
+      sessionId: input.parentSessionId,
+      phase: input.phase,
+    },
+    input.obligationId,
+    'REVIEWER_OUTPUT_CAP_INVALID',
+    { reason: `${input.failure.code}: ${input.failure.reason}` },
+    input.output,
+  );
+}
+
+/** Remove the transient pending-review entry for a blocked obligation. */
+export function clearPendingReviewForObligation(
+  state: SessionEnforcementState,
+  obligationId: string,
+): void {
+  for (const [tool, pending] of state.pendingReviews) {
+    if (pending.obligationId === obligationId) state.pendingReviews.delete(tool);
+  }
 }

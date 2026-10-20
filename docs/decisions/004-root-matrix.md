@@ -8,14 +8,19 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-10-10):
+(counts updated 2026-10-20):
 
-- `root-composition`: 23 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 25 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 4 named files (`installed-commands.ts`,
   `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 14 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 41 root production files
+- total: 43 root production files
+
+The reviewer output-cap `chat.params` hook and its terminal-persistence path live
+in `integration/reviewer-output-cap.ts` and
+`integration/reviewer-output-cap-failure.ts` at the root composition boundary;
+they are host transport adapters, not a new review authority.
 
 The guard-layer maintainability pass (PR #945) deliberately removed the
 hardcoded total production-file count (221) and derived owner lists from the

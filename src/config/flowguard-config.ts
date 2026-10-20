@@ -39,6 +39,9 @@ import {
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
+/** Default maximum output tokens requested from the independent reviewer. */
+export const REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT = 65_536;
+
 export const FlowGuardConfigSchema = z.object({
   /** Schema version for forward compatibility. Always "v1". */
   schemaVersion: z.literal('v1'),
@@ -223,6 +226,23 @@ export const FlowGuardConfigSchema = z.object({
       defaultHost: z.enum(HOST_IDS).optional(),
     })
     .default({}),
+
+  /** Independent-reviewer transport configuration. */
+  reviewer: z
+    .object({
+      /**
+       * Output-token ceiling applied to the OpenCode flowguard-reviewer agent.
+       * The host's model must support at least this value; the plugin fails
+       * closed instead of silently lowering the cap.
+       */
+      outputTokenMax: z
+        .number()
+        .int()
+        .min(1)
+        .max(1_000_000)
+        .default(REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT),
+    })
+    .default({ outputTokenMax: REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT }),
 
   /** Archive configuration. */
   archive: z

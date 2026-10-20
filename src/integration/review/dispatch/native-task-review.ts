@@ -44,6 +44,8 @@ import {
 import {
   abandonAndBlock,
   abandonOrRetryCaptureFailure,
+  blockReviewerOutputCapObligation,
+  clearPendingReviewForObligation,
   type CaptureFailureContext,
 } from './capture-failure-routing.js';
 import { projectReviewExecution } from './review-execution-projection.js';
@@ -450,6 +452,18 @@ async function fulfillNativeReviewTask(
     return;
   }
 
+  if (
+    await handleReviewerOutputCapFailure(
+      runtime,
+      { sessionId, sessDir, callId },
+      lineage,
+      childSessionId,
+      hookOutput,
+    )
+  ) {
+    return;
+  }
+
   await completeStructuredReview(runtime, {
     sessionId,
     callId,
@@ -487,6 +501,44 @@ function captureBound(
     dispatchAuthorizedAt: lineage.dispatch.dispatchAuthorizedAt,
   });
   return capturePreparedFindings(runtime, lineage.obligation, childSessionId, contract);
+}
+
+async function handleReviewerOutputCapFailure(
+  runtime: NativeReviewTransportRuntime,
+  context: { readonly sessionId: string; readonly sessDir: string; readonly callId: string },
+  lineage: NativeReviewLineage,
+  childSessionId: string,
+  hookOutput: ToolHookAfterOutput,
+): Promise<boolean> {
+  const failure = runtime.reviewerOutputCapFailures.get(childSessionId);
+  if (!failure) return false;
+  runtime.reviewerOutputCapFailures.delete(childSessionId);
+  await abandonAndBlock({
+    runtime,
+    sessDir: context.sessDir,
+    callId: context.callId,
+    output: hookOutput,
+    code: 'REVIEWER_OUTPUT_CAP_INVALID',
+    reason: `${failure.code}: ${failure.reason}`,
+    obligationId: lineage.obligation.obligationId,
+  });
+  try {
+    await blockReviewerOutputCapObligation(runtime.orchestratorDeps, {
+      sessDir: context.sessDir,
+      parentSessionId: context.sessionId,
+      phase: lineage.state.phase,
+      obligationId: lineage.obligation.obligationId,
+      failure,
+      output: hookOutput,
+    });
+    clearPendingReviewForObligation(
+      runtime.ws.getEnforcementState(context.sessionId),
+      lineage.obligation.obligationId,
+    );
+  } catch (err) {
+    runtime.logError('reviewer output cap fallback block failed', err);
+  }
+  return true;
 }
 
 async function completeStructuredReview(

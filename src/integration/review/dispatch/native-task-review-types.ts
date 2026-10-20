@@ -7,7 +7,11 @@ import type { readState } from '../../../adapters/persistence.js';
 import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { findBindableAttempt } from '../../../state/review-continuation.js';
-import type { ReviewerCompletionFailureCode, SessionEnforcementState } from '../types.js';
+import type {
+  ReviewerCompletionFailureCode,
+  ReviewerOutputCapFailure,
+  SessionEnforcementState,
+} from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 
 export type ReviewerTaskCompletion =
@@ -48,6 +52,8 @@ export interface NativeReviewTransportRuntime {
     resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   };
   readonly orchestratorDeps: OrchestratorDeps;
+  /** Bounded reviewer output-cap failures, keyed by reviewer child session. */
+  readonly reviewerOutputCapFailures: Map<string, ReviewerOutputCapFailure>;
   readonly log: {
     info(service: string, message: string, extra?: Record<string, unknown>): void;
     warn(service: string, message: string, extra?: Record<string, unknown>): void;

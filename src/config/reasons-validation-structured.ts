@@ -34,6 +34,17 @@ export const STRUCTURED_REVIEW_REASONS = [
     ],
   },
   {
+    code: 'REVIEWER_OUTPUT_CAP_INVALID',
+    category: 'config',
+    messageTemplate:
+      'The configured reviewer output cap cannot be applied to this reviewer model: {reason}',
+    recoverySteps: [
+      'Set reviewer.outputTokenMax in flowguard.json to at most the model output limit reported in the reason, or select a model that supports the configured cap',
+      'Restart OpenCode so the FlowGuard plugin reloads the resolved configuration',
+      'Re-run the originating FlowGuard command after correcting the cap; do not re-arm the reviewer with the same invalid configuration',
+    ],
+  },
+  {
     code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',
     category: 'state',
     messageTemplate:

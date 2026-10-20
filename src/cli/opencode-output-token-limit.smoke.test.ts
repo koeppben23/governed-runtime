@@ -18,11 +18,14 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+
+import { buildReviewerAgentContent } from './install-helpers.js';
+import { PLUGIN_WRAPPER, REVIEWER_AGENT } from '../templates/index.js';
 
 import { TESTED_OPENCODE_HOST_VERSION } from './opencode-runtime-compat.js';
 import {
@@ -149,7 +152,8 @@ async function startServe(
   capturePort: number,
   host: PinnedOpenCodeHost,
   root: string,
-  outputTokenMax: number,
+  outputTokenMax?: number,
+  modelOutputLimit = 393_216,
 ): Promise<ServeHandle> {
   await writeFile(
     join(projectDir, 'opencode.json'),
@@ -165,7 +169,7 @@ async function startServe(
             models: {
               probe: {
                 name: 'Probe',
-                limit: { context: 1_000_000, output: 393_216 },
+                limit: { context: 1_000_000, output: modelOutputLimit },
               },
             },
           },
@@ -179,17 +183,22 @@ async function startServe(
 
   const port = 21000 + Math.floor(Math.random() * 1000);
   const password = `token-limit-${Math.random().toString(36).slice(2)}`;
+  const childEnv: NodeJS.ProcessEnv = {
+    ...createIsolatedOpenCodeEnvironment(root, host),
+    OPENCODE_SERVER_PASSWORD: password,
+    FORCE_COLOR: '0',
+  };
+  if (outputTokenMax !== undefined) {
+    childEnv.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX = String(outputTokenMax);
+  } else {
+    delete childEnv.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX;
+  }
   const proc = spawn(
     host.command,
     [...host.argsPrefix, 'serve', '--hostname=127.0.0.1', `--port=${port}`, '--print-logs'],
     {
       cwd: projectDir,
-      env: {
-        ...createIsolatedOpenCodeEnvironment(root, host),
-        OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: String(outputTokenMax),
-        OPENCODE_SERVER_PASSWORD: password,
-        FORCE_COLOR: '0',
-      },
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );
@@ -286,6 +295,157 @@ async function probeOutputLimit(outputTokenMax: number): Promise<ProbeResult> {
   return { captured, version };
 }
 
+function maxTokensOf(body: Record<string, unknown>): unknown {
+  return body['max_tokens'] ?? body['max_output_tokens'];
+}
+
+async function writeFlowGuardProject(
+  projectDir: string,
+  options: { readonly cap: number; readonly invalidConfig?: boolean },
+): Promise<void> {
+  const opencodeDir = join(projectDir, '.opencode');
+  await mkdir(join(opencodeDir, 'plugins'), { recursive: true });
+  await mkdir(join(opencodeDir, 'agents'), { recursive: true });
+  await writeFile(join(opencodeDir, 'plugins', 'flowguard-audit.ts'), PLUGIN_WRAPPER, 'utf8');
+  await writeFile(
+    join(opencodeDir, 'agents', 'flowguard-reviewer.md'),
+    buildReviewerAgentContent(REVIEWER_AGENT, 'opencode'),
+    'utf8',
+  );
+  await writeFile(
+    join(opencodeDir, 'flowguard.json'),
+    options.invalidConfig
+      ? '{"schemaVersion":"invalid"}\n'
+      : `${JSON.stringify(
+          { schemaVersion: 'v1', reviewer: { outputTokenMax: options.cap } },
+          null,
+          2,
+        )}\n`,
+    'utf8',
+  );
+
+  // The thin plugin wrapper imports the workspace package. A symlink keeps the
+  // test on the repository's built plugin instead of a second patched copy.
+  const packageDir = join(projectDir, 'node_modules', '@flowguard');
+  await mkdir(packageDir, { recursive: true });
+  await symlink(ROOT, join(packageDir, 'core'), 'dir');
+
+  spawnSync('git', ['init', '-q'], { cwd: projectDir });
+  spawnSync('git', ['add', '.opencode'], { cwd: projectDir });
+  spawnSync(
+    'git',
+    [
+      '-c',
+      'user.name=FlowGuard Test',
+      '-c',
+      'user.email=flowguard-test@example.invalid',
+      'commit',
+      '-qm',
+      'fixture',
+    ],
+    { cwd: projectDir },
+  );
+}
+
+async function sendPrompt(
+  baseUrl: string,
+  directory: string,
+  headers: Record<string, string>,
+  agent: string,
+  text: string,
+): Promise<{ readonly ok: boolean; readonly body: string }> {
+  const sessionRes = await fetch(`${baseUrl}/session?directory=${directory}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title: `${agent} cap probe` }),
+  });
+  const session = (await sessionRes.json()) as { id?: string };
+  if (!session.id) throw new Error(`session creation failed: ${JSON.stringify(session)}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROMPT_TIMEOUT_MS);
+  try {
+    const messageRes = await fetch(
+      `${baseUrl}/session/${session.id}/message?directory=${directory}`,
+      {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          agent,
+          parts: [{ type: 'text', text }],
+          model: { providerID: 'flowguard-capture', modelID: 'probe' },
+        }),
+      },
+    );
+    return { ok: messageRes.ok, body: await messageRes.text() };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function probeConfiguredReviewerCap(options: {
+  readonly cap: number;
+  readonly modelOutputLimit?: number;
+  readonly invalidConfig?: boolean;
+}): Promise<{ readonly captured: Record<string, unknown>[]; readonly reviewerResponse: string }> {
+  const baseline = JSON.parse(
+    await readFile(join(ROOT, '.sdk-baselines', 'opencode', 'host-version.json'), 'utf8'),
+  ) as { package: string; version: string };
+  const host = resolvePinnedOpenCodeHost(baseline);
+  if (!(await readFile(join(ROOT, 'dist', 'integration', 'index.js'), 'utf8').catch(() => ''))) {
+    throw new Error(
+      'dist/integration/index.js is missing; run npm run build before the live smoke',
+    );
+  }
+  const root = await mkdtemp(join(tmpdir(), 'fg-open-code-reviewer-cap-'));
+  activeRoot = root;
+  const projectDir = join(root, 'project');
+  await mkdir(projectDir, { recursive: true });
+  await writeFlowGuardProject(projectDir, options);
+
+  const captured: Record<string, unknown>[] = [];
+  const capture = createCaptureServer(captured);
+  activeCapture = capture;
+  await new Promise<void>((resolve, reject) => {
+    capture.once('error', reject);
+    capture.listen(0, '127.0.0.1', resolve);
+  });
+  const address = capture.address();
+  if (!address || typeof address === 'string') throw new Error('capture port unavailable');
+
+  activeServe = await startServe(
+    projectDir,
+    address.port,
+    host,
+    root,
+    undefined,
+    options.modelOutputLimit,
+  );
+  const directory = encodeURIComponent(projectDir);
+  const auth = `Basic ${Buffer.from(`opencode:${activeServe.password}`).toString('base64')}`;
+  const headers = { Authorization: auth, 'Content-Type': 'application/json' };
+
+  const parent = await sendPrompt(
+    activeServe.baseUrl,
+    directory,
+    headers,
+    'build',
+    'Reply with OK.',
+  );
+  if (!parent.ok) throw new Error(`parent prompt failed: ${parent.body}`);
+
+  const marker = 'FLOWGUARD_LARGE_CONTEXT_MARKER';
+  const reviewer = await sendPrompt(
+    activeServe.baseUrl,
+    directory,
+    headers,
+    'flowguard-reviewer',
+    `${marker}\n${'context '.repeat(4_000)}`,
+  );
+  return { captured, reviewerResponse: reviewer.body };
+}
+
 describe.skipIf(!CAN_RUN)('OpenCode output-token cap reaches the provider request', () => {
   afterEach(async () => {
     await stopServe(activeServe);
@@ -319,6 +479,56 @@ describe.skipIf(!CAN_RUN)('OpenCode output-token cap reaches the provider reques
       const body = captured.at(-1)!;
       const transmitted = body['max_tokens'] ?? body['max_output_tokens'];
       expect(transmitted, JSON.stringify(body)).toBe(32000);
+    },
+    EXEC_TIMEOUT_MS,
+  );
+
+  it(
+    'HAPPY: a fresh FlowGuard install applies 65K to the reviewer without an env cap',
+    async () => {
+      const { captured, reviewerResponse } = await probeConfiguredReviewerCap({ cap: 65_536 });
+      const serialized = captured.map((body) => JSON.stringify(body));
+      const reviewerIndex = serialized.findIndex((body) =>
+        body.includes('FLOWGUARD_LARGE_CONTEXT_MARKER'),
+      );
+      expect(reviewerIndex, `reviewer call failed: ${reviewerResponse}`).toBeGreaterThanOrEqual(0);
+      const reviewerBody = captured[reviewerIndex]!;
+      expect(maxTokensOf(reviewerBody), JSON.stringify(reviewerBody)).toBe(65_536);
+
+      const parentBody = captured
+        .slice(0, reviewerIndex)
+        .reverse()
+        .find((body) => JSON.stringify(body).includes('Reply with OK.'));
+      expect(parentBody).toBeDefined();
+      expect(maxTokensOf(parentBody!), JSON.stringify(parentBody)).toBe(32_000);
+    },
+    EXEC_TIMEOUT_MS,
+  );
+
+  it(
+    'BAD: a model limit below the configured cap never reaches the provider',
+    async () => {
+      const { captured, reviewerResponse } = await probeConfiguredReviewerCap({
+        cap: 65_536,
+        modelOutputLimit: 32_768,
+      });
+      expect(captured).toHaveLength(1);
+      expect(JSON.stringify(captured[0])).toContain('Reply with OK.');
+      expect(reviewerResponse).not.toContain('FLOWGUARD_LARGE_CONTEXT_MARKER');
+    },
+    EXEC_TIMEOUT_MS,
+  );
+
+  it(
+    'BAD: a malformed FlowGuard config never reaches the provider',
+    async () => {
+      const { captured, reviewerResponse } = await probeConfiguredReviewerCap({
+        cap: 65_536,
+        invalidConfig: true,
+      });
+      expect(captured).toHaveLength(1);
+      expect(JSON.stringify(captured[0])).toContain('Reply with OK.');
+      expect(reviewerResponse).not.toContain('FLOWGUARD_LARGE_CONTEXT_MARKER');
     },
     EXEC_TIMEOUT_MS,
   );

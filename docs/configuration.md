@@ -624,29 +624,52 @@ dropping operator intent, setting either env var while installing for Codex
 **fails closed** with an explicit error. Unset the variables for the Codex
 install, or configure the Codex custom agent directly.
 
-### OpenCode Host Output Token Cap
+### Reviewer Output Token Cap (OpenCode)
 
-OpenCode caps each model call at
-`min(model.limit.output, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX)`. The selected
-FlowGuard reviewer baseline is to launch the host with `65536`:
+The independent reviewer's output ceiling is configured in `flowguard.json`:
 
-```bash
-OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536 opencode
+```json
+{
+  "reviewer": {
+    "outputTokenMax": 65536
+  }
+}
 ```
 
-This is an OpenCode host-process setting, not a `flowguard.json` field. FlowGuard
-does not set it automatically. It applies to the whole host process, not only the
-reviewer, so it can also affect other model calls and context/compaction behavior.
-The FlowGuard reviewer model, `reasoningEffort: none`, and the product reviewer
-step limit of 10 are unchanged. The `32000` default remains the fallback when the
-host cannot set the cap.
+`65536` is the selected default. A fresh install writes it; an existing config
+without the field resolves to the default through the config schema. An explicit
+value such as `32000` is preserved, including across `install --force`.
+
+The FlowGuard OpenCode plugin applies the value through the `chat.params` hook to
+the `flowguard-reviewer` agent only. The parent and every other agent keep the
+host default. The reviewer model, `reasoningEffort: none`, the reviewer variant,
+the step limit, and all governance gates are unchanged. OpenCode calls the hook
+after it computes its own `maxOutputTokens`, and the hook's value is passed to the
+provider request.
+
+The hook fails the reviewer request closed — before the provider call — when the
+configuration cannot be read, is invalid, or the model reports an output limit
+below the configured cap. It never silently clamps the requested cap. Correct
+`reviewer.outputTokenMax` to the reported model limit (or choose a compatible
+model) and restart OpenCode. The plugin reads the config at startup.
+
+`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback for hosts
+where the FlowGuard plugin hook is not active. It is not required for the
+reviewer baseline; when it is set, the plugin still applies
+`reviewer.outputTokenMax` to the reviewer. The fallback affects the whole host
+process, not only the reviewer.
+
+The hook changes the model request only. OpenCode's internal context/compaction
+reservation is not changed by this setting; that remains a documented limitation
+for very large contexts. A plugin loaded after FlowGuard can also overwrite
+`maxOutputTokens`; the final provider-request capture in the reviewer reference
+suite is the acceptance authority.
 
 This is a **conditional baseline**, not a statistical validation. Evidence is the
 reviewer reference suite: 65K single-review matrix 9/9 expected, full-loop B 3/3
 bound `changes_requested`, and full-loop R 3/3 `accept` in the targeted
 three-repetition run (3/4 accept including the earlier R-B false positive). The
-32K fallback produced a real single-call truncation at exactly 32,000 reasoning
-tokens and bound the full-loop B decision in only 1/2 comparable runs. Monitor
+32K fallback is selected by setting `reviewer.outputTokenMax` to `32000`. Monitor
 reasoning-token use, truncations, authorized re-arms, and runtime on demo runs;
 the R-B counterexample interpretation remains a documented residual semantic
 risk.

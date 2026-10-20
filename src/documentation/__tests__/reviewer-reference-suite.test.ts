@@ -22,6 +22,7 @@ import { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import {
+  applyReviewerOutputTokenMax,
   applyReviewerStepBudget,
   classifyCompletion,
   evaluateFindings,
@@ -291,7 +292,9 @@ const RunRecord = z
         childSessionId: z.string().min(1).nullable().optional(),
         caseCorpusDigest: z.string().regex(/^[0-9a-f]{64}$/),
         fixtureDigest: z.string().min(1),
-        outputTokenMaxEnv: OutputTokenMax,
+        capSource: z.enum(['config', 'env']),
+        outputTokenMaxConfig: OutputTokenMax.nullable(),
+        outputTokenMaxEnv: OutputTokenMax.nullable(),
       })
       .strict(),
     completion: z
@@ -616,7 +619,9 @@ describe('reviewer reference suite', () => {
   it('HAPPY: the run-record example matches the schema and the corpus digest', () => {
     const record = RunRecord.parse(readJson(RECORD_FILE));
     expect(record.arm.outputTokenMax).toBe(65536);
-    expect(record.provenance.outputTokenMaxEnv).toBe(65536);
+    expect(record.provenance.capSource).toBe('config');
+    expect(record.provenance.outputTokenMaxConfig).toBe(65536);
+    expect(record.provenance.outputTokenMaxEnv).toBeNull();
     expect(record.provenance.caseCorpusDigest).toBe(corpusDigest);
     expect(record.goldStandardType).toBe('plan_review');
     expect(record.evaluation.outcome).toBe('pass');
@@ -839,6 +844,38 @@ describe('reference-suite transport smoke contract', () => {
     const noPrompt = record();
     noPrompt.completion.hasSerializationPrompt = false;
     expect(transportSmokeFailures(noPrompt)).toContain('kein Serialisierungs-Prompt beobachtet');
+  });
+});
+
+describe('reference-suite reviewer output-token config', () => {
+  it('HAPPY: writes the selected arm into the installed FlowGuard config', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'fg-reviewer-cap-'));
+    try {
+      const dir = path.join(root, '.opencode');
+      mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'flowguard.json');
+      writeFileSync(
+        file,
+        JSON.stringify({ schemaVersion: 'v1', reviewer: { outputTokenMax: 65_536 } }),
+        'utf8',
+      );
+      applyReviewerOutputTokenMax(root, 32_000);
+      const parsed = JSON.parse(readFileSync(file, 'utf8')) as {
+        reviewer: { outputTokenMax: number };
+      };
+      expect(parsed.reviewer.outputTokenMax).toBe(32_000);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('BAD: refuses to write when the installed config is missing', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'fg-reviewer-cap-'));
+    try {
+      expect(() => applyReviewerOutputTokenMax(root, 65_536)).toThrow(/flowguard config missing/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

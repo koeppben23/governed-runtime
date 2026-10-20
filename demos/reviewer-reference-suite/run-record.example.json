@@ -42,7 +42,9 @@
     "childSessionId": "ses_example",
     "caseCorpusDigest": "61a624ebaf5c74798d341a9f2a6dbe664492835d3e6dc17f1fc9ecda40db648b",
     "fixtureDigest": "example-fixture-digest",
-    "outputTokenMaxEnv": 65536
+    "outputTokenMaxEnv": null,
+    "capSource": "config",
+    "outputTokenMaxConfig": 65536
   },
   "completion": {
     "kind": "completed",

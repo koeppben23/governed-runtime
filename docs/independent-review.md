@@ -130,6 +130,20 @@ criteria, evidence requirements, or validators:
   evidence always reopens a conclusion, and required falsification checks are
   never shortened.
 
+### Reviewer output cap
+
+On OpenCode, the FlowGuard plugin applies the resolved
+`reviewer.outputTokenMax` from `flowguard.json` to the `flowguard-reviewer`
+agent through the official `chat.params` hook. The parent and other agents are
+unchanged. The plugin reads the config at startup; a config or model-limit
+mismatch fails the reviewer request closed before the provider call instead of
+silently lowering the cap. `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a
+host-wide fallback for hosts where the plugin hook is not active. The hook
+changes the request output ceiling only; OpenCode's internal compaction
+reservation is not changed. The final provider-request capture in the reference
+suite is the acceptance authority because a later plugin can still overwrite
+`maxOutputTokens`.
+
 ### Reviewer authority boundaries and reference suite
 
 The deterministic ProofGraph core, the independent reviewer, and the

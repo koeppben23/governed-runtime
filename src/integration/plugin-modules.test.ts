@@ -225,13 +225,20 @@ describe('plugin-logging', () => {
       // Create temp dir with broken config to trigger readConfig throw
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-log-test-'));
       try {
-        // Write invalid JSON config (missing required fields)
+        // Write an invalid repo config (missing required fields).
+        await fs.mkdir(path.join(tmpDir, '.opencode'), { recursive: true });
         await fs.writeFile(
-          path.join(tmpDir, 'flowguard.json'),
+          path.join(tmpDir, '.opencode', 'flowguard.json'),
           JSON.stringify({ schemaVersion: 'invalid' }),
         );
-        const { config } = await createPluginLogger(undefined, tmpDir, undefined, null);
+        const { config, configReadError } = await createPluginLogger(
+          undefined,
+          tmpDir,
+          tmpDir,
+          null,
+        );
         expect(config).toBeDefined();
+        expect(configReadError).toBeInstanceOf(Error);
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }

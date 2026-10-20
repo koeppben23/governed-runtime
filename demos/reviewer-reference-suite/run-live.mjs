@@ -342,6 +342,25 @@ export function applyReviewerStepBudget(workspace, steps) {
   fs.writeFileSync(file, text.replace(pattern, `steps: ${steps}`), 'utf8');
 }
 
+/**
+ * Apply the run arm to the installed FlowGuard config. The product plugin reads
+ * reviewer.outputTokenMax at startup; the suite must therefore change the
+ * config, not the host-wide OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX.
+ */
+export function applyReviewerOutputTokenMax(workspace, outputTokenMax) {
+  const file = path.join(workspace, '.opencode', 'flowguard.json');
+  if (!fs.existsSync(file)) throw new Error(`flowguard config missing: ${file}`);
+  const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`flowguard config is not an object: ${file}`);
+  }
+  parsed.reviewer = {
+    ...(parsed.reviewer && typeof parsed.reviewer === 'object' ? parsed.reviewer : {}),
+    outputTokenMax,
+  };
+  fs.writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+}
+
 /** Installed reviewer frontmatter, proving the model/effort baseline. */
 function reviewerFrontmatter(workspace) {
   const file = path.join(workspace, '.opencode', 'agents', 'flowguard-reviewer.md');
@@ -587,6 +606,7 @@ async function runPlanCase({ runner, suite, selected, arm, repetition, options, 
   if (fs.existsSync(workspace)) throw new Error(`workspace already exists: ${workspace}`);
   fs.cpSync(path.join(options.root, 'setup', 'java-task-manager'), workspace, { recursive: true });
   applyReviewerStepBudget(workspace, options.reviewerSteps);
+  applyReviewerOutputTokenMax(workspace, arm);
   const frontmatter = reviewerFrontmatter(workspace);
   const session = { workspace, terminal: 'COMPLETE' };
   const record = {
@@ -615,7 +635,9 @@ async function runPlanCase({ runner, suite, selected, arm, repetition, options, 
       fixtureDigest: sha256Text(
         `${selected.input.planText ?? []}\n${JSON.stringify(selected.input.claims)}`,
       ),
-      outputTokenMaxEnv: arm,
+      capSource: 'config',
+      outputTokenMaxConfig: arm,
+      outputTokenMaxEnv: null,
     },
     completion: {
       kind: 'unverifiable',
@@ -900,6 +922,7 @@ async function main() {
     throw new Error(`run root already exists: ${options.root}`);
   }
   const hostVersion = assertHostVersion(options.hostVersion);
+  delete process.env.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX;
   process.env.FLOWGUARD_REFERENCE_SUITE = '1';
   process.env.FLOWGUARD_REVIEWER_STEPS = String(options.reviewerSteps);
   const tarball = tarballFor(options);
@@ -913,7 +936,6 @@ async function main() {
   const cases = reproduction ? [reproduction] : selection.cases;
   const records = [];
   for (const arm of arms) {
-    process.env.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX = String(arm);
     process.env.FLOWGUARD_REVIEW_SUITE_OBSERVATION_PATH = path.join(
       evidenceDir,
       'chat-params.jsonl',

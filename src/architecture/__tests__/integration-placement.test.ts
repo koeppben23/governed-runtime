@@ -151,10 +151,10 @@ describe('integration placement authority', () => {
     const countByOwner = (owner: string) =>
       rootFiles.filter((entry) => entry.owner === owner).length;
 
-    expect(countByOwner('root-composition')).toBe(23);
+    expect(countByOwner('root-composition')).toBe(25);
     expect(countByOwner('root-host-runtime')).toBe(4);
     expect(countByOwner('root-authority')).toBe(14);
-    expect(rootFiles.length).toBe(41);
+    expect(rootFiles.length).toBe(43);
   });
 
   it('freezes the host/runtime boundary set exactly', () => {

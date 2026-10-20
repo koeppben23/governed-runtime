@@ -48,6 +48,22 @@ export function isReviewerCompletionFailureCode(
   return (REVIEWER_COMPLETION_FAILURE_CODES as readonly string[]).includes(code);
 }
 
+/** Reviewer output-cap configuration failure categories. */
+export type ReviewerOutputCapErrorCode =
+  | 'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE'
+  | 'REVIEWER_OUTPUT_CAP_CONFIG_INVALID'
+  | 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN'
+  | 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL';
+
+/** Reviewer output-cap failure retained for the native Task after-hook. */
+export interface ReviewerOutputCapFailure {
+  readonly code: ReviewerOutputCapErrorCode;
+  readonly reason: string;
+  readonly model: string;
+  readonly modelLimit: number | null;
+  readonly configured: number;
+}
+
 /**
  * Host-classified retry diagnostic for a re-armed reviewer attempt.
  *
@@ -131,6 +147,11 @@ export interface OrchestratorClient {
     agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
   };
   session: {
+    /** Host session metadata, used to resolve a reviewer child's parent. */
+    get?(opts: { path: { id: string } }): Promise<{
+      data?: { id?: string; parentID?: string } | undefined;
+      error?: unknown;
+    }>;
     /** Host-recorded session messages; used to verify reviewer task completion. */
     messages?(opts: { path: { id: string } }): Promise<{
       data?:

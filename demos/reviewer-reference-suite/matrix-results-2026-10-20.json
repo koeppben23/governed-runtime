@@ -248,7 +248,10 @@
     "B 32K truncating per-call reasoning: 32,000 tokens (finish length, output 0); the 36,889 figure is the sum across three assistant calls.",
     "Retry accounting: completion.retries is normalized to max(frozen reviewer attempts - 1, transport.authorizedRearms), and transport.reviewerAttempts to at least authorizedRearms + 1. Historical records without a transport object remain driver-log-authoritative. The 65K R 3-rep r1 shows retries=1 with authorizedRearms=0 (host-task capture retry, not a governed re-arm); reason classification remains an open harness refinement.",
     "A was excluded from the matrix after remaining step-budget limited at 10 and 15 steps; retained as a termination probe.",
-    "Decision status: 65K is the selected productive baseline, conditional on monitoring; 32K remains the fallback. Effective host setting: OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536 (host-process-wide, not a FlowGuard config field). Monitor reasoning, truncations, re-arms, and runtime."
+    "Decision status: 65K is the selected productive baseline, conditional on monitoring; 32K remains the fallback. Effective host setting: OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536 (host-process-wide, not a FlowGuard config field). Monitor reasoning, truncations, re-arms, and runtime.",
+    "Historical scope: the 2026-10-20 matrix and full-loop comparison selected the cap through OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX. The current production path is reviewer.outputTokenMax in flowguard.json, applied by the FlowGuard OpenCode plugin; the numeric arm comparison remains valid evidence for the cap.",
+    "Config-mode full-loop R smoke: fresh install, no env cap, reviewer.outputTokenMax=65536; accept bound, all observed reviewer params 65536, reasoning max for review and none for serialization.",
+    "Post-fix config-mode R: accept bound after one authorized step-budget re-arm, no truncation; all reviewer params 65536; no env cap."
   ],
   "exclusions": ["subject_fidelity_mismatch", "reviewer_completion_failure"],
   "fullLoopB": {
@@ -474,5 +477,121 @@
       "includedInTokenFailureRate": false,
       "reason": "Persisted plan differs from the frozen subject. The run is not comparable; it is not evidence about the 32K output cap."
     }
-  ]
+  ],
+  "configModeSmoke": {
+    "runRoot": "/tmp/flowguard-reviewer-cap-config-20261020T204523",
+    "runId": "plan-r-reproduction-plan-65536-r1",
+    "verdict": "accept",
+    "evaluation": "pass",
+    "capSource": "config",
+    "outputTokenMaxConfig": 65536,
+    "outputTokenMaxEnv": null,
+    "reviewerParams": [
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "none"
+      }
+    ],
+    "transport": {
+      "reviewerAttempts": 1,
+      "reviewerTranscripts": 1,
+      "authorizedRearms": 0,
+      "rearmCodes": [],
+      "truncations": 0,
+      "stepBudgetAborts": 0,
+      "totalInputTokens": 47616,
+      "totalOutputTokens": 3123,
+      "totalReasoningTokens": 34560
+    },
+    "note": "Fresh FlowGuard installation, no OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX, reviewer.outputTokenMax=65536; full-loop R bound accept. The chat.params observation shows 65536 for all review and serialization calls."
+  },
+  "configModeAfterTerminalFix": {
+    "runRoot": "/tmp/flowguard-reviewer-cap-config-20261020T212429",
+    "runId": "plan-r-reproduction-plan-65536-r1",
+    "verdict": "accept",
+    "evaluation": "pass",
+    "capSource": "config",
+    "outputTokenMaxConfig": 65536,
+    "outputTokenMaxEnv": null,
+    "reviewerParams": [
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "max"
+      },
+      {
+        "agent": "flowguard-reviewer",
+        "maxOutputTokens": 65536,
+        "reasoningEffort": "none"
+      }
+    ],
+    "transport": {
+      "reviewerAttempts": 2,
+      "reviewerTranscripts": 2,
+      "authorizedRearms": 1,
+      "rearmCodes": ["REVIEWER_STEP_BUDGET_EXHAUSTED"],
+      "truncations": 0,
+      "stepBudgetAborts": 1,
+      "totalInputTokens": 74514,
+      "totalOutputTokens": 7724,
+      "totalReasoningTokens": 96836
+    },
+    "note": "Config-mode full-loop R after the terminal-persistence refactor: accept bound; one authorized step-budget re-arm, no truncation; reviewer config 65536 with no env cap."
+  }
 }
