@@ -306,6 +306,7 @@ describe('renderRepositoryObservationContract', () => {
     expect(text).toContain('flowguard_observe_repository');
     expect(text).toContain('revision: "head"');
     expect(text).not.toContain('<base|head>');
+    expect(text).toContain('cite line/endLine only within 1..lineCount');
   });
 
   it('HAPPY: candidate_pair → revision <base|head>', () => {

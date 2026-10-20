@@ -86,7 +86,7 @@ export async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): 
     const blockedReason =
       rearm.kind === 'blocked'
         ? rearm.cause === 'budget_exhausted'
-          ? `FlowGuard closed the broken review obligation because the re-arm budget is exhausted (${rearm.reason}). Re-run the originating command to mint a fresh obligation.`
+          ? `FlowGuard closed the broken review obligation because the re-arm budget is exhausted (${rearm.reason}); no fresh reviewer attempt was authorized. Re-run the originating command to submit the artifact again and mint a fresh obligation.`
           : `FlowGuard could not re-arm a fresh reviewer attempt: ${rearm.reason}.`
         : 'FlowGuard found no exact abandoned dispatch lineage to re-arm.';
     await abandonAndBlock({

@@ -267,11 +267,21 @@ describe('observe_repository', () => {
       path: string;
       revision: string;
       representation: string;
+      lineCount?: number;
       content: string;
     };
     expect(parsed.path).toBe('src/foo.ts');
     expect(parsed.revision).toBe('head');
     expect(parsed.content).toBe('frozen-content\n');
+    // The citable bound the evidence binder enforces, delivered up front.
+    expect(parsed.lineCount).toBe(1);
+    expect(Object.keys(parsed)).toEqual([
+      'path',
+      'revision',
+      'representation',
+      'lineCount',
+      'content',
+    ]);
 
     const digest = observationCapabilityDigest(capability);
     const read = await readObservationCaptures(

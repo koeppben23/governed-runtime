@@ -43,12 +43,38 @@ import {
   responseDigestOf,
 } from './observation-service.js';
 
+/** Why a capture never became authority. */
+export type ObservationCaptureDropReason =
+  | 'unreadable_capture'
+  | 'session_mismatch'
+  | 'target_mismatch'
+  | 'acquisition_failed'
+  | 'content_digest_mismatch'
+  | 'representation_mismatch'
+  /**
+   * Target, bytes and representation bind, but the delivered payload differs
+   * from the current canonical observation response - e.g. a capture recorded
+   * before an observation-response format change. Never reinterpreted.
+   */
+  | 'response_digest_mismatch';
+
 export interface ObservationReplayResult {
   /** Authoritative observations minted by this replay. */
   readonly observations: RepositoryObservation[];
   /** Capture lines that failed validation and were dropped (audit signal). */
   readonly dropped: number;
+  /** Dropped captures per reason; empty when nothing was dropped. */
+  readonly dropReasons: Readonly<Partial<Record<ObservationCaptureDropReason, number>>>;
+  /** Locations whose delivered payload no longer matches the canonical response. */
+  readonly responseMismatches: readonly { readonly path: string; readonly revision: string }[];
 }
+
+const NO_REPLAY: ObservationReplayResult = {
+  observations: [],
+  dropped: 0,
+  dropReasons: {},
+  responseMismatches: [],
+};
 
 type MintObservationBase = {
   attempt: ReviewAttempt;
@@ -107,26 +133,26 @@ function validateAndMintCapture(input: {
   readonly childSessionId: string;
   readonly now: string;
   readonly capture: import('../../../state/evidence.js').RepositoryObservationCapture;
-}): { observation: RepositoryObservation } | { drop: true } {
+}): { observation: RepositoryObservation } | { drop: ObservationCaptureDropReason } {
   const { capture, obligation, worktree } = input;
   // Execution boundary: the capture must have been produced by the EXACT
   // session the replay binds. A parent-side tool call (or any other session)
   // never becomes reviewer observation authority — the session identity was
   // recorded at capture time, not invented here.
-  if (capture.capturedSessionId !== input.childSessionId) return { drop: true };
+  if (capture.capturedSessionId !== input.childSessionId) return { drop: 'session_mismatch' };
   const target = resolveFrozenRevisionTarget(obligation, capture.revision);
-  if (!target || target.objectSha !== capture.resolvedObjectSha) return { drop: true };
+  if (!target || target.objectSha !== capture.resolvedObjectSha) return { drop: 'target_mismatch' };
   let acquired;
   try {
     acquired = acquireFrozenRepositoryContent(worktree, target, capture.path);
   } catch (err) {
-    if (err instanceof FrozenRepositoryError) return { drop: true };
+    if (err instanceof FrozenRepositoryError) return { drop: 'acquisition_failed' };
     throw err;
   }
   const contentDigest = contentDigestOf(acquired.bytes);
-  if (contentDigest !== capture.contentDigest) return { drop: true };
+  if (contentDigest !== capture.contentDigest) return { drop: 'content_digest_mismatch' };
   const representation = classifyRepresentation(acquired.bytes);
-  if (representation !== capture.representation) return { drop: true };
+  if (representation !== capture.representation) return { drop: 'representation_mismatch' };
   const content =
     representation === 'utf8_text'
       ? acquired.bytes.toString('utf-8')
@@ -137,7 +163,9 @@ function validateAndMintCapture(input: {
     representation,
     content,
   });
-  if (responseDigestOf(response) !== capture.responseDigest) return { drop: true };
+  if (responseDigestOf(response) !== capture.responseDigest) {
+    return { drop: 'response_digest_mismatch' };
+  }
   const base = {
     attempt: input.attempt,
     childSessionId: input.childSessionId,
@@ -189,9 +217,9 @@ export async function replayObservationCaptures(input: {
   const assurance = input.state.reviewAssurance;
   const attempt = assurance?.attempts.find((a) => a.attemptId === input.attemptId);
   const capability = attempt?.observationCapability ?? null;
-  if (!attempt || !capability) return { observations: [], dropped: 0 };
+  if (!attempt || !capability) return NO_REPLAY;
   const obligation = assurance?.obligations.find((o) => o.obligationId === attempt.obligationId);
-  if (!obligation) return { observations: [], dropped: 0 };
+  if (!obligation) return NO_REPLAY;
 
   const fingerprint = await resolveLedgerFingerprint(input.state, input.worktree);
   const ledgerRoot = observationLedgerRoot(workspacesHome(), fingerprint);
@@ -204,7 +232,7 @@ export async function replayObservationCaptures(input: {
     (attempt.observations ?? []).map((o) => `${o.path}\u0000${o.revision}\u0000${o.contentDigest}`),
   );
   const observations: RepositoryObservation[] = [];
-  let dropped = skipped;
+  const drops = new DropLedger(skipped);
 
   for (const capture of captures) {
     const result = validateAndMintCapture({
@@ -216,7 +244,7 @@ export async function replayObservationCaptures(input: {
       capture,
     });
     if ('drop' in result) {
-      dropped++;
+      drops.record(result.drop, capture);
       continue;
     }
     const key = `${capture.path}\u0000${capture.revision}\u0000${result.observation.contentDigest}`;
@@ -225,5 +253,33 @@ export async function replayObservationCaptures(input: {
     observations.push(result.observation);
   }
 
-  return { observations, dropped };
+  return { observations, ...drops.summary() };
+}
+
+/** Per-reason accounting of dropped captures (audit/diagnostic signal only). */
+class DropLedger {
+  private dropped: number;
+  private readonly reasons: Partial<Record<ObservationCaptureDropReason, number>> = {};
+  private readonly mismatches: { path: string; revision: string }[] = [];
+
+  constructor(unreadable: number) {
+    this.dropped = unreadable;
+    if (unreadable > 0) this.reasons.unreadable_capture = unreadable;
+  }
+
+  record(reason: ObservationCaptureDropReason, capture: { path: string; revision: string }): void {
+    this.dropped += 1;
+    this.reasons[reason] = (this.reasons[reason] ?? 0) + 1;
+    if (reason === 'response_digest_mismatch') {
+      this.mismatches.push({ path: capture.path, revision: capture.revision });
+    }
+  }
+
+  summary(): Omit<ObservationReplayResult, 'observations'> {
+    return {
+      dropped: this.dropped,
+      dropReasons: { ...this.reasons },
+      responseMismatches: [...this.mismatches],
+    };
+  }
 }

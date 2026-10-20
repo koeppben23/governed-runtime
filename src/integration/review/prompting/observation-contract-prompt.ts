@@ -46,6 +46,7 @@ export function renderRepositoryObservationContract(
     'The returned observation is the ONLY admissible basis for citing that',
     'location. Cite { path, revision } exactly as observed. Worktree reads,',
     'recalled content, or citations without a matching observation cannot bind.',
+    'A text observation states its lineCount: cite line/endLine only within 1..lineCount.',
     '',
   ];
 }
