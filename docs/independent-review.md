@@ -130,6 +130,18 @@ criteria, evidence requirements, or validators:
   evidence always reopens a conclusion, and required falsification checks are
   never shortened.
 
+### Reviewer authority boundaries and reference suite
+
+The deterministic ProofGraph core, the independent reviewer, and the
+deterministic governance gate keep separate responsibilities; see
+[ADR-008](./decisions/008-reviewer-authority-boundaries.md). Reviewer quality is
+measured by the fixed reference suite in
+[`demos/reviewer-reference-suite/`](../demos/reviewer-reference-suite/README.md),
+which separates plan review from implementation review and keeps formal
+ProofGraph claim states distinct from reviewer verdicts. Termination and
+evaluation are measured separately: a change from `finish: "length"` to
+`finish: "stop"` is not by itself a successful review.
+
 Generation `p42-v6` states the counterexample sufficiency rule once: a
 counterexample must be a targeted falsification — exercise a concrete violating
 variant and show the bound check detects it; a second successful execution

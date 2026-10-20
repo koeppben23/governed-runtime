@@ -624,6 +624,38 @@ dropping operator intent, setting either env var while installing for Codex
 **fails closed** with an explicit error. Unset the variables for the Codex
 install, or configure the Codex custom agent directly.
 
+### OpenCode Host Output Token Cap
+
+OpenCode caps each model call at
+`min(model.limit.output, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX)`. The selected
+FlowGuard reviewer baseline is to launch the host with `65536`:
+
+```bash
+OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536 opencode
+```
+
+This is an OpenCode host-process setting, not a `flowguard.json` field. FlowGuard
+does not set it automatically. It applies to the whole host process, not only the
+reviewer, so it can also affect other model calls and context/compaction behavior.
+The FlowGuard reviewer model, `reasoningEffort: none`, and the product reviewer
+step limit of 10 are unchanged. The `32000` default remains the fallback when the
+host cannot set the cap.
+
+This is a **conditional baseline**, not a statistical validation. Evidence is the
+reviewer reference suite: 65K single-review matrix 9/9 expected, full-loop B 3/3
+bound `changes_requested`, and full-loop R 3/3 `accept` in the targeted
+three-repetition run (3/4 accept including the earlier R-B false positive). The
+32K fallback produced a real single-call truncation at exactly 32,000 reasoning
+tokens and bound the full-loop B decision in only 1/2 comparable runs. Monitor
+reasoning-token use, truncations, authorized re-arms, and runtime on demo runs;
+the R-B counterexample interpretation remains a documented residual semantic
+risk.
+
+The reference-suite runner may additionally set `FLOWGUARD_REFERENCE_SUITE=1`
+and `FLOWGUARD_REVIEWER_STEPS=15` to test a larger step budget. That override is
+test-only; the product default remains 10 and the final 65K full-loop evidence
+used 10.
+
 ## Examples
 
 ### Minimal Config

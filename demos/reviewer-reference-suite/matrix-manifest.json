@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "reviewer-stability-matrix.v1",
+  "matrixId": "stability-matrix-2026-10-20T06-28-43-760Z",
+  "createdAt": "2026-10-20T06:28:43.760Z",
+  "model": "deepseek/deepseek-flash",
+  "variant": "max",
+  "hostVersion": "1.19.3",
+  "criteriaVersion": "p42-v7",
+  "reviewerTransport": {
+    "agentEffort": "none",
+    "parentVariant": "max",
+    "mode": "single_review",
+    "rearm": "bounded by obligation budget",
+    "reviewerSteps": 15,
+    "stepBudgetOverride": "suite-only; product default remains 10",
+    "configIsolation": "fresh OPENCODE_CONFIG_DIR per repetition"
+  },
+  "suiteVersion": "1.0.0",
+  "caseCorpusDigest": "61a624ebaf5c74798d341a9f2a6dbe664492835d3e6dc17f1fc9ecda40db648b",
+  "caseCorpusFileSha256": "a1063472a1fe463fd63d602c44df2eaa1de0a2e3ce57020d4910ee23ca713865",
+  "harness": {
+    "repoHead": "f5e5b52c2296cba8806c83a1bbc569b364b16dbf",
+    "dirty": true,
+    "node": "22.22.2",
+    "npm": "10.9.9",
+    "files": {
+      "demos/reviewer-reference-suite/cases.json": "a1063472a1fe463fd63d602c44df2eaa1de0a2e3ce57020d4910ee23ca713865",
+      "demos/reviewer-reference-suite/run-live.mjs": "7c8840b288adcb72c2e8a2a20965d435bc1926125b363099794195f1a2a8dacf",
+      "demos/reviewer-reference-suite/observe-chat-params.mjs": "7525203a5cf209690ec80c40c82a6622c69ccf0770b4ec56c0be5c83d6b84af1",
+      "demos/java-task-manager/run-live-matrix.mjs": "382b69bf2c8aac9b366a4a6534c62a9ae2c1e0b1fc252095451df82e1b83fd20",
+      "src/integration/review/dispatch/structured-followup.ts": "52a0f62be25d8d737f6c6b643ec9223be50467736615fe25e6dce75be5b37a18"
+    },
+    "harnessDigest": "fda85eda9fba39b869c9ae426413c2c643ff8113a6d753ea9f711633927454a2"
+  },
+  "tarball": {
+    "path": "flowguard-core-2.0.0-tp.2.tgz",
+    "sha256": "b234c8737d49ebcf21a5127fd2e6d6eac71eff51b6da1bdbf4759cd72e05e09a"
+  },
+  "arms": [32000, 65536],
+  "repetitions": 3,
+  "cases": [
+    {
+      "caseId": "plan-r-reproduction-plan",
+      "expectedReviewerVerdict": "accept",
+      "subjectDigest": "edf74043bf19f6ab2bc44060e7bf9fe92b007b94f496229b32c9360e274f1129"
+    },
+    {
+      "caseId": "plan-b-second-green-counterexample",
+      "expectedReviewerVerdict": "changes_requested",
+      "subjectDigest": "621a637cc74c2b67443a38c8648e67584c5eba1fb608c023fae798a2af7be22a"
+    },
+    {
+      "caseId": "plan-r-plus-explicit-red-green",
+      "expectedReviewerVerdict": "accept",
+      "subjectDigest": "1eddc2a05a825e1ce4a47a08bc462bb438b6d5a2f62fcf120500462b0b36146c"
+    }
+  ],
+  "excludedCases": [
+    {
+      "caseId": "plan-a-targeted-falsification",
+      "reason": "reviewer step-budget termination instability at 10 and 15 steps; retained as a termination probe, not as a stability-matrix evaluation case"
+    }
+  ],
+  "exclusions": ["subject_fidelity_mismatch", "reviewer_completion_failure"],
+  "retainedRuns": {
+    "transportChecks": {
+      "r32k": "accept after fresh-config isolation",
+      "rplus32k": "accept after fresh-config isolation"
+    }
+  }
+}
