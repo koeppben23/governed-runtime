@@ -1067,4 +1067,25 @@ describe('FlowGuardConfigSchema boundaries', () => {
     expect(partial.data!.archive.redaction.maxAuditEvents).toBe(10_000);
     expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowRawExport).toBe(false);
   });
+
+  it('defaults and bounds the reviewer output-token cap', () => {
+    expect(parse({ schemaVersion: 'v1' }).data!.reviewer.outputTokenMax).toBe(65_536);
+    expect(
+      parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 32_000 } }).data!.reviewer
+        .outputTokenMax,
+    ).toBe(32_000);
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1 } }).success).toBe(true);
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1_000_000 } }).success).toBe(
+      true,
+    );
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 0 } }).success).toBe(false);
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: -1 } }).success).toBe(false);
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1.5 } }).success).toBe(false);
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1_000_001 } }).success).toBe(
+      false,
+    );
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: '65536' } }).success).toBe(
+      false,
+    );
+  });
 });
