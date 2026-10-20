@@ -47,6 +47,15 @@ export interface ReviewerOutputCapDeps {
   readonly log: ReviewerOutputCapLogger;
   /** Bounded diagnostic map keyed by the reviewer child session. */
   readonly failures?: Map<string, ReviewerOutputCapFailure>;
+  /**
+   * Persist the terminal block directly from the child request. Return true
+   * only when the exact parent dispatch and obligation were blocked. A false
+   * result leaves the failure in `failures` for the after-hook fallback.
+   */
+  readonly persistFailure?: (
+    childSessionID: string,
+    failure: ReviewerOutputCapFailure,
+  ) => Promise<boolean>;
 }
 
 type ChatParamsHook = NonNullable<Hooks['chat.params']>;
@@ -88,24 +97,6 @@ function rememberFailure(
   failures.set(sessionID, failure);
 }
 
-function rejectOutputCap(
-  deps: ReviewerOutputCapDeps,
-  input: ChatParamsInput,
-  failure: ReviewerOutputCapFailure,
-): never {
-  rememberFailure(deps.failures, input.sessionID, failure);
-  deps.log.error('review', 'reviewer output cap rejected', {
-    sessionID: input.sessionID,
-    agent: input.agent,
-    model: failure.model,
-    modelLimit: failure.modelLimit,
-    configured: failure.configured,
-    code: failure.code,
-    reason: failure.reason,
-  });
-  throw new ReviewerOutputCapError(failure.code, failure.reason);
-}
-
 /**
  * Build the `chat.params` hook. The hook is inert for every non-reviewer agent.
  */
@@ -117,18 +108,49 @@ export function createReviewerOutputCapHook(deps: ReviewerOutputCapDeps): ChatPa
     const modelLimit = outputLimitOf(input.model);
     const configured = deps.config.reviewer.outputTokenMax;
 
-    const reject = (code: ReviewerOutputCapErrorCode, reason: string): never =>
-      rejectOutputCap(deps, input, { code, reason, model, modelLimit, configured });
+    const reject = async (code: ReviewerOutputCapErrorCode, reason: string): Promise<never> => {
+      const failure: ReviewerOutputCapFailure = {
+        code,
+        reason,
+        model,
+        modelLimit,
+        configured,
+      };
+      deps.log.error('review', 'reviewer output cap rejected', {
+        sessionID: input.sessionID,
+        agent: input.agent,
+        model,
+        modelLimit,
+        configured,
+        code,
+        reason,
+      });
+
+      let persisted = false;
+      if (deps.persistFailure) {
+        try {
+          persisted = await deps.persistFailure(input.sessionID, failure);
+        } catch (err) {
+          deps.log.error('review', 'reviewer output cap persistence failed', {
+            sessionID: input.sessionID,
+            code,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      if (!persisted) rememberFailure(deps.failures, input.sessionID, failure);
+      throw new ReviewerOutputCapError(code, reason);
+    };
 
     if (deps.configReadError !== undefined) {
-      reject(
+      return reject(
         'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE',
         `FlowGuard configuration could not be read: ${describeError(deps.configReadError)}. ` +
           'The reviewer output cap cannot be applied safely.',
       );
     }
     if (!Number.isInteger(configured) || configured < 1) {
-      reject(
+      return reject(
         'REVIEWER_OUTPUT_CAP_CONFIG_INVALID',
         `reviewer.outputTokenMax must be a positive integer; got ${String(configured)}.`,
       );
@@ -141,7 +163,7 @@ export function createReviewerOutputCapHook(deps: ReviewerOutputCapDeps): ChatPa
       );
     }
     if (modelLimit < configured) {
-      reject(
+      return reject(
         'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL',
         `Reviewer model ${model} supports ${modelLimit} output tokens, below the configured ` +
           `reviewer.outputTokenMax=${configured}. Lower reviewer.outputTokenMax or choose a ` +

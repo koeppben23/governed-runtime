@@ -42,6 +42,10 @@ function runHook(
     outputTokenMax?: number;
     configReadError?: unknown;
     failures?: Map<string, ReviewerOutputCapFailure>;
+    persistFailure?: (
+      childSessionID: string,
+      failure: ReviewerOutputCapFailure,
+    ) => Promise<boolean>;
   } = {},
 ) {
   const log = { info: vi.fn(), error: vi.fn() };
@@ -51,6 +55,7 @@ function runHook(
     ...(options.configReadError !== undefined ? { configReadError: options.configReadError } : {}),
     log,
     failures,
+    ...(options.persistFailure !== undefined ? { persistFailure: options.persistFailure } : {}),
   });
   const inputValue = {
     sessionID: input.sessionID ?? 'ses_reviewer',
@@ -153,6 +158,36 @@ describe('reviewer output-cap hook', () => {
       code: 'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE',
     });
     expect(failures.get('ses_reviewer')?.reason).toContain('flowguard.json is malformed');
+  });
+
+  it('HAPPY: persists the terminal failure and does not retain the fallback map', async () => {
+    const persistFailure = vi.fn(async () => true);
+    const { hook, inputValue, outputValue, failures } = runHook(
+      { model: { ...DEFAULT_MODEL, limit: { context: 1_000_000, output: 32_768 } } },
+      output(),
+      { persistFailure },
+    );
+    await expect(hook(inputValue, outputValue)).rejects.toMatchObject({
+      code: 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL',
+    });
+    expect(persistFailure).toHaveBeenCalledWith(
+      'ses_reviewer',
+      expect.objectContaining({ code: 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL' }),
+    );
+    expect(failures.size).toBe(0);
+  });
+
+  it('BAD: a persistence failure leaves the after-hook fallback map', async () => {
+    const persistFailure = vi.fn(async () => false);
+    const { hook, inputValue, outputValue, failures } = runHook(
+      { model: { ...DEFAULT_MODEL, limit: { context: 1_000_000, output: 32_768 } } },
+      output(),
+      { persistFailure },
+    );
+    await expect(hook(inputValue, outputValue)).rejects.toBeInstanceOf(ReviewerOutputCapError);
+    expect(failures.get('ses_reviewer')).toMatchObject({
+      code: 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL',
+    });
   });
 
   it('BAD: an invalid configured cap fails closed', async () => {

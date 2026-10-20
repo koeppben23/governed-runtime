@@ -883,6 +883,9 @@ describe('integration/plugin', () => {
           client: {
             app: { log: async () => {}, agents },
             session: {
+              get: async ({ path: { id } }: { path: { id: string } }) => ({
+                data: { id, parentID: sessionID },
+              }),
               prompt: structuredPrompt,
               messages: async () => ({
                 data: [
@@ -1044,16 +1047,21 @@ describe('integration/plugin', () => {
         ).rejects.toMatchObject({ code: 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL' });
         expect(params.maxOutputTokens).toBe(32_000);
 
-        const output = await completeReviewerTask(hooks, sessionID);
-        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
-        expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('REVIEWER_OUTPUT_CAP_INVALID');
-        expect(String(blocked.message)).toContain('reviewer.outputTokenMax=65536');
-        expect(String(blocked.message)).toContain('32768');
-
+        // The block is persisted directly from chat.params. The Task after-hook
+        // is deliberately not invoked: OpenCode may skip it when the child Task
+        // itself throws.
         const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('blocked');
+        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
+          'REVIEWER_OUTPUT_CAP_INVALID',
+        );
         expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
         expect(state?.reviewAssurance?.invocations).toEqual([]);
+
+        // A second native Task cannot re-arm the blocked configuration.
+        await expect(dispatchReviewerTask(hooks, sessionID, 'call-native-2')).rejects.toThrow(
+          /REVIEW_ATTEMPT_UNAVAILABLE|SUBAGENT_REVIEW_NOT_INVOKED/,
+        );
       } finally {
         await ws.cleanup();
       }

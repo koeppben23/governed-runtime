@@ -147,6 +147,11 @@ export interface OrchestratorClient {
     agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
   };
   session: {
+    /** Host session metadata, used to resolve a reviewer child's parent. */
+    get?(opts: { path: { id: string } }): Promise<{
+      data?: { id?: string; parentID?: string } | undefined;
+      error?: unknown;
+    }>;
     /** Host-recorded session messages; used to verify reviewer task completion. */
     messages?(opts: { path: { id: string } }): Promise<{
       data?:

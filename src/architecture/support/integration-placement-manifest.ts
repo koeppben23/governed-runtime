@@ -353,6 +353,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-workspace.ts', owner: 'root-composition' },
   { file: 'integration/plugin.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-output-cap.ts', owner: 'root-composition' },
+  { file: 'integration/reviewer-output-cap-failure.ts', owner: 'root-composition' },
   { file: 'integration/proofgraph/approval-projection.ts', owner: 'proofgraph' },
   { file: 'integration/proofgraph/claim-contract-rules.ts', owner: 'proofgraph' },
   { file: 'integration/proofgraph/claim-contract.ts', owner: 'proofgraph' },
