@@ -52,6 +52,31 @@ type ParsedFollowup =
   { readonly kind: 'ok'; readonly findings: Record<string, unknown> } | BlockedFollowup;
 type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
 
+type ReviewerStepLimitResolution =
+  | { readonly kind: 'resolved'; readonly limit: number }
+  | { readonly kind: 'invalid'; readonly reason: string };
+
+/**
+ * Reference-suite override for the reviewer step budget. The product default
+ * remains REVIEWER_STEP_LIMIT. The override is honored only when the isolated
+ * reference-suite host sets FLOWGUARD_REFERENCE_SUITE=1; an invalid value fails
+ * the completion closed instead of silently changing the budget.
+ */
+function resolveReviewerStepLimit(): ReviewerStepLimitResolution {
+  const raw = process.env.FLOWGUARD_REVIEWER_STEPS;
+  if (!raw || process.env.FLOWGUARD_REFERENCE_SUITE !== '1') {
+    return { kind: 'resolved', limit: REVIEWER_STEP_LIMIT };
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 20) {
+    return {
+      kind: 'invalid',
+      reason: `invalid FLOWGUARD_REVIEWER_STEPS: expected an integer from 1 to 20, got ${JSON.stringify(raw)}`,
+    };
+  }
+  return { kind: 'resolved', limit: value };
+}
+
 /**
  * Reviewer task completion: host-evidenced completion of a native reviewer Task
  * BEFORE any structured serialization.
@@ -181,8 +206,21 @@ function classifyLastStep(
  */
 export function classifyReviewerTaskMessages(
   data: unknown,
-  stepLimit: number = REVIEWER_STEP_LIMIT,
+  stepLimit?: number,
 ): ReviewerTaskCompletion {
+  let resolvedStepLimit = stepLimit;
+  if (resolvedStepLimit === undefined) {
+    const resolution = resolveReviewerStepLimit();
+    if (resolution.kind === 'invalid') {
+      return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
+        steps: 0,
+        finish: undefined,
+        error: null,
+        reason: resolution.reason,
+      });
+    }
+    resolvedStepLimit = resolution.limit;
+  }
   if (!Array.isArray(data)) {
     return incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {
       steps: 0,
@@ -216,7 +254,7 @@ export function classifyReviewerTaskMessages(
       reason: 'unexpected host message after the final assistant step',
     });
   }
-  return classifyHostSignal(facts) ?? classifyLastStep(last, facts, stepLimit);
+  return classifyHostSignal(facts) ?? classifyLastStep(last, facts, resolvedStepLimit);
 }
 /** Read the child's host-recorded messages and classify its completion. */
 export async function readReviewerTaskCompletion(
@@ -262,6 +300,7 @@ function serializationPrompt(obligationId: string): string {
     'Serialize exactly the findings you concluded in the immediately preceding review as one ReviewerFindingsInput.',
     `Set attestation.toolObligationId exactly to "${obligationId}".`,
     'Preserve the original overallVerdict, findings, relations, evidence locations, missing verification, challenges, and challenge-resolution verdicts.',
+    'Expand every cited offered-ref number ("Ref N") to the exact object listed as Ref N in the offered evidenceRefs of this review; never synthesize, alter, or cite a ref that was not offered.',
     'If the completed review cannot be represented faithfully, use overallVerdict="unable_to_review" rather than inventing or repairing evidence.',
     'This prompt is serialization only; it is not a second review.',
   ].join('\n');

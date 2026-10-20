@@ -1,0 +1,1751 @@
+{
+  "schemaVersion": "reviewer-reference-suite.v1",
+  "suiteVersion": "1.0.0",
+  "description": "Fixed reviewer reference suite. Each case freezes a review subject, its offered evidence, and an independently authored gold standard. Deterministic checks verify fixture consistency only; they do not prove the semantic reviewer judgment. behaviorStatus stays NOT_VERIFIED until a recorded live run matches the gold standard.",
+  "cases": [
+    {
+      "caseId": "plan-a-targeted-falsification",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "Fix `TaskService.updateTask` with the same null-check used by `getTask`, then activate the existing regression test and assert the preserved task ID.",
+          "",
+          "## Implementation",
+          "1. `src/main/java/com/example/taskmanager/service/TaskService.java`: throw `TaskNotFoundException` when `repository.findById(id)` returns null.",
+          "2. `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java`: remove `@Disabled`, add `$.taskId == \"non-existent-id\"`, and replace the baseline Javadoc instruction with active regression coverage.",
+          "",
+          "## Verification",
+          "- Positive evidence: `build` (`npm run build --`) executes the full suite and packaging.",
+          "- Counterexample evidence: `test` (`npm run test --`) executes `TaskControllerTest#update_taskNotFound_returns404` in its own attempt.",
+          "- The regression test is a targeted falsification: against the pre-fix service the request dereferences null and returns HTTP 500, so the bound assertion fails. After the guard it passes with HTTP 404 and the requested taskId.",
+          "- Baseline and implementation validation run both active checks; plan review does not require those future executions to exist yet.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` returns HTTP 404 with `taskId` for unknown IDs and HTTP 200 for existing IDs.",
+          "",
+          "## Authority Decisions",
+          "`TaskNotFoundException` plus `GlobalExceptionHandler` remain the only error mapping; `TaskRepository` remains the store; no new endpoint or authority is introduced."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with an error body whose taskId equals the requested ID.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "build",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "test",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "Pre-fix TaskService.updateTask dereferences null and returns HTTP 500 for the unknown ID.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "accept",
+        "requiredFindings": [],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "major",
+            "reason": "must not reject a plan whose counterexample is a targeted falsification with distinct check and attempt identities"
+          }
+        ],
+        "expectedEvidenceAssessment": "sufficient",
+        "rationale": "The plan names the exact defect, the null-check repair, the two active checks, and a regression assertion that fails on the pre-fix faulty variant. Plan review precedes execution, so the planned checks are sufficient without executed results.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Plans",
+          "src/templates/plan-claim-guidance.ts#Claim declarations"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "verification_candidates_match_seed",
+          "counterexample_has_faulty_variant"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-b-second-green-counterexample",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "Add the missing null-check in `TaskService.updateTask` and rely on the existing success-path test as the adversarial check.",
+          "",
+          "## Implementation",
+          "1. `src/main/java/com/example/taskmanager/service/TaskService.java`: add the null-check that throws `TaskNotFoundException` when `findById` returns null.",
+          "2. `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java`: remove `@Disabled`, add `$.taskId == \"non-existent-id\"`, and replace the baseline Javadoc instruction with active regression coverage.",
+          "",
+          "## Verification",
+          "- Positive evidence: `test` (`npm run test --`) executes the full suite.",
+          "- Counterexample evidence: `build` (`npm run build --`) executes the same suite again.",
+          "- A second green execution of `update_existing_task_returns_ok` is treated as the counterexample because it confirms the update behavior is healthy.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` keeps the existing update contract.",
+          "",
+          "## Authority Decisions",
+          "The existing repository and exception handler remain authoritative."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with an error body whose taskId equals the requested ID.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "second_green_run",
+        "faultyVariant": null,
+        "detectsViolation": false
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "any",
+            "reason": "the counterexample is a second successful execution of a normal path, not a targeted falsification of the claimed 404 behavior"
+          }
+        ],
+        "forbiddenFindings": [],
+        "expectedEvidenceAssessment": "insufficient_counterexample",
+        "rationale": "The bound counterexample assertion checks the existing update success path. It does not exercise a concrete violation of the claimed missing-ID 404 property, so a second green run cannot prove the claim. The plan must be blocked with a counterexample-sufficiency finding.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Plans",
+          "src/templates/plan-claim-guidance.ts#Claim declarations"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "counterexample_is_second_green_run"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-c1-missing-required-candidate",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "synthetic_discovery"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "Add the null-check and verify the 404 behavior with the repository's security scanner.",
+          "",
+          "## Implementation",
+          "",
+          "1. `src/main/java/com/example/taskmanager/service/TaskService.java`: add the null-check that throws `TaskNotFoundException` when `findById` returns null.",
+          "2. `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java`: remove `@Disabled`, add `$.taskId == \"non-existent-id\"`, and replace the baseline Javadoc instruction with active regression coverage.",
+          "",
+          "## Verification",
+          "- Positive evidence: `security_scan` (`./scripts/security-scan.sh`) proves the 404 behavior.",
+          "- No other check is required.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` returns 404 for unknown IDs.",
+          "",
+          "## Authority Decisions",
+          "The existing exception handler remains authoritative."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with the requested taskId.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "none",
+        "faultyVariant": null,
+        "detectsViolation": false
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "completeness",
+            "severity": "major",
+            "reason": "the plan's stated verification route uses security_scan, which is absent from the offered verification candidates"
+          }
+        ],
+        "forbiddenFindings": [],
+        "expectedEvidenceAssessment": "missing_required_candidate",
+        "rationale": "Only test and build are offered candidates. The plan's Verification section requires a security_scan route that does not exist, while the structured claim binds the active test/build pair. The reviewer must block the plan's missing verification authority without inventing a formal claim state.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Plans",
+          "src/templates/plan-claim-guidance.ts#Claim declarations"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "stated_check_is_absent_from_candidates"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-c2-non-executable-check",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "synthetic_discovery"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "Add the null-check and verify it through the repository test candidate.",
+          "",
+          "## Implementation",
+          "",
+          "1. `src/main/java/com/example/taskmanager/service/TaskService.java`: add the null-check that throws `TaskNotFoundException` when `findById` returns null.",
+          "2. `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java`: remove `@Disabled`, add `$.taskId == \"non-existent-id\"`, and replace the baseline Javadoc instruction with active regression coverage.",
+          "",
+          "## Verification",
+          "- Positive evidence: `test` with `./mvnw missing-goal` proves the 404 behavior.",
+          "- Counterexample evidence: `build` (`./mvnw verify`) repeats the test suite.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` returns 404 for unknown IDs.",
+          "",
+          "## Authority Decisions",
+          "The existing exception handler remains authoritative."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with the requested taskId.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw missing-goal",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test_broken"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "Pre-fix service returns HTTP 500 for the unknown ID.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "feasibility",
+            "severity": "major",
+            "reason": "the selected test candidate command ./mvnw missing-goal is not executable in the frozen workspace"
+          }
+        ],
+        "forbiddenFindings": [],
+        "expectedEvidenceAssessment": "non_executable",
+        "rationale": "The plan's counterexample design is targeted, but its positive check candidate cannot run. Plan review must block on feasibility before implementation; this is not a demand for future execution results.",
+        "contractRefs": ["src/templates/mandates-reviewer-criteria.ts#For Plans"],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "candidate_command_is_not_executable"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-c3-future-phase-check",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "Add the null-check and schedule the real active checks for baseline and implementation validation.",
+          "",
+          "## Implementation",
+          "",
+          "1. `src/main/java/com/example/taskmanager/service/TaskService.java`: add the null-check that throws `TaskNotFoundException` when `findById` returns null.",
+          "2. `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java`: remove `@Disabled`, add `$.taskId == \"non-existent-id\"`, and replace the baseline Javadoc instruction with active regression coverage.",
+          "",
+          "## Verification",
+          "- Baseline validation will execute `test` (`npm run test --`) and `build` (`./mvnw verify`) before implementation.",
+          "- Implementation validation will execute both checks again on the changed revision.",
+          "- `test` is the positive check; `build` is the separate counterexample check.",
+          "- The adversarial design is the existing regression assertion for the unknown-ID request, which fails on the pre-fix faulty variant.",
+          "- No executed results exist at plan time; plan review assesses whether this strategy is executable and sufficient.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` returns 404 with taskId for unknown IDs.",
+          "",
+          "## Authority Decisions",
+          "The existing exception handler remains authoritative."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with the requested taskId.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "Pre-fix service returns HTTP 500 for the unknown ID.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "accept",
+        "requiredFindings": [],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "completeness",
+            "severity": "major",
+            "reason": "must not demand executed baseline or implementation results from a plan review"
+          }
+        ],
+        "expectedEvidenceAssessment": "future_phase_only",
+        "rationale": "Plan review precedes baseline and implementation validation. The plan correctly schedules both active checks and describes a targeted falsification; missing executed results are not a plan defect.",
+        "contractRefs": ["src/templates/mandates-reviewer-criteria.ts#For Plans"],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "checks_are_active_candidates",
+          "plan_requires_future_phase_execution"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-c4-not-traceable-evidence",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "The null-check already exists at `src/main/java/com/example/taskmanager/service/MissingService.java:999`; only the test needs to be activated.",
+          "",
+          "## Verification",
+          "- `test` (`./mvnw test`) will prove the behavior.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` returns 404 for unknown IDs.",
+          "",
+          "## Authority Decisions",
+          "The cited service remains authoritative."
+        ],
+        "claims": [
+          {
+            "statement": "The missing-ID null-check is already implemented in the cited service.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "repository_location",
+            "path": "src/main/java/com/example/taskmanager/service/MissingService.java",
+            "revision": "head",
+            "line": 999
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "none",
+        "faultyVariant": null,
+        "detectsViolation": false
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "completeness",
+            "severity": "major",
+            "reason": "the cited service path and line do not exist in the frozen revision; the claim's basis is not traceable"
+          }
+        ],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "critical",
+            "reason": "must not invent an unrelated implementation defect when the evidence itself is untraceable"
+          }
+        ],
+        "expectedEvidenceAssessment": "not_traceable",
+        "rationale": "The plan cites a repository location the frozen revision does not contain. The reviewer must block on the unverifiable claim basis and must not fabricate a different defect. This is a plan defect, not a formal ProofGraph claim-state computation.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Plans",
+          "src/templates/plan-claim-guidance.ts#Claim declarations"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "cited_repository_location_is_absent"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-d-contract-violation",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "Preserve backward compatibility by returning HTTP 200 with an empty body for unknown task IDs.",
+          "",
+          "## Verification",
+          "- `test` (`./mvnw test`) executes the suite with the updated expectation.",
+          "- `build` (`./mvnw verify`) confirms the package.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` returns HTTP 200 for every ID, including unknown IDs, to avoid breaking existing clients.",
+          "",
+          "## Authority Decisions",
+          "The controller response contract is redefined to prefer backward compatibility over the ticket's 404 requirement."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with an unknown ID returns HTTP 200 with an empty body.",
+            "critical": true,
+            "authoritySectionId": "contracts",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Contracts"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "second_green_run",
+        "faultyVariant": null,
+        "detectsViolation": false
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "critical",
+            "reason": "the plan explicitly replaces the ticket's HTTP 404 contract with HTTP 200 for unknown IDs"
+          }
+        ],
+        "forbiddenFindings": [],
+        "expectedEvidenceAssessment": "sufficient",
+        "rationale": "The plan is technically verifiable but violates the approved ticket contract. The reviewer must block on the contract violation, not on missing evidence.",
+        "contractRefs": [
+          "demos/java-task-manager/seed/TICKET.md#Acceptance Criteria",
+          "src/templates/mandates-reviewer-criteria.ts#For Plans"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "ticket_requires_404",
+          "plan_requires_200"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-e-style-only",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "## Approach",
+          "Add the null-check and activate the existing regression assertion. Optional readability note: rename the local variable `existing` to `task`, but do not block on it.",
+          "",
+          "## Implementation",
+          "",
+          "1. `src/main/java/com/example/taskmanager/service/TaskService.java`: add the null-check that throws `TaskNotFoundException` when `findById` returns null.",
+          "2. `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java`: remove `@Disabled`, add `$.taskId == \"non-existent-id\"`, and replace the baseline Javadoc instruction with active regression coverage.",
+          "",
+          "## Verification",
+          "- Positive: `build` (`npm run build --`).",
+          "- Counterexample: `test` (`npm run test --`) executes the activated unknown-ID regression assertion.",
+          "- The pre-fix faulty variant returns HTTP 500 and fails the assertion; after the guard it passes with 404.",
+          "",
+          "## Contracts",
+          "`PUT /tasks/{id}` returns 404 with taskId for unknown IDs.",
+          "",
+          "## Authority Decisions",
+          "The existing exception handler remains authoritative."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with the requested taskId.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "build",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "test",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "Pre-fix service returns HTTP 500 for the unknown ID.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "accept",
+        "requiredFindings": [],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "quality",
+            "severity": "minor",
+            "reason": "a rename preference is not a blocking issue"
+          }
+        ],
+        "expectedEvidenceAssessment": "sufficient",
+        "rationale": "The plan satisfies the ticket and the falsification contract. The only additional point is an explicitly optional style preference, which belongs in majorRisks or unknowns, never blockingIssues.",
+        "contractRefs": ["src/templates/mandates-reviewer-criteria.ts#For Plans"],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "style_note_is_non_blocking"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-r-reproduction-plan",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "> **Objective:** Fix `PUT /tasks/{id}` so a request for a non-existent task returns HTTP 404 with the requested task ID in the error body instead of HTTP 500, and activate the existing regression test as executable evidence. | **Scope:** `TaskService.updateTask` guard plus `TaskControllerTest.update_taskNotFound_returns404` activation and strengthening. | **Risk:** Low | **Version:** 1",
+          "",
+          "## Approach",
+          "",
+          "- Enforce the not-found invariant in the service layer by mirroring the existing `getTask()` null-check in `updateTask()`, so the controller stays thin and no HTTP concerns leak into it.",
+          "- Leave `TaskRepository`, `TaskNotFoundException`, and `GlobalExceptionHandler` unchanged: the exception type and handler already produce the required 404 body with `taskId`; the defect is only the missing guard before dereferencing `findById`.",
+          "- Activate the existing regression test rather than duplicating coverage, and add a body assertion proving the requested ID is preserved in the error response.",
+          "- Keep the change vertical and small: one production guard and one executable HTTP-level regression assertion across two files.",
+          "",
+          "## Implementation",
+          "",
+          "### 1. Guard missing task in TaskService.updateTask",
+          "",
+          "**Files:** src/main/java/com/example/taskmanager/service/TaskService.java",
+          "",
+          "**Changes:** In `updateTask(String id, CreateTaskRequest request)`, immediately after `Task existing = repository.findById(id);`, add a null-check that throws `new TaskNotFoundException(id)` before any `existing.set...` call or `repository.save(existing)`. Keep the existing update path and imports unchanged (`TaskNotFoundException` is already imported). Do not change `getTask()` or any other method.",
+          "",
+          "**Edge cases:** Unknown ID must throw before mutation and before `save`, so no partial write occurs. Existing ID must follow the current path and still update title, description, priority, and `updatedAt`. A null request body remains handled by controller-level `@Valid` and is out of scope.",
+          "",
+          "**Validation:** The source compiles, and `updateTask(\"non-existent-id\", request)` no longer dereferences null; control reaches `TaskNotFoundException`, which the existing handler maps to HTTP 404 with `taskId`.",
+          "",
+          "### 2. Activate and strengthen the regression test",
+          "",
+          "**Files:** src/test/java/com/example/taskmanager/controller/TaskControllerTest.java",
+          "",
+          "**Changes:** Remove `@Disabled` from `update_taskNotFound_returns404()` and delete the now-unused `org.junit.jupiter.api.Disabled` import. Keep `@Test`, the `put(\"/tasks/non-existent-id\")` request, and the existing `status().isNotFound()` assertion. Add `.andExpect(jsonPath(\"$.taskId\").value(\"non-existent-id\"))` so the error body proves the requested ID is preserved. Replace the Javadoc paragraph that instructs manual removal of `@Disabled` with a description of the now-active regression coverage (non-existent `PUT` ID returns 404 with the requested `taskId`).",
+          "",
+          "**Edge cases:** The request body is valid JSON, so validation passes and the request reaches the service guard. The error body's `taskId` comes from the path variable via `TaskNotFoundException`. `update_existing_task_returns_ok` remains untouched and continues to cover the success path.",
+          "",
+          "**Validation:** `update_taskNotFound_returns404` appears as an executed (not skipped) test, passes with HTTP 404, and asserts `$.taskId == \"non-existent-id\"`.",
+          "",
+          "## Change Inventory",
+          "",
+          "| Area | Files | Change |",
+          "|---|---|---|",
+          "| Service | src/main/java/com/example/taskmanager/service/TaskService.java | MODIFY — add null-check in `updateTask` that throws `TaskNotFoundException` |",
+          "| Test | src/test/java/com/example/taskmanager/controller/TaskControllerTest.java | MODIFY — remove `@Disabled`, add `taskId` body assertion, update Javadoc |",
+          "",
+          "## Contracts",
+          "",
+          "- **HTTP update contract (owner: `TaskController` + `GlobalExceptionHandler`):** `PUT /tasks/{id}` returns HTTP 200 with the updated task for an existing ID; for an unknown ID it must return HTTP 404 with a JSON body containing `error`, `taskId`, and `timestamp`. The `taskId` value must equal the requested path ID.",
+          "- **Service failure contract (owner: `TaskService`):** `updateTask` must throw `TaskNotFoundException` for an unknown ID and must not attempt to mutate or save a non-existent entity.",
+          "- **Error-mapping contract (owner: `GlobalExceptionHandler`):** The existing `TaskNotFoundException` handler remains the only mapper for this failure; no controller-level catch or new error shape is introduced.",
+          "- **Regression-test contract (owner: `TaskControllerTest`):** `update_taskNotFound_returns404` runs by default and asserts both HTTP 404 and `$.taskId == \"non-existent-id\"`; it no longer carries `@Disabled`.",
+          "- **Unchanged API contract:** `GET`, `POST`, `PATCH`, `DELETE`, and `search` endpoints, DTOs, enums, `Task` model, `TaskRepository`, and build configuration remain unchanged.",
+          "",
+          "## Authority Decisions",
+          "",
+          "- `TaskNotFoundException` plus `GlobalExceptionHandler` remain the authoritative mapping of \"task not found\" to HTTP 404 and the error-body shape; the implementation must not create an independent error authority or suppress the exception in the controller.",
+          "- `TaskRepository` remains the authoritative task store; no persistence, database, or framework changes are introduced.",
+          "- The ticket's acceptance criteria and the activated regression test are authoritative for the required failure semantics.",
+          "- `package.json` scripts (`build`, `test`) remain the authoritative repo-native verification entry points wrapping the Maven wrapper.",
+          "",
+          "## Acceptance Criteria",
+          "",
+          "- [ ] `PUT /tasks/non-existent-id` returns HTTP 404 with an error body whose `taskId` is `\"non-existent-id\"`.",
+          "- [ ] `PUT /tasks/{existing-id}` still updates title, description, and priority and returns HTTP 200 with the updated values.",
+          "- [ ] `update_taskNotFound_returns404` is enabled, executes, and passes with the 404 and `taskId` assertions.",
+          "- [ ] The test Javadoc describes the active regression coverage and no longer instructs manual `@Disabled` removal.",
+          "- [ ] All existing tests continue to pass and the build remains green.",
+          "",
+          "## Verification",
+          "",
+          "1. `npm run test --` — Source: `package.json#scripts.test` (runs `./mvnw test`). Confirms the full test suite, including the activated `TaskControllerTest#update_taskNotFound_returns404`, passes.",
+          "2. `npm run build --` — Source: `package.json#scripts.build` (runs `./mvnw verify`). Confirms the build and full verification suite pass.",
+          ""
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with an error body whose taskId equals the requested ID.",
+            "critical": true,
+            "claimScope": "specific_behavior",
+            "authoritySectionId": "implementation-step-2",
+            "expectedCheckId": "build",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "test",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            },
+            "coversRiskTriggers": ["command_contract"]
+          },
+          {
+            "statement": "A PUT /tasks/{id} request with an existing task ID still updates title, description, and priority and returns HTTP 200 with the updated task values.",
+            "critical": false,
+            "claimScope": "specific_behavior",
+            "authoritySectionId": "implementation-step-1",
+            "expectedCheckId": "test",
+            "expectedAssertion": {
+              "providerId": "junit",
+              "localId": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "npm run test --",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "npm run build --",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "The frozen unguarded TaskService.updateTask dereferences the missing task and returns HTTP 500; the activated regression assertion encodes the required 404/taskId behavior.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "accept",
+        "requiredFindings": [],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "any",
+            "reason": "must not block a plan whose activated regression assertion is a targeted falsification; an executed RED result is not required at plan review"
+          }
+        ],
+        "expectedEvidenceAssessment": "sufficient",
+        "rationale": "R-A adjudication after the observed R-B miss: the activated regression assertion is a concrete targeted falsification of the missing-ID 404/taskId property. Plan review does not require an already-executed RED result. The reviewer accepted R 6/6, so the Stage 1 full-loop blockers are classified as over-strict/harness-confounded.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Plans",
+          "src/templates/plan-claim-guidance.ts#Claim declarations",
+          "demos/reviewer-reference-suite/adjudication/r-and-r-plus.md"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "reproduction_plan_matches_fixture",
+          "verification_section_only_post_fix_runs"
+        ],
+        "authoredBy": "FlowGuard maintainers (R-A adjudication)",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "plan-r-plus-explicit-red-green",
+      "goldStandardType": "plan_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": false,
+        "futurePhaseChecksAllowed": true
+      },
+      "input": {
+        "subjectKind": "plan",
+        "planText": [
+          "# Implementation Plan",
+          "",
+          "> **Objective:** Fix `PUT /tasks/{id}` so a request for a non-existent task returns HTTP 404 with the requested task ID in the error body instead of HTTP 500, and activate the existing regression test as executable evidence. | **Scope:** `TaskService.updateTask` guard plus `TaskControllerTest.update_taskNotFound_returns404` activation and strengthening. | **Risk:** Low | **Version:** 1",
+          "",
+          "## Approach",
+          "",
+          "- Enforce the not-found invariant in the service layer by mirroring the existing `getTask()` null-check in `updateTask()`, so the controller stays thin and no HTTP concerns leak into it.",
+          "- Leave `TaskRepository`, `TaskNotFoundException`, and `GlobalExceptionHandler` unchanged: the exception type and handler already produce the required 404 body with `taskId`; the defect is only the missing guard before dereferencing `findById`.",
+          "- Activate the existing regression test rather than duplicating coverage, and add a body assertion proving the requested ID is preserved in the error response.",
+          "- Keep the change vertical and small: one production guard and one executable HTTP-level regression assertion across two files.",
+          "",
+          "## Implementation",
+          "",
+          "### 1. Guard missing task in TaskService.updateTask",
+          "",
+          "**Files:** src/main/java/com/example/taskmanager/service/TaskService.java",
+          "",
+          "**Changes:** In `updateTask(String id, CreateTaskRequest request)`, immediately after `Task existing = repository.findById(id);`, add a null-check that throws `new TaskNotFoundException(id)` before any `existing.set...` call or `repository.save(existing)`. Keep the existing update path and imports unchanged (`TaskNotFoundException` is already imported). Do not change `getTask()` or any other method.",
+          "",
+          "**Edge cases:** Unknown ID must throw before mutation and before `save`, so no partial write occurs. Existing ID must follow the current path and still update title, description, priority, and `updatedAt`. A null request body remains handled by controller-level `@Valid` and is out of scope.",
+          "",
+          "**Validation:** The source compiles, and `updateTask(\"non-existent-id\", request)` no longer dereferences null; control reaches `TaskNotFoundException`, which the existing handler maps to HTTP 404 with `taskId`.",
+          "",
+          "### 2. Activate and strengthen the regression test",
+          "",
+          "**Files:** src/test/java/com/example/taskmanager/controller/TaskControllerTest.java",
+          "",
+          "**Changes:** Remove `@Disabled` from `update_taskNotFound_returns404()` and delete the now-unused `org.junit.jupiter.api.Disabled` import. Keep `@Test`, the `put(\"/tasks/non-existent-id\")` request, and the existing `status().isNotFound()` assertion. Add `.andExpect(jsonPath(\"$.taskId\").value(\"non-existent-id\"))` so the error body proves the requested ID is preserved. Replace the Javadoc paragraph that instructs manual removal of `@Disabled` with a description of the now-active regression coverage (non-existent `PUT` ID returns 404 with the requested `taskId`).",
+          "",
+          "**Edge cases:** The request body is valid JSON, so validation passes and the request reaches the service guard. The error body's `taskId` comes from the path variable via `TaskNotFoundException`. `update_existing_task_returns_ok` remains untouched and continues to cover the success path.",
+          "",
+          "**Validation:** `update_taskNotFound_returns404` appears as an executed (not skipped) test, passes with HTTP 404, and asserts `$.taskId == \"non-existent-id\"`.",
+          "",
+          "## Change Inventory",
+          "",
+          "| Area | Files | Change |",
+          "|---|---|---|",
+          "| Service | src/main/java/com/example/taskmanager/service/TaskService.java | MODIFY — add null-check in `updateTask` that throws `TaskNotFoundException` |",
+          "| Test | src/test/java/com/example/taskmanager/controller/TaskControllerTest.java | MODIFY — remove `@Disabled`, add `taskId` body assertion, update Javadoc |",
+          "",
+          "## Contracts",
+          "",
+          "- **HTTP update contract (owner: `TaskController` + `GlobalExceptionHandler`):** `PUT /tasks/{id}` returns HTTP 200 with the updated task for an existing ID; for an unknown ID it must return HTTP 404 with a JSON body containing `error`, `taskId`, and `timestamp`. The `taskId` value must equal the requested path ID.",
+          "- **Service failure contract (owner: `TaskService`):** `updateTask` must throw `TaskNotFoundException` for an unknown ID and must not attempt to mutate or save a non-existent entity.",
+          "- **Error-mapping contract (owner: `GlobalExceptionHandler`):** The existing `TaskNotFoundException` handler remains the only mapper for this failure; no controller-level catch or new error shape is introduced.",
+          "- **Regression-test contract (owner: `TaskControllerTest`):** `update_taskNotFound_returns404` runs by default and asserts both HTTP 404 and `$.taskId == \"non-existent-id\"`; it no longer carries `@Disabled`.",
+          "- **Unchanged API contract:** `GET`, `POST`, `PATCH`, `DELETE`, and `search` endpoints, DTOs, enums, `Task` model, `TaskRepository`, and build configuration remain unchanged.",
+          "",
+          "## Authority Decisions",
+          "",
+          "- `TaskNotFoundException` plus `GlobalExceptionHandler` remain the authoritative mapping of \"task not found\" to HTTP 404 and the error-body shape; the implementation must not create an independent error authority or suppress the exception in the controller.",
+          "- `TaskRepository` remains the authoritative task store; no persistence, database, or framework changes are introduced.",
+          "- The ticket's acceptance criteria and the activated regression test are authoritative for the required failure semantics.",
+          "- `package.json` scripts (`build`, `test`) remain the authoritative repo-native verification entry points wrapping the Maven wrapper.",
+          "",
+          "## Acceptance Criteria",
+          "",
+          "- [ ] `PUT /tasks/non-existent-id` returns HTTP 404 with an error body whose `taskId` is `\"non-existent-id\"`.",
+          "- [ ] `PUT /tasks/{existing-id}` still updates title, description, and priority and returns HTTP 200 with the updated values.",
+          "- [ ] `update_taskNotFound_returns404` is enabled, executes, and passes with the 404 and `taskId` assertions.",
+          "- [ ] The test Javadoc describes the active regression coverage and no longer instructs manual `@Disabled` removal.",
+          "- [ ] All existing tests continue to pass and the build remains green.",
+          "",
+          "## Verification",
+          "",
+          "- Counterexample (RED): activate `TaskControllerTest#update_taskNotFound_returns404` before adding the guard (or temporarily revert the guard), execute the supplied `test` candidate `npm run test --`, and record the expected failure (HTTP 500 / missing `taskId`).",
+          "- Positive (GREEN): after adding the guard, execute `npm run test --` and `npm run build --` and record the 404/`taskId` pass.",
+          "- Use separate execution attempts for the RED counterexample and the GREEN positive checks. Do not count a second green success-path execution as the counterexample.",
+          "- Baseline and implementation validation execute both active checks; plan review does not require those future executions to exist yet.",
+          "",
+          "1. `npm run test --` — Source: `package.json#scripts.test` (runs `./mvnw test`). Confirms the full test suite, including the activated `TaskControllerTest#update_taskNotFound_returns404`, passes.",
+          "2. `npm run build --` — Source: `package.json#scripts.build` (runs `./mvnw verify`). Confirms the build and full verification suite pass.",
+          ""
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with an error body whose taskId equals the requested ID.",
+            "critical": true,
+            "claimScope": "specific_behavior",
+            "authoritySectionId": "implementation-step-2",
+            "expectedCheckId": "build",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "test",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            },
+            "coversRiskTriggers": ["command_contract"]
+          },
+          {
+            "statement": "A PUT /tasks/{id} request with an existing task ID still updates title, description, and priority and returns HTTP 200 with the updated task values.",
+            "critical": false,
+            "claimScope": "specific_behavior",
+            "authoritySectionId": "implementation-step-1",
+            "expectedCheckId": "test",
+            "expectedAssertion": {
+              "providerId": "junit",
+              "localId": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "npm run test --",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "npm run build --",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "plan_adr_section",
+            "artifactKind": "plan",
+            "sectionPath": ["Verification"]
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "The pre-fix TaskService.updateTask dereferences the missing task and returns HTTP 500; removing the guard after the fix reproduces the same faulty variant.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "accept",
+        "requiredFindings": [],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "any",
+            "reason": "must not block an explicit RED/GREEN falsification design that names the faulty variant and separate attempts"
+          }
+        ],
+        "expectedEvidenceAssessment": "sufficient",
+        "rationale": "R-B adjudication: R+ adds the explicit RED/GREEN design that A already contains. The counterexample names the pre-fix/faulty variant, requires the expected failure, and separates the RED and GREEN attempts. Plan review does not require the future executions to already exist.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Plans",
+          "src/templates/plan-claim-guidance.ts#Claim declarations",
+          "demos/reviewer-reference-suite/adjudication/r-and-r-plus.md"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "reproduction_plan_matches_fixture",
+          "verification_section_has_explicit_red_green"
+        ],
+        "authoredBy": "FlowGuard maintainers (R-B adjudication)",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "impl-a-executed-positive-and-adversarial",
+      "goldStandardType": "implementation_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": true,
+        "futurePhaseChecksAllowed": false
+      },
+      "input": {
+        "subjectKind": "implementation",
+        "subjectText": [
+          "Implementation summary",
+          "- TaskService.updateTask now throws TaskNotFoundException when findById returns null.",
+          "- TaskControllerTest#update_taskNotFound_returns404 is enabled and asserts HTTP 404 plus $.taskId.",
+          "- Validation evidence: build passed; test passed; the adversarial assertion passed on the current implementation digest.",
+          "- Positive and adversarial evidence come from separate attempts with distinct check identities.",
+          "- The TaskControllerTest Javadoc was updated from the baseline @Disabled instruction to the active regression coverage."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with an error body whose taskId equals the requested ID.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "build",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "test",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "validation_attempt",
+            "checkId": "build",
+            "status": "passed",
+            "assertion": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+          },
+          {
+            "kind": "validation_attempt",
+            "checkId": "test",
+            "status": "passed",
+            "assertion": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "Pre-fix service returns HTTP 500 for the unknown ID.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "accept",
+        "requiredFindings": [],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "major",
+            "reason": "must not reject executed positive and adversarial evidence with distinct attempts and a current digest"
+          }
+        ],
+        "expectedEvidenceAssessment": "sufficient",
+        "expectedProofGraphStates": {
+          "criticalClaim": "PROVEN"
+        },
+        "rationale": "The implementation adds the guard and activates the regression assertion. Both checks executed on the current revision, and the adversarial assertion passed in its own attempt. The formal claim state is PROVEN; the reviewer verdict is accept.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Implementations",
+          "src/templates/plan-claim-guidance.ts#Claim declarations"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "executed_evidence_present",
+          "separate_attempt_identities"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "impl-b-second-green-counterexample",
+      "goldStandardType": "implementation_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": true,
+        "futurePhaseChecksAllowed": false
+      },
+      "input": {
+        "subjectKind": "implementation",
+        "subjectText": [
+          "Implementation summary",
+          "- The service guard is present.",
+          "- Both checks are green.",
+          "- The adversarial assertion update_taskNotFound_returns404 is reported as skipped.",
+          "- The second green run of update_existing_task_returns_ok is presented as the counterexample.",
+          "- The TaskControllerTest Javadoc was updated from the baseline @Disabled instruction to the active regression coverage."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with an error body whose taskId equals the requested ID.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "validation_attempt",
+            "checkId": "test",
+            "status": "passed",
+            "assertion": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+          },
+          {
+            "kind": "validation_attempt",
+            "checkId": "build",
+            "status": "passed",
+            "assertion": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "second_green_run",
+        "faultyVariant": null,
+        "detectsViolation": false
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "major",
+            "reason": "the adversarial evidence is a second successful execution of the normal update path; it does not falsify the missing-ID 404 claim"
+          }
+        ],
+        "forbiddenFindings": [],
+        "expectedEvidenceAssessment": "insufficient_counterexample",
+        "expectedProofGraphStates": {
+          "criticalClaim": "NOT_VERIFIED"
+        },
+        "rationale": "Both checks are green, but the bound counterexample assertion observes the existing success path. The missing-ID assertion is skipped, so no executed evidence contradicts the failure mode. The formal claim state is NOT_VERIFIED and the reviewer must request changes.",
+        "contractRefs": [
+          "src/templates/mandates-reviewer-criteria.ts#For Implementations",
+          "src/templates/plan-claim-guidance.ts#Claim declarations"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "counterexample_is_second_green_run",
+          "missing_id_assertion_is_skipped"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "impl-c-missing-executed-evidence",
+      "goldStandardType": "implementation_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": true,
+        "futurePhaseChecksAllowed": false
+      },
+      "input": {
+        "subjectKind": "implementation",
+        "subjectText": [
+          "Implementation summary",
+          "- The service guard is present.",
+          "- The required checks were not executed in this review attempt.",
+          "- The author reports that the tests should pass but provides no bound validation attempt.",
+          "- The TaskControllerTest Javadoc was updated from the baseline @Disabled instruction to the active regression coverage."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with the requested taskId.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": []
+      },
+      "counterexampleDesign": {
+        "kind": "none",
+        "faultyVariant": null,
+        "detectsViolation": false
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "missingVerification",
+            "category": "completeness",
+            "severity": "major",
+            "reason": "no executed validation attempt is bound to the critical claim"
+          }
+        ],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "critical",
+            "reason": "must not claim a demonstrated implementation defect when execution evidence is simply absent"
+          }
+        ],
+        "expectedEvidenceAssessment": "missing_executed_evidence",
+        "expectedProofGraphStates": {
+          "criticalClaim": "NOT_VERIFIED"
+        },
+        "rationale": "The implementation is not proven because the required executed evidence is missing. The formal claim state is NOT_VERIFIED; the reviewer requests changes and records missing verification rather than inventing a defect.",
+        "contractRefs": ["src/templates/mandates-reviewer-criteria.ts#For Implementations"],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "no_executed_evidence_present"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "impl-d-contract-violation",
+      "goldStandardType": "implementation_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": true,
+        "futurePhaseChecksAllowed": false
+      },
+      "input": {
+        "subjectKind": "implementation",
+        "subjectText": [
+          "Implementation summary",
+          "- The controller now returns HTTP 200 with an empty body for unknown task IDs.",
+          "- The executed test was changed to expect 200, so the check is green.",
+          "- The approved ticket requires HTTP 404 with taskId."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with an unknown ID returns HTTP 200 with an empty body.",
+            "critical": true,
+            "authoritySectionId": "contracts",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "test",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "build",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "validation_attempt",
+            "checkId": "test",
+            "status": "passed",
+            "assertion": "com.example.taskmanager.controller.TaskControllerTest#update_existing_task_returns_ok"
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "second_green_run",
+        "faultyVariant": null,
+        "detectsViolation": false
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "changes_requested",
+        "requiredFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "correctness",
+            "severity": "critical",
+            "reason": "the implementation changes the approved HTTP 404 contract to HTTP 200 for unknown IDs"
+          }
+        ],
+        "forbiddenFindings": [],
+        "expectedEvidenceAssessment": "sufficient",
+        "expectedProofGraphStates": {
+          "criticalClaim": "CONTRADICTED"
+        },
+        "rationale": "The green check proves the wrong contract. The approved ticket requires 404, so the executed evidence contradicts the approved behavior. The reviewer must request changes.",
+        "contractRefs": [
+          "demos/java-task-manager/seed/TICKET.md#Acceptance Criteria",
+          "src/templates/mandates-reviewer-criteria.ts#For Implementations"
+        ],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "ticket_requires_404",
+          "implementation_requires_200"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    },
+    {
+      "caseId": "impl-e-style-only",
+      "goldStandardType": "implementation_review",
+      "fixture": {
+        "workspace": "demos/java-task-manager/seed",
+        "frozenRevision": "6a4ff271",
+        "ticketFile": "demos/java-task-manager/seed/TICKET.md",
+        "executionMode": "java_seed"
+      },
+      "phaseConstraints": {
+        "requiresExecutedEvidence": true,
+        "futurePhaseChecksAllowed": false
+      },
+      "input": {
+        "subjectKind": "implementation",
+        "subjectText": [
+          "Implementation summary",
+          "- The service guard is present and the regression assertion is active.",
+          "- build and test passed with the missing-ID assertion.",
+          "- Optional readability note: the local variable could be renamed; do not block on it.",
+          "- The TaskControllerTest Javadoc was updated from the baseline @Disabled instruction to the active regression coverage."
+        ],
+        "claims": [
+          {
+            "statement": "A PUT /tasks/{id} request with a non-existent task ID returns HTTP 404 with the requested taskId.",
+            "critical": true,
+            "authoritySectionId": "verification",
+            "claimScope": "specific_behavior",
+            "expectedCheckId": "build",
+            "counterexampleRequirement": {
+              "kind": "assertion",
+              "checkId": "test",
+              "assertion": {
+                "providerId": "junit",
+                "localId": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+              }
+            }
+          }
+        ],
+        "verificationCandidates": [
+          {
+            "kind": "test",
+            "command": "./mvnw test",
+            "source": "package.json#scripts.test",
+            "confidence": "high",
+            "candidateId": "vc_test"
+          },
+          {
+            "kind": "build",
+            "command": "./mvnw verify",
+            "source": "package.json#scripts.build",
+            "confidence": "high",
+            "candidateId": "vc_build"
+          }
+        ],
+        "evidenceRefs": [
+          {
+            "kind": "validation_attempt",
+            "checkId": "build",
+            "status": "passed",
+            "assertion": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+          },
+          {
+            "kind": "validation_attempt",
+            "checkId": "test",
+            "status": "passed",
+            "assertion": "com.example.taskmanager.controller.TaskControllerTest#update_taskNotFound_returns404"
+          }
+        ]
+      },
+      "counterexampleDesign": {
+        "kind": "targeted_falsification",
+        "faultyVariant": "Pre-fix service returns HTTP 500 for the unknown ID.",
+        "detectsViolation": true
+      },
+      "goldStandard": {
+        "expectedReviewerVerdict": "accept",
+        "requiredFindings": [],
+        "forbiddenFindings": [
+          {
+            "lane": "blockingIssues",
+            "category": "quality",
+            "severity": "minor",
+            "reason": "a rename preference is not a blocking issue"
+          }
+        ],
+        "expectedEvidenceAssessment": "sufficient",
+        "expectedProofGraphStates": {
+          "criticalClaim": "PROVEN"
+        },
+        "rationale": "The implementation satisfies the approved contract and the executed evidence is complete. The optional rename belongs in majorRisks or unknowns, not blockingIssues.",
+        "contractRefs": ["src/templates/mandates-reviewer-criteria.ts#For Implementations"],
+        "deterministicChecks": [
+          "fixture_files_exist",
+          "claims_schema_valid",
+          "executed_evidence_present",
+          "style_note_is_non_blocking"
+        ],
+        "authoredBy": "FlowGuard maintainers",
+        "authoredAt": "2026-10-19",
+        "reviewStatus": "approved"
+      },
+      "behaviorStatus": "NOT_VERIFIED"
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "reviewer-full-loop-comparison.v1",
+  "matrixId": "full-loop-b-comparison-2026-10-20T09-23-23-974Z",
+  "createdAt": "2026-10-20T09:23:23.974Z",
+  "model": "deepseek/deepseek-flash",
+  "variant": "max",
+  "hostVersion": "1.19.3",
+  "criteriaVersion": "p42-v7",
+  "reviewerTransport": {
+    "agentEffort": "none",
+    "parentVariant": "max",
+    "mode": "full_loop",
+    "rearm": "bounded by obligation budget",
+    "reviewerSteps": 10,
+    "stepBudgetOverride": "none; product default 10",
+    "configIsolation": "fresh OPENCODE_CONFIG_DIR per repetition"
+  },
+  "suiteVersion": "1.0.0",
+  "caseCorpusDigest": "61a624ebaf5c74798d341a9f2a6dbe664492835d3e6dc17f1fc9ecda40db648b",
+  "harness": {
+    "repoHead": "f5e5b52c2296cba8806c83a1bbc569b364b16dbf",
+    "dirty": true,
+    "node": "22.22.2",
+    "npm": "10.9.9",
+    "files": {
+      "demos/reviewer-reference-suite/cases.json": "a1063472a1fe463fd63d602c44df2eaa1de0a2e3ce57020d4910ee23ca713865",
+      "demos/reviewer-reference-suite/run-live.mjs": "091158a9a1fae046c82454652c74d4425f6aa1ebe6ce08e2e9b9082e22d06dc3",
+      "demos/reviewer-reference-suite/observe-chat-params.mjs": "7525203a5cf209690ec80c40c82a6622c69ccf0770b4ec56c0be5c83d6b84af1",
+      "demos/java-task-manager/run-live-matrix.mjs": "382b69bf2c8aac9b366a4a6534c62a9ae2c1e0b1fc252095451df82e1b83fd20",
+      "src/integration/review/dispatch/structured-followup.ts": "52a0f62be25d8d737f6c6b643ec9223be50467736615fe25e6dce75be5b37a18"
+    },
+    "harnessDigest": "ac6a4259099465e3f1800e90710917183d6fdf456c3779ef7bb7dff9d8647047"
+  },
+  "tarball": {
+    "path": "flowguard-core-2.0.0-tp.2.tgz",
+    "sha256": "b234c8737d49ebcf21a5127fd2e6d6eac71eff51b6da1bdbf4759cd72e05e09a"
+  },
+  "arms": [32000, 65536],
+  "repetitions": 3,
+  "cases": [
+    {
+      "caseId": "plan-b-second-green-counterexample",
+      "expectedReviewerVerdict": "changes_requested",
+      "requiredFinding": "counterexample sufficiency: a second green execution is not a targeted falsification",
+      "subjectDigest": "621a637cc74c2b67443a38c8648e67584c5eba1fb608c023fae798a2af7be22a"
+    }
+  ],
+  "outcomeMetrics": [
+    "verdict and required finding",
+    "recovery counts (attempts, truncations, step-budget aborts, authorized re-arms)",
+    "finding/evidence/attestation binding",
+    "total reasoning/output tokens and runtime including re-arms",
+    "provenance across superseding obligations"
+  ],
+  "exclusions": ["subject_fidelity_mismatch", "reviewer_completion_failure"]
+}
