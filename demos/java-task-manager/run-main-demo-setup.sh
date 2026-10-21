@@ -120,6 +120,16 @@ echo ""
 echo "--- Copying seed ---"
 cp -R "$SEED_DIR" "$TARGET_DIR"
 
+echo "--- Copying ISO evidence demo tooling ---"
+for artifact in "run-iso-mapping.sh" "iso27001-demo-mapping.json"; do
+    if [[ ! -f "$SCRIPT_DIR/$artifact" ]]; then
+        echo "Error: ISO demo artifact not found: $SCRIPT_DIR/$artifact" >&2
+        exit 1
+    fi
+    cp "$SCRIPT_DIR/$artifact" "$TARGET_DIR/$artifact"
+done
+chmod +x "$TARGET_DIR/run-iso-mapping.sh"
+
 echo "--- Initializing git repository ---"
 cd "$TARGET_DIR"
 git init --initial-branch main

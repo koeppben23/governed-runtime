@@ -162,6 +162,41 @@ comparison together with the main workspace by default. Use
 `run-reduced-ceremony-demo-setup.sh` directly only when preparing the A/B
 comparison on its own.
 
+### Optional Post-Export — ISO/IEC 27001:2022 Evidence Projection
+
+After the Development Flow reaches `COMPLETE`, the prepared workspace contains
+`run-iso-mapping.sh` and a synthetic demo mapping
+(`iso27001-demo-mapping.json`). The wrapper is a read-only projection over the
+already verified export; it does not call a model, does not modify the session,
+and does not create evidence.
+
+```bash
+./run-iso-mapping.sh --session <host-session-id>
+```
+
+The host session ID is the OpenCode session identity from the live evidence
+checklist, not the internal FlowGuard session ID. The wrapper writes:
+
+- `/tmp/flowguard-iso-reports/<host-session-id>/iso27001-report.json`
+- `/tmp/flowguard-iso-reports/<host-session-id>/iso27001-report.md`
+
+Exit `0` means the reports were produced; individual controls may still be
+`EVIDENCE_MISSING` or `NOT_VERIFIED`. Exit `1` is a usage/mapping/output error;
+exit `2` means the export is missing or not verifiable. Existing report
+directories are never overwritten.
+
+The demo mapping relates the verified technical evidence to A.8.15, A.8.25,
+A.8.29, and A.8.32. A.8.29 is explicitly a functional regression assertion
+example, not a claim of complete security-test coverage. The mapping is
+synthetic: it is not an adorsys SoA, organizational approval, or ISO
+conformity assessment. Read the Markdown report's limitations and the
+`EVIDENCE_*` status values; do not reduce them to a pass/fail headline.
+
+The wrapper resolves the installed FlowGuard CLI from the repo-scoped
+`.opencode/node_modules/@flowguard/core/dist/cli/install.js` or the global
+OpenCode config, with `FLOWGUARD_BIN` as an explicit override. It does not use
+`npx` or an unrelated CLI from `PATH`.
+
 ## Live Evidence Checklist
 
 Workspace preparation is not a live run. Record a distinct host-session ID and

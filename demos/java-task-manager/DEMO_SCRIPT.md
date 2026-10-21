@@ -333,6 +333,27 @@ covers it.
 
 ---
 
+### Step 12 — ISO/IEC 27001:2022 Evidence Projection (post-export)
+
+> The FlowGuard workflow is already complete. This optional closing step reads
+> the verified `/export` package through the existing
+> `flowguard inspect --iso27001-mapping` CLI. It does not call a model, does not
+> change the session, and does not create new evidence. The mapping is a
+> synthetic demo input, not an adorsys Statement of Applicability or approval.
+
+| Action                                             | What I Say                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./run-iso-mapping.sh --session <host-session-id>` | "Jetzt lese ich das bereits verifizierte Export-Paket mit einem Bash-Kommando gegen ein synthetisches ISO-27001-Demo-Mapping. Der Wrapper ruft nur den installierten `flowguard inspect`-Pfad auf — kein weiterer LLM-Aufruf, kein Netzwerkzugriff und keine Änderung am Export."                                                                                                                  |
+| Show the two generated reports                     | "Die Ausgabe liegt unter `/tmp/flowguard-iso-reports/<host-session-id>/`: `iso27001-report.json` für Maschinen und `iso27001-report.md` für Architekten, Auditoren und Security-Verantwortliche. Beide werden aus demselben verifizierten Paket erzeugt; der Wrapper prüft, dass Report-, Mapping- und Paket-Digest in beiden Dateien übereinstimmen."                                             |
+| Point out the actual control statuses              | "Ich lese die Statuswerte aus dem Report, nicht aus einer Erfolgsmeldung: `EVIDENCE_LINKED_VERIFIED`, `EVIDENCE_PRESENT_UNVERIFIED`, `EVIDENCE_MISSING` und `NOT_VERIFIED` bleiben sichtbar. Ein fehlender Nachweis ist ein gültiges Ergebnis; der Report wird trotzdem mit Exit 0 geschrieben."                                                                                                   |
+| Explain the A.8.29 example                         | "A.8.29 ist hier bewusst als technische Zuordnung des funktionalen 404-Regressionstests markiert. Der Test ist eine konkrete, gebundene JUnit-Assertion, aber kein Nachweis vollständiger Security-Test-Abdeckung. Der Report trägt die Einschränkung `TEST_SEMANTIC_APPROPRIATENESS_NOT_ASSESSED`; `EVIDENCE_LINKED_VERIFIED` bedeutet nur, dass die konfigurierte technische Regel erfüllt ist." |
+| State the boundary                                 | "Das ist Evidence-to-Control-Mapping, keine ISO-27001-Konformitätsbewertung. Die Organisation muss SoA, Anwendbarkeit, Risikobehandlung und Wirksamkeit weiterhin selbst verantworten. Der Report enthält bewusst keine Zertifizierungs-, Audit- oder Konformitätsaussage."                                                                                                                        |
+
+The host-session ID is the OpenCode session identity from the live evidence
+checklist — not the internal FlowGuard session ID. The demo mapping lives next
+to the wrapper in the prepared workspace. The wrapper supports only explicit
+`--session`; it never guesses the latest session.
+
 ### Summary Slide
 
 Ich habe den Regressionstest im Seed bewusst disabled, weil FlowGuard zurecht keinen
