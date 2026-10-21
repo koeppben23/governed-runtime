@@ -32,7 +32,7 @@ import type { RiskEnforcementDeps } from './plugin-risk.js';
 import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import { createOpenCodeHostAdapter, HostCapabilityMismatchError } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
-import type { OrchestratorClient } from './review/types.js';
+import type { OrchestratorClient, ReviewerExecutionFailure } from './review/types.js';
 import {
   isNativeReviewerTaskAfter,
   isNativeReviewerTaskBefore,
@@ -48,6 +48,15 @@ import {
   type ReviewerOutputCapFailure,
 } from './reviewer-output-cap.js';
 import { createReviewerOutputCapFailurePersister } from './reviewer-output-cap-failure.js';
+import {
+  createReviewerExecutionWatchdog,
+  type ReviewerExecutionWatchdog,
+} from './reviewer-execution-watchdog.js';
+import {
+  createReviewerExecutionFailurePersister,
+  createReviewerExecutionTaskFailurePersister,
+} from './reviewer-execution-failure.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -242,6 +251,7 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
   const activeCommandScopes = new Map<string, ActiveCommandScope>();
   const checkReworkContinuations = new Set<string>();
   const reviewerOutputCapFailures = new Map<string, ReviewerOutputCapFailure>();
+  const reviewerExecutionFailures = new Map<string, ReviewerExecutionFailure>();
   const auditDeps = createAuditDeps(
     ws,
     log,
@@ -270,6 +280,8 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
     activeCommandScopes,
     checkReworkContinuations,
     reviewerOutputCapFailures,
+    reviewerExecutionFailures,
+    reviewerExecutionTimeoutMs: config.reviewer.executionTimeoutMs,
     logError,
   });
   attachReviewerOutputCapHook(hooks, {
@@ -280,6 +292,14 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
     client,
     ws,
     orchestratorDeps,
+  });
+  attachReviewerExecutionWatchdog(hooks, {
+    config,
+    log,
+    client,
+    ws,
+    orchestratorDeps,
+    failures: reviewerExecutionFailures,
   });
   return hooks;
 }
@@ -308,6 +328,77 @@ function attachReviewerOutputCapHook(
       log: deps.log,
     }),
   });
+}
+
+function attachReviewerExecutionWatchdog(
+  hooks: Awaited<ReturnType<Plugin>>,
+  deps: {
+    readonly config: FlowGuardConfig;
+    readonly log: PluginLogger;
+    readonly client: OrchestratorClient;
+    readonly ws: PluginWorkspaceRuntime;
+    readonly orchestratorDeps: OrchestratorDeps;
+    readonly failures: Map<string, ReviewerExecutionFailure>;
+  },
+): ReviewerExecutionWatchdog {
+  const watchdog = createReviewerExecutionWatchdog({
+    config: deps.config.reviewer,
+    client: deps.client,
+    log: deps.log,
+    failures: deps.failures,
+    persistFailure: createReviewerExecutionFailurePersister({
+      client: deps.client,
+      ws: deps.ws,
+      orchestratorDeps: deps.orchestratorDeps,
+      log: deps.log,
+    }),
+    persistTaskFailure: createReviewerExecutionTaskFailurePersister({
+      client: deps.client,
+      ws: deps.ws,
+      orchestratorDeps: deps.orchestratorDeps,
+      log: deps.log,
+    }),
+  });
+
+  const cap = hooks['chat.params'];
+  hooks['chat.params'] = async (input, output) => {
+    await cap?.(input, output);
+    if (input.agent === REVIEWER_SUBAGENT_TYPE) await watchdog.onReviewerRequest(input.sessionID);
+  };
+
+  const before = hooks['tool.execute.before'];
+  hooks['tool.execute.before'] = async (input, output) => {
+    await before?.(input, output);
+    if (isNativeReviewerTaskBefore(output)) {
+      if (typeof input.callID === 'string' && input.callID.length > 0) {
+        watchdog.onTaskAuthorized(input.sessionID, input.callID);
+      }
+      return;
+    }
+    watchdog.onToolStart(input.sessionID, input.callID);
+  };
+
+  const after = hooks['tool.execute.after'];
+  hooks['tool.execute.after'] = async (input, output) => {
+    if (isNativeReviewerTaskAfter(input)) {
+      const childSessionId = output.metadata?.sessionId;
+      if (typeof childSessionId === 'string' && childSessionId.length > 0) {
+        watchdog.onSerializationStart(childSessionId);
+      }
+      await after?.(input, output);
+      if (typeof childSessionId === 'string' && childSessionId.length > 0) {
+        watchdog.complete(childSessionId);
+      }
+      return;
+    }
+    try {
+      await after?.(input, output);
+    } finally {
+      watchdog.onToolEnd(input.sessionID, input.callID);
+    }
+  };
+
+  return watchdog;
 }
 
 function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<ReturnType<Plugin>> {

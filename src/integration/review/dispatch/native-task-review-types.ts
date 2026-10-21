@@ -10,6 +10,7 @@ import type { findBindableAttempt } from '../../../state/review-continuation.js'
 import type {
   ReviewerCompletionFailureCode,
   ReviewerOutputCapFailure,
+  ReviewerExecutionFailure,
   SessionEnforcementState,
 } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
@@ -54,6 +55,10 @@ export interface NativeReviewTransportRuntime {
   readonly orchestratorDeps: OrchestratorDeps;
   /** Bounded reviewer output-cap failures, keyed by reviewer child session. */
   readonly reviewerOutputCapFailures: Map<string, ReviewerOutputCapFailure>;
+  /** Watchdog failures that could not be persisted before the after-hook. */
+  readonly reviewerExecutionFailures?: Map<string, ReviewerExecutionFailure>;
+  /** Absolute dispatch deadline used to reconcile expired authorized releases. */
+  readonly reviewerExecutionTimeoutMs?: number;
   readonly log: {
     info(service: string, message: string, extra?: Record<string, unknown>): void;
     warn(service: string, message: string, extra?: Record<string, unknown>): void;

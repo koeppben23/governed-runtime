@@ -1,6 +1,7 @@
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { REVIEW_FINDING_VALIDATION_REASONS } from './reasons-validation-review-findings.js';
+import { REVIEW_EXECUTION_REASONS } from './reasons-validation-execution.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
@@ -145,17 +146,6 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer Task again for it, and never submit or copy reviewer findings.',
       'Report this blocker and stop. Recovery is the next run of the originating FlowGuard command (for /plan: submit the current plan again): it re-arms a still-pending obligation within its attempt budget, or mints a fresh review obligation when the exhausted budget closed this one.',
-    ],
-  },
-
-  {
-    code: 'REVIEWER_TASK_ABORTED',
-    category: 'state',
-    messageTemplate:
-      'The reviewer task was aborted before it completed; an aborted review is never serialized, accepted, or restarted automatically: {reason}',
-    recoverySteps: [
-      'If the abort was intended, no action is required: the review obligation stays unfulfilled',
-      'To review again, re-run the originating FlowGuard command; it re-arms a fresh reviewer attempt on the same frozen obligation',
     ],
   },
 
@@ -644,5 +634,6 @@ export const REVIEW_VALIDATION_REASONS = [
       'Do not retry the command until the misconfigured transition path is fixed',
     ],
   },
+  ...REVIEW_EXECUTION_REASONS,
   ...REVIEW_FINDING_VALIDATION_REASONS,
 ] as const satisfies readonly BlockedReason[];

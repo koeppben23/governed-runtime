@@ -64,6 +64,17 @@ export interface ReviewerOutputCapFailure {
   readonly configured: number;
 }
 
+/** Terminal failure raised by the bounded reviewer execution watchdog. */
+export type ReviewerExecutionFailureCode =
+  'REVIEWER_EXECUTION_TIMEOUT' | 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
+
+export interface ReviewerExecutionFailure {
+  readonly code: ReviewerExecutionFailureCode;
+  readonly reason: string;
+  readonly phase: 'review' | 'tool' | 'serialization' | 'total';
+  readonly abortConfirmed: boolean;
+}
+
 /**
  * Host-classified retry diagnostic for a re-armed reviewer attempt.
  *
@@ -147,6 +158,8 @@ export interface OrchestratorClient {
     agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
   };
   session: {
+    /** Request cancellation of exactly one host session. */
+    abort?(opts: { path: { id: string } }): Promise<{ data?: boolean; error?: unknown }>;
     /** Host session metadata, used to resolve a reviewer child's parent. */
     get?(opts: { path: { id: string } }): Promise<{
       data?: { id?: string; parentID?: string } | undefined;
@@ -157,7 +170,13 @@ export interface OrchestratorClient {
       data?:
         | Array<{
             info?: { role?: string; finish?: string; error?: unknown };
-            parts?: Array<{ type?: string; text?: string; synthetic?: boolean; ignored?: boolean }>;
+            parts?: Array<{
+              type?: string;
+              text?: string;
+              synthetic?: boolean;
+              ignored?: boolean;
+              state?: { status?: string };
+            }>;
           }>
         | undefined;
       error?: unknown;

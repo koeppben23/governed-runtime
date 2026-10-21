@@ -117,7 +117,7 @@ describe('OpenCode reviewer capability contract', () => {
         { permission: 'webfetch', action: 'deny', pattern: '*' },
       ]),
     );
-    expect(agent.tools).toMatchObject({ read: true, glob: true, grep: true });
+    expect(agent.tools).toMatchObject({ read: true, glob: false, grep: false });
   });
 
   it('removes direct and MCP-prefixed FlowGuard tools from the reviewer', () => {

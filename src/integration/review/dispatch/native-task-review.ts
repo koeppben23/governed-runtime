@@ -12,11 +12,7 @@
  */
 
 import { readState } from '../../../adapters/persistence.js';
-import {
-  buildEnforcementError,
-  strictBlockedOutput,
-  unableReviewDiagnostics,
-} from '../../blocked-result.js';
+import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 
 import type { PendingReviewRetryDiagnostic } from '../types.js';
 import type {
@@ -27,7 +23,6 @@ import type {
 } from '../../types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
-import type { ReviewFindings } from '../../../state/evidence.js';
 import { hashText } from '../../../shared/hashing.js';
 import { ensureReviewAssurance, hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { findBindableAttempt } from '../../../state/review-continuation.js';
@@ -49,6 +44,13 @@ import {
   type CaptureFailureContext,
 } from './capture-failure-routing.js';
 import { projectReviewExecution } from './review-execution-projection.js';
+import {
+  blockIncoherentCompletedCapture,
+  handleReviewerExecutionFailure,
+  projectUnableToReview,
+  reconcileExpiredAuthorizedDispatchesOrThrow,
+  taskChildSessionId,
+} from './native-task-review-execution.js';
 import type {
   NativeReviewTransportRuntime,
   PersistedState,
@@ -217,7 +219,13 @@ export async function nativeReviewTaskBefore(
   }
 
   await reconcileBeforeReviewerDispatch(reconcile, sessionId);
-  const { sessDir, state } = await requireState(runtime, sessionId);
+  let { sessDir, state } = await requireState(runtime, sessionId);
+  ({ sessDir, state } = await reconcileExpiredAuthorizedDispatchesOrThrow(
+    runtime,
+    sessionId,
+    sessDir,
+    state,
+  ));
   const capacityLock = state.reviewAssurance?.capacityLock;
   if (capacityLock) {
     throw buildEnforcementError(
@@ -255,12 +263,6 @@ export async function nativeReviewTaskBefore(
     obligationId: obligation.obligationId,
     attemptId: attempt.attemptId,
   });
-}
-
-function taskChildSessionId(output: ToolHookAfterOutput): string | null {
-  return typeof output.metadata?.sessionId === 'string' && output.metadata.sessionId.length > 0
-    ? output.metadata.sessionId
-    : null;
 }
 
 interface StructuredReviewInput {
@@ -337,18 +339,6 @@ async function projectFulfilledReview(input: {
     verdict: input.verdict,
   });
 }
-
-function projectUnableToReview(
-  output: ToolHookAfterOutput,
-  obligationId: string,
-  findings: Pick<ReviewFindings, 'missingVerification' | 'unknowns'>,
-): void {
-  output.output = strictBlockedOutput('SUBAGENT_UNABLE_TO_REVIEW', {
-    obligationId,
-    ...unableReviewDiagnostics(findings),
-  });
-}
-
 type NativeTaskContextResolution =
   | {
       readonly kind: 'resolved';
@@ -446,6 +436,18 @@ async function fulfillNativeReviewTask(
   // The strict self-approval invariant (see review/validation) applied at the
   // native transport: the child identity reported by the host must differ from
   // the governed parent session it was dispatched from.
+  if (
+    await handleReviewerExecutionFailure({
+      runtime,
+      sessDir,
+      callId,
+      childSessionId,
+      hookOutput,
+      obligationId: lineage.obligation.obligationId,
+    })
+  )
+    return;
+
   if (childSessionId === sessionId) {
     await abandonAndBlock({
       runtime,
@@ -550,6 +552,7 @@ async function handleReviewerOutputCapFailure(
   return true;
 }
 
+// eslint-disable-next-line max-lines-per-function -- capture, validation, and binding are one fail-closed boundary.
 async function completeStructuredReview(
   runtime: NativeReviewTransportRuntime,
   input: StructuredReviewInput,
@@ -584,6 +587,19 @@ async function completeStructuredReview(
     });
     return;
   }
+  if (
+    await blockIncoherentCompletedCapture({
+      runtime,
+      sessDir,
+      sessionId,
+      obligationId: lineage.obligation.obligationId,
+      prepared: captured.prepared,
+      output: hookOutput,
+      phase: refreshedState.phase,
+    })
+  )
+    return;
+
   const validation = validateCapturedFindings(
     refreshedState,
     lineage.obligation,

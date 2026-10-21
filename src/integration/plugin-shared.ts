@@ -20,6 +20,7 @@ import type { OrchestratorDeps } from './plugin-orchestrator.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { ToolHookBeforeInput, ToolHookAfterInput } from './types.js';
 import type { ReviewerOutputCapFailure } from './reviewer-output-cap.js';
+import type { ReviewerExecutionFailure } from './review/types.js';
 
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
@@ -63,6 +64,9 @@ export interface FlowGuardPluginRuntime {
    * after-hook consumes the entry and blocks terminally instead of re-arming.
    */
   readonly reviewerOutputCapFailures: Map<string, ReviewerOutputCapFailure>;
+  /** Terminal execution-watchdog failures awaiting the native after-hook fallback. */
+  readonly reviewerExecutionFailures: Map<string, ReviewerExecutionFailure>;
+  readonly reviewerExecutionTimeoutMs: number;
   readonly logError: (message: string, err: unknown) => void;
 }
 

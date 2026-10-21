@@ -807,6 +807,15 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Bounded reviewer execution.** The OpenCode reviewer now has explicit tool,
+  review, serialization, and absolute execution deadlines. Tool use is limited
+  to `read` and the authorized repository observation tool; `glob` and `grep`
+  are denied. Expiry requests termination of the exact child and blocks
+  terminally only after host termination is confirmed; otherwise the attempt is
+  persisted as `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`. A same-child serialization
+  contract violation may receive one bounded, semantically-preserving format
+  correction; an incoherent verdict or changed finding content blocks.
+
 - **Terminal reviewer capacity failures.** A reviewer step-budget or output-limit
   failure is no longer retried automatically. The exact authorized dispatch is
   closed as `outcome_unknown`, the spent attempt is staled, the obligation is

@@ -526,6 +526,7 @@ scoped; a target may still be a valid mutation target in another profile):
 - `src/config/reasons-validation.ts` (base)
 - `src/config/reasons-validation-observation.ts` (base)
 - `src/config/reasons-validation-review.ts` (base)
+- `src/config/reasons-validation-execution.ts` (execution deadlines)
 - `src/config/reasons-validation-structured.ts` (base)
 - `src/presentation/reason-copy.ts` — static copy, 0 valid mutants (human-projection).
 - `src/presentation/human-projection.ts` — type-driven composition, 0 valid mutants (human-projection).

@@ -95,6 +95,11 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
         reason:
           'Extracted routing unit: it keeps native-task-review.ts inside the 650-LOC production budget while owning retry-vs-terminal capture routing and stale-child persistence.',
       },
+      {
+        file: 'integration/review/dispatch/native-task-review-execution.ts',
+        reason:
+          'Extracted execution-failure fallback keeps native-task-review.ts inside the 650-LOC production budget.',
+      },
     ],
   },
   {
@@ -352,6 +357,8 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-shared.ts', owner: 'root-composition' },
   { file: 'integration/plugin-workspace.ts', owner: 'root-composition' },
   { file: 'integration/plugin.ts', owner: 'root-composition' },
+  { file: 'integration/reviewer-execution-failure.ts', owner: 'root-composition' },
+  { file: 'integration/reviewer-execution-watchdog.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-output-cap.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-output-cap-failure.ts', owner: 'root-composition' },
   { file: 'integration/proofgraph/approval-projection.ts', owner: 'proofgraph' },
@@ -403,6 +410,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   { file: 'integration/review/context/frozen-reviewer-context.ts', owner: 'review-context' },
 
+  { file: 'integration/review/dispatch/native-task-review-execution.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-prompt.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-types.ts', owner: 'review-dispatch' },

@@ -659,6 +659,39 @@ reviewer baseline; when it is set, the plugin still applies
 `reviewer.outputTokenMax` to the reviewer. The fallback affects the whole host
 process, not only the reviewer.
 
+### Reviewer Execution Budgets (OpenCode)
+
+The reviewer execution path has independent upper bounds and one absolute deadline:
+
+```json
+{
+  "reviewer": {
+    "toolTimeoutMs": 20000,
+    "reviewTimeoutMs": 80000,
+    "serializationTimeoutMs": 25000,
+    "executionTimeoutMs": 120000
+  }
+}
+```
+
+`toolTimeoutMs` is nested inside `reviewTimeoutMs`; it is not additive. The
+absolute deadline starts at reviewer dispatch authorization and covers child
+discovery, review, same-child serialization, validation, and binding. The
+remaining budget is headroom for orchestration and binding, not a sleep.
+
+When a deadline expires, FlowGuard requests termination of the exact reviewer
+child and polls host state. A blocked attempt is persisted with
+`REVIEWER_EXECUTION_TIMEOUT` only after termination is confirmed. If host
+quiescence cannot be established, the attempt is persisted as
+`REVIEWER_EXECUTION_OUTCOME_UNKNOWN` and no new review may start in the same
+turn. A client timeout or an abort acknowledgement alone is not termination
+proof.
+
+The productive OpenCode reviewer may use `read` and
+`flowguard_observe_repository`; `glob` and `grep` are denied. The prepared
+review context and observation authority must supply the required evidence. A
+missing-evidence review blocks rather than silently searching the repository.
+
 The hook changes the model request only. OpenCode's internal context/compaction
 reservation is not changed by this setting; that remains a documented limitation
 for very large contexts. A plugin loaded after FlowGuard can also overwrite
