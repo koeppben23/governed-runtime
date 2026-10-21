@@ -7,10 +7,12 @@
 import type { ToolHookAfterOutput } from '../../types.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 import { strictBlockedOutput, unableReviewDiagnostics } from '../../blocked-result.js';
+import { projectReviewExecution } from './review-execution-projection.js';
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
 import { abandonAndBlock, clearPendingReviewForObligation } from './capture-failure-routing.js';
 import { abandonAndBlockByHostCall } from './durable-dispatch.js';
 import { buildEnforcementError } from '../../blocked-result.js';
+import { readState } from '../../../adapters/persistence.js';
 import type { PersistedState } from './native-task-review-types.js';
 
 export async function handleReviewerExecutionFailure(input: {
@@ -135,4 +137,56 @@ export async function reconcileExpiredAuthorizedDispatchesOrThrow(
     'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
     'A prior authorized reviewer dispatch exceeded its absolute deadline before a child was observed. No new reviewer may start until that host outcome is reconciled.',
   );
+}
+
+export async function guardPreBindReview(input: {
+  readonly runtime: NativeReviewTransportRuntime;
+  readonly sessDir: string;
+  readonly obligationId: string;
+  readonly output: ToolHookAfterOutput;
+}): Promise<boolean> {
+  const state = await readState(input.sessDir);
+  const lock = state?.reviewAssurance?.capacityLock;
+  const obligation = state?.reviewAssurance?.obligations.find(
+    (item) => item.obligationId === input.obligationId,
+  );
+  if (obligation?.status !== 'blocked') return false;
+  input.output.output = strictBlockedOutput(
+    lock?.code ?? obligation.blockedCode ?? 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    {
+      obligationId: input.obligationId,
+      reason: 'The review was terminated before evidence binding.',
+    },
+  );
+  return true;
+}
+
+export async function projectFulfilledReview(input: {
+  readonly runtime: NativeReviewTransportRuntime;
+  readonly sessDir: string;
+  readonly sessionId: string;
+  readonly childSessionId: string;
+  readonly attemptId: string;
+  readonly obligationId: string;
+  readonly verdict: string;
+  readonly output: ToolHookAfterOutput;
+}): Promise<void> {
+  const boundState = await readState(input.sessDir);
+  const invocation = boundState?.reviewAssurance?.invocations.find(
+    (item) => item.attemptId === input.attemptId && item.childSessionId === input.childSessionId,
+  );
+  input.output.output = JSON.stringify({
+    status: 'Independent reviewer completed in a visible native child session.',
+    reviewDispatch: { required: true, completed: true, verdict: input.verdict },
+    ...(invocation ? { reviewExecution: projectReviewExecution(invocation) } : {}),
+  });
+  if (invocation)
+    input.output.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
+  input.runtime.log.info('orchestrator', 'native reviewer Task fulfilled review obligation', {
+    sessionId: input.sessionId,
+    childSessionId: input.childSessionId,
+    obligationId: input.obligationId,
+    attemptId: input.attemptId,
+    verdict: input.verdict,
+  });
 }

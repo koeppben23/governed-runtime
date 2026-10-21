@@ -99,12 +99,7 @@ export class ReviewerExecutionWatchdog {
       }
     }
     const task = parentSessionId
-      ? [...this.tasks.values()].find(
-          (candidate) =>
-            candidate.parentSessionId === parentSessionId &&
-            !candidate.childSessionId &&
-            !candidate.expired,
-        )
+      ? await this.findExactTask(parentSessionId, childSessionId)
       : undefined;
     if (task) {
       task.childSessionId = childSessionId;
@@ -117,6 +112,14 @@ export class ReviewerExecutionWatchdog {
         parentSessionId,
         childSessionId,
         reviewTimeoutMs: this.deps.config.reviewTimeoutMs,
+      });
+      return;
+    }
+    if (this.tasks.size > 0) {
+      this.deps.log.error('review', 'reviewer child has no exact task dispatch mapping', {
+        childSessionId,
+        parentSessionId,
+        pendingTasks: this.tasks.size,
       });
       return;
     }
@@ -140,6 +143,40 @@ export class ReviewerExecutionWatchdog {
       reviewTimeoutMs: this.deps.config.reviewTimeoutMs,
       executionTimeoutMs: this.deps.config.executionTimeoutMs,
     });
+  }
+
+  /** Resolve the task release by the parent-recorded Task call metadata, never by order. */
+  private async findExactTask(
+    parentSessionId: string,
+    childSessionId: string,
+  ): Promise<Entry | undefined> {
+    const candidates = [...this.tasks.values()].filter(
+      (candidate) =>
+        candidate.parentSessionId === parentSessionId &&
+        !candidate.childSessionId &&
+        !candidate.expired,
+    );
+    if (candidates.length === 0) return undefined;
+    const messages = this.deps.client.session.messages;
+    if (typeof messages !== 'function') return undefined;
+    try {
+      const response = await messages({ path: { id: parentSessionId } });
+      const callIds = new Set(
+        (response.data ?? []).flatMap((message) =>
+          (message.parts ?? []).flatMap((part) => {
+            if (part.type !== 'tool' || part.state?.metadata?.sessionId !== childSessionId)
+              return [];
+            return typeof part.callID === 'string' ? [part.callID] : [];
+          }),
+        ),
+      );
+      const matches = candidates.filter(
+        (candidate) => candidate.callId && callIds.has(candidate.callId),
+      );
+      return matches.length === 1 ? matches[0] : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   onToolStart(childSessionId: string, callId: string | undefined): void {
@@ -289,22 +326,37 @@ export class ReviewerExecutionWatchdog {
     });
   }
 
+  // eslint-disable-next-line complexity -- quiescence requires all positive host signals.
   private async confirmTerminal(childSessionId: string): Promise<boolean> {
     if (typeof this.deps.client.session.messages !== 'function') return false;
-    try {
-      const response = await this.deps.client.session.messages({ path: { id: childSessionId } });
-      const messages = response.data;
-      if (!Array.isArray(messages) || messages.length === 0) return false;
-      const assistants = messages.filter((message) => message.info?.role === 'assistant');
-      const last = assistants.at(-1);
-      if (!last || (!last.info?.finish && !last.info?.error)) return false;
-      const runningTool = last.parts?.some(
-        (part) => part.type === 'tool' && part.state?.status === 'running',
-      );
-      return runningTool !== true;
-    } catch {
-      return false;
+    if (typeof this.deps.client.session.status !== 'function') return false;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const [status, history] = await Promise.all([
+          this.deps.client.session.status(),
+          this.deps.client.session.messages({ path: { id: childSessionId } }),
+        ]);
+        if (status.error || !status.data) return false;
+        const hostState = status.data[childSessionId]?.type ?? 'idle';
+        if (hostState !== 'idle') return false;
+        const messages = history.data;
+        if (!Array.isArray(messages) || messages.length === 0) return false;
+        const running = messages.some((message) =>
+          (message.parts ?? []).some(
+            (part) =>
+              part.type === 'tool' &&
+              (part.state?.status === 'running' || part.state?.status === 'pending'),
+          ),
+        );
+        if (running) return false;
+        const assistants = messages.filter((message) => message.info?.role === 'assistant');
+        const last = assistants.at(-1);
+        if (!last || (!last.info?.finish && !last.info?.error)) return false;
+      } catch {
+        return false;
+      }
     }
+    return true;
   }
 }
 

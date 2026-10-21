@@ -165,6 +165,8 @@ export interface OrchestratorClient {
       data?: { id?: string; parentID?: string } | undefined;
       error?: unknown;
     }>;
+    /** Host status map; `idle` is the only quiescent state. */
+    status?(): Promise<{ data?: Record<string, { type?: string }> | undefined; error?: unknown }>;
     /** Host-recorded session messages; used to verify reviewer task completion. */
     messages?(opts: { path: { id: string } }): Promise<{
       data?:
@@ -175,7 +177,9 @@ export interface OrchestratorClient {
               text?: string;
               synthetic?: boolean;
               ignored?: boolean;
-              state?: { status?: string };
+              callID?: string;
+              tool?: string;
+              state?: { status?: string; metadata?: { sessionId?: string } };
             }>;
           }>
         | undefined;

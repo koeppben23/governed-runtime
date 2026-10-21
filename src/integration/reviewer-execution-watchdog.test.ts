@@ -21,15 +21,31 @@ function client(terminal = true): OrchestratorClient {
       abort: vi.fn(async () => ({ data: true })),
       get: vi.fn(async () => ({ data: { id: 'child', parentID: 'parent' } })),
       prompt: vi.fn(async () => ({ data: {} })),
-      messages: vi.fn(async () => ({
-        data: terminal
-          ? [
-              {
-                info: { role: 'assistant', finish: 'stop' },
-                parts: [{ type: 'text', text: 'done' }],
-              },
-            ]
-          : [],
+      status: vi.fn(async () => ({ data: { child: { type: 'idle' } } })),
+      messages: vi.fn(async (opts: { path: { id: string } }) => ({
+        data:
+          opts.path.id === 'parent'
+            ? [
+                {
+                  info: { role: 'assistant' },
+                  parts: [
+                    {
+                      type: 'tool',
+                      tool: 'task',
+                      callID: 'call-1',
+                      state: { status: 'completed', metadata: { sessionId: 'child' } },
+                    },
+                  ],
+                },
+              ]
+            : terminal
+              ? [
+                  {
+                    info: { role: 'assistant', finish: 'stop' },
+                    parts: [{ type: 'text', text: 'done' }],
+                  },
+                ]
+              : [],
       })),
     },
   };

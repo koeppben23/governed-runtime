@@ -43,10 +43,11 @@ import {
   clearPendingReviewForObligation,
   type CaptureFailureContext,
 } from './capture-failure-routing.js';
-import { projectReviewExecution } from './review-execution-projection.js';
 import {
   blockIncoherentCompletedCapture,
+  guardPreBindReview,
   handleReviewerExecutionFailure,
+  projectFulfilledReview,
   projectUnableToReview,
   reconcileExpiredAuthorizedDispatchesOrThrow,
   taskChildSessionId,
@@ -310,35 +311,6 @@ async function writeBindingFailure(
   );
 }
 
-async function projectFulfilledReview(input: {
-  readonly runtime: NativeReviewTransportRuntime;
-  readonly sessDir: string;
-  readonly sessionId: string;
-  readonly childSessionId: string;
-  readonly attemptId: string;
-  readonly obligationId: string;
-  readonly verdict: string;
-  readonly output: ToolHookAfterOutput;
-}): Promise<void> {
-  const boundState = await readState(input.sessDir);
-  const invocation = boundState?.reviewAssurance?.invocations.find(
-    (item) => item.attemptId === input.attemptId && item.childSessionId === input.childSessionId,
-  );
-  input.output.output = JSON.stringify({
-    status: 'Independent reviewer completed in a visible native child session.',
-    reviewDispatch: { required: true, completed: true, verdict: input.verdict },
-    ...(invocation ? { reviewExecution: projectReviewExecution(invocation) } : {}),
-  });
-  if (invocation)
-    input.output.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
-  input.runtime.log.info('orchestrator', 'native reviewer Task fulfilled review obligation', {
-    sessionId: input.sessionId,
-    childSessionId: input.childSessionId,
-    obligationId: input.obligationId,
-    attemptId: input.attemptId,
-    verdict: input.verdict,
-  });
-}
 type NativeTaskContextResolution =
   | {
       readonly kind: 'resolved';
@@ -615,6 +587,16 @@ async function completeStructuredReview(
     });
     return;
   }
+
+  if (
+    await guardPreBindReview({
+      runtime,
+      sessDir,
+      obligationId: lineage.obligation.obligationId,
+      output: hookOutput,
+    })
+  )
+    return;
 
   const result = await bindNativeReviewEvidence({
     runtime,
