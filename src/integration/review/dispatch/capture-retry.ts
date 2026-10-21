@@ -118,7 +118,7 @@ export const TERMINAL_REVIEWER_CAPTURE_CODES: readonly TerminalReviewerCaptureCo
   codesWithClassification('terminal') as readonly TerminalReviewerCaptureCode[];
 
 /** Reviewer-capacity failures that close the obligation without an automatic re-arm. */
-export const CAPACITY_REVIEWER_CAPTURE_CODES = [
+const CAPACITY_REVIEWER_CAPTURE_CODES = [
   'REVIEWER_STEP_BUDGET_EXHAUSTED',
   'REVIEWER_OUTPUT_TRUNCATED',
 ] as const;
