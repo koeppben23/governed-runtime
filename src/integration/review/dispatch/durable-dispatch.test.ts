@@ -1223,4 +1223,29 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.invocations).toHaveLength(0);
     expect(after.dispatches[0]).toMatchObject({ dispatchStatus: 'authorized' });
   });
+
+  it('BAD: refuses a late bind inside the same evidence mutation', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
+      ...recordingParams(attempt.attemptId, obligation.obligationId),
+      deadlineAt: new Date(0).toISOString(),
+    });
+
+    expect(result).toBe('execution_expired');
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.invocations).toHaveLength(0);
+    expect(after.attempts[0]!.status).toBe('created');
+    expect(after.obligations[0]!.status).toBe('pending');
+    expect(after.dispatches[0]!.dispatchStatus).toBe('authorized');
+  });
 });

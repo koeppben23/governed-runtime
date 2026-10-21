@@ -406,6 +406,7 @@ export async function bindNativeReviewEvidence(input: {
   lineage: NativeReviewLineage;
   prepared: Record<string, unknown>;
   fulfilledAt: string;
+  executionDeadlineAt: string;
   phase: SessionState['phase'];
 }) {
   const { obligation, attempt, dispatch } = input.lineage;
@@ -435,6 +436,7 @@ export async function bindNativeReviewEvidence(input: {
     findingsHash,
     invokedAt: dispatch.dispatchAuthorizedAt,
     fulfilledAt: input.fulfilledAt,
+    deadlineAt: input.executionDeadlineAt,
     reviewerResult,
     semanticIntents: nativeReviewAuditIntents({
       obligation,

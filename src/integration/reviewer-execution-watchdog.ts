@@ -143,7 +143,10 @@ export class ReviewerExecutionWatchdog {
           (message.parts ?? []).flatMap((part) => {
             if (part.type !== 'tool' || part.state?.metadata?.sessionId !== childSessionId)
               return [];
-            return typeof part.callID === 'string' ? [part.callID] : [];
+            // The before-hook receives the OpenCode part ID as callID; the
+            // Task part's protocol callID is a different ULID and is not the
+            // durable dispatch key.
+            return typeof part.id === 'string' ? [part.id] : [];
           }),
         ),
       );

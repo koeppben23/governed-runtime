@@ -303,7 +303,9 @@ async function writeBindingFailure(
       ? 'SUBAGENT_EVIDENCE_REUSED'
       : result === 'lineage_unavailable'
         ? 'REVIEW_ATTEMPT_UNAVAILABLE'
-        : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+        : result === 'execution_expired'
+          ? 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN'
+          : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
     captureFailureBlockDetail({
       obligationId: input.obligationId,
       reason: `Native reviewer evidence binding returned ${result}.`,
@@ -607,6 +609,10 @@ async function completeStructuredReview(
     lineage,
     prepared: captured.prepared,
     fulfilledAt: captured.fulfilledAt,
+    executionDeadlineAt: new Date(
+      Date.parse(lineage.dispatch.dispatchAuthorizedAt) +
+        (runtime.reviewerExecutionTimeoutMs ?? 600_000),
+    ).toISOString(),
     phase: refreshedState.phase,
   });
   if (result !== 'fulfilled') {

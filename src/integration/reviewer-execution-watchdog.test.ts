@@ -33,9 +33,10 @@ function client(
                 {
                   info: { role: 'assistant' },
                   parts: taskCallIds.map((callID) => ({
+                    id: callID,
                     type: 'tool',
                     tool: 'task',
-                    callID,
+                    callID: `protocol-${callID}`,
                     state: { status: 'completed', metadata: { sessionId: 'child' } },
                   })),
                 },

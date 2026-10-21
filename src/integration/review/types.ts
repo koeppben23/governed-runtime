@@ -173,6 +173,7 @@ export interface OrchestratorClient {
         | Array<{
             info?: { role?: string; finish?: string; error?: unknown };
             parts?: Array<{
+              id?: string;
               type?: string;
               text?: string;
               synthetic?: boolean;
@@ -202,6 +203,7 @@ export interface OrchestratorClient {
         | {
             /** Response parts are diagnostics only, never reviewer authority. */
             parts?: Array<{
+              id?: string;
               type?: string;
               text?: string;
             }>;
