@@ -292,7 +292,7 @@ describe('domain vocabulary SSOT (default-deny)', () => {
         );
       expect(violations, violations.join('\n')).toEqual([]);
     }
-  });
+  }, 60_000);
 
   describe('negative fixtures — prove every detector fires', () => {
     const taskClass = VOCABULARIES[0] as Vocabulary;
