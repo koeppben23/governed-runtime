@@ -59,6 +59,7 @@ function fixture(name: string): { data: unknown[] } {
 
 const OCT19 = fixture('reviewer-plan-2026-10-19-pre-followup-redacted.json');
 const YPE7QR = fixture('reviewer-step-budget-yPE7Qr.json');
+const OCT21_AT_LIMIT = fixture('reviewer-plan-2026-10-21-at-limit-redacted.json');
 
 function clientReturning(entry: unknown): OrchestratorClient {
   return {
@@ -85,6 +86,18 @@ describe('reviewer task completion - real host fixtures', () => {
 
   it('CORNER: the yPE7Qr child stays a host step-budget stop', () => {
     expect(codeOf(YPE7QR.data)).toBe('REVIEWER_STEP_BUDGET_EXHAUSTED');
+  });
+
+  it('BAD: the 2026-10-21 at-limit child with a plausible final text stays a step-budget stop', () => {
+    const assistants = OCT21_AT_LIMIT.data.filter(
+      (entry) => (entry as { info?: { role?: string } }).info?.role === 'assistant',
+    );
+    expect(assistants).toHaveLength(10);
+    expect(classifyReviewerTaskMessages(OCT21_AT_LIMIT.data)).toEqual({
+      kind: 'incomplete',
+      code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+      detail: 'steps=10; finish=stop; error=none',
+    });
   });
 });
 

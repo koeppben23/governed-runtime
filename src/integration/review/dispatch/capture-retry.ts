@@ -55,9 +55,6 @@ const CLASSIFICATION = {
   HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION: 'retryable',
   HOST_STRUCTURED_OUTPUT_REQUIRED: 'retryable',
   REVIEW_EVIDENCE_NOT_OBSERVED: 'retryable',
-  REVIEWER_STEP_BUDGET_EXHAUSTED: 'retryable',
-  // Proven truncation / missing final answer: an honest fresh review may finish.
-  REVIEWER_OUTPUT_TRUNCATED: 'retryable',
   REVIEWER_TASK_INCOMPLETE: 'retryable',
   SUBAGENT_CHALLENGE_CONTRADICTED: 'retryable',
   SUBAGENT_CHALLENGE_COUNT_INCOHERENT: 'retryable',
@@ -74,6 +71,8 @@ const CLASSIFICATION = {
   REVIEW_EVIDENCE_LOCATION_INVALID: 'retryable',
   REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE: 'retryable',
   // Terminal: capability, mandate, integrity, provenance, reuse, exhaustion.
+  REVIEWER_STEP_BUDGET_EXHAUSTED: 'terminal',
+  REVIEWER_OUTPUT_TRUNCATED: 'terminal',
   STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE: 'terminal',
   STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE: 'terminal',
   SUBAGENT_MANDATE_MISSING: 'terminal',
@@ -117,6 +116,17 @@ export const RETRYABLE_REVIEWER_CAPTURE_CODES: readonly RetryableReviewerCapture
 /** Every known terminal capture/binding failure code. */
 export const TERMINAL_REVIEWER_CAPTURE_CODES: readonly TerminalReviewerCaptureCode[] =
   codesWithClassification('terminal') as readonly TerminalReviewerCaptureCode[];
+
+/** Reviewer-capacity failures that close the obligation without an automatic re-arm. */
+const CAPACITY_REVIEWER_CAPTURE_CODES = [
+  'REVIEWER_STEP_BUDGET_EXHAUSTED',
+  'REVIEWER_OUTPUT_TRUNCATED',
+] as const;
+export type CapacityReviewerCaptureCode = (typeof CAPACITY_REVIEWER_CAPTURE_CODES)[number];
+
+export function isCapacityReviewerCaptureCode(code: string): code is CapacityReviewerCaptureCode {
+  return (CAPACITY_REVIEWER_CAPTURE_CODES as readonly string[]).includes(code);
+}
 
 /**
  * Phase-legal recovery for a spent/interrupted reviewer release. Every

@@ -218,6 +218,15 @@ export async function nativeReviewTaskBefore(
 
   await reconcileBeforeReviewerDispatch(reconcile, sessionId);
   const { sessDir, state } = await requireState(runtime, sessionId);
+  const capacityLock = state.reviewAssurance?.capacityLock;
+  if (capacityLock) {
+    throw buildEnforcementError(
+      'REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND',
+      'A previous reviewer exhausted its execution capacity and the review obligation is blocked. ' +
+        'No reviewer Task may be started in the same user turn.',
+      { obligationId: capacityLock.obligationId, code: capacityLock.code },
+    );
+  }
   const { obligation, attempt, retryDiagnostics } = requireCurrentAttempt(
     runtime,
     sessionId,

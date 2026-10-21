@@ -670,7 +670,7 @@ reviewer reference suite: 65K single-review matrix 9/9 expected, full-loop B 3/3
 bound `changes_requested`, and full-loop R 3/3 `accept` in the targeted
 three-repetition run (3/4 accept including the earlier R-B false positive). The
 32K fallback is selected by setting `reviewer.outputTokenMax` to `32000`. Monitor
-reasoning-token use, truncations, authorized re-arms, and runtime on demo runs;
+reasoning-token use, truncations, capacity closures, and runtime on demo runs;
 the R-B counterexample interpretation remains a documented residual semantic
 risk.
 

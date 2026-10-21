@@ -170,43 +170,25 @@ async function driveToBudgetClosure() {
   const hooks = await bootPlugin(structuredPrompt);
   await registerPlanResponse(hooks, submittedRaw, 'plan-1');
 
-  const runs: Awaited<ReturnType<typeof runReviewerTask>>[] = [];
-  for (let i = 1; i <= 5; i++) {
-    const run = await runReviewerTask(hooks, `task-${i}`);
-    runs.push(run);
-    if (run.result.reviewRetry === undefined) break;
-    expect(run.result.reviewRetry).toMatchObject({
-      code: 'REVIEWER_OUTPUT_TRUNCATED',
-      retryable: true,
-    });
-  }
-  return { closedObligationId, structuredPrompt, hooks, runs };
+  const run = await runReviewerTask(hooks, 'task-1');
+  return { closedObligationId, structuredPrompt, hooks, runs: [run] };
 }
 
 describe('reviewer re-arm budget exhaustion: executable recovery', () => {
-  it('closes without claiming a fresh attempt, and a resubmitted unchanged plan is the only legal path', async () => {
+  it('closes terminally without a fresh attempt, and releases only for a new explicit command', async () => {
     const { closedObligationId, structuredPrompt, hooks, runs } = await driveToBudgetClosure();
-    // At least one re-arm happened, so the retry prompt is really exercised.
-    expect(runs.length).toBeGreaterThan(1);
-    const closure = runs.at(-1)!.result;
+    expect(runs).toHaveLength(1);
+    const closure = runs[0]!.result;
     expect(closure).toMatchObject({ error: true, code: 'REVIEWER_OUTPUT_TRUNCATED' });
     expect(closure.reviewRetry).toBeUndefined();
-    // The truncated reviews were never serialized.
+    // The truncated review was never serialized.
     expect(structuredPrompt).not.toHaveBeenCalled();
 
-    // BAD: the closure output must not claim a re-armed attempt.
     const recovery = (closure.recovery as string[]).join('\n');
     expect(recovery).not.toMatch(/re-armed automatically/i);
     expect(recovery).not.toContain('Invoke the reviewer Task again');
-    expect(recovery).toContain('do not invoke the reviewer Task again');
-    expect(String(closure.message)).toContain('no fresh reviewer attempt was authorized');
-
-    // Every re-armed prompt reports an unfinished task, never rejected output.
-    for (const run of runs.slice(1)) {
-      expect(run.prompt).toContain('Prior Reviewer Task Not Completed');
-      expect(run.prompt).toContain('- Code: REVIEWER_OUTPUT_TRUNCATED');
-      expect(run.prompt).not.toContain('Prior Output Rejected');
-    }
+    expect(recovery).toContain('Do not invoke the reviewer Task again');
+    expect(recovery).toContain('new explicit review command');
 
     const sessDir = await sessionDir();
     const closed = (await readState(sessDir))!;
@@ -214,28 +196,53 @@ describe('reviewer re-arm budget exhaustion: executable recovery', () => {
       (o) => o.obligationId === closedObligationId,
     )!;
     expect(closedObligation.status).toBe('blocked');
+    expect(closedObligation.blockedCode).toBe('REVIEWER_OUTPUT_TRUNCATED');
     const closedAttempts = closed.reviewAssurance!.attempts.filter(
       (a) => a.obligationId === closedObligationId,
     );
-    expect(closedAttempts).toHaveLength(runs.length);
-    expect(closedAttempts).toHaveLength(closedObligation.maxReviewerAttempts + 1);
-    expect(closedAttempts.every((a) => a.status === 'stale')).toBe(true);
+    expect(closedAttempts).toHaveLength(1);
+    expect(closedAttempts[0]?.status).toBe('stale');
+    expect(closed.reviewAssurance!.capacityLock).toMatchObject({
+      code: 'REVIEWER_OUTPUT_TRUNCATED',
+      obligationId: closedObligationId,
+    });
 
-    // BAD: a further reviewer Task cannot be released for the closed obligation.
-    await expect(runReviewerTask(hooks, 'task-after-closure')).rejects.toThrow();
+    // BAD: a further reviewer Task and a plan submission in the same turn are locked.
+    await expect(runReviewerTask(hooks, 'task-after-closure')).rejects.toThrow(
+      /REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND/,
+    );
+    await expect(
+      hooks['tool.execute.before']!(
+        { tool: 'flowguard_plan', sessionID: ctx.sessionID, callID: 'plan-same-turn' },
+        { args: { planText: PLAN_TEXT, targetPaths: ['docs/test.md'] } },
+      ),
+    ).rejects.toThrow(/REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND/);
 
-    // BAD: retry_transport cannot reopen it and names the executable recovery.
+    // BAD: retry_transport cannot reopen it.
     const transport = parseToolResult(
       await plan.execute({ reviewRecovery: 'retry_transport' }, ctx),
     );
     expect(transport).toMatchObject({ error: true, code: 'REVIEW_ATTEMPT_UNAVAILABLE' });
     expect(String(transport.message)).toContain('closed');
-    expect(String(transport.message)).toContain('submit the artifact again');
-    expect(String(transport.message)).not.toContain('restored or the session aborted');
-    const afterRetries = (await readState(sessDir))!;
-    expect(afterRetries.reviewAssurance).toEqual(closed.reviewAssurance);
 
-    // HAPPY: the unchanged plan, resubmitted, mints exactly one fresh obligation.
+    // A non-review command does not release the lock.
+    await hooks['command.execute.before']!(
+      { sessionID: ctx.sessionID, command: '/status', arguments: '' },
+      { parts: [] },
+    );
+    expect((await readState(sessDir))!.reviewAssurance!.capacityLock).not.toBeNull();
+
+    // HAPPY: a new explicit /plan command releases the lock under the session lock.
+    await hooks['command.execute.before']!(
+      { sessionID: ctx.sessionID, command: '/plan', arguments: '' },
+      { parts: [] },
+    );
+    const released = (await readState(sessDir))!;
+    expect(released.reviewAssurance!.capacityLock).toBeNull();
+    expect(
+      released.reviewAssurance!.obligations.find((o) => o.obligationId === closedObligationId),
+    ).toEqual(closedObligation);
+
     const resubmittedRaw = String(
       await plan.execute({ planText: PLAN_TEXT, targetPaths: ['docs/test.md'] }, ctx),
     );
@@ -249,31 +256,19 @@ describe('reviewer re-arm budget exhaustion: executable recovery', () => {
       (o) => o.obligationType === 'plan',
     );
     expect(planObligations).toHaveLength(2);
-    // EDGE: the closed obligation and its spent attempts are untouched.
     expect(planObligations.find((o) => o.obligationId === closedObligationId)).toEqual(
       closedObligation,
     );
     expect(
       recovered.reviewAssurance!.attempts.filter((a) => a.obligationId === closedObligationId),
     ).toEqual(closedAttempts);
-    // The fresh obligation carries the regular budget, not an inherited or doubled one.
     const freshObligation = planObligations.find((o) => o.obligationId === fresh.obligationId)!;
     expect(freshObligation.status).toBe('pending');
-    expect(freshObligation.maxReviewerAttempts).toBe(closedObligation.maxReviewerAttempts);
     const freshAttempts = recovered.reviewAssurance!.attempts.filter(
       (a) => a.obligationId === fresh.obligationId,
     );
     expect(freshAttempts).toHaveLength(1);
     expect(freshAttempts[0]?.status).toBe('created');
-
-    // The recovered path is a legal reviewer dispatch again.
-    await registerPlanResponse(hooks, resubmittedRaw, 'plan-2');
-    const recoveredRun = await runReviewerTask(hooks, 'task-recovered');
-    expect(recoveredRun.prompt).not.toContain('Prior Reviewer Task Not Completed');
-    const dispatched = (await readState(sessDir))!.reviewAssurance!.dispatches.filter(
-      (d) => d.obligationId === fresh.obligationId,
-    );
-    expect(dispatched).toHaveLength(1);
   });
 
   it('keeps the closure audit intent durable and chains it at the next mutating FlowGuard tool', async () => {
@@ -292,8 +287,8 @@ describe('reviewer re-arm budget exhaustion: executable recovery', () => {
     const intent = intents[0]!;
     expect(intent.status).not.toBe('reconciled');
     expect(intent.kind === 'semantic' && intent.semantic.detail).toMatchObject({
-      blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-      captureCode: 'REVIEWER_OUTPUT_TRUNCATED',
+      obligationId: closedObligationId,
+      code: 'REVIEWER_OUTPUT_TRUNCATED',
     });
     // Outbox latency: nothing has drained it yet, so a raw trail export at this
     // point lacks the event (the GUI-run observation).
@@ -317,7 +312,12 @@ describe('reviewer re-arm budget exhaustion: executable recovery', () => {
       (await readAuditTrail(sessDir)).filter((e) => e.event === 'enforcement:denied').length,
     ).toBeGreaterThan(0);
 
-    // The next mutating FlowGuard tool reconciles the outbox before it runs.
+    // A new explicit command releases the turn lock; the next mutating FlowGuard
+    // tool then reconciles the outbox before it runs.
+    await hooks['command.execute.before']!(
+      { sessionID: ctx.sessionID, command: '/plan', arguments: '' },
+      { parts: [] },
+    );
     await hooks['tool.execute.before']!(
       { tool: 'flowguard_plan', sessionID: ctx.sessionID, callID: 'plan-resubmit' },
       { args: { planText: PLAN_TEXT, targetPaths: ['docs/test.md'] } },
@@ -327,8 +327,7 @@ describe('reviewer re-arm budget exhaustion: executable recovery', () => {
     expect(chained).toHaveLength(1);
     expect(chained[0]!.detail).toMatchObject({
       obligationId: closedObligationId,
-      blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-      captureCode: 'REVIEWER_OUTPUT_TRUNCATED',
+      code: 'REVIEWER_OUTPUT_TRUNCATED',
     });
     expect(verifyChain(trail as unknown as Record<string, unknown>[]).valid).toBe(true);
     expect(

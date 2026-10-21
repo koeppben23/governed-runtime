@@ -190,6 +190,85 @@ export async function abandonReviewDispatchByHostCall(
   });
 }
 
+export type AbandonAndBlockOutcome =
+  | { readonly kind: 'blocked'; readonly obligationId: string; readonly code: string }
+  | { readonly kind: 'noop' };
+
+/**
+ * Close one exact authorized host release and block its obligation in a single
+ * durable mutation. This is the terminal capacity path: the attempt is staled,
+ * the dispatch becomes outcome_unknown, the obligation is blocked with the
+ * original code, and a persistent capacity lock prevents another review in the
+ * same parent turn.
+ *
+ * Exact lineage is mandatory. A missing/ambiguous dispatch or a non-created
+ * attempt is a no-op: no lock, no audit, and no success claim. A repeated call
+ * for the same host call sees no authorized dispatch and is idempotent.
+ */
+export async function abandonAndBlockByHostCall(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  hostCallId: string,
+  code: string,
+  options: { readonly childSessionId?: string; readonly now?: string } = {},
+): Promise<AbandonAndBlockOutcome> {
+  const now = options.now ?? new Date().toISOString();
+  let outcome: AbandonAndBlockOutcome = { kind: 'noop' };
+  await deps.updateReviewAssurance(
+    sessDir,
+    (state) => {
+      const assurance = ensureReviewAssurance(state.reviewAssurance);
+      const authorized = (assurance.dispatches ?? []).filter(
+        (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
+      );
+      if (authorized.length !== 1) return state;
+      const record = authorized[0];
+      if (record === undefined) return state;
+      const attempt = (assurance.attempts ?? []).find(
+        (candidate) => candidate.attemptId === record.attemptId,
+      );
+      if (attempt === undefined || attempt.status !== 'created') return state;
+
+      const staled = bindStaleChildSession(
+        updateAttemptStatus(
+          abandonReviewDispatch(assurance, hostCallId),
+          attempt.attemptId,
+          'stale',
+          now,
+        ),
+        attempt.attemptId,
+        options.childSessionId,
+      );
+      const blocked = blockObligation(
+        { ...state, reviewAssurance: staled },
+        attempt.obligationId,
+        code,
+      );
+      const locked = {
+        ...blocked,
+        reviewAssurance: {
+          ...ensureReviewAssurance(blocked.reviewAssurance),
+          capacityLock: { code, obligationId: attempt.obligationId, createdAt: now },
+        },
+      };
+      outcome = { kind: 'blocked', obligationId: attempt.obligationId, code };
+      return locked;
+    },
+    (state) =>
+      outcome.kind === 'blocked'
+        ? [
+            {
+              phase: state.phase,
+              event: 'review:obligation_blocked',
+              occurredAt: now,
+              detail: { obligationId: outcome.obligationId, code: outcome.code },
+            },
+          ]
+        : [],
+  );
+  return outcome;
+}
+
 export type AbandonAndRearmOutcome =
   | { readonly kind: 'rearmed'; readonly attempt: ReviewAttempt; readonly obligationId: string }
   | {

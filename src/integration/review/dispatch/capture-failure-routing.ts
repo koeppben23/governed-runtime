@@ -21,11 +21,16 @@ import type {
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 import { strictBlockedOutput } from '../../blocked-result.js';
-import { abandonAndRearmByHostCall, abandonReviewDispatchByHostCall } from './durable-dispatch.js';
+import {
+  abandonAndBlockByHostCall,
+  abandonAndRearmByHostCall,
+  abandonReviewDispatchByHostCall,
+} from './durable-dispatch.js';
 import {
   buildReviewerCaptureRetryOutput,
   captureFailureBlockDetail,
   classifyReviewerCaptureFailure,
+  isCapacityReviewerCaptureCode,
 } from './capture-retry.js';
 import { registerPendingReviewForAttempt } from '../enforcement/enforcement.js';
 import { reviewableToolForObligationType } from '../obligations/obligation-tools.js';
@@ -71,6 +76,32 @@ export async function abandonAndBlock(input: BlockOutputInput): Promise<void> {
 }
 
 export async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise<void> {
+  if (isCapacityReviewerCaptureCode(input.code)) {
+    const closure = await abandonAndBlockByHostCall(
+      input.runtime.orchestratorDeps,
+      input.sessDir,
+      input.callId,
+      input.code,
+      { ...(input.childSessionId !== undefined ? { childSessionId: input.childSessionId } : {}) },
+    );
+    if (closure.kind === 'blocked') {
+      input.output.output = strictBlockedOutput(
+        input.code,
+        captureFailureBlockDetail({
+          obligationId: closure.obligationId,
+          reason: input.reason,
+          ...(input.diagnostics !== undefined ? { diagnostics: input.diagnostics } : {}),
+        }),
+      );
+      return;
+    }
+    await abandonAndBlock({
+      ...input,
+      reason: `${input.reason} Durable capacity closure could not resolve the exact dispatch lineage; the obligation was not marked blocked.`,
+    });
+    return;
+  }
+
   const decision = classifyReviewerCaptureFailure(input.code);
   if (!decision.retryable) {
     await abandonAndBlock(input);

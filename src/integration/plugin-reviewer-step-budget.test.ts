@@ -2,12 +2,13 @@
  * @module integration/plugin-reviewer-step-budget.test
  * @description Native-transport regressions for reviewer task completion,
  * asserted against the PERSISTED review authority:
- * - a child the host stopped at its configured step budget is re-armed on the
- *   same frozen obligation instead of being consumed as a verdict;
+ * - a child the host stopped at its configured step budget is closed
+ *   terminally with its original code, never consumed as a verdict and never
+ *   re-armed automatically;
  * - the real 2026-10-19 plan-review child (token-truncated, `finish: "length"`,
  *   no final answer) is never serialized: no invocation, no findings, no
- *   fulfilled/bound attempt; the spent attempt is staled and exactly one fresh
- *   attempt on the same frozen obligation is authorized within the budget;
+ *   fulfilled/bound attempt; the spent attempt is staled and the obligation is
+ *   blocked with a persistent capacity lock instead of being re-armed;
  * - an aborted child is never restarted automatically.
  *
  * @test-policy BAD, CORNER
@@ -102,22 +103,17 @@ describe('native reviewer step-budget recovery', () => {
     _resetAgentResolutionCache();
   });
 
-  it('re-arms at the host step limit and binds the fresh attempt', async () => {
+  it('closes at the host step limit without serialization or a fresh attempt', async () => {
     const ws = await createTestWorkspace();
     try {
       const sessionID = crypto.randomUUID();
-      const { sessDir, obligationId } = await seedImplementation(ws.tmpDir, sessionID, {
-        maxReviewerAttempts: 2,
-      });
+      const { sessDir, obligationId } = await seedImplementation(ws.tmpDir, sessionID);
       const exhaustedTranscript = {
         data: [
           { info: { role: 'user' } },
           ...Array.from({ length: REVIEWER_STEP_LIMIT - 1 }, () => step('tool-calls', true)),
           step('stop', false),
         ],
-      };
-      const healthyTranscript = {
-        data: [{ info: { role: 'user' } }, step('tool-calls', true), step('stop', false)],
       };
       const structuredPrompt = vi.fn(async () => ({
         data: { info: { structured: nativeFindings(obligationId) } },
@@ -165,30 +161,25 @@ describe('native reviewer step-budget recovery', () => {
       await dispatchReviewerTask(hooks, sessionID);
       const first = await completeReviewerTask(hooks, sessionID);
 
-      const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
-      expect(retry.reviewRetry).toMatchObject({
+      const blocked = JSON.parse(String(first.output)) as Record<string, unknown>;
+      expect(blocked).toMatchObject({
+        error: true,
         code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
-        obligationId,
-        retryable: true,
       });
-      // The exhausted child was never serialized; the retry gets a fresh attempt.
+      expect(blocked.reviewRetry).toBeUndefined();
       expect(structuredPrompt).not.toHaveBeenCalled();
 
-      sessionClient.transcript = healthyTranscript;
-      const retryAttemptId = String((retry.reviewRetry as Record<string, unknown>).attemptId);
-      await dispatchReviewerTask(hooks, sessionID, 'call-step-budget-2');
-      const second = await completeReviewerTask(hooks, sessionID, 'call-step-budget-2');
-      const completed = JSON.parse(String(second.output)) as Record<string, unknown>;
-      expect(completed.reviewDispatch).toEqual({
-        required: true,
-        completed: true,
-        verdict: 'accept',
+      const state = (await readState(sessDir))!;
+      expect(state.reviewAssurance!.obligations[0]?.status).toBe('blocked');
+      expect(state.reviewAssurance!.obligations[0]?.blockedCode).toBe(
+        'REVIEWER_STEP_BUDGET_EXHAUSTED',
+      );
+      expect(state.reviewAssurance!.attempts).toHaveLength(1);
+      expect(state.reviewAssurance!.attempts[0]?.status).toBe('stale');
+      expect(state.reviewAssurance!.capacityLock).toMatchObject({
+        code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+        obligationId,
       });
-      const state = await readState(sessDir);
-      expect(state?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
-      expect(
-        state?.reviewAssurance?.attempts.find((a) => a.attemptId === retryAttemptId)?.status,
-      ).toBe('bound');
     } finally {
       await ws.cleanup();
     }
@@ -342,6 +333,8 @@ async function runReviewerTask(input: {
   const after = (await readState(sessDir))!;
   return {
     ws,
+    sessionID,
+    hooks,
     obligationId,
     initialAttemptId: before.reviewAssurance!.attempts[0]!.attemptId,
     before,
@@ -381,32 +374,55 @@ describe('native reviewer task completion (persisted authority)', () => {
   });
 
   it.each(['plan', 'implement'] as const)(
-    '%s: the truncated 2026-10-19 child is re-armed, never accepted',
+    '%s: the truncated 2026-10-19 child is terminal, never accepted or re-armed',
     async (kind) => {
       const run = await runReviewerTask({ kind, messages: OCT19_TRUNCATED });
       try {
-        expect(run.output.reviewRetry).toMatchObject({
-          code: 'REVIEWER_OUTPUT_TRUNCATED',
-          obligationId: run.obligationId,
-          retryable: true,
-        });
+        expect(run.output).toMatchObject({ error: true, code: 'REVIEWER_OUTPUT_TRUNCATED' });
+        expect(run.output.reviewRetry).toBeUndefined();
         expectNothingAccepted(run, kind);
         const attempts = run.after.reviewAssurance!.attempts;
-        expect(attempts).toHaveLength(2);
-        expect(attempts.every((attempt) => attempt.obligationId === run.obligationId)).toBe(true);
-        expect(attempts.find((a) => a.attemptId === run.initialAttemptId)?.status).toBe('stale');
-        const fresh = attempts.find((a) => a.attemptId !== run.initialAttemptId)!;
-        expect(fresh.status).toBe('created');
-        expect(fresh.attemptId).toBe((run.output.reviewRetry as Record<string, unknown>).attemptId);
-        // The frozen obligation itself is unchanged.
-        expect(run.after.reviewAssurance!.obligations).toEqual(
-          run.before.reviewAssurance!.obligations,
+        expect(attempts).toHaveLength(1);
+        expect(attempts[0]?.attemptId).toBe(run.initialAttemptId);
+        expect(attempts[0]?.status).toBe('stale');
+        expect(run.after.reviewAssurance!.obligations[0]?.status).toBe('blocked');
+        expect(run.after.reviewAssurance!.obligations[0]?.blockedCode).toBe(
+          'REVIEWER_OUTPUT_TRUNCATED',
         );
+        expect(run.after.reviewAssurance!.capacityLock).toMatchObject({
+          code: 'REVIEWER_OUTPUT_TRUNCATED',
+          obligationId: run.obligationId,
+        });
       } finally {
         await run.ws.cleanup();
       }
     },
   );
+
+  it('holds the capacity lock across run_check, implementation verdict, and plugin restart', async () => {
+    const run = await runReviewerTask({ kind: 'plan', messages: OCT19_TRUNCATED });
+    try {
+      for (const tool of ['flowguard_run_check', 'flowguard_review_implementation']) {
+        await expect(
+          run.hooks['tool.execute.before']!(
+            { tool, sessionID: run.sessionID, callID: `locked-${tool}` },
+            { args: {} },
+          ),
+        ).rejects.toThrow(/REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND/);
+      }
+
+      // A fresh plugin boot reads the persisted lock, not process memory.
+      const restarted = await FlowGuardAuditPlugin(mockInput(run.ws.tmpDir));
+      await expect(
+        restarted['tool.execute.before']!(
+          { tool: 'flowguard_plan', sessionID: run.sessionID, callID: 'restart-plan' },
+          { args: {} },
+        ),
+      ).rejects.toThrow(/REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND/);
+    } finally {
+      await run.ws.cleanup();
+    }
+  });
 
   it('a truncated child with an exhausted attempt budget blocks without a fresh attempt', async () => {
     const run = await runReviewerTask({
@@ -421,8 +437,12 @@ describe('native reviewer task completion (persisted authority)', () => {
       const assurance = run.after.reviewAssurance!;
       expect(assurance.invocations).toHaveLength(0);
       expect(assurance.attempts).toHaveLength(1);
-      expect(assurance.attempts[0]?.status).not.toBe('bound');
+      expect(assurance.attempts[0]?.status).toBe('stale');
       expect(assurance.obligations[0]?.status).toBe('blocked');
+      expect(assurance.capacityLock).toMatchObject({
+        code: 'REVIEWER_OUTPUT_TRUNCATED',
+        obligationId: run.obligationId,
+      });
     } finally {
       await run.ws.cleanup();
     }

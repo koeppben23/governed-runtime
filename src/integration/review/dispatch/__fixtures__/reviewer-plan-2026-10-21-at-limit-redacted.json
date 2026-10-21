@@ -1,0 +1,259 @@
+{
+  "fixtureKind": "host-recorded-reviewer-completion-redacted",
+  "sourceFile": "child-plan1-review(4).json",
+  "sessionID": "ses_ea2a3d9f3ffeOB6yMPnP4Z50rw",
+  "parentID": "ses_ea2a56e8bffeyyOOOsGu12bNPo",
+  "sourceHostVersion": "1.19.3",
+  "sourceCreatedAtEpochMs": 1792567682572,
+  "redactionNote": "Only host assistant step completion signals and part types are retained; free-form review material, model reasoning, tool inputs/outputs and secrets are omitted. Final authentic opening excerpt retained solely to test nonblank human text.",
+  "data": [
+    {
+      "info": {
+        "role": "user"
+      },
+      "parts": [
+        {
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 1401,
+          "output": 461
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 89,
+          "output": 488
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 1474,
+          "output": 316
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 4892,
+          "output": 226
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 106,
+          "output": 131
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 104,
+          "output": 125
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 34,
+          "output": 128
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 18,
+          "output": 55
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "tool-calls",
+        "tokens": {
+          "reasoning": 24397,
+          "output": 283
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        },
+        {
+          "type": "tool"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "finish": "stop",
+        "tokens": {
+          "reasoning": 13908,
+          "output": 750
+        }
+      },
+      "parts": [
+        {
+          "type": "reasoning"
+        },
+        {
+          "type": "text",
+          "text": "Review completed; no remaining review tasks.\n\nOverall verdict: accept."
+        }
+      ]
+    }
+  ]
+}

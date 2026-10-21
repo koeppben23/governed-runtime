@@ -95,10 +95,10 @@ function resolveReviewerStepLimit(): ReviewerStepLimitResolution {
  * 1. unreadable messages / no assistant step   -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
  * 2. `MessageAbortedError`                      -> REVIEWER_TASK_ABORTED (terminal; never auto-restart)
  * 3. `finish: "length"` / `MessageOutputLengthError`
- *                                               -> REVIEWER_OUTPUT_TRUNCATED (retryable)
+ *                                               -> REVIEWER_OUTPUT_TRUNCATED (terminal capacity)
  * 4. any other host error                       -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
  * 5. more assistant steps than the limit        -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
- * 6. exactly the limit, `stop`, no tool call    -> REVIEWER_STEP_BUDGET_EXHAUSTED (retryable)
+ * 6. exactly the limit, `stop`, no tool call    -> REVIEWER_STEP_BUDGET_EXHAUSTED (terminal capacity)
  * 7. tool call in the last step, or `finish` missing / not `stop`
  *                                               -> REVIEWER_COMPLETION_UNVERIFIABLE (terminal)
  * 8. `stop` without a non-blank, non-synthetic text part
