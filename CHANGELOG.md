@@ -807,6 +807,19 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Terminal reviewer capacity failures.** A reviewer step-budget or output-limit
+  failure is no longer retried automatically. The exact authorized dispatch is
+  closed as `outcome_unknown`, the spent attempt is staled, the obligation is
+  blocked with its original code, and one `review:obligation_blocked` event is
+  committed in the same durable mutation. A persisted capacity lock prevents
+  the same parent user turn from minting another review or starting another
+  reviewer Task; only a new explicit host-observed review command clears it
+  under the session lock. The observed command hook proves command provenance,
+  not human identity, so internal command simulation remains `NOT_VERIFIED`.
+  The Lauf-1 at-limit child remains `REVIEWER_STEP_BUDGET_EXHAUSTED` even with a
+  plausible final text: `finish: "stop"` at the host step limit is not a
+  voluntary completion proof.
+
 - **Compact reviewer output contract (review criteria `p42-v7`).** The
   2026-10-19 GUI runs (build `6a4ff271`, OpenCode 1.19.3, `deepseek-flash`)
   ended both plan reviews at the shared 32,000-token output limit. One child

@@ -19,6 +19,7 @@ import {
   buildStructuredFindingsContractDiagnostics,
   captureClosureAuditDiagnostics,
   classifyReviewerCaptureFailure,
+  isCapacityReviewerCaptureCode,
   isKnownReviewerCaptureFailureCode,
   structuredFindingsContractReason,
 } from './capture-retry.js';
@@ -56,17 +57,22 @@ describe('reviewer capture retry classification', () => {
     expect(retryable.size + terminal.size).toBe(36);
   });
 
-  it('classifies reviewer task completion failures: proven truncation retries, abort never', () => {
-    for (const code of [
-      'REVIEWER_OUTPUT_TRUNCATED',
-      'REVIEWER_TASK_INCOMPLETE',
-      'REVIEWER_STEP_BUDGET_EXHAUSTED',
-    ]) {
+  it('classifies reviewer task completion failures: capacity is terminal, incomplete repairs retry', () => {
+    for (const code of ['REVIEWER_TASK_INCOMPLETE']) {
       expect(classifyReviewerCaptureFailure(code), code).toEqual({ retryable: true, code });
     }
-    for (const code of ['REVIEWER_TASK_ABORTED', 'REVIEWER_COMPLETION_UNVERIFIABLE']) {
+    for (const code of [
+      'REVIEWER_OUTPUT_TRUNCATED',
+      'REVIEWER_STEP_BUDGET_EXHAUSTED',
+      'REVIEWER_TASK_ABORTED',
+      'REVIEWER_COMPLETION_UNVERIFIABLE',
+    ]) {
       expect(classifyReviewerCaptureFailure(code), code).toEqual({ retryable: false, code });
     }
+    for (const code of ['REVIEWER_OUTPUT_TRUNCATED', 'REVIEWER_STEP_BUDGET_EXHAUSTED']) {
+      expect(isCapacityReviewerCaptureCode(code), code).toBe(true);
+    }
+    expect(isCapacityReviewerCaptureCode('REVIEWER_TASK_INCOMPLETE')).toBe(false);
     expect(classifyReviewerCaptureFailure('REVIEWER_STEP_BUDGET_UNVERIFIABLE').retryable).toBe(
       false,
     );

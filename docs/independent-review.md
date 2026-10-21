@@ -144,6 +144,23 @@ reservation is not changed. The final provider-request capture in the reference
 suite is the acceptance authority because a later plugin can still overwrite
 `maxOutputTokens`.
 
+### Terminal reviewer capacity failures
+
+A reviewer step-budget or output-limit failure is a terminal capacity failure,
+not a repairable output defect. FlowGuard closes the exact authorized dispatch
+as `outcome_unknown`, stales the spent attempt, blocks the obligation with the
+original code, and records one semantic `review:obligation_blocked` event in the
+same durable mutation. It also sets a persisted capacity lock for that session.
+
+The lock prevents the same parent user turn from minting another review
+obligation or starting another reviewer Task. It is released only by the
+host-observed `command.execute.before` of a new explicit review command
+(`/plan`, `/architecture`, `/review`, or `/implement`), under the session lock;
+free text and child/SDK messages do not release it. The command hook proves
+command provenance, not human identity — if an internal host command could
+simulate the same invocation, that boundary remains `NOT_VERIFIED` rather than
+being claimed as a human-origin guarantee.
+
 ### Reviewer authority boundaries and reference suite
 
 The deterministic ProofGraph core, the independent reviewer, and the
@@ -174,11 +191,12 @@ required-but-may-be-empty, and orders `reviewRetry` handling before any
 completed-review assumption in every review command surface.
 
 A reviewer child that the host stops at its configured step budget is not a
-substantive verdict: the native transport verifies the host stop (configured
-step count, last step `finish: stop`, no tool call) from the recorded child
-messages before the structured follow-up and re-arms a fresh attempt on the
-same frozen obligation. Unreadable or ambiguous termination keeps the normal
-capture path.
+substantive verdict, even when its last text looks plausible: the native
+transport verifies the host stop (configured step count, last step
+`finish: stop`, no tool call) from the recorded child messages. A capacity
+failure at the step or output limit closes the exact dispatch terminally; it
+does not re-arm automatically. Unreadable or ambiguous termination keeps the
+normal capture path.
 
 Implementation-challenge repair (`changes_requested` with a failing
 `implementation_challenge`) converges through one shared authority

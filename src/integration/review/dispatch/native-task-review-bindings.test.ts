@@ -465,6 +465,39 @@ describe('native capture - reviewer task completion gate for every obligation ty
     _resetAgentResolutionCache();
   });
 
+  const AT_LIMIT = JSON.parse(
+    readFileSync(
+      new URL('./__fixtures__/reviewer-plan-2026-10-21-at-limit-redacted.json', import.meta.url),
+      'utf8',
+    ),
+  ) as unknown;
+
+  it.each(['plan', 'architecture', 'implement', 'review'] as const)(
+    '%s: the at-limit 2026-10-21 child is never serialized',
+    async (obligationType) => {
+      const prompt = vi.fn(async () => ({ data: { info: { structured: {} } } }));
+      const runtime = {
+        orchestratorDeps: {
+          client: {
+            app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
+            session: { prompt, messages: vi.fn(async () => AT_LIMIT) },
+          },
+        },
+        log: { info: vi.fn(), warn: vi.fn() },
+        logError: vi.fn(),
+      } as unknown as NativeReviewRuntimePort;
+      const obligation = { obligationId: OBLIGATION_ID, obligationType } as ReviewObligation;
+
+      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1', CONTRACT);
+
+      expect(captured).toMatchObject({
+        kind: 'blocked',
+        code: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+      });
+      expect(prompt).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['plan', 'architecture', 'implement', 'review'] as const)(
     '%s: the truncated 2026-10-19 child is never serialized',
     async (obligationType) => {

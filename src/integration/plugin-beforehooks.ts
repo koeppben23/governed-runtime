@@ -11,6 +11,7 @@ import {
 import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
 import { enforceBeforeVerdict } from './review/enforcement/enforcement.js';
+import { reviewSignalOwner } from './review/obligations/obligation-tools.js';
 import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 import {
@@ -60,6 +61,8 @@ export async function commandBefore(
     // Stryker disable next-line OptionalChaining — equivalent: sessionID-missing inputs return at the guard above before this line is reached.
     updateCommandScope(runtime, rawSessionId, hookInput?.command ?? '');
 
+    await maybeReleaseCapacityLock(runtime, rawSessionId, hookInput?.command ?? '');
+
     const intent = recordUserDecisionIntentFromCommand({
       sessionId: rawSessionId,
       // Stryker disable next-line OptionalChaining — equivalent: the `?? ''` fallback keeps removed optional chains observationally identical.
@@ -75,6 +78,48 @@ export async function commandBefore(
       expectedVerdict: intent.expectedVerdict,
       expiresAt: intent.expiresAt,
     });
+  });
+}
+
+const REVIEW_CAPACITY_RELEASE_COMMANDS: ReadonlySet<string> = new Set([
+  'plan',
+  'architecture',
+  'review',
+  'implement',
+]);
+
+async function maybeReleaseCapacityLock(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  rawCommand: string,
+): Promise<void> {
+  const command = rawCommand.trim().replace(/^\/+/, '');
+  if (!REVIEW_CAPACITY_RELEASE_COMMANDS.has(command)) return;
+  await clearCapacityLock(runtime, sessionId, command);
+}
+
+/** Release the capacity lock only at the start of a new explicit review command. */
+async function clearCapacityLock(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  command: string,
+): Promise<void> {
+  const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
+  if (resolution.status !== 'resolved') return;
+  const lock = resolution.state.reviewAssurance?.capacityLock;
+  if (!lock) return;
+  await runtime.ws.updateReviewAssurance(resolution.sessDir, (state) => {
+    const assurance = state.reviewAssurance;
+    if (!assurance?.capacityLock) return state;
+    return {
+      ...state,
+      reviewAssurance: { ...assurance, capacityLock: null },
+    };
+  });
+  runtime.log.info('review', 'capacity lock released by explicit command', {
+    sessionId,
+    command,
+    obligationId: lock.obligationId,
   });
 }
 
@@ -161,6 +206,7 @@ async function enforceBeforeRules(
   callId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
+  await enforceCapacityLock(runtime, toolName, sessionId);
   await enforceCommandScope(runtime, toolName, sessionId);
 
   const mutatingHost = isMutatingHostTool(toolName);
@@ -346,6 +392,23 @@ async function isAllowedInImplReview(
     toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
   if (!reviewSurface) return false;
   return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
+}
+
+async function enforceCapacityLock(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+): Promise<void> {
+  if (reviewSignalOwner(toolName) === undefined) return;
+  const state = await resolveEnforcement(runtime, sessionId, 'verdict');
+  const lock = state?.reviewAssurance?.capacityLock;
+  if (!lock) return;
+  throw buildEnforcementError(
+    'REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND',
+    'A previous reviewer exhausted its execution capacity and the review obligation is blocked. ' +
+      'No new review may start in the same user turn. Report the blocker and wait for a new explicit review command.',
+    { obligationId: lock.obligationId, code: lock.code },
+  );
 }
 
 async function enforceCommandScope(

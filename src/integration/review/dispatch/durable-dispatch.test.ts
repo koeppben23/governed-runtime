@@ -13,6 +13,7 @@ import { hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { makeState } from '../../../fixtures.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import {
+  abandonAndBlockByHostCall,
   abandonAndRearmByHostCall,
   abandonReviewDispatchByHostCall,
   buildInterruptedDispatchRearm,
@@ -522,6 +523,112 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
     expect(second.kind).toBe('blocked');
     if (second.kind !== 'blocked') return;
     expect(second.reason).toContain('budget exhausted');
+  });
+});
+
+describe('abandonAndBlockByHostCall', () => {
+  const CAPACITY_CODE = 'REVIEWER_OUTPUT_TRUNCATED';
+
+  function collectingDeps(stateRef: { current: SessionState }) {
+    const intents: SemanticAuditIntent[] = [];
+    const deps: DispatchLedgerWriteDeps = {
+      updateReviewAssurance: vi.fn(async (_sessDir, update, semanticIntents) => {
+        const next = update(stateRef.current, NOW);
+        stateRef.current = next;
+        if (semanticIntents) intents.push(...semanticIntents(next, NOW));
+      }),
+    };
+    return { deps, intents };
+  }
+
+  async function releasedA1(
+    deps: DispatchLedgerWriteDeps,
+    obligationId: string,
+    attemptId: string,
+  ) {
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId,
+      obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+  }
+
+  it('HAPPY: closes dispatch, stales attempt, blocks obligation, locks the turn, and audits once', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+
+    const outcome = await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, CAPACITY_CODE, {
+      childSessionId: 'child-capacity-failure',
+      now: NOW,
+    });
+
+    expect(outcome).toEqual({
+      kind: 'blocked',
+      obligationId: obligation.obligationId,
+      code: CAPACITY_CODE,
+    });
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+    expect(after.attempts.find((a) => a.attemptId === attempt.attemptId)?.status).toBe('stale');
+    expect(after.attempts.find((a) => a.attemptId === attempt.attemptId)?.childSessionId).toBe(
+      'child-capacity-failure',
+    );
+    expect(after.obligations.find((o) => o.obligationId === obligation.obligationId)).toMatchObject(
+      {
+        status: 'blocked',
+        blockedCode: CAPACITY_CODE,
+      },
+    );
+    expect(after.capacityLock).toEqual({
+      code: CAPACITY_CODE,
+      obligationId: obligation.obligationId,
+      createdAt: NOW,
+    });
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      event: 'review:obligation_blocked',
+      detail: { obligationId: obligation.obligationId, code: CAPACITY_CODE },
+    });
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('IDEMPOTENT: a repeated host call does not add state or audit', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+
+    await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, CAPACITY_CODE, { now: NOW });
+    const afterFirst = stateRef.current;
+    const firstIntents = [...intents];
+
+    const second = await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, CAPACITY_CODE, {
+      now: NOW,
+    });
+    expect(second).toEqual({ kind: 'noop' });
+    expect(stateRef.current).toEqual(afterFirst);
+    expect(intents).toEqual(firstIntents);
+  });
+
+  it('NO-LINEAGE: no lock and no audit when the exact authorized dispatch is absent', async () => {
+    const { assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    const before = stateRef.current;
+
+    const outcome = await abandonAndBlockByHostCall(deps, SESS_DIR, 'missing-call', CAPACITY_CODE, {
+      now: NOW,
+    });
+
+    expect(outcome).toEqual({ kind: 'noop' });
+    expect(stateRef.current).toEqual(before);
+    expect(stateRef.current.reviewAssurance?.capacityLock).toBeUndefined();
+    expect(intents).toEqual([]);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
   });
 });
 
