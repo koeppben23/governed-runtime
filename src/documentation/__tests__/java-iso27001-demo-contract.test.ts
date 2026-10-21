@@ -161,9 +161,11 @@ describe('java demo ISO/IEC 27001 evidence projection contract', () => {
     expect(demo.toLowerCase()).not.toContain('iso compliant');
     expect(demo.toLowerCase()).not.toContain('certification achieved');
     expect(read(MAPPING_PATH).toLowerCase()).not.toContain('statement of applicability');
-    expect(
-      spawnSync('bash', ['-n', WRAPPER_PATH], { encoding: 'utf8' }).status,
-      'wrapper shell syntax',
-    ).toBe(0);
+    if (POSIX) {
+      expect(
+        spawnSync('bash', ['-n', WRAPPER_PATH], { encoding: 'utf8' }).status,
+        'wrapper shell syntax',
+      ).toBe(0);
+    }
   });
 });

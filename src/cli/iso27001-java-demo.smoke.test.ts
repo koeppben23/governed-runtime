@@ -33,13 +33,14 @@ const MAPPING = path.join(REPO_ROOT, 'demos', 'java-task-manager', 'iso27001-dem
 const SESSION = 'ses_iso27001_demo_session_0001';
 const HAS_BUILT_CLI = existsSync(CLI_ENTRY);
 const tarOk = await isTarAvailable();
-const CAN_RUN = HAS_BUILT_CLI && tarOk && process.platform !== 'win32';
+const PREREQUISITES = HAS_BUILT_CLI && tarOk;
+const CAN_RUN = PREREQUISITES && process.platform !== 'win32';
 
-if (!CAN_RUN && process.env['CI']) {
+if (!PREREQUISITES && process.env['CI']) {
   describe('iso27001 Java wrapper smoke (CI fail-closed guard)', () => {
-    it('CI must provide the built CLI, tar, and a POSIX shell', () => {
+    it('CI must provide the built CLI and tar', () => {
       throw new Error(
-        `wrapper smoke prerequisites missing: builtCli=${String(HAS_BUILT_CLI)} tar=${String(tarOk)} platform=${process.platform}`,
+        `wrapper smoke prerequisites missing: builtCli=${String(HAS_BUILT_CLI)} tar=${String(tarOk)}`,
       );
     });
   });
