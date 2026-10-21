@@ -666,18 +666,22 @@ The reviewer execution path has independent upper bounds and one absolute deadli
 ```json
 {
   "reviewer": {
-    "toolTimeoutMs": 20000,
-    "reviewTimeoutMs": 80000,
-    "serializationTimeoutMs": 25000,
-    "executionTimeoutMs": 120000
+    "toolTimeoutMs": 30000,
+    "reviewTimeoutMs": 300000,
+    "serializationTimeoutMs": 60000,
+    "executionTimeoutMs": 600000
   }
 }
 ```
 
-`toolTimeoutMs` is nested inside `reviewTimeoutMs`; it is not additive. The
-absolute deadline starts at reviewer dispatch authorization and covers child
-discovery, review, same-child serialization, validation, and binding. The
-remaining budget is headroom for orchestration and binding, not a sleep.
+These are the productive safety defaults, not the performance target. The
+80-second review / 120-second total profile is an opt-in lifecycle-validation
+profile; it must not be treated as the final product default until measured
+against real reviews. `toolTimeoutMs` is nested inside `reviewTimeoutMs`; it is
+not additive. The absolute deadline starts at reviewer dispatch authorization
+and covers child discovery, review, same-child serialization, validation, and
+binding. The remaining budget is headroom for orchestration and binding, not a
+sleep.
 
 When a deadline expires, FlowGuard requests termination of the exact reviewer
 child and polls host state. A blocked attempt is persisted with

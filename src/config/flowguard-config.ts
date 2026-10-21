@@ -42,13 +42,13 @@ import {
 /** Default maximum output tokens requested from the independent reviewer. */
 export const REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT = 65_536;
 /** Default maximum duration of one reviewer tool call. */
-const REVIEWER_TOOL_TIMEOUT_MS_DEFAULT = 20_000;
+const REVIEWER_TOOL_TIMEOUT_MS_DEFAULT = 30_000;
 /** Default review-phase budget. Tool time is nested inside this budget. */
-const REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT = 80_000;
+const REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT = 300_000;
 /** Default serialization budget, including one optional format correction. */
-const REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT = 25_000;
+const REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT = 60_000;
 /** Absolute reviewer execution deadline from dispatch authorization. */
-const REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT = 120_000;
+const REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT = 600_000;
 
 export const FlowGuardConfigSchema = z.object({
   /** Schema version for forward compatibility. Always "v1". */

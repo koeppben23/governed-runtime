@@ -123,7 +123,7 @@ export async function reconcileExpiredAuthorizedDispatchesOrThrow(
     runtime,
     sessDir,
     state,
-    timeoutMs: runtime.reviewerExecutionTimeoutMs ?? 120_000,
+    timeoutMs: runtime.reviewerExecutionTimeoutMs ?? 600_000,
   });
   if (expired === 0) return { sessDir, state };
   const resolution = await runtime.ws.resolveSessionAuthority(sessionId);

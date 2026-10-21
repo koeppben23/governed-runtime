@@ -95,7 +95,7 @@ export class ReviewerExecutionWatchdog {
       try {
         parentSessionId = (await get({ path: { id: childSessionId } })).data?.parentID;
       } catch {
-        // A missing parent mapping falls back to a child-scoped timer.
+        // Missing parent identity never grants timeout or abort authority.
       }
     }
     const task = parentSessionId
@@ -115,33 +115,10 @@ export class ReviewerExecutionWatchdog {
       });
       return;
     }
-    if (this.tasks.size > 0) {
-      this.deps.log.error('review', 'reviewer child has no exact task dispatch mapping', {
-        childSessionId,
-        parentSessionId,
-        pendingTasks: this.tasks.size,
-      });
-      return;
-    }
-    const total = timer(
-      () => void this.expire(childSessionId, 'total'),
-      this.deps.config.executionTimeoutMs,
-    );
-    const review = timer(
-      () => void this.expire(childSessionId, 'review'),
-      this.deps.config.reviewTimeoutMs,
-    );
-    const entry: Entry = {
+    this.deps.log.error('review', 'reviewer child has no exact task dispatch mapping', {
       childSessionId,
-      timers: { total, review },
-      toolTimers: new Map(),
-      expired: false,
-    };
-    this.entries.set(childSessionId, entry);
-    this.deps.log.info('review', 'reviewer execution deadline started', {
-      childSessionId,
-      reviewTimeoutMs: this.deps.config.reviewTimeoutMs,
-      executionTimeoutMs: this.deps.config.executionTimeoutMs,
+      parentSessionId,
+      pendingTasks: this.tasks.size,
     });
   }
 

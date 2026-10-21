@@ -14,7 +14,11 @@ const config = {
   executionTimeoutMs: 120,
 };
 
-function client(terminal = true): OrchestratorClient {
+function client(
+  terminal = true,
+  taskCallIds: string[] = ['call-1'],
+  runningTool = false,
+): OrchestratorClient {
   const value: OrchestratorClient = {
     app: { agents: async () => ({ data: [] }) },
     session: {
@@ -28,21 +32,21 @@ function client(terminal = true): OrchestratorClient {
             ? [
                 {
                   info: { role: 'assistant' },
-                  parts: [
-                    {
-                      type: 'tool',
-                      tool: 'task',
-                      callID: 'call-1',
-                      state: { status: 'completed', metadata: { sessionId: 'child' } },
-                    },
-                  ],
+                  parts: taskCallIds.map((callID) => ({
+                    type: 'tool',
+                    tool: 'task',
+                    callID,
+                    state: { status: 'completed', metadata: { sessionId: 'child' } },
+                  })),
                 },
               ]
             : terminal
               ? [
                   {
                     info: { role: 'assistant', finish: 'stop' },
-                    parts: [{ type: 'text', text: 'done' }],
+                    parts: runningTool
+                      ? [{ type: 'tool', state: { status: 'running' } }]
+                      : [{ type: 'text', text: 'done' }],
                   },
                 ]
               : [],
@@ -52,18 +56,28 @@ function client(terminal = true): OrchestratorClient {
   return value;
 }
 
-function harness(overrides: { terminal?: boolean; persist?: boolean } = {}) {
+function harness(
+  overrides: {
+    terminal?: boolean;
+    persist?: boolean;
+    runningTool?: boolean;
+    taskCallIds?: string[];
+  } = {},
+) {
   const failures = new Map<string, ReviewerExecutionFailure>();
-  const c = client(overrides.terminal ?? true);
+  const c = client(overrides.terminal ?? true, overrides.taskCallIds, overrides.runningTool);
   const persistFailure = vi.fn(async () => overrides.persist ?? true);
+  const persistTaskFailure = vi.fn(async () => true);
   const watchdog = new ReviewerExecutionWatchdog({
     config,
     client: c,
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     persistFailure,
+    persistTaskFailure,
     failures,
   });
-  return { c, watchdog, persistFailure, failures };
+  watchdog.onTaskAuthorized('parent', 'call-1');
+  return { c, watchdog, persistFailure, persistTaskFailure, failures };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -182,5 +196,32 @@ describe('reviewer execution watchdog', () => {
     await watchdog.onReviewerRequest('child');
     await vi.advanceTimersByTimeAsync(50);
     expect(c.session.abort).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not assign a child arbitrarily when two task calls match the parent', async () => {
+    vi.useFakeTimers();
+    const { c, watchdog, persistFailure, persistTaskFailure } = harness({
+      taskCallIds: ['call-1', 'call-2'],
+    });
+    watchdog.onTaskAuthorized('parent', 'call-2');
+    await watchdog.onReviewerRequest('child');
+    expect(c.session.abort).not.toHaveBeenCalled();
+    expect(persistFailure).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(120);
+    expect(persistTaskFailure).toHaveBeenCalledTimes(2);
+  });
+
+  it('never confirms quiescence while any observed tool is still running', async () => {
+    vi.useFakeTimers();
+    const { watchdog, persistFailure } = harness({ runningTool: true });
+    await watchdog.onReviewerRequest('child');
+    await vi.advanceTimersByTimeAsync(80);
+    expect(persistFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+        abortConfirmed: false,
+      }),
+      'child',
+    );
   });
 });

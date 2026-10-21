@@ -1,5 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
-import { blockIncoherentCompletedCapture } from './native-task-review-execution.js';
+
+const { readState, abandonAndBlockByHostCall } = vi.hoisted(() => ({
+  readState: vi.fn(),
+  abandonAndBlockByHostCall: vi.fn(),
+}));
+vi.mock('./durable-dispatch.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./durable-dispatch.js')>()),
+  abandonAndBlockByHostCall,
+}));
+vi.mock('../../../adapters/persistence.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../adapters/persistence.js')>()),
+  readState,
+}));
+
+import {
+  blockIncoherentCompletedCapture,
+  guardPreBindReview,
+  reconcileExpiredAuthorizedDispatchesOrThrow,
+} from './native-task-review-execution.js';
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
 
 function runtime() {
@@ -65,5 +83,59 @@ describe('terminal incoherent review capture', () => {
       await expect(blockIncoherentCompletedCapture(h.input)).resolves.toBe(false);
       expect(h.host.blockReviewOutcome).not.toHaveBeenCalled();
     }
+  });
+
+  it('blocks a late bind after the terminal execution lock is persisted', async () => {
+    readState.mockResolvedValue({
+      reviewAssurance: {
+        capacityLock: { code: 'REVIEWER_EXECUTION_TIMEOUT', obligationId: 'obl-1' },
+        obligations: [
+          {
+            obligationId: 'obl-1',
+            status: 'blocked',
+            blockedCode: 'REVIEWER_EXECUTION_TIMEOUT',
+          },
+        ],
+      },
+    });
+    const output = { output: '', title: '', metadata: {} };
+    await expect(
+      guardPreBindReview({
+        runtime: {} as NativeReviewTransportRuntime,
+        sessDir: '/tmp',
+        obligationId: 'obl-1',
+        output,
+      }),
+    ).resolves.toBe(true);
+    expect(output.output).toContain('REVIEWER_EXECUTION_TIMEOUT');
+  });
+
+  it('reconciles an expired authorized dispatch after restart before a new review', async () => {
+    abandonAndBlockByHostCall.mockResolvedValue({ kind: 'blocked' });
+    const runtime = {
+      reviewerExecutionTimeoutMs: 1,
+      orchestratorDeps: {},
+      ws: { resolveSessionAuthority: async () => ({ status: 'resolved' }) },
+    } as unknown as NativeReviewTransportRuntime;
+    const state = {
+      reviewAssurance: {
+        dispatches: [
+          {
+            dispatchStatus: 'authorized',
+            dispatchAuthorizedAt: new Date(0).toISOString(),
+            hostCallId: 'call-1',
+          },
+        ],
+      },
+    } as never;
+    await expect(
+      reconcileExpiredAuthorizedDispatchesOrThrow(runtime, 'parent', '/tmp', state),
+    ).rejects.toMatchObject({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' });
+    expect(abandonAndBlockByHostCall).toHaveBeenCalledWith(
+      runtime.orchestratorDeps,
+      '/tmp',
+      'call-1',
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    );
   });
 });
