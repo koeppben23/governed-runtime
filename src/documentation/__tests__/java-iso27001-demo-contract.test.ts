@@ -92,6 +92,7 @@ describe('java demo ISO/IEC 27001 evidence projection contract', () => {
       'mappingDigest',
       'packageSha256',
       'mkdir "$FINAL"',
+      'OUTPUT_ROOT="/tmp/flowguard-iso-reports"',
       'Not an ISO conformity assessment.',
     ]) {
       expect(wrapper, `wrapper must contain ${marker}`).toContain(marker);

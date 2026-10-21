@@ -15,7 +15,7 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAPPING="$SCRIPT_DIR/iso27001-demo-mapping.json"
-OUTPUT_ROOT="${TMPDIR:-/tmp}/flowguard-iso-reports"
+OUTPUT_ROOT="/tmp/flowguard-iso-reports"
 SESSION=""
 
 usage() {
@@ -123,16 +123,27 @@ fi
 
 OUTPUT_PARENT="$(cd "$(dirname "$OUTPUT_ROOT")" 2>/dev/null && pwd -P)" || die "output root parent does not exist: $(dirname "$OUTPUT_ROOT")"
 OUTPUT_ROOT="$OUTPUT_PARENT/$(basename "$OUTPUT_ROOT")"
-case "$OUTPUT_ROOT/" in
-  "$WORKTREE/"*) die "output root must be outside the git worktree" ;;
-esac
-CONFIG_REAL="$(cd "$CONFIG_DIR" 2>/dev/null && pwd -P || true)"
-if [ -n "$CONFIG_REAL" ]; then
-  case "$OUTPUT_ROOT/" in
-    "$CONFIG_REAL/"*) die "output root must be outside the FlowGuard config directory" ;;
-  esac
+
+# Resolve an existing directory or symlink before creating anything. A final
+# path component that is a symlink must not bypass the containment guards.
+if [ -L "$OUTPUT_ROOT" ] || [ -e "$OUTPUT_ROOT" ]; then
+  OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" 2>/dev/null && pwd -P)" || die "cannot resolve output root: $OUTPUT_ROOT"
 fi
+CONFIG_REAL="$(cd "$CONFIG_DIR" 2>/dev/null && pwd -P || true)"
+check_output_root_guards() {
+  case "$OUTPUT_ROOT/" in
+    "$WORKTREE/"*) die "output root must be outside the git worktree" ;;
+  esac
+  if [ -n "$CONFIG_REAL" ]; then
+    case "$OUTPUT_ROOT/" in
+      "$CONFIG_REAL/"*) die "output root must be outside the FlowGuard config directory" ;;
+    esac
+  fi
+}
+check_output_root_guards
 mkdir -p "$OUTPUT_ROOT" || die "cannot create output root: $OUTPUT_ROOT"
+OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd -P)" || die "cannot resolve output root: $OUTPUT_ROOT"
+check_output_root_guards
 
 FINAL="$OUTPUT_ROOT/$SESSION"
 [ ! -e "$FINAL" ] || die "refusing to overwrite existing report directory: $FINAL"
@@ -273,6 +284,9 @@ if [ "$STATUS" -ne 0 ]; then
   die "JSON/Markdown report validation failed" 1
 fi
 
+# The mkdir is the atomic target reservation. The two already-validated files
+# are moved after that claim; this prevents overwrite/concurrent publication but
+# is not a single directory rename if the process is killed between the moves.
 mkdir "$FINAL" 2>/dev/null || die "refusing to overwrite existing report directory: $FINAL"
 FINAL_CLAIMED=1
 if ! mv "$JSON_REPORT" "$FINAL/iso27001-report.json" || ! mv "$MD_REPORT" "$FINAL/iso27001-report.md"; then

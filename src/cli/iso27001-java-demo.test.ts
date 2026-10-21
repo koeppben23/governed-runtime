@@ -11,7 +11,17 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -237,6 +247,25 @@ describe.skipIf(!POSIX)('java demo ISO wrapper', () => {
       expect(result.status).toBe(1);
       expect(existsSync(inside)).toBe(false);
       expect(result.stderr).toContain('outside the git worktree');
+    } finally {
+      await rm(workspace.root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects output-root symlinks into the worktree or config directory', async () => {
+    const workspace = await createWorkspace();
+    try {
+      for (const target of [workspace.workspace, workspace.configDir]) {
+        const link = path.join(
+          workspace.root,
+          target === workspace.workspace ? 'workspace-link' : 'config-link',
+        );
+        await symlink(target, link, 'dir');
+        const result = runWrapper(workspace, ['--session', SESSION, '--output-root', link]);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('outside the');
+        expect(existsSync(path.join(target, SESSION))).toBe(false);
+      }
     } finally {
       await rm(workspace.root, { recursive: true, force: true });
     }
