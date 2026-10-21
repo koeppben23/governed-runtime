@@ -188,6 +188,12 @@ See [demos/iso27001-evidence-mapping/README.md](../demos/iso27001-evidence-mappi
 for the scenario table, exit codes, and the explicit statement that the
 synthetic fixture demonstrates the tool chain, not production state security.
 
+The Java Task Manager demo has an optional post-export projection using the same
+CLI and a synthetic, non-organizational mapping:
+[`run-iso-mapping.sh`](../demos/java-task-manager/run-iso-mapping.sh). It reads
+only the verified completion package and writes a JSON and Markdown companion
+report outside the worktree; it is not an ISO conformity assessment.
+
 ## Trust Boundary
 
 - The **only** positive-evidence source is the raw completion export read from
