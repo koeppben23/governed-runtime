@@ -278,4 +278,24 @@ describe('reviewer execution watchdog', () => {
     await vi.advanceTimersByTimeAsync(600);
     expect(persistTaskFailure).not.toHaveBeenCalled();
   });
+
+  it('does not clear another pending parent task after an exact Task completion', async () => {
+    vi.useFakeTimers();
+    const failures = new Map<string, ReviewerExecutionFailure>();
+    const persistTaskFailure = vi.fn(async () => true);
+    const watchdog = new ReviewerExecutionWatchdog({
+      config,
+      client: client(),
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      persistFailure: vi.fn(async () => true),
+      persistTaskFailure,
+      failures,
+    });
+    watchdog.onTaskAuthorized('parent', 'task-a');
+    watchdog.onTaskAuthorized('parent', 'task-b');
+    watchdog.finishTask({ callId: 'task-a', parentSessionId: 'parent' });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(persistTaskFailure).toHaveBeenCalledTimes(1);
+    expect(persistTaskFailure).toHaveBeenCalledWith(expect.anything(), 'parent', 'task-b');
+  });
 });

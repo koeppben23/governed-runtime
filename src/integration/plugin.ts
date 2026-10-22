@@ -335,10 +335,13 @@ function finishNativeTaskWatchdog(
   input: { readonly sessionID: string; readonly callID?: string },
   childSessionId: string | undefined,
 ): void {
-  if (typeof input.callID === 'string' && input.callID.length > 0) {
-    watchdog.completeTask(input.callID);
-  }
-  watchdog.completeTaskForParent(input.sessionID, childSessionId);
+  watchdog.finishTask({
+    ...(typeof input.callID === 'string' && input.callID.length > 0
+      ? { callId: input.callID }
+      : {}),
+    parentSessionId: input.sessionID,
+    ...(childSessionId === undefined ? {} : { childSessionId }),
+  });
   if (typeof childSessionId === 'string' && childSessionId.length > 0) {
     watchdog.complete(childSessionId);
   }

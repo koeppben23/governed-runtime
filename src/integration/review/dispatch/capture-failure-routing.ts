@@ -48,6 +48,7 @@ export interface BlockOutputInput {
 
 export interface CaptureFailureContext extends Omit<BlockOutputInput, 'code' | 'reason'> {
   readonly sessionId: string;
+  readonly phase: string;
   readonly obligationType: ReviewObligationType;
   /** Bound reviewer child, when the failure happens after the Task release. */
   readonly childSessionId?: string;

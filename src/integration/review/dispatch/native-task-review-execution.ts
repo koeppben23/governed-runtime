@@ -9,7 +9,13 @@ import type { ReviewFindings } from '../../../state/evidence.js';
 import { strictBlockedOutput, unableReviewDiagnostics } from '../../blocked-result.js';
 import { projectReviewExecution } from './review-execution-projection.js';
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
-import { clearPendingReviewForObligation } from './capture-failure-routing.js';
+import {
+  abandonOrRetryCaptureFailure,
+  clearPendingReviewForObligation,
+  type CaptureFailureContext,
+} from './capture-failure-routing.js';
+import { buildCapturedFindingsDiagnostics, captureFailureBlockDetail } from './capture-retry.js';
+import type { bindNativeReviewEvidence } from './native-task-review-bindings.js';
 import { abandonAndBlockByHostCall } from './durable-dispatch.js';
 import { buildEnforcementError } from '../../blocked-result.js';
 import { readState } from '../../../adapters/persistence.js';
@@ -22,8 +28,11 @@ export async function handleReviewerExecutionFailure(input: {
   readonly childSessionId: string;
   readonly hookOutput: ToolHookAfterOutput;
   readonly obligationId: string;
+  readonly sessionId: string;
+  readonly phase: string;
 }): Promise<boolean> {
-  const { runtime, sessDir, callId, childSessionId, hookOutput, obligationId } = input;
+  const { runtime, sessDir, callId, childSessionId, hookOutput, obligationId, sessionId, phase } =
+    input;
   const failures = runtime.reviewerExecutionFailures;
   const failure = failures?.get(childSessionId);
   if (!failure) return false;
@@ -35,6 +44,8 @@ export async function handleReviewerExecutionFailure(input: {
     code: failure.code,
     reason: failure.reason,
     obligationId,
+    sessionId,
+    phase,
     output: hookOutput,
   });
   if (closure.kind === 'blocked') failures?.delete(childSessionId);
@@ -50,6 +61,8 @@ export async function closeExecutionFailure(input: {
   readonly code: string;
   readonly reason: string;
   readonly obligationId: string;
+  readonly sessionId: string;
+  readonly phase: string;
   readonly output: ToolHookAfterOutput;
 }) {
   const closure = await abandonAndBlockByHostCall(
@@ -59,11 +72,43 @@ export async function closeExecutionFailure(input: {
     input.code,
     input.childSessionId === undefined ? {} : { childSessionId: input.childSessionId },
   );
+  if (closure.kind === 'noop') {
+    const state = await readState(input.sessDir);
+    if (!isTerminalExecutionClosure(state, input.callId, input.obligationId)) {
+      await input.runtime.orchestratorDeps.blockReviewOutcome(
+        { sessDir: input.sessDir, sessionId: input.sessionId, phase: input.phase },
+        input.obligationId,
+        input.code,
+        { reason: input.reason },
+        input.output,
+      );
+      return closure;
+    }
+  }
   input.output.output = strictBlockedOutput(input.code, {
     obligationId: closure.kind === 'blocked' ? closure.obligationId : input.obligationId,
     reason: input.reason,
   });
   return closure;
+}
+
+// eslint-disable-next-line complexity -- exact terminal proof checks every persisted lineage link.
+function isTerminalExecutionClosure(
+  state: PersistedState | null,
+  callId: string,
+  obligationId: string,
+): boolean {
+  const assurance = state?.reviewAssurance;
+  const dispatch = assurance?.dispatches.find((item) => item.hostCallId === callId);
+  const obligation = assurance?.obligations.find((item) => item.obligationId === obligationId);
+  const attempt = assurance?.attempts.find((item) => item.attemptId === dispatch?.attemptId);
+  if (dispatch?.dispatchStatus === 'completed' && attempt?.status === 'bound') return true;
+  return (
+    dispatch?.dispatchStatus === 'outcome_unknown' &&
+    attempt?.status === 'stale' &&
+    obligation?.status === 'blocked' &&
+    assurance?.capacityLock?.obligationId === obligationId
+  );
 }
 
 export async function blockIncoherentCompletedCapture(input: {
@@ -215,4 +260,47 @@ export async function projectFulfilledReview(input: {
     attemptId: input.attemptId,
     verdict: input.verdict,
   });
+}
+
+export async function writeBindingFailure(
+  input: CaptureFailureContext,
+  result: Exclude<Awaited<ReturnType<typeof bindNativeReviewEvidence>>, 'fulfilled'>,
+  childSessionId: string,
+): Promise<void> {
+  if (typeof result === 'object') {
+    await abandonOrRetryCaptureFailure({
+      ...input,
+      childSessionId,
+      code: result.code,
+      reason: JSON.stringify(result.details),
+      diagnostics: buildCapturedFindingsDiagnostics(result),
+    });
+    return;
+  }
+  if (result === 'execution_expired') {
+    await closeExecutionFailure({
+      runtime: input.runtime,
+      sessDir: input.sessDir,
+      callId: input.callId,
+      childSessionId,
+      sessionId: input.sessionId,
+      phase: input.phase,
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      reason: 'The absolute reviewer deadline elapsed before the evidence mutation could bind.',
+      obligationId: input.obligationId,
+      output: input.output,
+    });
+    return;
+  }
+  input.output.output = strictBlockedOutput(
+    result === 'reused'
+      ? 'SUBAGENT_EVIDENCE_REUSED'
+      : result === 'lineage_unavailable'
+        ? 'REVIEW_ATTEMPT_UNAVAILABLE'
+        : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    captureFailureBlockDetail({
+      obligationId: input.obligationId,
+      reason: `Native reviewer evidence binding returned ${result}.`,
+    }),
+  );
 }

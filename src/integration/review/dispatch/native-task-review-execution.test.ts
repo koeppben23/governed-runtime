@@ -15,6 +15,7 @@ vi.mock('../../../adapters/persistence.js', async (importOriginal) => ({
 
 import {
   blockIncoherentCompletedCapture,
+  closeExecutionFailure,
   guardPreBindReview,
   handleReviewerExecutionFailure,
   reconcileExpiredAuthorizedDispatchesOrThrow,
@@ -172,6 +173,8 @@ describe('terminal incoherent review capture', () => {
         childSessionId: 'child',
         hookOutput: output,
         obligationId: 'obl-1',
+        sessionId: 'parent',
+        phase: 'PLAN',
       }),
     ).resolves.toBe(true);
 
@@ -184,5 +187,77 @@ describe('terminal incoherent review capture', () => {
     );
     expect(failures.has('child')).toBe(false);
     expect(output.output).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+  });
+
+  it('treats a noop closure as terminal only with persisted blocked lineage', async () => {
+    abandonAndBlockByHostCall.mockClear();
+    abandonAndBlockByHostCall.mockResolvedValue({ kind: 'noop' });
+    const blockReviewOutcome = vi.fn();
+    readState.mockReset();
+    readState.mockResolvedValue({
+      reviewAssurance: {
+        dispatches: [
+          { hostCallId: 'call-1', attemptId: 'att-1', dispatchStatus: 'outcome_unknown' },
+        ],
+        attempts: [{ attemptId: 'att-1', status: 'stale' }],
+        obligations: [{ obligationId: 'obl-1', status: 'blocked' }],
+        capacityLock: { obligationId: 'obl-1', code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' },
+      },
+    });
+    const output = { output: '', title: '', metadata: {} };
+    const runtime = {
+      orchestratorDeps: { blockReviewOutcome },
+    } as unknown as NativeReviewTransportRuntime;
+
+    await closeExecutionFailure({
+      runtime,
+      sessDir: '/tmp',
+      callId: 'call-1',
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      reason: 'test',
+      obligationId: 'obl-1',
+      sessionId: 'parent',
+      phase: 'PLAN',
+      output,
+    });
+
+    expect(blockReviewOutcome).not.toHaveBeenCalled();
+    expect(output.output).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+  });
+
+  it('blocks the obligation when a noop closure is not provably terminal', async () => {
+    abandonAndBlockByHostCall.mockClear();
+    abandonAndBlockByHostCall.mockResolvedValue({ kind: 'noop' });
+    const blockReviewOutcome = vi.fn(
+      async (_ctx, _id, code, _detail, output: { output: string }) => {
+        output.output = code;
+      },
+    );
+    readState.mockReset();
+    readState.mockResolvedValue({ reviewAssurance: undefined });
+    const output = { output: '', title: '', metadata: {} };
+    const runtime = {
+      orchestratorDeps: { blockReviewOutcome },
+    } as unknown as NativeReviewTransportRuntime;
+
+    await closeExecutionFailure({
+      runtime,
+      sessDir: '/tmp',
+      callId: 'call-1',
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      reason: 'test',
+      obligationId: 'obl-1',
+      sessionId: 'parent',
+      phase: 'PLAN',
+      output,
+    });
+
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      { sessDir: '/tmp', sessionId: 'parent', phase: 'PLAN' },
+      'obl-1',
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      { reason: 'test' },
+      output,
+    );
   });
 });

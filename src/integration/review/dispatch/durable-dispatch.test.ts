@@ -153,6 +153,30 @@ function abandonSdkDispatch(
 }
 
 describe('persistAuthorizedSdkDispatch', () => {
+  it('BAD: refuses a second authorized release for the same attempt', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: attempt.attemptId,
+        obligationId: obligation.obligationId,
+        childSessionId: 'child-session-other',
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: NOW,
+      }),
+    ).rejects.toMatchObject({ code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED' });
+    expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
+  });
+
   it('HAPPY: appends an authorized durable dispatch for the created attempt', async () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };

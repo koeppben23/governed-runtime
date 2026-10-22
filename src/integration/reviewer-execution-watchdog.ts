@@ -229,16 +229,27 @@ export class ReviewerExecutionWatchdog {
   }
 
   /** The native Task completed; clear its dispatch timer even without child attachment. */
-  completeTask(callId: string): void {
+  completeTask(callId: string): boolean {
     const task = this.tasks.get(callId);
-    if (!task) return;
+    if (!task) return false;
     this.clear(task);
     this.tasks.delete(callId);
     if (task.childSessionId) this.entries.delete(task.childSessionId);
+    return true;
+  }
+
+  /** Complete a Task only after an exact call-ID hit; the parent fallback is last resort. */
+  finishTask(input: {
+    readonly callId?: string;
+    readonly parentSessionId: string;
+    readonly childSessionId?: string;
+  }): void {
+    if (input.callId && this.completeTask(input.callId)) return;
+    this.completeTaskForParent(input.parentSessionId, input.childSessionId);
   }
 
   /** Clear the sole pending dispatch for a parent when the host call IDs differ. */
-  completeTaskForParent(parentSessionId: string, childSessionId?: string): void {
+  completeTaskForParent(parentSessionId: string, childSessionId?: string): boolean {
     const pending = [...this.tasks.entries()].filter(([, task]) => {
       if (task.parentSessionId !== parentSessionId) return false;
       if (task.childSessionId && childSessionId) {
@@ -246,9 +257,9 @@ export class ReviewerExecutionWatchdog {
       }
       return task.childSessionId === undefined;
     });
-    if (pending.length !== 1) return;
+    if (pending.length !== 1) return false;
     const entry = pending[0];
-    if (entry) this.completeTask(entry[0]);
+    return entry ? this.completeTask(entry[0]) : false;
   }
 
   private clear(entry: Entry): void {

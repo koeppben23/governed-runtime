@@ -33,7 +33,6 @@ import { persistAuthorizedReviewDispatch } from './durable-dispatch.js';
 import {
   buildCapturedFindingsDiagnostics,
   buildCodeOnlyRetryDiagnostic,
-  captureFailureBlockDetail,
   transportRecoveryInstruction,
 } from './capture-retry.js';
 import {
@@ -46,9 +45,9 @@ import {
 import {
   blockIncoherentCompletedCapture,
   guardPreBindReview,
-  closeExecutionFailure,
   handleReviewerExecutionFailure,
   projectFulfilledReview,
+  writeBindingFailure,
   projectUnableToReview,
   reconcileExpiredAuthorizedDispatchesOrThrow,
   taskChildSessionId,
@@ -284,47 +283,6 @@ interface StructuredReviewInput {
  * budget). A refused re-arm also fails closed with the original capture code.
  */
 
-async function writeBindingFailure(
-  input: CaptureFailureContext,
-  result: Exclude<Awaited<ReturnType<typeof bindNativeReviewEvidence>>, 'fulfilled'>,
-  childSessionId: string,
-): Promise<void> {
-  if (typeof result === 'object') {
-    await abandonOrRetryCaptureFailure({
-      ...input,
-      childSessionId,
-      code: result.code,
-      reason: JSON.stringify(result.details),
-      diagnostics: buildCapturedFindingsDiagnostics(result),
-    });
-    return;
-  }
-  if (result === 'execution_expired') {
-    await closeExecutionFailure({
-      runtime: input.runtime,
-      sessDir: input.sessDir,
-      callId: input.callId,
-      childSessionId,
-      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      reason: 'The absolute reviewer deadline elapsed before the evidence mutation could bind.',
-      obligationId: input.obligationId,
-      output: input.output,
-    });
-    return;
-  }
-  input.output.output = strictBlockedOutput(
-    result === 'reused'
-      ? 'SUBAGENT_EVIDENCE_REUSED'
-      : result === 'lineage_unavailable'
-        ? 'REVIEW_ATTEMPT_UNAVAILABLE'
-        : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-    captureFailureBlockDetail({
-      obligationId: input.obligationId,
-      reason: `Native reviewer evidence binding returned ${result}.`,
-    }),
-  );
-}
-
 type NativeTaskContextResolution =
   | {
       readonly kind: 'resolved';
@@ -390,6 +348,7 @@ export async function nativeReviewTaskAfter(
   await fulfillNativeReviewTask(runtime, taskContext, hookOutput);
 }
 
+// eslint-disable-next-line max-lines-per-function -- Task identity, failure closure, and binding are one boundary.
 async function fulfillNativeReviewTask(
   runtime: NativeReviewTransportRuntime,
   taskContext: Extract<NativeTaskContextResolution, { kind: 'resolved' }>,
@@ -430,6 +389,8 @@ async function fulfillNativeReviewTask(
       childSessionId,
       hookOutput,
       obligationId: lineage.obligation.obligationId,
+      sessionId,
+      phase: lineage.state.phase,
     })
   )
     return;
@@ -472,6 +433,7 @@ async function fulfillNativeReviewTask(
       runtime,
       sessDir,
       sessionId,
+      phase: lineage.state.phase,
       callId,
       obligationType: lineage.obligation.obligationType,
       obligationId: lineage.obligation.obligationId,

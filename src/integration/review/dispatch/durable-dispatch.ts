@@ -129,6 +129,16 @@ export async function persistAuthorizedReviewDispatch(
     }
     if (disposition === 'retry') return state;
 
+    const authorizedForAttempt = (assurance.dispatches ?? []).filter(
+      (record) => record.attemptId === input.attemptId && record.dispatchStatus === 'authorized',
+    );
+    if (authorizedForAttempt.length > 0) {
+      throw buildEnforcementError(
+        REVIEW_DISPATCH_PERSISTENCE_FAILED,
+        'the reviewer attempt already has an authorized dispatch release',
+      );
+    }
+
     const record: ReviewDispatchRecord = {
       dispatchId: randomUUID(),
       attemptId: input.attemptId,
