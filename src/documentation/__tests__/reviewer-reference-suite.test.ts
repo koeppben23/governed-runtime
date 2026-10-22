@@ -674,6 +674,8 @@ describe('reference-suite live runner helpers', () => {
     expect(options.repetitions).toBe(3);
     expect(options.hostVersion).toBe('1.19.3');
     expect(options.singleReview).toBe(false);
+    expect(options.contextMode).toBe('baseline');
+    expect(parseSuiteArgs([...baseArgs, '--context-mode', 'dossier']).contextMode).toBe('dossier');
   });
 
   it('HAPPY: parses the single-review mode and the step override', () => {
@@ -685,6 +687,9 @@ describe('reference-suite live runner helpers', () => {
   it('BAD: rejects an unsupported arm or a non-positive repetition count', () => {
     expect(() => parseSuiteArgs([...baseArgs, '--arm', '32768'])).toThrow(/--arm/);
     expect(() => parseSuiteArgs([...baseArgs, '--repetitions', '0'])).toThrow(/positive integer/);
+    expect(() => parseSuiteArgs([...baseArgs, '--context-mode', 'legacy'])).toThrow(
+      /--context-mode/,
+    );
   });
 
   it('HAPPY: selects only Java-seed plan-review cases by default', () => {

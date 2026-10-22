@@ -93,6 +93,7 @@ function gitDirty() {
  * @property {boolean} singleReview
  * @property {string} [caseId]
  * @property {number} [arm]
+ * @property {'baseline'|'dossier'} contextMode
  */
 
 /**
@@ -111,6 +112,7 @@ export function parseSuiteArgs(argv) {
     check: false,
     transportSmoke: false,
     singleReview: false,
+    contextMode: 'baseline',
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -130,6 +132,7 @@ export function parseSuiteArgs(argv) {
     else if (flag === '--reviewer-steps') options.reviewerSteps = Number(next());
     else if (flag === '--transport-smoke') options.transportSmoke = true;
     else if (flag === '--single-review') options.singleReview = true;
+    else if (flag === '--context-mode') options.contextMode = next();
     else if (flag === '--case') options.caseId = next();
     else if (flag === '--arm') options.arm = next();
     else if (flag === '--repetitions') options.repetitions = Number(next());
@@ -139,6 +142,9 @@ export function parseSuiteArgs(argv) {
   if (!options.root) throw new Error('--root <fresh-root> is required');
   if (!Number.isInteger(options.repetitions) || options.repetitions < 1) {
     throw new Error('--repetitions must be a positive integer');
+  }
+  if (options.contextMode !== 'baseline' && options.contextMode !== 'dossier') {
+    throw new Error('--context-mode must be baseline or dossier');
   }
   if (!Number.isInteger(options.reviewerSteps) || options.reviewerSteps < 1) {
     throw new Error('--reviewer-steps must be a positive integer');
@@ -357,6 +363,18 @@ export function applyReviewerOutputTokenMax(workspace, outputTokenMax) {
   parsed.reviewer = {
     ...(parsed.reviewer && typeof parsed.reviewer === 'object' ? parsed.reviewer : {}),
     outputTokenMax,
+  };
+  fs.writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+}
+
+/** Apply the time-boxed reviewer context projection for one measurement arm. */
+export function applyReviewerContextMode(workspace, contextMode) {
+  const file = path.join(workspace, '.opencode', 'flowguard.json');
+  if (!fs.existsSync(file)) throw new Error(`flowguard config missing: ${file}`);
+  const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  parsed.reviewer = {
+    ...(parsed.reviewer && typeof parsed.reviewer === 'object' ? parsed.reviewer : {}),
+    contextMode,
   };
   fs.writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
 }
@@ -607,6 +625,7 @@ async function runPlanCase({ runner, suite, selected, arm, repetition, options, 
   fs.cpSync(path.join(options.root, 'setup', 'java-task-manager'), workspace, { recursive: true });
   applyReviewerStepBudget(workspace, options.reviewerSteps);
   applyReviewerOutputTokenMax(workspace, arm);
+  applyReviewerContextMode(workspace, options.contextMode);
   const frontmatter = reviewerFrontmatter(workspace);
   const session = { workspace, terminal: 'COMPLETE' };
   const record = {
@@ -616,7 +635,7 @@ async function runPlanCase({ runner, suite, selected, arm, repetition, options, 
     caseId: selected.caseId,
     goldStandardType: selected.goldStandardType,
     repetition,
-    arm: { outputTokenMax: arm },
+    arm: { outputTokenMax: arm, contextMode: options.contextMode },
     provenance: {
       repoHead: gitHead(),
       dirty: gitDirty(),
@@ -1016,6 +1035,7 @@ async function main() {
         reviewerSteps: options.reviewerSteps,
         arms,
         repetitions: options.repetitions,
+        contextMode: options.contextMode,
         caseIds: cases.map((entry) => entry.caseId ?? REPRODUCTION_CASE_ID),
         tarball,
         tarballSha256: sha256(tarball),
