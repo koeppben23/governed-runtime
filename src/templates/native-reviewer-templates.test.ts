@@ -12,6 +12,11 @@ describe('native reviewer templates', () => {
     expect(CLAUDE_REVIEWER_AGENT).toContain('Bash');
     expect(CLAUDE_REVIEWER_AGENT).toContain('transport/isolation artifacts only');
     expect(CLAUDE_REVIEWER_AGENT).toContain('validated, obligation-bound ReviewFindings');
+    expect(CLAUDE_REVIEWER_AGENT).toContain(
+      'tools: Read, mcp__flowguard__flowguard_observe_repository',
+    );
+    expect(CLAUDE_REVIEWER_AGENT).not.toContain('Glob');
+    expect(CLAUDE_REVIEWER_AGENT).not.toContain('Grep');
   });
 
   it('renders Codex reviewer as transport-only with restricted tools', () => {
@@ -20,6 +25,9 @@ describe('native reviewer templates', () => {
     expect(CODEX_REVIEWER_SUBAGENT).toContain('Write');
     expect(CODEX_REVIEWER_SUBAGENT).toContain('transport/isolation artifacts only');
     expect(CODEX_REVIEWER_SUBAGENT).toContain('validated, obligation-bound ReviewFindings');
+    expect(CODEX_REVIEWER_SUBAGENT).toContain('    - Read');
+    expect(CODEX_REVIEWER_SUBAGENT).not.toContain('    - Glob');
+    expect(CODEX_REVIEWER_SUBAGENT).not.toContain('    - Grep');
   });
 
   it.each([
@@ -46,5 +54,13 @@ describe('reviewer prompt authority separation', () => {
 
   it('static reviewer export remains identical to the permanent OpenCode prompt', () => {
     expect(REVIEWER_AGENT).toBe(renderReviewerPrompt('all'));
+  });
+
+  it('removes glob/grep from the productive reviewer while keeping read and observation', () => {
+    const prompt = renderReviewerPrompt('all');
+    expect(prompt).toContain('read: allow');
+    expect(prompt).toContain('glob: deny');
+    expect(prompt).toContain('grep: deny');
+    expect(prompt).toContain('flowguard_observe_repository: allow');
   });
 });

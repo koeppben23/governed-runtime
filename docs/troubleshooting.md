@@ -271,6 +271,8 @@ real, registered reason.
 | `REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND` | A previous reviewer exhausted its execution capacity; no new review may start in the same user turn | Report the blocked review and stop. A new review requires a new explicit review command from the user; do not retry the same transport or switch review tools |
 | `REVIEWER_STEP_BUDGET_EXHAUSTED` | The reviewer child reached its configured host step budget before structured findings could be captured; a plausible final text at the limit is not accepted | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer Task again, resubmit the artifact, or start another review in this turn. A new review requires a new explicit review command from the user (for a plan review: `/plan` again) |
 | `REVIEWER_OUTPUT_CAP_INVALID` | The configured reviewer output cap cannot be applied because the model limit is below it, the model limit is unknown, or the FlowGuard config is unreadable/invalid | Set `reviewer.outputTokenMax` in `flowguard.json` to at most the model output limit reported in the reason (or choose a compatible model), restart OpenCode, then re-run the originating command; do not re-arm the same invalid configuration |
+| `REVIEWER_EXECUTION_TIMEOUT` | The reviewer exceeded a bounded execution deadline and the host confirmed termination | Report the blocked review and stop. A new review requires a new explicit review command after the host is quiescent; do not raise the timeout to bypass the block |
+| `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` | The reviewer exceeded a bounded deadline but host termination or quiescence could not be confirmed | Do not start another reviewer Task. Inspect the exact child session and confirm host quiescence before any further review |
 | `REVIEWER_OUTPUT_TRUNCATED` | The reviewer child stopped at the host output limit (`finish: "length"` / `MessageOutputLengthError`) before a final answer; the truncated review is never serialized | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer Task again, resubmit the artifact, or start another review in this turn. A new review requires a new explicit review command from the user (for a plan review: `/plan` again) |
 | `REVIEWER_TASK_INCOMPLETE` | The reviewer child finished (`stop`) without a non-blank final answer | While the attempt budget allows, FlowGuard re-arms a fresh attempt on the same frozen obligation and answers with a `reviewRetry` envelope (invoke the reviewer Task again). The blocked code itself means no fresh attempt was authorized: do not invoke the Task again; stop and re-run the originating command (for `/plan`: submit the current plan again), which re-arms a still-pending obligation or mints a fresh one when the exhausted budget closed it |
 | `REVIEWER_TASK_ABORTED` | The reviewer task was aborted (`MessageAbortedError`), possibly by the user; it is never restarted automatically | If intended, nothing to do; otherwise re-run the originating command to re-arm a fresh attempt |
@@ -544,6 +546,8 @@ REVIEWER_COMPLETION_UNVERIFIABLE
 REVIEWER_CONTEXT_UNAVAILABLE
 REVIEWER_INVOCATION_EXHAUSTED
 REVIEWER_OUTPUT_CAP_INVALID
+REVIEWER_EXECUTION_OUTCOME_UNKNOWN
+REVIEWER_EXECUTION_TIMEOUT
 REVIEWER_OUTPUT_TRUNCATED
 REVIEWER_STEP_BUDGET_EXHAUSTED
 REVIEWER_TASK_ABORTED

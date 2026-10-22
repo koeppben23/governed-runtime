@@ -209,3 +209,141 @@ describe('structured follow-up ref expansion (p42-v7)', () => {
     },
   );
 });
+
+describe('structured follow-up bounded format correction', () => {
+  afterEach(() => {
+    _resetAgentResolutionCache();
+  });
+
+  const expandedRef = {
+    kind: 'plan_adr_section',
+    artifactKind: 'plan',
+    artifactDigest: 'a'.repeat(64),
+    sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
+    excerptDigest: 'b'.repeat(64),
+  };
+
+  function findings(): Record<string, unknown> {
+    return findingsWithChallengeRefs([expandedRef]);
+  }
+
+  it('accepts exactly one correction when the semantic projection is identical', async () => {
+    let calls = 0;
+    const host = client({
+      prompt: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return { data: { info: { structured: { ...findings(), summary: 'legacy extra' } } } };
+        }
+        return { data: { info: { structured: findings() } } };
+      },
+    });
+    const result = await captureStructuredFindingsFromVisibleChild(host, INPUT);
+    expect(result.kind).toBe('ok');
+    expect(calls).toBe(2);
+    expect(result).toMatchObject({ serializationRepair: { originalHash: expect.any(String) } });
+  });
+
+  it('propagates a repair transport failure to the execution lifecycle boundary', async () => {
+    let calls = 0;
+    const failure = new Error('repair transport lost while the host may still be running');
+    const host = client({
+      prompt: async () => {
+        calls += 1;
+        if (calls === 1)
+          return { data: { info: { structured: { ...findings(), summary: 'extra' } } } };
+        throw failure;
+      },
+    });
+    await expect(captureStructuredFindingsFromVisibleChild(host, INPUT)).rejects.toBe(failure);
+    expect(calls).toBe(2);
+  });
+
+  it('rejects a correction that changes an enum or other semantic field', async () => {
+    const invalid = findings();
+    const invalidBlocking = [
+      {
+        severity: 'major',
+        category: 'claim/evidence fit',
+        message: 'bad enum',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'artifact_section',
+              artifactKind: 'plan',
+              artifactDigest: 'a'.repeat(64),
+              sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
+            },
+          ],
+          evidenceLocations: [],
+        },
+      },
+    ];
+    const repaired = findings();
+    repaired.blockingIssues = [{ ...invalidBlocking[0], category: 'correctness' }];
+    repaired.overallVerdict = 'changes_requested';
+    let calls = 0;
+    const result = await captureStructuredFindingsFromVisibleChild(
+      client({
+        prompt: async () => {
+          calls += 1;
+          return {
+            data: {
+              info: {
+                structured:
+                  calls === 1 ? { ...invalid, blockingIssues: invalidBlocking } : repaired,
+              },
+            },
+          };
+        },
+      }),
+      INPUT,
+    );
+    expect(result).toMatchObject({
+      kind: 'blocked',
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+    });
+    expect(result.kind === 'blocked' ? result.reason : '').toContain('semantic projection');
+    expect(calls).toBe(2);
+  });
+
+  it('never repairs accept plus blocking issues into a different verdict', async () => {
+    const blocking = [
+      {
+        severity: 'major',
+        category: 'correctness',
+        message: 'real',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'artifact_section',
+              artifactKind: 'plan',
+              artifactDigest: 'a'.repeat(64),
+              sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
+            },
+          ],
+          evidenceLocations: [],
+        },
+      },
+    ];
+    const invalid = { ...findings(), overallVerdict: 'accept', blockingIssues: blocking };
+    const repaired = {
+      ...findings(),
+      overallVerdict: 'changes_requested',
+      blockingIssues: blocking,
+    };
+    let calls = 0;
+    const result = await captureStructuredFindingsFromVisibleChild(
+      client({
+        prompt: async () => {
+          calls += 1;
+          return { data: { info: { structured: calls === 1 ? invalid : repaired } } };
+        },
+      }),
+      INPUT,
+    );
+    expect(result.kind).toBe('ok');
+    expect(result).not.toHaveProperty('serializationRepair');
+    expect(calls).toBe(1);
+  });
+});

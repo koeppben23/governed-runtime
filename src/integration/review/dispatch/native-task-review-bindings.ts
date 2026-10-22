@@ -42,6 +42,7 @@ import type { NativeReviewLineage, PersistedState } from './native-task-review-t
  * full runtime, which satisfies this subset structurally.
  */
 export interface NativeReviewRuntimePort {
+  readonly reviewerExecutionFailures?: { has(key: string): boolean };
   readonly orchestratorDeps: OrchestratorDeps;
   readonly log: ReplayPersistDeps['log'];
   readonly logError: ReplayPersistDeps['logError'];
@@ -406,6 +407,7 @@ export async function bindNativeReviewEvidence(input: {
   lineage: NativeReviewLineage;
   prepared: Record<string, unknown>;
   fulfilledAt: string;
+  executionDeadlineAt: string;
   phase: SessionState['phase'];
 }) {
   const { obligation, attempt, dispatch } = input.lineage;
@@ -435,6 +437,10 @@ export async function bindNativeReviewEvidence(input: {
     findingsHash,
     invokedAt: dispatch.dispatchAuthorizedAt,
     fulfilledAt: input.fulfilledAt,
+    deadlineAt: input.executionDeadlineAt,
+    executionFailed: () =>
+      input.runtime.reviewerExecutionFailures?.has(input.childSessionId) === true ||
+      input.runtime.reviewerExecutionFailures?.has(`task:${input.callId}`) === true,
     reviewerResult,
     semanticIntents: nativeReviewAuditIntents({
       obligation,

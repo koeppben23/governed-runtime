@@ -41,6 +41,14 @@ import {
 
 /** Default maximum output tokens requested from the independent reviewer. */
 export const REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT = 65_536;
+/** Default maximum duration of one reviewer tool call. */
+const REVIEWER_TOOL_TIMEOUT_MS_DEFAULT = 30_000;
+/** Default review-phase budget. Tool time is nested inside this budget. */
+const REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT = 480_000;
+/** Default serialization budget, including one optional format correction. */
+const REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT = 60_000;
+/** Absolute reviewer execution deadline from dispatch authorization. */
+const REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT = 600_000;
 
 export const FlowGuardConfigSchema = z.object({
   /** Schema version for forward compatibility. Always "v1". */
@@ -241,8 +249,65 @@ export const FlowGuardConfigSchema = z.object({
         .min(1)
         .max(1_000_000)
         .default(REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT),
+      /** Maximum duration of one reviewer tool call. Must fit inside the review budget. */
+      toolTimeoutMs: z
+        .number()
+        .int()
+        .min(1000)
+        .max(480_000)
+        .default(REVIEWER_TOOL_TIMEOUT_MS_DEFAULT),
+      /** Maximum duration of the reviewer's substantive review phase. */
+      reviewTimeoutMs: z
+        .number()
+        .int()
+        .min(1000)
+        .max(600_000)
+        .default(REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT),
+      /** Serialization budget, including at most one bounded format correction. */
+      serializationTimeoutMs: z
+        .number()
+        .int()
+        .min(1000)
+        .max(480_000)
+        .default(REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT),
+      /** Absolute deadline from reviewer dispatch authorization through binding. */
+      executionTimeoutMs: z
+        .number()
+        .int()
+        .min(1000)
+        .max(1_800_000)
+        .default(REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT),
     })
-    .default({ outputTokenMax: REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT }),
+    .superRefine((reviewer, ctx) => {
+      if (reviewer.toolTimeoutMs > reviewer.reviewTimeoutMs) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['toolTimeoutMs'],
+          message: 'toolTimeoutMs must not exceed reviewTimeoutMs',
+        });
+      }
+      if (reviewer.reviewTimeoutMs > reviewer.executionTimeoutMs) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['reviewTimeoutMs'],
+          message: 'reviewTimeoutMs must not exceed executionTimeoutMs',
+        });
+      }
+      if (reviewer.serializationTimeoutMs > reviewer.executionTimeoutMs) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['serializationTimeoutMs'],
+          message: 'serializationTimeoutMs must not exceed executionTimeoutMs',
+        });
+      }
+    })
+    .default({
+      outputTokenMax: REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT,
+      toolTimeoutMs: REVIEWER_TOOL_TIMEOUT_MS_DEFAULT,
+      reviewTimeoutMs: REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT,
+      serializationTimeoutMs: REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT,
+      executionTimeoutMs: REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT,
+    }),
 
   /** Archive configuration. */
   archive: z

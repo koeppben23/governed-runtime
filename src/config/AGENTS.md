@@ -26,7 +26,7 @@ not runtime state.
   - eight nested category modules included through those aggregates:
     `reasons-envelope.ts` and `reasons-precondition-challenges.ts` (via
     precondition), `reasons-validation-review.ts` and
-    `reasons-validation-review-findings.ts`, `reasons-validation-observation.ts`,
+    `reasons-validation-review-findings.ts`, `reasons-validation-execution.ts`, `reasons-validation-observation.ts`,
     and `reasons-validation-structured.ts` (via validation), and
     `reasons-infra-preflight.ts` and `reasons-infra-boundary.ts` (via infra).
     `reasons-types.ts` owns the `BlockedReason`/`FormattedBlock` contracts;

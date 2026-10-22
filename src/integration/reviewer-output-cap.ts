@@ -41,7 +41,7 @@ export interface ReviewerOutputCapLogger {
 
 export interface ReviewerOutputCapDeps {
   /** Fully resolved repo-or-global FlowGuard configuration. */
-  readonly config: Pick<FlowGuardConfig, 'reviewer'>;
+  readonly config: { readonly reviewer: Pick<FlowGuardConfig['reviewer'], 'outputTokenMax'> };
   /** Original config-read failure retained alongside the logging fallback. */
   readonly configReadError?: unknown;
   readonly log: ReviewerOutputCapLogger;

@@ -95,6 +95,10 @@ permission:
   edit: deny
   bash: deny
   webfetch: deny
+  read: allow
+  glob: deny
+  grep: deny
+  list: deny
   flowguard_observe_repository: allow
   mcp__flowguard__flowguard_observe_repository: allow
 ---
@@ -114,7 +118,7 @@ export function renderClaudeReviewerAgent(reviewType: ReviewerPromptType = 'all'
 ---
 name: ${REVIEWER_SUBAGENT_TYPE}
 description: Independent code reviewer for FlowGuard governance
-tools: Read, Glob, Grep, mcp__flowguard__flowguard_observe_repository
+tools: Read, mcp__flowguard__flowguard_observe_repository
 disallowedTools: Bash, Write, Edit
 ---
 
@@ -129,8 +133,6 @@ description: Independent code reviewer for FlowGuard governance
 tools:
   allow:
     - Read
-    - Glob
-    - Grep
     - mcp__flowguard__flowguard_observe_repository
   deny:
     - Bash

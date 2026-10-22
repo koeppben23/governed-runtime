@@ -159,6 +159,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer execution closure (#1170):** cleanup now requires exact recorded
+  execution identity and persisted terminality. Serialization SDK failures and
+  hanging abort/status requests retain an immediate evidence-binding fence and
+  close through the durable dispatch authority, with retry on persistence
+  failure. Reconciliation preserves completed child-rebound invocations and
+  installs an idempotent capacity lock for unresolved released attempts without
+  duplicate block audit intents.
+
 - **Reviewer recovery after an exhausted re-arm budget is stated and executable.**
   In the 2026-10-19 GUI run two token-truncated plan reviews exhausted the
   re-arm budget. Three outputs then misdescribed the persisted state:
@@ -806,6 +814,15 @@ stop`, reviewer child reported it could not complete the falsification).
   the derived outcome (`applied`, `skipped`, or `failed`).
 
 ### Changed
+
+- **Bounded reviewer execution.** The OpenCode reviewer now has explicit tool,
+  review, serialization, and absolute execution deadlines. Tool use is limited
+  to `read` and the authorized repository observation tool; `glob` and `grep`
+  are denied. Expiry requests termination of the exact child and blocks
+  terminally only after host termination is confirmed; otherwise the attempt is
+  persisted as `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`. A same-child serialization
+  contract violation may receive one bounded, semantically-preserving format
+  correction; an incoherent verdict or changed finding content blocks.
 
 - **Terminal reviewer capacity failures.** A reviewer step-budget or output-limit
   failure is no longer retried automatically. The exact authorized dispatch is

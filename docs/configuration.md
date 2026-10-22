@@ -659,6 +659,54 @@ reviewer baseline; when it is set, the plugin still applies
 `reviewer.outputTokenMax` to the reviewer. The fallback affects the whole host
 process, not only the reviewer.
 
+### Reviewer Execution Budgets (OpenCode)
+
+The reviewer execution path has independent upper bounds and one absolute deadline:
+
+```json
+{
+  "reviewer": {
+    "toolTimeoutMs": 30000,
+    "reviewTimeoutMs": 480000,
+    "serializationTimeoutMs": 60000,
+    "executionTimeoutMs": 600000
+  }
+}
+```
+
+These are the productive safety defaults, not the performance target. The
+80-second review / 120-second total profile is an opt-in lifecycle-validation
+profile; it must not be treated as the final product default until measured
+against real reviews. `toolTimeoutMs` is nested inside `reviewTimeoutMs`; it is
+not additive. The absolute deadline starts at reviewer dispatch authorization
+and covers child discovery, review, same-child serialization, validation, and
+binding. The remaining budget is headroom for orchestration and binding, not a
+sleep.
+
+When a deadline expires, FlowGuard requests termination of the exact reviewer
+child and polls host state. A blocked attempt is persisted with
+`REVIEWER_EXECUTION_TIMEOUT` only after termination is confirmed. If host
+quiescence cannot be established, the attempt is persisted as
+`REVIEWER_EXECUTION_OUTCOME_UNKNOWN` and no new review may start in the same
+turn. A client timeout or an abort acknowledgement alone is not termination
+proof.
+
+SDK/transport exceptions during same-child serialization use the same durable
+execution closure. Host abort and status confirmation have a bounded 1-second
+reconciliation window; a nonresponding host is recorded as `OUTCOME_UNKNOWN`.
+A synchronous execution fence prevents binding while that reconciliation is
+pending. Failed persistence keeps the fence and retries closure; it is never
+reported as confirmed durable termination. Cleanup requires the exact recorded
+call/child lineage and a persisted terminal result. A parent's sole remaining
+Task is not sufficient identity evidence. Already-bound invocations are
+immutable, including when their dispatch was rebound from Task call ID to child
+session ID.
+
+The productive OpenCode reviewer may use `read` and
+`flowguard_observe_repository`; `glob` and `grep` are denied. The prepared
+review context and observation authority must supply the required evidence. A
+missing-evidence review blocks rather than silently searching the repository.
+
 The hook changes the model request only. OpenCode's internal context/compaction
 reservation is not changed by this setting; that remains a documented limitation
 for very large contexts. A plugin loaded after FlowGuard can also overwrite
@@ -675,9 +723,9 @@ the R-B counterexample interpretation remains a documented residual semantic
 risk.
 
 The reference-suite runner may additionally set `FLOWGUARD_REFERENCE_SUITE=1`
-and `FLOWGUARD_REVIEWER_STEPS=15` to test a larger step budget. That override is
-test-only; the product default remains 10 and the final 65K full-loop evidence
-used 10.
+and `FLOWGUARD_REVIEWER_STEPS=16` to test a larger step budget. That override is
+test-only; the product default remains 10. The live hard-gate run uses 16 because
+the 22 Oct 2026 plan reviewer reached 10 steps before emitting a verdict.
 
 ## Examples
 

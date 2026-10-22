@@ -64,6 +64,23 @@ export interface ReviewerOutputCapFailure {
   readonly configured: number;
 }
 
+/** Terminal failure raised by the bounded reviewer execution watchdog. */
+export type ReviewerExecutionFailureCode =
+  'REVIEWER_EXECUTION_TIMEOUT' | 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
+
+export interface ReviewerExecutionIdentity {
+  readonly parentSessionId: string;
+  readonly callId: string;
+  readonly childSessionId?: string;
+}
+
+export interface ReviewerExecutionFailure {
+  readonly code: ReviewerExecutionFailureCode;
+  readonly reason: string;
+  readonly phase: 'review' | 'tool' | 'serialization' | 'total';
+  readonly abortConfirmed: boolean;
+}
+
 /**
  * Host-classified retry diagnostic for a re-armed reviewer attempt.
  *
@@ -147,17 +164,35 @@ export interface OrchestratorClient {
     agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
   };
   session: {
+    /** Request cancellation of exactly one host session. */
+    abort?(opts: { path: { id: string } }): Promise<{ data?: boolean; error?: unknown }>;
     /** Host session metadata, used to resolve a reviewer child's parent. */
     get?(opts: { path: { id: string } }): Promise<{
       data?: { id?: string; parentID?: string } | undefined;
       error?: unknown;
     }>;
+    /** List sessions; used as a parent-resolution fallback when get races creation. */
+    list?(): Promise<{
+      data?: Array<{ id?: string; parentID?: string }> | undefined;
+      error?: unknown;
+    }>;
+    /** Host status map; `idle` is the only quiescent state. */
+    status?(): Promise<{ data?: Record<string, { type?: string }> | undefined; error?: unknown }>;
     /** Host-recorded session messages; used to verify reviewer task completion. */
     messages?(opts: { path: { id: string } }): Promise<{
       data?:
         | Array<{
             info?: { role?: string; finish?: string; error?: unknown };
-            parts?: Array<{ type?: string; text?: string; synthetic?: boolean; ignored?: boolean }>;
+            parts?: Array<{
+              id?: string;
+              type?: string;
+              text?: string;
+              synthetic?: boolean;
+              ignored?: boolean;
+              callID?: string;
+              tool?: string;
+              state?: { status?: string; metadata?: { sessionId?: string } };
+            }>;
           }>
         | undefined;
       error?: unknown;
@@ -179,6 +214,7 @@ export interface OrchestratorClient {
         | {
             /** Response parts are diagnostics only, never reviewer authority. */
             parts?: Array<{
+              id?: string;
               type?: string;
               text?: string;
             }>;

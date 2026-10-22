@@ -153,6 +153,30 @@ function abandonSdkDispatch(
 }
 
 describe('persistAuthorizedSdkDispatch', () => {
+  it('BAD: refuses a second authorized release for the same attempt', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: attempt.attemptId,
+        obligationId: obligation.obligationId,
+        childSessionId: 'child-session-other',
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: NOW,
+      }),
+    ).rejects.toMatchObject({ code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED' });
+    expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
+  });
+
   it('HAPPY: appends an authorized durable dispatch for the created attempt', async () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
@@ -609,9 +633,52 @@ describe('abandonAndBlockByHostCall', () => {
     const second = await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, CAPACITY_CODE, {
       now: NOW,
     });
-    expect(second).toEqual({ kind: 'noop' });
+    expect(second).toEqual({
+      kind: 'terminal',
+      status: 'blocked',
+      obligationId: afterFirst.reviewAssurance!.obligations[0]!.obligationId,
+    });
     expect(stateRef.current).toEqual(afterFirst);
     expect(intents).toEqual(firstIntents);
+  });
+
+  it('closes a spent but still pending execution once and preserves the lock across restart', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const { deps, intents } = collectingDeps(stateRef);
+    await releasedA1(deps, obligation.obligationId, attempt.attemptId);
+    await abandonReviewDispatchByHostCall(deps, SESS_DIR, CHILD, NOW);
+    expect(stateRef.current.reviewAssurance?.obligations[0]?.status).toBe('pending');
+    const code = 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
+    await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, code, { now: NOW });
+    stateRef.current = SessionState.parse(JSON.parse(JSON.stringify(stateRef.current)));
+    expect(stateRef.current.reviewAssurance?.capacityLock).toMatchObject({
+      code,
+      obligationId: obligation.obligationId,
+    });
+    expect(await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, code)).toMatchObject({
+      kind: 'terminal',
+      status: 'blocked',
+    });
+    expect(intents).toHaveLength(1);
+    const successor = baseAssurance();
+    stateRef.current = {
+      ...stateRef.current,
+      reviewAssurance: {
+        ...stateRef.current.reviewAssurance!,
+        obligations: [...stateRef.current.reviewAssurance!.obligations, successor.obligation],
+        attempts: [...stateRef.current.reviewAssurance!.attempts, successor.attempt],
+      },
+    };
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: successor.attempt.attemptId,
+        obligationId: successor.obligation.obligationId,
+        childSessionId: 'new-child',
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: NOW,
+      }),
+    ).rejects.toMatchObject({ code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED' });
   });
 
   it('NO-LINEAGE: no lock and no audit when the exact authorized dispatch is absent', async () => {
@@ -624,7 +691,10 @@ describe('abandonAndBlockByHostCall', () => {
       now: NOW,
     });
 
-    expect(outcome).toEqual({ kind: 'noop' });
+    expect(outcome).toMatchObject({
+      kind: 'unresolved',
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
     expect(stateRef.current).toEqual(before);
     expect(stateRef.current.reviewAssurance?.capacityLock).toBeUndefined();
     expect(intents).toEqual([]);
@@ -1222,5 +1292,92 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.obligations[0]).toMatchObject({ status: 'pending' });
     expect(after.invocations).toHaveLength(0);
     expect(after.dispatches[0]).toMatchObject({ dispatchStatus: 'authorized' });
+  });
+
+  it('never rewrites a completed invocation after its dispatch is rebound to the child', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const audit: SemanticAuditIntent[] = [];
+    const deps: DispatchLedgerWriteDeps = {
+      updateReviewAssurance: async (_dir, mutate, intents) => {
+        stateRef.current = mutate(stateRef.current, NOW);
+        audit.push(...(intents?.(stateRef.current, NOW) ?? []));
+      },
+    };
+    await persistAuthorizedReviewDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      hostCallId: 'original-task-call',
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
+      ...recordingParams(attempt.attemptId, obligation.obligationId),
+      authorizedHostCallId: 'original-task-call',
+    });
+    const before = structuredClone(stateRef.current);
+    for (let index = 0; index < 2; index += 1) {
+      expect(
+        await abandonAndBlockByHostCall(
+          deps,
+          SESS_DIR,
+          'original-task-call',
+          'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+          { childSessionId: CHILD, obligationId: obligation.obligationId },
+        ),
+      ).toMatchObject({ kind: 'terminal', status: 'completed' });
+    }
+    expect(stateRef.current).toEqual(before);
+    expect(audit).toEqual([]);
+    expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('refuses binding immediately when the watchdog fence is raised before durable closure', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
+      ...recordingParams(attempt.attemptId, obligation.obligationId),
+      executionFailed: () => true,
+      deadlineAt: '2099-01-01T00:00:00.000Z',
+    });
+    expect(result).toBe('execution_expired');
+    expect(stateRef.current.reviewAssurance?.invocations).toEqual([]);
+    await abandonAndBlockByHostCall(deps, SESS_DIR, CHILD, 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect(stateRef.current.reviewAssurance?.capacityLock?.code).toBe(
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    );
+  });
+
+  it('BAD: refuses a late bind inside the same evidence mutation', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
+      ...recordingParams(attempt.attemptId, obligation.obligationId),
+      deadlineAt: new Date(0).toISOString(),
+    });
+
+    expect(result).toBe('execution_expired');
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.invocations).toHaveLength(0);
+    expect(after.attempts[0]!.status).toBe('created');
+    expect(after.obligations[0]!.status).toBe('pending');
+    expect(after.dispatches[0]!.dispatchStatus).toBe('authorized');
   });
 });

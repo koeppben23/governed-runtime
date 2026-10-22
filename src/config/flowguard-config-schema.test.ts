@@ -835,6 +835,34 @@ describe('FlowGuardConfigSchema', () => {
       expect((result.data as Record<string, unknown>)['unknownField']).toBeUndefined();
     }
   });
+
+  it('defaults reviewer execution budgets and rejects inverted nesting', () => {
+    const reviewer = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' }).data!.reviewer;
+    expect(reviewer).toMatchObject({
+      toolTimeoutMs: 30_000,
+      reviewTimeoutMs: 480_000,
+      serializationTimeoutMs: 60_000,
+      executionTimeoutMs: 600_000,
+    });
+    expect(
+      FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        reviewer: { toolTimeoutMs: 490_000, reviewTimeoutMs: 480_000 },
+      }).success,
+    ).toBe(false);
+    expect(
+      FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        reviewer: { reviewTimeoutMs: 610_000, executionTimeoutMs: 600_000 },
+      }).success,
+    ).toBe(false);
+    expect(
+      FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        reviewer: { serializationTimeoutMs: 610_000, executionTimeoutMs: 600_000 },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 // =============================================================================

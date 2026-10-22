@@ -1746,7 +1746,7 @@ describe('integration/plugin', () => {
             },
             output,
           ),
-        ).resolves.toBeUndefined();
+        ).rejects.toMatchObject({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' });
 
         const parsed = JSON.parse(output.output) as { error?: boolean; code?: string };
         expect(parsed.error).toBe(true);
@@ -1770,19 +1770,17 @@ describe('integration/plugin', () => {
         );
 
         const output = { title: 'task', output: '{}', metadata: {} };
-        await hooks['tool.execute.after']!(
-          {
-            tool: 'task',
-            sessionID: crypto.randomUUID(),
-            callID: '',
-            args: { subagent_type: 'flowguard-reviewer' },
-          },
-          output,
-        );
-
-        const parsed = JSON.parse(output.output) as { error?: boolean; code?: string };
-        expect(parsed.error).toBe(true);
-        expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+        await expect(
+          hooks['tool.execute.after']!(
+            {
+              tool: 'task',
+              sessionID: crypto.randomUUID(),
+              callID: '',
+              args: { subagent_type: 'flowguard-reviewer' },
+            },
+            output,
+          ),
+        ).rejects.toMatchObject({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' });
       } finally {
         await ws.cleanup();
       }

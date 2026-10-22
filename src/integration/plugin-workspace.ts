@@ -24,6 +24,8 @@ import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolveDecisionSequence } from './services/decision-audit-intent.js';
 import { blockObligation } from './review/obligations/obligation-state.js';
+import { updateAttemptStatus } from './review/obligations/attempt-lifecycle.js';
+import { abandonReviewDispatch, ensureReviewAssurance } from '../state/review-dispatch.js';
 import type { SessionState } from '../state/schema.js';
 import { strictBlockedOutput } from './blocked-result.js';
 
@@ -200,7 +202,34 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       },
       {
         sessDir: ctx.sessDir,
-        stateMutation: (s) => blockObligation(s, obligationId, code),
+        stateMutation: (s) => {
+          const now = new Date().toISOString();
+          let next = blockObligation(s, obligationId, code);
+          const assurance = ensureReviewAssurance(next.reviewAssurance);
+          for (const dispatch of assurance.dispatches.filter(
+            (item) => item.obligationId === obligationId && item.dispatchStatus === 'authorized',
+          )) {
+            next = {
+              ...next,
+              reviewAssurance: abandonReviewDispatch(next.reviewAssurance, dispatch.hostCallId),
+            };
+            const attempt = next.reviewAssurance?.attempts.find(
+              (item) => item.attemptId === dispatch.attemptId,
+            );
+            if (attempt && (attempt.status === 'created' || attempt.status === 'bound')) {
+              next = {
+                ...next,
+                reviewAssurance: updateAttemptStatus(
+                  ensureReviewAssurance(next.reviewAssurance),
+                  attempt.attemptId,
+                  'stale',
+                  now,
+                ),
+              };
+            }
+          }
+          return next;
+        },
         auditEventName: 'review:obligation_blocked',
         auditDetail: { obligationId, code },
       },

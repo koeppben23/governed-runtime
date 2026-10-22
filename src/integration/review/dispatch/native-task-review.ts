@@ -12,11 +12,7 @@
  */
 
 import { readState } from '../../../adapters/persistence.js';
-import {
-  buildEnforcementError,
-  strictBlockedOutput,
-  unableReviewDiagnostics,
-} from '../../blocked-result.js';
+import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 
 import type { PendingReviewRetryDiagnostic } from '../types.js';
 import type {
@@ -27,7 +23,6 @@ import type {
 } from '../../types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
-import type { ReviewFindings } from '../../../state/evidence.js';
 import { hashText } from '../../../shared/hashing.js';
 import { ensureReviewAssurance, hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { findBindableAttempt } from '../../../state/review-continuation.js';
@@ -38,7 +33,6 @@ import { persistAuthorizedReviewDispatch } from './durable-dispatch.js';
 import {
   buildCapturedFindingsDiagnostics,
   buildCodeOnlyRetryDiagnostic,
-  captureFailureBlockDetail,
   transportRecoveryInstruction,
 } from './capture-retry.js';
 import {
@@ -48,7 +42,16 @@ import {
   clearPendingReviewForObligation,
   type CaptureFailureContext,
 } from './capture-failure-routing.js';
-import { projectReviewExecution } from './review-execution-projection.js';
+import {
+  blockIncoherentCompletedCapture,
+  guardPreBindReview,
+  handleReviewerExecutionFailure,
+  projectFulfilledReview,
+  writeBindingFailure,
+  projectUnableToReview,
+  reconcileExpiredAuthorizedDispatchesOrThrow,
+  taskChildSessionId,
+} from './native-task-review-execution.js';
 import type {
   NativeReviewTransportRuntime,
   PersistedState,
@@ -217,7 +220,13 @@ export async function nativeReviewTaskBefore(
   }
 
   await reconcileBeforeReviewerDispatch(reconcile, sessionId);
-  const { sessDir, state } = await requireState(runtime, sessionId);
+  let { sessDir, state } = await requireState(runtime, sessionId);
+  ({ sessDir, state } = await reconcileExpiredAuthorizedDispatchesOrThrow(
+    runtime,
+    sessionId,
+    sessDir,
+    state,
+  ));
   const capacityLock = state.reviewAssurance?.capacityLock;
   if (capacityLock) {
     throw buildEnforcementError(
@@ -257,12 +266,6 @@ export async function nativeReviewTaskBefore(
   });
 }
 
-function taskChildSessionId(output: ToolHookAfterOutput): string | null {
-  return typeof output.metadata?.sessionId === 'string' && output.metadata.sessionId.length > 0
-    ? output.metadata.sessionId
-    : null;
-}
-
 interface StructuredReviewInput {
   readonly sessionId: string;
   readonly callId: string;
@@ -279,75 +282,6 @@ interface StructuredReviewInput {
  * fresh attempt on the same frozen obligation (bounded by the obligation
  * budget). A refused re-arm also fails closed with the original capture code.
  */
-
-async function writeBindingFailure(
-  input: CaptureFailureContext,
-  result: Exclude<Awaited<ReturnType<typeof bindNativeReviewEvidence>>, 'fulfilled'>,
-  childSessionId: string,
-): Promise<void> {
-  if (typeof result === 'object') {
-    await abandonOrRetryCaptureFailure({
-      ...input,
-      childSessionId,
-      code: result.code,
-      reason: JSON.stringify(result.details),
-      diagnostics: buildCapturedFindingsDiagnostics(result),
-    });
-    return;
-  }
-  input.output.output = strictBlockedOutput(
-    result === 'reused'
-      ? 'SUBAGENT_EVIDENCE_REUSED'
-      : result === 'lineage_unavailable'
-        ? 'REVIEW_ATTEMPT_UNAVAILABLE'
-        : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-    captureFailureBlockDetail({
-      obligationId: input.obligationId,
-      reason: `Native reviewer evidence binding returned ${result}.`,
-    }),
-  );
-}
-
-async function projectFulfilledReview(input: {
-  readonly runtime: NativeReviewTransportRuntime;
-  readonly sessDir: string;
-  readonly sessionId: string;
-  readonly childSessionId: string;
-  readonly attemptId: string;
-  readonly obligationId: string;
-  readonly verdict: string;
-  readonly output: ToolHookAfterOutput;
-}): Promise<void> {
-  const boundState = await readState(input.sessDir);
-  const invocation = boundState?.reviewAssurance?.invocations.find(
-    (item) => item.attemptId === input.attemptId && item.childSessionId === input.childSessionId,
-  );
-  input.output.output = JSON.stringify({
-    status: 'Independent reviewer completed in a visible native child session.',
-    reviewDispatch: { required: true, completed: true, verdict: input.verdict },
-    ...(invocation ? { reviewExecution: projectReviewExecution(invocation) } : {}),
-  });
-  if (invocation)
-    input.output.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
-  input.runtime.log.info('orchestrator', 'native reviewer Task fulfilled review obligation', {
-    sessionId: input.sessionId,
-    childSessionId: input.childSessionId,
-    obligationId: input.obligationId,
-    attemptId: input.attemptId,
-    verdict: input.verdict,
-  });
-}
-
-function projectUnableToReview(
-  output: ToolHookAfterOutput,
-  obligationId: string,
-  findings: Pick<ReviewFindings, 'missingVerification' | 'unknowns'>,
-): void {
-  output.output = strictBlockedOutput('SUBAGENT_UNABLE_TO_REVIEW', {
-    obligationId,
-    ...unableReviewDiagnostics(findings),
-  });
-}
 
 type NativeTaskContextResolution =
   | {
@@ -414,6 +348,7 @@ export async function nativeReviewTaskAfter(
   await fulfillNativeReviewTask(runtime, taskContext, hookOutput);
 }
 
+// eslint-disable-next-line max-lines-per-function -- Task identity, failure closure, and binding are one boundary.
 async function fulfillNativeReviewTask(
   runtime: NativeReviewTransportRuntime,
   taskContext: Extract<NativeTaskContextResolution, { kind: 'resolved' }>,
@@ -446,6 +381,20 @@ async function fulfillNativeReviewTask(
   // The strict self-approval invariant (see review/validation) applied at the
   // native transport: the child identity reported by the host must differ from
   // the governed parent session it was dispatched from.
+  if (
+    await handleReviewerExecutionFailure({
+      runtime,
+      sessDir,
+      callId,
+      childSessionId,
+      hookOutput,
+      obligationId: lineage.obligation.obligationId,
+      sessionId,
+      phase: lineage.state.phase,
+    })
+  )
+    return;
+
   if (childSessionId === sessionId) {
     await abandonAndBlock({
       runtime,
@@ -484,6 +433,7 @@ async function fulfillNativeReviewTask(
       runtime,
       sessDir,
       sessionId,
+      phase: lineage.state.phase,
       callId,
       obligationType: lineage.obligation.obligationType,
       obligationId: lineage.obligation.obligationId,
@@ -550,6 +500,7 @@ async function handleReviewerOutputCapFailure(
   return true;
 }
 
+// eslint-disable-next-line max-lines-per-function -- capture, validation, and binding are one fail-closed boundary.
 async function completeStructuredReview(
   runtime: NativeReviewTransportRuntime,
   input: StructuredReviewInput,
@@ -584,6 +535,19 @@ async function completeStructuredReview(
     });
     return;
   }
+  if (
+    await blockIncoherentCompletedCapture({
+      runtime,
+      sessDir,
+      sessionId,
+      obligationId: lineage.obligation.obligationId,
+      prepared: captured.prepared,
+      output: hookOutput,
+      phase: refreshedState.phase,
+    })
+  )
+    return;
+
   const validation = validateCapturedFindings(
     refreshedState,
     lineage.obligation,
@@ -600,6 +564,16 @@ async function completeStructuredReview(
     return;
   }
 
+  if (
+    await guardPreBindReview({
+      runtime,
+      sessDir,
+      obligationId: lineage.obligation.obligationId,
+      output: hookOutput,
+    })
+  )
+    return;
+
   const result = await bindNativeReviewEvidence({
     runtime,
     sessDir,
@@ -609,6 +583,10 @@ async function completeStructuredReview(
     lineage,
     prepared: captured.prepared,
     fulfilledAt: captured.fulfilledAt,
+    executionDeadlineAt: new Date(
+      Date.parse(lineage.dispatch.dispatchAuthorizedAt) +
+        (runtime.reviewerExecutionTimeoutMs ?? 600_000),
+    ).toISOString(),
     phase: refreshedState.phase,
   });
   if (result !== 'fulfilled') {

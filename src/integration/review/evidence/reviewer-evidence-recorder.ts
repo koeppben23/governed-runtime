@@ -54,6 +54,10 @@ type SdkEvidenceParams = {
   findingsHash: string;
   invokedAt: string;
   fulfilledAt: string;
+  /** Absolute dispatch deadline; checked inside the binding mutation. */
+  deadlineAt?: string;
+  /** Synchronous watchdog fence, checked while holding the persistence lock. */
+  executionFailed?: () => boolean;
   reviewerResult: Omit<
     Pick<
       ReviewerSuccessResult,
@@ -76,6 +80,7 @@ type MutationFlags = {
   reused: boolean;
   missing: boolean;
   lineageUnavailable: boolean;
+  executionExpired: boolean;
   preBindFailure?: Exclude<PreBindFindingsResult, { readonly ok: true }>;
 };
 
@@ -183,6 +188,13 @@ function applyEvidenceMutation(
     flags.missing = true;
     return state;
   }
+  if (
+    params.executionFailed?.() ||
+    (params.deadlineAt !== undefined && Date.parse(now) >= Date.parse(params.deadlineAt))
+  ) {
+    flags.executionExpired = true;
+    return state;
+  }
   if (hasEvidenceReuse(assurance.invocations, params.childSessionId, params.findingsHash)) {
     flags.reused = true;
     return updateObligation(state, params.obligationId, (item) => ({
@@ -246,6 +258,7 @@ function applyEvidenceMutation(
 }
 
 function resultFromFlags(flags: MutationFlags): SdkEvidenceRecordResult {
+  if (flags.executionExpired) return 'execution_expired';
   if (flags.preBindFailure) return flags.preBindFailure;
   if (flags.missing) return 'missing';
   if (flags.lineageUnavailable) return 'lineage_unavailable';
@@ -258,7 +271,12 @@ export async function recordEvidenceOrBlockReuse(
   sessDir: string,
   params: SdkEvidenceParams,
 ): Promise<SdkEvidenceRecordResult> {
-  const flags: MutationFlags = { reused: false, missing: false, lineageUnavailable: false };
+  const flags: MutationFlags = {
+    reused: false,
+    missing: false,
+    lineageUnavailable: false,
+    executionExpired: false,
+  };
   await deps.updateReviewAssurance(
     sessDir,
     (state, now) => applyEvidenceMutation(state, now, params, flags),
@@ -267,6 +285,7 @@ export async function recordEvidenceOrBlockReuse(
       return typeof result !== 'string' ||
         result === 'missing' ||
         result === 'lineage_unavailable' ||
+        result === 'execution_expired' ||
         !params.semanticIntents
         ? []
         : params.semanticIntents(result, state, now);

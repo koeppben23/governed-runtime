@@ -28,7 +28,11 @@ import {
   ensureReviewAssurance,
   markDispatchOutcomeUnknown,
 } from '../../../state/review-dispatch.js';
-import type { ReviewAttempt, ReviewDispatchRecord } from '../../../state/evidence-review.js';
+import type {
+  ReviewAttempt,
+  ReviewDispatchRecord,
+  ReviewObligation,
+} from '../../../state/evidence-review.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import type { PendingReviewRetryDiagnostic } from '../types.js';
@@ -93,6 +97,7 @@ function assertDispatchAuthorizable(
   const obligation = assurance.obligations.find((item) => item.obligationId === input.obligationId);
   const attempt = assurance.attempts.find((item) => item.attemptId === input.attemptId);
   if (
+    assurance.capacityLock == null &&
     obligation?.status === 'pending' &&
     attempt !== undefined &&
     attempt.obligationId === obligation.obligationId &&
@@ -128,6 +133,16 @@ export async function persistAuthorizedReviewDispatch(
       );
     }
     if (disposition === 'retry') return state;
+
+    const authorizedForAttempt = (assurance.dispatches ?? []).filter(
+      (record) => record.attemptId === input.attemptId && record.dispatchStatus === 'authorized',
+    );
+    if (authorizedForAttempt.length > 0) {
+      throw buildEnforcementError(
+        REVIEW_DISPATCH_PERSISTENCE_FAILED,
+        'the reviewer attempt already has an authorized dispatch release',
+      );
+    }
 
     const record: ReviewDispatchRecord = {
       dispatchId: randomUUID(),
@@ -192,7 +207,129 @@ export async function abandonReviewDispatchByHostCall(
 
 export type AbandonAndBlockOutcome =
   | { readonly kind: 'blocked'; readonly obligationId: string; readonly code: string }
-  | { readonly kind: 'noop' };
+  | {
+      readonly kind: 'terminal';
+      readonly obligationId: string;
+      readonly status: 'completed' | 'blocked';
+    }
+  | {
+      readonly kind: 'unresolved';
+      readonly code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
+      readonly reason: string;
+    };
+
+export interface ExecutionClosureIdentity {
+  readonly childSessionId?: string;
+  readonly dispatchId?: string;
+  readonly attemptId?: string;
+  readonly obligationId?: string;
+}
+
+/** Resolve only recorded execution identities, including a dispatch rebound to its child. */
+export function resolveExecutionDispatch(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  hostCallId: string,
+  identity: ExecutionClosureIdentity,
+): ReviewDispatchRecord | undefined {
+  const matches = assurance.dispatches.filter((record) => {
+    if (identity.dispatchId !== undefined && record.dispatchId !== identity.dispatchId)
+      return false;
+    if (identity.attemptId !== undefined && record.attemptId !== identity.attemptId) return false;
+    if (identity.obligationId !== undefined && record.obligationId !== identity.obligationId)
+      return false;
+    return (
+      identity.dispatchId !== undefined ||
+      record.hostCallId === hostCallId ||
+      (identity.childSessionId !== undefined && record.hostCallId === identity.childSessionId)
+    );
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** Terminal evidence must belong to this exact dispatch, attempt and child. */
+export function executionDispatchIsTerminal(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  record: ReviewDispatchRecord,
+  childSessionId?: string,
+): boolean {
+  const attempt = assurance.attempts.find((item) => item.attemptId === record.attemptId);
+  if (!attempt || attempt.obligationId !== record.obligationId) return false;
+  if (
+    childSessionId !== undefined &&
+    attempt.childSessionId !== undefined &&
+    attempt.childSessionId !== childSessionId
+  )
+    return false;
+  if (record.dispatchStatus === 'outcome_unknown') return attempt.status === 'stale';
+  return (
+    record.dispatchStatus === 'completed' &&
+    attempt.status === 'bound' &&
+    assurance.invocations.some(
+      (item) =>
+        item.attemptId === attempt.attemptId &&
+        item.obligationId === record.obligationId &&
+        item.childSessionId === attempt.childSessionId,
+    )
+  );
+}
+
+function canCloseExecution(
+  attempt: ReviewAttempt,
+  obligation: ReviewObligation,
+  child?: string,
+): boolean {
+  return (
+    (obligation.status === 'pending' || obligation.status === 'blocked') &&
+    (attempt.status === 'created' || attempt.status === 'stale') &&
+    (!child || !attempt.childSessionId || attempt.childSessionId === child)
+  );
+}
+
+function hasTerminalBlock(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  record: ReviewDispatchRecord,
+  obligation: ReviewObligation,
+  attempt: ReviewAttempt,
+): boolean {
+  return (
+    obligation.status === 'blocked' &&
+    record.dispatchStatus === 'outcome_unknown' &&
+    attempt.status === 'stale' &&
+    assurance.capacityLock != null
+  );
+}
+
+function blockedExecutionState(
+  state: SessionState,
+  record: ReviewDispatchRecord,
+  options: ExecutionClosureIdentity,
+  code: string,
+  now: string,
+): SessionState {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const staled = bindStaleChildSession(
+    updateAttemptStatus(
+      abandonReviewDispatch(assurance, record.hostCallId),
+      record.attemptId,
+      'stale',
+      now,
+    ),
+    record.attemptId,
+    options.childSessionId,
+  );
+  const blocked = blockObligation({ ...state, reviewAssurance: staled }, record.obligationId, code);
+  return {
+    ...blocked,
+    reviewAssurance: {
+      ...ensureReviewAssurance(blocked.reviewAssurance),
+      capacityLock: assurance.capacityLock ?? {
+        code,
+        obligationId: record.obligationId,
+        createdAt: now,
+      },
+    },
+  };
+}
 
 /**
  * Close one exact authorized host release and block its obligation in a single
@@ -201,61 +338,59 @@ export type AbandonAndBlockOutcome =
  * original code, and a persistent capacity lock prevents another review in the
  * same parent turn.
  *
- * Exact lineage is mandatory. A missing/ambiguous dispatch or a non-created
- * attempt is a no-op: no lock, no audit, and no success claim. A repeated call
- * for the same host call sees no authorized dispatch and is idempotent.
+ * Exact lineage is mandatory. Completed invocations are immutable. Repeated
+ * blocked closures retain their lock without emitting another audit intent.
  */
 export async function abandonAndBlockByHostCall(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
   hostCallId: string,
   code: string,
-  options: { readonly childSessionId?: string; readonly now?: string } = {},
+  options: ExecutionClosureIdentity & { readonly now?: string } = {},
 ): Promise<AbandonAndBlockOutcome> {
   const now = options.now ?? new Date().toISOString();
-  let outcome: AbandonAndBlockOutcome = { kind: 'noop' };
+  let outcome: AbandonAndBlockOutcome = {
+    kind: 'unresolved',
+    code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    reason: 'No unique unfinished execution lineage could be proven.',
+  };
+  let audit = false;
   await deps.updateReviewAssurance(
     sessDir,
     (state) => {
       const assurance = ensureReviewAssurance(state.reviewAssurance);
-      const authorized = (assurance.dispatches ?? []).filter(
-        (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
-      );
-      if (authorized.length !== 1) return state;
-      const record = authorized[0];
-      if (record === undefined) return state;
+      const record = resolveExecutionDispatch(assurance, hostCallId, options);
+      if (!record) return state;
       const attempt = (assurance.attempts ?? []).find(
         (candidate) => candidate.attemptId === record.attemptId,
       );
-      if (attempt === undefined || attempt.status !== 'created') return state;
+      const obligation = assurance.obligations.find(
+        (item) => item.obligationId === record.obligationId,
+      );
+      if (!attempt || !obligation || attempt.obligationId !== obligation.obligationId) return state;
+      if (record.dispatchStatus === 'completed') {
+        if (executionDispatchIsTerminal(assurance, record, options.childSessionId)) {
+          outcome = {
+            kind: 'terminal',
+            status: 'completed',
+            obligationId: obligation.obligationId,
+          };
+        }
+        return state;
+      }
+      if (!canCloseExecution(attempt, obligation, options.childSessionId)) return state;
+      if (hasTerminalBlock(assurance, record, obligation, attempt)) {
+        outcome = { kind: 'terminal', status: 'blocked', obligationId: obligation.obligationId };
+        return state;
+      }
+      const blockedCode = obligation.blockedCode ?? code;
 
-      const staled = bindStaleChildSession(
-        updateAttemptStatus(
-          abandonReviewDispatch(assurance, hostCallId),
-          attempt.attemptId,
-          'stale',
-          now,
-        ),
-        attempt.attemptId,
-        options.childSessionId,
-      );
-      const blocked = blockObligation(
-        { ...state, reviewAssurance: staled },
-        attempt.obligationId,
-        code,
-      );
-      const locked = {
-        ...blocked,
-        reviewAssurance: {
-          ...ensureReviewAssurance(blocked.reviewAssurance),
-          capacityLock: { code, obligationId: attempt.obligationId, createdAt: now },
-        },
-      };
-      outcome = { kind: 'blocked', obligationId: attempt.obligationId, code };
-      return locked;
+      audit = obligation.status !== 'blocked';
+      outcome = { kind: 'blocked', obligationId: attempt.obligationId, code: blockedCode };
+      return blockedExecutionState(state, record, options, blockedCode, now);
     },
     (state) =>
-      outcome.kind === 'blocked'
+      audit && outcome.kind === 'blocked'
         ? [
             {
               phase: state.phase,
