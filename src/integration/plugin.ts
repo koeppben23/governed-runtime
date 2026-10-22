@@ -330,6 +330,20 @@ function attachReviewerOutputCapHook(
   });
 }
 
+function finishNativeTaskWatchdog(
+  watchdog: ReviewerExecutionWatchdog,
+  input: { readonly sessionID: string; readonly callID?: string },
+  childSessionId: string | undefined,
+): void {
+  if (typeof input.callID === 'string' && input.callID.length > 0) {
+    watchdog.completeTask(input.callID);
+  }
+  watchdog.completeTaskForParent(input.sessionID, childSessionId);
+  if (typeof childSessionId === 'string' && childSessionId.length > 0) {
+    watchdog.complete(childSessionId);
+  }
+}
+
 function attachReviewerExecutionWatchdog(
   hooks: Awaited<ReturnType<Plugin>>,
   deps: {
@@ -385,9 +399,16 @@ function attachReviewerExecutionWatchdog(
       if (typeof childSessionId === 'string' && childSessionId.length > 0) {
         watchdog.onSerializationStart(childSessionId);
       }
-      await after?.(input, output);
-      if (typeof childSessionId === 'string' && childSessionId.length > 0) {
-        watchdog.complete(childSessionId);
+      try {
+        await after?.(input, output);
+      } finally {
+        finishNativeTaskWatchdog(
+          watchdog,
+          input,
+          typeof childSessionId === 'string' && childSessionId.length > 0
+            ? childSessionId
+            : undefined,
+        );
       }
       return;
     }

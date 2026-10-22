@@ -89,15 +89,7 @@ export class ReviewerExecutionWatchdog {
   /** Attach the exact child observed by the host; do not reset the absolute timer. */
   async onReviewerRequest(childSessionId: string): Promise<void> {
     if (this.entries.has(childSessionId)) return;
-    let parentSessionId: string | undefined;
-    const get = this.deps.client.session.get;
-    if (typeof get === 'function') {
-      try {
-        parentSessionId = (await get({ path: { id: childSessionId } })).data?.parentID;
-      } catch {
-        // Missing parent identity never grants timeout or abort authority.
-      }
-    }
+    const parentSessionId = await this.resolveParentSession(childSessionId);
     const task = parentSessionId
       ? await this.findExactTask(parentSessionId, childSessionId)
       : undefined;
@@ -122,6 +114,38 @@ export class ReviewerExecutionWatchdog {
     });
   }
 
+  /** Resolve parent identity with get first, then a list fallback for creation races. */
+  private async resolveParentSession(childSessionId: string): Promise<string | undefined> {
+    const get = this.deps.client.session.get;
+    let getReason = 'unavailable';
+    if (typeof get === 'function') {
+      try {
+        const response = await get({ path: { id: childSessionId } });
+        const parent = response.data?.parentID;
+        if (parent) return parent;
+        getReason = response.error ? 'error' : 'missing_parent';
+      } catch (err) {
+        getReason = err instanceof Error ? err.message : 'error';
+      }
+    }
+    const list = this.deps.client.session.list;
+    if (typeof list === 'function') {
+      try {
+        const response = await list();
+        const parent = response.data?.find((session) => session.id === childSessionId)?.parentID;
+        if (parent) return parent;
+      } catch {
+        // Fall through to the diagnostic below.
+      }
+    }
+    this.deps.log.warn('review', 'reviewer parent session could not be resolved', {
+      childSessionId,
+      getReason,
+      hasList: typeof list === 'function',
+    });
+    return undefined;
+  }
+
   /** Resolve the task release by the parent-recorded Task call metadata, never by order. */
   private async findExactTask(
     parentSessionId: string,
@@ -143,10 +167,12 @@ export class ReviewerExecutionWatchdog {
           (message.parts ?? []).flatMap((part) => {
             if (part.type !== 'tool' || part.state?.metadata?.sessionId !== childSessionId)
               return [];
-            // The before-hook receives the OpenCode part ID as callID; the
-            // Task part's protocol callID is a different ULID and is not the
-            // durable dispatch key.
-            return typeof part.id === 'string' ? [part.id] : [];
+            // OpenCode exposes both the Task part id and callID. The live host
+            // passes callID to the before-hook; older/other Task paths pass id.
+            // Accept only a unique exact match against either observed field.
+            return [part.callID, part.id].filter(
+              (value): value is string => typeof value === 'string',
+            );
           }),
         ),
       );
@@ -200,6 +226,29 @@ export class ReviewerExecutionWatchdog {
     this.clear(entry);
     this.entries.delete(childSessionId);
     if (entry.callId) this.tasks.delete(entry.callId);
+  }
+
+  /** The native Task completed; clear its dispatch timer even without child attachment. */
+  completeTask(callId: string): void {
+    const task = this.tasks.get(callId);
+    if (!task) return;
+    this.clear(task);
+    this.tasks.delete(callId);
+    if (task.childSessionId) this.entries.delete(task.childSessionId);
+  }
+
+  /** Clear the sole pending dispatch for a parent when the host call IDs differ. */
+  completeTaskForParent(parentSessionId: string, childSessionId?: string): void {
+    const pending = [...this.tasks.entries()].filter(([, task]) => {
+      if (task.parentSessionId !== parentSessionId) return false;
+      if (task.childSessionId && childSessionId) {
+        return task.childSessionId === childSessionId;
+      }
+      return task.childSessionId === undefined;
+    });
+    if (pending.length !== 1) return;
+    const entry = pending[0];
+    if (entry) this.completeTask(entry[0]);
   }
 
   private clear(entry: Entry): void {

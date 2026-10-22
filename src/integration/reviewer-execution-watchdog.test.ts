@@ -33,10 +33,10 @@ function client(
                 {
                   info: { role: 'assistant' },
                   parts: taskCallIds.map((callID) => ({
-                    id: callID,
+                    id: `part-${callID}`,
                     type: 'tool',
                     tool: 'task',
-                    callID: `protocol-${callID}`,
+                    callID,
                     state: { status: 'completed', metadata: { sessionId: 'child' } },
                   })),
                 },
@@ -224,5 +224,58 @@ describe('reviewer execution watchdog', () => {
       }),
       'child',
     );
+  });
+
+  it('clears the dispatch timer when the native Task completes without child attachment', async () => {
+    vi.useFakeTimers();
+    const failures = new Map<string, ReviewerExecutionFailure>();
+    const persistTaskFailure = vi.fn(async () => true);
+    const watchdog = new ReviewerExecutionWatchdog({
+      config,
+      client: client(),
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      persistFailure: vi.fn(async () => true),
+      persistTaskFailure,
+      failures,
+    });
+    watchdog.onTaskAuthorized('parent', 'call-1');
+    watchdog.completeTask('call-1');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(persistTaskFailure).not.toHaveBeenCalled();
+  });
+
+  it('falls back to session.list when session.get has no parent yet', async () => {
+    vi.useFakeTimers();
+    const c = client();
+    c.session.get = vi.fn(async () => ({ data: { id: 'child' } }));
+    c.session.list = vi.fn(async () => ({ data: [{ id: 'child', parentID: 'parent' }] }));
+    const watchdog = new ReviewerExecutionWatchdog({
+      config,
+      client: c,
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      persistFailure: vi.fn(async () => true),
+    });
+    watchdog.onTaskAuthorized('parent', 'call-1');
+    await watchdog.onReviewerRequest('child');
+    await vi.advanceTimersByTimeAsync(80);
+    expect(c.session.abort).toHaveBeenCalledWith({ path: { id: 'child' } });
+  });
+
+  it('clears the sole pending dispatch for a parent when the host call IDs differ', async () => {
+    vi.useFakeTimers();
+    const failures = new Map<string, ReviewerExecutionFailure>();
+    const persistTaskFailure = vi.fn(async () => true);
+    const watchdog = new ReviewerExecutionWatchdog({
+      config,
+      client: client(),
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      persistFailure: vi.fn(async () => true),
+      persistTaskFailure,
+      failures,
+    });
+    watchdog.onTaskAuthorized('parent', 'before-hook-id');
+    watchdog.completeTaskForParent('parent', 'child');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(persistTaskFailure).not.toHaveBeenCalled();
   });
 });

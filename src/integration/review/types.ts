@@ -165,6 +165,11 @@ export interface OrchestratorClient {
       data?: { id?: string; parentID?: string } | undefined;
       error?: unknown;
     }>;
+    /** List sessions; used as a parent-resolution fallback when get races creation. */
+    list?(): Promise<{
+      data?: Array<{ id?: string; parentID?: string }> | undefined;
+      error?: unknown;
+    }>;
     /** Host status map; `idle` is the only quiescent state. */
     status?(): Promise<{ data?: Record<string, { type?: string }> | undefined; error?: unknown }>;
     /** Host-recorded session messages; used to verify reviewer task completion. */
