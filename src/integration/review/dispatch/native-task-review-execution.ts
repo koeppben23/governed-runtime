@@ -9,7 +9,7 @@ import type { ReviewFindings } from '../../../state/evidence.js';
 import { strictBlockedOutput, unableReviewDiagnostics } from '../../blocked-result.js';
 import { projectReviewExecution } from './review-execution-projection.js';
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
-import { abandonAndBlock, clearPendingReviewForObligation } from './capture-failure-routing.js';
+import { clearPendingReviewForObligation } from './capture-failure-routing.js';
 import { abandonAndBlockByHostCall } from './durable-dispatch.js';
 import { buildEnforcementError } from '../../blocked-result.js';
 import { readState } from '../../../adapters/persistence.js';
@@ -27,17 +27,43 @@ export async function handleReviewerExecutionFailure(input: {
   const failures = runtime.reviewerExecutionFailures;
   const failure = failures?.get(childSessionId);
   if (!failure) return false;
-  failures?.delete(childSessionId);
-  await abandonAndBlock({
+  const closure = await closeExecutionFailure({
     runtime,
     sessDir,
     callId,
-    output: hookOutput,
+    childSessionId,
     code: failure.code,
     reason: failure.reason,
     obligationId,
+    output: hookOutput,
   });
+  if (closure.kind === 'blocked') failures?.delete(childSessionId);
   return true;
+}
+
+/** Canonical terminal closure for an already-detected reviewer execution failure. */
+export async function closeExecutionFailure(input: {
+  readonly runtime: NativeReviewTransportRuntime;
+  readonly sessDir: string;
+  readonly callId: string;
+  readonly childSessionId?: string;
+  readonly code: string;
+  readonly reason: string;
+  readonly obligationId: string;
+  readonly output: ToolHookAfterOutput;
+}) {
+  const closure = await abandonAndBlockByHostCall(
+    input.runtime.orchestratorDeps,
+    input.sessDir,
+    input.callId,
+    input.code,
+    input.childSessionId === undefined ? {} : { childSessionId: input.childSessionId },
+  );
+  input.output.output = strictBlockedOutput(input.code, {
+    obligationId: closure.kind === 'blocked' ? closure.obligationId : input.obligationId,
+    reason: input.reason,
+  });
+  return closure;
 }
 
 export async function blockIncoherentCompletedCapture(input: {

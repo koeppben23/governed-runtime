@@ -16,6 +16,7 @@ vi.mock('../../../adapters/persistence.js', async (importOriginal) => ({
 import {
   blockIncoherentCompletedCapture,
   guardPreBindReview,
+  handleReviewerExecutionFailure,
   reconcileExpiredAuthorizedDispatchesOrThrow,
 } from './native-task-review-execution.js';
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
@@ -137,5 +138,51 @@ describe('terminal incoherent review capture', () => {
       'call-1',
       'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
     );
+  });
+
+  it('closes an unpersisted watchdog failure through the durable closure', async () => {
+    abandonAndBlockByHostCall.mockClear();
+    abandonAndBlockByHostCall.mockResolvedValue({
+      kind: 'blocked',
+      obligationId: 'obl-1',
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    const failures = new Map([
+      [
+        'child',
+        {
+          code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+          phase: 'total',
+          abortConfirmed: false,
+          reason: 'host outcome unknown',
+        },
+      ],
+    ]);
+    const runtime = {
+      reviewerExecutionFailures: failures,
+      orchestratorDeps: {},
+    } as unknown as NativeReviewTransportRuntime;
+    const output = { output: '', title: '', metadata: {} };
+
+    await expect(
+      handleReviewerExecutionFailure({
+        runtime,
+        sessDir: '/tmp',
+        callId: 'call-1',
+        childSessionId: 'child',
+        hookOutput: output,
+        obligationId: 'obl-1',
+      }),
+    ).resolves.toBe(true);
+
+    expect(abandonAndBlockByHostCall).toHaveBeenCalledWith(
+      runtime.orchestratorDeps,
+      '/tmp',
+      'call-1',
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      { childSessionId: 'child' },
+    );
+    expect(failures.has('child')).toBe(false);
+    expect(output.output).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
   });
 });

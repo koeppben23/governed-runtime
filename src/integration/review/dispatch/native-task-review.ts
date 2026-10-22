@@ -46,6 +46,7 @@ import {
 import {
   blockIncoherentCompletedCapture,
   guardPreBindReview,
+  closeExecutionFailure,
   handleReviewerExecutionFailure,
   projectFulfilledReview,
   projectUnableToReview,
@@ -298,14 +299,25 @@ async function writeBindingFailure(
     });
     return;
   }
+  if (result === 'execution_expired') {
+    await closeExecutionFailure({
+      runtime: input.runtime,
+      sessDir: input.sessDir,
+      callId: input.callId,
+      childSessionId,
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      reason: 'The absolute reviewer deadline elapsed before the evidence mutation could bind.',
+      obligationId: input.obligationId,
+      output: input.output,
+    });
+    return;
+  }
   input.output.output = strictBlockedOutput(
     result === 'reused'
       ? 'SUBAGENT_EVIDENCE_REUSED'
       : result === 'lineage_unavailable'
         ? 'REVIEW_ATTEMPT_UNAVAILABLE'
-        : result === 'execution_expired'
-          ? 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN'
-          : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+        : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
     captureFailureBlockDetail({
       obligationId: input.obligationId,
       reason: `Native reviewer evidence binding returned ${result}.`,
