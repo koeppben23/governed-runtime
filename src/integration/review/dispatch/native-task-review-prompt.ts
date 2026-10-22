@@ -45,10 +45,6 @@ import {
   type ReviewerProofGraphAuthorities,
 } from '../context/proof-context.js';
 import type { PersistedState } from './native-task-review-types.js';
-import {
-  buildReviewerEvidenceDossier,
-  MAX_CANONICAL_TASK_PROMPT_UTF8_BYTES,
-} from '../context/reviewer-evidence-dossier.js';
 
 function resolutionTargetIdsOf(
   contract: ReviewerChallengePromptContract | undefined,
@@ -123,14 +119,12 @@ function artifactScopeOf(
     : undefined;
 }
 
-// eslint-disable-next-line max-params, max-lines-per-function, complexity -- prompt composition has one fail-closed boundary.
 export function canonicalTaskPrompt(
   state: PersistedState,
   obligation: ReviewObligation,
   attempt: ReviewAttempt,
   proofGraphAuthorities: ReviewerProofGraphAuthorities,
   retryDiagnostics?: readonly PendingReviewRetryDiagnostic[],
-  contextMode: 'baseline' | 'dossier' = 'baseline',
 ): string {
   const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
   if (material.kind === 'blocked') {
@@ -146,26 +140,7 @@ export function canonicalTaskPrompt(
     resolutionTargetIdsOf(challengeContract),
   );
   const admittedSubjectAnchorKind = admittedAnchorKindOf(obligation);
-  const evidenceDossier =
-    contextMode === 'dossier'
-      ? buildReviewerEvidenceDossier({
-          state,
-          obligation,
-          attempt,
-          challenge: {
-            requiredChallengeCount: challengeContract?.requiredChallengeCount ?? 0,
-            ...(challengeContract?.requiredChallengeKind !== undefined
-              ? { requiredChallengeKind: challengeContract.requiredChallengeKind }
-              : {}),
-            offeredEvidenceRefCount: challengeContract?.evidenceRefs?.length ?? 0,
-            resolutionTargetCount: challengeContract?.resolutionTargets?.length ?? 0,
-          },
-        })
-      : undefined;
-  if (evidenceDossier?.kind === 'blocked') {
-    throw buildEnforcementError(evidenceDossier.code, evidenceDossier.reason);
-  }
-  const prompt = renderReviewerTaskPrompt({
+  return renderReviewerTaskPrompt({
     iteration: obligation.iteration,
     planVersion: obligation.planVersion,
     obligationId: obligation.obligationId,
@@ -196,17 +171,5 @@ export function canonicalTaskPrompt(
         : null,
     observationCapability: attempt.observationCapability,
     observationRevisions,
-    ...(contextMode === 'dossier' ? { contextMode: 'dossier' as const } : {}),
-    ...(evidenceDossier?.kind === 'ok' ? { evidenceDossier: evidenceDossier.text } : {}),
   });
-  if (
-    contextMode === 'dossier' &&
-    Buffer.byteLength(prompt, 'utf8') > MAX_CANONICAL_TASK_PROMPT_UTF8_BYTES
-  ) {
-    throw buildEnforcementError(
-      'REVIEW_DOSSIER_BUDGET_EXCEEDED',
-      `The canonical reviewer prompt is ${Buffer.byteLength(prompt, 'utf8')} UTF-8 bytes; the experimental limit is ${MAX_CANONICAL_TASK_PROMPT_UTF8_BYTES}.`,
-    );
-  }
-  return prompt;
 }

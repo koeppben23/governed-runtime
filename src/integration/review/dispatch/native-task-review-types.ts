@@ -59,8 +59,6 @@ export interface NativeReviewTransportRuntime {
   readonly reviewerExecutionFailures?: Map<string, ReviewerExecutionFailure>;
   /** Absolute dispatch deadline used to reconcile expired authorized releases. */
   readonly reviewerExecutionTimeoutMs?: number;
-  /** Time-boxed reviewer prompt projection experiment. */
-  readonly reviewerContextMode?: 'baseline' | 'dossier';
   readonly log: {
     info(service: string, message: string, extra?: Record<string, unknown>): void;
     warn(service: string, message: string, extra?: Record<string, unknown>): void;

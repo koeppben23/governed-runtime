@@ -277,11 +277,6 @@ export const FlowGuardConfigSchema = z.object({
         .min(1000)
         .max(1_800_000)
         .default(REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT),
-      /**
-       * Reviewer context projection. `baseline` preserves the established
-       * prompt. `dossier` is the time-boxed evidence-first experiment.
-       */
-      contextMode: z.enum(['baseline', 'dossier']).default('baseline'),
     })
     .superRefine((reviewer, ctx) => {
       if (reviewer.toolTimeoutMs > reviewer.reviewTimeoutMs) {
@@ -312,7 +307,6 @@ export const FlowGuardConfigSchema = z.object({
       reviewTimeoutMs: REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT,
       serializationTimeoutMs: REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT,
       executionTimeoutMs: REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT,
-      contextMode: 'baseline',
     }),
 
   /** Archive configuration. */

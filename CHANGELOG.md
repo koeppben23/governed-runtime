@@ -9,13 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Reviewer evidence dossier experiment (#1170 follow-up).** Added the
-  time-boxed `reviewer.contextMode` experiment (`baseline` default, `dossier`
-  projection), a pure persisted-fact dossier with explicit bound/stale/missing
-  labels, fixed UTF-8 dispatch budgets, and a fail-closed integrity boundary.
-  The dossier does not claim proof or a speed improvement; A/B quality and
-  latency remain to be measured.
-
 - **ISO/IEC 27001:2022 evidence-to-control mapping (#1083).** New opt-in,
   read-only companion report `flowguard inspect --session <id>
 --iso27001-mapping <file>` links organization-owned policy requirements to

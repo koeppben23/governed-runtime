@@ -247,7 +247,6 @@ export async function nativeReviewTaskBefore(
     attempt,
     proofGraphAuthorities,
     retryDiagnostics,
-    runtime.reviewerContextMode ?? 'baseline',
   );
   const authorizedAt = new Date().toISOString();
   await persistAuthorizedReviewDispatch(runtime.orchestratorDeps, sessDir, {

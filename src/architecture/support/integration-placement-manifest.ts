@@ -113,13 +113,6 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     dir: 'integration/review/context',
     description: 'Reviewer, discovery, proof, and subject context',
     targetProductionFiles: 8,
-    budgetExceptions: [
-      {
-        file: 'integration/review/context/reviewer-evidence-dossier.ts',
-        reason:
-          'Pure evidence-first projection and its compact renderer; kept in the context zone to avoid a context-to-obligations cycle. Remove with the baseline renderer after the experiment ends.',
-      },
-    ],
   },
   {
     id: 'review/observations',
@@ -416,7 +409,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     owner: 'review-obligations',
   },
   { file: 'integration/review/context/frozen-reviewer-context.ts', owner: 'review-context' },
-  { file: 'integration/review/context/reviewer-evidence-dossier.ts', owner: 'review-context' },
 
   { file: 'integration/review/dispatch/native-task-review-execution.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },

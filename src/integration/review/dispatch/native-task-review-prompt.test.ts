@@ -445,37 +445,3 @@ describe('canonicalTaskPrompt — implementation subject anchor contract wiring'
     expect(prompt).not.toContain(CONTRACT_HEADING);
   });
 });
-
-describe('canonicalTaskPrompt — evidence dossier experiment', () => {
-  it('keeps baseline output and adds the dossier only in the selected arm', () => {
-    const state = stateWith(false);
-    const currentObligation = obligation();
-    const currentAttempt = {
-      ...attemptFixture(),
-      obligationId: currentObligation.obligationId,
-      subjectDigest: currentObligation.subjectDigest,
-    } as ReviewAttempt;
-    const baseline = canonicalTaskPrompt(
-      state,
-      currentObligation,
-      currentAttempt,
-      PROOF_GRAPH_STUB,
-    );
-    const dossier = canonicalTaskPrompt(
-      state,
-      currentObligation,
-      currentAttempt,
-      PROOF_GRAPH_STUB,
-      undefined,
-      'dossier',
-    );
-    expect(baseline).toContain('## ProofGraph Context (persisted, advisory)');
-    expect(baseline).not.toContain('## Evidence Dossier');
-    expect(dossier).toContain('## Evidence Dossier (derived, advisory, untrusted)');
-    expect(dossier).not.toContain('## ProofGraph Context (persisted, advisory)');
-    expect(dossier).toContain('binding":"bound_current"');
-    expect(dossier.indexOf('## Evidence Dossier')).toBeLessThan(
-      dossier.indexOf('persisted review material below this line:'),
-    );
-  });
-});
