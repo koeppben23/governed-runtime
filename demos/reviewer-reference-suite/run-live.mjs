@@ -283,7 +283,7 @@ function singleReviewPrompt(planText, claims) {
     'Copy the plan text characters exactly; do not escape quotes or add backslashes.',
     'Follow the reviewDispatch/reviewInvocation instructions in the tool output.',
     'Call the `task` tool exactly once with subagent_type "flowguard-reviewer" for the returned invocation.',
-    'If the tool output contains a reviewRetry, invoke the reviewer Task again exactly as instructed.',
+    'If the tool output contains reviewRetry, stop and report it; do not invoke a second reviewer Task in this measurement run.',
     'After the reviewer Task returns, stop.',
     'Do not revise the plan, do not call flowguard_plan again, and do not submit a reviewVerdict.',
   ].join('\n');
@@ -704,6 +704,25 @@ async function runPlanCase({ runner, suite, selected, arm, repetition, options, 
       // fresh attempt. Continue to the re-arm loop instead of losing the run.
       planTurnError = error;
     }
+    if (options.singleReview) {
+      const taskEvents = fs
+        .readFileSync(path.join(runner.evidenceDir, `${label}-03-plan.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .filter(
+          (event) =>
+            event?.part?.type === 'tool' &&
+            event.part.tool === 'task' &&
+            event.part.state?.input?.subagent_type === 'flowguard-reviewer',
+        );
+      if (taskEvents.length !== 1) {
+        record.failure = `single-review measurement requires exactly one reviewer Task, observed ${taskEvents.length}`;
+        record.completion.durationMs = Date.now() - started;
+        return record;
+      }
+    }
     const expectedSubjectDigest = sha256Text(normalizePlan(planText));
     let snapshot = runner.requireBoundState(session);
     let frozen = frozenPlanInvocation(snapshot.state, expectedSubjectDigest);
@@ -716,27 +735,6 @@ async function runPlanCase({ runner, suite, selected, arm, repetition, options, 
       };
       record.failure = 'persisted plan differs from the frozen subject; run not comparable';
       return record;
-    }
-
-    if (options.singleReview) {
-      const initialObligation = latestPlanObligation(snapshot.state);
-      const rearmBudget = Math.max(
-        0,
-        Math.min(MAX_REVIEWER_REARMS, Number(initialObligation?.maxReviewerAttempts ?? 1)),
-      );
-      for (let rearm = 0; rearm < rearmBudget; rearm += 1) {
-        snapshot = runner.requireBoundState(session);
-        frozen = frozenPlanInvocation(snapshot.state, expectedSubjectDigest);
-        if (frozen) break;
-        const gate = classifyPlanGate(snapshot.state);
-        if (gate !== PLAN_GATE.TRANSPORT_RETRY) break;
-        await runner.turn(
-          session,
-          `${label}-04-rearm-${rearm + 1}`,
-          'The host authorized a fresh reviewer attempt on the same frozen obligation. Invoke the reviewer Task again for that obligation, then stop. Do not revise the plan and do not call flowguard_plan.',
-          {},
-        );
-      }
     }
 
     if (!options.singleReview) {
