@@ -669,10 +669,13 @@ The reviewer execution path has independent upper bounds and one absolute deadli
     "toolTimeoutMs": 30000,
     "reviewTimeoutMs": 480000,
     "serializationTimeoutMs": 60000,
-    "executionTimeoutMs": 600000
+    "executionTimeoutMs": 600000,
+    "contextMode": "baseline"
   }
 }
 ```
+
+`contextMode` is a time-boxed experiment: `baseline` preserves the established reviewer prompt and remains the default; `dossier` projects the persisted evidence dossier for paired A/B measurement. It is not a permanent dual product path.
 
 These are the productive safety defaults, not the performance target. The
 80-second review / 120-second total profile is an opt-in lifecycle-validation

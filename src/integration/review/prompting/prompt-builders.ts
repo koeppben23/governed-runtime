@@ -31,16 +31,21 @@ export { renderReviewContext } from './prompt-sections.js';
 import { renderReviewContext } from './prompt-sections.js';
 
 /** Serialize the integrity-verified review subject identically for every transport. */
-export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {
+export function renderFrozenReviewSubjectEnvelope(
+  context: FrozenReviewerContext,
+  advisoryDossier?: string,
+): string[] {
   if (!context.reviewSubject || !context.reviewSubjectScope || !context.anchorContract) {
     return [
       '## Frozen Untrusted Subject',
+      ...(advisoryDossier ? ['', advisoryDossier, ''] : []),
       `${CANONICAL_PROMPT_APPEND_MARKER} persisted review material below this line:`,
       context.reviewMaterial.content,
     ];
   }
   return [
     '## Frozen Untrusted Subject',
+    ...(advisoryDossier ? ['', advisoryDossier, ''] : []),
     '### Subject Identity',
     JSON.stringify(context.reviewSubject),
     '### Subject Scope (frozen obligation scope)',
@@ -78,6 +83,10 @@ export interface ReviewerTaskPromptInput {
   readonly artifactAnchorContract?: readonly string[] | undefined;
   readonly implementationAnchorContract?: readonly string[];
   readonly repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
+  /** Time-boxed experiment: replace redundant derived blocks with one dossier. */
+  readonly contextMode?: 'baseline' | 'dossier';
+  /** Advisory, untrusted dossier text; only rendered in dossier mode. */
+  readonly evidenceDossier?: string;
   readonly observationCapability?: string | undefined;
   readonly observationRevisions?: readonly ('base' | 'head')[];
   readonly retryDiagnostics?: readonly PendingReviewRetryDiagnostic[];
@@ -296,6 +305,7 @@ function resolveReviewerPromptType(input: ReviewerTaskPromptInput): ReviewerProm
   return 'all';
 }
 
+// eslint-disable-next-line complexity -- prompt sections are selected from one canonical contract.
 export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
   const context = renderReviewContext({
     iteration: input.iteration,
@@ -328,8 +338,12 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     `reviewerOwnedAttestation.toolObligationId: "${input.obligationId}"`,
     ...retryContract(input.retryDiagnostics),
     ...renderObservationContractLines(input),
-    ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
-    ...(discoverySection ? [discoverySection] : []),
+    ...(input.contextMode === 'dossier'
+      ? []
+      : [
+          ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
+          ...(discoverySection ? [discoverySection] : []),
+        ]),
     ...(input.challengeResolutions && input.challengeResolutions.length > 0
       ? [
           '### Advisory Challenge Resolutions (NOT_VERIFIED)',
@@ -344,9 +358,15 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       ? ['## Frozen Untrusted Subject Context', ...input.artifactContext, '']
       : []),
     ...(input.frozenReviewerContext
-      ? renderFrozenReviewSubjectEnvelope(input.frozenReviewerContext)
+      ? renderFrozenReviewSubjectEnvelope(
+          input.frozenReviewerContext,
+          input.contextMode === 'dossier' ? input.evidenceDossier : undefined,
+        )
       : [
           '## Frozen Untrusted Subject',
+          ...(input.contextMode === 'dossier' && input.evidenceDossier
+            ? ['', input.evidenceDossier, '']
+            : []),
           `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
         ]),
   ]

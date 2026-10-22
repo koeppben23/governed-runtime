@@ -283,6 +283,7 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
     reviewerOutputCapFailures,
     reviewerExecutionFailures,
     reviewerExecutionTimeoutMs: config.reviewer.executionTimeoutMs,
+    reviewerContextMode: config.reviewer.contextMode,
     logError,
   });
   attachReviewerOutputCapHook(hooks, {

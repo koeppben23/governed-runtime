@@ -67,6 +67,7 @@ export interface FlowGuardPluginRuntime {
   /** Terminal execution-watchdog failures awaiting the native after-hook fallback. */
   readonly reviewerExecutionFailures: Map<string, ReviewerExecutionFailure>;
   readonly reviewerExecutionTimeoutMs: number;
+  readonly reviewerContextMode: 'baseline' | 'dossier';
   readonly logError: (message: string, err: unknown) => void;
 }
 
