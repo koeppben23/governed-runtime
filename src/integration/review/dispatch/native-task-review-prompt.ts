@@ -153,17 +153,21 @@ function validationBindingsFor(
   return bindings;
 }
 
-function claimBindingFor(
+function claimBindingsFor(
   obligation: ReviewObligation,
   state: PersistedState,
-): 'bound_current' | 'stale' | 'persisted_advisory' {
-  if (obligation.obligationType === 'plan') {
-    return state.plan?.current.digest === obligation.subjectDigest ? 'bound_current' : 'stale';
+): ReadonlyMap<string, 'bound_current' | 'stale' | 'persisted_advisory'> {
+  const bindings = new Map<string, 'bound_current' | 'stale' | 'persisted_advisory'>();
+  for (const claim of state.proofGraph?.claims ?? []) {
+    if (!claim.freshness) {
+      bindings.set(claim.claimId, 'persisted_advisory');
+    } else if (claim.freshness.stale || claim.freshness.boundDigest !== obligation.subjectDigest) {
+      bindings.set(claim.claimId, 'stale');
+    } else {
+      bindings.set(claim.claimId, 'bound_current');
+    }
   }
-  if (obligation.obligationType === 'architecture') {
-    return state.architecture?.digest === obligation.subjectDigest ? 'bound_current' : 'stale';
-  }
-  return 'persisted_advisory';
+  return bindings;
 }
 
 // eslint-disable-next-line max-params, max-lines-per-function, complexity -- prompt composition has one fail-closed boundary.
@@ -208,7 +212,7 @@ export function canonicalTaskPrompt(
             resolutionTargetCount: challengeContract?.resolutionTargets?.length ?? 0,
           },
           validationBindings: validationBindingsFor(obligation, state),
-          claimBinding: claimBindingFor(obligation, state),
+          claimBindings: claimBindingsFor(obligation, state),
           canonicalProofContext: proofContext,
         })
       : undefined;

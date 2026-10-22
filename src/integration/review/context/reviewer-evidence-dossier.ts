@@ -33,7 +33,8 @@ export interface ReviewerDossierProjectionInput {
   readonly challenge: ReviewerDossierChallengeProjection;
   /** Binding results composed by the dispatch authority, never derived here. */
   readonly validationBindings: ReadonlyMap<string, ReviewerDossierBindingStatus>;
-  readonly claimBinding: 'bound_current' | 'stale' | 'persisted_advisory';
+  /** Per-claim status composed from persisted canonical freshness. */
+  readonly claimBindings: ReadonlyMap<string, 'bound_current' | 'stale' | 'persisted_advisory'>;
   /** Existing canonical ProofGraph/risk/coverage projection (unbounded in dossier mode). */
   readonly canonicalProofContext: readonly string[];
 }
@@ -122,13 +123,13 @@ function validationLine(
 
 function proofLines(
   state: SessionState,
-  claimBinding: 'bound_current' | 'stale' | 'persisted_advisory',
+  claimBindings: ReadonlyMap<string, 'bound_current' | 'stale' | 'persisted_advisory'>,
 ): string[] {
   const claims = proofClaims(state);
   if (claims.length === 0) return [statusLines('absent', 'proofgraph_claims', 'none')];
   return claims.map((claim) =>
     line('proof_claim', {
-      binding: claimBinding,
+      binding: claimBindings.get(claim.claimId) ?? 'persisted_advisory',
       claimId: claim.claimId,
       verificationState: claim.verificationState,
       critical: claim.critical,
@@ -272,7 +273,7 @@ export function buildReviewerEvidenceDossier(
     ...input.canonicalProofContext,
     '',
     '### ProofGraph Claims',
-    ...proofLines(input.state, input.claimBinding),
+    ...proofLines(input.state, input.claimBindings),
     '',
     '### Verification',
     ...(input.obligation.obligationType === 'plan'

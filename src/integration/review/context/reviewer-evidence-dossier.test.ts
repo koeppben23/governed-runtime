@@ -111,7 +111,7 @@ function input(
       resolutionTargetCount: 0,
     },
     validationBindings: new Map(),
-    claimBinding: 'persisted_advisory' as const,
+    claimBindings: new Map([['33333333-3333-4333-8333-000000000000', 'bound_current' as const]]),
     canonicalProofContext: ['CANONICAL-PROOF-CONTEXT'],
   };
 }

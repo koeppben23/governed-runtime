@@ -489,4 +489,45 @@ describe('canonicalTaskPrompt — evidence dossier experiment', () => {
       dossier.indexOf('persisted review material below this line:'),
     );
   });
+
+  it('does not mark a proof claim current when its own freshness binding is foreign', () => {
+    const current = stateWith(false);
+    const foreignClaimId = '66666666-6666-4666-8666-666666666666';
+    const foreignState = {
+      ...current,
+      proofGraph: {
+        version: 'proofgraph.v2',
+        evaluatedAt: NOW,
+        claims: [
+          {
+            claimId: foreignClaimId,
+            statement: 'foreign claim',
+            signalClass: 'fact',
+            critical: true,
+            provenance: null,
+            evidenceRefs: [],
+            counterexampleRefs: [],
+            verificationState: 'PROVEN',
+            freshness: { boundDigest: 'foreign-revision', evaluatedAt: NOW, stale: false },
+          },
+        ],
+      },
+    } as typeof current;
+    const currentObligation = obligation();
+    const currentAttempt = {
+      ...attemptFixture(),
+      obligationId: currentObligation.obligationId,
+      subjectDigest: currentObligation.subjectDigest,
+    } as ReviewAttempt;
+    const dossier = canonicalTaskPrompt(
+      foreignState,
+      currentObligation,
+      currentAttempt,
+      PROOF_GRAPH_STUB,
+      undefined,
+      'dossier',
+    );
+    expect(dossier).toContain(`"binding":"stale","claimId":"${foreignClaimId}"`);
+    expect(dossier).not.toContain(`"binding":"bound_current","claimId":"${foreignClaimId}"`);
+  });
 });
