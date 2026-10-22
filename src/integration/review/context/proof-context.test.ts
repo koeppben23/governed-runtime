@@ -297,3 +297,24 @@ describe('renderImplementationRiskFocus (#1081 risk-adaptive context)', () => {
     expect(renderImplementationRiskFocus(makeState('READY'))).toEqual([]);
   });
 });
+
+describe('dossier proof context completeness', () => {
+  it('removes the 20-entry truncation only for the unbounded dossier arm', () => {
+    const claims = Array.from({ length: 25 }, (_, index) =>
+      provenClaim({
+        claimId: `33333333-3333-4333-8333-${String(index).padStart(12, '0')}`,
+        statement: `claim ${index}`,
+        verificationState: 'UNPROVEN',
+      }),
+    );
+    const state = makeState('PLAN_REVIEW', { proofGraph: projection(claims) });
+    const bounded = rawBuildReviewerProofContext(state, authorities).join('\n');
+    const unbounded = rawBuildReviewerProofContext(state, authorities, {
+      unbounded: true,
+    }).join('\n');
+    expect(bounded).toContain('omitted for prompt length');
+    expect(unbounded).not.toContain('omitted for prompt length');
+    expect(unbounded).toContain('claim 24');
+    expect(unbounded).toContain('33333333-3333-4333-8333-000000000024');
+  });
+});

@@ -40,6 +40,15 @@ const PROOF_GRAPH_STUB: ReviewerProofGraphAuthorities = {
   renderPlanClaimDeclarations: () => '',
 };
 
+const PROOF_GRAPH_RISK_STUB: ReviewerProofGraphAuthorities = {
+  evaluateProofGraphGate: () => ({
+    kind: 'risk_trigger_uncovered',
+    relevantTriggers: ['command_contract'],
+    uncoveredTriggers: ['command_contract'],
+  }),
+  renderPlanClaimDeclarations: () => '',
+};
+
 function priorFindings(): ReviewFindings {
   return {
     iteration: 0,
@@ -465,15 +474,17 @@ describe('canonicalTaskPrompt — evidence dossier experiment', () => {
       state,
       currentObligation,
       currentAttempt,
-      PROOF_GRAPH_STUB,
+      PROOF_GRAPH_RISK_STUB,
       undefined,
       'dossier',
     );
     expect(baseline).toContain('## ProofGraph Context (persisted, advisory)');
     expect(baseline).not.toContain('## Evidence Dossier');
     expect(dossier).toContain('## Evidence Dossier (derived, advisory, untrusted)');
-    expect(dossier).not.toContain('## ProofGraph Context (persisted, advisory)');
+    expect(dossier.match(/## ProofGraph Context \(persisted, advisory\)/g)).toHaveLength(1);
     expect(dossier).toContain('binding":"bound_current"');
+    expect(dossier).toContain('command_contract');
+    expect(dossier).toContain('Triggers without approved critical-claim coverage');
     expect(dossier.indexOf('## Evidence Dossier')).toBeLessThan(
       dossier.indexOf('persisted review material below this line:'),
     );

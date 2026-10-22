@@ -110,6 +110,9 @@ function input(
       offeredEvidenceRefCount: 2,
       resolutionTargetCount: 0,
     },
+    validationBindings: new Map(),
+    claimBinding: 'persisted_advisory' as const,
+    canonicalProofContext: ['CANONICAL-PROOF-CONTEXT'],
   };
 }
 
@@ -125,6 +128,7 @@ describe('reviewer evidence dossier', () => {
     expect(first.text).toContain('candidate-49');
     expect(first.text).not.toContain('omitted for prompt length');
     expect(first.text).toContain('Ref 1 to Ref 2');
+    expect(first.text).toContain('CANONICAL-PROOF-CONTEXT');
     expect(first.utf8Bytes).toBeLessThanOrEqual(MAX_DOSSIER_UTF8_BYTES);
   });
 
@@ -165,6 +169,8 @@ describe('reviewer evidence dossier', () => {
         },
       ] as never,
     });
+    (stale as unknown as { validationBindings: ReadonlyMap<string, 'stale'> }).validationBindings =
+      new Map([['44444444-4444-4444-8444-444444444444', 'stale']]);
     const result = buildReviewerEvidenceDossier(stale);
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {

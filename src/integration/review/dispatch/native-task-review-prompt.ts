@@ -48,6 +48,7 @@ import type { PersistedState } from './native-task-review-types.js';
 import {
   buildReviewerEvidenceDossier,
   MAX_CANONICAL_TASK_PROMPT_UTF8_BYTES,
+  type ReviewerDossierBindingStatus,
 } from '../context/reviewer-evidence-dossier.js';
 
 function resolutionTargetIdsOf(
@@ -123,6 +124,48 @@ function artifactScopeOf(
     : undefined;
 }
 
+function validationBindingsFor(
+  obligation: ReviewObligation,
+  state: PersistedState,
+): ReadonlyMap<string, ReviewerDossierBindingStatus> {
+  const bindings = new Map<string, ReviewerDossierBindingStatus>();
+  const implementationScope =
+    obligation.reviewSubjectScope?.kind === 'implementation'
+      ? obligation.reviewSubjectScope
+      : undefined;
+  for (const attempt of state.validationAttempts) {
+    if (attempt.scope === 'baseline') {
+      bindings.set(
+        attempt.attemptId,
+        attempt.planDigest === obligation.subjectDigest ? 'bound_current' : 'stale',
+      );
+    } else {
+      bindings.set(
+        attempt.attemptId,
+        implementationScope !== undefined &&
+          attempt.implementationDigest === implementationScope.implementationDigest &&
+          obligation.subjectDigest === implementationScope.implementationDigest
+          ? 'bound_current'
+          : 'stale',
+      );
+    }
+  }
+  return bindings;
+}
+
+function claimBindingFor(
+  obligation: ReviewObligation,
+  state: PersistedState,
+): 'bound_current' | 'stale' | 'persisted_advisory' {
+  if (obligation.obligationType === 'plan') {
+    return state.plan?.current.digest === obligation.subjectDigest ? 'bound_current' : 'stale';
+  }
+  if (obligation.obligationType === 'architecture') {
+    return state.architecture?.digest === obligation.subjectDigest ? 'bound_current' : 'stale';
+  }
+  return 'persisted_advisory';
+}
+
 // eslint-disable-next-line max-params, max-lines-per-function, complexity -- prompt composition has one fail-closed boundary.
 export function canonicalTaskPrompt(
   state: PersistedState,
@@ -146,6 +189,10 @@ export function canonicalTaskPrompt(
     resolutionTargetIdsOf(challengeContract),
   );
   const admittedSubjectAnchorKind = admittedAnchorKindOf(obligation);
+  const proofContext = buildReviewerProofContext(state, proofGraphAuthorities, {
+    includeDeclarationPreview: keepsDeclarationPreview(obligation),
+    ...(contextMode === 'dossier' ? { unbounded: true } : {}),
+  });
   const evidenceDossier =
     contextMode === 'dossier'
       ? buildReviewerEvidenceDossier({
@@ -160,6 +207,9 @@ export function canonicalTaskPrompt(
             offeredEvidenceRefCount: challengeContract?.evidenceRefs?.length ?? 0,
             resolutionTargetCount: challengeContract?.resolutionTargets?.length ?? 0,
           },
+          validationBindings: validationBindingsFor(obligation, state),
+          claimBinding: claimBindingFor(obligation, state),
+          canonicalProofContext: proofContext,
         })
       : undefined;
   if (evidenceDossier?.kind === 'blocked') {
@@ -175,9 +225,7 @@ export function canonicalTaskPrompt(
     reviewType: reviewerPromptTypeForTask(obligation.obligationType),
     repositoryReview: observationRevisions.length > 0,
     challengeContract: challengeContract ?? undefined,
-    proofContext: buildReviewerProofContext(state, proofGraphAuthorities, {
-      includeDeclarationPreview: keepsDeclarationPreview(obligation),
-    }),
+    proofContext,
     ...(advisoryResolutions.length > 0 ? { challengeResolutions: advisoryResolutions } : {}),
     ...(retryDiagnostics !== undefined && retryDiagnostics.length > 0 ? { retryDiagnostics } : {}),
     ...(admittedSubjectAnchorKind !== undefined ? { admittedSubjectAnchorKind } : {}),

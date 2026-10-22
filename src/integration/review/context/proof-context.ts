@@ -65,11 +65,15 @@ export interface ReviewerProofGraphAuthorities {
 const MAX_RENDERED_ENTRIES = 20;
 
 /** Render at most {@link MAX_RENDERED_ENTRIES} entries, with an explicit overflow note. */
-function bounded(entries: readonly string[], label: string): string[] {
-  if (entries.length <= MAX_RENDERED_ENTRIES) return [...entries];
-  const omitted = entries.length - MAX_RENDERED_ENTRIES;
+function bounded(
+  entries: readonly string[],
+  label: string,
+  maxEntries: number = MAX_RENDERED_ENTRIES,
+): string[] {
+  if (entries.length <= maxEntries) return [...entries];
+  const omitted = entries.length - maxEntries;
   return [
-    ...entries.slice(0, MAX_RENDERED_ENTRIES),
+    ...entries.slice(0, maxEntries),
     `  - ... ${omitted} further ${label} omitted for prompt length; inspect flowguard_status for the full set.`,
   ];
 }
@@ -82,6 +86,7 @@ function bounded(entries: readonly string[], label: string): string[] {
  */
 export function renderPersistedProofGraphContext(
   proofGraph: ProofGraphProjection | undefined,
+  maxEntries?: number,
 ): string[] {
   if (!proofGraph) {
     return [
@@ -112,6 +117,7 @@ export function renderPersistedProofGraphContext(
               (claim) => `  - [${claim.verificationState}] ${claim.claimId}: ${claim.statement}`,
             ),
             'critical unresolved claim(s)',
+            maxEntries,
           ),
         ]),
     '',
@@ -151,7 +157,7 @@ function renderPlanDeclarations(
   ];
 }
 
-function renderArchitectureDeclarations(state: SessionState): string[] {
+function renderArchitectureDeclarations(state: SessionState, maxEntries?: number): string[] {
   const declarations = state.architecture?.claimDeclarations;
   if (!declarations || declarations.claims.length === 0) return [];
   return [
@@ -168,6 +174,7 @@ function renderArchitectureDeclarations(state: SessionState): string[] {
         return `- [${claim.critical ? 'critical' : 'non-critical'}] ${claim.claimId}: ${claim.statement}\n  ${detail}`;
       }),
       'architecture declaration(s)',
+      maxEntries,
     ),
     renderCertificateLine('Architecture', state.architecture?.approvalCertificate),
     '',
@@ -184,10 +191,11 @@ function renderArchitectureDeclarations(state: SessionState): string[] {
 export function renderDeclarationPreview(
   state: SessionState,
   authorities: ReviewerProofGraphAuthorities,
+  maxEntries?: number,
 ): string[] {
   const sections = [
     ...renderPlanDeclarations(state, authorities),
-    ...renderArchitectureDeclarations(state),
+    ...renderArchitectureDeclarations(state, maxEntries),
   ];
   if (sections.length === 0) return [];
   return [
@@ -201,7 +209,7 @@ export function renderDeclarationPreview(
 }
 
 /** Render recorded coverage gaps so missing evidence is visible, never implied. */
-export function renderCoverageGaps(state: SessionState): string[] {
+export function renderCoverageGaps(state: SessionState, maxEntries?: number): string[] {
   const coverage = state.proofContractCoverage ?? [];
   if (coverage.length === 0) return [];
   return [
@@ -211,6 +219,7 @@ export function renderCoverageGaps(state: SessionState): string[] {
     ...bounded(
       coverage.map((gap) => `- ${gap.cause}${gap.claimId ? ` (claim ${gap.claimId})` : ''}`),
       'coverage gap(s)',
+      maxEntries,
     ),
     '',
   ];
@@ -323,17 +332,18 @@ function renderCriticalClaimRequirement(
 export function buildReviewerProofContext(
   state: SessionState,
   authorities: ReviewerProofGraphAuthorities,
-  options: { readonly includeDeclarationPreview?: boolean } = {},
+  options: { readonly includeDeclarationPreview?: boolean; readonly unbounded?: boolean } = {},
 ): string[] {
   // Only frozen PLAN material already carries the claim declarations. ADR
   // material contains the ticket and ADR body, so architecture declarations
   // still need this preview, including their evidence requirements/assumptions.
   const includePreview = options.includeDeclarationPreview !== false;
+  const maxEntries = options.unbounded ? Number.MAX_SAFE_INTEGER : undefined;
   return [
-    ...renderPersistedProofGraphContext(state.proofGraph),
+    ...renderPersistedProofGraphContext(state.proofGraph, maxEntries),
     ...renderImplementationRiskFocus(state),
-    ...(includePreview ? renderDeclarationPreview(state, authorities) : []),
-    ...renderCoverageGaps(state),
+    ...(includePreview ? renderDeclarationPreview(state, authorities, maxEntries) : []),
+    ...renderCoverageGaps(state, maxEntries),
     ...renderCriticalClaimRequirement(state, authorities),
   ];
 }

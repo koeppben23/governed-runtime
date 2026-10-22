@@ -24,11 +24,18 @@ export interface ReviewerDossierChallengeProjection {
   readonly resolutionTargetCount: number;
 }
 
+export type ReviewerDossierBindingStatus = 'bound_current' | 'stale' | 'unbound';
+
 export interface ReviewerDossierProjectionInput {
   readonly state: SessionState;
   readonly obligation: ReviewObligation;
   readonly attempt: ReviewAttempt;
   readonly challenge: ReviewerDossierChallengeProjection;
+  /** Binding results composed by the dispatch authority, never derived here. */
+  readonly validationBindings: ReadonlyMap<string, ReviewerDossierBindingStatus>;
+  readonly claimBinding: 'bound_current' | 'stale' | 'persisted_advisory';
+  /** Existing canonical ProofGraph/risk/coverage projection (unbounded in dossier mode). */
+  readonly canonicalProofContext: readonly string[];
 }
 
 export type ReviewerEvidenceDossierResult =
@@ -78,25 +85,11 @@ function validationStateChanged(attempt: SessionState['validationAttempts'][numb
   );
 }
 
-function validationBinding(
-  state: SessionState,
-  attempt: SessionState['validationAttempts'][number],
-): 'bound_current' | 'stale' | 'unbound' {
-  if (attempt.scope === 'baseline') {
-    const digest = state.plan?.current.digest;
-    return digest !== undefined && digest === attempt.planDigest ? 'bound_current' : 'unbound';
-  }
-  const digest = state.implementation?.digest;
-  return digest !== undefined && digest === attempt.implementationDigest
-    ? 'bound_current'
-    : 'stale';
-}
-
 function validationLine(
   state: SessionState,
   attempt: SessionState['validationAttempts'][number],
+  binding: ReviewerDossierBindingStatus,
 ): string {
-  const binding = validationBinding(state, attempt);
   return line('validation', {
     binding,
     attemptId: attempt.attemptId,
@@ -127,47 +120,15 @@ function validationLine(
   });
 }
 
-function declarationLines(state: SessionState): string[] {
-  const plan = state.plan?.claimDeclarations;
-  const architecture = state.architecture?.claimDeclarations;
-  const lines: string[] = [];
-  for (const claim of plan?.claims ?? []) {
-    lines.push(
-      line('declaration', {
-        sourceKind: 'plan_claim_declaration',
-        claimId: claim.claimId,
-        statement: claim.statement,
-        critical: claim.critical,
-        authoritySectionId: claim.authoritySectionId,
-        expectedCheckId: claim.expectedCheckId,
-        ...(claim.counterexampleRequirement
-          ? { counterexampleRequirement: claim.counterexampleRequirement }
-          : {}),
-      }),
-    );
-  }
-  for (const claim of architecture?.claims ?? []) {
-    lines.push(
-      line('declaration', {
-        sourceKind: 'architecture_claim_declaration',
-        claimId: claim.claimId,
-        statement: claim.statement,
-        critical: claim.critical,
-        authoritySectionId: claim.authoritySectionId,
-        requiredReviewEvidence: claim.requiredReviewEvidence,
-        ...(claim.assumptions ? { assumptions: claim.assumptions } : {}),
-      }),
-    );
-  }
-  if (lines.length === 0) lines.push(statusLines('absent', 'claim_declarations', 'none'));
-  return lines;
-}
-
-function proofLines(state: SessionState): string[] {
+function proofLines(
+  state: SessionState,
+  claimBinding: 'bound_current' | 'stale' | 'persisted_advisory',
+): string[] {
   const claims = proofClaims(state);
   if (claims.length === 0) return [statusLines('absent', 'proofgraph_claims', 'none')];
   return claims.map((claim) =>
     line('proof_claim', {
+      binding: claimBinding,
       claimId: claim.claimId,
       verificationState: claim.verificationState,
       critical: claim.critical,
@@ -217,46 +178,6 @@ function discoveryLines(attempt: ReviewAttempt): string[] {
           }),
         )),
   ];
-}
-
-function riskLines(state: SessionState): string[] {
-  if (!state.implementation) return [statusLines('absent', 'implementation_risk', 'none')];
-  const assessment = state.implementationRiskAssessment;
-  if (!assessment)
-    return [statusLines('missing', 'implementation_risk', state.implementation.digest)];
-  if (assessment.implementationDigest !== state.implementation.digest) {
-    return [
-      statusLines('stale', 'implementation_risk', state.implementation.digest),
-      line('risk_assessment', {
-        assessedImplementationDigest: assessment.implementationDigest,
-        effectiveTaskClass: assessment.effectiveTaskClass,
-        riskTriggers: assessment.riskTriggers,
-        touchedSurfaces: assessment.touchedSurfaces,
-      }),
-    ];
-  }
-  return [
-    line('risk_assessment', {
-      binding: 'bound_current',
-      effectiveTaskClass: assessment.effectiveTaskClass,
-      computedMinimumTaskClass: assessment.computedMinimumTaskClass,
-      riskTriggers: assessment.riskTriggers,
-      touchedSurfaces: assessment.touchedSurfaces,
-      assessedFileCount: assessment.assessedFileCount,
-      implementationDigest: assessment.implementationDigest,
-    }),
-  ];
-}
-
-function coverageLines(state: SessionState): string[] {
-  const coverage = state.proofContractCoverage ?? [];
-  if (coverage.length === 0) return [statusLines('absent', 'proofgraph_coverage_gaps', 'none')];
-  return coverage.map((gap) =>
-    line('coverage_gap', {
-      cause: gap.cause,
-      claimId: gap.claimId ?? null,
-    }),
-  );
 }
 
 function integrityIssues(
@@ -347,11 +268,11 @@ export function buildReviewerEvidenceDossier(
     line('binding', 'unchanged-frozen-subject-follows'),
     line('materialDigest', input.obligation.reviewMaterial?.materialDigest ?? 'missing'),
     '',
-    '### Claim Declarations',
-    ...declarationLines(input.state),
+    '### Canonical ProofGraph Context',
+    ...input.canonicalProofContext,
     '',
     '### ProofGraph Claims',
-    ...proofLines(input.state),
+    ...proofLines(input.state, input.claimBinding),
     '',
     '### Verification',
     ...(input.obligation.obligationType === 'plan'
@@ -359,16 +280,18 @@ export function buildReviewerEvidenceDossier(
       : []),
     ...(input.state.validationAttempts.length === 0
       ? [statusLines('absent', 'validation_attempts', input.attempt.attemptId)]
-      : input.state.validationAttempts.map((attempt) => validationLine(input.state, attempt))),
+      : input.state.validationAttempts.map((attempt) =>
+          validationLine(
+            input.state,
+            attempt,
+            input.validationBindings.get(attempt.attemptId) ?? 'unbound',
+          ),
+        )),
     '',
     '### Discovery',
     ...discoveryLines(input.attempt),
     '',
-    '### Risk',
-    ...riskLines(input.state),
-    '',
     '### Completeness',
-    ...coverageLines(input.state),
     statusLines(
       input.state.validationAttempts.length === 0 ? 'NOT_VERIFIED' : 'present',
       'validation_attempts',
