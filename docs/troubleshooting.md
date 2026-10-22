@@ -279,6 +279,8 @@ real, registered reason.
 | `REVIEWER_COMPLETION_UNVERIFIABLE` | Host-recorded messages cannot prove reviewer completion (unreadable, host error, more steps than the limit, tool call or no `stop` in the last step); the review cannot be accepted | Do not consume the result as findings; re-run the originating command when host evidence is available, or report the blocker |
 | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` | Reviewer child session completed without host-owned execution provenance | Re-run the originating FlowGuard command; do not reuse the prior reviewer output or submit copied findings |
 | `REVIEW_DISPATCH_PERSISTENCE_FAILED` | Durable reviewer dispatch could not be persisted before the host release; reviewer NOT executed | Retry the originating command; ensure the session state is writable; do not submit fabricated findings |
+| `REVIEW_DOSSIER_INTEGRITY_FAILED` | The reviewer evidence dossier has contradictory mandatory identities | Inspect the referenced claim, candidate, attempt, and revision identities; repair the persisted authority state or start a fresh review obligation |
+| `REVIEW_DOSSIER_BUDGET_EXCEEDED` | The complete dossier or canonical reviewer prompt exceeds the fixed experimental UTF-8 budget | Do not truncate mandatory facts or fall back silently; reduce only redundant derived data and retry |
 | `REVIEW_SUBJECT_CHANGED_WHILE_PENDING` | Submitted artifact revision does not match the frozen subject of the pending review obligation | Submit the same revision to continue the active review, or wait for the obligation to settle before reviewing a changed revision |
 | `RESTART_CYCLE_ITERATION_MISMATCH` | Architecture review restart refused: blocked predecessor iteration does not match the flow state's review cycle | Inspect session state and audit trail; restore a consistent review cycle from trusted evidence or abort the session |
 
@@ -564,6 +566,8 @@ REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND
 REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
 REVIEW_DISPATCH_PERSISTENCE_FAILED
+REVIEW_DOSSIER_BUDGET_EXCEEDED
+REVIEW_DOSSIER_INTEGRITY_FAILED
 REVIEW_EVIDENCE_LOCATION_ESCAPES_REPOSITORY
 REVIEW_EVIDENCE_LOCATION_INVALID
 REVIEW_EVIDENCE_NOT_OBSERVED

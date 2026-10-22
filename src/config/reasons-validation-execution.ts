@@ -23,6 +23,26 @@ export const REVIEW_EXECUTION_REASONS = [
     ],
   },
   {
+    code: 'REVIEW_DOSSIER_INTEGRITY_FAILED',
+    category: 'state',
+    messageTemplate:
+      'The reviewer evidence dossier could not be projected because mandatory persisted identities are contradictory.',
+    recoverySteps: [
+      'Do not dispatch the reviewer. Inspect the referenced claim, candidate, attempt, and revision identities.',
+      'Repair the persisted authority state or start a fresh review obligation; never fabricate missing evidence.',
+    ],
+  },
+  {
+    code: 'REVIEW_DOSSIER_BUDGET_EXCEEDED',
+    category: 'state',
+    messageTemplate:
+      'The complete reviewer evidence dossier or canonical prompt exceeds the fixed experimental UTF-8 budget.',
+    recoverySteps: [
+      'Do not truncate mandatory facts or silently fall back to the baseline renderer.',
+      'Inspect the reported byte count and reduce only redundant derived data before dispatch.',
+    ],
+  },
+  {
     code: 'REVIEWER_TASK_ABORTED',
     category: 'state',
     messageTemplate:

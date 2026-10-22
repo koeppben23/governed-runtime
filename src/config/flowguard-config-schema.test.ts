@@ -843,6 +843,7 @@ describe('FlowGuardConfigSchema', () => {
       reviewTimeoutMs: 480_000,
       serializationTimeoutMs: 60_000,
       executionTimeoutMs: 600_000,
+      contextMode: 'baseline',
     });
     expect(
       FlowGuardConfigSchema.safeParse({
@@ -860,6 +861,12 @@ describe('FlowGuardConfigSchema', () => {
       FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
         reviewer: { serializationTimeoutMs: 610_000, executionTimeoutMs: 600_000 },
+      }).success,
+    ).toBe(false);
+    expect(
+      FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        reviewer: { contextMode: 'unbounded' },
       }).success,
     ).toBe(false);
   });
