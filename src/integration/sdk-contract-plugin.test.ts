@@ -325,9 +325,10 @@ describe('SDK Contract: Type baseline infrastructure', () => {
     expect(typeof meta.version).toBe('string');
     expect(meta.version.length).toBeGreaterThan(0);
 
-    expect(meta.files).toHaveLength(3);
+    expect(meta.files).toHaveLength(4);
     expect(meta.files[0].label).toBe('plugin/dist/index.d.ts');
     expect(meta.files[1].label).toBe('plugin/dist/tool.d.ts');
+    expect(meta.files[3].label).toBe('sdk/gen/types.gen.d.ts#ToolPart');
     expect(meta.files[2].label).toBe('sdk/gen/types.gen.d.ts#Event');
   });
 

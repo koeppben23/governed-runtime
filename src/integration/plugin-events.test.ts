@@ -34,6 +34,7 @@ function createMockDeps(): EventHandlerDeps & {
         calls.push({ method: 'log.error', args: [service, message, extra] });
       },
     },
+    observeMutationEvent: async () => {},
     resumePendingSystemWork(sessionId: string) {
       calls.push({ method: 'resumePendingSystemWork', args: [sessionId] });
       return Promise.resolve();

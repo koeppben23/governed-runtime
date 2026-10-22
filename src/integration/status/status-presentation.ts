@@ -199,7 +199,7 @@ function buildBlockerSection(
   detail: PresentationBuildOptions['detail'],
 ): BlockerSection {
   const reasonProjection = blocker.reasonCode
-    ? projectReasonFromRegistry(blocker.reasonCode)
+    ? projectReasonFromRegistry(blocker.reasonCode, blocker.reasonParams)
     : null;
   const recovery = reasonProjection?.recovery.primary;
   return {
@@ -369,6 +369,8 @@ function buildPresentationConclusion(
   conclusion: StatusProjection['conclusion'],
 ): PresentationConclusion {
   switch (conclusion.kind) {
+    case 'recovery':
+      return { kind: 'recovery', message: conclusion.message, steps: conclusion.steps };
     case 'next_action':
       return { kind: 'next_action', action: conclusion.action };
     case 'decision_required':

@@ -149,6 +149,7 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
       commands: ['/task', '/architecture', '/review'],
     },
     blocker: null,
+    mutationEpisodes: [],
     evidenceSummary: { present: 0, missing: 0, notYetRequired: 7, failed: 0, waived: 0 },
     reducedCeremony: { status: 'not_applicable', reason: null },
     ticketRisk: null,

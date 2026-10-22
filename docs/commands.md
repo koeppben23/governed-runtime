@@ -371,6 +371,11 @@ revision uses `/approve` instead.
 
 ### /reconcile-mutation-episode
 
+For a regular failed OpenCode `edit`, first retry `/implement`: the runtime can
+observe the exact stored error and close the authorized episode without a
+restart. This automatic error path is admitted only for `edit`; an interrupted
+cleanup part is never a regular completion proof.
+
 Resolve a host mutation episode whose outcome can never be observed (the host process
 died between the Before- and After-hook). Appends an append-only resolution record
 (`reconciled_after_unknown_outcome`, basis `worktree_recapture`).
@@ -380,6 +385,18 @@ unreliable: re-apply the work, record it with `/implement`, re-run the checks, a
 submit a fresh review. Never use this command for a host call with a known outcome.
 
 **Allowed in:** any phase with an unresolved `dispatch_authorized` host mutation episode.
+
+The original runtime holder must be provably dead and a later lease generation
+must fence it before unknown-outcome resolution is permitted. Reloading a plugin,
+changing a runtime ID, or an old heartbeat does not establish that authority.
+Stop outstanding shell/background writers separately: tool completion and lease
+fencing do not attest process-tree quiescence.
+
+`flowguard_status({ whyBlocked: true })` projects open identities under
+`whyBlocked.mutationEpisodes` (full status: `mutationEpisodes`). While they block
+implementation, `nextResolvableCommand: null` means no unconditional progress
+recommendation can be derived from persisted state; the conditional retry above
+remains available. Status itself performs no host reconciliation or writes.
 
 ### /architecture
 

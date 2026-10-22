@@ -159,6 +159,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MUT4: recover throwing host edits without weakening episode fencing (#1172).**
+  Regular OpenCode edit errors are observed from an exact, freshly read host
+  ToolPart through asynchronous event wakeups and a synchronous barrier before
+  `/implement`. All completion channels share one locked, lease-authorized,
+  audit-outbox-backed writer. Cleanup/interrupted parts, ambiguous identities,
+  unknown outcomes and already resolved episodes never become observed success.
+  Full status, `/why`, readiness and recovery now project open episode IDs and
+  the actual blocker without recommending unconditional implementation progress.
+  Live tests pin OpenCode 1.19.3 and cover the real edit failure, event loss,
+  cleanup and shell-descendant limitation; automatic error reconciliation is
+  deliberately admitted only for `edit` (MUT5 / #1173 tracks shell quiescence).
+
 - **Reviewer execution closure (#1170):** cleanup now requires exact recorded
   execution identity and persisted terminality. Serialization SDK failures and
   hanging abort/status requests retain an immediate evidence-binding fence and

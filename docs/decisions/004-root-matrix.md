@@ -8,14 +8,14 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-10-20):
+(counts updated 2026-10-22):
 
-- `root-composition`: 27 files (plugin lifecycle entrypoints and barrels)
-- `root-host-runtime`: exactly 4 named files (`installed-commands.ts`,
-  `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
+- `root-composition`: 28 files (plugin lifecycle entrypoints and barrels)
+- `root-host-runtime`: exactly 5 named files (`host-mutation-observation.ts`,
+  `installed-commands.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 14 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 45 root production files
+- total: 47 root production files
 
 The reviewer output-cap `chat.params` hook and its terminal-persistence path live
 in `integration/reviewer-output-cap.ts` and
@@ -24,6 +24,12 @@ they are host transport adapters, not a new review authority. The bounded
 execution watchdog and its terminal-persistence adapter live in
 `integration/reviewer-execution-watchdog.ts` and
 `integration/reviewer-execution-failure.ts`.
+
+MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
+to connect asynchronous host notifications and the synchronous pre-implement
+barrier to the existing completion writer. `host-mutation-observation.ts` owns
+the pinned host-part parser at the host/runtime boundary. Episode lifecycle
+authority remains in `state/evidence-mutation-episode.ts`.
 
 The guard-layer maintainability pass (PR #945) deliberately removed the
 hardcoded total production-file count (221) and derived owner lists from the

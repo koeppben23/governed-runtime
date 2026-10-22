@@ -2,6 +2,7 @@
 
 import type { Phase, SessionState } from '../state/schema.js';
 import { TERMINAL, USER_GATES } from './topology.js';
+import { unresolvedMutationEpisodes } from '../state/evidence-mutation-episode.js';
 
 export type WorkflowIntent =
   | 'CAPTURE_TASK'
@@ -45,6 +46,8 @@ export type WorkflowDirectiveCode =
 
 export interface DirectiveContext {
   readonly reasonCode?: string;
+  readonly reasonParams?: Readonly<Record<string, string>>;
+  readonly reasonText?: string;
   readonly recovery?: string;
 }
 
@@ -196,14 +199,30 @@ function resolveBlockingAuthority(state: SessionState): DirectiveContext | null 
   if (state.error) {
     return {
       reasonCode: state.error.code,
+      reasonText: state.error.message,
       ...(state.error.recoveryHint ? { recovery: state.error.recoveryHint } : {}),
     };
   }
   if (state.riskGate?.status === 'blocked') {
-    return { reasonCode: state.riskGate.code };
+    return { reasonCode: state.riskGate.code, reasonText: state.riskGate.message };
   }
   if (state.discoveryHealthGate?.status === 'blocked') {
-    return { reasonCode: state.discoveryHealthGate.code };
+    return {
+      reasonCode: state.discoveryHealthGate.code,
+      reasonText: state.discoveryHealthGate.message,
+    };
+  }
+  if (state.phase === 'IMPLEMENTATION') {
+    const open = unresolvedMutationEpisodes(
+      state.mutationEpisodes,
+      state.mutationEpisodeResolutions,
+    );
+    if (open.length > 0) {
+      return {
+        reasonCode: 'MUTATION_EPISODE_UNRESOLVED',
+        reasonParams: { count: String(open.length) },
+      };
+    }
   }
   return null;
 }

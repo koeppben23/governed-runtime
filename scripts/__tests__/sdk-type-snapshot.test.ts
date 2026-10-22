@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveEventContract, normalize, sha256 } from '../sdk-type-snapshot.mjs';
+import {
+  deriveEventContract,
+  deriveToolPartContract,
+  normalize,
+  sha256,
+} from '../sdk-type-snapshot.mjs';
 
 const SDK_FIXTURE = [
   'export type Event = EventAlpha | EventBeta;',
@@ -20,6 +25,27 @@ const SDK_FIXTURE = [
 ].join('\n');
 
 describe('scripts/sdk-type-snapshot', () => {
+  it('rejects missing nested tool lifecycle declarations', () => {
+    expect(() => deriveToolPartContract(SDK_FIXTURE)).toThrow(/ToolPart/);
+  });
+  it('pins nested tool-state changes independently of the Event union', () => {
+    const fixture = [
+      'export type ToolPart = {\n    state: ToolState;\n};',
+      'export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError;',
+      ...['ToolStatePending', 'ToolStateRunning', 'ToolStateCompleted', 'ToolStateError'].map(
+        (name) => `export type ${name} = {\n    status: "${name}";\n};`,
+      ),
+    ].join('\n');
+    const before = deriveToolPartContract(fixture);
+    expect(before).toContain('export type ToolState =');
+    expect(before).toContain('export type ToolStateError =');
+    expect(
+      deriveToolPartContract(fixture.replace('status: "ToolStateError"', 'error: string')),
+    ).not.toBe(before);
+    expect(() =>
+      deriveToolPartContract(fixture.replace('export type ToolStateError', 'export type Removed')),
+    ).toThrow(/ToolStateError/);
+  });
   describe('normalize', () => {
     it('normalizes CRLF and trailing whitespace to a single trailing newline', () => {
       expect(normalize('a  \r\nb\r\n\r\n')).toBe('a\nb\n');

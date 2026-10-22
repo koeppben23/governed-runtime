@@ -70,7 +70,10 @@ export interface StatusProjection {
   blocker: {
     reasonCode: string | null;
     reasonText: string | null;
+    reasonParams?: Readonly<Record<string, string>>;
   } | null;
+  /** Open dispatch identities, including episodes that require fenced recovery. */
+  mutationEpisodes: readonly OpenMutationEpisodeProjection[];
   /** Evidence completeness summary. */
   evidenceSummary: {
     present: number;
@@ -183,12 +186,15 @@ export interface BlockedProjection {
   blocked: boolean;
   reasonCode: string | null;
   reasonText: string | null;
+  reasonParams?: Readonly<Record<string, string>>;
   recoveryHint: string | null;
   missingEvidence: Array<{
     slot: string;
     hint: string | null;
   }>;
+  /** Null means no unconditional progress recommendation from persisted state; conditional recovery remains possible. */
   nextResolvableCommand: string | null;
+  mutationEpisodes: readonly OpenMutationEpisodeProjection[];
   /**
    * Whether a human decision is required at a User Gate.
    *
@@ -203,6 +209,13 @@ export interface BlockedProjection {
    * `directive` for user guidance.
    */
   humanActionRequired: boolean | null;
+}
+
+interface OpenMutationEpisodeProjection {
+  readonly hostCallId: string;
+  readonly toolName: string;
+  readonly authorizedAt: string;
+  readonly leaseGeneration: number;
 }
 
 /** Context surface for /status --context. */

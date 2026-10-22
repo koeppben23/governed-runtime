@@ -48,7 +48,11 @@ import { projectCeremonyEligibility } from '../phase-tool-gate.js';
 import { reducedCeremonyReady } from '../../machine/guards.js';
 import { getReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import { isConverged } from '../../machine/guards.js';
-import { projectApprovalBlockedConclusion, projectStatusConclusion } from './status-conclusion.js';
+import {
+  projectApprovalBlockedConclusion,
+  projectStatusConclusion,
+  projectDirectiveBlock,
+} from './status-conclusion.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
 import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
@@ -58,6 +62,7 @@ import type { StatusProjection } from './status-types.js';
 import {
   proofGraphGateRegistryCode,
   projectEvidenceApprovalBlock,
+  projectOpenMutationEpisodes,
 } from './status-detail-projections.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
@@ -167,9 +172,12 @@ export function buildStatusProjection(
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
 
   const approvalBlock = projectEvidenceApprovalBlock(state);
-  const blocker = approvalBlock
-    ? { reasonCode: approvalBlock.code, reasonText: approvalBlock.reason }
-    : buildBlocker(evalResult, state);
+  const directiveBlock = projectDirectiveBlock(directive);
+  const blocker = directiveBlock
+    ? buildDirectiveBlocker(directiveBlock, directive)
+    : approvalBlock
+      ? { reasonCode: approvalBlock.code, reasonText: approvalBlock.reason }
+      : buildBlocker(evalResult, state);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
 
@@ -195,6 +203,7 @@ export function buildStatusProjection(
     executionDisposition: resolveExecutionDisposition(state),
     directive,
     blocker,
+    mutationEpisodes: projectOpenMutationEpisodes(state),
     evidenceSummary: {
       present: completeness.summary.complete,
       missing: completeness.summary.missing,
@@ -214,7 +223,20 @@ export function buildStatusProjection(
       ? projectApprovalBlockedConclusion(approvalBlock, directive)
       : projectStatusConclusion(evalResult, directive),
 
-    readiness: approvalBlock ? 'BLOCKED' : deriveReadinessField(evalResult, completeness),
+    readiness:
+      directiveBlock || approvalBlock ? 'BLOCKED' : deriveReadinessField(evalResult, completeness),
+  };
+}
+
+function buildDirectiveBlocker(
+  block: NonNullable<ReturnType<typeof projectDirectiveBlock>>,
+  directive: ReturnType<typeof resolveWorkflowDirective>,
+): NonNullable<StatusProjection['blocker']> {
+  const reasonParams = directive.context?.reasonParams;
+  return {
+    reasonCode: block.code,
+    reasonText: block.reason,
+    ...(reasonParams ? { reasonParams } : {}),
   };
 }
 

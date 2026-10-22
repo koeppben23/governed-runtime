@@ -256,6 +256,22 @@ never tolerate or reinterpret malformed records. The architecture guard
 | Required operational logs                 | `info` for plugin initialization/command start, `warn` for degraded host capability, and `error` for enforcement or hook failures with fields such as `host`, `enforcementLevel`, `tool`, `reasonCode`, and `sessionId`. Operational logs are diagnostic only.                                                                                                                             |
 | Known gaps / residual risk / NOT_VERIFIED | A malicious or compromised host runtime is outside FlowGuard's full prevention boundary. Host capability probes are `NOT_VERIFIED` until runtime evidence exists. Presentation/admin console features are not built-in enforcement authority. The adversarial scenario ledger for this boundary is [`opencode-host-boundary-attack-matrix.md`](./opencode-host-boundary-attack-matrix.md). |
 
+Mutation completion (MUT4 / #1172) has one locked writer in
+[`plugin-mutation-episodes.ts`](../src/integration/plugin-mutation-episodes.ts).
+It consumes the canonical episode lifecycle, rechecks binding/dispatch identity
+and current lease authority, and commits through the existing audit outbox.
+[`host-mutation-observation.ts`](../src/integration/host-mutation-observation.ts)
+admits only a unique regular `edit` error from freshly read host history;
+asynchronous events are wakeups. Cleanup/interrupted parts never prove regular
+completion. The synchronous pre-implement barrier closes the event-delivery race.
+The [real-host verification record](development/mut4-host-completion.md) pins the
+tested version and separates observed tool completion from OS process quiescence.
+
+**MUT5 / #1173 remains open:** a shell may leave descendant writers after either
+successful or failed tool return. Existing Bash exit classification, host
+idle/messages, and runtime lease fencing do not attest absence of those writers.
+The new edit-error reconciliation must not be presented as such an attestation.
+
 ### Network Boundary
 
 FlowGuard is filesystem-first and offline-capable by default. Network-dependent features are explicit operator/configuration surfaces and have different authorities.
