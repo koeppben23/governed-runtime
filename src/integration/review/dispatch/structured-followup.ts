@@ -458,24 +458,19 @@ async function repairStructuredFindings(
 ): Promise<StructuredFollowupResult> {
   const originalProjection = semanticProjection(previous);
   if (originalProjection === null) return originalBlocked;
-  let repaired: PromptResponse;
-  try {
-    repaired = await client.session.prompt({
-      path: { id: input.childSessionId },
-      body: {
-        agent,
-        parts: [
-          {
-            type: 'text',
-            text: repairPrompt(input.obligationId, previous, originalBlocked.reason),
-          },
-        ],
-        format: { type: 'json_schema', schema: input.schema, retryCount: 0 },
-      },
-    });
-  } catch {
-    return originalBlocked;
-  }
+  const repaired: PromptResponse = await client.session.prompt({
+    path: { id: input.childSessionId },
+    body: {
+      agent,
+      parts: [
+        {
+          type: 'text',
+          text: repairPrompt(input.obligationId, previous, originalBlocked.reason),
+        },
+      ],
+      format: { type: 'json_schema', schema: input.schema, retryCount: 0 },
+    },
+  });
   const failure = responseFailure(repaired);
   if (failure) return originalBlocked;
   const parsed = parseStructuredFindings(repaired);

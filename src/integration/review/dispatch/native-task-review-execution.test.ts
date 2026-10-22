@@ -183,15 +183,19 @@ describe('terminal incoherent review capture', () => {
       '/tmp',
       'call-1',
       'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      { childSessionId: 'child' },
+      { childSessionId: 'child', obligationId: 'obl-1' },
     );
     expect(failures.has('child')).toBe(false);
     expect(output.output).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
   });
 
-  it('treats a noop closure as terminal only with persisted blocked lineage', async () => {
+  it('accepts the atomic authority proof of an already-blocked execution', async () => {
     abandonAndBlockByHostCall.mockClear();
-    abandonAndBlockByHostCall.mockResolvedValue({ kind: 'noop' });
+    abandonAndBlockByHostCall.mockResolvedValue({
+      kind: 'terminal',
+      status: 'blocked',
+      obligationId: 'obl-1',
+    });
     const blockReviewOutcome = vi.fn();
     readState.mockReset();
     readState.mockResolvedValue({
@@ -225,9 +229,13 @@ describe('terminal incoherent review capture', () => {
     expect(output.output).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
   });
 
-  it('blocks the obligation when a noop closure is not provably terminal', async () => {
+  it('surfaces unresolved lineage without blocking an arbitrary obligation', async () => {
     abandonAndBlockByHostCall.mockClear();
-    abandonAndBlockByHostCall.mockResolvedValue({ kind: 'noop' });
+    abandonAndBlockByHostCall.mockResolvedValue({
+      kind: 'unresolved',
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      reason: 'No exact execution.',
+    });
     const blockReviewOutcome = vi.fn(
       async (_ctx, _id, code, _detail, output: { output: string }) => {
         output.output = code;
@@ -240,24 +248,20 @@ describe('terminal incoherent review capture', () => {
       orchestratorDeps: { blockReviewOutcome },
     } as unknown as NativeReviewTransportRuntime;
 
-    await closeExecutionFailure({
-      runtime,
-      sessDir: '/tmp',
-      callId: 'call-1',
-      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      reason: 'test',
-      obligationId: 'obl-1',
-      sessionId: 'parent',
-      phase: 'PLAN',
-      output,
-    });
+    await expect(
+      closeExecutionFailure({
+        runtime,
+        sessDir: '/tmp',
+        callId: 'call-1',
+        code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+        reason: 'test',
+        obligationId: 'obl-1',
+        sessionId: 'parent',
+        phase: 'PLAN',
+        output,
+      }),
+    ).rejects.toMatchObject({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' });
 
-    expect(blockReviewOutcome).toHaveBeenCalledWith(
-      { sessDir: '/tmp', sessionId: 'parent', phase: 'PLAN' },
-      'obl-1',
-      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      { reason: 'test' },
-      output,
-    );
+    expect(blockReviewOutcome).not.toHaveBeenCalled();
   });
 });

@@ -691,6 +691,17 @@ quiescence cannot be established, the attempt is persisted as
 turn. A client timeout or an abort acknowledgement alone is not termination
 proof.
 
+SDK/transport exceptions during same-child serialization use the same durable
+execution closure. Host abort and status confirmation have a bounded 1-second
+reconciliation window; a nonresponding host is recorded as `OUTCOME_UNKNOWN`.
+A synchronous execution fence prevents binding while that reconciliation is
+pending. Failed persistence keeps the fence and retries closure; it is never
+reported as confirmed durable termination. Cleanup requires the exact recorded
+call/child lineage and a persisted terminal result. A parent's sole remaining
+Task is not sufficient identity evidence. Already-bound invocations are
+immutable, including when their dispatch was rebound from Task call ID to child
+session ID.
+
 The productive OpenCode reviewer may use `read` and
 `flowguard_observe_repository`; `glob` and `grep` are denied. The prepared
 review context and observation authority must supply the required evidence. A

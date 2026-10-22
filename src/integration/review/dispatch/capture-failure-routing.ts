@@ -20,7 +20,7 @@ import type {
 } from '../types.js';
 import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
-import { strictBlockedOutput } from '../../blocked-result.js';
+import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 import {
   abandonAndBlockByHostCall,
   abandonAndRearmByHostCall,
@@ -76,32 +76,31 @@ export async function abandonAndBlock(input: BlockOutputInput): Promise<void> {
   );
 }
 
-export async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise<void> {
-  if (isCapacityReviewerCaptureCode(input.code)) {
-    const closure = await abandonAndBlockByHostCall(
-      input.runtime.orchestratorDeps,
-      input.sessDir,
-      input.callId,
+async function closeCapacityFailure(input: CaptureFailureInput): Promise<void> {
+  const closure = await abandonAndBlockByHostCall(
+    input.runtime.orchestratorDeps,
+    input.sessDir,
+    input.callId,
+    input.code,
+    { ...(input.childSessionId !== undefined ? { childSessionId: input.childSessionId } : {}) },
+  );
+  if (closure.kind === 'terminal' && closure.status === 'completed') return;
+  if (closure.kind === 'blocked' || closure.kind === 'terminal') {
+    input.output.output = strictBlockedOutput(
       input.code,
-      { ...(input.childSessionId !== undefined ? { childSessionId: input.childSessionId } : {}) },
+      captureFailureBlockDetail({
+        obligationId: closure.obligationId,
+        reason: input.reason,
+        ...(input.diagnostics !== undefined ? { diagnostics: input.diagnostics } : {}),
+      }),
     );
-    if (closure.kind === 'blocked') {
-      input.output.output = strictBlockedOutput(
-        input.code,
-        captureFailureBlockDetail({
-          obligationId: closure.obligationId,
-          reason: input.reason,
-          ...(input.diagnostics !== undefined ? { diagnostics: input.diagnostics } : {}),
-        }),
-      );
-      return;
-    }
-    await abandonAndBlock({
-      ...input,
-      reason: `${input.reason} Durable capacity closure could not resolve the exact dispatch lineage; the obligation was not marked blocked.`,
-    });
     return;
   }
+  throw buildEnforcementError(closure.code, closure.reason);
+}
+
+export async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise<void> {
+  if (isCapacityReviewerCaptureCode(input.code)) return closeCapacityFailure(input);
 
   const decision = classifyReviewerCaptureFailure(input.code);
   if (!decision.retryable) {

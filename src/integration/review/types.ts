@@ -68,6 +68,12 @@ export interface ReviewerOutputCapFailure {
 export type ReviewerExecutionFailureCode =
   'REVIEWER_EXECUTION_TIMEOUT' | 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
 
+export interface ReviewerExecutionIdentity {
+  readonly parentSessionId: string;
+  readonly callId: string;
+  readonly childSessionId?: string;
+}
+
 export interface ReviewerExecutionFailure {
   readonly code: ReviewerExecutionFailureCode;
   readonly reason: string;

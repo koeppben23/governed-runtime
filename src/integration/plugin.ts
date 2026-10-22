@@ -54,8 +54,9 @@ import {
 } from './reviewer-execution-watchdog.js';
 import {
   createReviewerExecutionFailurePersister,
-  createReviewerExecutionTaskFailurePersister,
+  createReviewerExecutionTerminalReader,
 } from './reviewer-execution-failure.js';
+import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
@@ -342,9 +343,6 @@ function finishNativeTaskWatchdog(
     parentSessionId: input.sessionID,
     ...(childSessionId === undefined ? {} : { childSessionId }),
   });
-  if (typeof childSessionId === 'string' && childSessionId.length > 0) {
-    watchdog.complete(childSessionId);
-  }
 }
 
 function attachReviewerExecutionWatchdog(
@@ -363,19 +361,9 @@ function attachReviewerExecutionWatchdog(
     client: deps.client,
     log: deps.log,
     failures: deps.failures,
-    persistFailure: createReviewerExecutionFailurePersister({
-      client: deps.client,
-      ws: deps.ws,
-      orchestratorDeps: deps.orchestratorDeps,
-      log: deps.log,
-    }),
-    persistTaskFailure: createReviewerExecutionTaskFailurePersister({
-      client: deps.client,
-      ws: deps.ws,
-      orchestratorDeps: deps.orchestratorDeps,
-      log: deps.log,
-    }),
+    persistFailure: createReviewerExecutionFailurePersister(deps),
   });
+  const isTerminal = createReviewerExecutionTerminalReader(deps);
 
   const cap = hooks['chat.params'];
   hooks['chat.params'] = async (input, output) => {
@@ -402,15 +390,31 @@ function attachReviewerExecutionWatchdog(
       if (typeof childSessionId === 'string' && childSessionId.length > 0) {
         watchdog.onSerializationStart(childSessionId);
       }
+      if (!input.callID) {
+        throw buildEnforcementError(
+          'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+          'Task completion has no exact authorized call ID; its watchdog was retained.',
+        );
+      }
+      const identity = {
+        parentSessionId: input.sessionID,
+        callId: input.callID,
+        ...(typeof childSessionId === 'string' ? { childSessionId } : {}),
+      };
       try {
         await after?.(input, output);
-      } finally {
-        finishNativeTaskWatchdog(
-          watchdog,
-          input,
-          typeof childSessionId === 'string' && childSessionId.length > 0
-            ? childSessionId
-            : undefined,
+        if (await isTerminal(identity)) {
+          finishNativeTaskWatchdog(watchdog, input, identity.childSessionId);
+          return;
+        }
+      } catch (err) {
+        await watchdog.failTask(identity);
+        throw err;
+      }
+      if (!(await watchdog.failTask(identity))) {
+        throw buildEnforcementError(
+          'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+          'Task outcome is unresolved; execution monitoring and the failure fence were retained.',
         );
       }
       return;

@@ -244,6 +244,21 @@ describe('structured follow-up bounded format correction', () => {
     expect(result).toMatchObject({ serializationRepair: { originalHash: expect.any(String) } });
   });
 
+  it('propagates a repair transport failure to the execution lifecycle boundary', async () => {
+    let calls = 0;
+    const failure = new Error('repair transport lost while the host may still be running');
+    const host = client({
+      prompt: async () => {
+        calls += 1;
+        if (calls === 1)
+          return { data: { info: { structured: { ...findings(), summary: 'extra' } } } };
+        throw failure;
+      },
+    });
+    await expect(captureStructuredFindingsFromVisibleChild(host, INPUT)).rejects.toBe(failure);
+    expect(calls).toBe(2);
+  });
+
   it('rejects a correction that changes an enum or other semantic field', async () => {
     const invalid = findings();
     const invalidBlocking = [

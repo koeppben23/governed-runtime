@@ -68,22 +68,61 @@ function harness(
   const failures = new Map<string, ReviewerExecutionFailure>();
   const c = client(overrides.terminal ?? true, overrides.taskCallIds, overrides.runningTool);
   const persistFailure = vi.fn(async () => overrides.persist ?? true);
-  const persistTaskFailure = vi.fn(async () => true);
   const watchdog = new ReviewerExecutionWatchdog({
     config,
     client: c,
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     persistFailure,
-    persistTaskFailure,
     failures,
   });
   watchdog.onTaskAuthorized('parent', 'call-1');
-  return { c, watchdog, persistFailure, persistTaskFailure, failures };
+  return { c, watchdog, persistFailure, failures };
 }
 
 afterEach(() => vi.useRealTimers());
 
 describe('reviewer execution watchdog', () => {
+  it('bounds a hanging abort and persists unknown instead of losing monitoring', async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.c.session.abort = vi.fn(async () => new Promise<never>(() => {}));
+    await h.watchdog.onReviewerRequest('child');
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.failures.get('child')?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect(h.persistFailure).not.toHaveBeenCalled();
+    expect(h.watchdog.finishTask({ callId: 'call-1', parentSessionId: 'parent' })).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.persistFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+        abortConfirmed: false,
+      }),
+      { parentSessionId: 'parent', callId: 'call-1', childSessionId: 'child' },
+    );
+    expect(h.c.session.abort).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries failed durable closure and retains the synchronous binding fence', async () => {
+    vi.useFakeTimers();
+    const h = harness({ persist: false });
+    await h.watchdog.onReviewerRequest('child');
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.persistFailure).toHaveBeenCalledTimes(1);
+    expect(h.failures.has('child')).toBe(true);
+    h.persistFailure.mockResolvedValue(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.persistFailure).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.persistFailure).toHaveBeenCalledTimes(2);
+  });
+
+  it('never cleans up an unrelated task when both call and child identities are absent', async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    expect(h.watchdog.finishTask({ parentSessionId: 'parent' })).toBe(false);
+    await vi.advanceTimersByTimeAsync(120);
+    expect(h.persistFailure).toHaveBeenCalledTimes(1);
+  });
   it('aborts and persists a confirmed review timeout', async () => {
     vi.useFakeTimers();
     const { c, watchdog, persistFailure } = harness();
@@ -96,7 +135,7 @@ describe('reviewer execution watchdog', () => {
         phase: 'review',
         abortConfirmed: true,
       }),
-      'child',
+      { parentSessionId: 'parent', callId: 'call-1', childSessionId: 'child' },
     );
   });
 
@@ -110,7 +149,7 @@ describe('reviewer execution watchdog', () => {
         code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
         abortConfirmed: false,
       }),
-      'child',
+      { parentSessionId: 'parent', callId: 'call-1', childSessionId: 'child' },
     );
     expect(failures.get('child')).toMatchObject({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' });
   });
@@ -157,16 +196,14 @@ describe('reviewer execution watchdog', () => {
       config,
       client: client(),
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      persistFailure: vi.fn(async () => true),
-      persistTaskFailure,
+      persistFailure: persistTaskFailure,
       failures,
     });
     watchdog.onTaskAuthorized('parent', 'call-1');
     await vi.advanceTimersByTimeAsync(120);
     expect(persistTaskFailure).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN', phase: 'total' }),
-      'parent',
-      'call-1',
+      { parentSessionId: 'parent', callId: 'call-1' },
     );
   });
 
@@ -179,7 +216,6 @@ describe('reviewer execution watchdog', () => {
       client: c,
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       persistFailure: vi.fn(async () => true),
-      persistTaskFailure: vi.fn(async () => true),
       failures,
     });
     watchdog.onTaskAuthorized('parent', 'call-1');
@@ -201,7 +237,7 @@ describe('reviewer execution watchdog', () => {
 
   it('does not assign a child arbitrarily when two task calls match the parent', async () => {
     vi.useFakeTimers();
-    const { c, watchdog, persistFailure, persistTaskFailure } = harness({
+    const { c, watchdog, persistFailure } = harness({
       taskCallIds: ['call-1', 'call-2'],
     });
     watchdog.onTaskAuthorized('parent', 'call-2');
@@ -209,7 +245,7 @@ describe('reviewer execution watchdog', () => {
     expect(c.session.abort).not.toHaveBeenCalled();
     expect(persistFailure).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(120);
-    expect(persistTaskFailure).toHaveBeenCalledTimes(2);
+    expect(persistFailure).toHaveBeenCalledTimes(2);
   });
 
   it('never confirms quiescence while any observed tool is still running', async () => {
@@ -222,7 +258,7 @@ describe('reviewer execution watchdog', () => {
         code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
         abortConfirmed: false,
       }),
-      'child',
+      { parentSessionId: 'parent', callId: 'call-1', childSessionId: 'child' },
     );
   });
 
@@ -234,8 +270,7 @@ describe('reviewer execution watchdog', () => {
       config,
       client: client(),
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      persistFailure: vi.fn(async () => true),
-      persistTaskFailure,
+      persistFailure: persistTaskFailure,
       failures,
     });
     watchdog.onTaskAuthorized('parent', 'call-1');
@@ -261,7 +296,7 @@ describe('reviewer execution watchdog', () => {
     expect(c.session.abort).toHaveBeenCalledWith({ path: { id: 'child' } });
   });
 
-  it('clears the sole pending dispatch for a parent when the host call IDs differ', async () => {
+  it('retains a foreign unbound task when no exact completion identity matches', async () => {
     vi.useFakeTimers();
     const failures = new Map<string, ReviewerExecutionFailure>();
     const persistTaskFailure = vi.fn(async () => true);
@@ -269,14 +304,19 @@ describe('reviewer execution watchdog', () => {
       config,
       client: client(),
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      persistFailure: vi.fn(async () => true),
-      persistTaskFailure,
+      persistFailure: persistTaskFailure,
       failures,
     });
     watchdog.onTaskAuthorized('parent', 'before-hook-id');
-    watchdog.completeTaskForParent('parent', 'child');
+    expect(
+      watchdog.finishTask({
+        callId: 'foreign-call',
+        parentSessionId: 'parent',
+        childSessionId: 'foreign-child',
+      }),
+    ).toBe(false);
     await vi.advanceTimersByTimeAsync(600);
-    expect(persistTaskFailure).not.toHaveBeenCalled();
+    expect(persistTaskFailure).toHaveBeenCalledTimes(1);
   });
 
   it('does not clear another pending parent task after an exact Task completion', async () => {
@@ -287,8 +327,7 @@ describe('reviewer execution watchdog', () => {
       config,
       client: client(),
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      persistFailure: vi.fn(async () => true),
-      persistTaskFailure,
+      persistFailure: persistTaskFailure,
       failures,
     });
     watchdog.onTaskAuthorized('parent', 'task-a');
@@ -296,7 +335,10 @@ describe('reviewer execution watchdog', () => {
     watchdog.finishTask({ callId: 'task-a', parentSessionId: 'parent' });
     await vi.advanceTimersByTimeAsync(600);
     expect(persistTaskFailure).toHaveBeenCalledTimes(1);
-    expect(persistTaskFailure).toHaveBeenCalledWith(expect.anything(), 'parent', 'task-b');
+    expect(persistTaskFailure).toHaveBeenCalledWith(expect.anything(), {
+      parentSessionId: 'parent',
+      callId: 'task-b',
+    });
   });
 
   it('preserves SDK session method receiver context', async () => {

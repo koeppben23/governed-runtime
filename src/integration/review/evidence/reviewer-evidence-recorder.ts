@@ -56,6 +56,8 @@ type SdkEvidenceParams = {
   fulfilledAt: string;
   /** Absolute dispatch deadline; checked inside the binding mutation. */
   deadlineAt?: string;
+  /** Synchronous watchdog fence, checked while holding the persistence lock. */
+  executionFailed?: () => boolean;
   reviewerResult: Omit<
     Pick<
       ReviewerSuccessResult,
@@ -186,7 +188,10 @@ function applyEvidenceMutation(
     flags.missing = true;
     return state;
   }
-  if (params.deadlineAt !== undefined && Date.parse(now) > Date.parse(params.deadlineAt)) {
+  if (
+    params.executionFailed?.() ||
+    (params.deadlineAt !== undefined && Date.parse(now) >= Date.parse(params.deadlineAt))
+  ) {
     flags.executionExpired = true;
     return state;
   }

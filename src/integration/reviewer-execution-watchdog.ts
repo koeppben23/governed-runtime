@@ -11,6 +11,7 @@ import type {
   OrchestratorClient,
   ReviewerExecutionFailure,
   ReviewerExecutionFailureCode,
+  ReviewerExecutionIdentity,
 } from './review/types.js';
 
 type Phase = ReviewerExecutionFailure['phase'];
@@ -24,12 +25,13 @@ function timer(callback: () => void, ms: number): Timer {
 }
 
 interface Entry {
-  readonly parentSessionId?: string;
-  readonly callId?: string;
+  readonly parentSessionId: string;
+  readonly callId: string;
   childSessionId?: string;
-  readonly timers: { review?: Timer; serialization?: Timer; total: Timer };
+  readonly timers: { review?: Timer; serialization?: Timer; retry?: Timer; total: Timer };
   readonly toolTimers: Map<string, Timer>;
   expired: boolean;
+  settlement?: Promise<boolean>;
 }
 
 export interface ReviewerExecutionWatchdogDeps {
@@ -45,13 +47,7 @@ export interface ReviewerExecutionWatchdogDeps {
   };
   readonly persistFailure: (
     failure: ReviewerExecutionFailure,
-    childSessionId: string,
-  ) => Promise<boolean>;
-  /** Persist a timeout before the child identity was ever observed. */
-  readonly persistTaskFailure?: (
-    failure: ReviewerExecutionFailure,
-    parentSessionId: string,
-    callId: string,
+    identity: ReviewerExecutionIdentity,
   ) => Promise<boolean>;
   readonly failures?: Map<string, ReviewerExecutionFailure>;
 }
@@ -237,33 +233,45 @@ export class ReviewerExecutionWatchdog {
     return true;
   }
 
-  /** Complete a Task only after an exact call-ID hit; the parent fallback is last resort. */
+  /** Completion may only remove the exact authorized call or its attached child. */
   finishTask(input: {
     readonly callId?: string;
     readonly parentSessionId: string;
     readonly childSessionId?: string;
-  }): void {
-    if (input.callId && this.completeTask(input.callId)) return;
-    this.completeTaskForParent(input.parentSessionId, input.childSessionId);
+  }): boolean {
+    const task = input.callId
+      ? this.tasks.get(input.callId)
+      : input.childSessionId
+        ? this.entries.get(input.childSessionId)
+        : undefined;
+    if (!task || task.parentSessionId !== input.parentSessionId || task.expired) return false;
+    if (task.childSessionId && input.childSessionId && task.childSessionId !== input.childSessionId)
+      return false;
+    return this.completeTask(task.callId);
   }
 
-  /** Clear the sole pending dispatch for a parent when the host call IDs differ. */
-  completeTaskForParent(parentSessionId: string, childSessionId?: string): boolean {
-    const pending = [...this.tasks.entries()].filter(([, task]) => {
-      if (task.parentSessionId !== parentSessionId) return false;
-      if (task.childSessionId && childSessionId) {
-        return task.childSessionId === childSessionId;
-      }
-      return task.childSessionId === undefined;
-    });
-    if (pending.length !== 1) return false;
-    const entry = pending[0];
-    return entry ? this.completeTask(entry[0]) : false;
+  /** A transport exception is an execution failure, not normal completion. */
+  async failTask(identity: ReviewerExecutionIdentity): Promise<boolean> {
+    const entry = this.tasks.get(identity.callId);
+    if (!entry) return this.deps.persistFailure(this.unknownFailure('serialization'), identity);
+    if (entry.parentSessionId !== identity.parentSessionId) return false;
+    if (
+      entry.childSessionId &&
+      identity.childSessionId &&
+      entry.childSessionId !== identity.childSessionId
+    )
+      return false;
+    if (identity.childSessionId) {
+      entry.childSessionId = identity.childSessionId;
+      this.entries.set(identity.childSessionId, entry);
+    }
+    return this.expireEntry(entry, 'serialization');
   }
 
   private clear(entry: Entry): void {
     if (entry.timers.review) clearTimeout(entry.timers.review);
     if (entry.timers.serialization) clearTimeout(entry.timers.serialization);
+    if (entry.timers.retry) clearTimeout(entry.timers.retry);
     clearTimeout(entry.timers.total);
     for (const timer of entry.toolTimers.values()) clearTimeout(timer);
     entry.toolTimers.clear();
@@ -272,50 +280,94 @@ export class ReviewerExecutionWatchdog {
   private async expireTask(callId: string): Promise<void> {
     const entry = this.tasks.get(callId);
     if (!entry || entry.expired) return;
-    if (entry.childSessionId) {
-      await this.expire(entry.childSessionId, 'total');
-      return;
-    }
-    entry.expired = true;
-    this.clear(entry);
-    const failure: ReviewerExecutionFailure = {
-      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      phase: 'total',
-      abortConfirmed: false,
-      reason:
-        'Reviewer dispatch exceeded the absolute deadline before a child session was observed.',
-    };
-    let persisted = false;
-    if (this.deps.persistTaskFailure && entry.parentSessionId && entry.callId) {
-      try {
-        persisted = await this.deps.persistTaskFailure(
-          failure,
-          entry.parentSessionId,
-          entry.callId,
-        );
-      } catch (err) {
-        this.deps.log.error('review', 'reviewer dispatch timeout persistence failed', {
-          parentSessionId: entry.parentSessionId,
-          callId: entry.callId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    if (!persisted) this.deps.failures?.set(`task:${callId}`, failure);
-    this.deps.log.error('review', 'reviewer dispatch deadline exceeded', {
-      parentSessionId: entry.parentSessionId,
-      callId,
-      persisted,
-    });
+    await this.expireEntry(entry, 'total');
   }
 
-  // eslint-disable-next-line complexity -- phase handling is intentionally fail-closed.
   private async expire(childSessionId: string, phase: Phase): Promise<void> {
     const entry = this.entries.get(childSessionId);
     if (!entry || entry.expired) return;
+    await this.expireEntry(entry, phase);
+  }
+
+  private unknownFailure(phase: Phase): ReviewerExecutionFailure {
+    return {
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      phase,
+      abortConfirmed: false,
+      reason: `Reviewer execution failed during ${phase}; host termination is not confirmed.`,
+    };
+  }
+
+  private expireEntry(entry: Entry, phase: Phase): Promise<boolean> {
+    if (entry.settlement) return entry.settlement;
     entry.expired = true;
     this.clear(entry);
+    const key = entry.childSessionId ?? `task:${entry.callId}`;
+    // Fence evidence binding immediately, before any asynchronous host request.
+    this.deps.failures?.set(key, this.unknownFailure(phase));
+    entry.settlement = this.settleEntry(entry, phase);
+    return entry.settlement;
+  }
 
+  private async settleEntry(entry: Entry, phase: Phase): Promise<boolean> {
+    const confirmed = entry.childSessionId
+      ? await this.boundedHostTermination(entry.childSessionId)
+      : false;
+    const code: ReviewerExecutionFailureCode = confirmed
+      ? 'REVIEWER_EXECUTION_TIMEOUT'
+      : 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
+    const failure: ReviewerExecutionFailure = {
+      code,
+      phase,
+      abortConfirmed: confirmed,
+      reason: confirmed
+        ? `Reviewer execution failed during ${phase}; host termination confirmed.`
+        : this.unknownFailure(phase).reason,
+    };
+    this.deps.failures?.set(entry.childSessionId ?? `task:${entry.callId}`, failure);
+    return this.persistClosure(entry, failure);
+  }
+
+  private async persistClosure(entry: Entry, failure: ReviewerExecutionFailure): Promise<boolean> {
+    let persisted = false;
+    try {
+      persisted = await this.deps.persistFailure(failure, {
+        parentSessionId: entry.parentSessionId,
+        callId: entry.callId,
+        ...(entry.childSessionId === undefined ? {} : { childSessionId: entry.childSessionId }),
+      });
+    } catch (err) {
+      this.deps.log.error('review', 'reviewer execution closure failed', {
+        callId: entry.callId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (persisted) this.completeTask(entry.callId);
+    else entry.timers.retry = timer(() => void this.persistClosure(entry, failure), 1000);
+    this.deps.log.error('review', 'reviewer execution failed', {
+      callId: entry.callId,
+      code: failure.code,
+      persisted,
+    });
+    return persisted;
+  }
+
+  /** A stalled abort/status/messages request cannot stall durable fail-closed closure. */
+  private async boundedHostTermination(childSessionId: string): Promise<boolean> {
+    let deadline: Timer | undefined;
+    try {
+      return await Promise.race([
+        this.requestHostTermination(childSessionId),
+        new Promise<boolean>((resolve) => {
+          deadline = timer(() => resolve(false), 1000);
+        }),
+      ]);
+    } finally {
+      if (deadline) clearTimeout(deadline);
+    }
+  }
+
+  private async requestHostTermination(childSessionId: string): Promise<boolean> {
     let acknowledged = false;
     const session = this.deps.client.session;
     if (typeof session.abort === 'function') {
@@ -332,37 +384,7 @@ export class ReviewerExecutionWatchdog {
       this.deps.log.warn('review', 'reviewer host abort unavailable', { childSessionId });
     }
 
-    const confirmed = acknowledged && (await this.confirmTerminal(childSessionId));
-    const code: ReviewerExecutionFailureCode = confirmed
-      ? 'REVIEWER_EXECUTION_TIMEOUT'
-      : 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
-    const failure: ReviewerExecutionFailure = {
-      code,
-      phase,
-      abortConfirmed: confirmed,
-      reason: confirmed
-        ? `Reviewer exceeded the ${phase} deadline and the host confirmed termination.`
-        : `Reviewer exceeded the ${phase} deadline; host termination could not be confirmed.`,
-    };
-    let persisted = false;
-    try {
-      persisted = await this.deps.persistFailure(failure, childSessionId);
-    } catch (err) {
-      this.deps.log.error('review', 'reviewer execution failure persistence failed', {
-        childSessionId,
-        code,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    if (!persisted) this.deps.failures?.set(childSessionId, failure);
-    this.deps.log.error('review', 'reviewer execution deadline exceeded', {
-      childSessionId,
-      code,
-      phase,
-      abortAcknowledged: acknowledged,
-      abortConfirmed: confirmed,
-      persisted,
-    });
+    return acknowledged && this.confirmTerminal(childSessionId);
   }
 
   // eslint-disable-next-line complexity -- quiescence requires all positive host signals.

@@ -34,9 +34,9 @@ export async function handleReviewerExecutionFailure(input: {
   const { runtime, sessDir, callId, childSessionId, hookOutput, obligationId, sessionId, phase } =
     input;
   const failures = runtime.reviewerExecutionFailures;
-  const failure = failures?.get(childSessionId);
+  const failure = failures?.get(childSessionId) ?? failures?.get(`task:${callId}`);
   if (!failure) return false;
-  const closure = await closeExecutionFailure({
+  await closeExecutionFailure({
     runtime,
     sessDir,
     callId,
@@ -48,7 +48,8 @@ export async function handleReviewerExecutionFailure(input: {
     phase,
     output: hookOutput,
   });
-  if (closure.kind === 'blocked') failures?.delete(childSessionId);
+  failures?.delete(childSessionId);
+  failures?.delete(`task:${callId}`);
   return true;
 }
 
@@ -70,45 +71,20 @@ export async function closeExecutionFailure(input: {
     input.sessDir,
     input.callId,
     input.code,
-    input.childSessionId === undefined ? {} : { childSessionId: input.childSessionId },
+    {
+      obligationId: input.obligationId,
+      ...(input.childSessionId === undefined ? {} : { childSessionId: input.childSessionId }),
+    },
   );
-  if (closure.kind === 'noop') {
-    const state = await readState(input.sessDir);
-    if (!isTerminalExecutionClosure(state, input.callId, input.obligationId)) {
-      await input.runtime.orchestratorDeps.blockReviewOutcome(
-        { sessDir: input.sessDir, sessionId: input.sessionId, phase: input.phase },
-        input.obligationId,
-        input.code,
-        { reason: input.reason },
-        input.output,
-      );
-      return closure;
-    }
+  if (closure.kind === 'unresolved') {
+    throw buildEnforcementError(closure.code, closure.reason);
   }
+  if (closure.kind === 'terminal' && closure.status === 'completed') return closure;
   input.output.output = strictBlockedOutput(input.code, {
     obligationId: closure.kind === 'blocked' ? closure.obligationId : input.obligationId,
     reason: input.reason,
   });
   return closure;
-}
-
-// eslint-disable-next-line complexity -- exact terminal proof checks every persisted lineage link.
-function isTerminalExecutionClosure(
-  state: PersistedState | null,
-  callId: string,
-  obligationId: string,
-): boolean {
-  const assurance = state?.reviewAssurance;
-  const dispatch = assurance?.dispatches.find((item) => item.hostCallId === callId);
-  const obligation = assurance?.obligations.find((item) => item.obligationId === obligationId);
-  const attempt = assurance?.attempts.find((item) => item.attemptId === dispatch?.attemptId);
-  if (dispatch?.dispatchStatus === 'completed' && attempt?.status === 'bound') return true;
-  return (
-    dispatch?.dispatchStatus === 'outcome_unknown' &&
-    attempt?.status === 'stale' &&
-    obligation?.status === 'blocked' &&
-    assurance?.capacityLock?.obligationId === obligationId
-  );
 }
 
 export async function blockIncoherentCompletedCapture(input: {

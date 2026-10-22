@@ -159,6 +159,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer execution closure (#1170):** cleanup now requires exact recorded
+  execution identity and persisted terminality. Serialization SDK failures and
+  hanging abort/status requests retain an immediate evidence-binding fence and
+  close through the durable dispatch authority, with retry on persistence
+  failure. Reconciliation preserves completed child-rebound invocations and
+  installs an idempotent capacity lock for unresolved released attempts without
+  duplicate block audit intents.
+
 - **Reviewer recovery after an exhausted re-arm budget is stated and executable.**
   In the 2026-10-19 GUI run two token-truncated plan reviews exhausted the
   re-arm budget. Three outputs then misdescribed the persisted state:
