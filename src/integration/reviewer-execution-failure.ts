@@ -43,11 +43,11 @@ export function createReviewerExecutionFailurePersister(
 ): (failure: ReviewerExecutionFailure, childSessionId: string) => Promise<boolean> {
   // eslint-disable-next-line complexity -- exact lineage resolution is fail-closed.
   return async (failure, childSessionId) => {
-    const get = deps.client.session.get;
-    if (!get) return false;
-    let child: Awaited<ReturnType<NonNullable<typeof get>>>;
+    const session = deps.client.session;
+    if (typeof session.get !== 'function') return false;
+    let child: Awaited<ReturnType<NonNullable<typeof session.get>>>;
     try {
-      child = await get({ path: { id: childSessionId } });
+      child = await session.get({ path: { id: childSessionId } });
     } catch (err) {
       deps.log.warn('review', 'reviewer execution child lookup failed', {
         childSessionId,

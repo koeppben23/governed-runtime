@@ -116,11 +116,11 @@ export class ReviewerExecutionWatchdog {
 
   /** Resolve parent identity with get first, then a list fallback for creation races. */
   private async resolveParentSession(childSessionId: string): Promise<string | undefined> {
-    const get = this.deps.client.session.get;
+    const session = this.deps.client.session;
     let getReason = 'unavailable';
-    if (typeof get === 'function') {
+    if (typeof session.get === 'function') {
       try {
-        const response = await get({ path: { id: childSessionId } });
+        const response = await session.get({ path: { id: childSessionId } });
         const parent = response.data?.parentID;
         if (parent) return parent;
         getReason = response.error ? 'error' : 'missing_parent';
@@ -128,11 +128,10 @@ export class ReviewerExecutionWatchdog {
         getReason = err instanceof Error ? err.message : 'error';
       }
     }
-    const list = this.deps.client.session.list;
-    if (typeof list === 'function') {
+    if (typeof session.list === 'function') {
       try {
-        const response = await list();
-        const parent = response.data?.find((session) => session.id === childSessionId)?.parentID;
+        const response = await session.list();
+        const parent = response.data?.find((item) => item.id === childSessionId)?.parentID;
         if (parent) return parent;
       } catch {
         // Fall through to the diagnostic below.
@@ -141,7 +140,7 @@ export class ReviewerExecutionWatchdog {
     this.deps.log.warn('review', 'reviewer parent session could not be resolved', {
       childSessionId,
       getReason,
-      hasList: typeof list === 'function',
+      hasList: typeof session.list === 'function',
     });
     return undefined;
   }
@@ -158,10 +157,10 @@ export class ReviewerExecutionWatchdog {
         !candidate.expired,
     );
     if (candidates.length === 0) return undefined;
-    const messages = this.deps.client.session.messages;
-    if (typeof messages !== 'function') return undefined;
+    const session = this.deps.client.session;
+    if (typeof session.messages !== 'function') return undefined;
     try {
-      const response = await messages({ path: { id: parentSessionId } });
+      const response = await session.messages({ path: { id: parentSessionId } });
       const callIds = new Set(
         (response.data ?? []).flatMap((message) =>
           (message.parts ?? []).flatMap((part) => {
@@ -318,10 +317,10 @@ export class ReviewerExecutionWatchdog {
     this.clear(entry);
 
     let acknowledged = false;
-    const abort = this.deps.client.session.abort;
-    if (typeof abort === 'function') {
+    const session = this.deps.client.session;
+    if (typeof session.abort === 'function') {
       try {
-        const response = await abort({ path: { id: childSessionId } });
+        const response = await session.abort({ path: { id: childSessionId } });
         acknowledged = response.data === true;
       } catch (err) {
         this.deps.log.warn('review', 'reviewer host abort failed', {
@@ -368,13 +367,14 @@ export class ReviewerExecutionWatchdog {
 
   // eslint-disable-next-line complexity -- quiescence requires all positive host signals.
   private async confirmTerminal(childSessionId: string): Promise<boolean> {
-    if (typeof this.deps.client.session.messages !== 'function') return false;
-    if (typeof this.deps.client.session.status !== 'function') return false;
+    const session = this.deps.client.session;
+    if (typeof session.messages !== 'function') return false;
+    if (typeof session.status !== 'function') return false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const [status, history] = await Promise.all([
-          this.deps.client.session.status(),
-          this.deps.client.session.messages({ path: { id: childSessionId } }),
+          session.status(),
+          session.messages({ path: { id: childSessionId } }),
         ]);
         if (status.error || !status.data) return false;
         const hostState = status.data[childSessionId]?.type ?? 'idle';

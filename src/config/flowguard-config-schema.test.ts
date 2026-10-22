@@ -840,14 +840,14 @@ describe('FlowGuardConfigSchema', () => {
     const reviewer = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' }).data!.reviewer;
     expect(reviewer).toMatchObject({
       toolTimeoutMs: 30_000,
-      reviewTimeoutMs: 300_000,
+      reviewTimeoutMs: 480_000,
       serializationTimeoutMs: 60_000,
       executionTimeoutMs: 600_000,
     });
     expect(
       FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
-        reviewer: { toolTimeoutMs: 310_000, reviewTimeoutMs: 300_000 },
+        reviewer: { toolTimeoutMs: 490_000, reviewTimeoutMs: 480_000 },
       }).success,
     ).toBe(false);
     expect(

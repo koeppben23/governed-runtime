@@ -667,7 +667,7 @@ The reviewer execution path has independent upper bounds and one absolute deadli
 {
   "reviewer": {
     "toolTimeoutMs": 30000,
-    "reviewTimeoutMs": 300000,
+    "reviewTimeoutMs": 480000,
     "serializationTimeoutMs": 60000,
     "executionTimeoutMs": 600000
   }
@@ -712,9 +712,9 @@ the R-B counterexample interpretation remains a documented residual semantic
 risk.
 
 The reference-suite runner may additionally set `FLOWGUARD_REFERENCE_SUITE=1`
-and `FLOWGUARD_REVIEWER_STEPS=15` to test a larger step budget. That override is
-test-only; the product default remains 10 and the final 65K full-loop evidence
-used 10.
+and `FLOWGUARD_REVIEWER_STEPS=16` to test a larger step budget. That override is
+test-only; the product default remains 10. The live hard-gate run uses 16 because
+the 22 Oct 2026 plan reviewer reached 10 steps before emitting a verdict.
 
 ## Examples
 

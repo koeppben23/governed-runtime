@@ -44,7 +44,7 @@ export const REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT = 65_536;
 /** Default maximum duration of one reviewer tool call. */
 const REVIEWER_TOOL_TIMEOUT_MS_DEFAULT = 30_000;
 /** Default review-phase budget. Tool time is nested inside this budget. */
-const REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT = 300_000;
+const REVIEWER_REVIEW_TIMEOUT_MS_DEFAULT = 480_000;
 /** Default serialization budget, including one optional format correction. */
 const REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT = 60_000;
 /** Absolute reviewer execution deadline from dispatch authorization. */
@@ -254,7 +254,7 @@ export const FlowGuardConfigSchema = z.object({
         .number()
         .int()
         .min(1000)
-        .max(300_000)
+        .max(480_000)
         .default(REVIEWER_TOOL_TIMEOUT_MS_DEFAULT),
       /** Maximum duration of the reviewer's substantive review phase. */
       reviewTimeoutMs: z
@@ -268,7 +268,7 @@ export const FlowGuardConfigSchema = z.object({
         .number()
         .int()
         .min(1000)
-        .max(300_000)
+        .max(480_000)
         .default(REVIEWER_SERIALIZATION_TIMEOUT_MS_DEFAULT),
       /** Absolute deadline from reviewer dispatch authorization through binding. */
       executionTimeoutMs: z

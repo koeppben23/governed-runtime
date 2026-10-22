@@ -298,4 +298,70 @@ describe('reviewer execution watchdog', () => {
     expect(persistTaskFailure).toHaveBeenCalledTimes(1);
     expect(persistTaskFailure).toHaveBeenCalledWith(expect.anything(), 'parent', 'task-b');
   });
+
+  it('preserves SDK session method receiver context', async () => {
+    vi.useFakeTimers();
+    let aborted = false;
+    const session = {
+      _client: {},
+      async get(this: { _client: unknown }, opts: { path: { id: string } }) {
+        if (!this._client) throw new Error('lost session receiver');
+        return { data: { id: opts.path.id, parentID: 'parent' } };
+      },
+      async list(this: { _client: unknown }) {
+        if (!this._client) throw new Error('lost session receiver');
+        return { data: [] };
+      },
+      async messages(this: { _client: unknown }, opts: { path: { id: string } }) {
+        if (!this._client) throw new Error('lost session receiver');
+        return {
+          data:
+            opts.path.id === 'parent'
+              ? [
+                  {
+                    info: { role: 'assistant' },
+                    parts: [
+                      {
+                        id: 'part-1',
+                        callID: 'call-1',
+                        type: 'tool',
+                        tool: 'task',
+                        state: { status: 'completed', metadata: { sessionId: 'child' } },
+                      },
+                    ],
+                  },
+                ]
+              : [
+                  {
+                    info: { role: 'assistant', finish: 'stop' },
+                    parts: [{ type: 'text', text: 'done' }],
+                  },
+                ],
+        };
+      },
+      async status(this: { _client: unknown }) {
+        if (!this._client) throw new Error('lost session receiver');
+        return { data: { child: { type: 'idle' } } };
+      },
+      async abort(this: { _client: unknown }) {
+        if (!this._client) throw new Error('lost session receiver');
+        aborted = true;
+        return { data: true };
+      },
+    };
+    const c = {
+      app: { agents: async () => ({ data: [] }) },
+      session,
+    } as unknown as OrchestratorClient;
+    const watchdog = new ReviewerExecutionWatchdog({
+      config,
+      client: c,
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      persistFailure: vi.fn(async () => true),
+    });
+    watchdog.onTaskAuthorized('parent', 'call-1');
+    await watchdog.onReviewerRequest('child');
+    await vi.advanceTimersByTimeAsync(80);
+    expect(aborted).toBe(true);
+  });
 });

@@ -63,8 +63,8 @@ async function resolveParentContext(
   deps: ReviewerOutputCapFailureDeps,
   childSessionId: string,
 ): Promise<ResolvedParentContext | null> {
-  const get = deps.client.session.get;
-  if (!get) {
+  const session = deps.client.session;
+  if (typeof session.get !== 'function') {
     deps.log.warn('review', 'reviewer output cap terminal persistence unavailable', {
       childSessionId,
       reason: 'session.get unavailable',
@@ -74,7 +74,7 @@ async function resolveParentContext(
 
   let parentId: string | undefined;
   try {
-    const child = await get({ path: { id: childSessionId } });
+    const child = await session.get({ path: { id: childSessionId } });
     parentId = child.data?.parentID;
   } catch (err) {
     deps.log.warn('review', 'reviewer output cap parent lookup failed', {

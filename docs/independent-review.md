@@ -467,8 +467,9 @@ The installer (`flowguard install`) automatically deploys all required artifacts
 
 The installer writes `.opencode/agents/flowguard-reviewer.md`:
 
-- `mode: subagent`, `hidden: true`, `steps: 10`
-- Read-only: `edit: deny`, `bash: deny`, `webfetch: deny`
+- `mode: subagent`, `hidden: true`, `steps: 10` (the live hard-gate profile may
+  override this to 16 for the isolated acceptance run)
+- Read-only: `edit: deny`, `bash: deny`, `webfetch: deny`, `glob: deny`, `grep: deny`, `list: deny`
 - FlowGuard-isolated: `flowguard_*: deny` and `mcp__flowguard__*: deny` are
   agent-specific OpenCode permission rules. They prevent reviewer children from
   hydrating, mutating, or auditing an independent FlowGuard workflow session.
