@@ -28,6 +28,7 @@ import {
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_IMPLEMENT,
 } from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
@@ -44,6 +45,7 @@ import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js'
 import { getRuntimeInstanceId } from './runtime-instance.js';
 import { acquireRuntimeLease } from './runtime-lease.js';
 import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
+import { reconcileHostMutationEpisodes } from './plugin-mutation-reconciliation.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -208,6 +210,9 @@ async function enforceBeforeRules(
 ): Promise<void> {
   await enforceCapacityLock(runtime, toolName, sessionId);
   await enforceCommandScope(runtime, toolName, sessionId);
+  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
+    await reconcileHostMutationEpisodes(runtime, sessionId);
+  }
 
   const mutatingHost = isMutatingHostTool(toolName);
 

@@ -87,6 +87,8 @@
     "src/integration/plugin-beforehooks.ts",
     "src/integration/plugin-helpers.ts",
     "src/integration/plugin-mutation-episodes.ts",
+    "src/integration/host-mutation-observation.ts",
+    "src/integration/plugin-mutation-reconciliation.ts",
     "src/integration/plugin-workspace.ts",
     "src/integration/plugin.ts",
     "src/integration/audit-outbox.ts",

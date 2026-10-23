@@ -7,6 +7,21 @@ import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './audit-outbox.js';
 import { MUTATING_HOST_TOOLS } from './phase-tool-gate.js';
+import { validateBinding, validateFingerprintBinding } from '../adapters/binding.js';
+import type { SessionAuthorityResolution } from '../adapters/session-authority.js';
+import type { MutationEpisode } from '../state/evidence-mutation-episode.js';
+import { getRuntimeInstanceId } from './runtime-instance.js';
+import { acquireRuntimeLease } from './runtime-lease.js';
+import { IntegrationInvariantError } from './errors.js';
+
+class MutationCompletionLeaseError extends IntegrationInvariantError {
+  constructor(readonly activeLeaseGeneration: number) {
+    super(
+      'MUTATION_EPISODE_LEASE_UNAVAILABLE',
+      'Another live runtime holds the mutation completion lease.',
+    );
+  }
+}
 
 /**
  * A mutating host tool is governed by the Before-hook boundary: no host call
@@ -44,45 +59,124 @@ export async function recordMutationCompletion(input: {
     );
     return;
   }
+  const expected = resolution.state.mutationEpisodes.find(
+    (episode) => episode.hostCallId === callId && episode.toolName === hookInput.tool,
+  );
+  if (!expected) {
+    blockUnavailableCompletion(
+      hookOutput,
+      'No authorized mutation episode exists for this host call; the mutation is not acknowledged as governed.',
+    );
+    return;
+  }
+  try {
+    await commitMutationCompletion({
+      resolution,
+      expected,
+      now,
+      outcome: mutationOutcome(hookInput.tool, hookOutput),
+      sessionId,
+    });
+  } catch (error) {
+    if (!(error instanceof IntegrationInvariantError)) throw error;
+    hookOutput.output = strictBlockedOutput(error.code, {
+      reason: error.message,
+      ...(error instanceof MutationCompletionLeaseError
+        ? { activeLeaseGeneration: String(error.activeLeaseGeneration) }
+        : {}),
+    });
+  }
+}
+
+/** Single completion writer for After, event-triggered reads, and pre-implement reconciliation. */
+export async function commitMutationCompletion(input: {
+  readonly resolution: Extract<SessionAuthorityResolution, { status: 'resolved' }>;
+  readonly expected: MutationEpisode;
+  readonly sessionId: string;
+  readonly now: string;
+  readonly outcome: 'success' | 'failure' | 'unknown';
+}): Promise<'completed' | 'unchanged'> {
+  const { resolution, expected, sessionId, now, outcome } = input;
   const sessDir = resolution.sessDir;
-  await withSessionWriteLock(sessDir, async () => {
+  return withSessionWriteLock(sessDir, async () => {
     const state = await readState(sessDir);
-    if (!state) {
-      blockUnavailableCompletion(
-        hookOutput,
+    if (!state)
+      throw new IntegrationInvariantError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
         'FlowGuard session state disappeared before the mutation episode could be completed.',
       );
-      return;
-    }
-    const episode = state.mutationEpisodes.find(
-      (candidate) => candidate.hostCallId === callId && candidate.toolName === hookInput.tool,
-    );
-    if (!episode) {
-      blockUnavailableCompletion(
-        hookOutput,
-        'No authorized mutation episode exists for this host call; the mutation is not acknowledged as governed.',
+    validateBinding(state, { worktreeRoot: resolution.worktreeRoot, sessionId });
+    validateFingerprintBinding(state, resolution.fingerprint);
+    if (state.binding.hostSessionId !== sessionId)
+      throw new IntegrationInvariantError(
+        'SESSION_BINDING_MISMATCH',
+        'The mutation completion belongs to another host session.',
       );
-      return;
-    }
-    // A fenced recovery makes a prior host outcome permanently unobservable.
-    // Ignore a delayed After hook instead of invalidating the append-only resolution.
+    if (state.flowguardSessionId !== resolution.state.flowguardSessionId)
+      throw new IntegrationInvariantError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        'The FlowGuard session changed before mutation completion.',
+      );
+    const episode = state.mutationEpisodes.find(
+      (candidate) => candidate.hostCallId === expected.hostCallId,
+    );
+    if (!episode || !sameDispatch(episode, expected))
+      throw new IntegrationInvariantError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        'The authorized mutation dispatch changed before completion.',
+      );
     if (
-      state.mutationEpisodeResolutions.some(
-        (resolution) => resolution.hostCallId === episode.hostCallId,
-      )
+      state.mutationEpisodeResolutions.some((item) => item.hostCallId === episode.hostCallId) ||
+      episode.status === 'completed'
     )
-      return;
+      return 'unchanged';
+    const acquisition = acquireRuntimeLease({
+      current: state.runtimeLease,
+      runtimeInstanceId: getRuntimeInstanceId(),
+      pid: process.pid,
+      now: new Date().toISOString(),
+    });
+    if (acquisition.kind === 'blocked')
+      throw new MutationCompletionLeaseError(acquisition.lease.generation);
+    if (!state.runtimeLease || !validLeaseProvenance(episode, acquisition.lease))
+      throw new IntegrationInvariantError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        'Mutation authorization does not match the runtime lease provenance.',
+      );
     await writeStateWithAuditOperationsAlreadyLocked(sessDir, {
       ...state,
+      runtimeLease: acquisition.lease,
       mutationEpisodes: completeMutationEpisode(
         state.mutationEpisodes,
-        callId,
-        hookInput.tool,
+        episode.hostCallId,
+        episode.toolName,
         now,
-        mutationOutcome(hookInput.tool, hookOutput),
+        outcome,
       ),
     });
+    return 'completed';
   });
+}
+
+function validLeaseProvenance(
+  episode: MutationEpisode,
+  lease: { generation: number; holderRuntimeInstanceId: string },
+): boolean {
+  return (
+    episode.leaseGeneration < lease.generation ||
+    (episode.leaseGeneration === lease.generation &&
+      episode.runtimeInstanceId === lease.holderRuntimeInstanceId)
+  );
+}
+
+function sameDispatch(current: MutationEpisode, expected: MutationEpisode): boolean {
+  return (
+    current.episodeId === expected.episodeId &&
+    current.toolName === expected.toolName &&
+    current.runtimeInstanceId === expected.runtimeInstanceId &&
+    current.leaseGeneration === expected.leaseGeneration &&
+    current.authorizedAt === expected.authorizedAt
+  );
 }
 
 /**
@@ -92,8 +186,9 @@ export async function recordMutationCompletion(input: {
  * `metadata` and `output` are host-owned and not a contractual verdict
  * signal. Explicit error signals classify `failure`; explicit success
  * signals classify `success`; anything else is `unknown`. All three are
- * bound by the reconciliation — a host call that failed may still have
- * mutated files, so binding never depends on this classification.
+ * retained without assuming absence of filesystem changes. Observed failure
+ * can bind to a fresh implementation digest; unknown remains ineligible and
+ * requires the existing fenced unknown-outcome recovery.
  */
 function mutationOutcome(
   toolName: string,

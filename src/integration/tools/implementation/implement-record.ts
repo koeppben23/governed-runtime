@@ -97,7 +97,7 @@ import {
 import type { CeremonyEligibilityProjection } from '../../phase-tool-gate.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
-  hasUnresolvedMutationEpisodes,
+  unresolvedMutationEpisodes,
   reconcileMutationEpisodes,
 } from '../../../state/evidence-mutation-episode.js';
 import {
@@ -141,19 +141,11 @@ export function validateImplRecordPrerequisites(input: ImplementRuntime): string
   }
   if (!input.state.ticket) return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
   if (!input.state.plan) return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
-  const resolvedCallIds = new Set(
-    input.state.mutationEpisodeResolutions.map((resolution) => resolution.hostCallId),
+  const unresolvedEpisodes = unresolvedMutationEpisodes(
+    input.state.mutationEpisodes,
+    input.state.mutationEpisodeResolutions,
   );
-  const unresolvedEpisodes = input.state.mutationEpisodes.filter(
-    (episode) =>
-      episode.status === 'dispatch_authorized' && !resolvedCallIds.has(episode.hostCallId),
-  );
-  if (
-    hasUnresolvedMutationEpisodes(
-      input.state.mutationEpisodes,
-      input.state.mutationEpisodeResolutions,
-    )
-  ) {
+  if (unresolvedEpisodes.length > 0) {
     return formatBlocked('MUTATION_EPISODE_UNRESOLVED', {
       count: String(unresolvedEpisodes.length),
     });

@@ -54,6 +54,7 @@ import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-val
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
+import { reconcileMutationEvent } from './plugin-mutation-reconciliation.js';
 
 export async function toolAfter(
   runtime: FlowGuardPluginRuntime,
@@ -395,6 +396,7 @@ export async function handlePluginEvent(
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
       resumePendingSystemWork: (sessionId: string) =>
         resumeSystemWorkForSession(runtime, sessionId),
+      observeMutationEvent: (hostEvent) => reconcileMutationEvent(runtime, hostEvent),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
         const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
         // Without durable session identity there is no canonical audit event
