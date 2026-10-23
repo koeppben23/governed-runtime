@@ -159,6 +159,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OpenCode docs drift is pinned to the tested host (#1164):** the scheduled
+  documentation check previously fetched from the moving `dev` branch, so
+  unrelated upstream edits were reported as integration drift. It now fetches
+  the exact tag in `.sdk-baselines/opencode/host-version.json` (currently
+  `v1.19.3`), records that tag in `docs-hashes.json`, refuses partial fetch
+  results, and rejects a baseline pinned to another host version. The SDK update
+  workflow refreshes the docs baseline at the new tag in the same reviewed PR.
+  Drift at an already-adopted immutable tag is reported as a tag-mutation or
+  fetch-integrity incident rather than prompting a blind baseline update.
+
 - **Reviewer execution closure (#1170):** cleanup now requires exact recorded
   execution identity and persisted terminality. Serialization SDK failures and
   hanging abort/status requests retain an immediate evidence-binding fence and
