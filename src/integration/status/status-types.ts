@@ -54,7 +54,11 @@ export interface StatusProjection {
     integrityCapability: 'verifiable' | 'not_verifiable' | null;
     verificationStatus: 'not_run' | 'passed' | 'failed' | null;
   };
-  /** Commands that are currently admissible. */
+  /**
+   * Phase-admissible commands only, from isCommandAllowed(). This list neither
+   * evaluates command prerequisites nor authorizes execution. Use the directive,
+   * blocker, readiness and conclusion for current action/recovery guidance.
+   */
   allowedCommands: string[];
   /**
    * Derived execution disposition — never persisted. `blocked` never destroys

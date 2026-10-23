@@ -12,7 +12,7 @@
  *
  * Source of truth for each field:
  * - phase              → state.phase
- * - allowedCommands    → isCommandAllowed() for each known command
+ * - allowedCommands    → phase admissibility via isCommandAllowed(), not prerequisite clearance
  * - directive          → resolveWorkflowDirective()
  * - blocker           → evaluate() waiting/pending reason
  * - evidenceSummary    → evaluateCompleteness()

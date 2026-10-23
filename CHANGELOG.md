@@ -172,6 +172,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown outcomes and already resolved episodes never become observed success.
   Full status, `/why`, readiness and recovery now project open episode IDs and
   the actual blocker without recommending unconditional implementation progress.
+  `allowedCommands` remains explicitly phase-only; detailed status rendering
+  labels that list with its prerequisite limitation rather than "Available actions".
   Live tests pin OpenCode 1.19.3 and cover the real edit failure, event loss,
   cleanup and shell-descendant limitation; automatic error reconciliation is
   deliberately admitted only for `edit` (MUT5 / #1173 tracks shell quiescence).

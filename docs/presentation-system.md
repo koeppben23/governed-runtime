@@ -284,11 +284,15 @@ Default `/status` uses `detail: 'summary'`:
 - Evidence section compressed to a compact notice only when evidence
   incompleteness causes `NOT_VERIFIED`.
 - ProofGraph summary counts only; no per-claim list unless diagnostic mode.
-- Available actions hidden (use `/why` for explanation).
+- The phase-admissible command list is hidden (use `/why` for explanation).
 - One primary next action in the conclusion.
 
 At `detail: 'explanation'` and higher, the full Evidence section and
-Available actions list return.
+the "Commands allowed by phase (prerequisites still apply)" list return.
+This list projects `allowedCommands` from machine phase admissibility only;
+it does not evaluate command prerequisites or authorize execution. The directive,
+blocker and conclusion supply current action/recovery guidance, so an open
+mutation episode can block `/implement` even though it remains phase-admissible.
 
 At `detail: 'diagnostic'`, reason codes, canonical messages, and full
 ProofGraph diagnostic detail are visible.

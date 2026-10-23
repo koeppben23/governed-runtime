@@ -93,3 +93,18 @@ npm run mutation -- --mutate src/machine/workflow-directive.ts,src/state/evidenc
 - `NOT_VERIFIED`: full base-profile mutation admission has not been established
   by these targeted diagnostics. Recovery: a clean freeze commit, `npm run mutation`,
   then the documented full-profile admission verifier.
+
+For a release requiring full admission of the two new authorities, this remains
+an outstanding release condition until the existing verifier accepts a full
+base-profile report and its freeze-commit manifest. A green PR CI or the targeted
+100 % score does not satisfy that condition. On the clean freeze commit run:
+
+```sh
+npm run mutation
+node scripts/verify-mutation-admission.mjs --profile base --require-admitted --require-selectors src/integration/host-mutation-observation.ts,src/integration/plugin-mutation-reconciliation.ts --write-profile-manifest
+node scripts/verify-mutation-admission.mjs --profile base --require-admitted --require-selectors src/integration/host-mutation-observation.ts,src/integration/plugin-mutation-reconciliation.ts --verify-profile-manifest --emit-admission
+```
+
+Only verified admission output may be added to the immutable admission records;
+until then the inventory entries remain admission candidates. This is the
+repository's existing admission rule, not a replacement or relaxed gate.

@@ -15,6 +15,8 @@ import {
 import { buildFinishCard } from './status-finish.js';
 import { buildWhyDocument } from './why-presentation.js';
 import { renderMarkdown } from '../../presentation/index.js';
+import { buildStatusDocument } from './status-presentation.js';
+import { notCheckedDiscoveryDriftStatus } from '../discovery/discovery-drift-status.js';
 
 const at = '2026-10-01T00:00:00.000Z';
 const policy = getPolicyPreset('solo');
@@ -47,6 +49,7 @@ describe('MUT4 canonical mutation blocker projection', () => {
     });
     expect(full.blocker?.reasonCode).toBe('MUTATION_EPISODE_UNRESOLVED');
     expect(full.readiness).toBe('BLOCKED');
+    expect(full.allowedCommands).toContain('/implement');
     expect(full.conclusion.kind).toBe('recovery');
     expect(focused).toMatchObject({
       blocked: true,
@@ -72,6 +75,30 @@ describe('MUT4 canonical mutation blocker projection', () => {
     expect(markdown).not.toContain('{count}');
     expect(JSON.stringify(why)).not.toContain('REVIEW_STATE_INCOMPLETE');
     expect(state).toEqual(before);
+  });
+
+  it('labels phase-admissible commands without recommending a blocked implementation', () => {
+    const full = buildStatusProjection(openState(), policy);
+    const document = buildStatusDocument(
+      {
+        status: full,
+        discoveryHealth: null,
+        discoveryDrift: notCheckedDiscoveryDriftStatus('Mutation blocker presentation test.'),
+      },
+      { detail: 'explanation' },
+    );
+    const commands = document.sections.find((section) => section.kind === 'commandList');
+    expect(commands).toMatchObject({
+      heading: 'Commands allowed by phase (prerequisites still apply)',
+      items: expect.arrayContaining([
+        expect.objectContaining({ invocation: '/implement', visibility: 'available' }),
+      ]),
+    });
+    expect(document.conclusion).toMatchObject({ kind: 'recovery' });
+    const markdown = renderMarkdown(document);
+    expect(markdown).not.toContain('## Available actions');
+    expect(markdown).not.toContain('→ `/implement`');
+    expect(markdown).toContain('retry /implement');
   });
 
   it('clears the blocker only after completion or a valid append-only resolution', () => {

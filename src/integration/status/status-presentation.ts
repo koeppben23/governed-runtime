@@ -100,7 +100,7 @@ export function buildStatusDocument(
   sections.push(buildProofGraphSection(status.proofSummary, proofGraphOpts(detail, status)));
 
   if (detail !== 'summary' && status.allowedCommands.length > 0) {
-    sections.push(buildAvailableActionsSection(status));
+    sections.push(buildPhaseCommandsSection(status));
   }
 
   if (remainingChecks && remainingChecks.length > 0) {
@@ -276,13 +276,17 @@ function buildEvidenceSection(
   }
 }
 
-function buildAvailableActionsSection(status: StatusProjection): PresentationSection {
+function buildPhaseCommandsSection(status: StatusProjection): PresentationSection {
   const items: PresentationAction[] = status.allowedCommands.map((invocation: string) => {
     const p = projectStatusActionFromCommand(invocation, 'available');
     return { invocation: p.invocation, description: p.description, visibility: p.visibility };
   });
 
-  return { kind: 'commandList', heading: 'Available actions', items };
+  return {
+    kind: 'commandList',
+    heading: 'Commands allowed by phase (prerequisites still apply)',
+    items,
+  };
 }
 
 function buildRemainingChecksSection(checks: string[]): PresentationSection {

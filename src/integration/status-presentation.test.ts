@@ -697,7 +697,7 @@ describe('discovery notice', () => {
       expect(result).not.toContain('/finish');
     });
 
-    it('does not add /finish to allowedCommands / Available actions', () => {
+    it('does not add /finish to allowedCommands / phase-admissible commands', () => {
       const projection = makeBaseProjection({
         phase: 'COMPLETE',
         phaseLabel: 'COMPLETE',
@@ -706,9 +706,9 @@ describe('discovery notice', () => {
       const result = renderMarkdown(
         buildCompactDoc({ status: projection, discoveryHealth: null, discoveryDrift: cleanDrift }),
       );
-      // Available actions section is only emitted from allowedCommands, which
+      // The phase command section is only emitted from allowedCommands, which
       // never contains /finish (machine-enum authority is untouched).
-      expect(result).not.toContain('## Available actions');
+      expect(result).not.toContain('## Commands allowed by phase');
     });
 
     it('places the /finish hint before a terminal (archived) conclusion', () => {
