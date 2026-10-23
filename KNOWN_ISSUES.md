@@ -84,16 +84,17 @@ trail retains that exact order.
 
 ## Status Legend
 
-| Status                 | Meaning                                                   |
-| ---------------------- | --------------------------------------------------------- |
-| `Fixed`                | Code merged or PR merged for the scoped finding.          |
-| `Fixed (pre-existing)` | Finding already satisfied in code before the analysis.    |
-| `Partially Fixed`      | Some findings in the group are fixed; others remain open. |
-| `Tracked`              | Covered by an open issue or package, not fixed yet.       |
-| `Open`                 | Known item without a dedicated child issue yet.           |
-| `Not Verified`         | Static-analysis claim still needs confirmation.           |
-| `Non-Regression Note`  | Positive finding or behavior to preserve.                 |
-| `SEE ALSO`             | Cross-reference note, not a fixable finding.              |
+| Status                   | Meaning                                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Fixed`                  | Code merged or PR merged for the scoped finding.                                                                                               |
+| `Fixed (in this change)` | Scoped implementation and executed verification are included in the containing change; merge, delivery and release admission are not asserted. |
+| `Fixed (pre-existing)`   | Finding already satisfied in code before the analysis.                                                                                         |
+| `Partially Fixed`        | Some findings in the group are fixed; others remain open.                                                                                      |
+| `Tracked`                | Covered by an open issue or package, not fixed yet.                                                                                            |
+| `Open`                   | Known item without a dedicated child issue yet.                                                                                                |
+| `Not Verified`           | Static-analysis claim still needs confirmation.                                                                                                |
+| `Non-Regression Note`    | Positive finding or behavior to preserve.                                                                                                      |
+| `SEE ALSO`               | Cross-reference note, not a fixable finding.                                                                                                   |
 
 ## Fixed
 
@@ -671,13 +672,17 @@ is unchanged (no state write); valid and claim-free submissions still work.
 ## Maintenance Rules
 
 - Keep this file aligned with #487 and child issues.
-- Mark items `Fixed` only after the scoped code fix or carrying PR is merged,
-  as defined by the status legend. While the carrying PR is open, keep the item
-  `Tracked` and link that PR; passing tests alone do not establish merged status.
+- Reserve unqualified `Fixed` for merged scoped fixes, as defined by the legend.
+- Use `Fixed (in this change)` when the containing change includes the scoped
+  implementation and its executed verification. Link the carrying PR and retain
+  relevant `NOT_VERIFIED` limits. This records the code state, not a claim that
+  the PR is merged, delivered or release-admitted; the qualified status remains
+  accurate after merge without a follow-up status-only PR.
+- Keep findings without an included, verified fix `Tracked` or `Open`.
 - Preserve finding IDs in child issue titles or descriptions.
 - Do not add exploit procedures or sensitive operational detail to this file.
 - If a static finding is disproven, update the status and link the evidence.
-- Trust-boundary changes under `src/rails/`, `src/integration/review/`, `src/adapters/`, or `src/audit/proofgraph/` get a dated section here; findings stay `Tracked`/`Open` until the carrying PR merges.
+- Trust-boundary changes under `src/rails/`, `src/integration/review/`, `src/adapters/`, or `src/audit/proofgraph/` get a dated section here; apply the same scoped implementation/verification criteria above, keeping unresolved findings `Tracked`/`Open`.
 
 ## 2026-10-18 Review reliability forensics (DREP validation)
 
@@ -685,10 +690,10 @@ The DREP validation exposed three failed demo runs with the experiment flag
 off. They were classified from the persisted mutation episodes, session state,
 turn transcripts, and audit trails; the performance experiment is stopped.
 
-| ID   | Severity | Status  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---- | -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| MUT4 | HIGH     | Tracked | Fix implemented in open PR #1174 (issue #1172); pending merge. Throwing host edits complete from a unique regular host error part through event-triggered reads or synchronous reconciliation before `flowguard_implement`. One locked completion writer rechecks session/dispatch identity, lease authority and existing decisions with the existing atomic audit outbox. Status/why/readiness project the blocker and recovery IDs. Real OpenCode 1.19.3 reproduction: `src/cli/opencode-mutation-lifecycle-live.smoke.test.ts`. The historical `development-05-implement` raw run remains NOT_VERIFIED; no DREP relation. |
-| ARC1 | LOW      | Tracked | The demo architecture flow treats a turn that produces no `flowguard_architecture` submission (phase remains `READY`, no ADR, no denial) as a hard `FAILED` gate mismatch. The product state is coherent; this is an agent non-action. The harness should classify the missing submission as `NOT_VERIFIED` (or resume the step) instead of a product failure. Observed in `architecture-03-approve` on 2026-10-18.                                                                                                                                                                                                          |
+| ID   | Severity | Status                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---- | -------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MUT4 | HIGH     | Fixed (in this change) | Scoped implementation and executed verification are contained in PR #1174 (issue #1172); merge/delivery status is tracked by that PR. Throwing host edits complete from a unique regular host error part through event-triggered reads or synchronous reconciliation before `flowguard_implement`. One locked completion writer rechecks session/dispatch identity, lease authority and existing decisions with the existing atomic audit outbox. Status/why/readiness project the blocker and recovery IDs. Real OpenCode 1.19.3 reproduction: `src/cli/opencode-mutation-lifecycle-live.smoke.test.ts`. The historical `development-05-implement` raw run and full-profile admission remain NOT_VERIFIED; see `docs/development/mut4-host-completion.md`; no DREP relation. |
+| ARC1 | LOW      | Tracked                | The demo architecture flow treats a turn that produces no `flowguard_architecture` submission (phase remains `READY`, no ADR, no denial) as a hard `FAILED` gate mismatch. The product state is coherent; this is an agent non-action. The harness should classify the missing submission as `NOT_VERIFIED` (or resume the step) instead of a product failure. Observed in `architecture-03-approve` on 2026-10-18.                                                                                                                                                                                                                                                                                                                                                           |
 
 The third failed run (`risk-uncovered-05-implement`) is **not a defect**: the
 reviewer returned an `implementation_challenge` with `outcome: not_verified`,
