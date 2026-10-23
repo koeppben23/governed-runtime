@@ -21,6 +21,9 @@ import { evaluateCompleteness } from '../../audit/completeness.js';
 import {
   projectApprovalBlockedConclusion,
   projectStatusActionFromCommand,
+  projectStatusConclusion,
+  projectDirectiveBlock,
+  type StatusConclusionProjection,
 } from './status-conclusion.js';
 import { projectEvidenceApprovalBlock } from './status-detail-projections.js';
 import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
@@ -30,24 +33,7 @@ import { IntegrationInvariantError } from '../errors.js';
 
 // ─── /why Projection Types ─────────────────────────────────────────────────────
 
-export type WhyConclusionProjection =
-  | {
-      readonly kind: 'next_action';
-      readonly action: PresentationAction;
-    }
-  | {
-      readonly kind: 'terminal';
-      readonly message: string;
-    }
-  | {
-      readonly kind: 'decision_required';
-      readonly question: string;
-      readonly actions: readonly PresentationAction[];
-    }
-  | {
-      readonly kind: 'review_pending';
-      readonly message: string;
-    };
+export type WhyConclusionProjection = StatusConclusionProjection;
 
 export interface WhyPresentationProjection {
   readonly phase: string;
@@ -121,6 +107,7 @@ function buildWhyConclusion(
   evalResult: ReturnType<typeof evaluate>,
   directive: WorkflowDirective,
 ): WhyConclusionProjection {
+  if (directive.kind === 'blocked') return projectStatusConclusion(evalResult, directive);
   if (directive.kind === 'system_work') {
     return { kind: 'review_pending', message: directiveLabel(directive.code) };
   }
@@ -179,6 +166,9 @@ export function buildFinishPresentationProjection(
 
 function buildFinishConclusion(state: SessionState): FinishConclusionProjection {
   const directive = resolveWorkflowDirective(state);
+  const directiveBlock = projectDirectiveBlock(directive);
+  if (directiveBlock)
+    return { kind: 'recovery', message: directiveBlock.reason, steps: directiveBlock.recovery };
   // The finish card is BLOCKED while the approval preflight refuses approval;
   // its conclusion is the preflight's own recovery, never a recommended /approve.
   const approvalBlock = projectEvidenceApprovalBlock(state);

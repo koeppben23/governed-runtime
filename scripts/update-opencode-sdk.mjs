@@ -114,6 +114,9 @@ run('npm', ['install', `@opencode-ai/plugin@${targetVersion}`, '--save-dev', '--
 run('node', ['scripts/sdk-type-snapshot.mjs', '--platform', 'opencode', '--update']);
 writeHostVersion(targetHostVersion);
 writeTestedHostVersion(targetHostVersion);
+// Refresh the docs baseline at the NEW pinned tag. Fails closed on any fetch
+// failure, so a version bump can never leave docs pinned to the old host.
+run('node', ['scripts/docs-drift.mjs', '--update']);
 
 const installedVersion = readJson(installedPackageJsonPath).version;
 const baselineVersion = readJson(baselineVersionPath).version;

@@ -27,7 +27,9 @@ export const MUTATION_REASONS: readonly BlockedReason[] = [
       'Implementation is blocked while {count} authorized host mutation episode(s) lack completion outcomes.',
     recoverySteps: [
       'Wait for the authorized host tool call to complete',
-      'If the host call was interrupted and its outcome can never be observed, resolve it with flowguard_reconcile_mutation_episode({ hostCallId }) and re-apply the implementation work',
+      'If an edit call already returned normally with an error, retry /implement: the runtime re-reads the exact host outcome before recording evidence',
+      'If the outcome is truly unknown, stop the original host process and restart the runtime; only a later lease generation may resolve it with flowguard_reconcile_mutation_episode({ hostCallId }) before fresh worktree evidence is recorded',
+      'A tool or shell exit does not prove that background processes can no longer write; stop outstanding writers before recording implementation evidence',
     ],
   },
   {

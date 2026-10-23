@@ -162,6 +162,8 @@ jobs:
             "- @opencode-ai/plugin: $CURRENT_SDK -> $TARGET_SDK" \
             "- opencode-ai host/Desktop: $CURRENT_HOST -> $TARGET_HOST" \
             '' \
+            'The documentation baseline is refreshed from the exact new host tag, never from a moving branch.' \
+            '' \
             'Verification in workflow:' \
             '- npm run check' \
             '- node scripts/sdk-type-snapshot.mjs --platform opencode' \

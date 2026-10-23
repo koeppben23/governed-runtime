@@ -27,6 +27,7 @@ import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeStateDigest, writeStateWithAuditOperations } from './audit-outbox.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
+import { getRuntimeInstanceId } from './runtime-instance.js';
 import { finalizeStrictTimestampFailure } from './plugin-audit-reconcile.js';
 import { persistRiskDecisionBlock } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
@@ -78,7 +79,7 @@ function episode(hostCallId: string, toolName: string): SessionState['mutationEp
     episodeId: crypto.randomUUID(),
     hostCallId,
     toolName,
-    runtimeInstanceId: crypto.randomUUID(),
+    runtimeInstanceId: getRuntimeInstanceId(),
     leaseGeneration: 1,
     authorizedAt: '2026-01-01T00:00:00.000Z',
     status: 'dispatch_authorized',
@@ -138,6 +139,13 @@ async function seedClaimState(
 ): Promise<SessionState> {
   const state: SessionState = {
     ...withClaim(makeProgressedState(phase)),
+    runtimeLease: {
+      holderRuntimeInstanceId: getRuntimeInstanceId(),
+      holderPid: process.pid,
+      generation: 1,
+      acquiredAt: NOW,
+      lastHeartbeatAt: NOW,
+    },
     ...(overrides.mutationEpisodes === undefined
       ? {}
       : { mutationEpisodes: overrides.mutationEpisodes }),
@@ -158,12 +166,17 @@ describe('direct metadata write channel', () => {
       mutationEpisodes: [episode(hostCallId, 'bash')],
     });
     const runtime = {
-      ws: { resolveSessionAuthority: async () => resolvedAuthority(seeded, sessDir) },
+      ws: {
+        resolveSessionAuthority: async () => ({
+          ...resolvedAuthority(seeded, sessDir),
+          worktreeRoot: seeded.binding.worktree,
+        }),
+      },
     } as never;
 
     await recordMutationCompletion({
       runtime,
-      sessionId: seeded.flowguardSessionId,
+      sessionId: seeded.binding.hostSessionId,
       hookInput: { tool: 'bash', callID: hostCallId } as never,
       hookOutput: { metadata: { exit: 0 }, output: '' } as never,
       now: NOW,

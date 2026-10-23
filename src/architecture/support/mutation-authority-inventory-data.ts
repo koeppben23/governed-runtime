@@ -1211,6 +1211,20 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 
   // ── Base profile: candidate authorities pending admission ─────────────────
+  candidate(
+    'src/integration/host-mutation-observation.ts',
+    'Pinned host terminal edit-error observation boundary',
+    'base',
+    ['src/integration/host-mutation-observation.test.ts'],
+    'MUT4: measure the new terminality and identity boundary before admission.',
+  ),
+  candidate(
+    'src/integration/plugin-mutation-reconciliation.ts',
+    'Event and pre-implement mutation outcome reconciliation',
+    'base',
+    ['src/integration/plugin-mutation-reconciliation.test.ts'],
+    'MUT4: measure synchronous reconciliation and fail-closed host reads before admission.',
+  ),
   {
     classification: 'required',
     profile: 'base',

@@ -311,6 +311,8 @@ export const status: ToolDefinition = {
   description:
     'Read the current FlowGuard session state. Returns phase, evidence summary, ' +
     'policy info, completeness matrix, and next action. ' +
+    'allowedCommands reports phase admissibility only; command prerequisites still apply. ' +
+    'Use the directive and blocker for current action or recovery guidance. ' +
     'Does NOT mutate state. Use /status to inspect session state or debug blockers. ' +
     'Use /continue for deterministic next-action routing (tells you which command to run next).',
   args: {

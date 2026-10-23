@@ -54,6 +54,7 @@ import {
 import { resetRuntimeInstanceIdForTest } from './runtime-instance.js';
 import { recordUserDecisionIntent } from './user-decision-intent.js';
 import { computeGitControlPlaneMarker } from './git-control-plane.js';
+import { TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 
 // The plugin/persistence/hook pipeline itself is unmocked; only the git
 // ADAPTER (external system boundary) is mocked: the test workspace carries a
@@ -140,6 +141,88 @@ async function recordMutationOutcome(
 }
 
 describe('mutation episode end-to-end (real plugin runtime)', () => {
+  it.each(['event', 'pre-implement barrier'])(
+    'MUT4: %s closes an edit error and binds actual partial worktree contents',
+    async (channel) => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const binding = await canonicalBinding(ws.tmpDir, sessionID);
+        const sessDir = resolveSessionDir(binding.fingerprint, sessionID);
+        await fs.mkdir(path.join(ws.tmpDir, 'src'), { recursive: true });
+        await fs.writeFile(path.join(ws.tmpDir, 'src/auth.ts'), 'export const partial = 1;\n');
+        await fs.writeFile(path.join(ws.tmpDir, 'src/auth.test.ts'), 'export {};\n');
+        await writeStateWithArtifacts(sessDir, {
+          ...makeProgressedState('IMPLEMENTATION'),
+          binding,
+          implementationBaseline: {
+            dirtyFiles: [],
+            capturedAt: new Date().toISOString(),
+            controlPlaneMarker: await computeGitControlPlaneMarker(ws.tmpDir),
+          },
+        });
+        const callID = crypto.randomUUID();
+        const part = () => ({
+          type: 'tool',
+          id: 'part-edit',
+          messageID: 'message-edit',
+          sessionID,
+          callID,
+          tool: 'edit',
+          state: {
+            status: 'error',
+            input: {},
+            error: 'edit failed after partial mutation',
+            time: { start: Date.now(), end: Date.now() },
+          },
+        });
+        const messages = vi.fn(async () => ({
+          data: [{ info: { id: 'message-edit', sessionID, role: 'assistant' }, parts: [part()] }],
+        }));
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: createBootableHostClient({ session: { messages } }),
+          }),
+        );
+        await hooks['tool.execute.before']!({ tool: 'edit', sessionID, callID }, { args: {} });
+        // Real filesystem mutation before the host's failing completion; no After hook runs.
+        await fs.writeFile(path.join(ws.tmpDir, 'src/auth.ts'), 'export const partial = 2;\n');
+        if (channel === 'event')
+          await hooks.event!({
+            event: { type: 'message.part.updated', properties: { part: part() } },
+          } as never);
+        await hooks['tool.execute.before']!(
+          { tool: TOOL_FLOWGUARD_IMPLEMENT, sessionID, callID: crypto.randomUUID() },
+          { args: {} },
+        );
+        const result = parseToolResult<{ code?: string }>(
+          await implement.execute({}, createToolContext({ sessionID, worktree: ws.tmpDir })),
+        );
+        expect(result.code, JSON.stringify(result)).not.toBe('MUTATION_EPISODE_UNRESOLVED');
+        const state = (await readState(sessDir))!;
+        expect(state.implementation, JSON.stringify(result)).not.toBeNull();
+        expect(state.mutationEpisodes[0]).toMatchObject({
+          status: 'completed',
+          outcome: 'failure',
+          implementationDigest: state.implementation?.digest,
+          evidenceStatus: 'eligible',
+        });
+        expect(state.implementation?.digest).toBe(
+          await computeImplementationDigest({
+            worktree: ws.tmpDir,
+            files: ['src/auth.ts', 'src/auth.test.ts'],
+            digest: hashText,
+          }),
+        );
+        expect(state.mutationEpisodeResolutions).toEqual([]);
+        expect(messages).toHaveBeenCalledTimes(1);
+      } finally {
+        await ws.cleanup();
+      }
+    },
+  );
   it('authorizes durably, binds the completed host mutation, and blocks replay', async () => {
     const ws = await createTestWorkspace();
     try {

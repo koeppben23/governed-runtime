@@ -72,6 +72,30 @@ ls ~/.config/opencode/workspaces/*/sessions/
 `/review` is **not** a status command — it is the entry point of the peer
 review flow (READY only). Use `/status` or `/why` instead.
 
+### Implementation blocked by an open host mutation
+
+`MUTATION_EPISODE_UNRESOLVED` means an authorized host mutation has no recorded
+completion. `/why` reports the exact `hostCallId` under
+`whyBlocked.mutationEpisodes`; it does not query or modify host/session state.
+`nextResolvableCommand: null` means no unconditional progress recommendation is
+available, not that conditional recovery commands are forbidden.
+
+- If the tool is still executing, wait for its completion.
+- If a regular OpenCode `edit` already failed, retry `/implement`. Its Before
+  boundary re-reads the exact host error and closes the episode before the tool
+  rechecks its prerequisites. This automatic error path is admitted only for
+  `edit`, not arbitrary shell or file tools.
+- If the result is truly unknown, stop the original host process and restart.
+  Only a later lease generation may run `/reconcile-mutation-episode`; then
+  capture fresh implementation, checks and review. A stale heartbeat or plugin
+  reload cannot fence a live holder.
+- A cleanup/interrupted part remains unknown even when it has an end timestamp.
+  Shell/background writers require separate termination: neither a shell exit
+  nor runtime fencing proves descendant quiescence (MUT5 / #1173).
+
+See the [MUT4 host verification record](development/mut4-host-completion.md) for
+the pinned-host reproduction and negative-path contract.
+
 ### External Reviewer Evidence Not Accepted
 
 **Symptom:** Claude Code or Codex produced a reviewer response, but FlowGuard remains pending or blocked.

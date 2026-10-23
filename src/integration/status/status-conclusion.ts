@@ -19,10 +19,13 @@ import type { WorkflowDirective } from '../../machine/workflow-directive.js';
 import { getInstalledCommand } from '../installed-commands.js';
 import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
 import { IntegrationInvariantError } from '../errors.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
+import type { FormattedBlock } from '../../config/reasons-types.js';
 
 // ─── Conclusion Projection ─────────────────────────────────────────────────────
 
 export type StatusConclusionProjection =
+  | { readonly kind: 'recovery'; readonly message: string; readonly steps: readonly string[] }
   | {
       readonly kind: 'next_action';
       readonly action: PresentationAction;
@@ -55,6 +58,8 @@ export function projectStatusConclusion(
   evalResult: ReturnType<typeof evaluate>,
   directive: WorkflowDirective,
 ): StatusConclusionProjection {
+  const block = projectDirectiveBlock(directive);
+  if (block) return { kind: 'recovery', message: block.reason, steps: block.recovery };
   if (evalResult.kind === 'waiting') {
     const actions = directive.commands.map((invocation) =>
       projectStatusActionFromCommand(invocation, 'available'),
@@ -83,6 +88,23 @@ export function projectStatusConclusion(
   }
 
   return { kind: 'terminal', message: directiveLabel(directive.code) };
+}
+
+/** Format the machine-selected execution blocker; never reinterpret it as a review failure. */
+export function projectDirectiveBlock(directive: WorkflowDirective): FormattedBlock | null {
+  if (directive.kind !== 'blocked') return null;
+  const code = directive.context?.reasonCode;
+  if (!code)
+    throw new IntegrationInvariantError(
+      'DIRECTIVE_BLOCK_REASON_MISSING',
+      'A blocked directive must name its owning reason.',
+    );
+  const formatted = defaultReasonRegistry.format(code, directive.context?.reasonParams);
+  return {
+    ...formatted,
+    ...(directive.context?.reasonText ? { reason: directive.context.reasonText } : {}),
+    ...(directive.context?.recovery ? { recovery: [directive.context.recovery] } : {}),
+  };
 }
 
 /**

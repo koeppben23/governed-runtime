@@ -30,17 +30,23 @@ import { redactExtra, sanitizeDiagnosticString } from '../logging/redact.js';
 type HostEvent = Parameters<NonNullable<Hooks['event']>>[0]['event'];
 type HandledEventType = Extract<
   HostEvent,
-  { type: 'session.error' | 'session.deleted' | 'session.idle' | 'session.status' }
+  {
+    type:
+      | 'session.error'
+      | 'session.deleted'
+      | 'session.idle'
+      | 'session.status'
+      | 'message.part.updated';
+  }
 >['type'];
 
 /**
  * OpenCode Event shape (from @opencode-ai/sdk, used by plugin event hooks).
  *
  * Intentionally defined here as a subset of the SDK Event type rather than
- * imported. FlowGuard only needs { type, properties } for audit logging.
- * Re-defining avoids a runtime dependency on @opencode-ai/sdk. If the SDK
- * Event gains new fields, this subset silently ignores them — safe for our
- * logging-only use case.
+ * imported. Event dispatch consumes { type, properties }; mutation wakeups
+ * additionally pass through the strict terminal-part/history boundary before
+ * any state write. Unconsumed event fields are never completion evidence.
  */
 export interface PluginEvent {
   readonly type: string;
@@ -83,6 +89,7 @@ export interface EventHandlerDeps {
    * throw for an unavailable/resolved-elsewhere session.
    */
   resumePendingSystemWork(sessionId: string): Promise<void>;
+  observeMutationEvent(event: PluginEvent): Promise<void>;
 }
 
 /**
@@ -96,6 +103,7 @@ const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set<HandledEventType>([
   'session.deleted',
   'session.idle',
   'session.status',
+  'message.part.updated',
 ]);
 
 /**
@@ -259,7 +267,8 @@ export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): P
   if (!event || !event.type) return;
   if (!HANDLED_EVENT_TYPES.has(event.type)) return;
   try {
-    if (event.type === 'session.error') await handleSessionError(deps, event);
+    if (event.type === 'message.part.updated') await deps.observeMutationEvent(event);
+    else if (event.type === 'session.error') await handleSessionError(deps, event);
     else if (event.type === 'session.deleted') await handleSessionDelete(deps, event);
     else if (isSessionIdleEvent(event)) await handleSessionIdle(deps, event);
   } catch (err) {

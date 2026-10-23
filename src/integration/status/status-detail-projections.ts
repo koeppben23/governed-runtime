@@ -27,6 +27,8 @@ import { evaluateCompleteness } from '../../audit/completeness.js';
 import { evaluateEvidenceApprovalPreflight } from '../../audit/proofgraph/evidence-approval-preflight.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import type { FormattedBlock } from '../../config/reasons-types.js';
+import { projectDirectiveBlock } from './status-conclusion.js';
+import { unresolvedMutationEpisodes } from '../../state/evidence-mutation-episode.js';
 import { hashFindings } from '../review/findings-hash.js';
 import {
   findAcceptedInvocationForFindings,
@@ -153,6 +155,20 @@ export function buildBlockedProjection(
       slot: slot.slot,
       hint: slot.status === 'failed' ? (slot.detail ?? null) : null,
     }));
+  const directiveBlock = projectDirectiveBlock(directive);
+  if (directiveBlock) {
+    return {
+      blocked: true,
+      reasonCode: directiveBlock.code,
+      reasonText: directiveBlock.reason,
+      ...(directive.context?.reasonParams ? { reasonParams: directive.context.reasonParams } : {}),
+      recoveryHint: directiveBlock.recovery.join('\n'),
+      missingEvidence,
+      nextResolvableCommand: null,
+      humanActionRequired: false,
+      mutationEpisodes: projectOpenMutationEpisodes(state),
+    };
+  }
 
   // #400: surface the explicit validation-evidence reason when VALIDATION is
   // fail-closed-blocked with no active checks. This is a projection of the single
@@ -178,7 +194,20 @@ export function buildBlockedProjection(
     missingEvidence,
     ...blockedRecoveryFields(approvalBlock, evalResult, reason.reasonText, directive),
     humanActionRequired: resolveHumanActionRequired(evalResult, incompleteReview),
+    mutationEpisodes: projectOpenMutationEpisodes(state),
   };
+}
+
+/** Exact IDs needed by recovery, derived solely from persisted canonical episodes/resolutions. */
+export function projectOpenMutationEpisodes(state: SessionState) {
+  return unresolvedMutationEpisodes(state.mutationEpisodes, state.mutationEpisodeResolutions).map(
+    ({ hostCallId, toolName, authorizedAt, leaseGeneration }) => ({
+      hostCallId,
+      toolName,
+      authorizedAt,
+      leaseGeneration,
+    }),
+  );
 }
 
 function blockedRecoveryFields(
@@ -233,7 +262,10 @@ export function buildReadinessProjection(
 ): ReadinessProjection {
   const completeness = evaluateCompleteness(state);
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
-  const blocked = evalResult.kind === 'waiting' || projectEvidenceApprovalBlock(state) !== null;
+  const blocked =
+    resolveExecutionDisposition(state) === 'blocked' ||
+    evalResult.kind === 'waiting' ||
+    projectEvidenceApprovalBlock(state) !== null;
   const snapshot = state.policySnapshot;
   const warnings: string[] = [];
 
