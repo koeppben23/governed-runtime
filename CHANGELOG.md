@@ -159,6 +159,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security audit dependency closure:** pin Effect's transitive `toml` parser
+  to patched 5.0.1 for GHSA-4qx8-w7c3-pj3p, GHSA-9j65-hcg3-gc64 and
+  GHSA-9qmh-m7c6-f92p. The OpenCode SDK/host baseline stays at 1.19.3 and the
+  high-severity audit gate remains enforced.
+
 - **MUT4: recover throwing host edits without weakening episode fencing (#1172).**
   Regular OpenCode edit errors are observed from an exact, freshly read host
   ToolPart through asynchronous event wakeups and a synchronous barrier before
