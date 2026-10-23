@@ -159,6 +159,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OpenCode docs drift is pinned to the tested host (#1164):** the scheduled
+  documentation check previously fetched from the moving `dev` branch, so
+  unrelated upstream edits were reported as integration drift. It now fetches
+  the exact tag in `.sdk-baselines/opencode/host-version.json` (currently
+  `v1.19.3`), records that tag in `docs-hashes.json`, refuses partial fetch
+  results, and rejects a baseline pinned to another host version. The SDK update
+  workflow refreshes the docs baseline at the new tag in the same reviewed PR.
+  Drift at an already-adopted immutable tag is reported as a tag-mutation or
+  fetch-integrity incident rather than prompting a blind baseline update.
+
 - **Security audit dependency closure:** pin Effect's transitive `toml` parser
   to patched 5.0.1 for GHSA-4qx8-w7c3-pj3p, GHSA-9j65-hcg3-gc64 and
   GHSA-9qmh-m7c6-f92p. The OpenCode SDK/host baseline stays at 1.19.3 and the

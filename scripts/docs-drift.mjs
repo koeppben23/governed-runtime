@@ -1,18 +1,16 @@
 /**
  * OpenCode Docs Drift Detection Tool.
  *
- * Fetches raw Markdown/MDX source files from the OpenCode GitHub repository
- * and compares section hashes against a committed baseline. Detects changes
- * to code blocks, tables, and structural headers that may indicate API or
- * configuration changes requiring integration review.
- *
- * Uses raw Markdown rather than rendered HTML to avoid false positives from
- * Astro framework upgrades, CSS changes, or layout modifications.
+ * Compares structurally relevant OpenCode documentation sections against a
+ * committed baseline. Documentation is fetched from the EXACT pinned host
+ * version tag recorded in `.sdk-baselines/opencode/host-version.json`, never
+ * from a moving branch: the integration is pinned to one host contract, so
+ * unreviewed `dev` documentation changes must not masquerade as drift.
  *
  * Usage:
  *   node scripts/docs-drift.mjs              # Check: exit 1 if drift
- *   node scripts/docs-drift.mjs --update     # Update baseline hashes
- *   node scripts/docs-drift.mjs --verbose    # Show which pages changed + diffs
+ *   node scripts/docs-drift.mjs --update     # Update baseline for the pinned tag
+ *   node scripts/docs-drift.mjs --verbose    # Show which pages changed
  *
  * Baseline: .sdk-baselines/opencode/docs-hashes.json
  */
@@ -25,69 +23,72 @@ import { createHash } from 'node:crypto';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
 const BASELINE_PATH = path.join(root, '.sdk-baselines', 'opencode', 'docs-hashes.json');
+const HOST_VERSION_PATH = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
 
-const BASE_URL =
-  'https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/web/src/content/docs';
-
-const PAGES = [
-  { url: `${BASE_URL}/sdk.mdx`, key: 'sdk' },
-  { url: `${BASE_URL}/plugins.mdx`, key: 'plugins' },
-  { url: `${BASE_URL}/config.mdx`, key: 'config' },
-  { url: `${BASE_URL}/commands.mdx`, key: 'commands' },
-  { url: `${BASE_URL}/permissions.mdx`, key: 'permissions' },
-  { url: `${BASE_URL}/agents.mdx`, key: 'agents' },
-  { url: `${BASE_URL}/custom-tools.mdx`, key: 'custom-tools' },
-  { url: `${BASE_URL}/skills.mdx`, key: 'skills' },
+const BASELINE_SCHEMA_VERSION = '1';
+const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._+-]*$/;
+const PAGE_FILES = [
+  'sdk',
+  'plugins',
+  'config',
+  'commands',
+  'permissions',
+  'agents',
+  'custom-tools',
+  'skills',
 ];
+
+/** Raw-docs base URL for one exact OpenCode tag. Never a mutable branch. */
+export function docsBaseUrl(version) {
+  if (typeof version !== 'string' || !VERSION_PATTERN.test(version)) {
+    throw new Error(`Invalid OpenCode version for docs URL: ${String(version)}`);
+  }
+  return `https://raw.githubusercontent.com/anomalyco/opencode/v${version}/packages/web/src/content/docs`;
+}
+
+/** All pinned documentation pages for one host version. */
+export function derivePages(version) {
+  return PAGE_FILES.map((file) => ({
+    key: file,
+    url: `${docsBaseUrl(version)}/${file}.mdx`,
+  }));
+}
+
+/** The exact host version the integration is pinned to. */
+export function readPinnedHostVersion(filePath = HOST_VERSION_PATH) {
+  const meta = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  const version = typeof meta.version === 'string' ? meta.version.replace(/^v/, '') : '';
+  if (!VERSION_PATTERN.test(version)) {
+    throw new Error(`Invalid pinned OpenCode host version in ${filePath}: ${String(meta.version)}`);
+  }
+  return version;
+}
 
 /**
  * Extract structurally relevant sections from Markdown/MDX source:
- * 1. Fenced code blocks (```...```)
- * 2. Markdown table rows (|...|)
- * 3. Headers (## / ### / ####)
- *
- * Ignores: prose paragraphs, frontmatter, JSX components, import statements.
- *
- * @param {string} markdown
- * @returns {{ sections: string[], content: string }}
+ * fenced code blocks, table rows, and headers. Prose, frontmatter, JSX, and
+ * imports are ignored so formatting-only edits do not create drift.
  */
-function extractRelevantSections(markdown) {
+export function extractRelevantSections(markdown) {
   const sections = [];
-
-  // 1. Fenced code blocks (including language specifier)
-  const codeBlockRegex = /```[\s\S]*?```/g;
   let match;
-  while ((match = codeBlockRegex.exec(markdown)) !== null) {
-    sections.push(match[0].trim());
-  }
 
-  // 2. Markdown table rows
+  const codeBlockRegex = /```[\s\S]*?```/g;
+  while ((match = codeBlockRegex.exec(markdown)) !== null) sections.push(match[0].trim());
+
   const tableRowRegex = /^\|.+\|$/gm;
-  while ((match = tableRowRegex.exec(markdown)) !== null) {
-    sections.push(match[0].trim());
-  }
+  while ((match = tableRowRegex.exec(markdown)) !== null) sections.push(match[0].trim());
 
-  // 3. Headers (## through ####)
   const headerRegex = /^#{2,4}\s+.+$/gm;
-  while ((match = headerRegex.exec(markdown)) !== null) {
-    sections.push(match[0].trim());
-  }
+  while ((match = headerRegex.exec(markdown)) !== null) sections.push(match[0].trim());
 
-  const content = sections.join('\n');
-  return { sections, content };
+  return { sections, content: sections.join('\n') };
 }
 
 function sha256(content) {
   return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
-/**
- * Fetch a single page with retry and timeout.
- *
- * @param {string} url
- * @param {number} retries
- * @returns {Promise<string | null>}
- */
 async function fetchPage(url, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -96,18 +97,13 @@ async function fetchPage(url, retries = 2) {
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
 
-      if (res.status === 404) {
-        console.warn(`WARN: Page not found (404): ${url}`);
-        return null;
-      }
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       return await res.text();
     } catch (err) {
       if (attempt < retries) {
         console.warn(`WARN: Fetch failed for ${url}, retrying (${attempt + 1}/${retries})...`);
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
         continue;
       }
       console.error(`ERROR: Failed to fetch ${url}: ${err.message}`);
@@ -117,116 +113,175 @@ async function fetchPage(url, retries = 2) {
   return null;
 }
 
-async function run() {
-  const isUpdate = process.argv.includes('--update');
-  const isVerbose = process.argv.includes('--verbose');
-
-  // ÔöÇÔöÇ Fetch all pages ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  console.log(`Fetching ${PAGES.length} documentation pages...`);
+/** Fetch and hash every page. A missing page is a failure, never a skip. */
+export async function collectHashes(pages, fetchImpl = fetchPage) {
   const results = {};
-  let fetchErrors = 0;
-
-  for (const page of PAGES) {
-    const markdown = await fetchPage(page.url);
+  const failures = [];
+  for (const page of pages) {
+    const markdown = await fetchImpl(page.url);
     if (markdown === null) {
-      fetchErrors++;
+      failures.push(page.key);
       results[page.key] = null;
       continue;
     }
-
     const { sections, content } = extractRelevantSections(markdown);
-    results[page.key] = {
-      hash: sha256(content),
-      sections: sections.length,
-      content: isVerbose ? content : undefined,
-    };
+    results[page.key] = { hash: sha256(content), sections: sections.length };
+  }
+  return { results, failures };
+}
 
-    if (isVerbose) {
-      console.log(
-        `  ${page.key}: ${sections.length} sections, hash ${results[page.key].hash.slice(0, 12)}`,
+/** Reject a baseline that does not describe the currently pinned host tag. */
+export function assertBaselineMetadata(baseline, pinnedVersion) {
+  if (!baseline || typeof baseline !== 'object') throw new Error('Baseline is not an object.');
+  if (baseline.version !== BASELINE_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported docs baseline schema version ${String(baseline.version)}; expected ${BASELINE_SCHEMA_VERSION}.`,
+    );
+  }
+  if (baseline.opencodeVersion !== pinnedVersion) {
+    throw new Error(
+      `Docs baseline is pinned to OpenCode ${String(baseline.opencodeVersion)}, but the host is pinned ` +
+        `to ${pinnedVersion}. Run "node scripts/docs-drift.mjs --update" after reviewing the pinned-tag diff.`,
+    );
+  }
+  const expected = [...PAGE_FILES].sort();
+  const actual = Object.keys(baseline.hashes ?? {}).sort();
+  if (expected.length !== actual.length || expected.some((key, index) => key !== actual[index])) {
+    throw new Error(
+      `Docs baseline page set is stale (expected ${expected.join(', ')}, found ${actual.join(', ')}). ` +
+        'Run "node scripts/docs-drift.mjs --update".',
+    );
+  }
+  for (const key of expected) {
+    const entry = baseline.hashes[key];
+    if (
+      typeof entry?.hash !== 'string' ||
+      entry.hash.length === 0 ||
+      !Number.isInteger(entry.sections) ||
+      entry.sections < 0
+    ) {
+      throw new Error(
+        `Docs baseline entry "${key}" is invalid; run "node scripts/docs-drift.mjs --update".`,
       );
     }
   }
+}
 
-  if (fetchErrors === PAGES.length) {
-    console.error('ERROR: All page fetches failed. Network issue or repository restructured.');
-    process.exit(1);
+/** Compare freshly fetched results against a validated baseline. */
+export function compareAgainstBaseline(pages, results, baseline) {
+  const changed = [];
+  for (const page of pages) {
+    const result = results[page.key];
+    const base = baseline.hashes[page.key];
+    if (result.hash !== base.hash) changed.push(page.key);
+  }
+  return changed;
+}
+
+/** Build a complete baseline; partial fetch results are refused. */
+export function buildBaseline({ pages, results, pinnedVersion, generatedAt }) {
+  const missing = pages.filter((page) => results[page.key] === null).map((page) => page.key);
+  if (missing.length > 0) {
+    throw new Error(`Refusing a partial docs baseline; fetch failed for: ${missing.join(', ')}.`);
+  }
+  const hashes = {};
+  for (const page of pages) {
+    hashes[page.key] = {
+      hash: results[page.key].hash,
+      sections: results[page.key].sections,
+    };
+  }
+  return {
+    generated: generatedAt,
+    version: BASELINE_SCHEMA_VERSION,
+    opencodeVersion: pinnedVersion,
+    hashes,
+  };
+}
+
+async function run(argv = process.argv.slice(2), fetchImpl = fetchPage) {
+  const isUpdate = argv.includes('--update');
+  const isVerbose = argv.includes('--verbose');
+  const pinnedVersion = readPinnedHostVersion();
+  const pages = derivePages(pinnedVersion);
+
+  console.log(`Fetching ${pages.length} documentation pages for OpenCode v${pinnedVersion}...`);
+  const { results, failures } = await collectHashes(pages, fetchImpl);
+  if (failures.length > 0) {
+    console.error(`ERROR: Documentation fetch failed for: ${failures.join(', ')}.`);
+    return 1;
   }
 
-  // ÔöÇÔöÇ Update mode ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  if (isUpdate) {
-    const baseline = {
-      generated: new Date().toISOString(),
-      version: '1',
-      hashes: {},
-    };
-
-    for (const [key, result] of Object.entries(results)) {
-      if (result === null) {
-        console.warn(`WARN: Skipping ${key} (fetch failed)`);
-        continue;
-      }
-      baseline.hashes[key] = { hash: result.hash, sections: result.sections };
+  if (isVerbose) {
+    for (const page of pages) {
+      const result = results[page.key];
+      console.log(`  ${page.key}: ${result.sections} sections, hash ${result.hash.slice(0, 12)}`);
     }
+  }
 
+  if (isUpdate) {
+    const baseline = buildBaseline({
+      pages,
+      results,
+      pinnedVersion,
+      generatedAt: new Date().toISOString(),
+    });
     fs.mkdirSync(path.dirname(BASELINE_PATH), { recursive: true });
     fs.writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2) + '\n', 'utf-8');
-    console.log(`Baseline updated: ${Object.keys(baseline.hashes).length} pages hashed.`);
-    process.exit(0);
+    console.log(
+      `Baseline updated for OpenCode v${pinnedVersion}: ${Object.keys(baseline.hashes).length} pages hashed.`,
+    );
+    return 0;
   }
 
-  // ÔöÇÔöÇ Check mode ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   if (!fs.existsSync(BASELINE_PATH)) {
     console.error('ERROR: Baseline file missing: .sdk-baselines/opencode/docs-hashes.json');
     console.error('Run "node scripts/docs-drift.mjs --update" to create it.');
-    process.exit(1);
+    return 1;
   }
 
   const baseline = JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf-8'));
-  let drifted = false;
-  const changed = [];
+  assertBaselineMetadata(baseline, pinnedVersion);
+  const changed = compareAgainstBaseline(pages, results, baseline);
 
-  for (const page of PAGES) {
-    const result = results[page.key];
-    const base = baseline.hashes[page.key];
-
-    if (result === null) {
-      if (base) {
-        console.warn(`WARN: Could not fetch ${page.key} ÔÇö skipping (was in baseline).`);
-      }
-      continue;
-    }
-
-    if (!base) {
+  for (const page of pages) {
+    const key = page.key;
+    if (changed.includes(key)) {
+      console.error(`DRIFT: ${key}`);
       console.error(
-        `DRIFT: New page ${page.key} not in baseline (hash: ${result.hash.slice(0, 12)})`,
+        `  Baseline: ${baseline.hashes[key].hash.slice(0, 12)} (${baseline.hashes[key].sections} sections)`,
       );
-      changed.push(page.key);
-      drifted = true;
-      continue;
-    }
-
-    if (result.hash !== base.hash) {
-      console.error(`DRIFT: ${page.key}`);
-      console.error(`  Baseline: ${base.hash.slice(0, 12)} (${base.sections} sections)`);
-      console.error(`  Current:  ${result.hash.slice(0, 12)} (${result.sections} sections)`);
-      changed.push(page.key);
-      drifted = true;
+      console.error(
+        `  Current:  ${results[key].hash.slice(0, 12)} (${results[key].sections} sections)`,
+      );
     } else {
-      console.log(`OK: ${page.key} (${result.hash.slice(0, 12)})`);
+      console.log(`OK: ${key} (${results[key].hash.slice(0, 12)})`);
     }
   }
 
-  if (drifted) {
+  if (changed.length > 0) {
     console.error('');
     console.error(`Docs drift detected in: ${changed.join(', ')}`);
-    console.error('Review the changes, then run:');
-    console.error('  node scripts/docs-drift.mjs --update');
-    process.exit(1);
+    console.error(
+      `The pinned tag v${pinnedVersion} is immutable. Treat changed bytes as a tag-mutation ` +
+        'or fetch-integrity incident: verify the tag commit before updating the baseline.',
+    );
+    return 1;
   }
 
-  console.log(`All ${PAGES.length} documentation baselines match.`);
-  process.exit(0);
+  console.log(`All ${pages.length} documentation baselines match OpenCode v${pinnedVersion}.`);
+  return 0;
 }
 
-run();
+export { run, fetchPage, sha256 };
+
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  run().then(
+    (code) => process.exit(code),
+    (err) => {
+      console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    },
+  );
+}
