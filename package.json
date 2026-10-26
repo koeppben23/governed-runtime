@@ -137,7 +137,7 @@
     "@opentelemetry/auto-instrumentations-node": "^0.82.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.300.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.300.0",
-    "@opentelemetry/sdk-logs": "^0.223.0",
+    "@opentelemetry/sdk-logs": "^3.0.0",
     "@opentelemetry/sdk-node": "^0.300.0"
   },
   "devDependencies": {
