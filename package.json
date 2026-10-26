@@ -130,7 +130,7 @@
     "asn1js": "^3.0.10",
     "jose": "^6.2.13",
     "jsonc-parser": "^3.3.1",
-    "pkijs": "^3.4.1",
+    "pkijs": "^4.0.0",
     "zod": "^4.6.7"
   },
   "optionalDependencies": {
