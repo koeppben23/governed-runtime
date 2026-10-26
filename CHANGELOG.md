@@ -159,6 +159,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security audit closure for transitive runtime/dev dependencies:** align the
+  OpenCode plugin's pinned `zod` with the application's patched `4.6.7`, move
+  `fast-uri` to patched `3.1.9`, and refresh `body-parser` (2.4.0), `hono`
+  (4.13.14) and `ip-address` (10.7.5). `npm audit --audit-level=high` now
+  reports zero vulnerabilities; the host/SDK pin and validation contracts are
+  unchanged.
+
 - **OpenCode docs drift is pinned to the tested host (#1164):** the scheduled
   documentation check previously fetched from the moving `dev` branch, so
   unrelated upstream edits were reported as integration drift. It now fetches
