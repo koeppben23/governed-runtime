@@ -168,11 +168,12 @@
     "@grpc/grpc-js": "1.14.5",
     "brace-expansion": "5.0.12",
     "qs": "6.16.0",
-    "fast-uri": "3.1.7",
+    "fast-uri": "3.1.9",
     "protobufjs": "7.6.5",
     "effect": {
       "toml": "5.0.1"
-    }
+    },
+    "zod": "$zod"
   },
   "files": [
     "dist",
