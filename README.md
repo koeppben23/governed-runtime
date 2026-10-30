@@ -47,6 +47,8 @@ Three governed flows are available after `/start` (or `/hydrate`):
 
 **Ticket flow** — full development lifecycle:
 
+![FlowGuard development lifecycle: task, independently reviewed plan, approval, baseline validation, implementation, post-implementation verification, independent review, evidence approval, and verifiable export.](./docs/assets/development-lifecycle.png)
+
 1. `/start` — bootstrap the session
 2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan (subagent-reviewed iteratively)
