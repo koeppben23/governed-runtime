@@ -1,0 +1,89 @@
+{
+  "at": "2026-10-30T22:10:00.000Z",
+  "status": "SUPPORTED_FOR_DESKTOP_DEV",
+  "desktopDev": true,
+  "installedAppTouched": false,
+  "installedAppBackend": "2.2.4 stock opencode-cli",
+  "process": {
+    "electronVitePid": 14258,
+    "desktopMainPid": 14320,
+    "sidecarPid": 14606,
+    "sidecarParentPid": 14320,
+    "sidecarCommand": "bun run --cwd <opencode-v2.2.4-src>/packages/cli --define=OPENCODE_VERSION=process.env.OPENCODE_VERSION src/index.ts serve --service --hostname 0.0.0.0 --port 3084",
+    "sidecarVersion": "2.2.4-host-enforcement",
+    "hostPolicyPath": "<test-root>/host-policy.json",
+    "testRoot": "<test-root>",
+    "installedAppProcess": "not used by this probe"
+  },
+  "serverInfo": {
+    "version": "2.2.4-host-enforcement",
+    "url": "http://127.0.0.1:3084",
+    "pid": 14606
+  },
+  "patch": {
+    "baseCommit": "45898d0f8569225eb1ddb4ee13f8581b34dff311",
+    "sourceDiffSha256": "154f42edf05ea1df3e199076789db9324aeea9558e6fc29da384231d22497f4f",
+    "experimentCommit": "503071ba69c45209e8605eec8372d1c74e5ecad4"
+  },
+  "policy": {
+    "requiredPlugins": ["flowguard.host-probe"],
+    "providerExecution": {
+      "allowedProviders": ["probe"],
+      "hostedTools": "deny"
+    }
+  },
+  "pluginActivation": {
+    "id": "flowguard.host-probe",
+    "sourceType": "local",
+    "sourcePath": "<test-root>/project/.opencode/plugins/flowguard-probe.js",
+    "state": "active",
+    "provider": "probe",
+    "model": "probe"
+  },
+  "positive": {
+    "sessionID": "ses_e7125bb91ffeFyIoeQrXft4Y7Y",
+    "prompt": "desktop-ok",
+    "assistantText": "desktop-ok",
+    "assistantModel": {
+      "providerID": "probe",
+      "id": "probe"
+    },
+    "providerRequest": true,
+    "contextMessages": 5,
+    "uiComposerSubmit": "Enter dispatched in the Desktop renderer"
+  },
+  "negativeFailedPlugin": {
+    "prompt": "blocked-desktop",
+    "pluginState": "failed",
+    "pluginError": "desktop-reload-fail",
+    "uiError": "Eingabe konnte nicht gesendet werden\nUnexpectedStatus: 500",
+    "contextMessagesBefore": 5,
+    "contextMessagesAfter": 5,
+    "newAssistantMessage": false,
+    "providerRequest": false
+  },
+  "reviewerChild": {
+    "parentSessionID": "ses_e7125bb91ffeFyIoeQrXft4Y7Y",
+    "parentAgent": "build",
+    "childSessionID": "ses_e71244e15ffenC9grA3NGkNDgD",
+    "childParentID": "ses_e7125bb91ffeFyIoeQrXft4Y7Y",
+    "childAgent": "probe-reviewer",
+    "childTitle": "desktop reviewer",
+    "childResult": "reviewer-child-result",
+    "uiChildHref": "/server/c2lkZWNhcg/session/ses_e71244e15ffenC9grA3NGkNDgD",
+    "uiChildView": "Desktop reviewer session with 'Zurück zur Hauptsitzung' navigation",
+    "contextMessages": 9
+  },
+  "guiBoundary": {
+    "sessionCreatedVia": "sidecar API for deterministic project placement",
+    "promptSentVia": "Desktop renderer composer through CDP",
+    "nativeProjectPickerAutomated": false,
+    "reason": "The native project directory picker was not automated; the session record was pre-created in the isolated test project, then opened and prompted through the Desktop UI."
+  },
+  "limits": [
+    "This is a Desktop development build, not a signed distributable build.",
+    "The installed OpenCode 2.2.4 app and its sessions were not touched.",
+    "Provider allowlist and hosted-tool denial were proven in the CLI probe; the Desktop GUI path covered required-plugin activation and failed-plugin blocking.",
+    "A signed Desktop security build still needs its own release and revalidation."
+  ]
+}

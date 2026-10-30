@@ -92,6 +92,35 @@ preventively are not supported. Provider approval must not silently change the
 user's selected model or reasoning level; it may only reject an unsupported
 selection or require an explicit choice.
 
+## Desktop development acceptance
+
+The patched source tree was launched as an isolated Desktop development app
+(`OPENCODE_DESKTOP_TEST_ROOT`, separate userData/XDG roots, no protocol
+registration). The installed OpenCode app and its sessions were not touched.
+
+Evidence is in
+[`desktop-dev-acceptance.json`](./desktop-dev-acceptance.json).
+
+- Desktop main process spawned the CLI as
+  `bun run --cwd <source>/packages/cli ... src/index.ts serve --service
+--hostname 0.0.0.0 --port 3084`.
+- The sidecar reported version `2.2.4-host-enforcement`; its environment carried
+  the isolated `OPENCODE_HOST_POLICY` path.
+- A GUI composer prompt returned `desktop-ok` from the local provider.
+- Replacing the plugin with a failing setup changed its state to `failed`; the
+  next GUI prompt showed `Eingabe konnte nicht gesendet werden /
+UnexpectedStatus: 500`, added no assistant message, and made no provider
+  request.
+- A GUI prompt asking for the reviewer created a child session with
+  `parentID` set, agent `probe-reviewer`. The UI exposed the child link and the
+  child session view offered `Zurück zur Hauptsitzung`.
+
+**Boundary:** the session record was pre-created through the sidecar API to
+place it in the isolated test project; the native project picker was not
+automated. The prompt and reviewer navigation were exercised through the
+Desktop renderer. This is a development-build acceptance, not a signed
+distribution acceptance.
+
 ## Boundaries
 
 - **Desktop: NOT_VERIFIED.** The packaged app resolves
