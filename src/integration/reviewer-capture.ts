@@ -39,9 +39,13 @@ interface Capture {
   violation?: string;
   quarantined: boolean;
   reconciliation?: Promise<boolean>;
-  idleReconciliationObserved?: boolean;
+  idleReconciliationAttempts?: number;
   terminalReconciliationMessageId?: string;
+  terminalReconciliationAttempts?: number;
 }
+
+/** Event-driven retries only; each trigger is a proven host state change. */
+const MAX_RECONCILIATION_ATTEMPTS = 3;
 
 export class ReviewerCaptureController {
   private readonly active = new Map<string, Capture>();
@@ -230,6 +234,22 @@ export class ReviewerCaptureController {
     return this.active.get(childSessionId)?.quarantined === true;
   }
 
+  /** A deterministic failure stays terminal, but the fence may only be
+   * released when the host response proves the exact request's terminal
+   * assistant completion. Missing, stale or non-assistant proof quarantines. */
+  settleClassifiedFailure(childSessionId: string, response: unknown): void {
+    const capture = this.active.get(childSessionId);
+    if (!capture) return;
+    const info = record(record(response).info);
+    if (
+      info.role !== 'assistant' ||
+      !responseIdentityMatches(info, capture) ||
+      !hasTerminalOutcome(info)
+    ) {
+      capture.quarantined = true;
+    }
+  }
+
   /** No timer/event alone unlocks a capture. Abort + stable, request-bound
    * terminal history + idle status are required, and the original lease must
    * still own the entry after every asynchronous host observation. */
@@ -254,10 +274,14 @@ export class ReviewerCaptureController {
 
   reconcileOnIdle(client: OrchestratorClient, childSessionId: string): Promise<boolean> {
     const capture = this.active.get(childSessionId);
-    if (!capture?.quarantined || capture.idleReconciliationObserved) return Promise.resolve(false);
-    // Abort itself publishes idle. One idle-triggered probe per capture avoids
-    // an abort -> idle -> abort loop; a later terminal message can trigger again.
-    capture.idleReconciliationObserved = true;
+    if (!capture?.quarantined) return Promise.resolve(false);
+    // Abort itself publishes idle. A new probe must not start while one is
+    // already observing the host; otherwise a later idle event retries, up to
+    // the bound. Time alone never unlocks the fence.
+    if (capture.reconciliation) return capture.reconciliation;
+    const attempts = capture.idleReconciliationAttempts ?? 0;
+    if (attempts >= MAX_RECONCILIATION_ATTEMPTS) return Promise.resolve(false);
+    capture.idleReconciliationAttempts = attempts + 1;
     return this.reconcileQuarantine(client, childSessionId);
   }
 
@@ -267,12 +291,30 @@ export class ReviewerCaptureController {
     if (
       !capture?.quarantined ||
       !responseIdentityMatches(info, capture) ||
-      !hasTerminalOutcome(info) ||
-      capture.terminalReconciliationMessageId === info.id
+      !hasTerminalOutcome(info)
     )
       return Promise.resolve(false);
-    capture.terminalReconciliationMessageId = String(info.id);
-    return this.reconcileQuarantine(client, capture.childSessionId);
+    if (capture.reconciliation) return capture.reconciliation;
+    const messageId = String(info.id);
+    if (capture.terminalReconciliationMessageId === messageId) return Promise.resolve(false);
+    const attempts = capture.terminalReconciliationAttempts ?? 0;
+    if (attempts >= MAX_RECONCILIATION_ATTEMPTS) return Promise.resolve(false);
+    capture.terminalReconciliationMessageId = messageId;
+    capture.terminalReconciliationAttempts = attempts + 1;
+    const result = this.reconcileQuarantine(client, capture.childSessionId);
+    // A failed observation consumed this update but not the message identity:
+    // a later host update for the same terminal message may retry within the
+    // bound. A successful reconciliation deletes the capture.
+    void result.then((released) => {
+      if (
+        !released &&
+        this.active.get(capture.childSessionId) === capture &&
+        capture.terminalReconciliationMessageId === messageId
+      ) {
+        delete capture.terminalReconciliationMessageId;
+      }
+    });
+    return result;
   }
 
   private async confirmQuarantine(client: OrchestratorClient, capture: Capture): Promise<boolean> {

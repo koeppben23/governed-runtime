@@ -90,7 +90,13 @@ function responseFailure(input: Input, response: Response): Blocked | null {
   const sdkError = response?.error;
   const classified =
     classifyReviewerProviderError(sdkError) ?? classifyReviewerProviderError(data?.info?.error);
-  if (classified) return classified;
+  if (classified) {
+    // A terminal code is not proof that the host finished the exact request.
+    // Only an exact terminal assistant record may release the fence.
+    if (sdkError == null) input.controller.settleClassifiedFailure(input.childSessionId, data);
+    else input.controller.quarantine(input.childSessionId);
+    return classified;
+  }
   if (sdkError != null || !data || data.info?.error != null) {
     input.controller.quarantine(input.childSessionId);
     throw new ReviewerCaptureOutcomeUnknownError(
@@ -136,7 +142,12 @@ function executionError(input: Input, error: unknown): Blocked {
   if (error instanceof ReviewerCaptureError)
     return { kind: 'blocked', code: error.code, reason: error.message };
   const classified = classifyReviewerProviderError(error);
-  if (classified) return classified;
+  if (classified) {
+    // A thrown error carries no host completion record. Keep the fence until
+    // reconciliation proves the exact request and child are terminal.
+    input.controller.quarantine(input.childSessionId);
+    return classified;
+  }
   input.controller.quarantine(input.childSessionId);
   throw error;
 }

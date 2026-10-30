@@ -40,13 +40,18 @@ tools. An additional model step is rejected before execution. Persistent child
 permissions are not modified. Unknown execution outcomes retain the fence.
 
 Both unclassified SDK error responses/missing data and thrown transport exceptions
-enter the existing unknown-outcome watchdog path. Cleanup requires the exact
+enter the existing unknown-outcome watchdog path. A classified deterministic
+provider failure stays terminal, but terminality is not completion proof: the
+fence is released only when the response carries the exact request's terminal
+assistant record, including that failure. Missing, stale or non-assistant proof
+quarantines instead, so the task handler's normal release cannot open the child.
+Cleanup requires the exact
 child metadata, an acknowledged abort and two stable idle history snapshots
 containing the capture's own request and terminal assistant response. Lease and
 request ownership remain checked across asynchronous observations. A failed or
-timed-out probe retains quarantine; timeout never unlocks it. Idle notifications
-trigger at most one automatic probe per capture (abort itself can publish idle);
-a later exact terminal-message notification can trigger another verified probe.
+timed-out probe retains quarantine; timeout never unlocks it. Idle and terminal
+message notifications retry only on later host state changes, at most three
+attempts per trigger kind; a probe already observing the host is not duplicated.
 
 The complete regular text of the correlated assistant message is decoded as one
 strict JSON object, bounded to 1 MiB, depth 64 and 100,000 values. There is no prose
@@ -99,11 +104,11 @@ capacity failures remain terminal under the existing execution contract.
   `npm run mutation -- stryker.review-capture.conf.json` profile runs that
   preflight, selects the boundary's direct suites and writes the complete JSON
   report. The first meaningful run exposed missing negative tests (73.42%); the
-  hardened profile full run passed the unchanged 80% aggregate gate at 90.60%
-  (614 killed, 3 timeout, 59 survived, 5 no coverage, 396 compile errors;
-  8 min 16 s). Per target: `provider-error.ts` 92.86%,
-  `reviewer-task-completion.ts` 88.89%, `structured-followup.ts` 90.63%,
-  `reviewer-capture.ts` 91.79%, `strict-json-object.ts` 85.96%, and
+  hardened profile full run passed the unchanged 80% aggregate gate at 90.28%
+  (647 killed, 3 timeout, 61 survived, 9 no coverage, 408 compile errors;
+  8 min 5 s). Per target: `provider-error.ts` 92.86%,
+  `reviewer-task-completion.ts` 88.89%, `structured-followup.ts` 84.62%,
+  `reviewer-capture.ts` 91.71%, `strict-json-object.ts` 85.96%, and
   `review-message-capture.ts` 88.89%. The verification command
   `node scripts/verify-mutation-admission.mjs --profile review-capture` accepts
   the report. Selectors remain explicit admission candidates until immutable

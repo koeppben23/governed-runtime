@@ -637,12 +637,15 @@ describe('identity-bound quarantine reconciliation', () => {
     expect(client.session.abort).not.toHaveBeenCalled();
   });
 
-  it('does not loop abort/idle and can reconcile on a later exact terminal message', async () => {
+  it('bounds idle-triggered probes and can reconcile on a later exact terminal message', async () => {
     const { controller, client, history } = quarantineHarness();
     client.session.status = vi.fn(async () => ({ data: { child: { type: 'busy' } } }));
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
-    expect(client.session.abort).toHaveBeenCalledTimes(1);
+    expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
+    // Bound reached: further idle events no longer abort the still-busy child.
+    expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
+    expect(client.session.abort).toHaveBeenCalledTimes(3);
     const terminal = history[1]!.info;
     expect(
       await controller.reconcileOnTerminalMessage(client, { ...terminal, parentID: 'msg_other' }),
@@ -650,17 +653,77 @@ describe('identity-bound quarantine reconciliation', () => {
     client.session.status = vi.fn(async () => ({ data: {} }));
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(true);
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
-    expect(client.session.abort).toHaveBeenCalledTimes(2);
+    expect(client.session.abort).toHaveBeenCalledTimes(4);
+    expect(controller.isQuarantined('child')).toBe(false);
+  });
+
+  it('retries a transiently failed idle observation on the next host event', async () => {
+    const { controller, client } = quarantineHarness();
+    client.session.get = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('host status unavailable'))
+      .mockResolvedValue({ data: { id: 'child', parentID: 'parent' } });
+    expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
+    expect(controller.isQuarantined('child')).toBe(true);
+    expect(await controller.reconcileOnIdle(client, 'child')).toBe(true);
+    expect(controller.isQuarantined('child')).toBe(false);
+  });
+
+  it('retries the same terminal message after a transiently failed observation', async () => {
+    const { controller, client, history } = quarantineHarness();
+    client.session.get = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('host status unavailable'))
+      .mockResolvedValue({ data: { id: 'child', parentID: 'parent' } });
+    const terminal = history[1]!.info;
+    expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
+    expect(controller.isQuarantined('child')).toBe(true);
+    expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(true);
     expect(controller.isQuarantined('child')).toBe(false);
   });
 
   it('deduplicates the same terminal event while retaining a still-busy quarantine', async () => {
     const { controller, client, history } = quarantineHarness();
     client.session.status = vi.fn(async () => ({ data: { child: { type: 'busy' } } }));
-    expect(await controller.reconcileOnTerminalMessage(client, history[1]!.info)).toBe(false);
-    expect(await controller.reconcileOnTerminalMessage(client, history[1]!.info)).toBe(false);
-    expect(client.session.abort).toHaveBeenCalledTimes(1);
+    const terminal = history[1]!.info;
+    expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
+    expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
+    expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
+    expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
+    expect(client.session.abort).toHaveBeenCalledTimes(3);
     expect(controller.isQuarantined('child')).toBe(true);
+  });
+
+  it.each(['missing', 'non-assistant', 'stale', 'unfinished'] as const)(
+    'settles a classified failure only with exact terminal proof (%s)',
+    (scenario) => {
+      const h = fixture();
+      const response = observedPrompt(h.controller, h.opts, h.payload);
+      const info: Record<string, unknown> = {
+        ...response.data.info,
+        finish: 'error',
+        error: { name: 'APIError' },
+      };
+      if (scenario === 'missing') h.controller.settleClassifiedFailure('child', undefined);
+      else {
+        if (scenario === 'non-assistant') info.role = 'user';
+        if (scenario === 'stale') info.parentID = 'msg_other';
+        if (scenario === 'unfinished') info.time = {};
+        h.controller.settleClassifiedFailure('child', { info });
+      }
+      expect(h.controller.isQuarantined('child')).toBe(true);
+    },
+  );
+
+  it('allows a classified failure release only when the host proved terminal completion', () => {
+    const h = fixture();
+    const response = observedPrompt(h.controller, h.opts, h.payload);
+    h.controller.settleClassifiedFailure('child', {
+      info: { ...response.data.info, finish: 'error', error: { name: 'APIError' } },
+    });
+    expect(h.controller.isQuarantined('child')).toBe(false);
+    h.controller.release('child', h.lease);
+    expect(() => h.controller.beforeTool({ sessionID: 'child', tool: 'read' })).not.toThrow();
   });
 
   it('reclaims bounded capacity only after the exact quarantined request is confirmed terminal', async () => {

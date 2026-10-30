@@ -143,9 +143,12 @@ describe('model-neutral same-child findings', () => {
   });
 
   it.each(['sdk', 'message', 'repair'] as const)(
-    'keeps deterministic %s provider errors terminal',
+    'keeps deterministic %s provider errors terminal without releasing an unproven fence',
     async (channel) => {
-      const { client, input } = fixture(() => ({ ...reviewerInputFixture(), unexpected: true }));
+      const { client, input, controller } = fixture(() => ({
+        ...reviewerInputFixture(),
+        unexpected: true,
+      }));
       const prompt = client.session.prompt.bind(client.session);
       let calls = 0;
       const error = {
@@ -169,8 +172,64 @@ describe('model-neutral same-child findings', () => {
         classifyReviewerCaptureFailure(result.kind === 'blocked' ? result.code : ''),
       ).toMatchObject({ retryable: false });
       expect(calls).toBe(channel === 'repair' ? 2 : 1);
+      controller.release(input.childSessionId, input.lease.id);
+      expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+      expect(() => controller.beforeTool({ sessionID: input.childSessionId })).toThrow();
     },
   );
+
+  it('releases a classified message failure only with exact terminal assistant proof', async () => {
+    const { client, input, controller } = fixture();
+    const error = {
+      name: 'APIError',
+      data: {
+        message: 'Unsupported value for reasoning_effort: none. Only supports low or high.',
+      },
+    };
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => {
+      const base = await prompt(opts);
+      return {
+        data: {
+          ...base.data,
+          info: { ...base.data?.info, finish: 'error', error },
+        },
+      };
+    });
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result).toMatchObject({
+      kind: 'blocked',
+      code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(false);
+    controller.release(input.childSessionId, input.lease.id);
+    expect(() => controller.beforeTool({ sessionID: input.childSessionId })).not.toThrow();
+  });
+
+  it('quarantines a classified failure whose terminal record has stale request identity', async () => {
+    const { client, input, controller } = fixture();
+    const error = {
+      name: 'APIError',
+      data: {
+        message: 'Unsupported value for reasoning_effort: none. Only supports low or high.',
+      },
+    };
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => {
+      const base = await prompt(opts);
+      return {
+        data: {
+          ...base.data,
+          info: { ...base.data?.info, parentID: 'msg_other', finish: 'error', error },
+        },
+      };
+    });
+    expect(await captureStructuredFindingsFromVisibleChild(client, input)).toMatchObject({
+      kind: 'blocked',
+      code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+  });
 
   it('times a throwing prompt and retains its unknown-outcome fence', async () => {
     const { client, input, controller } = fixture();
