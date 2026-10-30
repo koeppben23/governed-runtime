@@ -4,10 +4,7 @@ import { buildReviewerAgentContent, reviewerDefinitionForPlatform } from './inst
 import { FLOWGUARD_REVIEWER_EFFORT_ENV, FLOWGUARD_REVIEWER_MODEL_ENV } from './install-types.js';
 import { REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT, CODEX_REVIEWER_SUBAGENT } from './templates.js';
 
-const OPENCODE_STRUCTURED_REVIEWER = REVIEWER_AGENT.replace(
-  '---\n',
-  '---\nreasoningEffort: none\n',
-);
+const OPENCODE_STRUCTURED_REVIEWER = REVIEWER_AGENT;
 
 describe('buildReviewerAgentContent', () => {
   let restoreEnv: (() => void) | undefined;
@@ -221,10 +218,12 @@ describe('buildReviewerAgentContent — per-host reasoning-effort injection', ()
     expect(frontmatterLines(result)).toContain('reasoningEffort: medium');
   });
 
-  it('F4-2a: opencode defaults the structured reviewer to non-thinking mode', () => {
+  it('F4-2a: opencode preserves host reasoning defaults without an explicit effort', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: undefined });
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
-    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
+    expect(frontmatterLines(result).some((line) => line.startsWith('reasoningEffort:'))).toBe(
+      false,
+    );
   });
 
   it('F4-2b: opencode accepts none as the explicit non-thinking effort', () => {
@@ -265,10 +264,12 @@ describe('buildReviewerAgentContent — per-host reasoning-effort injection', ()
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(/invalid value/);
   });
 
-  it('F4-7: empty/whitespace effort retains the OpenCode non-thinking default', () => {
+  it('F4-7: empty/whitespace effort leaves OpenCode defaults untouched', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: '   ' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
-    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
+    expect(frontmatterLines(result).some((line) => line.startsWith('reasoningEffort:'))).toBe(
+      false,
+    );
   });
 
   // ─── GOVERNANCE INVARIANCE: tuning never alters the mandate body ──────────────

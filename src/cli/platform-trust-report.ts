@@ -31,13 +31,13 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       contextInjection: true,
       reviewTransports: [
         {
-          kind: 'native_task_structured_followup',
-          structuredOutput: true,
+          kind: 'native_task_message_json',
+          validatedResult: true,
           parentVisible: true,
           transcriptNavigable: true,
           isolatedAgentIdentity: true,
           permissionIsolation: true,
-          assurance: 'structured_high',
+          assurance: 'host_message_validated',
         },
       ],
       compactionInjection: true,
@@ -49,7 +49,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
     hookSemantics: 'in-process plugin can synchronously block through FlowGuard runtime decisions',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
     reviewerTransport:
-      'native_task_structured_followup uses one native Task child for visible review execution and schema-constrained findings capture; the same child identity binds both phases',
+      'native_task_message_json uses one native Task child and request-correlated JSON validated by FlowGuard; model selection and child identity bind both phases',
     receiptPreservation: [
       'sessionId: preserved by FlowGuard state/audit',
       'reviewDecisionId: preserved by FlowGuard decision receipt',

@@ -19,7 +19,9 @@ export interface ReviewExecutionProjection {
   readonly invocationMode: ReviewInvocationEvidence['invocationMode'];
   readonly visible: boolean;
   readonly transcriptNavigable: boolean;
-  readonly structuredOutput: boolean;
+  readonly validationAuthority: 'flowguard';
+  readonly requestMessageId: string;
+  readonly responseMessageId: string;
   readonly invokedAt: string;
   readonly fulfilledAt: string | null;
 }
@@ -37,7 +39,9 @@ export function projectReviewExecution(
     invocationMode: invocation.invocationMode,
     visible: invocation.hostVisible,
     transcriptNavigable: invocation.transcriptNavigable === true,
-    structuredOutput: invocation.structuredOutputUsed,
+    validationAuthority: 'flowguard',
+    requestMessageId: invocation.capture.requestMessageId,
+    responseMessageId: invocation.capture.responseMessageId,
     invokedAt: invocation.invokedAt,
     fulfilledAt: invocation.fulfilledAt,
   };

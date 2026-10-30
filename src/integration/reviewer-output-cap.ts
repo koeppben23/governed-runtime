@@ -108,6 +108,10 @@ export function createReviewerOutputCapHook(deps: ReviewerOutputCapDeps): ChatPa
     const modelLimit = outputLimitOf(input.model);
     const configured = deps.config.reviewer.outputTokenMax;
 
+    // Host-selected capacity is the model-neutral default. No fabricated limit,
+    // clamping, or provider-specific inference is needed for this mode.
+    if (configured === 'host' && deps.configReadError === undefined) return;
+
     const reject = async (code: ReviewerOutputCapErrorCode, reason: string): Promise<never> => {
       const failure: ReviewerOutputCapFailure = {
         code,
@@ -149,7 +153,7 @@ export function createReviewerOutputCapHook(deps: ReviewerOutputCapDeps): ChatPa
           'The reviewer output cap cannot be applied safely.',
       );
     }
-    if (!Number.isInteger(configured) || configured < 1) {
+    if (typeof configured !== 'number' || !Number.isInteger(configured) || configured < 1) {
       return reject(
         'REVIEWER_OUTPUT_CAP_CONFIG_INVALID',
         `reviewer.outputTokenMax must be a positive integer; got ${String(configured)}.`,

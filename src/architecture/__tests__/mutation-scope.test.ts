@@ -63,6 +63,7 @@ import identityJwksVitest from '../../../vitest.stryker-identity-jwks.config.js'
 import mandatesVitest from '../../../vitest.mandates.config.js';
 import schemasVitest from '../../../vitest.stryker-schemas.config.js';
 import topologyVitest from '../../../vitest.stryker-topology.config.js';
+import reviewCaptureVitest from '../../../vitest.stryker-review-capture.config.js';
 import { PRODUCT_INVENTORY } from '../../shared/product-inventory.js';
 import {
   AUTHORITY_ROOTS,
@@ -137,6 +138,7 @@ const PROFILE_VITEST: Readonly<Record<MutationProfile, VitestConfig>> = {
   'human-projection': humanProjectionVitest,
   'identity-jwks': identityJwksVitest,
   mandates: mandatesVitest,
+  'review-capture': reviewCaptureVitest,
   schemas: schemasVitest,
   topology: topologyVitest,
 };

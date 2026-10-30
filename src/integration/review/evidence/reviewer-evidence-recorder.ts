@@ -28,6 +28,10 @@ import { updateObligation } from '../obligations/obligation-state.js';
 import type { ReviewerSuccessResult } from '../types.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 import type { SessionState } from '../../../state/schema.js';
+import {
+  captureMatchesFindings,
+  hasCaptureLineage,
+} from '../../../state/review-message-capture.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from '../pipeline-types.js';
 import {
   validatePreBindFindings,
@@ -61,11 +65,7 @@ type SdkEvidenceParams = {
   reviewerResult: Omit<
     Pick<
       ReviewerSuccessResult,
-      | 'sessionId'
-      | 'reviewOutputMode'
-      | 'structuredOutputUsed'
-      | 'reviewAssuranceLevel'
-      | 'findings'
+      'sessionId' | 'reviewOutputMode' | 'capture' | 'reviewAssuranceLevel' | 'findings'
     >,
     'findings'
   > & { findings: Record<string, unknown> };
@@ -104,6 +104,7 @@ function buildReviewInvocation(
     fulfilledAt: params.fulfilledAt,
     attemptId: params.attemptId,
     capturedRawFindings: params.reviewerResult.findings,
+    capture: params.reviewerResult.capture,
   });
 }
 
@@ -174,6 +175,14 @@ function settleBoundEvidence(
   );
 }
 
+function validCapture(params: SdkEvidenceParams, flags: MutationFlags): boolean {
+  const valid =
+    hasCaptureLineage({ ...params, capture: params.reviewerResult.capture }) &&
+    captureMatchesFindings(params.reviewerResult.capture, params.reviewerResult.findings);
+  if (!valid) flags.lineageUnavailable = true;
+  return valid;
+}
+
 function applyEvidenceMutation(
   state: SessionState,
   now: string,
@@ -181,6 +190,7 @@ function applyEvidenceMutation(
   flags: MutationFlags,
 ): SessionState {
   const assurance = ensureReviewAssurance(state.reviewAssurance);
+  if (!validCapture(params, flags)) return state;
   const obligation = assurance.obligations.find(
     (item) => item.obligationId === params.obligationId,
   );

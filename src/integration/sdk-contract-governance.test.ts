@@ -123,7 +123,7 @@ describe('SDK Contract: HAI governance surface', () => {
       const transport = defs.HostReviewTransportCapability!;
       expect(transport.required).toEqual([
         'kind',
-        'structuredOutput',
+        'validatedResult',
         'parentVisible',
         'transcriptNavigable',
         'isolatedAgentIdentity',
@@ -131,13 +131,13 @@ describe('SDK Contract: HAI governance surface', () => {
         'assurance',
       ]);
       const props = transport.properties as Record<string, Record<string, unknown>>;
-      expect(props.kind!.enum).toEqual(['native_task_structured_followup']);
-      expect(props.structuredOutput!.const).toBe(true);
+      expect(props.kind!.enum).toEqual(['native_task_message_json']);
+      expect(props.validatedResult!.const).toBe(true);
       expect(props.parentVisible!.const).toBe(true);
       expect(props.transcriptNavigable!.const).toBe(true);
       expect(props.isolatedAgentIdentity!.const).toBe(true);
       expect(props.permissionIsolation!.const).toBe(true);
-      expect(props.assurance!.const).toBe('structured_high');
+      expect(props.assurance!.const).toBe('host_message_validated');
     });
   });
 
@@ -248,13 +248,13 @@ describe('SDK Contract: HAI governance surface', () => {
 
     it('HostCapabilities has six top-level fields and transport capability is atomic', () => {
       const transport: HostReviewTransportCapability = {
-        kind: 'native_task_structured_followup',
-        structuredOutput: true,
+        kind: 'native_task_message_json',
+        validatedResult: true,
         parentVisible: true,
         transcriptNavigable: true,
         isolatedAgentIdentity: true,
         permissionIsolation: true,
-        assurance: 'structured_high',
+        assurance: 'host_message_validated',
       };
       const caps: HostCapabilities = {
         preToolBlock: true,

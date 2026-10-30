@@ -851,6 +851,23 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Model-neutral reviewer JSON transport.** OpenCode reviews no longer require
+  `format: json_schema` or its forced StructuredOutput tool call. After a normal
+  native Task completion, FlowGuard sends one serialization prompt in the same
+  child with the completed call's model and variant, an explicit request
+  `messageID`, and no `format` or tool-choice override. Synchronous host hooks
+  prove request/response identity, one tool-free model step, successful
+  completion and no concurrent work; a lease-bound fence rejects any attempted
+  tool and permanently invalidates that capture. The exact correlated assistant
+  text must be one strict bounded JSON object and is validated by the unchanged
+  `ReviewerFindingsInput`, evidence, observation, obligation and reuse gates.
+  Invocation evidence generation 5 records request/response identities, model
+  selection, payload/findings digests and `host_message_validated` assurance.
+  The installer no longer injects an implicit `reasoningEffort`, and
+  `reviewer.outputTokenMax` defaults to the host's resolved budget while explicit
+  numeric caps remain fail-closed. The pinned host/SDK baseline moves to 1.19.5.
+  OpenCode's formatted-history persistence defect remains upstream (#40169,
+  #26929); FlowGuard neither rewrites history nor fabricates provenance.
 - **Bounded reviewer execution.** The OpenCode reviewer now has explicit tool,
   review, serialization, and absolute execution deadlines. Tool use is limited
   to `read` and the authorized repository observation tool; `glob` and `grep`

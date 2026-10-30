@@ -210,9 +210,8 @@ export function buildReviewerAgentContent(template: string, platform: InstallPla
     lines.push(`model: ${model}`);
   }
 
-  // OpenCode models that default to Thinking mode reject the host's required
-  // structured-output tool. The reviewer is always non-thinking by default.
-  const effort = readReviewerEffortEnv(platform) ?? (platform === 'opencode' ? 'none' : null);
+  // Only explicit operator tuning is installed. Provider/host defaults remain authoritative.
+  const effort = readReviewerEffortEnv(platform);
   const effortField = reviewerEffortFieldForPlatform(platform);
   if (effort && effortField) {
     lines.push(`${effortField}: ${effort}`);

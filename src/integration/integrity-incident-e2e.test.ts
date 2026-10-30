@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+
 /**
  * @module integration/integrity-incident-e2e.test
  * @description D7 (#1028) end-to-end chain: an actual reviewer-evidence replay
@@ -201,6 +203,7 @@ function recordingParams(
   attemptId: string,
   findings: ReturnType<typeof baseFindings>,
 ) {
+  const boundFindings = { ...findings, attestation: { toolObligationId: obligation.obligationId } };
   return {
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
@@ -209,15 +212,20 @@ function recordingParams(
     hostCallId: CHILD,
     attemptId,
     promptHash: PROMPT_DIGEST,
-    findingsHash: hashFindings(findings),
+    findingsHash: hashFindings(boundFindings),
     invokedAt: NOW,
     fulfilledAt: NOW,
     reviewerResult: {
       sessionId: CHILD,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
-      findings,
+      reviewOutputMode: 'validated_json' as const,
+      capture: messageCaptureFixture({
+        childSessionId: CHILD,
+        obligationId: obligation.obligationId,
+        attemptId,
+        findings: boundFindings,
+      }),
+      reviewAssuranceLevel: 'host_message_validated' as const,
+      findings: boundFindings,
     },
   };
 }
@@ -252,7 +260,7 @@ describe('integrity incident chain (recordEvidenceOrBlockReuse → persisted sta
       const seedResult = await recordEvidenceOrBlockReuse(
         persistingDeps as never,
         sessionDir,
-        recordingParams(seed.obligation, seed.attemptId, SEED_FINDINGS) as never,
+        recordingParams(seed.obligation, seed.attemptId, SEED_FINDINGS),
       );
       expect(seedResult).toBe('fulfilled');
       await persistingDeps.updateReviewAssurance(sessionDir, (state) => ({
@@ -290,7 +298,7 @@ describe('integrity incident chain (recordEvidenceOrBlockReuse → persisted sta
       const replayResult = await recordEvidenceOrBlockReuse(
         persistingDeps as never,
         sessionDir,
-        recordingParams(target.obligation, target.attemptId, REPLAY_FINDINGS) as never,
+        recordingParams(target.obligation, target.attemptId, REPLAY_FINDINGS),
       );
       expect(replayResult).toBe('reused');
 

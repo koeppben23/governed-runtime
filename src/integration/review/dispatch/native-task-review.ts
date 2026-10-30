@@ -422,24 +422,35 @@ async function fulfillNativeReviewTask(
     return;
   }
 
-  await completeStructuredReview(runtime, {
-    sessionId,
-    callId,
-    sessDir,
-    lineage,
-    childSessionId,
-    hookOutput,
-    captureFailure: {
+  const lease: { id?: string } = {};
+  try {
+    await completeStructuredReview(
       runtime,
-      sessDir,
-      sessionId,
-      phase: lineage.state.phase,
-      callId,
-      obligationType: lineage.obligation.obligationType,
-      obligationId: lineage.obligation.obligationId,
-      output: hookOutput,
-    },
-  });
+      {
+        sessionId,
+        callId,
+        sessDir,
+        lineage,
+        childSessionId,
+        hookOutput,
+        captureFailure: {
+          runtime,
+          sessDir,
+          sessionId,
+          phase: lineage.state.phase,
+          callId,
+          obligationType: lineage.obligation.obligationType,
+          obligationId: lineage.obligation.obligationId,
+          output: hookOutput,
+        },
+      },
+      lease,
+    );
+  } finally {
+    if (lease.id !== undefined) {
+      runtime.orchestratorDeps.reviewerCapture?.release(childSessionId, lease.id);
+    }
+  }
 }
 
 /**
@@ -451,6 +462,7 @@ function captureBound(
   state: NonNullable<Awaited<ReturnType<typeof readState>>>,
   lineage: StructuredReviewInput['lineage'],
   childSessionId: string,
+  lease: { id?: string },
 ) {
   const contract = obligationCaptureContract(state, lineage.obligation);
   logContractGrowthAfterDispatch(runtime, state, {
@@ -459,7 +471,10 @@ function captureBound(
     contract,
     dispatchAuthorizedAt: lineage.dispatch.dispatchAuthorizedAt,
   });
-  return capturePreparedFindings(runtime, lineage.obligation, childSessionId, contract);
+  return capturePreparedFindings(runtime, lineage.obligation, childSessionId, contract, {
+    attemptId: lineage.attempt.attemptId,
+    lease,
+  });
 }
 
 async function handleReviewerOutputCapFailure(
@@ -504,6 +519,7 @@ async function handleReviewerOutputCapFailure(
 async function completeStructuredReview(
   runtime: NativeReviewTransportRuntime,
   input: StructuredReviewInput,
+  lease: { id?: string } = {},
 ): Promise<void> {
   const { sessionId, callId, sessDir, lineage, childSessionId, hookOutput, captureFailure } = input;
 
@@ -524,7 +540,7 @@ async function completeStructuredReview(
     return;
   }
 
-  const captured = await captureBound(runtime, refreshedState, lineage, childSessionId);
+  const captured = await captureBound(runtime, refreshedState, lineage, childSessionId, lease);
   if (captured.kind === 'blocked') {
     await abandonOrRetryCaptureFailure({
       ...captureFailure,
@@ -582,6 +598,7 @@ async function completeStructuredReview(
     childSessionId,
     lineage,
     prepared: captured.prepared,
+    capture: captured.capture,
     fulfilledAt: captured.fulfilledAt,
     executionDeadlineAt: new Date(
       Date.parse(lineage.dispatch.dispatchAuthorizedAt) +

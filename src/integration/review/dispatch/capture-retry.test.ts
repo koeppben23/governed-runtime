@@ -54,7 +54,7 @@ describe('reviewer capture retry classification', () => {
     expect(retryable.size).toBe(RETRYABLE_REVIEWER_CAPTURE_CODES.length);
     expect(terminal.size).toBe(TERMINAL_REVIEWER_CAPTURE_CODES.length);
     for (const code of retryable) expect(terminal.has(code), code).toBe(false);
-    expect(retryable.size + terminal.size).toBe(36);
+    expect(retryable.size + terminal.size).toBe(38);
   });
 
   it('classifies reviewer task completion failures: capacity is terminal, incomplete repairs retry', () => {

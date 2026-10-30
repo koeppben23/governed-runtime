@@ -1097,7 +1097,8 @@ describe('FlowGuardConfigSchema boundaries', () => {
   });
 
   it('defaults and bounds the reviewer output-token cap', () => {
-    expect(parse({ schemaVersion: 'v1' }).data!.reviewer.outputTokenMax).toBe(65_536);
+    expect(parse({ schemaVersion: 'v1' }).data!.reviewer.outputTokenMax).toBe('host');
+    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 'host' } }).success).toBe(true);
     expect(
       parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 32_000 } }).data!.reviewer
         .outputTokenMax,

@@ -26,14 +26,14 @@ export function buildChildSessionReviewInstruction(input: ChildSessionReviewInst
   const nativeTask =
     input.mode === 'host_structured' && input.platform === 'opencode'
       ? {
-          transport: 'native_task_structured_followup' as const,
+          transport: 'native_task_message_json' as const,
           action: 'call_task' as const,
           task: {
             tool: 'task' as const,
             subagentType: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
             description: 'FlowGuard independent review' as const,
             promptAuthority: 'host_injected_frozen_review_material' as const,
-            findingsAuthority: 'same_child_json_schema_followup' as const,
+            findingsAuthority: 'same_child_correlated_message_json' as const,
           },
         }
       : {};

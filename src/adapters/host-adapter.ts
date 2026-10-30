@@ -26,22 +26,22 @@ export type EnforcementLevel = 'synchronous' | 'hook_gated' | 'advisory';
 // ─── Host Capabilities ───────────────────────────────────────────────────────
 
 /** Canonical host transport used to execute an independent reviewer. */
-export type HostReviewTransportKind = 'native_task_structured_followup';
+export type HostReviewTransportKind = 'native_task_message_json';
 
 /** Assurance produced by one concrete review transport. */
-export type HostReviewTransportAssurance = 'structured_high' | 'unstructured';
+export type HostReviewTransportAssurance = 'host_message_validated' | 'unstructured';
 
 /**
  * Capabilities of ONE concrete review transport.
  *
- * `native_task_structured_followup` is one concrete transport even though it
- * has two host operations: both operate on the SAME Task child session and only
- * their composition can mint review evidence. No capability from an unrelated
- * SDK child is combined with the native Task.
+ * `native_task_message_json` is one concrete transport even though it has two
+ * host operations: both operate on the SAME Task child session and only their
+ * composition can mint review evidence. No capability from an unrelated SDK
+ * child is combined with the native Task.
  */
 export interface HostReviewTransportCapability {
   readonly kind: HostReviewTransportKind;
-  readonly structuredOutput: boolean;
+  readonly validatedResult: boolean;
   readonly parentVisible: boolean;
   readonly transcriptNavigable: boolean;
   readonly isolatedAgentIdentity: boolean;
@@ -50,7 +50,7 @@ export interface HostReviewTransportCapability {
 }
 
 export interface ReviewTransportRequirements {
-  readonly structuredOutput: boolean;
+  readonly validatedResult: boolean;
   readonly parentVisible: boolean;
   readonly transcriptNavigable: boolean;
   readonly isolatedAgentIdentity: boolean;
@@ -65,7 +65,7 @@ export interface ReviewTransportRequirements {
  * isolated. This is the hard product contract, not an advisory preference.
  */
 export const REQUIRED_INDEPENDENT_REVIEW_TRANSPORT: ReviewTransportRequirements = {
-  structuredOutput: true,
+  validatedResult: true,
   parentVisible: true,
   transcriptNavigable: true,
   isolatedAgentIdentity: true,
@@ -86,7 +86,7 @@ export function reviewTransportSatisfies(
   requirements: ReviewTransportRequirements,
 ): boolean {
   return (
-    (!requirements.structuredOutput || capability.structuredOutput) &&
+    (!requirements.validatedResult || capability.validatedResult) &&
     (!requirements.parentVisible || capability.parentVisible) &&
     (!requirements.transcriptNavigable || capability.transcriptNavigable) &&
     (!requirements.isolatedAgentIdentity || capability.isolatedAgentIdentity) &&

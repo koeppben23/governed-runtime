@@ -7,12 +7,13 @@
  * one native, host-visible Task child across review execution and the
  * schema-constrained serialization follow-up.
  *
- * @version v4
+ * @version v5
  */
 
 import { z } from 'zod';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { ReviewObligationType } from './evidence-primitives.js';
+import { ReviewMessageCapture } from './review-message-capture.js';
 
 const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);
 
@@ -31,7 +32,9 @@ export const ReviewInvocationEvidence = z
      * authoritative structured findings through a schema-constrained follow-up
      * in that same child session.
      */
-    invocationMode: z.literal('native_task_structured_followup'),
+    invocationMode: z.literal('native_task_message_json'),
+    transportVersion: z.literal(5),
+    capture: ReviewMessageCapture,
     /** Native Task execution must be visible from the parent host session. */
     hostVisible: z.literal(true),
     /** Native Task metadata must provide a navigable child transcript. */
@@ -52,11 +55,9 @@ export const ReviewInvocationEvidence = z
     /** Evidence is always host-orchestrated. */
     source: z.literal('host-orchestrated'),
     /** Findings are always host-observed structured model output. */
-    reviewOutputMode: z.literal('structured_output'),
-    /** Host-observed structured model output was used. */
-    structuredOutputUsed: z.literal(true),
-    /** Output assurance tier for host-observed structured output. */
-    reviewAssuranceLevel: z.literal('structured_high'),
+    reviewOutputMode: z.literal('validated_json'),
+    /** Message provenance and local validation are distinct from host StructuredOutput. */
+    reviewAssuranceLevel: z.literal('host_message_validated'),
     /** Resolved full head commit SHA (branch reviews only). */
     resolvedBranchSha: z
       .string()

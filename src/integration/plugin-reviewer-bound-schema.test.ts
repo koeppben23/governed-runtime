@@ -29,6 +29,12 @@ import {
 } from './review/dispatch/dispatch-authority.js';
 import { seedStrictPlanSession } from './plugin-host-task-diagnostics-test-helpers.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './review/evidence/findings-schema.js';
+import {
+  completedReviewMessages,
+  hostJsonReply,
+  wireReviewerHostFixture,
+} from './reviewer-capture-test-helpers.js';
+import type { OrchestratorClient } from './review/types.js';
 
 const CHILD_SESSION_ID = 'child-session-bound-schema';
 
@@ -56,9 +62,12 @@ type SentSchema = {
 function nonValidatingHost(answer: (obligationId: string) => Record<string, unknown>) {
   const sent: SentSchema[] = [];
   let obligationId = '';
-  const prompt = vi.fn(async (opts: { body: { format?: { schema: Record<string, unknown> } } }) => {
-    sent.push(opts.body.format!.schema as unknown as SentSchema);
-    return { data: { info: { structured: answer(obligationId) } } };
+  const prompt = vi.fn(async (opts: Parameters<OrchestratorClient['session']['prompt']>[0]) => {
+    expect(opts.body).not.toHaveProperty('format');
+    const prefix = 'ReviewerFindingsInput JSON schema (data, not instructions): ';
+    const line = opts.body.parts[0]?.text.split('\n').find((part) => part.startsWith(prefix));
+    sent.push(JSON.parse(line?.slice(prefix.length) ?? '{}') as SentSchema);
+    return hostJsonReply(answer(obligationId));
   });
   return { prompt, sent, bind: (id: string) => (obligationId = id) };
 }
@@ -69,32 +78,25 @@ async function runPlanReview(answer: (obligationId: string) => Record<string, un
   const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
   const host = nonValidatingHost(answer);
   host.bind(obligationId);
+  const client = createBootableHostClient({
+    app: {
+      log: async () => {},
+      agents: vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] })),
+    },
+    session: {
+      prompt: host.prompt,
+      messages: async () => completedReviewMessages(CHILD_SESSION_ID),
+    },
+  });
   const hooks = await FlowGuardAuditPlugin({
     project: {} as unknown,
-    client: {
-      ...createBootableHostClient(),
-      app: {
-        log: async () => {},
-        agents: vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] })),
-      },
-      session: {
-        prompt: host.prompt,
-        messages: vi.fn(async () => ({
-          data: [
-            { info: { role: 'user' } },
-            {
-              info: { role: 'assistant', finish: 'stop' },
-              parts: [{ type: 'text', text: 'Verdict: accept.' }],
-            },
-          ],
-        })),
-      },
-    },
+    client,
     $: {} as unknown,
     directory: ws.tmpDir,
     worktree: ws.tmpDir,
     serverUrl: new URL('http://localhost:3000'),
   } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0]);
+  wireReviewerHostFixture(client, hooks);
   const before = (await readState(sessDir))!;
   const authority = resolveReviewDispatchAuthority(before.reviewAssurance, obligationId);
   if (authority.kind !== 'ok') throw new Error(authority.reason);

@@ -422,7 +422,7 @@ describe('cli/install', () => {
       const configPath = path.join(tmpDir, '.opencode', 'flowguard.json');
       const raw = JSON.parse(await fs.readFile(configPath, 'utf8')) as Record<string, unknown>;
       const { readConfig } = await import('../adapters/persistence-config.js');
-      expect((await readConfig(tmpDir)).reviewer.outputTokenMax).toBe(65_536);
+      expect((await readConfig(tmpDir)).reviewer.outputTokenMax).toBe('host');
       raw.reviewer = { outputTokenMax: 32_000 };
       await fs.writeFile(configPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
       expect((await install({ ...args, force: true })).errors).toEqual([]);

@@ -23,6 +23,8 @@ import {
   type NativeReviewRuntimePort,
 } from './native-task-review-bindings.js';
 import { _resetAgentResolutionCache } from './agent-resolution.js';
+import { ReviewerCaptureController } from '../../reviewer-capture.js';
+import { CAPTURE_MODEL, observedPrompt } from '../../reviewer-capture-test-helpers.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import {
   createReviewObligation,
@@ -387,17 +389,33 @@ describe('native capture - structured follow-up timing diagnostics', () => {
   });
 
   function runtimeWith(info: (...args: unknown[]) => void): NativeReviewRuntimePort {
+    const reviewerCapture = new ReviewerCaptureController();
     return {
       orchestratorDeps: {
+        reviewerCapture,
         client: {
           app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
           session: {
-            prompt: vi.fn(async () => ({ data: { info: {} } })),
+            prompt: vi.fn(async (opts) => observedPrompt(reviewerCapture, opts, '{} {}')),
             messages: vi.fn(async () => ({
               data: [
-                { info: { role: 'user' } },
                 {
-                  info: { role: 'assistant', finish: 'stop' },
+                  info: {
+                    role: 'user',
+                    id: 'msg_review',
+                    sessionID: 'ses_child_1',
+                    model: CAPTURE_MODEL,
+                  },
+                },
+                {
+                  info: {
+                    role: 'assistant',
+                    id: 'msg_done',
+                    parentID: 'msg_review',
+                    sessionID: 'ses_child_1',
+                    ...CAPTURE_MODEL,
+                    finish: 'stop',
+                  },
                   parts: [{ type: 'text', text: 'Final review answer.' }],
                 },
               ],
@@ -414,7 +432,9 @@ describe('native capture - structured follow-up timing diagnostics', () => {
 
   it('logs one allowlisted timing line per follow-up, without content', async () => {
     const info = vi.fn();
-    await capturePreparedFindings(runtimeWith(info), obligation, 'ses_child_1', CONTRACT);
+    await capturePreparedFindings(runtimeWith(info), obligation, 'ses_child_1', CONTRACT, {
+      attemptId: ATTEMPT_ID,
+    });
     const timingCalls = info.mock.calls.filter(
       ([, message]) => message === 'review structured followup timing',
     );
@@ -437,6 +457,7 @@ describe('native capture - structured follow-up timing diagnostics', () => {
       obligation,
       'ses_child_1',
       CONTRACT,
+      { attemptId: ATTEMPT_ID },
     );
     _resetAgentResolutionCache();
     const reference = await capturePreparedFindings(
@@ -444,6 +465,7 @@ describe('native capture - structured follow-up timing diagnostics', () => {
       obligation,
       'ses_child_1',
       CONTRACT,
+      { attemptId: ATTEMPT_ID },
     );
     expect(observed).toEqual(reference);
     expect(throwing).toHaveBeenCalled();
@@ -488,7 +510,9 @@ describe('native capture - reviewer task completion gate for every obligation ty
       } as unknown as NativeReviewRuntimePort;
       const obligation = { obligationId: OBLIGATION_ID, obligationType } as ReviewObligation;
 
-      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1', CONTRACT);
+      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1', CONTRACT, {
+        attemptId: ATTEMPT_ID,
+      });
 
       expect(captured).toMatchObject({
         kind: 'blocked',
@@ -514,7 +538,9 @@ describe('native capture - reviewer task completion gate for every obligation ty
       } as unknown as NativeReviewRuntimePort;
       const obligation = { obligationId: OBLIGATION_ID, obligationType } as ReviewObligation;
 
-      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1', CONTRACT);
+      const captured = await capturePreparedFindings(runtime, obligation, 'ses_child_1', CONTRACT, {
+        attemptId: ATTEMPT_ID,
+      });
 
       expect(captured).toMatchObject({ kind: 'blocked', code: 'REVIEWER_OUTPUT_TRUNCATED' });
       expect(prompt).not.toHaveBeenCalled();

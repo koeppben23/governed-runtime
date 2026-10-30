@@ -196,7 +196,7 @@ export function resolveStructuredFindings(
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
-      inv.invocationMode === 'native_task_structured_followup' &&
+      inv.invocationMode === 'native_task_message_json' &&
       inv.capturedRawFindings != null,
   );
   return resolveFromStructuredInvocations(context, matchingInvocations);

@@ -9,103 +9,213 @@ import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import { _resetAgentResolutionCache } from './review/dispatch/agent-resolution.js';
+import { completedReviewMessages } from './reviewer-capture-test-helpers.js';
 
-it('durably locks a serialization SDK failure before removing execution monitoring', async () => {
-  _resetAgentResolutionCache();
-  const ws = await createTestWorkspace();
-  const sessionID = randomUUID();
-  const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-  const normalCleanup = vi.spyOn(ReviewerExecutionWatchdog.prototype, 'finishTask');
-  try {
-    const hooks = await FlowGuardAuditPlugin({
-      project: {},
-      $: {},
-      worktree: ws.tmpDir,
-      directory: ws.tmpDir,
-      serverUrl: new URL('http://localhost:3000'),
-      client: {
-        app: {
-          log: async () => {},
-          agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+it.each(['classified-sdk-error', 'classified-message-error'])(
+  'keeps the reviewer child fence after a terminal %s failure',
+  async (outcome) => {
+    _resetAgentResolutionCache();
+    const ws = await createTestWorkspace();
+    const sessionID = randomUUID();
+    const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+    try {
+      const classified = {
+        name: 'APIError',
+        data: {
+          message: 'Unsupported value for reasoning_effort: none. Only supports low or high.',
         },
-        session: {
-          get: async () => ({ data: { parentID: sessionID } }),
-          messages: async () => ({
-            data: [
-              { info: { role: 'user' } },
-              {
-                info: { role: 'assistant', finish: 'stop' },
-                parts: [{ type: 'text', text: 'Final review.' }],
-              },
-            ],
+      };
+      const hooks = await FlowGuardAuditPlugin({
+        project: {},
+        $: {},
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        serverUrl: new URL('http://localhost:3000'),
+        client: {
+          app: {
+            log: async () => {},
+            agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+          },
+          session: {
+            get: async () => ({ data: { parentID: sessionID } }),
+            messages: async () => completedReviewMessages('child-A'),
+            prompt: async () =>
+              outcome === 'classified-sdk-error'
+                ? { error: classified }
+                : { data: { info: { error: classified } } },
+          },
+        },
+      } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0]);
+      await hooks['tool.execute.after']!(
+        { tool: 'flowguard_plan', sessionID, callID: 'plan', args: {} },
+        {
+          title: 'plan',
+          metadata: {},
+          output: JSON.stringify({
+            phase: 'PLAN',
+            selfReviewIteration: 0,
+            reviewMode: 'subagent',
+            reviewAttemptId: '11111111-2222-4111-8111-111111111111',
+            reviewObligation: {
+              obligationId,
+              obligationType: 'plan',
+              iteration: 0,
+              planVersion: 1,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+            },
+            reviewDispatch: { required: true },
           }),
-          prompt: async () => {
-            throw new Error('SDK transport failed during serialization');
-          },
         },
-      },
-    } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0]);
-    await hooks['tool.execute.after']!(
-      { tool: 'flowguard_plan', sessionID, callID: 'plan', args: {} },
-      {
-        title: 'plan',
-        metadata: {},
-        output: JSON.stringify({
-          phase: 'PLAN',
-          selfReviewIteration: 0,
-          reviewMode: 'subagent',
-          reviewAttemptId: '11111111-2222-4111-8111-111111111111',
-          reviewObligation: {
-            obligationId,
-            obligationType: 'plan',
-            iteration: 0,
-            planVersion: 1,
-            criteriaVersion: REVIEW_CRITERIA_VERSION,
-            mandateDigest: REVIEW_MANDATE_DIGEST,
-            requiredChallengeCount: 0,
-            requiredChallengeKind: 'design_challenge',
-          },
-          reviewDispatch: { required: true },
-        }),
-      },
-    );
-    const before = (callID: string) =>
-      hooks['tool.execute.before']!(
-        { tool: 'task', sessionID, callID },
+      );
+      await hooks['tool.execute.before']!(
+        { tool: 'task', sessionID, callID: 'call-A' },
         { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } },
       );
-    await before('call-A');
-    await expect(
-      hooks['tool.execute.after']!(
+      const taskOutput = { title: 'task', output: '', metadata: { sessionId: 'child-A' } };
+      await hooks['tool.execute.after']!(
         {
           tool: 'task',
           sessionID,
           callID: 'call-A',
           args: { subagent_type: 'flowguard-reviewer' },
         },
-        { title: 'task', output: '', metadata: { sessionId: 'child-A' } },
-      ),
-    ).rejects.toThrow('SDK transport failed');
-    expect(normalCleanup).not.toHaveBeenCalled();
-    const state = await readState(sessDir);
-    expect(state?.reviewAssurance?.obligations[0]).toMatchObject({
-      status: 'blocked',
-      blockedCode: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-    });
-    expect(state?.reviewAssurance?.attempts[0]).toMatchObject({
-      status: 'stale',
-      childSessionId: 'child-A',
-    });
-    expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
-    expect(state?.reviewAssurance?.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
-    await expect(before('retry')).rejects.toThrow('REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND');
-    expect(
-      (await readAuditTrail(sessDir)).filter(
-        (event) => event.event === 'review:obligation_blocked',
-      ),
-    ).toHaveLength(1);
-  } finally {
-    normalCleanup.mockRestore();
-    await ws.cleanup();
-  }
-});
+        taskOutput,
+      );
+      expect(taskOutput.output).toContain('STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE');
+      await hooks.event?.({
+        event: {
+          type: 'session.status',
+          properties: { sessionID: 'child-A', status: { type: 'idle' } },
+        },
+      });
+      await expect(
+        hooks['tool.execute.before']!(
+          { tool: 'read', sessionID: 'child-A', callID: 'late-tool' },
+          { args: { filePath: 'README.md' } },
+        ),
+      ).rejects.toMatchObject({ code: 'REVIEWER_CAPTURE_PROVENANCE_INVALID' });
+      const state = await readState(sessDir);
+      expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
+      expect(state?.reviewAssurance?.attempts[0]).toMatchObject({ status: 'stale' });
+    } finally {
+      await ws.cleanup();
+    }
+  },
+);
+
+it.each(['throw', 'sdk-error', 'missing-data', 'unknown-message-error'])(
+  'durably locks a %s serialization outcome before removing execution monitoring',
+  async (outcome) => {
+    _resetAgentResolutionCache();
+    const ws = await createTestWorkspace();
+    const sessionID = randomUUID();
+    const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+    const normalCleanup = vi.spyOn(ReviewerExecutionWatchdog.prototype, 'finishTask');
+    try {
+      const hooks = await FlowGuardAuditPlugin({
+        project: {},
+        $: {},
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        serverUrl: new URL('http://localhost:3000'),
+        client: {
+          app: {
+            log: async () => {},
+            agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
+          },
+          session: {
+            get: async () => ({ data: { parentID: sessionID } }),
+            messages: async () => completedReviewMessages('child-A'),
+            prompt: async () => {
+              if (outcome === 'throw') throw new Error('SDK transport failed during serialization');
+              if (outcome === 'sdk-error') return { error: new Error('SDK connection lost') };
+              if (outcome === 'unknown-message-error')
+                return { data: { info: { error: { name: 'UnknownError' } } } };
+              return {};
+            },
+          },
+        },
+      } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0]);
+      await hooks['tool.execute.after']!(
+        { tool: 'flowguard_plan', sessionID, callID: 'plan', args: {} },
+        {
+          title: 'plan',
+          metadata: {},
+          output: JSON.stringify({
+            phase: 'PLAN',
+            selfReviewIteration: 0,
+            reviewMode: 'subagent',
+            reviewAttemptId: '11111111-2222-4111-8111-111111111111',
+            reviewObligation: {
+              obligationId,
+              obligationType: 'plan',
+              iteration: 0,
+              planVersion: 1,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              requiredChallengeCount: 0,
+              requiredChallengeKind: 'design_challenge',
+            },
+            reviewDispatch: { required: true },
+          }),
+        },
+      );
+      const before = (callID: string) =>
+        hooks['tool.execute.before']!(
+          { tool: 'task', sessionID, callID },
+          { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } },
+        );
+      await before('call-A');
+      await expect(
+        hooks['tool.execute.after']!(
+          {
+            tool: 'task',
+            sessionID,
+            callID: 'call-A',
+            args: { subagent_type: 'flowguard-reviewer' },
+          },
+          { title: 'task', output: '', metadata: { sessionId: 'child-A' } },
+        ),
+      ).rejects.toThrow(/SDK transport failed|execution outcome/);
+      expect(normalCleanup).not.toHaveBeenCalled();
+      await hooks.event?.({
+        event: {
+          type: 'session.status',
+          properties: {
+            sessionID: 'child-A',
+            status: { type: 'idle' },
+          },
+        },
+      });
+      await expect(
+        hooks['tool.execute.before']!(
+          { tool: 'read', sessionID: 'child-A', callID: 'late-tool' },
+          { args: { filePath: 'README.md' } },
+        ),
+      ).rejects.toMatchObject({ code: 'REVIEWER_CAPTURE_PROVENANCE_INVALID' });
+      const state = await readState(sessDir);
+      expect(state?.reviewAssurance?.obligations[0]).toMatchObject({
+        status: 'blocked',
+        blockedCode: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      });
+      expect(state?.reviewAssurance?.attempts[0]).toMatchObject({
+        status: 'stale',
+        childSessionId: 'child-A',
+      });
+      expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
+      expect(state?.reviewAssurance?.capacityLock?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+      await expect(before('retry')).rejects.toThrow('REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND');
+      expect(
+        (await readAuditTrail(sessDir)).filter(
+          (event) => event.event === 'review:obligation_blocked',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      normalCleanup.mockRestore();
+      await ws.cleanup();
+    }
+  },
+);

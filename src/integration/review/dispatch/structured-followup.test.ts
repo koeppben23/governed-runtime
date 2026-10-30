@@ -1,349 +1,380 @@
-/**
- * @module integration/review/dispatch/structured-followup.test
- * @description Diagnostic timing of the same-child structured follow-up.
- *
- * The timing observer covers ONLY the host prompt. A prompt that was never
- * invoked reports `not_invoked` (never 0 ms); a throwing prompt reports its
- * duration and rethrows the original error unchanged; a failing observer never
- * alters the follow-up result.
- *
- * Ref expansion (p42-v7): the review prose cites offered refs by number; the
- * serialization prompt expands each number to the exact offered object, and an
- * unexpanded number never passes the canonical findings contract.
- *
- * @test-policy HAPPY, BAD, EDGE
- */
-
+/** Correlated, model-neutral JSON capture and bounded, semantic-preserving repair. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { ReviewerCaptureController } from '../../reviewer-capture.js';
+import {
+  CAPTURE_MODEL,
+  CAPTURE_ATTEMPT,
+  CAPTURE_OBLIGATION,
+  observedPrompt,
+  reviewerInputFixture,
+} from '../../reviewer-capture-test-helpers.js';
 import { _resetAgentResolutionCache } from './agent-resolution.js';
 import {
   captureStructuredFindingsFromVisibleChild,
   type StructuredFollowupTiming,
 } from './structured-followup.js';
-import type { OrchestratorClient } from '../types.js';
 import { classifyReviewerCaptureFailure } from './capture-retry.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
+import type { OrchestratorClient } from '../types.js';
 
-const INPUT = {
-  childSessionId: 'ses_child_timing',
-  obligationId: '44444444-4444-4444-8444-444444444444',
-  schema: REVIEW_FINDINGS_JSON_SCHEMA as unknown as Record<string, unknown>,
-};
-
-function client(options: {
-  readonly agents?: unknown;
-  readonly prompt?: () => Promise<unknown>;
-}): OrchestratorClient {
-  return {
-    app: {
-      agents: vi.fn(async () => ({ data: options.agents ?? [{ name: REVIEWER_SUBAGENT_TYPE }] })),
-    },
+function fixture(payload: (call: number) => unknown = () => reviewerInputFixture()) {
+  const controller = new ReviewerCaptureController();
+  const input = {
+    childSessionId: 'ses_child',
+    obligationId: CAPTURE_OBLIGATION,
+    attemptId: CAPTURE_ATTEMPT,
+    schema: REVIEW_FINDINGS_JSON_SCHEMA as Record<string, unknown>,
+    model: { ...CAPTURE_MODEL } as { providerID: string; modelID: string; variant: string | null },
+    controller,
+    lease: {} as { id?: string },
+  };
+  let calls = 0;
+  const client: OrchestratorClient = {
+    app: { agents: vi.fn(async () => ({ data: [{ name: 'flowguard-reviewer' }] })) },
     session: {
-      prompt: vi.fn(options.prompt ?? (async () => ({ data: { info: {} } }))),
+      prompt: vi.fn(async (opts) => {
+        const value = payload(++calls);
+        return observedPrompt(
+          controller,
+          opts,
+          typeof value === 'string' ? value : JSON.stringify(value),
+        );
+      }),
     },
-  } as unknown as OrchestratorClient;
+  };
+  return { client, input, controller };
 }
 
-function recorder(): {
-  readonly timings: StructuredFollowupTiming[];
-  readonly observe: (timing: StructuredFollowupTiming) => void;
-} {
-  const timings: StructuredFollowupTiming[] = [];
-  return { timings, observe: (timing) => timings.push(timing) };
-}
-
-describe('structured follow-up diagnostic timing', () => {
-  afterEach(() => {
-    _resetAgentResolutionCache();
-  });
-
-  it('HAPPY: measures the responded host prompt', async () => {
-    const { timings, observe } = recorder();
-    const result = await captureStructuredFindingsFromVisibleChild(client({}), INPUT, observe);
-    expect(result.kind).toBe('blocked');
-    expect(timings).toHaveLength(1);
-    expect(timings[0]).toMatchObject({ promptOutcome: 'responded' });
-    expect((timings[0] as { followupPromptMs: number }).followupPromptMs).toBeGreaterThanOrEqual(0);
-  });
-
-  it('BAD: a prompt that is never invoked is not_invoked, never 0 ms', async () => {
-    const { timings, observe } = recorder();
-    const host = client({ agents: [] });
-    const result = await captureStructuredFindingsFromVisibleChild(host, INPUT, observe);
-    expect(result).toMatchObject({
-      kind: 'blocked',
-      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
-    });
-    expect(host.session.prompt).not.toHaveBeenCalled();
-    expect(timings).toEqual([{ followupPromptMsUnavailable: 'not_invoked' }]);
-  });
-
-  it('BAD: a throwing host prompt is timed and its original error rethrown unchanged', async () => {
-    const { timings, observe } = recorder();
-    const failure = new Error('host transport reset');
-    await expect(
-      captureStructuredFindingsFromVisibleChild(
-        client({
-          prompt: async () => {
-            throw failure;
-          },
-        }),
-        INPUT,
-        observe,
-      ),
-    ).rejects.toBe(failure);
-    expect(timings).toHaveLength(1);
-    expect(timings[0]).toMatchObject({ promptOutcome: 'threw' });
-    expect((timings[0] as { followupPromptMs: number }).followupPromptMs).toBeGreaterThanOrEqual(0);
-  });
-
-  it('EDGE: a throwing observer changes neither the result nor the failure path', async () => {
-    const throwing = () => {
-      throw new Error('diagnostic sink failure');
-    };
-    const observed = await captureStructuredFindingsFromVisibleChild(client({}), INPUT, throwing);
-    _resetAgentResolutionCache();
-    const reference = await captureStructuredFindingsFromVisibleChild(client({}), INPUT);
-    expect(observed).toEqual(reference);
-
-    _resetAgentResolutionCache();
-    const failure = new Error('host transport reset');
-    await expect(
-      captureStructuredFindingsFromVisibleChild(
-        client({
-          prompt: async () => {
-            throw failure;
-          },
-        }),
-        INPUT,
-        throwing,
-      ),
-    ).rejects.toBe(failure);
-  });
+afterEach(() => {
+  _resetAgentResolutionCache();
+  vi.restoreAllMocks();
 });
 
-function findingsWithChallengeRefs(evidenceRefs: readonly unknown[]): Record<string, unknown> {
-  return {
-    iteration: 0,
-    planVersion: 1,
-    reviewMode: 'subagent',
-    overallVerdict: 'accept',
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    challenges: [
-      {
-        clientReference: 'c1',
-        obligationId: INPUT.obligationId,
-        kind: 'design_challenge',
-        scenario: 'Remove the guard and run the build.',
-        claim: 'The build detects the missing guard.',
-        locations: ['plan § Verification'],
-        outcome: 'supported',
-        evidenceRefs,
-      },
-    ],
-    attestation: { toolObligationId: INPUT.obligationId },
-  };
-}
-
-describe('structured follow-up ref expansion (p42-v7)', () => {
-  afterEach(() => {
-    _resetAgentResolutionCache();
-  });
-
-  it('HAPPY: the serialization prompt expands cited Ref numbers to the exact offered objects', async () => {
-    const host = client({});
-    await captureStructuredFindingsFromVisibleChild(host, INPUT);
-    const sent = vi.mocked(host.session.prompt).mock.calls[0]?.[0] as unknown as {
-      body: { parts: { text: string }[] };
-    };
-    const text = sent.body.parts[0]!.text;
-    expect(text).toContain(
-      'Expand every cited offered-ref number ("Ref N") to the exact object listed as Ref N in the offered evidenceRefs of this review; never synthesize, alter, or cite a ref that was not offered.',
-    );
-    expect(text).toContain('This prompt is serialization only; it is not a second review.');
-  });
-
-  it('HAPPY (control): the same findings with an expanded offered ref object pass the contract', async () => {
-    const expanded = {
-      kind: 'plan_adr_section',
-      artifactKind: 'plan',
-      artifactDigest: 'a'.repeat(64),
-      sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
-      excerptDigest: 'b'.repeat(64),
-    };
-    const result = await captureStructuredFindingsFromVisibleChild(
-      client({
-        prompt: async () => ({
-          data: { info: { structured: findingsWithChallengeRefs([expanded]) } },
-        }),
-      }),
-      INPUT,
-    );
-    expect(result.kind).toBe('ok');
-  });
-
-  it.each([['Ref 4'], [4]])(
-    'BAD: an unexpanded ref number (%j) fails the canonical contract as a retryable violation',
-    async (unexpanded) => {
-      const result = await captureStructuredFindingsFromVisibleChild(
-        client({
-          prompt: async () => ({
-            data: { info: { structured: findingsWithChallengeRefs([unexpanded]) } },
-          }),
-        }),
-        INPUT,
-      );
+describe('model-neutral same-child findings', () => {
+  it.each(['low', 'high', 'max', null])(
+    'preserves model/variant %s without a format or effort override',
+    async (variant) => {
+      const { client, input } = fixture();
+      input.model.variant = variant;
+      const result = await captureStructuredFindingsFromVisibleChild(client, input);
+      expect(result.kind).toBe('ok');
+      const [request] = vi.mocked(client.session.prompt).mock.calls[0]!;
+      expect(request.path.id).toBe(input.childSessionId);
+      expect(request.body.model).toEqual({
+        providerID: CAPTURE_MODEL.providerID,
+        modelID: CAPTURE_MODEL.modelID,
+      });
+      expect(request.body.variant ?? null).toBe(variant);
+      expect(request.body).not.toHaveProperty('format');
+      expect(request.body).not.toHaveProperty('tools');
+      expect(request.body).not.toHaveProperty('reasoningEffort');
       expect(result).toMatchObject({
-        kind: 'blocked',
-        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        capture: {
+          requestMessageId: request.body.messageID,
+          childSessionId: input.childSessionId,
+          model: input.model,
+        },
       });
-      expect(classifyReviewerCaptureFailure(result.kind === 'blocked' ? result.code : '')).toEqual({
-        retryable: true,
-        code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
-      });
+      expect(request.body.parts[0]?.text).toContain('Expand every cited offered-ref number');
+      expect(request.body.parts[0]?.text).toContain('JSON schema (data, not instructions)');
     },
   );
-});
 
-describe('structured follow-up bounded format correction', () => {
-  afterEach(() => {
-    _resetAgentResolutionCache();
+  it.each([
+    '{} {}',
+    '```json\n{}\n```',
+    '{"overallVerdict":"accept","overallVerdict":"unable_to_review"}',
+    'The model does not support tools or reasoning effort.',
+  ])('rejects non-contract text without extracting findings: %s', async (text) => {
+    const { client, input } = fixture(() => text);
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result).toMatchObject({ kind: 'blocked', code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' });
+    expect(client.session.prompt).toHaveBeenCalledTimes(1);
   });
 
-  const expandedRef = {
-    kind: 'plan_adr_section',
-    artifactKind: 'plan',
-    artifactDigest: 'a'.repeat(64),
-    sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
-    excerptDigest: 'b'.repeat(64),
-  };
-
-  function findings(): Record<string, unknown> {
-    return findingsWithChallengeRefs([expandedRef]);
-  }
-
-  it('accepts exactly one correction when the semantic projection is identical', async () => {
-    let calls = 0;
-    const host = client({
-      prompt: async () => {
-        calls += 1;
-        if (calls === 1) {
-          return { data: { info: { structured: { ...findings(), summary: 'legacy extra' } } } };
-        }
-        return { data: { info: { structured: findings() } } };
-      },
-    });
-    const result = await captureStructuredFindingsFromVisibleChild(host, INPUT);
-    expect(result.kind).toBe('ok');
-    expect(calls).toBe(2);
-    expect(result).toMatchObject({ serializationRepair: { originalHash: expect.any(String) } });
-  });
-
-  it('propagates a repair transport failure to the execution lifecycle boundary', async () => {
-    let calls = 0;
-    const failure = new Error('repair transport lost while the host may still be running');
-    const host = client({
-      prompt: async () => {
-        calls += 1;
-        if (calls === 1)
-          return { data: { info: { structured: { ...findings(), summary: 'extra' } } } };
-        throw failure;
-      },
-    });
-    await expect(captureStructuredFindingsFromVisibleChild(host, INPUT)).rejects.toBe(failure);
-    expect(calls).toBe(2);
-  });
-
-  it('rejects a correction that changes an enum or other semantic field', async () => {
-    const invalid = findings();
-    const invalidBlocking = [
-      {
-        severity: 'major',
-        category: 'claim/evidence fit',
-        message: 'bad enum',
-        relation: {
-          subjectAnchors: [
-            {
-              kind: 'artifact_section',
-              artifactKind: 'plan',
-              artifactDigest: 'a'.repeat(64),
-              sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
-            },
-          ],
-          evidenceLocations: [],
+  it('rejects synthetic or tool-derived JSON even when it satisfies the schema', async () => {
+    const { client, input } = fixture();
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => {
+      const result = await prompt(opts);
+      return {
+        data: {
+          ...result.data,
+          parts: [{ type: 'text', synthetic: true, text: JSON.stringify(reviewerInputFixture()) }],
         },
-      },
-    ];
-    const repaired = findings();
-    repaired.blockingIssues = [{ ...invalidBlocking[0], category: 'correctness' }];
-    repaired.overallVerdict = 'changes_requested';
-    let calls = 0;
-    const result = await captureStructuredFindingsFromVisibleChild(
-      client({
-        prompt: async () => {
-          calls += 1;
-          return {
-            data: {
-              info: {
-                structured:
-                  calls === 1 ? { ...invalid, blockingIssues: invalidBlocking } : repaired,
-              },
-            },
-          };
-        },
-      }),
-      INPUT,
+      };
+    });
+    expect(await captureStructuredFindingsFromVisibleChild(client, input)).toMatchObject({
+      kind: 'blocked',
+      code: 'REVIEWER_CAPTURE_PROVENANCE_INVALID',
+    });
+  });
+
+  it('allows one syntax/structure correction without changing reviewer semantics', async () => {
+    const { client, input } = fixture((call) =>
+      call === 1
+        ? { ...reviewerInputFixture(), unexpected: 'untrusted extra field' }
+        : reviewerInputFixture(),
     );
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result).toMatchObject({
+      kind: 'ok',
+      serializationRepair: { originalHash: expect.any(String) },
+    });
+    expect(client.session.prompt).toHaveBeenCalledTimes(2);
+    const calls = vi.mocked(client.session.prompt).mock.calls;
+    expect(calls[0]?.[0].body.messageID).not.toBe(calls[1]?.[0].body.messageID);
+    expect(calls[0]?.[0].body.model).toEqual(calls[1]?.[0].body.model);
+    expect(calls[0]?.[0].body.variant).toBe(calls[1]?.[0].body.variant);
+  });
+
+  it('rejects a repair that changes the verdict', async () => {
+    const { client, input } = fixture((call) =>
+      call === 1
+        ? { ...reviewerInputFixture(), unexpected: true }
+        : { ...reviewerInputFixture(), overallVerdict: 'unable_to_review' },
+    );
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
     expect(result).toMatchObject({
       kind: 'blocked',
       code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
     });
-    expect(result.kind === 'blocked' ? result.reason : '').toContain('semantic projection');
+    expect(result.kind === 'blocked' && result.reason).toContain('semantic projection');
+  });
+
+  it.each(['sdk', 'message', 'repair'] as const)(
+    'keeps deterministic %s provider errors terminal without releasing an unproven fence',
+    async (channel) => {
+      const { client, input, controller } = fixture(() => ({
+        ...reviewerInputFixture(),
+        unexpected: true,
+      }));
+      const prompt = client.session.prompt.bind(client.session);
+      let calls = 0;
+      const error = {
+        name: 'APIError',
+        data: {
+          message: 'Unsupported value for reasoning_effort: none. Only supports low or high.',
+        },
+      };
+      client.session.prompt = vi.fn(async (opts) => {
+        calls++;
+        if (channel === 'repair' && calls === 1) return prompt(opts);
+        if (channel === 'sdk') return { error };
+        return { data: { info: { error } } };
+      });
+      const result = await captureStructuredFindingsFromVisibleChild(client, input);
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+      });
+      expect(
+        classifyReviewerCaptureFailure(result.kind === 'blocked' ? result.code : ''),
+      ).toMatchObject({ retryable: false });
+      expect(calls).toBe(channel === 'repair' ? 2 : 1);
+      controller.release(input.childSessionId, input.lease.id);
+      expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+      expect(() => controller.beforeTool({ sessionID: input.childSessionId })).toThrow();
+    },
+  );
+
+  it('releases a classified message failure only with exact terminal assistant proof', async () => {
+    const { client, input, controller } = fixture();
+    const error = {
+      name: 'APIError',
+      data: {
+        message: 'Unsupported value for reasoning_effort: none. Only supports low or high.',
+      },
+    };
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => {
+      const base = await prompt(opts);
+      return {
+        data: {
+          ...base.data,
+          info: { ...base.data?.info, finish: 'error', error },
+        },
+      };
+    });
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result).toMatchObject({
+      kind: 'blocked',
+      code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(false);
+    controller.release(input.childSessionId, input.lease.id);
+    expect(() => controller.beforeTool({ sessionID: input.childSessionId })).not.toThrow();
+  });
+
+  it('quarantines a classified failure whose terminal record has stale request identity', async () => {
+    const { client, input, controller } = fixture();
+    const error = {
+      name: 'APIError',
+      data: {
+        message: 'Unsupported value for reasoning_effort: none. Only supports low or high.',
+      },
+    };
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => {
+      const base = await prompt(opts);
+      return {
+        data: {
+          ...base.data,
+          info: { ...base.data?.info, parentID: 'msg_other', finish: 'error', error },
+        },
+      };
+    });
+    expect(await captureStructuredFindingsFromVisibleChild(client, input)).toMatchObject({
+      kind: 'blocked',
+      code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+  });
+
+  it('times a throwing prompt and retains its unknown-outcome fence', async () => {
+    const { client, input, controller } = fixture();
+    const failure = new Error('connection lost');
+    client.session.prompt = vi.fn(async () => {
+      throw failure;
+    });
+    const timings: StructuredFollowupTiming[] = [];
+    await expect(
+      captureStructuredFindingsFromVisibleChild(client, input, (timing) => timings.push(timing)),
+    ).rejects.toBe(failure);
+    expect(timings).toMatchObject([
+      { promptOutcome: 'threw', followupPromptMs: expect.any(Number) },
+    ]);
+    controller.release(input.childSessionId);
+    expect(controller.isSafe(input.childSessionId)).toBe(false);
+    expect(() => controller.beforeTool({ sessionID: input.childSessionId })).toThrow();
+  });
+
+  it.each([
+    { error: new Error('host request failed without execution outcome') },
+    { error: { name: 'UnknownError', data: { message: 'host disconnected' } } },
+    {},
+    { data: undefined },
+    { data: { info: { error: { name: 'UnknownError' } } } },
+  ])('quarantines returned SDK ambiguity just like a thrown exception: %j', async (response) => {
+    const { client, input, controller } = fixture();
+    client.session.prompt = vi.fn(async () => response);
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+    controller.release(input.childSessionId, input.lease.id);
+    expect(() => controller.beforeTool({ sessionID: input.childSessionId })).toThrow();
+    expect(() => controller.begin(input.childSessionId, input.model, input)).toThrow();
+    expect(client.session.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('quarantines a returned unknown repair outcome without downgrading it to contract retry', async () => {
+    const { client, input, controller } = fixture(() => ({
+      ...reviewerInputFixture(),
+      unexpected: true,
+    }));
+    const prompt = client.session.prompt.bind(client.session);
+    let calls = 0;
+    client.session.prompt = vi.fn(async (opts) =>
+      ++calls === 1 ? prompt(opts) : { error: new Error('repair outcome unknown') },
+    );
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    controller.release(input.childSessionId, input.lease.id);
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
     expect(calls).toBe(2);
   });
 
-  it('never repairs accept plus blocking issues into a different verdict', async () => {
-    const blocking = [
-      {
-        severity: 'major',
-        category: 'correctness',
-        message: 'real',
-        relation: {
-          subjectAnchors: [
-            {
-              kind: 'artifact_section',
-              artifactKind: 'plan',
-              artifactDigest: 'a'.repeat(64),
-              sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Verification' }],
-            },
-          ],
-          evidenceLocations: [],
-        },
-      },
-    ];
-    const invalid = { ...findings(), overallVerdict: 'accept', blockingIssues: blocking };
-    const repaired = {
-      ...findings(),
-      overallVerdict: 'changes_requested',
-      blockingIssues: blocking,
-    };
-    let calls = 0;
-    const result = await captureStructuredFindingsFromVisibleChild(
-      client({
-        prompt: async () => {
-          calls += 1;
-          return { data: { info: { structured: calls === 1 ? invalid : repaired } } };
-        },
-      }),
-      INPUT,
-    );
+  it('does not let a diagnostic observer alter successful findings', async () => {
+    const { client, input } = fixture();
+    const result = await captureStructuredFindingsFromVisibleChild(client, input, () => {
+      throw new Error('logger');
+    });
     expect(result.kind).toBe('ok');
-    expect(result).not.toHaveProperty('serializationRepair');
-    expect(calls).toBe(1);
+  });
+
+  it('quarantines an SDK error even when it also carries otherwise valid response data', async () => {
+    const { client, input, controller } = fixture();
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => ({
+      ...(await prompt(opts)),
+      error: new Error('unknown execution status'),
+    }));
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+  });
+
+  it.each([null, undefined])(
+    'retains the fence for a malformed empty SDK envelope (%j)',
+    async (response) => {
+      const { client, input, controller } = fixture();
+      client.session.prompt = vi.fn(
+        async () =>
+          response as unknown as Awaited<ReturnType<OrchestratorClient['session']['prompt']>>,
+      );
+      await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+        code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      });
+      controller.release(input.childSessionId, input.lease.id);
+      expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+    },
+  );
+
+  it('does not steal a busy capture lease or invoke another host prompt', async () => {
+    const { client, input, controller } = fixture();
+    const lease = controller.begin(input.childSessionId, input.model, input);
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEWER_CAPTURE_PROVENANCE_INVALID' });
+    expect(input.lease.id).toBeUndefined();
+    expect(controller.isSafe(input.childSessionId)).toBe(true);
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    controller.release(input.childSessionId, lease);
+  });
+
+  it('preserves bounded contract diagnostics after an unsuccessful structure repair', async () => {
+    const { client, input } = fixture(() => ({
+      ...reviewerInputFixture(),
+      overallVerdict: 'untrusted rejected value',
+    }));
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result.kind).toBe('blocked');
+    if (result.kind !== 'blocked') throw new Error('Expected contract rejection');
+    expect(result.diagnostics).toMatchObject([
+      { code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION', data: { path: 'overallVerdict' } },
+    ]);
+    expect(JSON.stringify(result.diagnostics)).not.toContain('untrusted rejected value');
+    expect(client.session.prompt).toHaveBeenCalledTimes(2);
+  });
+
+  it('quarantines an unclassified message error even alongside plausible completed metadata', async () => {
+    const { client, input, controller } = fixture();
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => {
+      const result = await prompt(opts);
+      return {
+        data: { ...result.data, info: { ...result.data?.info, error: { name: 'UnknownError' } } },
+      };
+    });
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+  });
+
+  it('reports elapsed prompt duration, not absolute performance clock values', async () => {
+    const { client, input } = fixture();
+    vi.spyOn(performance, 'now').mockReturnValueOnce(1000).mockReturnValue(1005);
+    const timings: StructuredFollowupTiming[] = [];
+    expect(
+      (
+        await captureStructuredFindingsFromVisibleChild(client, input, (timing) =>
+          timings.push(timing),
+        )
+      ).kind,
+    ).toBe('ok');
+    expect(timings).toEqual([{ followupPromptMs: 5, promptOutcome: 'responded' }]);
   });
 });

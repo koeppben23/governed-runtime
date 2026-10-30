@@ -45,7 +45,7 @@ Separation of concerns:
                       implReviewFindings
 ```
 
-**Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. On OpenCode, the reviewer runs in a host-created child session that the plugin prompts with the canonical review prompt and a required `json_schema` output contract; only the host-observed structured result can bind to a review obligation. Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
+**Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. On OpenCode, the reviewer runs in a host-created child session that the plugin prompts with the canonical review prompt and, after normal completion, a same-child JSON serialization prompt. Model and variant are preserved, no `format` or forced tool is requested, and only the request-correlated, FlowGuard-validated JSON result can bind to a review obligation. Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
 
 ### Review Coverage Profile (`core`)
 
@@ -132,17 +132,18 @@ criteria, evidence requirements, or validators:
 
 ### Reviewer output cap
 
-On OpenCode, the FlowGuard plugin applies the resolved
-`reviewer.outputTokenMax` from `flowguard.json` to the `flowguard-reviewer`
-agent through the official `chat.params` hook. The parent and other agents are
-unchanged. The plugin reads the config at startup; a config or model-limit
-mismatch fails the reviewer request closed before the provider call instead of
-silently lowering the cap. `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a
-host-wide fallback for hosts where the plugin hook is not active. The hook
-changes the request output ceiling only; OpenCode's internal compaction
-reservation is not changed. The final provider-request capture in the reference
-suite is the acceptance authority because a later plugin can still overwrite
-`maxOutputTokens`.
+On OpenCode, `reviewer.outputTokenMax` defaults to `"host"`: the plugin leaves
+OpenCode's resolved output budget unchanged, so smaller and locally hosted agent
+models are not excluded by a FlowGuard-specific ceiling. An explicit numeric cap
+is applied to the `flowguard-reviewer` agent through the official `chat.params`
+hook and is validated against the model's reported output limit; a mismatch fails
+the reviewer request closed before the provider call instead of silently lowering
+the cap. The parent and other agents are unchanged.
+`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback for hosts
+where the plugin hook is not active. The hook changes the request output ceiling
+only; OpenCode's internal compaction reservation is not changed. The final
+provider-request capture in the reference suite is the acceptance authority
+because a later plugin can still overwrite `maxOutputTokens`.
 
 ### Terminal reviewer capacity failures
 
@@ -243,13 +244,13 @@ The reviewer is a host-visible native Task child, never a hidden SDK session:
 1. The parent agent calls the host `task` tool with `subagent_type: "flowguard-reviewer"`, following the `reviewDispatch` / `reviewInvocation` instruction (`action: "call_task"`) in the FlowGuard tool response.
 2. The plugin `tool.execute.before` hook authorizes the exact current pending obligation/attempt, persists a durable dispatch under the host `callID`, and overwrites the Task arguments with the canonical frozen reviewer prompt (the parent-supplied prompt is transport filler only).
 3. The host runs the visible, navigable `flowguard-reviewer` child Task session.
-4. The plugin `tool.execute.after` hook resolves the durable dispatch lineage by `callID`, requires the authoritative child session ID from Task metadata, replays the reviewer observations, proves from the host-recorded messages that the reviewer finished its task normally (a truncated, aborted, step-limited or unprovable task is never serialized), and sends a schema-constrained serialization request (`format: json_schema`) to that SAME child session. The schema is obligation-bound: it fixes the attestation identity, `iteration`, `planVersion` and, when challenges are required, the challenge kind and the offered evidence refs (whole objects), so the model is given the exact admissible values. The pinned OpenCode host forwards this schema to the model as the StructuredOutput tool parameters but does not validate the answer against it; the capture gate below remains the only enforcement. It narrows nothing the capture gate accepts in more than one form (subject anchors, evidence locations, challenge count, verdict) and never replaces the validators.
-5. The structured payload is validated against `ReviewerFindingsInput`, host provenance and attestation are stamped, and the canonical `ReviewFindings` is bound to the obligation.
+4. The plugin `tool.execute.after` hook resolves the durable dispatch lineage by `callID`, requires the authoritative child session ID from Task metadata, replays the reviewer observations, proves from the host-recorded messages that the reviewer finished its task normally (a truncated, aborted, step-limited or unprovable task is never serialized), and sends a normal serialization prompt to that SAME child session. The prompt carries the obligation-bound ReviewerFindingsInput schema as data, the exact model/variant from the completed child call, and an explicit request `messageID`; it sets no `format` and forces no tool. Synchronous host hooks prove request/response identity, one tool-free model step, successful completion, and absence of concurrent/unknown work. Any attempted tool action permanently invalidates the capture. The complete assistant text must be one strict JSON object; there is no prose extraction or Markdown repair.
+5. The payload is validated against `ReviewerFindingsInput`, host provenance and attestation are stamped, and the canonical `ReviewFindings` is bound to the obligation. Capture proof and canonical findings are compared semantically, with separate payload/findings digests.
 6. Only after a successful binding does the hook replace the Task output with the completed dispatch signal (`reviewDispatch.completed: true` and the bound verdict).
 
 The LLM then sees the completed `reviewDispatch` response and submits the verdict.
 
-**Contract:** the completed dispatch signal (`reviewDispatch.completed`) is only signaled when the reviewer's structured payload validates and binds against the durable dispatch and invocation evidence. Only host-observed structured output from the same native Task child (`structured_output` / `structured_high`) can bind. The Task's free-form text is never findings authority; unparseable, text-only, or contract-violating reviewer responses never produce a completed dispatch and block with an explicit structured-output code.
+**Contract:** the completed dispatch signal (`reviewDispatch.completed`) is only signaled when the correlated reviewer JSON validates and binds against the durable dispatch and invocation evidence. Evidence generation 5 records `native_task_message_json`, host message identities, model/variant, payload and findings digests, and `host_message_validated` assurance. The Task's free-form prose is never findings authority; the only accepted text is the exact correlated assistant payload that decodes as one strict JSON object. Unparseable, extracted, tool-contaminated, or contract-violating responses never produce a completed dispatch and block explicitly.
 
 ### Evidence-Grounded Implementation Review
 
@@ -323,23 +324,27 @@ review input). Mandatory pre-review execution is tracked separately.
 
 ### Reviewer Output Contract
 
-Reviewer output is accepted only through the host-observed structured child
-session: the plugin prompts the reviewer child session with `format: json_schema`
-and binds `reviewOutputMode: "structured_output"` with
-`reviewAssuranceLevel: "structured_high"`. There is no text-compatibility
-fallback. Failures block explicitly:
+Reviewer output is accepted only through the correlated same-child JSON
+transport: the plugin sends a normal prompt with an explicit request
+`messageID`, preserves the completed child's model/variant, sets no `format`,
+and binds `reviewOutputMode: "validated_json"` with
+`reviewAssuranceLevel: "host_message_validated"`. There is no text-extraction
+or StructuredOutput fallback. Failures block explicitly:
 
 | Condition                                                           | BLOCKED Code                                    |
 | ------------------------------------------------------------------- | ----------------------------------------------- |
-| Reviewer model cannot produce structured output                     | `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`      |
-| Reviewer Thinking Mode conflicts with the required structured tool  | `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` |
-| Host does not return the required structured result                 | `HOST_STRUCTURED_OUTPUT_REQUIRED`               |
-| Host structured result violates the reviewer findings contract      | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`     |
+| Reviewer agent or a required agent capability is unavailable        | `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`      |
+| Host/provider rejects the selected execution options                | `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` |
+| Correlated response is not one complete strict JSON object          | `HOST_STRUCTURED_OUTPUT_REQUIRED`               |
+| JSON violates the reviewer findings contract                        | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`     |
+| Request/response, model, tool-free execution or completion unproven | `REVIEWER_CAPTURE_PROVENANCE_INVALID`           |
+| Host cannot encode a required formatted history message             | `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`         |
 | Child session output cannot bind to host-owned execution provenance | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`  |
 
-Recovery is to configure the `flowguard-reviewer` agent with a
-structured-output-capable model and, for OpenCode, `reasoningEffort: none`; then
-re-run the originating FlowGuard command.
+Recovery is to correct an explicitly invalid OpenCode model configuration or
+produce a strict JSON serialization; do not force a reasoning mode or switch
+models automatically. The normal reviewer transport requires no StructuredOutput
+tool capability.
 
 ### Reviewer Dispatch Recovery
 
@@ -434,19 +439,19 @@ The submitted `reviewFindings` are compared against the host-captured structured
 - `blockingIssues` count must match exactly (blocks `SUBAGENT_FINDINGS_ISSUES_MISMATCH`)
 - `accept` with blocking issues is rejected (blocks `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`)
 
-The former Level 3 (Task-prompt integrity) was removed with reviewer Task interception. Reviewer dispatch failures now surface as `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`, `HOST_STRUCTURED_OUTPUT_REQUIRED`, `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, or `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
+The former Level 3 (Task-prompt integrity) was removed with reviewer Task interception. Reviewer dispatch failures now surface as `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`, `HOST_STRUCTURED_OUTPUT_REQUIRED`, `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, `REVIEWER_CAPTURE_PROVENANCE_INVALID`, `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`, or `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
 
 ```
 flowguard_plan (initial)    →  tool emits reviewDispatch.required
-    ↓                          plugin creates reviewer child session (session.create)
-    ↓                          plugin prompts it with format: json_schema
-    ↓                          plugin captures host-owned structured output
+    ↓                          parent invokes the native reviewer Task child
+    ↓                          plugin requests a correlated normal JSON serialization
+    ↓                          plugin validates response-correlated strict JSON
     ↓                          plugin mutates reviewDispatch to completed
     ↓                          plugin records the invocation in enforcement state
     ↓
 flowguard_plan (verdict)    →  L1: host-observed invocation recorded?
                             →  L2: child session ID match?
-                            →  L4: findings match host-captured structured output?
+                            →  L4: findings match the captured, validated JSON payload?
                                 ↳ ALL PASS → tool executes normally
                                 ↳ ANY FAIL → throw → tool call physically blocked
 ```

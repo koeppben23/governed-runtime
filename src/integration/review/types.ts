@@ -15,6 +15,7 @@ import type {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW,
 } from '../tool-names.js';
+import type { ReviewMessageCapture } from '../../state/review-message-capture.js';
 
 /** Tools that own a review obligation and its pending-review key. */
 export type ReviewableTool =
@@ -38,6 +39,7 @@ const REVIEWER_COMPLETION_FAILURE_CODES = [
   'REVIEWER_OUTPUT_TRUNCATED',
   'REVIEWER_STEP_BUDGET_EXHAUSTED',
   'REVIEWER_TASK_INCOMPLETE',
+  'REVIEWER_HOST_MESSAGE_ENCODING_FAILED',
 ] as const;
 
 export type ReviewerCompletionFailureCode = (typeof REVIEWER_COMPLETION_FAILURE_CODES)[number];
@@ -61,7 +63,7 @@ export interface ReviewerOutputCapFailure {
   readonly reason: string;
   readonly model: string;
   readonly modelLimit: number | null;
-  readonly configured: number;
+  readonly configured: number | 'host';
 }
 
 /** Terminal failure raised by the bounded reviewer execution watchdog. */
@@ -182,7 +184,18 @@ export interface OrchestratorClient {
     messages?(opts: { path: { id: string } }): Promise<{
       data?:
         | Array<{
-            info?: { role?: string; finish?: string; error?: unknown };
+            info?: {
+              id?: string;
+              parentID?: string;
+              sessionID?: string;
+              role?: string;
+              model?: { providerID: string; modelID: string; variant?: string };
+              providerID?: string;
+              modelID?: string;
+              variant?: string;
+              finish?: string;
+              error?: unknown;
+            };
             parts?: Array<{
               id?: string;
               type?: string;
@@ -201,13 +214,11 @@ export interface OrchestratorClient {
       path: { id: string };
       body: {
         agent?: string;
+        messageID?: string;
+        model?: { providerID: string; modelID: string };
+        variant?: string;
         system?: string;
         parts: Array<{ type: string; text: string }>;
-        format?: {
-          type: 'json_schema';
-          schema: Record<string, unknown>;
-          retryCount?: number;
-        };
       };
     }): Promise<{
       data?:
@@ -217,9 +228,20 @@ export interface OrchestratorClient {
               id?: string;
               type?: string;
               text?: string;
+              synthetic?: boolean;
+              ignored?: boolean;
             }>;
             info?: {
-              structured?: unknown;
+              id?: string;
+              parentID?: string;
+              sessionID?: string;
+              role?: string;
+              agent?: string;
+              providerID?: string;
+              modelID?: string;
+              variant?: string;
+              finish?: string;
+              time?: { completed?: number };
               error?: {
                 name: string;
                 message?: string;
@@ -250,9 +272,9 @@ export interface ReviewerSuccessResult {
   readonly sessionId: string;
   readonly rawResponse: string;
   readonly findings: Record<string, unknown> | null;
-  readonly reviewOutputMode: 'structured_output';
-  readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high';
+  readonly reviewOutputMode: 'validated_json';
+  readonly reviewAssuranceLevel: 'host_message_validated';
+  readonly capture: ReviewMessageCapture;
   /** Host-observed lifecycle timestamps for the successful reviewer prompt. */
   readonly invokedAt?: string;
   readonly fulfilledAt?: string;

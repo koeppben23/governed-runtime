@@ -142,6 +142,13 @@
         "src/templates/mandates.ts"
       ]
     },
+    "review-capture": {
+      "configFile": "stryker.review-capture.conf.json",
+      "vitestConfigFile": "vitest.stryker-review-capture.config.ts",
+      "reportPath": "reports/mutation/review-capture/mutation.json",
+      "manifestPath": "reports/mutation/review-capture/admission-manifest.json",
+      "admittedSelectors": []
+    },
     "schemas": {
       "configFile": "stryker.schemas.conf.json",
       "vitestConfigFile": "vitest.stryker-schemas.config.ts",

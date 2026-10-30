@@ -64,7 +64,7 @@ Start the peer review flow for the current FlowGuard session.
    - When \`reviewDispatch.required\` is true, \`reviewDispatch.completed\` is not true, and the
      response carries NO \`reviewRetry\` envelope:
      - Require \`reviewInvocation.action === "call_task"\`,
-       \`reviewInvocation.transport === "native_task_structured_followup"\`, and
+       \`reviewInvocation.transport === "native_task_message_json"\`, and
        \`reviewInvocation.task.subagentType === "flowguard-reviewer"\`. If any differ, stop;
        do not invent another transport.
      - Call the host-native \`task\` tool with \`subagent_type: "flowguard-reviewer"\`,
@@ -78,7 +78,7 @@ Start the peer review flow for the current FlowGuard session.
        branches; do not continue this dispatch branch or demand completion fields before rerouting.
    - When \`reviewDispatch.completed\` is true:
      - Require \`reviewExecution.visible === true\`, \`reviewExecution.transcriptNavigable === true\`,
-       and \`reviewExecution.structuredOutput === true\`. Otherwise stop on the returned blocker.
+       and \`reviewExecution.validationAuthority === "flowguard"\`. Otherwise stop on the returned blocker.
 
 5. Complete content-aware \`flowguard_review\`: when \`reviewDispatch.completed\` is true,
    call \`flowguard_review({ reviewObligationId })\` with the exact obligation ID from the

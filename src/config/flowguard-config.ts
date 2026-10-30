@@ -40,7 +40,7 @@ import {
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
 /** Default maximum output tokens requested from the independent reviewer. */
-export const REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT = 65_536;
+export const REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT = 'host' as const;
 /** Default maximum duration of one reviewer tool call. */
 const REVIEWER_TOOL_TIMEOUT_MS_DEFAULT = 30_000;
 /** Default review-phase budget. Tool time is nested inside this budget. */
@@ -244,10 +244,7 @@ export const FlowGuardConfigSchema = z.object({
        * closed instead of silently lowering the cap.
        */
       outputTokenMax: z
-        .number()
-        .int()
-        .min(1)
-        .max(1_000_000)
+        .union([z.literal('host'), z.number().int().min(1).max(1_000_000)])
         .default(REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT),
       /** Maximum duration of one reviewer tool call. Must fit inside the review budget. */
       toolTimeoutMs: z

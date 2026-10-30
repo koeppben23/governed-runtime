@@ -3,11 +3,12 @@
  * @description OpenCode platform adapter — concrete implementation of HostAdapter (HAI).
  *
  * Independent review has exactly one productive OpenCode transport:
- * `native_task_structured_followup`. OpenCode's native Task owns the visible,
- * navigable, permission-isolated reviewer child; FlowGuard then requests
- * schema-constrained serialization in that SAME child session. A direct
- * session.create/session.prompt child is intentionally not advertised because
- * OpenCode does not surface it as a native subagent in the parent UI.
+ * `native_task_message_json`. OpenCode's native Task owns the visible,
+ * navigable, permission-isolated reviewer child; FlowGuard then requests a
+ * normal JSON serialization in that SAME child session with the same model and
+ * variant. A direct session.create/session.prompt child is intentionally not
+ * advertised because OpenCode does not surface it as a native subagent in the
+ * parent UI.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
  * @version v5
@@ -56,15 +57,15 @@ export class HostCapabilityMismatchError extends Error {
 }
 
 const NATIVE_TASK_STRUCTURED_REVIEW_TRANSPORT: HostReviewTransportCapability = {
-  kind: 'native_task_structured_followup',
-  structuredOutput: true,
+  kind: 'native_task_message_json',
+  validatedResult: true,
   parentVisible: true,
   transcriptNavigable: true,
   isolatedAgentIdentity: true,
   // OpenCode's native Task derives child permissions from the parent and the
   // selected subagent, and applies additional task/primary-tool denies.
   permissionIsolation: true,
-  assurance: 'structured_high',
+  assurance: 'host_message_validated',
 };
 
 export class OpenCodeHostAdapter implements HostAdapter {
@@ -129,7 +130,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
         'argMutation',
         'outputReplacement',
         'contextInjection',
-        'reviewTransports.native_task_structured_followup',
+        'reviewTransports.native_task_message_json',
         'compactionInjection',
       ],
     };

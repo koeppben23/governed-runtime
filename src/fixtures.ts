@@ -56,6 +56,7 @@ import {
 import type { DeclaredClaim } from './state/proofgraph.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
+import { messageCaptureFixture } from './review-invocation-test-helpers.js';
 
 export {
   IMPL_REVIEW_CONVERGED,
@@ -302,7 +303,14 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'native_task_structured_followup',
+      invocationMode: 'native_task_message_json',
+      transportVersion: 5,
+      capture: messageCaptureFixture({
+        childSessionId: 'child-session-1',
+        obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        findings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
+      }),
       hostVisible: true,
       transcriptNavigable: true,
       promptHash: 'a'.repeat(64),
@@ -314,9 +322,8 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       consumedByObligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       capturedVerdict: 'accept',
       capturedRawFindings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
+      reviewOutputMode: 'validated_json',
+      reviewAssuranceLevel: 'host_message_validated',
     },
   ],
   attempts: [
@@ -405,7 +412,14 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'native_task_structured_followup',
+      invocationMode: 'native_task_message_json',
+      transportVersion: 5,
+      capture: messageCaptureFixture({
+        childSessionId: 'child-session-1',
+        obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        findings: PLAN_REVIEW_CAPTURED_FINDINGS,
+      }),
       hostVisible: true,
       transcriptNavigable: true,
       promptHash: 'b'.repeat(64),
@@ -417,9 +431,8 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       consumedByObligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       capturedVerdict: 'accept',
       capturedRawFindings: PLAN_REVIEW_CAPTURED_FINDINGS,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
+      reviewOutputMode: 'validated_json',
+      reviewAssuranceLevel: 'host_message_validated',
     },
   ],
   attempts: [

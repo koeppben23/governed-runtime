@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../../../review-invocation-test-helpers.js';
+
 /**
  * @module integration/review/observation-binding.test
  * @description Adversarial matrix for canonical repository evidence binding.
@@ -500,10 +502,16 @@ describe('direct/submitted validator path', () => {
       parentSessionId: SESSION_ID,
       childSessionId: CHILD_SESSION_ID,
       agentType: REVIEWER_SUBAGENT_TYPE,
-      invocationMode: 'native_task_structured_followup',
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
+      invocationMode: 'native_task_message_json',
+      transportVersion: 5,
+      capture: messageCaptureFixture({
+        childSessionId: CHILD_SESSION_ID,
+        obligationId: obligation.obligationId,
+        attemptId,
+        findings,
+      }),
+      reviewOutputMode: 'validated_json',
+      reviewAssuranceLevel: 'host_message_validated',
       hostVisible: true,
       transcriptNavigable: true,
       source: 'host-orchestrated',

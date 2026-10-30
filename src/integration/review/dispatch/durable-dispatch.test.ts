@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../../../review-invocation-test-helpers.js';
+
 /**
  * @module integration/review/durable-dispatch.test
  * @description Blocker 3: durable dispatch authorization, abandonment, and
@@ -1032,6 +1034,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       challenges: [],
       reviewedBy: { sessionId: CHILD },
       reviewedAt: NOW,
+      attestation: { toolObligationId: obligationId },
     };
     return {
       obligationId,
@@ -1048,9 +1051,14 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
         sessionId: CHILD,
         rawResponse: JSON.stringify(findings),
         findings,
-        reviewOutputMode: 'structured_output' as const,
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high' as const,
+        reviewOutputMode: 'validated_json' as const,
+        capture: messageCaptureFixture({
+          childSessionId: CHILD,
+          obligationId,
+          attemptId,
+          findings,
+        }),
+        reviewAssuranceLevel: 'host_message_validated' as const,
       } satisfies ReviewerSuccessResult,
     };
   }
@@ -1098,7 +1106,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.invocations[0]).toMatchObject({
       childSessionId: CHILD,
       attemptId: attempt.attemptId,
-      invocationMode: 'native_task_structured_followup',
+      invocationMode: 'native_task_message_json',
     });
     expect(after.obligations[0]).toMatchObject({
       status: 'fulfilled',
@@ -1281,6 +1289,12 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       },
     ];
 
+    params.reviewerResult.capture = messageCaptureFixture({
+      childSessionId: CHILD,
+      obligationId: obligation.obligationId,
+      attemptId: attempt.attemptId,
+      findings,
+    });
     const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, params);
 
     expect(result).toMatchObject({

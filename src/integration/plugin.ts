@@ -58,6 +58,8 @@ import {
 } from './reviewer-execution-failure.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { ReviewerCaptureController } from './reviewer-capture.js';
+import { attachReviewerCaptureHooks } from './plugin-reviewer-capture.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -189,6 +191,7 @@ function createOrchestratorDeps(
   client: OrchestratorClient,
 ): OrchestratorDeps {
   return {
+    reviewerCapture: new ReviewerCaptureController(),
     resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
     updateReviewAssurance: ws.updateReviewAssurance,
     blockReviewOutcome: ws.blockReviewOutcome,
@@ -302,6 +305,9 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
     orchestratorDeps,
     failures: reviewerExecutionFailures,
   });
+  if (orchestratorDeps.reviewerCapture) {
+    attachReviewerCaptureHooks(hooks, orchestratorDeps.reviewerCapture, client);
+  }
   return hooks;
 }
 
@@ -361,6 +367,7 @@ function attachReviewerExecutionWatchdog(
     client: deps.client,
     log: deps.log,
     failures: deps.failures,
+    capture: deps.orchestratorDeps.reviewerCapture,
     persistFailure: createReviewerExecutionFailurePersister(deps),
   });
   const isTerminal = createReviewerExecutionTerminalReader(deps);

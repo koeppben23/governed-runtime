@@ -28,7 +28,6 @@ import type {
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-  buildInvocationEvidence,
   findLatestObligation,
 } from './review/obligations/assurance.js';
 import { hashFindings } from './review/findings-hash.js';
@@ -39,6 +38,7 @@ import { completedDispatchForInvocation } from '../state/evidence-test-constants
 import { isOpenReviewObligation } from '../state/review-dispatch.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
 import { buildReviewChallengeContract } from './review/obligations/challenge-contract.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../review-invocation-test-helpers.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 

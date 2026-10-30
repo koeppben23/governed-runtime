@@ -39,7 +39,7 @@ function runHook(
   },
   outputValue = output(),
   options: {
-    outputTokenMax?: number;
+    outputTokenMax?: number | 'host';
     configReadError?: unknown;
     failures?: Map<string, ReviewerOutputCapFailure>;
     persistFailure?: (
@@ -100,6 +100,18 @@ describe('reviewer output-cap hook', () => {
     await hook(inputValue, outputValue);
     expect(outputValue.maxOutputTokens).toBe(32_000);
   });
+
+  it.each([{}, { limit: { output: 4096 } }])(
+    'preserves host capacity for small or unknown models: %j',
+    async (model) => {
+      const { hook, inputValue, outputValue, failures } = runHook({ model }, output(), {
+        outputTokenMax: 'host',
+      });
+      await hook(inputValue, outputValue);
+      expect(outputValue).toEqual(output());
+      expect(failures.size).toBe(0);
+    },
+  );
 
   it('HAPPY: leaves every non-reviewer agent untouched', async () => {
     const { hook, inputValue, outputValue, log } = runHook({ agent: 'build' });

@@ -1,3 +1,9 @@
+import {
+  completedReviewMessages,
+  hostJsonReply,
+  wireReviewerHostFixture,
+} from './reviewer-capture-test-helpers.js';
+
 /**
  * @module integration/plugin.test
  * @description Tests for the FlowGuardAuditPlugin integration module.
@@ -250,10 +256,12 @@ describe('integration/plugin', () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks).sort();
       expect(keys).toEqual([
+        'chat.message',
         'chat.params',
         'command.execute.before',
         'dispose',
         'event',
+        'experimental.chat.messages.transform',
         'experimental.session.compacting',
         'tool.execute.after',
         'tool.execute.before',
@@ -303,7 +311,7 @@ describe('integration/plugin', () => {
                 'argMutation',
                 'outputReplacement',
                 'contextInjection',
-                'reviewTransports.native_task_structured_followup',
+                'reviewTransports.native_task_message_json',
                 'compactionInjection',
               ],
             },
@@ -869,37 +877,38 @@ describe('integration/plugin', () => {
       };
     }
 
-    async function bootNativeReviewSession(buildStructured?: (obligationId: string) => unknown) {
+    async function bootNativeReviewSession(
+      buildStructured?: (obligationId: string) => unknown,
+      outputTokenMax: number | 'host' = 'host',
+    ) {
       const ws = await createTestWorkspace();
       const sessionID = crypto.randomUUID();
       const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+      await writeRepoConfig(ws.tmpDir, {
+        ...DEFAULT_CONFIG,
+        reviewer: { ...DEFAULT_CONFIG.reviewer, outputTokenMax },
+      });
       const structured = buildStructured?.(obligationId) ?? null;
-      const structuredPrompt = vi.fn(async () => ({ data: { info: { structured } } }));
+      const structuredPrompt = vi.fn(async () => hostJsonReply(structured));
       const agents = vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] }));
+      const client = createBootableHostClient({
+        app: { log: async () => {}, agents },
+        session: {
+          get: async ({ path: { id } }: { path: { id: string } }) => ({
+            data: { id, parentID: sessionID },
+          }),
+          prompt: structuredPrompt,
+          messages: async () => completedReviewMessages(CHILD_SESSION_ID),
+        },
+      });
       const hooks = await FlowGuardAuditPlugin(
         createMockInput({
           worktree: ws.tmpDir,
           directory: ws.tmpDir,
-          client: {
-            app: { log: async () => {}, agents },
-            session: {
-              get: async ({ path: { id } }: { path: { id: string } }) => ({
-                data: { id, parentID: sessionID },
-              }),
-              prompt: structuredPrompt,
-              messages: async () => ({
-                data: [
-                  { info: { role: 'user' } },
-                  {
-                    info: { role: 'assistant', finish: 'stop' },
-                    parts: [{ type: 'text', text: 'Final review answer.' }],
-                  },
-                ],
-              }),
-            },
-          },
+          client,
         }),
       );
+      wireReviewerHostFixture(client, hooks);
       const output = {
         title: 'plan',
         output: strictPlanReviewRequiredOutput(obligationId, { reviewAttemptId: ATTEMPT_ID }),
@@ -1019,7 +1028,7 @@ describe('integration/plugin', () => {
     });
 
     it('blocks a reviewer whose configured output cap exceeds the model limit without re-arming', async () => {
-      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession();
+      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession(undefined, 65_536);
       try {
         await dispatchReviewerTask(hooks, sessionID);
         const params = {
@@ -1350,9 +1359,7 @@ describe('integration/plugin', () => {
         ]);
         const retryAttemptId = reviewRetry.attemptId as string;
 
-        structuredPrompt.mockResolvedValue({
-          data: { info: { structured: nativeFindings(obligationId) } },
-        });
+        structuredPrompt.mockResolvedValue(hostJsonReply(nativeFindings(obligationId)));
         const secondTask = await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
         const secondPrompt = String(secondTask.args.prompt);
         expect(secondPrompt).toContain('## Prior Output Rejected — Contract Errors');
@@ -1576,7 +1583,8 @@ describe('integration/plugin', () => {
           expect.objectContaining({
             path: { id: CHILD_SESSION_ID },
             body: expect.objectContaining({
-              format: expect.objectContaining({ type: 'json_schema' }),
+              messageID: expect.stringMatching(/^msg/),
+              model: expect.any(Object),
             }),
           }),
         );
@@ -1592,7 +1600,7 @@ describe('integration/plugin', () => {
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
         const invocation = state?.reviewAssurance?.invocations[0];
-        expect(invocation?.invocationMode).toBe('native_task_structured_followup');
+        expect(invocation?.invocationMode).toBe('native_task_message_json');
         expect(invocation?.childSessionId).toBe(CHILD_SESSION_ID);
         void obligationId;
       } finally {

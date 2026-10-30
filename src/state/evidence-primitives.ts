@@ -157,8 +157,8 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
 /**
  * How the reviewer was invoked.
  *
- * `native_task_structured_followup` is the only sanctioned transport: OpenCode
+ * `native_task_message_json` is the only sanctioned transport: OpenCode
  * exposes the reviewer as a native Task child and FlowGuard captures structured
  * findings from a schema-constrained follow-up in that same child session.
  */
-export type ReviewInvocationMode = 'native_task_structured_followup';
+export type ReviewInvocationMode = 'native_task_message_json';

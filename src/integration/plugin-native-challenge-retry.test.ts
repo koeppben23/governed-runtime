@@ -21,6 +21,11 @@ import {
   reviewObligationResponseFields,
 } from './review/dispatch/dispatch-authority.js';
 import { seedStrictImplementationSession } from './plugin-host-task-diagnostics-test-helpers.js';
+import {
+  completedReviewMessages,
+  hostJsonReply,
+  wireReviewerHostFixture,
+} from './reviewer-capture-test-helpers.js';
 
 const CHILD_SESSION_ID = 'child-session-native-1';
 const CALL_ID = 'call-native-1';
@@ -138,27 +143,21 @@ describe('native challenge-evidence retry', () => {
 
       const structuredPrompt = vi.fn();
       const agents = vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] }));
+      const client = createBootableHostClient({
+        app: { log: async () => {}, agents },
+        session: {
+          prompt: structuredPrompt,
+          messages: async () => completedReviewMessages(CHILD_SESSION_ID),
+        },
+      });
       const hooks = await FlowGuardAuditPlugin(
         mockInput(ws.tmpDir, {
           worktree: ws.tmpDir,
           directory: ws.tmpDir,
-          client: {
-            app: { log: async () => {}, agents },
-            session: {
-              prompt: structuredPrompt,
-              messages: async () => ({
-                data: [
-                  { info: { role: 'user' } },
-                  {
-                    info: { role: 'assistant', finish: 'stop' },
-                    parts: [{ type: 'text', text: 'Final review answer.' }],
-                  },
-                ],
-              }),
-            },
-          },
+          client,
         }),
       );
+      wireReviewerHostFixture(client, hooks);
 
       const state = await readState(sessDir);
       if (!state) throw new Error('expected persisted session state');
@@ -206,15 +205,13 @@ describe('native challenge-evidence retry', () => {
         evidenceRefs: [implementationRef, validationRef],
       };
 
-      structuredPrompt.mockResolvedValue({
-        data: {
-          info: {
-            structured: nativeFindings(obligationId, {
-              challenges: [invalidChallenge, validChallenge],
-            }),
-          },
-        },
-      });
+      structuredPrompt.mockResolvedValue(
+        hostJsonReply(
+          nativeFindings(obligationId, {
+            challenges: [invalidChallenge, validChallenge],
+          }),
+        ),
+      );
       const first = await completeReviewerTask(hooks, sessionID);
 
       const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
@@ -238,15 +235,13 @@ describe('native challenge-evidence retry', () => {
         ...invalidChallenge,
         evidenceRefs: [implementationRef, validationRef],
       };
-      structuredPrompt.mockResolvedValue({
-        data: {
-          info: {
-            structured: nativeFindings(obligationId, {
-              challenges: [correctedChallenge, validChallenge],
-            }),
-          },
-        },
-      });
+      structuredPrompt.mockResolvedValue(
+        hostJsonReply(
+          nativeFindings(obligationId, {
+            challenges: [correctedChallenge, validChallenge],
+          }),
+        ),
+      );
       const secondTask = await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
       const secondPrompt = String(secondTask.args.prompt);
       expect(secondPrompt).toContain('challenges.0.evidenceRefs');

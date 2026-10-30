@@ -452,7 +452,7 @@ function detectCustomConfig(config: {
   logging: { level: string };
   policy: Record<string, unknown>;
   profile: Record<string, unknown>;
-  reviewer: { outputTokenMax: number };
+  reviewer: { outputTokenMax: number | 'host' };
 }): boolean {
   return (
     config.logging.level !== 'info' ||

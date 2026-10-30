@@ -1,24 +1,26 @@
 /**
  * @module cli/opencode-reviewer-structured-live.smoke.test
- * @description Real-host E2E for the frozen OpenCode structured-reviewer wire
- * contract (Blocker 5).
+ * @description Real-host E2E for the model-neutral reviewer wire contract.
  *
  * Proves against the pinned OpenCode binary with a deterministic local capture
  * provider (no credentials, no cost) that:
  * 1. the pinned host version exactly matches the validated baseline,
  * 2. `flowguard-reviewer` resolves as an installed subagent,
  * 3. a reviewer CHILD session can be created with `parentID`,
- * 4. `session.prompt` with `format: { type: 'json_schema' }` reaches the model
- *    as a host-validated structured-output call, and
- * 5. the host returns the result exclusively as `info.structured` — never the
- *    removed `info.structured_output` field or a text/tool-part fallback.
+ * 4. a normal `session.prompt` with an explicit `messageID` and no `format`
+ *    reaches the provider without StructuredOutput or required tool choice,
+ * 5. the response is correlated to that request and carries the selected
+ *    provider/model, and the unformatted history remains readable.
+ *
+ * Model/variant acceptance and force-tool rejection are provider-profile
+ * properties, not claims of this deterministic capture host.
  *
  * Gating: runs in CI (deterministic capture provider) and locally with
  * `OPENCODE_LIVE=1`. Uses the pinned `opencode-ai` baseline via `npm exec`
  * unless `OPENCODE_CLI` names an explicit binary.
  *
  * @test-policy HAPPY, BAD — gated host-contract integration.
- * @version v1
+ * @version v2
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -31,7 +33,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { buildReviewerAgentContent } from './install-helpers.js';
-import { buildObligationFindingsJsonSchema } from '../integration/review/evidence/findings-schema.js';
 import { ReviewerFindingsInput } from '../state/evidence-review-input.js';
 import { TESTED_OPENCODE_HOST_VERSION } from './opencode-runtime-compat.js';
 import {
@@ -65,18 +66,8 @@ const FINDINGS = {
   attestation: { toolObligationId: '11111111-1111-4111-8111-111111111111' },
 } as const;
 
-/** The obligation the deterministic answer above belongs to. */
-const OBLIGATION_SCHEMA = buildObligationFindingsJsonSchema({
-  obligationId: FINDINGS.attestation.toolObligationId,
-  iteration: FINDINGS.iteration,
-  planVersion: FINDINGS.planVersion,
-  requiredChallengeCount: 0,
-  requiredChallengeKind: undefined,
-  allowedEvidenceRefs: undefined,
-});
-
-/** Structured answer that is statically valid but violates the obligation `const`. */
-const WRONG_ITERATION = { ...FINDINGS, iteration: FINDINGS.iteration + 1 };
+const FINDINGS_JSON = JSON.stringify(FINDINGS);
+const REQUEST_MESSAGE_ID = 'msg_flowguard_smoke_request';
 
 let tmpRoot: string;
 let host: PinnedOpenCodeHost;
@@ -88,10 +79,8 @@ interface ServeHandle {
   output: () => string;
 }
 
-/** Deterministic OpenAI-compatible capture: answers structured-output tool calls. */
-let structuredCalls = 0;
-/** Parameter schema of the structured-output tool as the host sent it to the model. */
-const structuredToolParameters: unknown[] = [];
+/** Every provider request observed by the deterministic capture server. */
+const capturedRequests: Array<Record<string, unknown>> = [];
 
 function createCaptureServer(captured: Record<string, unknown>[]): ReturnType<typeof createServer> {
   return createServer(async (request: IncomingMessage, response: ServerResponse) => {
@@ -116,47 +105,17 @@ function createCaptureServer(captured: Record<string, unknown>[]): ReturnType<ty
     }
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
     captured.push(body);
-
-    const tools = Array.isArray(body.tools)
-      ? (body.tools as Array<{ function?: { name?: string } }>)
-      : [];
-    const structuredTool =
-      tools.find((tool) => /structured/i.test(tool.function?.name ?? '')) ?? tools[0];
-    const toolName = structuredTool?.function?.name;
-    if (!toolName) {
-      // No structured-output tool offered: answer plain text. The assertion on
-      // `info.structured` then fails, which is the honest wire-contract defect.
-      const textBody = JSON.stringify({
-        id: 'chatcmpl-probe',
-        object: 'chat.completion',
-        created: 1,
-        model: 'probe',
-        choices: [
-          { index: 0, message: { role: 'assistant', content: 'no tools' }, finish_reason: 'stop' },
-        ],
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-      });
-      if (body.stream === true) {
-        response.writeHead(200, { 'content-type': 'text/event-stream' });
-        response.write(`data: ${textBody}\n\n`);
-        response.end('data: [DONE]\n\n');
-        return;
-      }
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(textBody);
-      return;
-    }
-    structuredCalls += 1;
-    structuredToolParameters.push(
-      (structuredTool as { function?: { parameters?: unknown } }).function?.parameters,
-    );
-    const toolCall = {
-      id: `call_structured_${structuredCalls}`,
-      type: 'function',
-      function: { name: toolName, arguments: JSON.stringify(WRONG_ITERATION) },
-    };
-    // OpenCode streams chat completions; a non-streaming reply would leave the
-    // host waiting. Mirror the OpenAI SSE shape (same as the boundary E2E).
+    // Normal agent turn: plain JSON text, never a StructuredOutput tool call.
+    const textBody = JSON.stringify({
+      id: 'chatcmpl-probe',
+      object: 'chat.completion',
+      created: 1,
+      model: 'probe',
+      choices: [
+        { index: 0, message: { role: 'assistant', content: FINDINGS_JSON }, finish_reason: 'stop' },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
     if (body.stream === true) {
       response.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -170,7 +129,7 @@ function createCaptureServer(captured: Record<string, unknown>[]): ReturnType<ty
         created: 1,
         model: 'probe',
         choices: [
-          { index: 0, delta: { role: 'assistant', tool_calls: [toolCall] }, finish_reason: null },
+          { index: 0, delta: { role: 'assistant', content: FINDINGS_JSON }, finish_reason: null },
         ],
       });
       chunk({
@@ -178,7 +137,7 @@ function createCaptureServer(captured: Record<string, unknown>[]): ReturnType<ty
         object: 'chat.completion.chunk',
         created: 1,
         model: 'probe',
-        choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
       });
       chunk({
         id: 'chatcmpl-probe',
@@ -192,22 +151,7 @@ function createCaptureServer(captured: Record<string, unknown>[]): ReturnType<ty
       return;
     }
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(
-      JSON.stringify({
-        id: 'chatcmpl-probe',
-        object: 'chat.completion',
-        created: 1,
-        model: 'probe',
-        choices: [
-          {
-            index: 0,
-            message: { role: 'assistant', content: null, tool_calls: [toolCall] },
-            finish_reason: 'tool_calls',
-          },
-        ],
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-      }),
-    );
+    response.end(textBody);
   });
 }
 
@@ -310,8 +254,7 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
       'utf8',
     );
 
-    const captured: Record<string, unknown>[] = [];
-    capture = createCaptureServer(captured);
+    capture = createCaptureServer(capturedRequests);
     await new Promise<void>((resolve, reject) => {
       capture!.once('error', reject);
       capture!.listen(0, '127.0.0.1', resolve);
@@ -333,7 +276,7 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
   });
 
   it(
-    'returns the reviewer findings exclusively through info.structured for a child session',
+    'preserves request identity and model selection without forcing structured tool output',
     async () => {
       const versionProbe = spawnSync(host.command, [...host.argsPrefix, '--version'], {
         encoding: 'utf8',
@@ -353,17 +296,16 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
       const agentsRes = await fetch(`${serve!.baseUrl}/agent?directory=${dir}`, { headers });
       const agents = (await agentsRes.json()) as Array<{ name?: string }>;
       expect(agents.some((agent) => agent.name === 'flowguard-reviewer')).toBe(true);
-      expect(
-        await readFile(
-          join(tmpRoot, 'project', '.opencode', 'agents', 'flowguard-reviewer.md'),
-          'utf8',
-        ),
-      ).toContain('reasoningEffort: none');
+      const agentMarkdown = await readFile(
+        join(tmpRoot, 'project', '.opencode', 'agents', 'flowguard-reviewer.md'),
+        'utf8',
+      );
+      expect(agentMarkdown).not.toMatch(/^reasoningEffort:/m);
 
       const parentRes = await fetch(`${serve!.baseUrl}/session?directory=${dir}`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ title: 'FlowGuard Structured Review Parent' }),
+        body: JSON.stringify({ title: 'FlowGuard Model-Neutral Review Parent' }),
       });
       const parent = (await parentRes.json()) as { id: string };
       expect(parent.id).toBeTruthy();
@@ -389,13 +331,9 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
             signal: controller.signal,
             body: JSON.stringify({
               agent: 'flowguard-reviewer',
-              parts: [{ type: 'text', text: 'Return the required review findings object.' }],
+              messageID: REQUEST_MESSAGE_ID,
+              parts: [{ type: 'text', text: 'Serialize the review as one JSON object.' }],
               model: { providerID: 'flowguard-capture', modelID: 'probe' },
-              format: {
-                type: 'json_schema',
-                schema: OBLIGATION_SCHEMA,
-                retryCount: 1,
-              },
             }),
           },
         );
@@ -408,34 +346,48 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
 
       const info = message.info as Record<string, unknown> | undefined;
       expect(info, `missing info in ${JSON.stringify(message)}`).toBeTruthy();
-      expect(info!.sessionID ?? child.id).toBe(child.id);
+      expect(info!.sessionID).toBe(child.id);
+      expect(info!.parentID).toBe(REQUEST_MESSAGE_ID);
+      expect(info!.providerID).toBe('flowguard-capture');
+      expect(info!.modelID).toBe('probe');
       expect(info!.error).toBeUndefined();
+      expect(info!.finish).toBe('stop');
 
-      // Frozen wire contract: host-observed structured output only.
-      expect(info!.structured, JSON.stringify(info)).toBeTruthy();
-      expect(Object.prototype.hasOwnProperty.call(info!, 'structured_output')).toBe(false);
-      const parsed = ReviewerFindingsInput.safeParse(info!.structured);
+      const textParts = (message.parts as Array<{ type?: string; text?: string }>).filter(
+        (part) => part.type === 'text',
+      );
+      expect(textParts.map((part) => part.text).join('')).toBe(FINDINGS_JSON);
+      const parsed = ReviewerFindingsInput.safeParse(JSON.parse(textParts[0]!.text!));
       expect(parsed.success, JSON.stringify(parsed.success ? {} : parsed.error.issues)).toBe(true);
-      // The obligation-bound schema reaches the model intact: the `const`
-      // facts are part of the StructuredOutput tool parameters.
-      expect(structuredCalls).toBe(1);
-      const sent = structuredToolParameters[0] as {
-        properties?: Record<
-          string,
-          { const?: unknown; properties?: Record<string, { const?: unknown }> }
-        >;
-      };
-      expect(sent?.properties?.iteration?.const).toBe(FINDINGS.iteration);
-      expect(sent?.properties?.planVersion?.const).toBe(FINDINGS.planVersion);
-      expect(sent?.properties?.attestation?.properties?.toolObligationId?.const).toBe(
-        FINDINGS.attestation.toolObligationId,
+
+      // The provider request is a normal agent turn. No StructuredOutput tool
+      // and no forced tool choice means models are not required to implement
+      // that additional capability.
+      expect(capturedRequests).toHaveLength(1);
+      const providerRequest = capturedRequests[0]!;
+      const toolNames = Array.isArray(providerRequest.tools)
+        ? (providerRequest.tools as Array<{ function?: { name?: string } }>).map(
+            (tool) => tool.function?.name ?? '',
+          )
+        : [];
+      expect(toolNames.some((name) => /structured/i.test(name))).toBe(false);
+      expect(providerRequest.tool_choice).not.toBe('required');
+      expect(providerRequest.model).toBe('probe');
+
+      // Unformatted prompts remain listable; no OpenCode formatted-message
+      // encoding defect is triggered by this transport.
+      const historyRes = await fetch(
+        `${serve!.baseUrl}/session/${child.id}/message?directory=${dir}`,
+        {
+          headers,
+        },
       );
-      // Pinned host behavior: no host-side validation or retry against the
-      // schema. The const-violating answer is returned unchanged, so only the
-      // FlowGuard capture gate can reject it.
-      expect((info!.structured as { iteration?: number }).iteration).toBe(
-        WRONG_ITERATION.iteration,
-      );
+      const historyText = await historyRes.text();
+      expect(historyRes.ok, `history failed: ${historyRes.status} ${historyText}`).toBe(true);
+      const history = JSON.parse(historyText) as Array<{ info?: { id?: string } }>;
+      const ids = history.map((entry) => entry.info?.id);
+      expect(ids).toContain(REQUEST_MESSAGE_ID);
+      expect(ids).toContain(info!.id);
     },
     EXEC_TIMEOUT_MS,
   );

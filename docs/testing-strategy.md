@@ -610,6 +610,45 @@ for a future full base-profile run: `src/audit/proofgraph/evidence-approval-admi
 `src/state/risk-path-classifier.ts` and `src/shared/repo-path.ts`. The
 canonical admission remains the profile full run on the freeze commit.
 
+The 2026-10-30 model-neutral review transport stages six candidates in the
+dedicated `review-capture` profile for a future commit-bound profile full run:
+`src/integration/reviewer-capture.ts` (request correlation, tool fence and
+identity-bound quarantine completion),
+`src/integration/review/dispatch/structured-followup.ts` (serialization, repair
+and unknown SDK outcomes), `src/integration/review/dispatch/provider-error.ts`
+(trusted error classification),
+`src/integration/review/dispatch/reviewer-task-completion.ts` (host completion
+and child-model proof), `src/shared/strict-json-object.ts` (strict,
+resource-bounded JSON decoding) and `src/state/review-message-capture.ts`
+(payload, lineage and semantic evidence binding).
+
+### Reviewer Capture Security Profile
+
+The registered `review-capture` profile (`stryker.review-capture.conf.json`) measures
+the model-neutral capture boundary independently with the standard 80% break
+threshold. Its candidate authorities are:
+
+- `src/integration/reviewer-capture.ts` — request correlation, tool fence and identity-bound quarantine completion.
+- `src/integration/review/dispatch/structured-followup.ts` — serialization, repair and unknown SDK outcomes.
+- `src/integration/review/dispatch/provider-error.ts` — trusted error classification.
+- `src/integration/review/dispatch/reviewer-task-completion.ts` — host completion and child-model proof.
+- `src/shared/strict-json-object.ts` — strict, resource-bounded JSON decoding.
+- `src/state/review-message-capture.ts` — payload, lineage and semantic evidence binding.
+
+Run the complete profile with its mandatory Vitest-5 preflight:
+
+```bash
+npm run mutation -- stryker.review-capture.conf.json
+node scripts/verify-mutation-admission.mjs --profile review-capture
+```
+
+The full-profile report is `reports/mutation/review-capture/mutation.json`.
+Passing a working-tree measurement does not invent immutable admission history:
+these selectors remain explicit candidates until a commit-bound admission is
+recorded. This profile complements the actual-plugin OpenCode smoke test
+`src/cli/opencode-reviewer-capture-live.smoke.test.ts`, which exercises positive
+native Task binding and a prohibited serialization tool call on the pinned host.
+
 ### Running Locally
 
 ```bash

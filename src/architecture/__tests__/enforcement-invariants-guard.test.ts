@@ -20,7 +20,7 @@ describe('enforcement contract invariants', () => {
     // Only a host-observed structured invocation authorizes a verdict; no
     // submitted argument payload can satisfy the gate.
     expect(content).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
-    expect(content).toContain('native_task_structured_followup');
+    expect(content).toContain('native_task_message_json');
     expect(content).not.toContain('args.reviewFindings');
   });
 
@@ -31,7 +31,7 @@ describe('enforcement contract invariants', () => {
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('native_task_structured_followup');
+    expect(content).toContain('native_task_message_json');
     expect(content).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
   });
 
@@ -58,7 +58,7 @@ describe('enforcement contract invariants', () => {
     expect(content).not.toContain('recordPluginReview');
     expect(content).not.toContain('subagentCalled');
     expect(content).not.toContain('capturedFindings');
-    expect(content).toContain('native_task_structured_followup');
+    expect(content).toContain('native_task_message_json');
   });
 
   it('removes the obsolete host-task prompt authority', () => {

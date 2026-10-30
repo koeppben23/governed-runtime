@@ -872,6 +872,7 @@ describe('Layer Dependency Rules', () => {
     const allowedStateSharedImports = new Set([
       '../shared/actor-assurance.js',
       '../shared/canonical-json.js',
+      '../shared/strict-json-object.js', // Pure, bounded decoder shared by capture and persisted proof validation.
       '../shared/hashing.js',
       '../shared/repo-path.js', // Canonical logical paths and bounded glob matching.
       '../shared/policy-idp-config.js',
