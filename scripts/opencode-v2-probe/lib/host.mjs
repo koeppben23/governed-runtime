@@ -82,13 +82,17 @@ function config({
   mcpCodemode,
   providerPackage = '@opencode/ai/providers/openai-compatible',
   modelId = 'probe',
+  staticProvider = true,
+  denyAllPermissions = false,
+  policies,
 }) {
   return {
     $schema: 'https://opencode.ai/config.json',
     update: 'disable',
     model: `probe/${modelId}`,
-    permissions: [{ action: '*', resource: '*', effect: 'allow' }],
+    permissions: [{ action: '*', resource: '*', effect: denyAllPermissions ? 'deny' : 'allow' }],
     ...(instructions ? { instructions: [instructions] } : {}),
+    ...(policies ? { policies } : {}),
     ...(mcpServer
       ? {
           mcp: {
@@ -102,29 +106,33 @@ function config({
           },
         }
       : {}),
-    providers: {
-      probe: {
-        name: 'FlowGuard Probe',
-        package: providerPackage,
-        settings: {
-          baseURL: provider.baseURL,
-          apiKey: 'probe-only',
-        },
-        models: {
-          [modelId]: {
-            name: 'Probe',
-            limit: { context: 128_000, output: 8_192 },
-            capabilities: { tools: true },
-            variants: [
-              {
-                id: 'chosen',
-                settings: { reasoningEffort: 'high' },
+    ...(staticProvider
+      ? {
+          providers: {
+            probe: {
+              name: 'FlowGuard Probe',
+              package: providerPackage,
+              settings: {
+                baseURL: provider.baseURL,
+                apiKey: 'probe-only',
               },
-            ],
+              models: {
+                [modelId]: {
+                  name: 'Probe',
+                  limit: { context: 128_000, output: 8_192 },
+                  capabilities: { tools: true },
+                  variants: [
+                    {
+                      id: 'chosen',
+                      settings: { reasoningEffort: 'high' },
+                    },
+                  ],
+                },
+              },
+            },
           },
-        },
-      },
-    },
+        }
+      : {}),
   };
 }
 
@@ -221,6 +229,9 @@ export default {
         mcpCodemode: options.mcpCodemode,
         providerPackage: options.providerPackage,
         modelId: options.modelId,
+        staticProvider: options.staticProvider !== false,
+        denyAllPermissions: options.denyAllPermissions === true,
+        policies: options.policies,
       }),
       null,
       2,
@@ -266,6 +277,9 @@ export default {
     FG_PROBE_DENY_TOOLS: (options.denyTools ?? []).join(','),
     FG_PROBE_DENY_PROMPT: options.denyPrompt ? '1' : '0',
     FG_PROBE_FAIL_SETUP: options.failSetup ? '1' : '0',
+    FG_PROBE_REGISTER_PROVIDER: options.registerProvider ? '1' : '0',
+    FG_PROBE_PROVIDER_URL: provider.baseURL,
+    ...(options.disableDefaultPlugins ? { OPENCODE_DISABLE_DEFAULT_PLUGINS: '1' } : {}),
     ...(options.mcpMarker ? { FG_MCP_MARKER: options.mcpMarker } : {}),
   };
   const binary = process.env.OPENCODE_CLI ?? 'opencode';

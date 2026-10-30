@@ -7,7 +7,7 @@
  * prove what that exact installed entrypoint can observe.
  */
 import { appendFileSync } from 'node:fs';
-import { Plugin } from '@opencode/plugin';
+import { Model, Plugin, Provider } from '@opencode/plugin';
 
 const JOURNAL = process.env.FG_PROBE_JOURNAL ?? '';
 const DENY_TOOLS = new Set(
@@ -106,6 +106,32 @@ export default Plugin.define({
       journal: JOURNAL,
       denyTools: [...DENY_TOOLS],
     });
+
+    if (process.env.FG_PROBE_REGISTER_PROVIDER === '1') {
+      const providerID = Provider.ID.make('probe');
+      const modelID = Model.ID.make('probe');
+      const baseURL = process.env.FG_PROBE_PROVIDER_URL ?? '';
+      await ctx.provider.transform((editor) => {
+        editor.add({
+          info: {
+            ...Provider.Info.empty(providerID),
+            name: 'FlowGuard Probe',
+            activation: 'enabled',
+            package: '@opencode/ai/providers/openai-compatible',
+            settings: { baseURL, apiKey: 'probe-only' },
+          },
+          models: [
+            {
+              ...Model.Info.default(providerID, modelID),
+              name: 'Probe',
+              limit: { context: 128_000, output: 8_192 },
+              capabilities: { tools: true },
+            },
+          ],
+        });
+      });
+      record('setup:provider-registered', { providerID: 'probe', modelID: 'probe', baseURL });
+    }
 
     await ctx.tool.transform((editor) => {
       editor.add({

@@ -8,6 +8,7 @@
     "backup-restore": "node backup-restore.mjs",
     "desktop-backend": "node probes/desktop-backend.mjs",
     "plugin-activation": "node probes/plugin-activation.mjs",
+    "p0-inactive-host": "node probes/p0-inactive-host.mjs",
     "tool-discovery": "node probes/tool-discovery.mjs",
     "fences": "node probes/fences.mjs",
     "command-provenance": "node probes/command-provenance.mjs",

@@ -13,6 +13,10 @@ support, and it does not claim that the missing guarantees are impossible.
 It records which guarantees were demonstrated, which failed, and which remain
 unverified.
 
+The focused P0 follow-up is
+[`P0_SECURITY_GATE.md`](./P0_SECURITY_GATE.md). It records the inactive-plugin
+provider gate and the MCP/provider-executed tool findings.
+
 ## Host and method
 
 | Item                                 | Recorded value                                                                                  |
@@ -276,6 +280,8 @@ treated as active.
 | Plugin discovery                               | PASS                               | host log + `setup:ready`                                                        |
 | Full plugin activation                         | PASS                               | `Plugin.define` entrypoint; tools and commands registered                       |
 | Plugin setup failure fail-closed               | **NOT_SUPPORTED**                  | prompt accepted with zero hooks; install/doctor is not a runtime lock           |
+| Inactive-plugin provider gate (managed config) | **SUPPORTED only as config gate**  | no static provider + deny built-in provider; static-provider control bypasses   |
+| Non-bypassable inactive-host lock              | **NOT_SUPPORTED**                  | host falls back to built-in `opencode/big-pickle` without provider policy       |
 | V1 tool file compatibility                     | **NOT_SUPPORTED**                  | `.opencode/tools/legacy-probe.ts` absent from tool lists                        |
 | Local file/shell/code-mode fences              | PASS                               | no file/marker/network side effect                                              |
 | MCP preventive fence                           | **NOT_VERIFIED**                   | MCP connected but tool not advertised                                           |

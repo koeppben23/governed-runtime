@@ -15,6 +15,8 @@ or the repository's production runtime.
   serialization requests.
 - Record actual side effects and negative paths. A hook throw without a
   side-effect probe is not evidence.
+- The focused P0 follow-up is
+  `docs/host-probes/opencode-v2/2026-10-30-2.2.4/P0_SECURITY_GATE.md`.
 - Keep the raw JSON evidence under `evidence/` (gitignored). The committed
   report contains only sanitized facts.
 

@@ -12,6 +12,7 @@ const steps = [
   ...(skipBackup ? [] : [['backup', 'scripts/opencode-v2-probe/backup-restore.mjs']]),
   ['desktop-backend', 'scripts/opencode-v2-probe/probes/desktop-backend.mjs'],
   ['plugin-activation', 'scripts/opencode-v2-probe/probes/plugin-activation.mjs'],
+  ['p0-inactive-host', 'scripts/opencode-v2-probe/probes/p0-inactive-host.mjs'],
   ['tool-discovery', 'scripts/opencode-v2-probe/probes/tool-discovery.mjs'],
   ['fences', 'scripts/opencode-v2-probe/probes/fences.mjs'],
   ['command-provenance', 'scripts/opencode-v2-probe/probes/command-provenance.mjs'],
