@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-30T21:46:14.379Z",
+  "at": "2026-10-30T21:53:20.742Z",
   "host": "patched-opencode",
   "policy": {
     "requiredPlugins": ["flowguard.host-probe"],

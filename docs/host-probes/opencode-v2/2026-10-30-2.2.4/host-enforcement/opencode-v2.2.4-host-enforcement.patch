@@ -43,10 +43,10 @@ index 5b5aee6..e3d145a 100644
  )
 diff --git a/packages/core/src/host-policy.ts b/packages/core/src/host-policy.ts
 new file mode 100644
-index 0000000..bf726b3
+index 0000000..1bf83f8
 --- /dev/null
 +++ b/packages/core/src/host-policy.ts
-@@ -0,0 +1,379 @@
+@@ -0,0 +1,398 @@
 +export * as HostPolicy from "./host-policy.js"
 +
 +import { ConfigHost } from "@opencode/schema/config/host"
@@ -70,6 +70,7 @@ index 0000000..bf726b3
 +
 +type ProviderRule = {
 +  readonly id: string
++  readonly package?: string
 +  readonly baseURL?: string
 +  readonly transports?: readonly ("http" | "websocket")[]
 +}
@@ -97,6 +98,7 @@ index 0000000..bf726b3
 +  readonly assertProviderRequest: (
 +    input: {
 +      readonly providerID: string
++      readonly package?: string
 +      readonly url: string
 +      readonly body: string
 +      readonly transport: "http" | "websocket"
@@ -107,6 +109,7 @@ index 0000000..bf726b3
 +  readonly withProviderSend: <A, E, R>(
 +    input: {
 +      readonly providerID: string
++      readonly package?: string
 +      readonly url: string
 +      readonly body: string
 +      readonly transport: "http" | "websocket"
@@ -175,6 +178,7 @@ index 0000000..bf726b3
 +        )
 +          return []
 +        const rules = declared.filter((rule) => rule.id === id)
++        const packages = Array.from(new Set(rules.flatMap((rule) => (rule.package ? [rule.package] : []))))
 +        const baseURLs = Array.from(new Set(rules.flatMap((rule) => (rule.baseURL ? [rule.baseURL] : []))))
 +        const transports = rules.some((rule) => rule.transports !== undefined)
 +          ? rules
@@ -188,6 +192,11 @@ index 0000000..bf726b3
 +        return [
 +          {
 +            id,
++            ...(packages.length === 1
++              ? { package: packages[0] }
++              : packages.length > 1
++                ? { package: "__host_policy_conflict__" }
++                : {}),
 +            ...(baseURLs.length === 1
 +              ? { baseURL: baseURLs[0] }
 +              : baseURLs.length > 1
@@ -321,6 +330,7 @@ index 0000000..bf726b3
 +    const assertProviderRequest = Effect.fn("HostPolicy.assertProviderRequest")(function* (
 +      input: {
 +        readonly providerID: string
++        readonly package?: string
 +        readonly url: string
 +        readonly body: string
 +        readonly transport: "http" | "websocket"
@@ -348,6 +358,14 @@ index 0000000..bf726b3
 +            ]),
 +          )
 +        for (const rule of rules) {
++          if (rule.package && rule.package !== input.package)
++            return yield* Effect.die(
++              denied(
++                "PROVIDER_IMPLEMENTATION_NOT_ALLOWED",
++                `Provider ${input.providerID} uses ${input.package ?? "an unknown package"}, outside ${rule.package}.`,
++                ["Use the provider package pinned by the provider rule."],
++              ),
++            )
 +          if (rule.transports && !rule.transports.includes(input.transport))
 +            return yield* Effect.die(
 +              denied("PROVIDER_TRANSPORT_NOT_ALLOWED", `Provider ${input.providerID} may not use ${input.transport}.`, [
@@ -379,6 +397,7 @@ index 0000000..bf726b3
 +    const withProviderSend = <A, E, R>(
 +      input: {
 +        readonly providerID: string
++        readonly package?: string
 +        readonly url: string
 +        readonly body: string
 +        readonly transport: "http" | "websocket"
@@ -446,6 +465,37 @@ index 0691d63..eef877b 100644
    InstancePlugins.node,
    PluginSupervisor.node,
    WorktreeStrategies.node,
+diff --git a/packages/core/src/model-resolver.ts b/packages/core/src/model-resolver.ts
+index 5f0595a..0823938 100644
+--- a/packages/core/src/model-resolver.ts
++++ b/packages/core/src/model-resolver.ts
+@@ -133,6 +133,8 @@ export interface Resolved {
+   readonly cache?: Provider.Cache
+   /** Provider transport policy; omitted means HTTP. */
+   readonly transport?: Provider.Transport
++  /** Provider package that supplies the runtime implementation. */
++  readonly package?: string
+   /** Milliseconds without streamed data before a WebSocket exchange fails; `false` disables the limit. */
+   readonly chunkTimeout?: number | false
+ }
+@@ -364,7 +366,8 @@ function prepareProviderURL(
+   const prepared = baseURL.replace(
+     /\$\{([^}]+)\}/g,
+     (placeholder, name: string) =>
+-      (name === "AWS_REGION" && typeof settings.region === "string" ? settings.region : process.env[name]) ?? placeholder,
++      (name === "AWS_REGION" && typeof settings.region === "string" ? settings.region : process.env[name]) ??
++      placeholder,
+   )
+   const failure = unresolvedProviderVariables(model, prepared)
+   return failure ? Effect.fail(failure) : Effect.succeed(prepared)
+@@ -486,6 +489,7 @@ export const layer = Layer.effect(
+         compaction: runtimeInfo.settings?.compaction,
+         cache: runtimeInfo.settings?.cache,
+         transport: provider?.settings?.transport,
++        package: runtimeInfo.package,
+         chunkTimeout: Provider.timeout(provider?.settings?.chunkTimeout),
+       }
+     })
 diff --git a/packages/core/src/plugin.ts b/packages/core/src/plugin.ts
 index fc59262..67d32f2 100644
 --- a/packages/core/src/plugin.ts
@@ -679,7 +729,7 @@ index c83baed..1ffa5fc 100644
      const selection = yield* context.select(input.session.id)
      const model = yield* context.resolveModel(selection.session)
 diff --git a/packages/core/src/session/model-request.ts b/packages/core/src/session/model-request.ts
-index a3bde4c..88edb3c 100644
+index a3bde4c..e5afe53 100644
 --- a/packages/core/src/session/model-request.ts
 +++ b/packages/core/src/session/model-request.ts
 @@ -24,13 +24,15 @@ import type {
@@ -717,7 +767,7 @@ index a3bde4c..88edb3c 100644
        const session = input.session
        const model = input.model
        const scope = { sessionID: session.id, agent: input.agent, model: model.ref, kind }
-@@ -334,54 +343,87 @@ export const layer = Layer.effect(
+@@ -334,54 +343,89 @@ export const layer = Layer.effect(
        const hasHttpHooks =
          (yield* hooks.has("session", "http.request", model.ref.providerID)) ||
          (yield* hooks.has("session", "http.response", model.ref.providerID))
@@ -762,6 +812,7 @@ index a3bde4c..88edb3c 100644
 +          const body = yield* Effect.promise(() => before.request.clone().text())
 +          const providerInput = {
 +            providerID: model.ref.providerID,
++            package: model.package,
 +            url: before.request.url,
 +            body,
 +            transport: "http" as const,
@@ -830,6 +881,7 @@ index a3bde4c..88edb3c 100644
 +                  policy.withProviderSend(
 +                    {
 +                      providerID: model.ref.providerID,
++                      package: model.package,
 +                      url: webSocketURL ?? "",
 +                      body: webSocketFrame ?? "",
 +                      transport: "websocket",
@@ -840,7 +892,7 @@ index a3bde4c..88edb3c 100644
                  receive: (frame) =>
                    hooks
                      .trigger("session", "experimental.ws.receive", { ...scope, frame })
-@@ -394,7 +436,7 @@ export const layer = Layer.effect(
+@@ -394,7 +438,7 @@ export const layer = Layer.effect(
        return {
          event: shaped,
          request,
@@ -849,7 +901,7 @@ index a3bde4c..88edb3c 100644
          retry: (event: Parameters<Prepared["retry"]>[0]) =>
            hooks.trigger("session", "retry", event).pipe(Effect.asVoid),
          // Permission.assert and the question tool throw declines as defects so tools cannot
-@@ -435,5 +477,5 @@ export const layer = Layer.effect(
+@@ -435,5 +479,5 @@ export const layer = Layer.effect(
  export const node = makeLocationNode({
    service: Service,
    layer,
@@ -1004,6 +1056,26 @@ index 8ec498e..d669d9e 100644
      Plugin.node,
      PluginHooks.node,
      Job.node,
+diff --git a/packages/core/src/session/runner/model.ts b/packages/core/src/session/runner/model.ts
+index 46bbaf2..b538cca 100644
+--- a/packages/core/src/session/runner/model.ts
++++ b/packages/core/src/session/runner/model.ts
+@@ -53,6 +53,7 @@ export const resolved = (
+     readonly limit: Model.Info["limit"]
+     readonly compaction?: Provider.Compaction
+     readonly transport?: Provider.Transport
++    readonly package?: string
+   },
+ ): Resolved => ({
+   model,
+@@ -66,6 +67,7 @@ export const resolved = (
+   limit: options.limit,
+   compaction: options.compaction,
+   transport: options.transport,
++  package: options.package,
+ })
+ 
+ const layer = Layer.effect(
 diff --git a/packages/core/src/session/runner/step.ts b/packages/core/src/session/runner/step.ts
 index 8d1a6c0..d1b03e5 100644
 --- a/packages/core/src/session/runner/step.ts
@@ -1120,10 +1192,10 @@ index 7fbce8a..d548ec7 100644
  
 diff --git a/packages/core/test/host-policy.test.ts b/packages/core/test/host-policy.test.ts
 new file mode 100644
-index 0000000..74a46ba
+index 0000000..57fb62b
 --- /dev/null
 +++ b/packages/core/test/host-policy.test.ts
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,208 @@
 +import { expect } from "bun:test"
 +import { Config } from "@opencode/core/config"
 +import { ConfigManaged } from "@opencode/core/config/managed"
@@ -1175,6 +1247,7 @@ index 0000000..74a46ba
 +  allowedProviders: [
 +    {
 +      id: "probe",
++      package: "probe-package",
 +      baseURL: "https://probe.invalid/v1",
 +      transports: ["http"],
 +    },
@@ -1203,6 +1276,7 @@ index 0000000..74a46ba
 +    const result = yield* host
 +      .assertProviderRequest({
 +        providerID: "probe",
++        package: "probe-package",
 +        url: "wss://probe.invalid/v1/responses",
 +        body: JSON.stringify({ tools: [{ type: "web_search" }] }),
 +        transport: "websocket",
@@ -1291,6 +1365,16 @@ index 0000000..74a46ba
 +    const allowed = yield* host
 +      .assertProviderRequest({
 +        providerID: "probe",
++        package: "probe-package",
++        url: "https://probe.invalid/v1/chat/completions",
++        body: JSON.stringify({ tools: [] }),
++        transport: "http",
++      })
++      .pipe(Effect.exit)
++    const wrongPackage = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        package: "other-package",
 +        url: "https://probe.invalid/v1/chat/completions",
 +        body: JSON.stringify({ tools: [] }),
 +        transport: "http",
@@ -1299,6 +1383,7 @@ index 0000000..74a46ba
 +    const wrongHost = yield* host
 +      .assertProviderRequest({
 +        providerID: "probe",
++        package: "probe-package",
 +        url: "https://evil.invalid/v1/chat/completions",
 +        body: JSON.stringify({ tools: [] }),
 +        transport: "http",
@@ -1307,12 +1392,14 @@ index 0000000..74a46ba
 +    const wrongTransport = yield* host
 +      .assertProviderRequest({
 +        providerID: "probe",
++        package: "probe-package",
 +        url: "wss://probe.invalid/v1/responses",
 +        body: JSON.stringify({ tools: [] }),
 +        transport: "websocket",
 +      })
 +      .pipe(Effect.exit)
 +    expect(Exit.isSuccess(allowed)).toBe(true)
++    expect(Exit.isFailure(wrongPackage)).toBe(true)
 +    expect(Exit.isFailure(wrongHost)).toBe(true)
 +    expect(Exit.isFailure(wrongTransport)).toBe(true)
 +  }).pipe(Effect.provide(policyLayer(endpointPolicy))),
@@ -1386,10 +1473,10 @@ index e78cbae..bf39961 100644
    }),
 diff --git a/packages/schema/src/config/host.ts b/packages/schema/src/config/host.ts
 new file mode 100644
-index 0000000..f744987
+index 0000000..c31a598
 --- /dev/null
 +++ b/packages/schema/src/config/host.ts
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,63 @@
 +export * as ConfigHost from "./host.js"
 +
 +import { Schema } from "effect"
@@ -1424,6 +1511,9 @@ index 0000000..f744987
 +  Schema.String,
 +  Schema.Struct({
 +    id: Schema.String,
++    package: Schema.String.pipe(optional).annotate({
++      description: "Provider package that must supply the runtime implementation.",
++    }),
 +    baseURL: Schema.String.pipe(optional).annotate({
 +      description: "Allowed endpoint origin and path prefix for this provider.",
 +    }),

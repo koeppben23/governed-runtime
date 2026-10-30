@@ -15,7 +15,7 @@ SDK baseline, and `TESTED_OPENCODE_HOST_VERSION` are unchanged. The patch is in
 | Trusted policy          | `requiredPlugins` and `providerExecution` are honored only from managed config documents or the launcher-owned `OPENCODE_HOST_POLICY` file. Required plugins may carry a source identity; provider rules may carry an endpoint prefix and allowed transports. Workspace and SDK config cannot weaken them. |
 | Required-plugin barrier | `Plugin.requireActive` waits for the current activation, checks live slots and the trusted source (local path or package target/version), and fails when a required plugin is missing, failed, closed, from another source, or retained only as a fallback after a failed reload.                          |
 | Execution gates         | The barrier runs in `SessionPrompt.prepare`, `SessionCommand.execute` before native command shell interpolation, `SessionGenerate.generate`, `SessionShell.start`, the session runner per step, immediately before the provider request in `SessionStep.attempt`, and before local tool execution.         |
-| Provider request policy | The final HTTP request body and WebSocket send frame are inspected after plugin request hooks and before the external send. Provider ID, endpoint prefix, transport, hosted-tool definitions, and known hosted calls are checked. Provider HTTP requests use `redirect: "manual"`.                         |
+| Provider request policy | The final HTTP request body and WebSocket send frame are inspected after plugin request hooks and before the external send. Provider ID, package, endpoint prefix, transport, hosted-tool definitions, and known hosted calls are checked. Provider HTTP requests use `redirect: "manual"`.                |
 | Final readiness         | The provider send runs under `Plugin.withActive`: the activation lock is held from the final readiness check through the network handoff, so a reload or deactivation cannot land in that interval.                                                                                                        |
 | MCP                     | `McpTool.flush` waits for the next catalog announcement with a bounded timeout, then reconciles. It no longer uses a fixed settle delay. The existing `permission.assert` remains before `mcp.callTool`.                                                                                                   |
 
@@ -91,8 +91,8 @@ from a clean temporary project with `OPENCODE_HOST_POLICY` pointing at
   equivalent upstream contract.
 - **Provider-emitted unoffered calls.** A provider that executes a hosted action
   without an offered definition cannot be stopped by a request gate. The
-  provider endpoint/transport rules are the capability contract; providers
-  without such a contract remain outside the guaranteed scope.
+  provider package/endpoint/transport rules are the capability contract;
+  providers without such a contract remain outside the guaranteed scope.
 - **Source identity is path/package identity.** `requiredPlugins` binds a plugin
   to a local path or package target/version. It does not yet pin a content hash;
   write access to the trusted path is treated as trusted installation access.
