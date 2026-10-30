@@ -7,7 +7,12 @@ import type {
   ReviewerModelSelection,
   ReviewMessageCapture,
 } from '../../../state/review-message-capture.js';
-import { ReviewerCaptureController, ReviewerCaptureError, textOf } from '../../reviewer-capture.js';
+import {
+  ReviewerCaptureController,
+  ReviewerCaptureError,
+  ReviewerCaptureOutcomeUnknownError,
+  textOf,
+} from '../../reviewer-capture.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import { classifyReviewerProviderError } from './provider-error.js';
 import type { OrchestratorClient, PendingReviewRetryDiagnostic } from '../types.js';
@@ -80,18 +85,19 @@ function serializationPrompt(input: Input): string {
   ].join('\n');
 }
 
-function responseFailure(response: Response): Blocked | null {
+function responseFailure(input: Input, response: Response): Blocked | null {
+  const data = response?.data;
+  const sdkError = response?.error;
   const classified =
-    classifyReviewerProviderError(response.error) ??
-    classifyReviewerProviderError(response.data?.info?.error);
+    classifyReviewerProviderError(sdkError) ?? classifyReviewerProviderError(data?.info?.error);
   if (classified) return classified;
-  return response.error || !response.data || response.data.info?.error
-    ? {
-        kind: 'blocked',
-        code: 'REVIEWER_CAPTURE_PROVENANCE_INVALID',
-        reason: 'OpenCode did not establish a successful reviewer prompt execution outcome.',
-      }
-    : null;
+  if (sdkError != null || !data || data.info?.error != null) {
+    input.controller.quarantine(input.childSessionId);
+    throw new ReviewerCaptureOutcomeUnknownError(
+      'OpenCode did not establish the reviewer prompt execution outcome; its capture fence is retained.',
+    );
+  }
+  return null;
 }
 
 function parseFindings(text: string): Parsed {
@@ -188,7 +194,7 @@ async function repair(
       path: { id: input.childSessionId },
       body: promptBody(input, agent, text),
     });
-    const failure = responseFailure(response);
+    const failure = responseFailure(input, response);
     if (failure) return failure;
     const capture = captureResponse(input, response);
     const parsed = parseFindings(capture.payloadText);
@@ -224,7 +230,7 @@ async function finish(
   response: Response,
   invokedAt: string,
 ): Promise<StructuredFollowupResult> {
-  const failure = responseFailure(response);
+  const failure = responseFailure(input, response);
   if (failure) return failure;
   let capture: ReviewMessageCapture;
   try {

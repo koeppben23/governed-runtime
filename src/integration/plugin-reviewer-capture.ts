@@ -1,8 +1,13 @@
 /** Wire the capture fence outside other handlers, before any tool side effect. */
 import type { Hooks } from '@opencode-ai/plugin';
 import type { ReviewerCaptureController } from './reviewer-capture.js';
+import type { OrchestratorClient } from './review/types.js';
 
-export function attachReviewerCaptureHooks(hooks: Hooks, capture: ReviewerCaptureController): void {
+export function attachReviewerCaptureHooks(
+  hooks: Hooks,
+  capture: ReviewerCaptureController,
+  client: OrchestratorClient,
+): void {
   const message = hooks['chat.message'];
   hooks['chat.message'] = async (input, output) => {
     await message?.(input, output);
@@ -22,5 +27,22 @@ export function attachReviewerCaptureHooks(hooks: Hooks, capture: ReviewerCaptur
   hooks['tool.execute.before'] = async (input, output) => {
     capture.beforeTool(input);
     await before?.(input, output);
+  };
+  const event = hooks.event;
+  hooks.event = async (input) => {
+    await event?.(input);
+    const notification = input.event;
+    const childSessionId =
+      notification.type === 'session.idle'
+        ? notification.properties.sessionID
+        : notification.type === 'session.status' && notification.properties.status.type === 'idle'
+          ? notification.properties.sessionID
+          : undefined;
+    // An abort can itself publish idle. Never make its event subscriber await
+    // the reconciliation whose abort request caused this notification.
+    if (childSessionId) void capture.reconcileOnIdle(client, childSessionId);
+    if (notification.type === 'message.updated') {
+      void capture.reconcileOnTerminalMessage(client, notification.properties.info);
+    }
   };
 }

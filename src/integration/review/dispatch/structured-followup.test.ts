@@ -26,6 +26,7 @@ function fixture(payload: (call: number) => unknown = () => reviewerInputFixture
     schema: REVIEW_FINDINGS_JSON_SCHEMA as Record<string, unknown>,
     model: { ...CAPTURE_MODEL } as { providerID: string; modelID: string; variant: string | null },
     controller,
+    lease: {} as { id?: string },
   };
   let calls = 0;
   const client: OrchestratorClient = {
@@ -44,7 +45,10 @@ function fixture(payload: (call: number) => unknown = () => reviewerInputFixture
   return { client, input, controller };
 }
 
-afterEach(() => _resetAgentResolutionCache());
+afterEach(() => {
+  _resetAgentResolutionCache();
+  vi.restoreAllMocks();
+});
 
 describe('model-neutral same-child findings', () => {
   it.each(['low', 'high', 'max', null])(
@@ -186,11 +190,132 @@ describe('model-neutral same-child findings', () => {
     expect(() => controller.beforeTool({ sessionID: input.childSessionId })).toThrow();
   });
 
+  it.each([
+    { error: new Error('host request failed without execution outcome') },
+    { error: { name: 'UnknownError', data: { message: 'host disconnected' } } },
+    {},
+    { data: undefined },
+    { data: { info: { error: { name: 'UnknownError' } } } },
+  ])('quarantines returned SDK ambiguity just like a thrown exception: %j', async (response) => {
+    const { client, input, controller } = fixture();
+    client.session.prompt = vi.fn(async () => response);
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+    controller.release(input.childSessionId, input.lease.id);
+    expect(() => controller.beforeTool({ sessionID: input.childSessionId })).toThrow();
+    expect(() => controller.begin(input.childSessionId, input.model, input)).toThrow();
+    expect(client.session.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('quarantines a returned unknown repair outcome without downgrading it to contract retry', async () => {
+    const { client, input, controller } = fixture(() => ({
+      ...reviewerInputFixture(),
+      unexpected: true,
+    }));
+    const prompt = client.session.prompt.bind(client.session);
+    let calls = 0;
+    client.session.prompt = vi.fn(async (opts) =>
+      ++calls === 1 ? prompt(opts) : { error: new Error('repair outcome unknown') },
+    );
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    controller.release(input.childSessionId, input.lease.id);
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+    expect(calls).toBe(2);
+  });
+
   it('does not let a diagnostic observer alter successful findings', async () => {
     const { client, input } = fixture();
     const result = await captureStructuredFindingsFromVisibleChild(client, input, () => {
       throw new Error('logger');
     });
     expect(result.kind).toBe('ok');
+  });
+
+  it('quarantines an SDK error even when it also carries otherwise valid response data', async () => {
+    const { client, input, controller } = fixture();
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => ({
+      ...(await prompt(opts)),
+      error: new Error('unknown execution status'),
+    }));
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+  });
+
+  it.each([null, undefined])(
+    'retains the fence for a malformed empty SDK envelope (%j)',
+    async (response) => {
+      const { client, input, controller } = fixture();
+      client.session.prompt = vi.fn(
+        async () =>
+          response as unknown as Awaited<ReturnType<OrchestratorClient['session']['prompt']>>,
+      );
+      await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+        code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      });
+      controller.release(input.childSessionId, input.lease.id);
+      expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+    },
+  );
+
+  it('does not steal a busy capture lease or invoke another host prompt', async () => {
+    const { client, input, controller } = fixture();
+    const lease = controller.begin(input.childSessionId, input.model, input);
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEWER_CAPTURE_PROVENANCE_INVALID' });
+    expect(input.lease.id).toBeUndefined();
+    expect(controller.isSafe(input.childSessionId)).toBe(true);
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    controller.release(input.childSessionId, lease);
+  });
+
+  it('preserves bounded contract diagnostics after an unsuccessful structure repair', async () => {
+    const { client, input } = fixture(() => ({
+      ...reviewerInputFixture(),
+      overallVerdict: 'untrusted rejected value',
+    }));
+    const result = await captureStructuredFindingsFromVisibleChild(client, input);
+    expect(result.kind).toBe('blocked');
+    if (result.kind !== 'blocked') throw new Error('Expected contract rejection');
+    expect(result.diagnostics).toMatchObject([
+      { code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION', data: { path: 'overallVerdict' } },
+    ]);
+    expect(JSON.stringify(result.diagnostics)).not.toContain('untrusted rejected value');
+    expect(client.session.prompt).toHaveBeenCalledTimes(2);
+  });
+
+  it('quarantines an unclassified message error even alongside plausible completed metadata', async () => {
+    const { client, input, controller } = fixture();
+    const prompt = client.session.prompt.bind(client.session);
+    client.session.prompt = vi.fn(async (opts) => {
+      const result = await prompt(opts);
+      return {
+        data: { ...result.data, info: { ...result.data?.info, error: { name: 'UnknownError' } } },
+      };
+    });
+    await expect(captureStructuredFindingsFromVisibleChild(client, input)).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(controller.isQuarantined(input.childSessionId)).toBe(true);
+  });
+
+  it('reports elapsed prompt duration, not absolute performance clock values', async () => {
+    const { client, input } = fixture();
+    vi.spyOn(performance, 'now').mockReturnValueOnce(1000).mockReturnValue(1005);
+    const timings: StructuredFollowupTiming[] = [];
+    expect(
+      (
+        await captureStructuredFindingsFromVisibleChild(client, input, (timing) =>
+          timings.push(timing),
+        )
+      ).kind,
+    ).toBe('ok');
+    expect(timings).toEqual([{ followupPromptMs: 5, promptOutcome: 'responded' }]);
   });
 });

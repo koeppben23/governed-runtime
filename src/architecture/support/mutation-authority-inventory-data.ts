@@ -12,6 +12,7 @@ import {
   type RequiredAuthorityEntry,
 } from './mutation-authority-inventory.js';
 import { MUTATION_PROFILES } from './mutation-authority-profile-registry.js';
+import { REVIEW_CAPTURE_MUTATION_CANDIDATES } from './mutation-review-capture-inventory.js';
 
 const SOURCE = {
   rootAgents: 'AGENTS.md#canonical-authorities',
@@ -1953,6 +1954,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Run-9 F2: a blocked artifact review surfaces its canonical recovery through resolveReviewContinuation without touching the machine directive or execution disposition. New projection authority; admission requires a profile full run meeting the per-target threshold.',
     { source: [SOURCE.integration], critical: true },
   ),
+  ...REVIEW_CAPTURE_MUTATION_CANDIDATES,
   candidate(
     'src/hooks/shared/session-resolver.ts',
     'Hook session resolution and payload-cwd binding enforcement',

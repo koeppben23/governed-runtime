@@ -63,6 +63,7 @@ export type MutationProfile =
   | 'human-projection'
   | 'identity-jwks'
   | 'mandates'
+  | 'review-capture'
   | 'schemas'
   | 'topology';
 

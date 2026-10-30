@@ -7,6 +7,7 @@
  */
 
 import type { FlowGuardConfig } from '../config/flowguard-config.js';
+import type { ReviewerCaptureController } from './reviewer-capture.js';
 import type {
   OrchestratorClient,
   ReviewerExecutionFailure,
@@ -50,6 +51,7 @@ export interface ReviewerExecutionWatchdogDeps {
     identity: ReviewerExecutionIdentity,
   ) => Promise<boolean>;
   readonly failures?: Map<string, ReviewerExecutionFailure>;
+  readonly capture?: ReviewerCaptureController | undefined;
 }
 
 /**
@@ -368,6 +370,9 @@ export class ReviewerExecutionWatchdog {
   }
 
   private async requestHostTermination(childSessionId: string): Promise<boolean> {
+    if (this.deps.capture?.isQuarantined(childSessionId)) {
+      return this.deps.capture.reconcileQuarantine(this.deps.client, childSessionId);
+    }
     let acknowledged = false;
     const session = this.deps.client.session;
     if (typeof session.abort === 'function') {

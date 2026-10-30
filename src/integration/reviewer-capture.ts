@@ -1,11 +1,13 @@
 /** Synchronous, request-scoped capture fence. Never mutates host permissions. */
 import { randomUUID } from 'node:crypto';
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
   ReviewerModelSelection,
   type ReviewMessageCapture,
 } from '../state/review-message-capture.js';
+import type { OrchestratorClient } from './review/types.js';
 
 type RecordValue = Record<string, unknown>;
 function record(value: unknown): RecordValue {
@@ -16,6 +18,10 @@ function record(value: unknown): RecordValue {
 
 export class ReviewerCaptureError extends Error {
   readonly code = 'REVIEWER_CAPTURE_PROVENANCE_INVALID';
+}
+
+export class ReviewerCaptureOutcomeUnknownError extends Error {
+  readonly code = 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
 }
 
 interface Capture {
@@ -32,6 +38,9 @@ interface Capture {
   responseMessageId?: string;
   violation?: string;
   quarantined: boolean;
+  reconciliation?: Promise<boolean>;
+  idleReconciliationObserved?: boolean;
+  terminalReconciliationMessageId?: string;
 }
 
 export class ReviewerCaptureController {
@@ -166,8 +175,16 @@ export class ReviewerCaptureController {
 
   verify(childSessionId: string, response: unknown, payloadText: string): ReviewMessageCapture {
     const capture = this.require(childSessionId);
-    this.assertSafe(childSessionId);
     const info = record(record(response).info);
+    // A stale/incomplete response proves neither completion of this request nor
+    // host quiescence. Keep the fence even if another capture check also fails.
+    if (!responseIdentityMatches(info, capture) || !hasTerminalOutcome(info)) {
+      capture.quarantined = true;
+      throw new ReviewerCaptureOutcomeUnknownError(
+        'Reviewer response does not prove termination of the exact capture request.',
+      );
+    }
+    this.assertSafe(childSessionId);
     if (
       !capture.requestObserved ||
       !capture.transformObserved ||
@@ -207,6 +224,69 @@ export class ReviewerCaptureController {
   quarantine(childSessionId: string): void {
     const capture = this.active.get(childSessionId);
     if (capture) capture.quarantined = true;
+  }
+
+  isQuarantined(childSessionId: string): boolean {
+    return this.active.get(childSessionId)?.quarantined === true;
+  }
+
+  /** No timer/event alone unlocks a capture. Abort + stable, request-bound
+   * terminal history + idle status are required, and the original lease must
+   * still own the entry after every asynchronous host observation. */
+  reconcileQuarantine(client: OrchestratorClient, childSessionId: string): Promise<boolean> {
+    const capture = this.active.get(childSessionId);
+    if (!capture?.quarantined) return Promise.resolve(false);
+    if (capture.reconciliation) return capture.reconciliation;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const bounded = new Promise<boolean>((resolve) => {
+      deadline = setTimeout(() => resolve(false), 1000);
+      deadline.unref?.();
+    });
+    capture.reconciliation = Promise.race([
+      this.confirmQuarantine(client, capture),
+      bounded,
+    ]).finally(() => {
+      if (deadline) clearTimeout(deadline);
+      delete capture.reconciliation;
+    });
+    return capture.reconciliation;
+  }
+
+  reconcileOnIdle(client: OrchestratorClient, childSessionId: string): Promise<boolean> {
+    const capture = this.active.get(childSessionId);
+    if (!capture?.quarantined || capture.idleReconciliationObserved) return Promise.resolve(false);
+    // Abort itself publishes idle. One idle-triggered probe per capture avoids
+    // an abort -> idle -> abort loop; a later terminal message can trigger again.
+    capture.idleReconciliationObserved = true;
+    return this.reconcileQuarantine(client, childSessionId);
+  }
+
+  reconcileOnTerminalMessage(client: OrchestratorClient, message: unknown): Promise<boolean> {
+    const info = record(message);
+    const capture = this.active.get(String(info.sessionID));
+    if (
+      !capture?.quarantined ||
+      !responseIdentityMatches(info, capture) ||
+      !hasTerminalOutcome(info) ||
+      capture.terminalReconciliationMessageId === info.id
+    )
+      return Promise.resolve(false);
+    capture.terminalReconciliationMessageId = String(info.id);
+    return this.reconcileQuarantine(client, capture.childSessionId);
+  }
+
+  private async confirmQuarantine(client: OrchestratorClient, capture: Capture): Promise<boolean> {
+    try {
+      const owned = () =>
+        this.active.get(capture.childSessionId) === capture && capture.quarantined;
+      if (!(await confirmCaptureTermination(client, capture, owned))) return false;
+      if (this.active.get(capture.childSessionId) !== capture || !capture.quarantined) return false;
+      this.active.delete(capture.childSessionId);
+      return true;
+    } catch {
+      // Failed host I/O is an unconfirmed outcome, never an unlock signal.
+      return false;
+    }
   }
 
   /** Only the owner lease may release; a failed concurrent begin must never
@@ -260,6 +340,112 @@ function completedResponse(info: RecordValue): boolean {
     info.error == null &&
     Number.isFinite(record(info.time).completed)
   );
+}
+
+function hasTerminalOutcome(info: RecordValue): boolean {
+  if (!Number.isFinite(record(info.time).completed)) return false;
+  if (info.error != null) return true;
+  return ['stop', 'length', 'content-filter', 'error', 'other'].includes(String(info.finish));
+}
+
+function terminalCaptureHistory(data: unknown, capture: Capture): boolean {
+  if (!Array.isArray(data) || data.length === 0) return false;
+  const messages = data.map((entry: unknown) => ({
+    info: record(record(entry).info),
+    parts: record(entry).parts,
+  }));
+  if (messages.some((entry) => entry.info.sessionID !== capture.childSessionId)) return false;
+  const requests = messages.filter((entry) => entry.info.id === capture.requestMessageId);
+  if (requests.length !== 1 || requests[0]?.info.role !== 'user') return false;
+  const running = messages.some(
+    (entry) =>
+      Array.isArray(entry.parts) &&
+      entry.parts.some((part: unknown) => {
+        const value = record(part);
+        return (
+          value.type === 'tool' &&
+          ['running', 'pending'].includes(String(record(value.state).status))
+        );
+      }),
+  );
+  const last = messages.at(-1)?.info;
+  return (
+    !running &&
+    last !== undefined &&
+    last.role === 'assistant' &&
+    responseIdentityMatches(last, capture) &&
+    hasTerminalOutcome(last)
+  );
+}
+
+async function confirmCaptureTermination(
+  client: OrchestratorClient,
+  capture: Capture,
+  owned: () => boolean,
+): Promise<boolean> {
+  const session = client.session;
+  if (!hasTerminationCapabilities(session)) return false;
+  const metadata = await session.get({ path: { id: capture.childSessionId } });
+  if (!owned() || !matchesChildMetadata(metadata, capture.childSessionId)) return false;
+  const aborted = await session.abort({ path: { id: capture.childSessionId } });
+  if (!owned() || aborted.error != null || aborted.data !== true) return false;
+  let previousDigest: string | undefined;
+  for (let probe = 0; probe < 2; probe++) {
+    const digest = await captureSnapshotDigest(session, capture, owned);
+    if (digest === null) return false;
+    if (previousDigest !== undefined && previousDigest !== digest) return false;
+    previousDigest = digest;
+  }
+  return true;
+}
+
+type TerminationSession = OrchestratorClient['session'] &
+  Required<Pick<OrchestratorClient['session'], 'get' | 'abort' | 'status' | 'messages'>>;
+
+function hasTerminationCapabilities(
+  session: OrchestratorClient['session'],
+): session is TerminationSession {
+  return (
+    typeof session.get === 'function' &&
+    typeof session.abort === 'function' &&
+    typeof session.status === 'function' &&
+    typeof session.messages === 'function'
+  );
+}
+
+function matchesChildMetadata(
+  metadata: Awaited<ReturnType<TerminationSession['get']>>,
+  child: string,
+): boolean {
+  return metadata.error == null && metadata.data?.id === child;
+}
+
+async function captureSnapshotDigest(
+  session: TerminationSession,
+  capture: Capture,
+  owned: () => boolean,
+): Promise<string | null> {
+  const [status, history] = await Promise.all([
+    session.status(),
+    session.messages({ path: { id: capture.childSessionId } }),
+  ]);
+  if (
+    !owned() ||
+    !idleCaptureStatus(status, capture.childSessionId) ||
+    history.error != null ||
+    !terminalCaptureHistory(history.data, capture)
+  )
+    return null;
+  return hashText(canonicalJsonStringify(history.data));
+}
+
+function idleCaptureStatus(
+  status: Awaited<ReturnType<NonNullable<OrchestratorClient['session']['status']>>>,
+  childSessionId: string,
+): boolean {
+  if (status.error != null || !status.data || Array.isArray(status.data)) return false;
+  // OpenCode's status map is sparse: idle sessions are removed from the map.
+  return status.data[childSessionId] === undefined || status.data[childSessionId]?.type === 'idle';
 }
 
 /** Resolve only the actual final child call, linked to its own host user request. */

@@ -306,7 +306,7 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
     failures: reviewerExecutionFailures,
   });
   if (orchestratorDeps.reviewerCapture) {
-    attachReviewerCaptureHooks(hooks, orchestratorDeps.reviewerCapture);
+    attachReviewerCaptureHooks(hooks, orchestratorDeps.reviewerCapture, client);
   }
   return hooks;
 }
@@ -367,6 +367,7 @@ function attachReviewerExecutionWatchdog(
     client: deps.client,
     log: deps.log,
     failures: deps.failures,
+    capture: deps.orchestratorDeps.reviewerCapture,
     persistFailure: createReviewerExecutionFailurePersister(deps),
   });
   const isTerminal = createReviewerExecutionTerminalReader(deps);

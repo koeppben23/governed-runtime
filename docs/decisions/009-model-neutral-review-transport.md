@@ -39,6 +39,15 @@ capture. Tool parts in the final response are rejected, including provider-execu
 tools. An additional model step is rejected before execution. Persistent child
 permissions are not modified. Unknown execution outcomes retain the fence.
 
+Both unclassified SDK error responses/missing data and thrown transport exceptions
+enter the existing unknown-outcome watchdog path. Cleanup requires the exact
+child metadata, an acknowledged abort and two stable idle history snapshots
+containing the capture's own request and terminal assistant response. Lease and
+request ownership remain checked across asynchronous observations. A failed or
+timed-out probe retains quarantine; timeout never unlocks it. Idle notifications
+trigger at most one automatic probe per capture (abort itself can publish idle);
+a later exact terminal-message notification can trigger another verified probe.
+
 The complete regular text of the correlated assistant message is decoded as one
 strict JSON object, bounded to 1 MiB, depth 64 and 100,000 values. There is no prose
 extraction, Markdown unwrapping, duplicate-key acceptance, or parser repair.
@@ -69,6 +78,14 @@ capacity failures remain terminal under the existing execution contract.
 - Live wire smoke on that pinned host: explicit request identity, correlated
   response, preserved provider/model, no StructuredOutput tool, no required
   tool choice, and readable unformatted history — passed.
+- Actual-plugin host integration: the compiled FlowGuard plugin and real plan
+  tool run through native Task authorization, child completion, synchronous
+  capture hooks and persisted atomic evidence binding. A negative provider
+  attempts `read` during serialization: the before-hook blocks it, the payload
+  sentinel never reaches the provider, and no invocation or bound attempt is
+  created. The selected `chosen` variant yields actual `reasoning_effort: high`
+  provider parameters in both phases; persistent child permissions are unchanged.
+  Both deterministic 1.19.5 scenarios passed.
 - Installed reviewer capability smoke on the pinned host (permissions, denied
   FlowGuard/MCP tools, observation carve-out) — passed.
 - FlowGuard unit/integration suite, architecture guards, installer smoke,
@@ -77,7 +94,19 @@ capacity failures remain terminal under the existing execution contract.
 - NOT_VERIFIED: the cross-provider live matrix (DeepSeek, GPT-6.1 Sol low/high,
   Claude, Gemini, local agent model) requires credentials and external provider
   execution. It was not run here and must not be claimed as passed.
-- The targeted mutation run for the new capture authorities did not produce a
-  usable score because the Stryker/Vitest per-test coverage mapping reported
-  zero executed tests and many harness errors for those files. The unit and
-  negative-path suites pass, but mutation coverage remains NOT_VERIFIED.
+- Earlier direct `npx stryker` invocations bypassed the repository's mandatory
+  Vitest-5 preflight and therefore skipped nested tests. The reproducible
+  `npm run mutation -- stryker.review-capture.conf.json` profile runs that
+  preflight, selects the boundary's direct suites and writes the complete JSON
+  report. The first meaningful run exposed missing negative tests (73.42%); the
+  hardened profile full run passed the unchanged 80% aggregate gate at 90.60%
+  (614 killed, 3 timeout, 59 survived, 5 no coverage, 396 compile errors;
+  8 min 16 s). Per target: `provider-error.ts` 92.86%,
+  `reviewer-task-completion.ts` 88.89%, `structured-followup.ts` 90.63%,
+  `reviewer-capture.ts` 91.79%, `strict-json-object.ts` 85.96%, and
+  `review-message-capture.ts` 88.89%. The verification command
+  `node scripts/verify-mutation-admission.mjs --profile review-capture` accepts
+  the report. Selectors remain explicit admission candidates until immutable
+  commit-bound admission provenance is recorded; no old commit is misattributed
+  to a dirty working-tree measurement. See `docs/testing-strategy.md` for
+  reproduction.
