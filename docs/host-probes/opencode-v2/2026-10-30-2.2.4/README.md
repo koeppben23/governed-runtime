@@ -40,6 +40,10 @@ node scripts/opencode-v2-probe/backup-restore.mjs
 node scripts/opencode-v2-probe/run-all.mjs --skip-backup
 ```
 
+`run-all.mjs` intentionally exits non-zero when any probe step is
+`NOT_SUPPORTED` or `NOT_VERIFIED`; the complete evidence is still written
+before it reports the failure.
+
 The probe package and its own lockfile live under
 `scripts/opencode-v2-probe/`. Raw JSON evidence is kept locally under
 `scripts/opencode-v2-probe/evidence/` and is not committed.

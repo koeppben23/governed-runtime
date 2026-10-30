@@ -58,3 +58,6 @@ for (const [name, script] of steps) {
 }
 await writeFile(join(evidence, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
 console.log('\n' + JSON.stringify(summary, null, 2));
+// The probe is evidence collection, but a non-zero step must not look like a
+// clean run. Expected NOT_VERIFIED probes are still real failures for GO.
+if (summary.steps.some((step) => step.exitCode !== 0)) process.exitCode = 1;
