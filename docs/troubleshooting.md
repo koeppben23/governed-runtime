@@ -283,10 +283,12 @@ real, registered reason.
 | `REVIEW_EVIDENCE_NOT_OBSERVED` | evidenceLocations have no matching authoritative repository observation for this reviewer attempt | Cite only locations obtained via flowguard_observe_repository during the attempt; start a fresh review otherwise |
 | `REVIEWER_CONTEXT_UNAVAILABLE` | Canonical reviewer context could not be materialized; no review attempt was created | Restore the persisted Discovery basis or workspace fingerprint, then re-run the review |
 | `INVALID_REVIEW_TOOL_SEQUENCE` | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn) | Follow invocation sequence; do not submit reviewerUnavailable when a host-observed reviewer invocation exists |
-| `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE` | Configured reviewer model does not support required structured output | Configure the flowguard-reviewer agent to use a structured-output-capable model, then re-run the originating command |
-| `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` | Reviewer Thinking Mode conflicts with the host-required structured-output tool | Configure flowguard-reviewer with `reasoningEffort: none`, then re-run the originating command |
-| `HOST_STRUCTURED_OUTPUT_REQUIRED` | Host did not deliver required structured output for the reviewer child session | Ensure the host supports session.prompt with format: json_schema; re-run the originating command |
-| `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | Host structured output violates the reviewer findings contract | Re-run the originating command to authorize a fresh reviewer attempt; do not repair findings outside the host-observed transaction |
+| `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE` | The isolated reviewer agent or a required agent capability is unavailable | Inspect the actual SDK/provider error; no host StructuredOutput capability is required |
+| `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` | The host/provider rejected the selected execution options | Correct explicit OpenCode model options; do not restart the reviewer automatically or force `none` |
+| `HOST_STRUCTURED_OUTPUT_REQUIRED` | The correlated assistant response is not one complete strict JSON object | Inspect the contract diagnostic; do not extract JSON from prose or submit copied findings |
+| `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | The correlated JSON violates ReviewerFindingsInput | Follow bounded capture recovery; never repair reviewer semantics outside the capture transaction |
+| `REVIEWER_CAPTURE_PROVENANCE_INVALID` | Request/response identity, model selection, tool-free execution or successful completion cannot be proved | Resolve the exact execution outcome; do not accept stale or concurrent messages or bypass the capture fence |
+| `REVIEWER_HOST_MESSAGE_ENCODING_FAILED` | OpenCode cannot encode a historical formatted message needed for reviewer provenance | Preserve session history and track upstream issues #40169/#26929; use an official corrected host, never a FlowGuard persistence workaround |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Re-hydrate; if persistent, restore from archive |
 | `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE` | Invocation does not establish coherent persisted attempt lineage | Re-invoke the reviewer; the stale invocation is retained for audit |
 | `REVIEW_ATTEMPT_NOT_FOUND` | Attempt referenced by invocation was not found in assurance state | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt |
@@ -566,12 +568,14 @@ PROOFGRAPH_RISK_TRIGGER_UNCOVERED
 READ_FAILED
 REGULATED_ACTOR_UNKNOWN
 RESTART_CYCLE_ITERATION_MISMATCH
+REVIEWER_CAPTURE_PROVENANCE_INVALID
 REVIEWER_COMPLETION_UNVERIFIABLE
 REVIEWER_CONTEXT_UNAVAILABLE
 REVIEWER_INVOCATION_EXHAUSTED
 REVIEWER_OUTPUT_CAP_INVALID
 REVIEWER_EXECUTION_OUTCOME_UNKNOWN
 REVIEWER_EXECUTION_TIMEOUT
+REVIEWER_HOST_MESSAGE_ENCODING_FAILED
 REVIEWER_OUTPUT_TRUNCATED
 REVIEWER_STEP_BUDGET_EXHAUSTED
 REVIEWER_TASK_ABORTED

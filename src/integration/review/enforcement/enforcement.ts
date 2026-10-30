@@ -35,6 +35,10 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
+import {
+  hasCaptureLineage,
+  captureMatchesFindings,
+} from '../../../state/review-message-capture.js';
 import type { EnforcementResult } from './types.js';
 import type {
   PendingReviewRetryDiagnostic,
@@ -273,7 +277,9 @@ export function enforceBeforeVerdict(
   }
   const bound = sessionState?.reviewAssurance?.invocations.some(
     (invocation) =>
-      invocation.invocationMode === 'native_task_structured_followup' &&
+      invocation.invocationMode === 'native_task_message_json' &&
+      hasCaptureLineage(invocation) &&
+      captureMatchesFindings(invocation.capture, invocation.capturedRawFindings) &&
       invocation.hostVisible === true &&
       invocation.transcriptNavigable === true &&
       invocation.obligationId === pending.obligationId &&

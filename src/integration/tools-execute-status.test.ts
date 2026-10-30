@@ -43,12 +43,12 @@ import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
   artifactReviewSubjectScope,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../review-invocation-test-helpers.js';
 import { hashFindings } from './review/findings-hash.js';
 import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';

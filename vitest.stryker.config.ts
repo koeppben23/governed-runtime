@@ -57,6 +57,8 @@ export default defineConfig({
       'src/integration/review/dispatch/agent-resolution.test.ts',
       'src/integration/review/dispatch/native-task-review-bindings.test.ts',
       'src/integration/review/dispatch/reviewer-task-completion.test.ts',
+      'src/integration/review/dispatch/structured-followup.test.ts',
+      'src/integration/reviewer-capture.test.ts',
       'src/integration/review/dispatch/native-task-review-prompt.test.ts',
       'src/integration/review/validation/challenge-policy-evaluation.test.ts',
       'src/integration/review/enforcement/dispatch-signal.test.ts',
@@ -68,6 +70,7 @@ export default defineConfig({
       'src/integration/review/verification-evidence-projection.test.ts',
 
       'src/shared/hashing.test.ts',
+      'src/shared/strict-json-object.test.ts',
       'src/redaction/export-redaction.test.ts',
       'src/shared/canonical-json.test.ts',
       'src/logging/error-serialize.test.ts',

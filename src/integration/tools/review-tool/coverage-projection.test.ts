@@ -8,10 +8,10 @@ import { buildPeerReviewCoverage } from './completion.js';
 import { buildReviewReport } from '../../../rails/review.js';
 import { assuranceWith, makeProgressedState, makeState } from '../../../fixtures.js';
 import {
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
 } from '../../review/obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../../review-invocation-test-helpers.js';
 import {
   PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
   PeerReviewCoverage,
@@ -150,7 +150,7 @@ describe('buildPeerReviewCoverage', () => {
     });
     expect(covered.objectivesTotal).toBe(3);
     expect(covered.objectivesCovered).toBe(3);
-    expect(covered.reviewAssurance).toBe('structured_high');
+    expect(covered.reviewAssurance).toBe('host_message_validated');
   });
 
   it('uses the authoritative objective count from the prepared peer-review task', () => {
@@ -292,6 +292,6 @@ describe('buildPeerReviewCoverage', () => {
     });
     expect(coverage.objectivesTotal).toBe(0);
     expect(coverage.objectivesCovered).toBe(0);
-    expect(coverage.reviewAssurance).toBe('structured_high');
+    expect(coverage.reviewAssurance).toBe('host_message_validated');
   });
 });

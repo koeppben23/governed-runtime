@@ -16,6 +16,7 @@
 
 import { z } from 'zod';
 import type { ObligationRefinementShape } from './evidence-review-refinements.js';
+import { hasCaptureLineage, type ReviewMessageCapture } from './review-message-capture.js';
 import {
   deriveRepositoryRevisionProvenance,
   hasFrozenRepositoryAuthority,
@@ -59,7 +60,8 @@ export interface AssuranceRefinementShape {
     readonly canonicalPromptDigest?: string | undefined;
     readonly consumedByObligationId?: string | null | undefined;
     readonly reviewOutputMode?: string | undefined;
-    readonly structuredOutputUsed?: boolean | undefined;
+    readonly transportVersion?: number | undefined;
+    readonly capture?: ReviewMessageCapture | undefined;
     readonly reviewAssuranceLevel?: string | undefined;
   }[];
   readonly attempts: readonly AttemptRefinementShape[];
@@ -135,10 +137,11 @@ function hasCanonicalInvocationShape(
 ): boolean {
   for (const invocation of assurance.invocations) {
     if (
-      invocation.invocationMode !== 'native_task_structured_followup' ||
-      invocation.reviewOutputMode !== 'structured_output' ||
-      invocation.reviewAssuranceLevel !== 'structured_high' ||
-      invocation.structuredOutputUsed !== true ||
+      invocation.invocationMode !== 'native_task_message_json' ||
+      invocation.reviewOutputMode !== 'validated_json' ||
+      invocation.reviewAssuranceLevel !== 'host_message_validated' ||
+      invocation.transportVersion !== 5 ||
+      !hasCaptureLineage(invocation) ||
       invocation.source !== 'host-orchestrated' ||
       invocation.hostVisible !== true ||
       invocation.transcriptNavigable !== true

@@ -65,7 +65,7 @@ export const PeerReviewCoverage = z
     changedPathCount: z.number().int().nonnegative(),
     objectivesCovered: z.number().int().nonnegative(),
     objectivesTotal: z.number().int().nonnegative(),
-    reviewAssurance: z.literal('structured_high').nullable(),
+    reviewAssurance: z.literal('host_message_validated').nullable(),
     missingVerification: z.array(z.string()),
   })
   .strict()

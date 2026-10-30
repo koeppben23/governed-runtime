@@ -606,16 +606,17 @@ Values are validated fail-closed at install time:
 - `FLOWGUARD_REVIEWER_MODEL` — alphanumerics, dots, slashes, `@`, colons, and
   hyphens only; newlines rejected (YAML-injection guard).
 - `FLOWGUARD_REVIEWER_EFFORT` — one of `none`, `low`, `medium`, `high`,
-  `xhigh`, or `max`. `none` is supported by OpenCode only and is the required
-  default for its structured reviewer transport. Any other value aborts the install.
+  `xhigh`, or `max` (OpenCode also accepts `none`). It is applied only when the
+  operator sets it explicitly; FlowGuard no longer injects a default reasoning
+  value. Any other value aborts the install.
 
 Per-host support matrix (the injected frontmatter key differs by host):
 
-| Host          | `model:` injection | Effort frontmatter key | Notes                                                                                        |
-| ------------- | ------------------ | ---------------------- | -------------------------------------------------------------------------------------------- |
-| `opencode`    | yes                | `reasoningEffort:`     | Defaults to `none`: Thinking Mode conflicts with OpenCode's required structured-output tool. |
-| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.                                          |
-| `codex`       | no                 | unsupported            | See limitation below.                                                                        |
+| Host          | `model:` injection | Effort frontmatter key | Notes                                                                             |
+| ------------- | ------------------ | ---------------------- | --------------------------------------------------------------------------------- |
+| `opencode`    | yes                | `reasoningEffort:`     | Applied only when explicitly set; host/provider defaults are preserved otherwise. |
+| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.                               |
+| `codex`       | no                 | unsupported            | See limitation below.                                                             |
 
 **Codex limitation:** FlowGuard ships the Codex reviewer as a markdown subagent,
 which does not honor `model`/`model_reasoning_effort` directives. Codex configures
@@ -631,27 +632,30 @@ The independent reviewer's output ceiling is configured in `flowguard.json`:
 ```json
 {
   "reviewer": {
-    "outputTokenMax": 65536
+    "outputTokenMax": "host"
   }
 }
 ```
 
-`65536` is the selected default. A fresh install writes it; an existing config
-without the field resolves to the default through the config schema. An explicit
-value such as `32000` is preserved, including across `install --force`.
+`"host"` is the model-neutral default: OpenCode's resolved output budget is used
+unchanged, including for smaller or locally hosted agent models. A fresh install
+writes it; an existing config without the field resolves to it through the config
+schema. An explicit numeric value such as `32000` is preserved, including across
+`install --force`, and is validated against the model's reported output limit.
 
 The FlowGuard OpenCode plugin applies the value through the `chat.params` hook to
 the `flowguard-reviewer` agent only. The parent and every other agent keep the
-host default. The reviewer model, `reasoningEffort: none`, the reviewer variant,
-the step limit, and all governance gates are unchanged. OpenCode calls the hook
+host default. The reviewer model, selected variant/reasoning options, step limit,
+and all governance gates are unchanged. OpenCode calls the hook
 after it computes its own `maxOutputTokens`, and the hook's value is passed to the
 provider request.
 
-The hook fails the reviewer request closed — before the provider call — when the
-configuration cannot be read, is invalid, or the model reports an output limit
-below the configured cap. It never silently clamps the requested cap. Correct
-`reviewer.outputTokenMax` to the reported model limit (or choose a compatible
-model) and restart OpenCode. The plugin reads the config at startup.
+In `"host"` mode the hook leaves `maxOutputTokens` untouched. The hook fails the
+reviewer request closed — before the provider call — when the configuration
+cannot be read, is invalid, or an explicitly configured numeric cap exceeds the
+model's reported output limit. It never silently clamps the requested cap.
+Correct `reviewer.outputTokenMax` to the reported model limit (or choose a
+compatible model) and restart OpenCode. The plugin reads the config at startup.
 
 `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback for hosts
 where the FlowGuard plugin hook is not active. It is not required for the

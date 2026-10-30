@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+
 /**
  * @module integration/implementation-review-no-observation-e2e.test
  * @description Decisive end-to-end scenario for the implementation subject
@@ -309,7 +311,14 @@ async function inject(
     parentSessionId: se.sId,
     childSessionId,
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'native_task_structured_followup' as const,
+    invocationMode: 'native_task_message_json' as const,
+    transportVersion: 5 as const,
+    capture: messageCaptureFixture({
+      childSessionId,
+      obligationId: obl.obligationId,
+      attemptId: boundAttempt.attemptId,
+      findings: ff,
+    }),
     hostVisible: true as const,
     transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
@@ -323,9 +332,8 @@ async function inject(
     capturedVerdict: verdict,
     capturedRawFindings: ff,
     attemptId: boundAttempt.attemptId,
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true as const,
-    reviewAssuranceLevel: 'structured_high' as const,
+    reviewOutputMode: 'validated_json' as const,
+    reviewAssuranceLevel: 'host_message_validated' as const,
   };
   const aug: SessionState = {
     ...state!,

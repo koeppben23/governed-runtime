@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { buildInvocationFixture } from '../review-invocation-test-helpers.js';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -66,7 +67,6 @@ import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import type { ReviewVerdict } from '../state/evidence.js';
-
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -1752,7 +1752,7 @@ describe('plan', () => {
       const planResponseMod = await import('./tools/plan/plan-response.js');
       return {
         artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,
-        buildInvocationEvidence: assuranceMod.buildInvocationEvidence,
+        buildInvocationEvidence: buildInvocationFixture,
         createReviewObligation: assuranceMod.createReviewObligation,
         freezeReviewMaterial: assuranceMod.freezeReviewMaterial,
         REVIEW_CRITERIA_VERSION: assuranceMod.REVIEW_CRITERIA_VERSION,

@@ -21,7 +21,10 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it, vi } from 'vitest';
-import { classifyReviewerTaskMessages, readReviewerTaskCompletion } from './structured-followup.js';
+import {
+  classifyReviewerTaskMessages,
+  readReviewerTaskCompletion,
+} from './reviewer-task-completion.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
 import type { OrchestratorClient, ReviewerCompletionFailureCode } from '../types.js';
 
@@ -65,7 +68,7 @@ function clientReturning(entry: unknown): OrchestratorClient {
   return {
     app: { agents: async () => ({ data: [] }) },
     session: {
-      prompt: vi.fn(async () => ({ data: { info: { structured: {} } } })),
+      prompt: vi.fn(async () => ({ data: { info: {} } })),
       messages: async () => entry as never,
     },
   };
@@ -257,15 +260,42 @@ describe('reviewer task completion - host messages authority', () => {
   it('HAPPY: reads the host messages through the SDK receiver', async () => {
     const session = {
       _client: { transport: 'host' },
-      prompt: async () => ({ data: { info: { structured: {} } } }),
+      prompt: async () => ({ data: { info: {} } }),
       async messages(this: { _client?: unknown }) {
         if (this._client === undefined) throw new TypeError('detached receiver');
-        return { data: transcript([step('stop', [ANSWER])]) } as never;
+        return {
+          data: [
+            {
+              info: {
+                role: 'user',
+                id: 'msg_request',
+                sessionID: 'c',
+                model: { providerID: 'p', modelID: 'm' },
+              },
+            },
+            {
+              info: {
+                role: 'assistant',
+                id: 'msg_answer',
+                parentID: 'msg_request',
+                sessionID: 'c',
+                providerID: 'p',
+                modelID: 'm',
+                finish: 'stop',
+              },
+              parts: [ANSWER],
+            },
+          ],
+        };
       },
     } as unknown as OrchestratorClient['session'];
     await expect(
       readReviewerTaskCompletion({ app: { agents: async () => ({ data: [] }) }, session }, 'c'),
-    ).resolves.toEqual({ kind: 'completed', steps: 1 });
+    ).resolves.toEqual({
+      kind: 'completed',
+      steps: 1,
+      model: { providerID: 'p', modelID: 'm', variant: null },
+    });
   });
 
   it('BAD: the 2026-10-19 child read from the host is truncated', async () => {
@@ -278,12 +308,12 @@ describe('reviewer task completion - host messages authority', () => {
   it('EDGE: missing, throwing, erroring or null messages are unverifiable', async () => {
     const withoutMessages: OrchestratorClient = {
       app: { agents: async () => ({ data: [] }) },
-      session: { prompt: async () => ({ data: { info: { structured: {} } } }) },
+      session: { prompt: async () => ({ data: { info: {} } }) },
     };
     const throwing: OrchestratorClient = {
       app: { agents: async () => ({ data: [] }) },
       session: {
-        prompt: async () => ({ data: { info: { structured: {} } } }),
+        prompt: async () => ({ data: { info: {} } }),
         messages: async () => {
           throw new Error('host down');
         },

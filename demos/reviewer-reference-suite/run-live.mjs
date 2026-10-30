@@ -105,7 +105,7 @@ export function parseSuiteArgs(argv) {
     model: DEFAULT_MODEL,
     hostVersion: DEFAULT_HOST_VERSION,
     repetitions: DEFAULT_REPETITIONS,
-    reviewerEffort: 'none',
+    reviewerEffort: '',
     variant: 'max',
     reviewerSteps: REVIEWER_SUITE_STEPS,
     check: false,

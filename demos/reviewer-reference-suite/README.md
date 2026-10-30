@@ -133,28 +133,29 @@ Hard preconditions:
 
 - Arm B requires `model.limit.output >= 65536`; the plugin fails closed instead of
   clamping.
-- The installed reviewer agent must use `reasoningEffort: none`.
 - The review message must use the selected variant `max`.
+- The same selected model and variant must be reused for serialization; FlowGuard
+  does not switch reasoning modes between phases.
 - The resolved provider reasoning options must be identical in both arms.
 - The parent model must stay identical in both arms.
 
-The runner does **not** pin a `model:` in the reviewer agent frontmatter. It
-installs the OpenCode default `FLOWGUARD_REVIEWER_EFFORT=none`, passes the parent
-model via `--model`, and selects `--variant max` for the review turn. The Task
-transport then inherits the parent model and variant for the review call while
-the same-child follow-up uses the agent's non-thinking serialization mode. This
-reproduces the original two-call transport:
+The runner does **not** pin a `model:` in the reviewer agent frontmatter and does
+not inject a default `reasoningEffort`. It passes the parent model via `--model`
+and selects `--variant max` for the review turn. The same-child serialization
+prompt carries the same model/variant and a normal JSON instruction; it does not
+use `format: json_schema` or force a tool. This reproduces the model-neutral
+two-call transport:
 
-| Call                            | Purpose                                | Reasoning     |
-| ------------------------------- | -------------------------------------- | ------------- |
-| Review message                  | independent falsification-first review | variant `max` |
-| Same-child structured follow-up | serialize the concluded findings       | `none`        |
+| Call                      | Purpose                                | Reasoning              |
+| ------------------------- | -------------------------------------- | ---------------------- |
+| Review message            | independent falsification-first review | selected variant `max` |
+| Same-child JSON follow-up | serialize the concluded findings       | same selected variant  |
 
 The runner records the installed frontmatter (`reviewerModel`, `reviewerEffort`),
 the prepared params of every observed model call, and the review-vs-serialization
 reasoning tokens from the child transcript. The variant name `max` is not assumed
-to be a literal `reasoningEffort: "max"` in the follow-up; the invariant is that
-the two phases keep their supported modes and only the output cap differs.
+to be a literal `reasoningEffort: "max"`; the invariant is that both phases keep
+the same supported selection and only the output cap differs.
 
 The hook changes the provider request's output ceiling only. OpenCode's internal
 compaction reservation is not changed by `reviewer.outputTokenMax`; record
@@ -240,18 +241,18 @@ reasoning tokens, truncations, re-arms, and runtime.
 
 ## Staged execution
 
-| Stage | Content                                                         | Runs                      |
-| ----- | --------------------------------------------------------------- | ------------------------- |
-| 0     | Suite, gold standard, contract tests, instrumentation           | 0                         |
-| 0.5   | Transport smoke: reasoning review + non-reasoning serialization | 1                         |
-| 1     | Reproduction plan 2026-10-19, 32K vs 65K                        | 2 arms × 3 = 6            |
-| 2     | Cases A and B, both arms                                        | 2 cases × 2 arms × 3 = 12 |
-| 3     | Full matrix, only after Stage 1/2 show a signal                 | 13 × 2 × 3 = 78           |
-| 4     | Decision and, if needed, suite expansion                        | —                         |
+| Stage | Content                                                          | Runs                      |
+| ----- | ---------------------------------------------------------------- | ------------------------- |
+| 0     | Suite, gold standard, contract tests, instrumentation            | 0                         |
+| 0.5   | Transport smoke: same selected mode for review and serialization | 1                         |
+| 1     | Reproduction plan 2026-10-19, 32K vs 65K                         | 2 arms × 3 = 6            |
+| 2     | Cases A and B, both arms                                         | 2 cases × 2 arms × 3 = 12 |
+| 3     | Full matrix, only after Stage 1/2 show a signal                  | 13 × 2 × 3 = 78           |
+| 4     | Decision and, if needed, suite expansion                         | —                         |
 
-Stage 0.5 must pass before Stage 1: the main review must use reasoning, the
-same-child serialization must use no reasoning, and the structured findings must
-bind successfully. Stage 1 measures termination only. Stage 2 measures
+Stage 0.5 must pass before Stage 1: review and same-child serialization must
+use the same selected model/variant, and the validated JSON findings must bind
+successfully. Stage 1 measures termination only. Stage 2 measures
 termination and evaluation. Do not start Stage 3 before Stage 1 shows a
 termination improvement and Stage 2 shows stable, gold-standard-conforming
 evaluation.

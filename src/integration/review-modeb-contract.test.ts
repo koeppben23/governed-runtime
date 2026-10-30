@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+
 /**
  * @module integration/review-modeb-contract.test
  * @description Plan and architecture review-verdict submission contract.
@@ -99,7 +101,14 @@ function buildAssuranceForObligation(
     parentSessionId,
     childSessionId: 'ses_reviewer',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'native_task_structured_followup' as const,
+    invocationMode: 'native_task_message_json' as const,
+    transportVersion: 5 as const,
+    capture: messageCaptureFixture({
+      childSessionId: 'ses_reviewer',
+      obligationId: obligation.obligationId,
+      attemptId,
+      findings: rawFindings,
+    }),
     hostVisible: true as const,
     transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
@@ -112,9 +121,8 @@ function buildAssuranceForObligation(
     fulfilledAt: now,
     consumedByObligationId: null,
     capturedVerdict: 'accept',
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true as const,
-    reviewAssuranceLevel: 'structured_high' as const,
+    reviewOutputMode: 'validated_json' as const,
+    reviewAssuranceLevel: 'host_message_validated' as const,
     attemptId,
   };
   const fulfilled = {

@@ -29,9 +29,13 @@ import {
   REVIEW_MANDATE_DIGEST,
   REVIEW_CRITERIA_VERSION,
   appendInvocationEvidence,
-  buildInvocationEvidence,
   fulfillObligation,
 } from './review/obligations/assurance.js';
+import {
+  buildInvocationFixture as buildInvocationEvidence,
+  messageCaptureFixture,
+} from '../review-invocation-test-helpers.js';
+import { ReviewMessageCapture } from '../state/review-message-capture.js';
 import { ensureReviewAssurance } from '../state/review-dispatch.js';
 import { hashFindings } from './review/findings-hash.js';
 import { ReviewAttestation, ReviewInvocationEvidence } from '../state/evidence.js';
@@ -338,7 +342,7 @@ describe('review (standalone flow)', () => {
     // the reviewer identity the captured findings attest to.
     const childSessionId = findings.reviewedBy.sessionId;
     const fulfilledAt = '2026-01-01T00:00:00.000Z';
-    const invocation = buildInvocationEvidence({
+    const draft = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
       mandateDigest: obligation.mandateDigest,
@@ -352,6 +356,19 @@ describe('review (standalone flow)', () => {
       capturedRawFindings: findings,
       attemptId: boundAttempt.attemptId,
     });
+    // A semantically invalid capture cannot carry a matching capture proof.
+    // Tests that deliberately persist such evidence need a valid proof whose
+    // mismatch is then rejected by the resolution contract.
+    const invocation = ReviewMessageCapture.safeParse(draft.capture).success
+      ? draft
+      : {
+          ...draft,
+          capture: messageCaptureFixture({
+            childSessionId,
+            obligationId,
+            attemptId: boundAttempt.attemptId,
+          }),
+        };
     const assuranceWithEvidence = appendInvocationEvidence(
       {
         ...ensureReviewAssurance(state.reviewAssurance),
@@ -443,7 +460,7 @@ describe('review (standalone flow)', () => {
         changedPathCount: 3,
         objectivesCovered: 3,
         objectivesTotal: 3,
-        reviewAssurance: 'structured_high',
+        reviewAssurance: 'host_message_validated',
         missingVerification: [],
       });
     });
@@ -464,7 +481,7 @@ describe('review (standalone flow)', () => {
         changedPathCount: 3,
         objectivesCovered: 3,
         objectivesTotal: 3,
-        reviewAssurance: 'structured_high',
+        reviewAssurance: 'host_message_validated',
         missingVerification: ['Add regression coverage for the branch review path'],
       });
     });
@@ -548,9 +565,9 @@ describe('review (standalone flow)', () => {
       );
       // Host-observed structured capture is the only accepted provenance.
       expect(invocation?.source).toBe('host-orchestrated');
-      expect(invocation?.reviewOutputMode).toBe('structured_output');
-      expect(invocation?.structuredOutputUsed).toBe(true);
-      expect(invocation?.reviewAssuranceLevel).toBe('structured_high');
+      expect(invocation?.reviewOutputMode).toBe('validated_json');
+      expect(invocation?.transportVersion).toBe(5);
+      expect(invocation?.reviewAssuranceLevel).toBe('host_message_validated');
       // ... and the referenced attempt is bound atomically.
       const boundAttempt = afterSubmit.reviewAssurance!.attempts.find(
         (item) => item.attemptId === invocation?.attemptId,
@@ -938,7 +955,7 @@ describe('review (standalone flow)', () => {
         changedPathCount: 3,
         objectivesCovered: 3,
         objectivesTotal: 3,
-        reviewAssurance: 'structured_high',
+        reviewAssurance: 'host_message_validated',
         missingVerification: [],
       });
       expect(result.completeness).toBeUndefined();
@@ -1089,7 +1106,9 @@ describe('review (standalone flow)', () => {
         );
         const result = parseToolResult(raw);
         expect(result.error).toBe(true);
-        expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+        // The persisted proof cannot match invalid reviewer semantics, so the
+        // invocation is never bindable and the verdict stays fail-closed.
+        expect(result.code).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
       });
 
       it('B2: missing attestation is rejected with requiredReviewAttestation', async () => {
@@ -1438,7 +1457,7 @@ describe('review (standalone flow)', () => {
         expect(invocation.obligationType).toBe('review');
         expect(invocation.obligationId).toBe(uuid);
         expect(invocation.source).toBe('host-orchestrated');
-        expect(invocation.reviewOutputMode).toBe('structured_output');
+        expect(invocation.reviewOutputMode).toBe('validated_json');
         expect(invocation.findingsHash).toMatch(/^[a-f0-9]{64}$/);
         expect(invocation.promptHash).toBe('a'.repeat(64));
         // childSessionId from the attested reviewedBy.sessionId in buildAnalysisFindings.
@@ -1573,7 +1592,8 @@ describe('review (standalone flow)', () => {
       });
 
       it('S3: ReviewInvocationEvidence.parse accepts buildInvocationEvidence output', async () => {
-        const { buildInvocationEvidence } = await import('./review/obligations/assurance.js');
+        const { buildInvocationFixture: buildInvocationEvidence } =
+          await import('../review-invocation-test-helpers.js');
         const inv = buildInvocationEvidence({
           obligationId: '11111111-2222-3333-8444-555555555555',
           obligationType: 'review',
@@ -1641,7 +1661,7 @@ describe('review (standalone flow)', () => {
             changedPathCount: 3,
             objectivesCovered: 3,
             objectivesTotal: 3,
-            reviewAssurance: 'structured_high',
+            reviewAssurance: 'host_message_validated',
             missingVerification: [],
           });
         },

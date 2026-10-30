@@ -20,13 +20,13 @@ import type {
 } from '../../../state/evidence.js';
 import {
   artifactReviewSubjectScope,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
   fulfillObligation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../../review-invocation-test-helpers.js';
 import {
   getAdapterLogger,
   runWithAdapterLogger,

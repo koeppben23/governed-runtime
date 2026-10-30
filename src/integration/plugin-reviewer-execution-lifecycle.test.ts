@@ -9,6 +9,7 @@ import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import { _resetAgentResolutionCache } from './review/dispatch/agent-resolution.js';
+import { completedReviewMessages } from './reviewer-capture-test-helpers.js';
 
 it('durably locks a serialization SDK failure before removing execution monitoring', async () => {
   _resetAgentResolutionCache();
@@ -30,15 +31,7 @@ it('durably locks a serialization SDK failure before removing execution monitori
         },
         session: {
           get: async () => ({ data: { parentID: sessionID } }),
-          messages: async () => ({
-            data: [
-              { info: { role: 'user' } },
-              {
-                info: { role: 'assistant', finish: 'stop' },
-                parts: [{ type: 'text', text: 'Final review.' }],
-              },
-            ],
-          }),
+          messages: async () => completedReviewMessages('child-A'),
           prompt: async () => {
             throw new Error('SDK transport failed during serialization');
           },

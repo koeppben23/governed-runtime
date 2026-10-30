@@ -4,12 +4,12 @@ import { completedDispatchForInvocation } from '../../state/evidence-test-consta
 import { ReviewFindings } from '../../state/evidence.js';
 import {
   artifactReviewSubjectScope,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../review/obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../review-invocation-test-helpers.js';
 import { hashFindings } from '../review/findings-hash.js';
 import {
   buildReviewFeedbackProjection,

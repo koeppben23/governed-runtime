@@ -29,10 +29,10 @@ import {
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
 } from '../obligations/assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../../review-invocation-test-helpers.js';
 import { hashFindings } from '../findings-hash.js';
 import {
   completedDispatchForInvocation,

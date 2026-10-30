@@ -1,3 +1,5 @@
+import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+
 /**
  * @module integration/runtime-flow-e2e-contract.test
  * @description FlowGuard tool-level contract coverage for review-gated
@@ -291,7 +293,14 @@ async function inject(
     parentSessionId: sessionId,
     childSessionId: 'ses_r',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'native_task_structured_followup' as const,
+    invocationMode: 'native_task_message_json' as const,
+    transportVersion: 5 as const,
+    capture: messageCaptureFixture({
+      childSessionId: 'ses_r',
+      obligationId: obl.obligationId,
+      attemptId,
+      findings: ff,
+    }),
     hostVisible: true as const,
     transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
@@ -304,9 +313,8 @@ async function inject(
     fulfilledAt: FIXED_TIME,
     consumedByObligationId: null,
     capturedVerdict: 'accept',
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true as const,
-    reviewAssuranceLevel: 'structured_high' as const,
+    reviewOutputMode: 'validated_json' as const,
+    reviewAssuranceLevel: 'host_message_validated' as const,
     attemptId,
   };
   const newObl = {

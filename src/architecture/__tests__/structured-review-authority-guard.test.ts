@@ -117,13 +117,15 @@ describe('structured review authority hard cut', () => {
 
   it('admits exactly the native visible structured invocation generation', () => {
     const schema = readFileSync(join(SRC, 'state/evidence-review-invocation.ts'), 'utf8');
-    expect(schema).toContain("invocationMode: z.literal('native_task_structured_followup')");
+    expect(schema).toContain("invocationMode: z.literal('native_task_message_json')");
+    expect(schema).toContain('transportVersion: z.literal(5)');
+    expect(schema).toContain('capture: ReviewMessageCapture');
     expect(schema).toContain('hostVisible: z.literal(true)');
     expect(schema).toContain('transcriptNavigable: z.literal(true)');
     expect(schema).toContain("source: z.literal('host-orchestrated')");
-    expect(schema).toContain("reviewOutputMode: z.literal('structured_output')");
-    expect(schema).toContain('structuredOutputUsed: z.literal(true)');
-    expect(schema).toContain("reviewAssuranceLevel: z.literal('structured_high')");
+    expect(schema).toContain("reviewOutputMode: z.literal('validated_json')");
+    expect(schema).not.toContain('structuredOutputUsed');
+    expect(schema).toContain("reviewAssuranceLevel: z.literal('host_message_validated')");
     expect(schema).toContain('capturedRawFindings: z.record');
     expect(schema).not.toContain('z.enum');
   });

@@ -271,7 +271,7 @@ interface ReviewCardInvocationFields {
   invocationMode?: ReviewInvocationEvidence['invocationMode'];
   hostVisible?: boolean;
   reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
-  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  validationAuthority?: 'flowguard';
   reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   reviewerSessionId?: string;
 }
@@ -300,9 +300,7 @@ function invocationAssuranceFields(
   boundInvocation: BoundReviewInvocation,
 ): ReviewCardInvocationFields {
   return {
-    ...(boundInvocation?.structuredOutputUsed !== undefined
-      ? { structuredOutputUsed: boundInvocation.structuredOutputUsed }
-      : {}),
+    ...(boundInvocation ? { validationAuthority: 'flowguard' as const } : {}),
     ...(boundInvocation?.reviewAssuranceLevel !== undefined
       ? { reviewAssuranceLevel: boundInvocation.reviewAssuranceLevel }
       : {}),

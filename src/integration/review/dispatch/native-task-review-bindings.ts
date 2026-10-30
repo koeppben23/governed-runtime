@@ -21,9 +21,9 @@ import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-record
 import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
 import {
   captureStructuredFindingsFromVisibleChild,
-  readReviewerTaskCompletion,
   type StructuredFollowupTiming,
 } from './structured-followup.js';
+import { readReviewerTaskCompletion } from './reviewer-task-completion.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
 import {
   buildObligationFindingsJsonSchema,
@@ -33,7 +33,12 @@ import { buildReviewChallengeContract } from '../obligations/challenge-contract.
 import type { PendingReviewRetryDiagnostic, ReviewerSuccessResult } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 import type { ReplayPersistDeps } from '../observations/observation-replay-persist.js';
-import type { NativeReviewLineage, PersistedState } from './native-task-review-types.js';
+import type {
+  NativeReviewLineage,
+  PersistedState,
+  ReviewerTaskCompletion,
+} from './native-task-review-types.js';
+import type { ReviewMessageCapture } from '../../../state/review-message-capture.js';
 
 /**
  * Structural host-runtime port for the native reviewer Task transport.
@@ -82,11 +87,11 @@ export function nativeReviewAuditIntents(input: {
           attemptId: input.attemptId,
           promptHash: input.promptHash,
           findingsHash: input.findingsHash,
-          invocationMode: 'native_task_structured_followup',
+          invocationMode: 'native_task_message_json',
           hostVisible: true,
           transcriptNavigable: true,
-          structuredOutputUsed: true,
-          reviewAssuranceLevel: 'structured_high',
+          validationAuthority: 'flowguard',
+          reviewAssuranceLevel: 'host_message_validated',
         },
       },
       settled?.status === 'blocked'
@@ -246,11 +251,35 @@ export function logContractGrowthAfterDispatch(
   }
 }
 
+function refuseIncompleteCapture(
+  runtime: NativeReviewRuntimePort,
+  obligationId: string,
+  childSessionId: string,
+  completion: Extract<ReviewerTaskCompletion, { readonly kind: 'incomplete' }>,
+) {
+  try {
+    runtime.log.warn('orchestrator', 'reviewer task not completed; serialization refused', {
+      obligationId,
+      childSessionId,
+      code: completion.code,
+      detail: completion.detail,
+    });
+  } catch {
+    // Logging is diagnostic only; the fail-closed decision below stands.
+  }
+  return {
+    kind: 'blocked' as const,
+    code: completion.code,
+    reason: `Reviewer task not completed (${completion.detail}); its output is never serialized or accepted.`,
+  };
+}
+
 export async function capturePreparedFindings(
   runtime: NativeReviewRuntimePort,
   obligation: ReviewObligation,
   childSessionId: string,
   contract: ObligationFindingsSchemaContract,
+  binding: { readonly attemptId: string; readonly lease?: { id?: string } },
 ): Promise<
   | {
       readonly kind: 'blocked';
@@ -262,6 +291,7 @@ export async function capturePreparedFindings(
       readonly kind: 'captured';
       readonly prepared: Record<string, unknown>;
       readonly fulfilledAt: string;
+      readonly capture: ReviewMessageCapture;
     }
 > {
   // Completion gate for EVERY obligation type (plan, architecture, implement,
@@ -274,28 +304,26 @@ export async function capturePreparedFindings(
     childSessionId,
   );
   if (completion.kind === 'incomplete') {
-    try {
-      runtime.log.warn('orchestrator', 'reviewer task not completed; serialization refused', {
-        obligationId: obligation.obligationId,
-        childSessionId,
-        code: completion.code,
-        detail: completion.detail,
-      });
-    } catch {
-      // Logging is diagnostic only; the fail-closed decision below stands.
-    }
-    return {
-      kind: 'blocked',
-      code: completion.code,
-      reason: `Reviewer task not completed (${completion.detail}); its output is never serialized or accepted.`,
-    };
+    return refuseIncompleteCapture(runtime, obligation.obligationId, childSessionId, completion);
   }
 
+  const controller = runtime.orchestratorDeps.reviewerCapture;
+  if (!controller || !completion.model) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEWER_CAPTURE_PROVENANCE_INVALID',
+      reason: 'Reviewer model identity or synchronous capture fence is unavailable.',
+    };
+  }
   const structured = await captureStructuredFindingsFromVisibleChild(
     runtime.orchestratorDeps.client,
     {
       childSessionId,
       obligationId: obligation.obligationId,
+      attemptId: binding.attemptId,
+      model: completion.model,
+      controller,
+      ...(binding.lease !== undefined ? { lease: binding.lease } : {}),
       schema: buildObligationFindingsJsonSchema(contract),
     },
     (timing) =>
@@ -318,7 +346,12 @@ export async function capturePreparedFindings(
       reason: prepared.issues.join('; '),
     };
   }
-  return { kind: 'captured', prepared: prepared.findings, fulfilledAt: structured.fulfilledAt };
+  return {
+    kind: 'captured',
+    prepared: prepared.findings,
+    fulfilledAt: structured.fulfilledAt,
+    capture: structured.capture,
+  };
 }
 
 /**
@@ -409,20 +442,24 @@ export async function bindNativeReviewEvidence(input: {
   fulfilledAt: string;
   executionDeadlineAt: string;
   phase: SessionState['phase'];
+  capture: ReviewMessageCapture;
 }) {
   const { obligation, attempt, dispatch } = input.lineage;
+  const controller = input.runtime.orchestratorDeps.reviewerCapture;
+  if (!controller) return 'lineage_unavailable';
   const promptHash = dispatch.canonicalPromptDigest;
   const findingsHash = hashFindings(input.prepared);
   const reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> } = {
     sessionId: input.childSessionId,
     rawResponse: JSON.stringify(input.prepared),
     findings: input.prepared,
-    reviewOutputMode: 'structured_output',
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high',
+    reviewOutputMode: 'validated_json',
+    reviewAssuranceLevel: 'host_message_validated',
+    capture: input.capture,
     invokedAt: dispatch.dispatchAuthorizedAt,
     fulfilledAt: input.fulfilledAt,
   };
+  controller.assertSafe(input.childSessionId);
   return recordEvidenceOrBlockReuse(input.runtime.orchestratorDeps, input.sessDir, {
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
@@ -439,6 +476,7 @@ export async function bindNativeReviewEvidence(input: {
     fulfilledAt: input.fulfilledAt,
     deadlineAt: input.executionDeadlineAt,
     executionFailed: () =>
+      !controller.isSafe(input.childSessionId) ||
       input.runtime.reviewerExecutionFailures?.has(input.childSessionId) === true ||
       input.runtime.reviewerExecutionFailures?.has(`task:${input.callId}`) === true,
     reviewerResult,

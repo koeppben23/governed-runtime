@@ -382,7 +382,6 @@ export function findAcceptedInvocationForFindings(
   if (!obligation || !findings) return null;
   const findingsHash = hashFindings(findings);
   const base = ensureReviewAssurance(assurance);
-
   if (obligation.invocationId) {
     return (
       base.invocations.find(
@@ -399,7 +398,7 @@ export function findAcceptedInvocationForFindings(
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'native_task_structured_followup' &&
+        invocation.invocationMode === 'native_task_message_json' &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         invocation.consumedByObligationId === null,
@@ -480,6 +479,7 @@ export function buildInvocationEvidence(input: {
   invokedAt: string;
   fulfilledAt?: string;
   capturedRawFindings: Record<string, unknown>;
+  capture: ReviewInvocationEvidence['capture'];
   resolvedBranchSha?: string | null;
   resolvedBaseSha?: string | null;
   reviewedContentDigest?: string | null;
@@ -493,9 +493,10 @@ export function buildInvocationEvidence(input: {
     parentSessionId: input.parentSessionId,
     childSessionId: input.childSessionId,
     agentType: REVIEWER_SUBAGENT_TYPE,
-    // Canonical transport: one native, host-visible Task child executes the
-    // review and serializes its findings in a schema-constrained follow-up.
-    invocationMode: 'native_task_structured_followup',
+    // One native child; exact message provenance and FlowGuard-validated JSON.
+    invocationMode: 'native_task_message_json',
+    transportVersion: 5,
+    capture: input.capture,
     hostVisible: true,
     transcriptNavigable: true,
     promptHash: input.promptHash,
@@ -510,9 +511,8 @@ export function buildInvocationEvidence(input: {
     capturedRawFindings: input.capturedRawFindings,
     ...(typeof capturedVerdict === 'string' ? { capturedVerdict } : {}),
     source: 'host-orchestrated',
-    reviewOutputMode: 'structured_output',
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high',
+    reviewOutputMode: 'validated_json',
+    reviewAssuranceLevel: 'host_message_validated',
     resolvedBranchSha: input.resolvedBranchSha ?? null,
     resolvedBaseSha: input.resolvedBaseSha ?? null,
     reviewedContentDigest: input.reviewedContentDigest ?? null,

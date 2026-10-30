@@ -70,13 +70,13 @@ describe('HostAdapter Contract', () => {
     it('HAPPY: exposes one native visible structured reviewer transport', () => {
       expect(adapter.capabilities.reviewTransports).toEqual([
         {
-          kind: 'native_task_structured_followup',
-          structuredOutput: true,
+          kind: 'native_task_message_json',
+          validatedResult: true,
           parentVisible: true,
           transcriptNavigable: true,
           isolatedAgentIdentity: true,
           permissionIsolation: true,
-          assurance: 'structured_high',
+          assurance: 'host_message_validated',
         },
       ]);
     });
@@ -168,7 +168,7 @@ describe('HostAdapter Contract', () => {
           'argMutation',
           'outputReplacement',
           'contextInjection',
-          'reviewTransports.native_task_structured_followup',
+          'reviewTransports.native_task_message_json',
           'compactionInjection',
         ],
       });
@@ -227,7 +227,7 @@ describe('HAI Type Contract', () => {
 
 describe('reviewTransportSatisfies contract', () => {
   const TRANSPORT_FLAGS = [
-    'structuredOutput',
+    'validatedResult',
     'parentVisible',
     'transcriptNavigable',
     'isolatedAgentIdentity',
@@ -240,13 +240,13 @@ describe('reviewTransportSatisfies contract', () => {
     overrides: Partial<Record<TransportFlag, boolean>> = {},
   ): Parameters<typeof reviewTransportSatisfies>[0] {
     return {
-      kind: 'native_task_structured_followup',
-      structuredOutput: true,
+      kind: 'native_task_message_json',
+      validatedResult: true,
       parentVisible: true,
       transcriptNavigable: true,
       isolatedAgentIdentity: true,
       permissionIsolation: true,
-      assurance: 'structured_high',
+      assurance: 'host_message_validated',
       ...overrides,
     };
   }
@@ -255,7 +255,7 @@ describe('reviewTransportSatisfies contract', () => {
     overrides: Partial<Record<TransportFlag, boolean>> = {},
   ): Parameters<typeof reviewTransportSatisfies>[1] {
     return {
-      structuredOutput: false,
+      validatedResult: false,
       parentVisible: false,
       transcriptNavigable: false,
       isolatedAgentIdentity: false,
@@ -282,7 +282,7 @@ describe('reviewTransportSatisfies contract', () => {
 
   it('HAPPY: an unrequired flag does not constrain the transport', () => {
     const allMissing = transport({
-      structuredOutput: false,
+      validatedResult: false,
       parentVisible: false,
       transcriptNavigable: false,
       isolatedAgentIdentity: false,

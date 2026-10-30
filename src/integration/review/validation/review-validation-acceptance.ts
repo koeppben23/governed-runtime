@@ -9,6 +9,10 @@
 import type { ReviewObligation, ReviewInvocationEvidence } from '../../../state/evidence.js';
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import {
+  captureMatchesFindings,
+  hasCaptureLineage,
+} from '../../../state/review-message-capture.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 
@@ -66,6 +70,17 @@ export function getReviewFindingsAcceptanceRejection(input: {
 }
 
 /** Canonical provenance contract for captured host-observed reviewer evidence. */
+function currentTransport(invocation: ReviewInvocationEvidence): boolean {
+  return (
+    invocation.invocationMode === 'native_task_message_json' &&
+    invocation.transportVersion === 5 &&
+    invocation.hostVisible === true &&
+    invocation.transcriptNavigable === true &&
+    invocation.reviewOutputMode === 'validated_json' &&
+    invocation.reviewAssuranceLevel === 'host_message_validated'
+  );
+}
+
 export function hasValidStructuredInvocationContract(input: {
   readonly obligation: ReviewObligation;
   readonly invocation: ReviewInvocationEvidence;
@@ -74,12 +89,10 @@ export function hasValidStructuredInvocationContract(input: {
 }): boolean {
   const { obligation, invocation, parentSessionId } = input;
   return (
-    invocation.invocationMode === 'native_task_structured_followup' &&
-    invocation.hostVisible === true &&
-    invocation.transcriptNavigable === true &&
-    invocation.structuredOutputUsed === true &&
-    invocation.reviewOutputMode === 'structured_output' &&
-    invocation.reviewAssuranceLevel === 'structured_high' &&
+    currentTransport(invocation) &&
+    hasCaptureLineage(invocation) &&
+    invocation.obligationId === obligation.obligationId &&
+    captureMatchesFindings(invocation.capture, invocation.capturedRawFindings) &&
     invocation.agentType === REVIEWER_SUBAGENT_TYPE &&
     (parentSessionId === undefined || invocation.parentSessionId === parentSessionId) &&
     invocation.criteriaVersion === obligation.criteriaVersion &&

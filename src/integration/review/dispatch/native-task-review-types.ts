@@ -14,9 +14,10 @@ import type {
   SessionEnforcementState,
 } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
+import type { ReviewerModelSelection } from '../../../state/review-message-capture.js';
 
 export type ReviewerTaskCompletion =
-  | { readonly kind: 'completed'; readonly steps: number }
+  | { readonly kind: 'completed'; readonly steps: number; readonly model?: ReviewerModelSelection }
   | {
       readonly kind: 'incomplete';
       readonly code: ReviewerCompletionFailureCode;
@@ -29,7 +30,9 @@ export type StructuredFollowupFailureCode =
   | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
   | 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE'
   | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
-  | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
+  | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'
+  | 'REVIEWER_CAPTURE_PROVENANCE_INVALID'
+  | 'REVIEWER_HOST_MESSAGE_ENCODING_FAILED';
 
 export type PersistedState = NonNullable<Awaited<ReturnType<typeof readState>>>;
 

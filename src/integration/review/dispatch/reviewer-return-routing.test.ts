@@ -42,7 +42,7 @@ describe('reviewer Task return contract', () => {
       const completion = command.indexOf('When `reviewDispatch.completed` is true:');
       const completedBranch = command.slice(completion);
       expect(completedBranch).toContain('reviewExecution.transcriptNavigable === true');
-      expect(completedBranch).toContain('reviewExecution.structuredOutput === true');
+      expect(completedBranch).toContain('reviewExecution.validationAuthority === "flowguard"');
       expect(completedBranch).toContain('Otherwise stop on the returned');
       expect(command).toContain('terminal BLOCKED or `error: true`');
       expect(command).toContain('never infer a retry from an error code');

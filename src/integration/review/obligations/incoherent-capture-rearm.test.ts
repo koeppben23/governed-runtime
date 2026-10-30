@@ -15,10 +15,10 @@ import { hashText } from '../../../shared/hashing.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
 import {
   artifactReviewSubjectScope,
-  buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
 } from './assurance.js';
+import { buildInvocationFixture as buildInvocationEvidence } from '../../../review-invocation-test-helpers.js';
 import { hashFindings } from '../findings-hash.js';
 import {
   authorizeIncoherentCaptureRearm,
@@ -33,7 +33,24 @@ const CHILD_SESSION = 'ses_child';
 
 const INCOHERENT_RAW_FINDINGS = {
   overallVerdict: 'accept',
-  blockingIssues: [{ severity: 'major', category: 'correctness', message: 'contradiction' }],
+  blockingIssues: [
+    {
+      severity: 'major',
+      category: 'correctness',
+      message: 'contradiction',
+      relation: {
+        subjectAnchors: [
+          {
+            kind: 'artifact_section',
+            artifactKind: 'plan',
+            artifactDigest: 'a'.repeat(64),
+            sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+          },
+        ],
+        evidenceLocations: [],
+      },
+    },
+  ],
 };
 
 function planObligation(maxReviewerAttempts = 3): ReviewObligation {

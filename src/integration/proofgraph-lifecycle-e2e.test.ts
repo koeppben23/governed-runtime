@@ -35,11 +35,11 @@ import { canonicalBinding } from './test-helpers.js';
 import { runRequiredDiscovery } from './tools/hydrate/hydrate-discovery.js';
 import { plan } from './tools/plan/plan.js';
 import { review } from './tools/review-tool/index.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import {
-  REVIEW_CRITERIA_VERSION,
-  REVIEW_MANDATE_DIGEST,
-  buildInvocationEvidence,
-} from './review/obligations/assurance.js';
+  buildInvocationFixture as buildInvocationEvidence,
+  messageCaptureFixture,
+} from '../review-invocation-test-helpers.js';
 import { hashFindings } from './review/findings-hash.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
@@ -1596,7 +1596,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             parentSessionId: 'ses_parent',
             childSessionId: 'ses_child',
             agentType: 'flowguard-reviewer' as const,
-            invocationMode: 'native_task_structured_followup' as const,
+            invocationMode: 'native_task_message_json' as const,
+            transportVersion: 5 as const,
+            capture: messageCaptureFixture({
+              childSessionId: 'ses_child',
+              obligationId,
+              attemptId: '55555555-3333-4333-8333-333333333333',
+            }),
             hostVisible: true,
             transcriptNavigable: true,
             source: 'host-orchestrated' as const,
@@ -1609,9 +1615,8 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             consumedByObligationId: null,
             capturedVerdict: 'accept',
             capturedRawFindings: { overallVerdict: 'accept' },
-            reviewOutputMode: 'structured_output' as const,
-            structuredOutputUsed: true,
-            reviewAssuranceLevel: 'structured_high' as const,
+            reviewOutputMode: 'validated_json' as const,
+            reviewAssuranceLevel: 'host_message_validated' as const,
             attemptId: '55555555-3333-4333-8333-333333333333',
           },
         ],

@@ -100,6 +100,16 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
         reason:
           'Extracted execution-failure fallback keeps native-task-review.ts inside the 650-LOC production budget.',
       },
+      {
+        file: 'integration/review/dispatch/provider-error.ts',
+        reason:
+          'One trusted-error classifier shared by SDK response, host message, and repair boundaries; keeps the capture unit below its production size budget.',
+      },
+      {
+        file: 'integration/review/dispatch/reviewer-task-completion.ts',
+        reason:
+          'Separates the ordered host-completion authority from request-correlated JSON serialization and repair.',
+      },
     ],
   },
   {
@@ -353,6 +363,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-mutation-reconciliation.ts', owner: 'root-composition' },
   { file: 'integration/plugin-orchestrator.ts', owner: 'root-composition' },
   { file: 'integration/plugin-policy.ts', owner: 'root-composition' },
+  { file: 'integration/plugin-reviewer-capture.ts', owner: 'root-composition' },
   { file: 'integration/plugin-regulated-recovery.ts', owner: 'root-composition' },
   { file: 'integration/plugin-rework-continuation.ts', owner: 'root-composition' },
   { file: 'integration/plugin-risk.ts', owner: 'root-composition' },
@@ -361,6 +372,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-execution-failure.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-execution-watchdog.ts', owner: 'root-composition' },
+  { file: 'integration/reviewer-capture.ts', owner: 'root-authority' },
   { file: 'integration/reviewer-output-cap.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-output-cap-failure.ts', owner: 'root-composition' },
   { file: 'integration/proofgraph/approval-projection.ts', owner: 'proofgraph' },
@@ -481,6 +493,8 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/dispatch/reviewer-task-type.ts', owner: 'review-dispatch' },
   { file: 'integration/review/shared-helpers.ts', owner: 'review' },
   { file: 'integration/review/dispatch/structured-followup.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/provider-error.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/reviewer-task-completion.ts', owner: 'review-dispatch' },
   { file: 'integration/review/context/subject-scope.ts', owner: 'review-context' },
   { file: 'integration/review/types.ts', owner: 'review' },
   { file: 'integration/runtime-instance.ts', owner: 'root-host-runtime' },

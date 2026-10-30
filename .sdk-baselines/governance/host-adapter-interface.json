@@ -72,7 +72,7 @@
       "type": "object",
       "required": [
         "kind",
-        "structuredOutput",
+        "validatedResult",
         "parentVisible",
         "transcriptNavigable",
         "isolatedAgentIdentity",
@@ -82,16 +82,16 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["native_task_structured_followup"]
+          "enum": ["native_task_message_json"]
         },
-        "structuredOutput": { "type": "boolean", "const": true },
+        "validatedResult": { "type": "boolean", "const": true },
         "parentVisible": { "type": "boolean", "const": true },
         "transcriptNavigable": { "type": "boolean", "const": true },
         "isolatedAgentIdentity": { "type": "boolean", "const": true },
         "permissionIsolation": { "type": "boolean", "const": true },
         "assurance": {
           "type": "string",
-          "const": "structured_high"
+          "const": "host_message_validated"
         }
       },
       "additionalProperties": false
