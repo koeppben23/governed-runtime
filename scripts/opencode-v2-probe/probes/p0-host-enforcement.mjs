@@ -661,6 +661,130 @@ async function runRedirect() {
   return result;
 }
 
+function websocketURL(baseURL) {
+  return `${baseURL.replace(/^http/, 'ws')}/responses`;
+}
+
+async function writeProviderPolicy(host, baseURL, transports = ['http']) {
+  await writeFile(
+    join(host.root, 'host-policy.json'),
+    JSON.stringify({
+      requiredPlugins: policy.requiredPlugins,
+      providerExecution: {
+        allowedProviders: [{ id: 'probe', baseURL, transports }],
+        hostedTools: 'deny',
+      },
+    }),
+    'utf8',
+  );
+}
+
+async function runWebSocketConnectDenied() {
+  const ws = await startWebSocketProvider();
+  const host = await startProbeHost({
+    name: 'host-ws-connect-denied',
+    hostPolicy: policy,
+    staticProvider: true,
+    providerPackage: '@opencode/ai/providers/openai',
+    providerBaseURL: ws.baseURL,
+    providerSettings: { transport: 'websocket' },
+  });
+  const result = { connections: 0, frames: 0, providerRequests: 0, passed: false };
+  try {
+    await writeProviderPolicy(host, ws.baseURL.replace('/v1', '/wrong'), ['websocket']);
+    const session = await sessionFor(host, 'ws connect denied', true);
+    try {
+      await host.prompt(session.id, 'WebSocket connect denial probe');
+      await waitBounded(host.client, session.id, 5_000);
+    } catch (error) {
+      result.promptError = String(error);
+    }
+    result.connections = ws.connections();
+    result.frames = ws.frames.length;
+    result.providerRequests = host.provider.requests.length;
+    result.passed = result.connections === 0 && result.frames === 0;
+  } catch (error) {
+    result.error = String(error);
+  } finally {
+    await host.close();
+    await ws.close();
+  }
+  return result;
+}
+
+async function runWebSocketHandshakeRewrite() {
+  const authorized = await startWebSocketProvider();
+  const unauthorized = await startWebSocketProvider();
+  const host = await startProbeHost({
+    name: 'host-ws-handshake-rewrite',
+    hostPolicy: policy,
+    staticProvider: true,
+    providerPackage: '@opencode/ai/providers/openai',
+    providerBaseURL: authorized.baseURL,
+    providerSettings: { transport: 'websocket' },
+    wsRewriteURL: websocketURL(unauthorized.baseURL),
+  });
+  const result = {
+    authorizedConnections: 0,
+    unauthorizedConnections: 0,
+    authorizedFrames: 0,
+    unauthorizedFrames: 0,
+    passed: false,
+  };
+  try {
+    await writeProviderPolicy(host, authorized.baseURL, ['websocket']);
+    const session = await sessionFor(host, 'ws handshake rewrite', true);
+    try {
+      await host.prompt(session.id, 'WebSocket handshake rewrite probe');
+      await waitBounded(host.client, session.id, 5_000);
+    } catch (error) {
+      result.promptError = String(error);
+    }
+    result.authorizedConnections = authorized.connections();
+    result.unauthorizedConnections = unauthorized.connections();
+    result.authorizedFrames = authorized.frames.length;
+    result.unauthorizedFrames = unauthorized.frames.length;
+    result.passed =
+      result.authorizedConnections === 0 &&
+      result.unauthorizedConnections === 0 &&
+      result.authorizedFrames === 0 &&
+      result.unauthorizedFrames === 0;
+  } catch (error) {
+    result.error = String(error);
+  } finally {
+    await host.close();
+    await authorized.close();
+    await unauthorized.close();
+  }
+  return result;
+}
+
+async function runProviderSchemeDenied() {
+  const host = await startProbeHost({
+    name: 'host-provider-scheme-denied',
+    hostPolicy: policy,
+    staticProvider: true,
+  });
+  const result = { providerRequests: 0, passed: false };
+  try {
+    await writeProviderPolicy(host, host.provider.baseURL.replace(/^http:/, 'https:'), ['http']);
+    const session = await sessionFor(host, 'provider scheme denial', true);
+    try {
+      await host.prompt(session.id, 'Provider scheme denial probe');
+      await waitBounded(host.client, session.id, 5_000);
+    } catch (error) {
+      result.promptError = String(error);
+    }
+    result.providerRequests = host.provider.requests.length;
+    result.passed = result.providerRequests === 0;
+  } catch (error) {
+    result.error = String(error);
+  } finally {
+    await host.close();
+  }
+  return result;
+}
+
 const result = {
   at: new Date().toISOString(),
   host: process.env.OPENCODE_CLI ?? 'opencode',
@@ -680,10 +804,13 @@ const result = {
   toctouControl: await runToctouControl(),
   websocketAllowed: await runWebSocket(false),
   websocketHostedDenied: await runWebSocket(true),
+  websocketConnectDenied: await runWebSocketConnectDenied(),
+  websocketHandshakeRewrite: await runWebSocketHandshakeRewrite(),
   pluginIdentityAuthentic: await runPluginIdentity(true),
   pluginIdentityFake: await runPluginIdentity(false),
   providerEndpointAllowed: await runProviderEndpoint(true),
   providerEndpointDenied: await runProviderEndpoint(false),
+  providerSchemeDenied: await runProviderSchemeDenied(),
   providerRedirectBlocked: await runRedirect(),
 };
 result.passed = [
@@ -702,10 +829,13 @@ result.passed = [
   result.toctouControl,
   result.websocketAllowed,
   result.websocketHostedDenied,
+  result.websocketConnectDenied,
+  result.websocketHandshakeRewrite,
   result.pluginIdentityAuthentic,
   result.pluginIdentityFake,
   result.providerEndpointAllowed,
   result.providerEndpointDenied,
+  result.providerSchemeDenied,
   result.providerRedirectBlocked,
 ].every((item) => item.passed);
 result.status = result.passed ? 'SUPPORTED' : 'NOT_SUPPORTED';
@@ -720,7 +850,7 @@ result.scope = {
     'failed reload and plugin removal block the next prompt with zero provider requests',
   toctou: 'plugin fails during http.request; the final provider middleware still blocks the send',
   websocket:
-    'local Open Responses WebSocket provider; hosted-tool frame is rejected before the socket send',
+    'local Open Responses WebSocket provider; endpoint authorization runs before connector.open and hosted-tool frames are rejected before sendText',
   pluginIdentity:
     'required-plugin source is bound to the trusted local plugin path; a same-ID plugin from another path is rejected',
   providerEndpoint:

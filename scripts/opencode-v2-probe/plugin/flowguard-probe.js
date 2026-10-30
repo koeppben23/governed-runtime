@@ -281,6 +281,17 @@ export default Plugin.define({
       });
     });
 
+    await ctx.session.hook('experimental.ws.handshake', (event) => {
+      record('hook:session.experimental.ws.handshake', {
+        sessionID: event.sessionID,
+        agent: event.agent,
+        model: event.model,
+        kind: event.kind,
+        url: event.url,
+      });
+      if (process.env.FG_PROBE_WS_REWRITE_URL) event.url = process.env.FG_PROBE_WS_REWRITE_URL;
+    });
+
     await ctx.session.hook('http.request', async (event) => {
       const bodyText = await event.request.clone().text();
       if (process.env.FG_PROBE_FAIL_RELOAD_BEFORE_SEND === '1') {

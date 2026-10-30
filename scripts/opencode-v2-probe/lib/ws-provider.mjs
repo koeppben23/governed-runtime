@@ -34,8 +34,10 @@ const EVENTS = (id, text) => [
 export async function startWebSocketProvider({ text = 'ws-probe-ok' } = {}) {
   const frames = [];
   const sockets = new Set();
+  let connections = 0;
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   server.on('connection', (socket) => {
+    connections++;
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
     socket.on('message', (data) => {
@@ -62,6 +64,7 @@ export async function startWebSocketProvider({ text = 'ws-probe-ok' } = {}) {
     port: address.port,
     baseURL: `http://127.0.0.1:${address.port}/v1`,
     frames,
+    connections: () => connections,
     close: () =>
       new Promise((resolve) => {
         for (const socket of sockets) socket.close();

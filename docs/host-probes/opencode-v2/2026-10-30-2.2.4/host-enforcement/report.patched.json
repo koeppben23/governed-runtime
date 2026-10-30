@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-30T21:53:20.742Z",
+  "at": "2026-10-30T21:59:39.345Z",
   "host": "patched-opencode",
   "policy": {
     "requiredPlugins": ["flowguard.host-probe"],
@@ -109,6 +109,19 @@
     "text": "",
     "passed": true
   },
+  "websocketConnectDenied": {
+    "connections": 0,
+    "frames": 0,
+    "providerRequests": 0,
+    "passed": true
+  },
+  "websocketHandshakeRewrite": {
+    "authorizedConnections": 0,
+    "unauthorizedConnections": 0,
+    "authorizedFrames": 0,
+    "unauthorizedFrames": 0,
+    "passed": true
+  },
   "pluginIdentityAuthentic": {
     "authentic": true,
     "providerRequests": 1,
@@ -133,6 +146,10 @@
     "promptError": null,
     "passed": true
   },
+  "providerSchemeDenied": {
+    "providerRequests": 0,
+    "passed": true
+  },
   "providerRedirectBlocked": {
     "targetHits": 0,
     "passed": true,
@@ -148,7 +165,7 @@
     "mcpControl": "real MCP tool exposed with codemode:false; permission deny uses resource ** so discovery keeps the tool",
     "activationLoss": "failed reload and plugin removal block the next prompt with zero provider requests",
     "toctou": "plugin fails during http.request; the final provider middleware still blocks the send",
-    "websocket": "local Open Responses WebSocket provider; hosted-tool frame is rejected before the socket send",
+    "websocket": "local Open Responses WebSocket provider; endpoint authorization runs before connector.open and hosted-tool frames are rejected before sendText",
     "pluginIdentity": "required-plugin source is bound to the trusted local plugin path; a same-ID plugin from another path is rejected",
     "providerEndpoint": "provider rule binds ID, endpoint prefix, and transport; a mismatched endpoint is rejected before send",
     "providerRedirect": "provider requests run with fetch redirect:manual; a redirect target is not contacted",

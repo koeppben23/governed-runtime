@@ -43,10 +43,10 @@ index 5b5aee6..e3d145a 100644
  )
 diff --git a/packages/core/src/host-policy.ts b/packages/core/src/host-policy.ts
 new file mode 100644
-index 0000000..1bf83f8
+index 0000000..ac6319e
 --- /dev/null
 +++ b/packages/core/src/host-policy.ts
-@@ -0,0 +1,398 @@
+@@ -0,0 +1,411 @@
 +export * as HostPolicy from "./host-policy.js"
 +
 +import { ConfigHost } from "@opencode/schema/config/host"
@@ -223,6 +223,19 @@ index 0000000..1bf83f8
 +    return false
 +  }
 +  if (request.hostname !== base.hostname || effectivePort(request) !== effectivePort(base)) return false
++  // Never let an allowed secure endpoint degrade to its cleartext variant, even on
++  // the same explicit port. A secure base may carry the matching secure upgrade.
++  const protocolMatches =
++    base.protocol === "https:"
++      ? request.protocol === "https:" || request.protocol === "wss:"
++      : base.protocol === "wss:"
++        ? request.protocol === "wss:"
++        : base.protocol === "http:"
++          ? request.protocol === "http:" || request.protocol === "ws:"
++          : base.protocol === "ws:"
++            ? request.protocol === "ws:"
++            : false
++  if (!protocolMatches) return false
 +  const basePath = base.pathname.replace(/\/+$/, "")
 +  const requestPath = request.pathname
 +  return requestPath === basePath || requestPath.startsWith(`${basePath}/`)
@@ -729,7 +742,7 @@ index c83baed..1ffa5fc 100644
      const selection = yield* context.select(input.session.id)
      const model = yield* context.resolveModel(selection.session)
 diff --git a/packages/core/src/session/model-request.ts b/packages/core/src/session/model-request.ts
-index a3bde4c..e5afe53 100644
+index a3bde4c..f6ea911 100644
 --- a/packages/core/src/session/model-request.ts
 +++ b/packages/core/src/session/model-request.ts
 @@ -24,13 +24,15 @@ import type {
@@ -767,7 +780,7 @@ index a3bde4c..e5afe53 100644
        const session = input.session
        const model = input.model
        const scope = { sessionID: session.id, agent: input.agent, model: model.ref, kind }
-@@ -334,54 +343,89 @@ export const layer = Layer.effect(
+@@ -334,54 +343,101 @@ export const layer = Layer.effect(
        const hasHttpHooks =
          (yield* hooks.has("session", "http.request", model.ref.providerID)) ||
          (yield* hooks.has("session", "http.response", model.ref.providerID))
@@ -866,6 +879,18 @@ index a3bde4c..e5afe53 100644
 +                    webSocketURL = event.url
 +                    return { url: event.url, headers: event.headers }
 +                  }),
++                authorizeConnect: (connect, open) =>
++                  policy.withProviderSend(
++                    {
++                      providerID: model.ref.providerID,
++                      package: model.package,
++                      url: connect.url,
++                      body: "",
++                      transport: "websocket",
++                    },
++                    pluginService,
++                    open,
++                  ),
                  send: (frame) =>
 -                  hooks
 -                    .trigger("session", "experimental.ws.send", { ...scope, frame })
@@ -892,7 +917,7 @@ index a3bde4c..e5afe53 100644
                  receive: (frame) =>
                    hooks
                      .trigger("session", "experimental.ws.receive", { ...scope, frame })
-@@ -394,7 +438,7 @@ export const layer = Layer.effect(
+@@ -394,7 +450,7 @@ export const layer = Layer.effect(
        return {
          event: shaped,
          request,
@@ -901,7 +926,7 @@ index a3bde4c..e5afe53 100644
          retry: (event: Parameters<Prepared["retry"]>[0]) =>
            hooks.trigger("session", "retry", event).pipe(Effect.asVoid),
          // Permission.assert and the question tool throw declines as defects so tools cannot
-@@ -435,5 +479,5 @@ export const layer = Layer.effect(
+@@ -435,5 +491,5 @@ export const layer = Layer.effect(
  export const node = makeLocationNode({
    service: Service,
    layer,
@@ -909,13 +934,19 @@ index a3bde4c..e5afe53 100644
 +  deps: [HostPolicy.node, PluginHooks.node, SessionModelTransport.node, App.node],
  })
 diff --git a/packages/core/src/session/model-transport.ts b/packages/core/src/session/model-transport.ts
-index 81c4a4b..0757cfb 100644
+index 81c4a4b..338bc46 100644
 --- a/packages/core/src/session/model-transport.ts
 +++ b/packages/core/src/session/model-transport.ts
-@@ -69,6 +69,11 @@ export interface Handshake {
+@@ -69,6 +69,17 @@ export interface Handshake {
  export interface Interceptor {
    readonly handshake?: (connect: Handshake) => Effect.Effect<Handshake>
    readonly send?: (frame: string) => Effect.Effect<string>
++  /**
++   * Wraps the actual socket connect, after the handshake hook selected the final
++   * URL and headers. The host uses it to authorize the endpoint before any
++   * connection is opened.
++   */
++  readonly authorizeConnect?: <A, E, R>(connect: Handshake, open: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 +  /**
 +   * Wraps the actual socket send, after `send` produced the final frame. The host
 +   * uses it to hold its activation lease across the network handoff.
@@ -924,7 +955,21 @@ index 81c4a4b..0757cfb 100644
    readonly receive?: (frame: string) => Effect.Effect<string>
  }
  
-@@ -385,7 +390,8 @@ export const makeLayer = (connector: WebSocketConnector) =>
+@@ -340,9 +351,12 @@ export const makeLayer = (connector: WebSocketConnector) =>
+             phase: "connect",
+           })
+         if (owner.channel) yield* metric("reuse")
++        const opening = open(owner, exchange, key)
+         const channel = owner.channel
+           ? owner.channel
+-          : yield* open(owner, exchange, key).pipe(
++          : yield* (
++              interceptor?.authorizeConnect ? interceptor.authorizeConnect(exchange.connect, opening) : opening
++            ).pipe(
+               Effect.catch((error) => {
+                 if (error.reason._tag === "Transport" && error.reason.code === "owner-closed") return Effect.fail(error)
+                 // Any connect failure, transient or not, pins the Session to HTTP until restart or move:
+@@ -385,7 +399,8 @@ export const makeLayer = (connector: WebSocketConnector) =>
            delivery: "send-attempted",
          }
          channel.active = active
@@ -1192,10 +1237,10 @@ index 7fbce8a..d548ec7 100644
  
 diff --git a/packages/core/test/host-policy.test.ts b/packages/core/test/host-policy.test.ts
 new file mode 100644
-index 0000000..57fb62b
+index 0000000..32ffc8c
 --- /dev/null
 +++ b/packages/core/test/host-policy.test.ts
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,242 @@
 +import { expect } from "bun:test"
 +import { Config } from "@opencode/core/config"
 +import { ConfigManaged } from "@opencode/core/config/managed"
@@ -1240,6 +1285,17 @@ index 0000000..57fb62b
 +
 +const policy = new ConfigHost.ProviderExecution({
 +  allowedProviders: ["probe"],
++  hostedTools: "deny",
++})
++
++const securePolicy = new ConfigHost.ProviderExecution({
++  allowedProviders: [
++    {
++      id: "probe",
++      baseURL: "https://probe.invalid:8443/v1",
++      transports: ["http", "websocket"],
++    },
++  ],
 +  hostedTools: "deny",
 +})
 +
@@ -1403,6 +1459,29 @@ index 0000000..57fb62b
 +    expect(Exit.isFailure(wrongHost)).toBe(true)
 +    expect(Exit.isFailure(wrongTransport)).toBe(true)
 +  }).pipe(Effect.provide(policyLayer(endpointPolicy))),
++)
++
++it.effect("does not downgrade an allowed secure endpoint", () =>
++  Effect.gen(function* () {
++    const host = yield* HostPolicy.Service
++    const cases = [
++      ["https", "https://probe.invalid:8443/v1/chat/completions", "http"],
++      ["http downgrade", "http://probe.invalid:8443/v1/chat/completions", "http"],
++      ["wss upgrade", "wss://probe.invalid:8443/v1/responses", "websocket"],
++      ["ws downgrade", "ws://probe.invalid:8443/v1/responses", "websocket"],
++    ] as const
++    const results = yield* Effect.forEach(cases, ([, url, transport]) =>
++      host
++        .assertProviderRequest({
++          providerID: "probe",
++          url,
++          body: JSON.stringify({ tools: [] }),
++          transport,
++        })
++        .pipe(Effect.exit),
++    )
++    expect(results.map(Exit.isSuccess)).toEqual([true, false, true, false])
++  }).pipe(Effect.provide(policyLayer(securePolicy))),
 +)
 diff --git a/packages/core/test/plugin/fixture.ts b/packages/core/test/plugin/fixture.ts
 index d3d3fce..8e53bcc 100644

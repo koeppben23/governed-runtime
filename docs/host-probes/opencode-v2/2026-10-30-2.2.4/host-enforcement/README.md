@@ -45,6 +45,7 @@ OPENCODE_CLI=/path/to/patched/opencode \
 | Allowed control without hosted definition                                      | one provider request                                                                                                                                     |
 | Provider allowlist mismatch                                                    | zero provider requests                                                                                                                                   |
 | Provider endpoint/transport mismatch                                           | zero provider requests                                                                                                                                   |
+| Provider protocol downgrade (`https`→`http`, `wss`→`ws`)                       | zero provider requests / zero WebSocket connections                                                                                                      |
 | Provider redirect to another origin                                            | redirect target is not contacted                                                                                                                         |
 | Same plugin ID from a different local source                                   | prompt rejected, zero provider requests                                                                                                                  |
 | Authentic plugin with source-bound requirement                                 | one provider request                                                                                                                                     |
@@ -56,6 +57,8 @@ OPENCODE_CLI=/path/to/patched/opencode \
 | TOCTOU control                                                                 | one provider request                                                                                                                                     |
 | WebSocket provider, allowed control                                            | one `response.create` frame, answer received                                                                                                             |
 | WebSocket provider, hosted-tool definition                                     | zero WebSocket frames, no provider execution                                                                                                             |
+| WebSocket provider, unauthorized endpoint                                      | zero connections, zero frames                                                                                                                            |
+| WebSocket handshake hook rewrites to another origin                            | zero connections on both origins, zero frames                                                                                                            |
 | Stock OpenCode 2.2.4                                                           | required-plugin, command-shell, hosted-tool, allowlist, endpoint/redirect, source-identity, reload/removal, TOCTOU, WebSocket-hosted, and MCP cases fail |
 
 Reports:
@@ -69,7 +72,7 @@ Relevant source verification:
 cd packages/core
 bun test test/host-policy.test.ts test/session-model-request-hooks.test.ts \
   test/tool-execute.test.ts test/mcp.test.ts test/session-step.test.ts --timeout 30000
-# 101 pass, 0 fail (after the final revision)
+# 102 pass, 0 fail (after the final revision)
 
 bun run typecheck   # core
 bun run --cwd ../server typecheck
@@ -79,6 +82,15 @@ bun run --cwd ../cli typecheck
 All three type checks passed in the source tree. The patched CLI was launched
 from a clean temporary project with `OPENCODE_HOST_POLICY` pointing at
 [`host-policy.example.json`](./host-policy.example.json).
+
+## Provider support contract
+
+FlowGuard supports all agent-capable models of explicitly approved providers
+whose reviewed capability contract satisfies the governance guarantees.
+Unreviewed providers and providers whose hosted actions cannot be controlled
+preventively are not supported. Provider approval must not silently change the
+user's selected model or reasoning level; it may only reject an unsupported
+selection or require an explicit choice.
 
 ## Boundaries
 
@@ -91,8 +103,13 @@ from a clean temporary project with `OPENCODE_HOST_POLICY` pointing at
   equivalent upstream contract.
 - **Provider-emitted unoffered calls.** A provider that executes a hosted action
   without an offered definition cannot be stopped by a request gate. The
-  provider package/endpoint/transport rules are the capability contract;
-  providers without such a contract remain outside the guaranteed scope.
+  provider package/endpoint/protocol/transport rules are the capability
+  contract; providers without such a contract remain outside the guaranteed
+  scope.
+- **WebSocket connection authorization.** The endpoint and plugin state are
+  checked before `connector.open`; the final frame is checked again before
+  `sendText`. A rejected endpoint therefore receives neither a connection nor a
+  frame.
 - **Source identity is path/package identity.** `requiredPlugins` binds a plugin
   to a local path or package target/version. It does not yet pin a content hash;
   write access to the trusted path is treated as trusted installation access.

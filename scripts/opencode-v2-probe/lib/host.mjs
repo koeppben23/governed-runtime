@@ -298,6 +298,7 @@ export default {
     FG_PROBE_FAIL_SETUP: options.failSetup ? '1' : '0',
     FG_PROBE_DENY_HOSTED_TOOLS: options.denyHostedTools ? '1' : '0',
     FG_PROBE_FAIL_RELOAD_BEFORE_SEND: options.failReloadBeforeSend ? '1' : '0',
+    FG_PROBE_WS_REWRITE_URL: options.wsRewriteURL ?? '',
     FG_PROBE_REGISTER_PROVIDER: options.registerProvider ? '1' : '0',
     FG_PROBE_PROVIDER_URL: provider.baseURL,
     ...(options.disableDefaultPlugins ? { OPENCODE_DISABLE_DEFAULT_PLUGINS: '1' } : {}),
