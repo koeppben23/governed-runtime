@@ -23,12 +23,30 @@ index 1ef0847..5a2f38c 100644
      worktree: Info.fields.worktree,
      warming: Info.fields.warming,
    }
+diff --git a/packages/core/src/effect/app-node-platform.ts b/packages/core/src/effect/app-node-platform.ts
+index 5b5aee6..e3d145a 100644
+--- a/packages/core/src/effect/app-node-platform.ts
++++ b/packages/core/src/effect/app-node-platform.ts
+@@ -13,7 +13,12 @@ const withoutBunTimeout = Layer.effect(
+     const client = yield* HttpClient.HttpClient
+     return HttpClient.transformResponse(
+       client,
+-      Effect.provideService(FetchHttpClient.RequestInit, { timeout: false } as BunFetchRequestInit),
++      // Provider requests must not follow redirects: an allowed endpoint must not be
++      // able to hand the request to a different origin outside the host policy.
++      Effect.provideService(FetchHttpClient.RequestInit, {
++        timeout: false,
++        redirect: "manual",
++      } as BunFetchRequestInit),
+     )
+   }),
+ )
 diff --git a/packages/core/src/host-policy.ts b/packages/core/src/host-policy.ts
 new file mode 100644
-index 0000000..e9aef18
+index 0000000..bf726b3
 --- /dev/null
 +++ b/packages/core/src/host-policy.ts
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,379 @@
 +export * as HostPolicy from "./host-policy.js"
 +
 +import { ConfigHost } from "@opencode/schema/config/host"
@@ -45,18 +63,24 @@ index 0000000..e9aef18
 + * they cannot decide whether the host is allowed to execute it.
 + */
 +const FilePolicy = Schema.Struct({
-+  requiredPlugins: Schema.Array(Schema.String).pipe(Schema.optional),
++  requiredPlugins: Schema.Array(ConfigHost.RequiredPlugin).pipe(Schema.optional),
 +  providerExecution: ConfigHost.ProviderExecution.pipe(Schema.optional),
 +})
 +type FilePolicy = typeof FilePolicy.Type
 +
++type ProviderRule = {
++  readonly id: string
++  readonly baseURL?: string
++  readonly transports?: readonly ("http" | "websocket")[]
++}
++
 +type ProviderPolicy = {
-+  readonly allowedProviders?: readonly string[]
++  readonly allowedProviders?: readonly ProviderRule[]
 +  readonly hostedTools: "allow" | "deny"
 +}
 +
 +export type Policy = {
-+  readonly requiredPlugins: readonly string[]
++  readonly requiredPlugins: readonly ConfigHost.RequiredPlugin[]
 +  readonly provider: ProviderPolicy | undefined
 +}
 +
@@ -73,11 +97,23 @@ index 0000000..e9aef18
 +  readonly assertProviderRequest: (
 +    input: {
 +      readonly providerID: string
++      readonly url: string
 +      readonly body: string
 +      readonly transport: "http" | "websocket"
 +    },
 +    plugins?: Plugin.Interface,
 +  ) => Effect.Effect<void>
++  /** Authorize and run the provider send under an activation lease. */
++  readonly withProviderSend: <A, E, R>(
++    input: {
++      readonly providerID: string
++      readonly url: string
++      readonly body: string
++      readonly transport: "http" | "websocket"
++    },
++    plugins: Plugin.Interface | undefined,
++    send: Effect.Effect<A, E, R>,
++  ) => Effect.Effect<A, E, R>
 +}
 +
 +export class Service extends Context.Service<Service, Interface>()("@opencode/HostPolicy") {}
@@ -124,20 +160,63 @@ index 0000000..e9aef18
 +function mergeProvider(policies: readonly (FilePolicy["providerExecution"] | undefined)[]): ProviderPolicy | undefined {
 +  const present = policies.filter((policy) => policy !== undefined)
 +  if (present.length === 0) return undefined
++  const normalize = (rule: ConfigHost.ProviderRule): ProviderRule => (typeof rule === "string" ? { id: rule } : rule)
++  const declared = present.flatMap((policy) => (policy.allowedProviders ?? []).map(normalize))
 +  const restricted = present.some((policy) => policy.allowedProviders !== undefined)
++  const ids = Array.from(new Set(declared.map((rule) => rule.id)))
 +  const allowedProviders = restricted
-+    ? present
-+        .flatMap((policy) => policy.allowedProviders ?? [])
-+        .filter(
-+          (provider, index, all) =>
-+            all.indexOf(provider) === index &&
-+            present.every(
-+              (policy) => policy.allowedProviders === undefined || policy.allowedProviders.includes(provider),
-+            ),
++    ? ids.flatMap((id) => {
++        if (
++          !present.every(
++            (policy) =>
++              policy.allowedProviders === undefined ||
++              policy.allowedProviders.some((rule) => (typeof rule === "string" ? rule : rule.id) === id),
++          )
 +        )
++          return []
++        const rules = declared.filter((rule) => rule.id === id)
++        const baseURLs = Array.from(new Set(rules.flatMap((rule) => (rule.baseURL ? [rule.baseURL] : []))))
++        const transports = rules.some((rule) => rule.transports !== undefined)
++          ? rules
++              .flatMap((rule) => rule.transports ?? [])
++              .filter(
++                (transport) =>
++                  !rules.some((rule) => rule.transports !== undefined && !rule.transports.includes(transport)),
++              )
++              .filter((transport, index, all) => all.indexOf(transport) === index)
++          : undefined
++        return [
++          {
++            id,
++            ...(baseURLs.length === 1
++              ? { baseURL: baseURLs[0] }
++              : baseURLs.length > 1
++                ? { baseURL: "__host_policy_conflict__" }
++                : {}),
++            ...(transports === undefined ? {} : { transports }),
++          },
++        ]
++      })
 +    : undefined
 +  const hostedTools = present.some((policy) => policy.hostedTools !== "allow") ? "deny" : "allow"
 +  return { ...(allowedProviders ? { allowedProviders } : {}), hostedTools }
++}
++
++const effectivePort = (url: URL) => url.port || (url.protocol === "https:" || url.protocol === "wss:" ? "443" : "80")
++
++function matchesEndpoint(input: string, baseURL: string) {
++  let request: URL
++  let base: URL
++  try {
++    request = new URL(input)
++    base = new URL(baseURL)
++  } catch {
++    return false
++  }
++  if (request.hostname !== base.hostname || effectivePort(request) !== effectivePort(base)) return false
++  const basePath = base.pathname.replace(/\/+$/, "")
++  const requestPath = request.pathname
++  return requestPath === basePath || requestPath.startsWith(`${basePath}/`)
 +}
 +
 +function hostedToolDefinition(value: Record<string, unknown>) {
@@ -204,7 +283,14 @@ index 0000000..e9aef18
 +        (entry): entry is ConfigManaged.Document => entry instanceof ConfigManaged.Document,
 +      )
 +      const requiredPlugins = Array.from(
-+        new Set([...(file?.requiredPlugins ?? []), ...managed.flatMap((entry) => entry.info.requiredPlugins ?? [])]),
++        new Map(
++          [...(file?.requiredPlugins ?? []), ...managed.flatMap((entry) => entry.info.requiredPlugins ?? [])].map(
++            (entry) => {
++              const normalized = typeof entry === "string" ? { id: entry } : entry
++              return [JSON.stringify([normalized.id, normalized.source ?? null]), normalized] as const
++            },
++          ),
++        ).values(),
 +      )
 +      return {
 +        requiredPlugins,
@@ -212,9 +298,9 @@ index 0000000..e9aef18
 +      } satisfies Policy
 +    })
 +
-+    const requirePlugins = (plugins: Plugin.Interface, selectors: readonly string[]) =>
++    const requirePlugins = (plugins: Plugin.Interface, selectors: readonly ConfigHost.RequiredPlugin[]) =>
 +      plugins
-+        .requireActive(selectors)
++        .requireActive(selectors.map((selector) => (typeof selector === "string" ? { id: selector } : selector)))
 +        .pipe(
 +          Effect.catchTag("Plugin.RequiredPluginError", (error) =>
 +            Effect.die(
@@ -235,21 +321,49 @@ index 0000000..e9aef18
 +    const assertProviderRequest = Effect.fn("HostPolicy.assertProviderRequest")(function* (
 +      input: {
 +        readonly providerID: string
++        readonly url: string
 +        readonly body: string
 +        readonly transport: "http" | "websocket"
 +      },
 +      plugins?: Plugin.Interface,
 +    ) {
 +      const current = yield* currentPolicy()
++      if (current.requiredPlugins.length > 0 && plugins === undefined)
++        return yield* Effect.die(
++          denied(
++            "REQUIRED_PLUGIN_CONTEXT_MISSING",
++            "A required-plugin policy is active but the provider path has no plugin service.",
++            ["Run the provider request inside the governed location context."],
++          ),
++        )
 +      if (plugins) yield* requirePlugins(plugins, current.requiredPlugins)
 +      const provider = current.provider
 +      if (!provider) return
-+      if (provider.allowedProviders && !provider.allowedProviders.includes(input.providerID))
-+        return yield* Effect.die(
-+          denied("PROVIDER_NOT_ALLOWED", `Provider ${input.providerID} is not allowed by the host policy.`, [
-+            "Use a provider listed in the host providerExecution policy.",
-+          ]),
-+        )
++      if (provider.allowedProviders) {
++        const rules = provider.allowedProviders.filter((rule) => rule.id === input.providerID)
++        if (rules.length === 0)
++          return yield* Effect.die(
++            denied("PROVIDER_NOT_ALLOWED", `Provider ${input.providerID} is not allowed by the host policy.`, [
++              "Use a provider listed in the host providerExecution policy.",
++            ]),
++          )
++        for (const rule of rules) {
++          if (rule.transports && !rule.transports.includes(input.transport))
++            return yield* Effect.die(
++              denied("PROVIDER_TRANSPORT_NOT_ALLOWED", `Provider ${input.providerID} may not use ${input.transport}.`, [
++                "Use a transport permitted by the provider rule.",
++              ]),
++            )
++          if (rule.baseURL && !matchesEndpoint(input.url, rule.baseURL))
++            return yield* Effect.die(
++              denied(
++                "PROVIDER_ENDPOINT_NOT_ALLOWED",
++                `Provider ${input.providerID} requested ${input.url || "(unknown endpoint)"}, outside ${rule.baseURL}.`,
++                ["Use the endpoint pinned by the provider rule."],
++              ),
++            )
++        }
++      }
 +      if (provider.hostedTools === "allow") return
 +      const found = inspectProviderBody(input.body)
 +      if (found)
@@ -262,7 +376,48 @@ index 0000000..e9aef18
 +        )
 +    })
 +
-+    return Service.of({ assertExecutionAllowed, assertProviderRequest })
++    const withProviderSend = <A, E, R>(
++      input: {
++        readonly providerID: string
++        readonly url: string
++        readonly body: string
++        readonly transport: "http" | "websocket"
++      },
++      plugins: Plugin.Interface | undefined,
++      send: Effect.Effect<A, E, R>,
++    ) =>
++      Effect.gen(function* () {
++        yield* assertProviderRequest(input, plugins)
++        const current = yield* currentPolicy()
++        if (current.requiredPlugins.length === 0) return yield* send
++        if (plugins === undefined)
++          return yield* Effect.die(
++            denied(
++              "REQUIRED_PLUGIN_CONTEXT_MISSING",
++              "A required-plugin policy is active but the provider path has no plugin service.",
++              ["Run the provider request inside the governed location context."],
++            ),
++          )
++        return yield* plugins
++          .withActive(
++            current.requiredPlugins.map((selector) => (typeof selector === "string" ? { id: selector } : selector)),
++            send,
++          )
++          .pipe(
++            Effect.catchIf(
++              (error): error is Plugin.RequiredPluginError => error instanceof Plugin.RequiredPluginError,
++              (error) =>
++                Effect.die(
++                  denied("REQUIRED_PLUGIN_INACTIVE", error.message, [
++                    "Activate the required plugin generation and retry.",
++                    "Check the host log for plugin setup or transform failures.",
++                  ]),
++                ),
++            ),
++          )
++      })
++
++    return Service.of({ assertExecutionAllowed, assertProviderRequest, withProviderSend })
 +  }),
 +)
 +
@@ -292,62 +447,92 @@ index 0691d63..eef877b 100644
    PluginSupervisor.node,
    WorktreeStrategies.node,
 diff --git a/packages/core/src/plugin.ts b/packages/core/src/plugin.ts
-index fc59262..4f36053 100644
+index fc59262..67d32f2 100644
 --- a/packages/core/src/plugin.ts
 +++ b/packages/core/src/plugin.ts
-@@ -11,7 +11,7 @@ import { Cause, Context, Effect, Exit, Latch, Layer, Logger, Queue, References,
+@@ -2,6 +2,7 @@ export * as Plugin from "./plugin.js"
+ export { Event, GuiBundle, ID, Info, Source, State } from "@opencode/schema/plugin"
+ 
+ import { readFile } from "node:fs/promises"
++import path from "node:path"
+ import { fileURLToPath } from "node:url"
+ import { Plugin } from "@opencode/schema/plugin"
+ import { Node } from "@opencode/util/effect/app-node"
+@@ -11,7 +12,7 @@ import { Cause, Context, Effect, Exit, Latch, Layer, Logger, Queue, References,
  import { Bus } from "./bus.js"
  import { KV } from "./kv.js"
  import { PluginHost } from "./plugin/host.js"
 -import { type Failure, type Generation, Service } from "./plugin/service.js"
-+import { type Failure, type Generation, RequiredPluginError, Service } from "./plugin/service.js"
++import { type Failure, type Generation, RequiredPluginError, type RequiredPlugin, Service } from "./plugin/service.js"
  import { State } from "./state.js"
  
  export { awaitActivation, type Generation, type Interface, Service } from "./plugin/service.js"
-@@ -51,6 +51,34 @@ const layer = Layer.effect(
+@@ -51,6 +52,55 @@ const layer = Layer.effect(
      const list = Effect.fn("Plugin.list")(function* () {
        return inventory
      })
-+    const requireActive = Effect.fn("Plugin.requireActive")(function* (selectors: readonly string[]) {
++    const assertActive = Effect.fn("Plugin.assertActive")(function* (selectors: readonly RequiredPlugin[]) {
++      const current = Array.from(active.values())
++      const failed = inventory.filter(
++        (item): item is Plugin.Info & { readonly id: Plugin.ID } =>
++          item.state.status === "failed" && item.id !== undefined,
++      )
++      for (const required of selectors) {
++        const found = current.some(
++          (slot) =>
++            matchesSelector(required.id, slot.plugin.id) &&
++            sourceMatches(slot.plugin.source, required.source) &&
++            slot.activation !== undefined &&
++            slot.activation.failure === undefined &&
++            slot.error === undefined,
++        )
++        const failedRevision = failed.some((item) => matchesSelector(required.id, item.id))
++        if (!found || failedRevision)
++          return yield* new RequiredPluginError({
++            plugin: required.id,
++            message: `Required plugin is not active from the trusted source: ${required.id}`,
++          })
++      }
++    })
++    const requireActive = Effect.fn("Plugin.requireActive")(function* (selectors: readonly RequiredPlugin[]) {
 +      yield* ready.await
 +      if (closed)
 +        return yield* new RequiredPluginError({
 +          plugin: "*",
 +          message: "Plugin host is closed; governed execution is unavailable",
 +        })
-+      const current = Array.from(active.values())
-+      const failed = inventory.filter(
-+        (item): item is Plugin.Info & { readonly id: Plugin.ID } =>
-+          item.state.status === "failed" && item.id !== undefined,
-+      )
-+      for (const selector of selectors) {
-+        const found = current.some(
-+          (slot) =>
-+            matchesSelector(selector, slot.plugin.id) &&
-+            slot.activation !== undefined &&
-+            slot.activation.failure === undefined &&
-+            slot.error === undefined,
-+        )
-+        const failedRevision = failed.some((item) => matchesSelector(selector, item.id))
-+        if (!found || failedRevision)
-+          return yield* new RequiredPluginError({
-+            plugin: selector,
-+            message: `Required plugin is not active: ${selector}`,
-+          })
-+      }
++      yield* assertActive(selectors)
 +    })
++    // The provider send runs under the activation lock, so a reload or deactivation
++    // cannot land between the final readiness check and the network handoff.
++    const withActive = <A, E, R>(selectors: readonly RequiredPlugin[], effect: Effect.Effect<A, E, R>) =>
++      Effect.gen(function* () {
++        yield* ready.await
++        if (closed)
++          return yield* new RequiredPluginError({
++            plugin: "*",
++            message: "Plugin host is closed; governed execution is unavailable",
++          })
++        return yield* lock.withPermit(
++          Effect.gen(function* () {
++            yield* assertActive(selectors)
++            return yield* effect
++          }),
++        )
++      })
      const gui = Effect.fn("Plugin.gui")(function* (id: Plugin.ID) {
        const gui = active.get(id)?.plugin.gui
        if (!gui) return undefined
-@@ -267,6 +295,7 @@ const layer = Layer.effect(
+@@ -267,6 +317,8 @@ const layer = Layer.effect(
        awaitActivation: ready.await,
        hold,
        list,
 +      requireActive,
++      withActive,
        gui,
      })
    }),
-@@ -297,6 +326,12 @@ type PendingFailure = {
+@@ -297,6 +349,31 @@ type PendingFailure = {
    readonly release: Effect.Effect<void>
  }
  
@@ -357,14 +542,33 @@ index fc59262..4f36053 100644
 +  return selector === target
 +}
 +
++function sourceMatches(actual: Plugin.Source | undefined, required: Plugin.Source | undefined) {
++  if (required === undefined) return true
++  if (actual === undefined || actual.type !== required.type) return false
++  switch (required.type) {
++    case "local":
++      return actual.type === "local" && path.resolve(actual.path) === path.resolve(required.path)
++    case "package":
++      return (
++        actual.type === "package" &&
++        actual.target === required.target &&
++        (required.version === undefined || actual.version === required.version)
++      )
++    case "builtin":
++      return actual.type === "builtin"
++    case "sdk":
++      return actual.type === "sdk"
++  }
++}
++
  function slotInfo(slot: Slot): Plugin.Info {
    const failure = slot.activation?.failure ?? (slot.error === undefined ? undefined : { error: slot.error })
    return {
 diff --git a/packages/core/src/plugin/service.ts b/packages/core/src/plugin/service.ts
-index d647969..39b6326 100644
+index d647969..d99b930 100644
 --- a/packages/core/src/plugin/service.ts
 +++ b/packages/core/src/plugin/service.ts
-@@ -4,11 +4,22 @@ export * as Plugin from "./service.js"
+@@ -4,11 +4,31 @@ export * as Plugin from "./service.js"
  // importing the plugin host, which itself depends on Session.
  import { Plugin } from "@opencode/schema/plugin"
  import type { Plugin as PluginDefinition } from "@opencode/plugin/effect/plugin"
@@ -384,10 +588,31 @@ index d647969..39b6326 100644
 +   * selector to match an active, non-fallback plugin. A failed, removed, closed,
 +   * or replaced generation fails even when a previous inventory looked active.
 +   */
-+  readonly requireActive: (selectors: readonly string[]) => Effect.Effect<void, RequiredPluginError>
++  readonly requireActive: (selectors: readonly RequiredPlugin[]) => Effect.Effect<void, RequiredPluginError>
++  /**
++   * Runs `effect` under the activation lock after checking the required plugins.
++   * Activation changes wait until the effect completes, closing the check-to-send
++   * race for provider requests.
++   */
++  readonly withActive: <A, E, R>(
++    selectors: readonly RequiredPlugin[],
++    effect: Effect.Effect<A, E, R>,
++  ) => Effect.Effect<A, E | RequiredPluginError, R>
    /** An active plugin's prebuilt `./gui-experimental` bundle, or undefined when it exports none. */
    readonly gui: (id: Plugin.ID) => Effect.Effect<Plugin.GuiBundle | undefined>
    readonly close: (exit: Exit.Exit<unknown, unknown>) => Effect.Effect<void>
+@@ -20,6 +40,11 @@ export interface Interface {
+ 
+ export type Failure = Plugin.Info & { readonly state: Extract<Plugin.State, { readonly status: "failed" }> }
+ 
++export type RequiredPlugin = {
++  readonly id: string
++  readonly source?: Plugin.Source
++}
++
+ export type Generation = PluginDefinition & {
+   readonly revision: string
+   readonly source?: Plugin.Source
 diff --git a/packages/core/src/plugin/supervisor.ts b/packages/core/src/plugin/supervisor.ts
 index bba12a8..05b61cf 100644
 --- a/packages/core/src/plugin/supervisor.ts
@@ -454,7 +679,7 @@ index c83baed..1ffa5fc 100644
      const selection = yield* context.select(input.session.id)
      const model = yield* context.resolveModel(selection.session)
 diff --git a/packages/core/src/session/model-request.ts b/packages/core/src/session/model-request.ts
-index a3bde4c..01450db 100644
+index a3bde4c..88edb3c 100644
 --- a/packages/core/src/session/model-request.ts
 +++ b/packages/core/src/session/model-request.ts
 @@ -24,13 +24,15 @@ import type {
@@ -462,8 +687,9 @@ index a3bde4c..01450db 100644
  import type { Model } from "@opencode/schema/model"
  import type { Content } from "@opencode/schema/tool"
 -import { Cause, Context, Effect, Layer, Result, Stream } from "effect"
+-import { HttpClientRequest, HttpClientResponse } from "effect/http"
 +import { Cause, Context, Effect, Layer, Option, Result, Stream } from "effect"
- import { HttpClientRequest, HttpClientResponse } from "effect/http"
++import { FetchHttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
  import { makeLocationNode } from "@opencode/util/effect/app-node"
  import { App } from "../app.js"
 +import { HostPolicy } from "../host-policy.js"
@@ -491,7 +717,7 @@ index a3bde4c..01450db 100644
        const session = input.session
        const model = input.model
        const scope = { sessionID: session.id, agent: input.agent, model: model.ref, kind }
-@@ -334,35 +343,47 @@ export const layer = Layer.effect(
+@@ -334,54 +343,87 @@ export const layer = Layer.effect(
        const hasHttpHooks =
          (yield* hooks.has("session", "http.request", model.ref.providerID)) ||
          (yield* hooks.has("session", "http.response", model.ref.providerID))
@@ -530,18 +756,19 @@ index a3bde4c..01450db 100644
 +          const before = hasHttpHooks
 +            ? yield* hooks.trigger("session", "http.request", { ...scope, request })
 +            : { request }
-+          // Host policy sees the final outbound request, after plugin hooks have had their say. The
-+          // check runs before `handler`, so a rejected request never leaves the host.
++          // Host policy sees the final outbound request, after plugin hooks have had their say.
++          // The send runs under the activation lease, so a reload cannot land between the
++          // final readiness check and the network handoff.
 +          const body = yield* Effect.promise(() => before.request.clone().text())
-+          yield* policy.assertProviderRequest(
-+            {
-+              providerID: model.ref.providerID,
-+              body,
-+              transport: "http",
-+            },
-+            pluginService,
-+          )
-+          if (!hasHttpHooks) return yield* handler(req)
++          const providerInput = {
++            providerID: model.ref.providerID,
++            url: before.request.url,
++            body,
++            transport: "http" as const,
++          }
++          const send = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
++            effect.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }))
++          if (!hasHttpHooks) return yield* policy.withProviderSend(providerInput, pluginService, send(handler(req)))
 +          // A hook that kept the request object cannot have replaced its body, so the original body is sent as is.
 +          // Reading it back would hold a second full copy of the request, screenshots included, for the whole call.
 +          const sent =
@@ -554,7 +781,7 @@ index a3bde4c..01450db 100644
 +                    before.request.headers.get("content-type") ?? undefined,
 +                  )
 +                : HttpClientRequest.fromWeb(before.request)
-+          const res = yield* handler(sent)
++          const res = yield* policy.withProviderSend(providerInput, pluginService, send(handler(sent)))
 +          const after = yield* hooks.trigger("session", "http.response", {
 +            ...scope,
 +            request: before.request,
@@ -567,10 +794,27 @@ index a3bde4c..01450db 100644
 +        })
        // HTTP hooks wrap every HTTP request, including the WebSocket fallback path. The route decides
        // which transport actually carries the request, so both hook families are always offered.
++      let webSocketURL: string | undefined
++      let webSocketFrame: string | undefined
        const webSocket =
-@@ -379,9 +400,20 @@ export const layer = Layer.effect(
+         input.webSocket === "session" && model.transport === "websocket"
+           ? transport.bind(
+               session.id,
+               {
+                 handshake: (connect) =>
+-                  hooks
+-                    .trigger("session", "experimental.ws.handshake", {
++                  Effect.gen(function* () {
++                    webSocketURL = connect.url
++                    const event = yield* hooks.trigger("session", "experimental.ws.handshake", {
+                       ...scope,
+                       url: connect.url,
+                       headers: connect.headers,
                      })
-                     .pipe(Effect.map((event) => ({ url: event.url, headers: event.headers }))),
+-                    .pipe(Effect.map((event) => ({ url: event.url, headers: event.headers }))),
++                    webSocketURL = event.url
++                    return { url: event.url, headers: event.headers }
++                  }),
                  send: (frame) =>
 -                  hooks
 -                    .trigger("session", "experimental.ws.send", { ...scope, frame })
@@ -579,20 +823,24 @@ index a3bde4c..01450db 100644
 +                    const next = yield* hooks
 +                      .trigger("session", "experimental.ws.send", { ...scope, frame })
 +                      .pipe(Effect.map((event) => event.frame))
-+                    yield* policy.assertProviderRequest(
-+                      {
-+                        providerID: model.ref.providerID,
-+                        body: next,
-+                        transport: "websocket",
-+                      },
-+                      pluginService,
-+                    )
++                    webSocketFrame = next
 +                    return next
 +                  }),
++                authorizeSend: (send) =>
++                  policy.withProviderSend(
++                    {
++                      providerID: model.ref.providerID,
++                      url: webSocketURL ?? "",
++                      body: webSocketFrame ?? "",
++                      transport: "websocket",
++                    },
++                    pluginService,
++                    send,
++                  ),
                  receive: (frame) =>
                    hooks
                      .trigger("session", "experimental.ws.receive", { ...scope, frame })
-@@ -394,7 +426,7 @@ export const layer = Layer.effect(
+@@ -394,7 +436,7 @@ export const layer = Layer.effect(
        return {
          event: shaped,
          request,
@@ -601,13 +849,39 @@ index a3bde4c..01450db 100644
          retry: (event: Parameters<Prepared["retry"]>[0]) =>
            hooks.trigger("session", "retry", event).pipe(Effect.asVoid),
          // Permission.assert and the question tool throw declines as defects so tools cannot
-@@ -435,5 +467,5 @@ export const layer = Layer.effect(
+@@ -435,5 +477,5 @@ export const layer = Layer.effect(
  export const node = makeLocationNode({
    service: Service,
    layer,
 -  deps: [PluginHooks.node, SessionModelTransport.node, App.node],
 +  deps: [HostPolicy.node, PluginHooks.node, SessionModelTransport.node, App.node],
  })
+diff --git a/packages/core/src/session/model-transport.ts b/packages/core/src/session/model-transport.ts
+index 81c4a4b..0757cfb 100644
+--- a/packages/core/src/session/model-transport.ts
++++ b/packages/core/src/session/model-transport.ts
+@@ -69,6 +69,11 @@ export interface Handshake {
+ export interface Interceptor {
+   readonly handshake?: (connect: Handshake) => Effect.Effect<Handshake>
+   readonly send?: (frame: string) => Effect.Effect<string>
++  /**
++   * Wraps the actual socket send, after `send` produced the final frame. The host
++   * uses it to hold its activation lease across the network handoff.
++   */
++  readonly authorizeSend?: <A, E, R>(send: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+   readonly receive?: (frame: string) => Effect.Effect<string>
+ }
+ 
+@@ -385,7 +390,8 @@ export const makeLayer = (connector: WebSocketConnector) =>
+           delivery: "send-attempted",
+         }
+         channel.active = active
+-        const sent = yield* channel.connection.sendText(message).pipe(
++        const sending = channel.connection.sendText(message)
++        const sent = yield* (interceptor?.authorizeSend ? interceptor.authorizeSend(sending) : sending).pipe(
+           Effect.withSpan("SessionModelTransport.send"),
+           Effect.onInterrupt(() => closeChannel(owner, channel)),
+           Effect.result,
 diff --git a/packages/core/src/session/prompt.ts b/packages/core/src/session/prompt.ts
 index af4464e..b81d733 100644
 --- a/packages/core/src/session/prompt.ts
@@ -778,10 +1052,39 @@ index b4e2a1a..f5bd008 100644
      command: input.command,
      cwd: input.session.location.directory,
 diff --git a/packages/core/src/tool/mcp.ts b/packages/core/src/tool/mcp.ts
-index 7fbce8a..261dd59 100644
+index 7fbce8a..d548ec7 100644
 --- a/packages/core/src/tool/mcp.ts
 +++ b/packages/core/src/tool/mcp.ts
-@@ -140,7 +140,22 @@ export const layer = Layer.effect(
+@@ -40,6 +40,15 @@ export const layer = Layer.effect(
+     const lock = Semaphore.makeUnsafe(1)
+     let discovered: Mcp.Tool[] = []
+ 
++    // Subscribe before initial discovery so a connection that announces tools while the
++    // first catalog is being read cannot publish into a gap. The sliding feed keeps only
++    // the latest announcement for a flush that is already waiting.
++    const changes = yield* PubSub.sliding<void>(1)
++    yield* bus.subscribe(McpEvent.ToolsChanged).pipe(
++      Stream.runForEach(() => PubSub.publish(changes, undefined)),
++      Effect.forkScoped({ startImmediately: true }),
++    )
++
+     // Register once after initial discovery; only subsequent updates need a debounced reload.
+     const initial = yield* lock
+       .withPermit(
+@@ -128,19 +137,39 @@ export const layer = Layer.effect(
+     )
+ 
+     // Servers announce tools in bursts and each read loads the whole catalog, so settle and refresh
+-    // once. The bus subscription stays eager; only the already-open sliding subscription is debounced.
+-    const changes = yield* PubSub.sliding<void>(1)
+-    yield* bus.subscribe(McpEvent.ToolsChanged).pipe(
+-      Stream.runForEach(() => PubSub.publish(changes, undefined)),
+-      Effect.forkScoped({ startImmediately: true }),
+-    )
++    // once. The bus subscription is already eager; only this sliding subscription is debounced.
+     const updates = yield* PubSub.subscribe(changes)
+     yield* Stream.fromSubscription(updates).pipe(
+       Stream.debounce("100 millis"),
        Stream.runForEach(() => reconcile),
        Effect.forkScoped({ startImmediately: true }),
      )
@@ -794,10 +1097,20 @@ index 7fbce8a..261dd59 100644
 +      flush: Effect.gen(function* () {
 +        yield* Fiber.await(initial)
 +        // A configured server can connect just after the initial discovery fiber
-+        // committed an empty catalog. Give that first announcement a short settle
-+        // window, then re-read once; the event subscription owns later changes.
++        // committed an empty catalog. Wait for the next catalog announcement with a
++        // bounded timeout, then reconcile; there is no fixed settle delay.
 +        if (discovered.length === 0 && (yield* mcp.servers()).length > 0) {
-+          yield* Effect.sleep("500 millis")
++          yield* Effect.scoped(
++            Effect.gen(function* () {
++              const subscription = yield* PubSub.subscribe(changes)
++              yield* Stream.fromSubscription(subscription).pipe(
++                Stream.take(1),
++                Stream.timeout("1 second"),
++                Stream.runDrain,
++                Effect.ignore,
++              )
++            }),
++          )
 +          yield* reconcile
 +        }
 +      }),
@@ -807,10 +1120,10 @@ index 7fbce8a..261dd59 100644
  
 diff --git a/packages/core/test/host-policy.test.ts b/packages/core/test/host-policy.test.ts
 new file mode 100644
-index 0000000..3995fa6
+index 0000000..74a46ba
 --- /dev/null
 +++ b/packages/core/test/host-policy.test.ts
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,193 @@
 +import { expect } from "bun:test"
 +import { Config } from "@opencode/core/config"
 +import { ConfigManaged } from "@opencode/core/config/managed"
@@ -824,17 +1137,23 @@ index 0000000..3995fa6
 +
 +const it = testEffect(Layer.empty)
 +
-+const managed = (providerExecution: ConfigHost.ProviderExecution) =>
++const managed = (
++  providerExecution: ConfigHost.ProviderExecution,
++  requiredPlugins?: ReadonlyArray<ConfigHost.RequiredPlugin>,
++) =>
 +  new ConfigManaged.Document({
 +    type: "document",
-+    info: new Info({ providerExecution }),
++    info: new Info({ providerExecution, requiredPlugins }),
 +  })
 +
-+const configLayer = (providerExecution: ConfigHost.ProviderExecution) =>
++const configLayer = (
++  providerExecution: ConfigHost.ProviderExecution,
++  requiredPlugins?: ReadonlyArray<ConfigHost.RequiredPlugin>,
++) =>
 +  Layer.succeed(
 +    Config.Service,
 +    Config.Service.of({
-+      entries: () => Effect.succeed([managed(providerExecution)]),
++      entries: () => Effect.succeed([managed(providerExecution, requiredPlugins)]),
 +      changes: () => Stream.never,
 +      compatibility: () => Effect.succeed({ claude: [], agents: [] }),
 +    }),
@@ -842,11 +1161,24 @@ index 0000000..3995fa6
 +
 +const fsLayer = Layer.succeed(FSUtil.Service, {} as FSUtil.Interface)
 +
-+const policyLayer = (providerExecution: ConfigHost.ProviderExecution) =>
-+  HostPolicy.layer.pipe(Layer.provide(Layer.merge(configLayer(providerExecution), fsLayer)))
++const policyLayer = (
++  providerExecution: ConfigHost.ProviderExecution,
++  requiredPlugins?: ReadonlyArray<ConfigHost.RequiredPlugin>,
++) => HostPolicy.layer.pipe(Layer.provide(Layer.merge(configLayer(providerExecution, requiredPlugins), fsLayer)))
 +
 +const policy = new ConfigHost.ProviderExecution({
 +  allowedProviders: ["probe"],
++  hostedTools: "deny",
++})
++
++const endpointPolicy = new ConfigHost.ProviderExecution({
++  allowedProviders: [
++    {
++      id: "probe",
++      baseURL: "https://probe.invalid/v1",
++      transports: ["http"],
++    },
++  ],
 +  hostedTools: "deny",
 +})
 +
@@ -856,6 +1188,7 @@ index 0000000..3995fa6
 +    const result = yield* host
 +      .assertProviderRequest({
 +        providerID: "probe",
++        url: "https://probe.invalid/v1/chat/completions",
 +        body: JSON.stringify({ tools: [{ type: "web_search" }] }),
 +        transport: "http",
 +      })
@@ -870,6 +1203,7 @@ index 0000000..3995fa6
 +    const result = yield* host
 +      .assertProviderRequest({
 +        providerID: "probe",
++        url: "wss://probe.invalid/v1/responses",
 +        body: JSON.stringify({ tools: [{ type: "web_search" }] }),
 +        transport: "websocket",
 +      })
@@ -884,6 +1218,7 @@ index 0000000..3995fa6
 +    const allowed = yield* host
 +      .assertProviderRequest({
 +        providerID: "probe",
++        url: "https://probe.invalid/v1/chat/completions",
 +        body: JSON.stringify({ tools: [{ type: "function", name: "read" }] }),
 +        transport: "http",
 +      })
@@ -891,6 +1226,7 @@ index 0000000..3995fa6
 +    const denied = yield* host
 +      .assertProviderRequest({
 +        providerID: "other",
++        url: "https://probe.invalid/v1/chat/completions",
 +        body: JSON.stringify({ tools: [] }),
 +        transport: "http",
 +      })
@@ -913,6 +1249,7 @@ index 0000000..3995fa6
 +            message: "required plugin inactive",
 +          }),
 +        ),
++      withActive: (_selectors, effect) => effect,
 +      gui: () => Effect.succeed(undefined),
 +      close: () => Effect.void,
 +      awaitActivation: Effect.void,
@@ -922,6 +1259,7 @@ index 0000000..3995fa6
 +      .assertProviderRequest(
 +        {
 +          providerID: "probe",
++          url: "https://probe.invalid/v1/chat/completions",
 +          body: JSON.stringify({ tools: [{ type: "function", name: "read" }] }),
 +          transport: "http",
 +        },
@@ -929,7 +1267,55 @@ index 0000000..3995fa6
 +      )
 +      .pipe(Effect.exit)
 +    expect(Exit.isFailure(result)).toBe(true)
-+  }).pipe(Effect.provide(policyLayer(policy))),
++  }).pipe(Effect.provide(policyLayer(policy, [{ id: "flowguard.host-probe" }]))),
++)
++
++it.effect("fails closed when a required plugin service is absent", () =>
++  Effect.gen(function* () {
++    const host = yield* HostPolicy.Service
++    const result = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        url: "https://probe.invalid/v1/chat/completions",
++        body: JSON.stringify({ tools: [] }),
++        transport: "http",
++      })
++      .pipe(Effect.exit)
++    expect(Exit.isFailure(result)).toBe(true)
++  }).pipe(Effect.provide(policyLayer(policy, [{ id: "flowguard.host-probe" }]))),
++)
++
++it.effect("pins the provider endpoint and transport", () =>
++  Effect.gen(function* () {
++    const host = yield* HostPolicy.Service
++    const allowed = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        url: "https://probe.invalid/v1/chat/completions",
++        body: JSON.stringify({ tools: [] }),
++        transport: "http",
++      })
++      .pipe(Effect.exit)
++    const wrongHost = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        url: "https://evil.invalid/v1/chat/completions",
++        body: JSON.stringify({ tools: [] }),
++        transport: "http",
++      })
++      .pipe(Effect.exit)
++    const wrongTransport = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        url: "wss://probe.invalid/v1/responses",
++        body: JSON.stringify({ tools: [] }),
++        transport: "websocket",
++      })
++      .pipe(Effect.exit)
++    expect(Exit.isSuccess(allowed)).toBe(true)
++    expect(Exit.isFailure(wrongHost)).toBe(true)
++    expect(Exit.isFailure(wrongTransport)).toBe(true)
++  }).pipe(Effect.provide(policyLayer(endpointPolicy))),
 +)
 diff --git a/packages/core/test/plugin/fixture.ts b/packages/core/test/plugin/fixture.ts
 index d3d3fce..8e53bcc 100644
@@ -972,7 +1358,7 @@ index 513263e..633ffd7 100644
      })
  
 diff --git a/packages/schema/src/config.ts b/packages/schema/src/config.ts
-index e78cbae..3102ff7 100644
+index e78cbae..bf39961 100644
 --- a/packages/schema/src/config.ts
 +++ b/packages/schema/src/config.ts
 @@ -10,6 +10,7 @@ import { ConfigCompaction } from "./config/compaction.js"
@@ -987,9 +1373,9 @@ index e78cbae..3102ff7 100644
    plugins: ConfigPlugin.Plugins.pipe(optional).annotate({
      description: "Ordered plugin enablement directives and external package declarations",
    }),
-+  requiredPlugins: Schema.Array(Schema.String).pipe(optional).annotate({
++  requiredPlugins: Schema.Array(ConfigHost.RequiredPlugin).pipe(optional).annotate({
 +    description:
-+      "Plugin IDs or wildcard selectors that must be active before governed execution. Only honored from managed configuration.",
++      "Plugin IDs or source-bound selectors that must be active before governed execution. Only honored from managed configuration.",
 +  }),
 +  providerExecution: ConfigHost.ProviderExecution.pipe(optional).annotate({
 +    description:
@@ -1000,14 +1386,55 @@ index e78cbae..3102ff7 100644
    }),
 diff --git a/packages/schema/src/config/host.ts b/packages/schema/src/config/host.ts
 new file mode 100644
-index 0000000..d06d593
+index 0000000..f744987
 --- /dev/null
 +++ b/packages/schema/src/config/host.ts
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,60 @@
 +export * as ConfigHost from "./host.js"
 +
 +import { Schema } from "effect"
 +import { optional } from "../schema.js"
++
++/** A required plugin's trusted source identity, optionally tied to its ID. */
++export const RequiredPluginSource = Schema.Union([
++  Schema.Struct({ type: Schema.Literal("local"), path: Schema.String }),
++  Schema.Struct({
++    type: Schema.Literal("package"),
++    target: Schema.String,
++    version: Schema.String.pipe(optional),
++  }),
++  Schema.Struct({ type: Schema.Literal("builtin") }),
++  Schema.Struct({ type: Schema.Literal("sdk") }),
++]).annotate({ identifier: "Config.RequiredPluginSource" })
++export type RequiredPluginSource = typeof RequiredPluginSource.Type
++
++export const RequiredPlugin = Schema.Union([
++  Schema.String,
++  Schema.Struct({
++    id: Schema.String,
++    source: RequiredPluginSource.pipe(optional).annotate({
++      description: "Trusted source identity for the active plugin. Omit to require only the ID.",
++    }),
++  }),
++]).annotate({ identifier: "Config.RequiredPlugin" })
++export type RequiredPlugin = typeof RequiredPlugin.Type
++
++/** A provider rule may pin the endpoint and the transport that may carry its requests. */
++export const ProviderRule = Schema.Union([
++  Schema.String,
++  Schema.Struct({
++    id: Schema.String,
++    baseURL: Schema.String.pipe(optional).annotate({
++      description: "Allowed endpoint origin and path prefix for this provider.",
++    }),
++    transports: Schema.Array(Schema.Literals(["http", "websocket"]))
++      .pipe(optional)
++      .annotate({
++        description: "Transports this provider may use. Omit to allow both.",
++      }),
++  }),
++]).annotate({ identifier: "Config.ProviderRule" })
++export type ProviderRule = typeof ProviderRule.Type
 +
 +/**
 + * Host-enforced provider execution limits. A host policy may narrow which
@@ -1016,8 +1443,8 @@ index 0000000..d06d593
 + * tool pipeline, so the host must reject the request before it leaves.
 + */
 +export class ProviderExecution extends Schema.Class<ProviderExecution>("Config.ProviderExecution")({
-+  allowedProviders: Schema.Array(Schema.String).pipe(optional).annotate({
-+    description: "Provider IDs allowed to receive model requests. Omit to allow every provider.",
++  allowedProviders: Schema.Array(ProviderRule).pipe(optional).annotate({
++    description: "Provider IDs or endpoint/transport rules allowed to receive model requests.",
 +  }),
 +  hostedTools: Schema.Literals(["allow", "deny"]).pipe(optional).annotate({
 +    description: "Whether provider-hosted tool definitions are allowed. A configured policy defaults to deny.",

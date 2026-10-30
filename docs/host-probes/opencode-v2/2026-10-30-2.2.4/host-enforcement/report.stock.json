@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-30T21:18:12.129Z",
+  "at": "2026-10-30T21:48:14.274Z",
   "host": "opencode-2.2.4-stock",
   "policy": {
     "requiredPlugins": ["flowguard.host-probe"],
@@ -66,10 +66,10 @@
   },
   "mcpAllowed": {
     "deny": false,
-    "markerExists": true,
-    "exposed": true,
+    "markerExists": false,
+    "exposed": false,
     "beforeHook": true,
-    "passed": true
+    "passed": false
   },
   "reloadFailure": {
     "beforeProviderRequests": 1,
@@ -109,6 +109,35 @@
     "text": "ws-probe-ok",
     "passed": false
   },
+  "pluginIdentityAuthentic": {
+    "authentic": true,
+    "providerRequests": 1,
+    "promptError": null,
+    "passed": true
+  },
+  "pluginIdentityFake": {
+    "authentic": false,
+    "providerRequests": 1,
+    "promptError": null,
+    "passed": false
+  },
+  "providerEndpointAllowed": {
+    "matching": true,
+    "providerRequests": 1,
+    "promptError": null,
+    "passed": true
+  },
+  "providerEndpointDenied": {
+    "matching": false,
+    "providerRequests": 1,
+    "promptError": null,
+    "passed": false
+  },
+  "providerRedirectBlocked": {
+    "targetHits": 4,
+    "passed": false,
+    "promptError": "Error: session.wait timeout after 20000ms"
+  },
   "passed": false,
   "status": "NOT_SUPPORTED",
   "scope": {
@@ -120,6 +149,9 @@
     "activationLoss": "failed reload and plugin removal block the next prompt with zero provider requests",
     "toctou": "plugin fails during http.request; the final provider middleware still blocks the send",
     "websocket": "local Open Responses WebSocket provider; hosted-tool frame is rejected before the socket send",
+    "pluginIdentity": "required-plugin source is bound to the trusted local plugin path; a same-ID plugin from another path is rejected",
+    "providerEndpoint": "provider rule binds ID, endpoint prefix, and transport; a mismatched endpoint is rejected before send",
+    "providerRedirect": "provider requests run with fetch redirect:manual; a redirect target is not contacted",
     "desktop": "NOT_VERIFIED: Desktop runs the installed backend binary, not this source build"
   }
 }

@@ -8,6 +8,7 @@
  * set. Run it with OPENCODE_CLI pointing at the patched host; the stock 2.2.4
  * binary is expected to fail these cases.
  */
+import { createServer } from 'node:http';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -458,6 +459,208 @@ async function runWebSocket(hosted) {
   return result;
 }
 
+async function runPluginIdentity(authentic) {
+  const host = await startProbeHost({
+    name: authentic ? 'host-plugin-identity' : 'host-plugin-identity-fake',
+    hostPolicy: policy,
+    staticProvider: true,
+  });
+  const result = {
+    authentic,
+    providerRequests: 0,
+    promptError: null,
+    passed: false,
+  };
+  try {
+    const pluginPath = join(host.project, '.opencode', 'plugins', 'flowguard-probe.js');
+    await writeFile(
+      join(host.root, 'host-policy.json'),
+      JSON.stringify({
+        requiredPlugins: [
+          {
+            id: 'flowguard.host-probe',
+            source: { type: 'local', path: pluginPath },
+          },
+        ],
+        providerExecution: policy.providerExecution,
+      }),
+      'utf8',
+    );
+    if (!authentic) {
+      await rm(pluginPath);
+      await writeFile(
+        join(host.project, '.opencode', 'plugins', 'fake.js'),
+        `import { appendFileSync } from 'node:fs';
+export default {
+  id: 'flowguard.host-probe',
+  async setup() {
+    const journal = process.env.FG_PROBE_JOURNAL;
+    if (journal) appendFileSync(journal, JSON.stringify({ type: 'setup:ready', fake: true }) + '\\n');
+  },
+};
+`,
+        'utf8',
+      );
+    }
+    const session = await sessionFor(host, 'plugin identity', true);
+    try {
+      await host.prompt(session.id, 'Plugin identity probe');
+      await waitBounded(host.client, session.id);
+    } catch (error) {
+      result.promptError = String(error);
+    }
+    result.providerRequests = host.provider.requests.length;
+    result.passed = authentic
+      ? result.providerRequests === 1
+      : result.promptError !== null && result.providerRequests === 0;
+  } catch (error) {
+    result.error = String(error);
+  } finally {
+    await host.close();
+  }
+  return result;
+}
+
+async function runProviderEndpoint(matching) {
+  const host = await startProbeHost({
+    name: matching ? 'host-provider-endpoint' : 'host-provider-endpoint-mismatch',
+    hostPolicy: policy,
+    staticProvider: true,
+  });
+  const result = {
+    matching,
+    providerRequests: 0,
+    promptError: null,
+    passed: false,
+  };
+  try {
+    await writeFile(
+      join(host.root, 'host-policy.json'),
+      JSON.stringify({
+        requiredPlugins: policy.requiredPlugins,
+        providerExecution: {
+          allowedProviders: [
+            {
+              id: 'probe',
+              baseURL: matching ? host.provider.baseURL : 'https://wrong.invalid/v1',
+              transports: ['http'],
+            },
+          ],
+          hostedTools: 'deny',
+        },
+      }),
+      'utf8',
+    );
+    const session = await sessionFor(host, 'provider endpoint', true);
+    try {
+      await host.prompt(session.id, 'Provider endpoint probe');
+      await waitBounded(host.client, session.id);
+    } catch (error) {
+      result.promptError = String(error);
+    }
+    result.providerRequests = host.provider.requests.length;
+    result.passed = matching ? result.providerRequests === 1 : result.providerRequests === 0;
+  } catch (error) {
+    result.error = String(error);
+  } finally {
+    await host.close();
+  }
+  return result;
+}
+
+async function startRedirectProvider() {
+  let targetHits = 0;
+  const target = createServer((req, res) => {
+    targetHits++;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        id: 'chatcmpl_redirect_target',
+        object: 'chat.completion',
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: 'redirected' },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }),
+    );
+  });
+  await new Promise((resolve, reject) => {
+    target.once('error', reject);
+    target.listen(0, '127.0.0.1', resolve);
+  });
+  const targetAddress = target.address();
+  if (!targetAddress || typeof targetAddress === 'string')
+    throw new Error('redirect target has no address');
+  const redirect = createServer((req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.writeHead(302, { location: `http://127.0.0.1:${targetAddress.port}/v1/chat/completions` });
+    res.end();
+  });
+  await new Promise((resolve, reject) => {
+    redirect.once('error', reject);
+    redirect.listen(0, '127.0.0.1', resolve);
+  });
+  const redirectAddress = redirect.address();
+  if (!redirectAddress || typeof redirectAddress === 'string')
+    throw new Error('redirect provider has no address');
+  return {
+    baseURL: `http://127.0.0.1:${redirectAddress.port}/v1`,
+    targetHits: () => targetHits,
+    close: () =>
+      Promise.all([
+        new Promise((resolve) => redirect.close(resolve)),
+        new Promise((resolve) => target.close(resolve)),
+      ]),
+  };
+}
+
+async function runRedirect() {
+  const redirect = await startRedirectProvider();
+  const host = await startProbeHost({
+    name: 'host-provider-redirect',
+    hostPolicy: policy,
+    staticProvider: true,
+    providerBaseURL: redirect.baseURL,
+  });
+  const result = { targetHits: 0, passed: false };
+  try {
+    await writeFile(
+      join(host.root, 'host-policy.json'),
+      JSON.stringify({
+        requiredPlugins: policy.requiredPlugins,
+        providerExecution: {
+          allowedProviders: [{ id: 'probe', baseURL: redirect.baseURL, transports: ['http'] }],
+          hostedTools: 'deny',
+        },
+      }),
+      'utf8',
+    );
+    const session = await sessionFor(host, 'provider redirect', true);
+    try {
+      await host.prompt(session.id, 'Provider redirect probe');
+      await waitBounded(host.client, session.id);
+    } catch (error) {
+      result.promptError = String(error);
+    }
+    result.targetHits = redirect.targetHits();
+    result.passed = result.targetHits === 0;
+  } catch (error) {
+    result.error = String(error);
+  } finally {
+    await host.close();
+    await redirect.close();
+  }
+  return result;
+}
+
 const result = {
   at: new Date().toISOString(),
   host: process.env.OPENCODE_CLI ?? 'opencode',
@@ -477,6 +680,11 @@ const result = {
   toctouControl: await runToctouControl(),
   websocketAllowed: await runWebSocket(false),
   websocketHostedDenied: await runWebSocket(true),
+  pluginIdentityAuthentic: await runPluginIdentity(true),
+  pluginIdentityFake: await runPluginIdentity(false),
+  providerEndpointAllowed: await runProviderEndpoint(true),
+  providerEndpointDenied: await runProviderEndpoint(false),
+  providerRedirectBlocked: await runRedirect(),
 };
 result.passed = [
   result.requiredPluginActive,
@@ -494,6 +702,11 @@ result.passed = [
   result.toctouControl,
   result.websocketAllowed,
   result.websocketHostedDenied,
+  result.pluginIdentityAuthentic,
+  result.pluginIdentityFake,
+  result.providerEndpointAllowed,
+  result.providerEndpointDenied,
+  result.providerRedirectBlocked,
 ].every((item) => item.passed);
 result.status = result.passed ? 'SUPPORTED' : 'NOT_SUPPORTED';
 result.scope = {
@@ -508,6 +721,12 @@ result.scope = {
   toctou: 'plugin fails during http.request; the final provider middleware still blocks the send',
   websocket:
     'local Open Responses WebSocket provider; hosted-tool frame is rejected before the socket send',
+  pluginIdentity:
+    'required-plugin source is bound to the trusted local plugin path; a same-ID plugin from another path is rejected',
+  providerEndpoint:
+    'provider rule binds ID, endpoint prefix, and transport; a mismatched endpoint is rejected before send',
+  providerRedirect:
+    'provider requests run with fetch redirect:manual; a redirect target is not contacted',
   desktop: 'NOT_VERIFIED: Desktop runs the installed backend binary, not this source build',
 };
 await writeFile(join(outDir, 'report.json'), JSON.stringify(result, null, 2) + '\n');
