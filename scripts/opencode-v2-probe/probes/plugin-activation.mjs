@@ -56,21 +56,31 @@ const failedResult = {
 try {
   try {
     await failed.client.location.get();
-    await failed.client.session.create({
+    const failedSession = await failed.client.session.create({
       title: 'probe activation failure',
       location: { directory: failed.project },
     });
+    failedResult.sessionID = failedSession.id;
+    await failed.client.session.prompt({
+      sessionID: failedSession.id,
+      text: 'This prompt must not look governed.',
+    });
+    await failed.client.session.wait({ sessionID: failedSession.id });
+    failedResult.promptAccepted = true;
   } catch (error) {
     failedResult.sessionCreateError = String(error);
   }
   await new Promise((resolve) => setTimeout(resolve, 1_500));
   failedResult.observed = await failed.entries();
+  failedResult.hooksAfterFailure = failedResult.observed.filter((entry) =>
+    entry.type.startsWith('hook:'),
+  ).length;
   failedResult.survivedSetupFailure = failed.proc.exitCode === null;
   failedResult.failClosed = !failedResult.survivedSetupFailure;
   failedResult.status = failedResult.failClosed ? 'SUPPORTED' : 'NOT_SUPPORTED';
   failedResult.reason = failedResult.failClosed
     ? 'Host stopped when plugin setup failed.'
-    : 'Host remained alive and accepted session operations after plugin setup failed; hooks were absent. Install/doctor must detect this fail-open state.';
+    : 'Host remained alive, accepted a prompt and produced zero FlowGuard hook records after plugin setup failed. Install/doctor detection is not a runtime lock; the protected scope is undefined unless a launcher/runtime check closes this fail-open path.';
 } finally {
   await failed.close();
 }

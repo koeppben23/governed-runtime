@@ -1,6 +1,6 @@
 import { createServer } from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -164,6 +164,8 @@ export async function startProbeHost(options = {}) {
     join(project, '.opencode', 'package.json'),
     JSON.stringify({ type: 'module' }, null, 2) + '\n',
   );
+  await rm(join(project, '.opencode', 'node_modules'), { recursive: true, force: true });
+  await symlink(join(HERE, 'node_modules'), join(project, '.opencode', 'node_modules'), 'dir');
   await cp(
     join(HERE, 'plugin', 'flowguard-probe.js'),
     join(project, '.opencode', 'plugins', 'flowguard-probe.js'),

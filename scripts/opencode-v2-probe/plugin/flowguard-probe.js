@@ -1,11 +1,13 @@
 /**
  * Installed-artifact OpenCode v2 probe plugin.
  *
- * Deliberately depends on nothing but Node built-ins: the host loads this file
- * from a disposable project, and the probe must prove what that exact file can
- * observe. FlowGuard production code is not imported here.
+ * Uses the supported `Plugin.define` entrypoint from the pinned
+ * `@opencode/plugin@2.2.4` package. FlowGuard production code is not imported
+ * here; the host loads this file from a disposable project and the probe must
+ * prove what that exact installed entrypoint can observe.
  */
 import { appendFileSync } from 'node:fs';
+import { Plugin } from '@opencode/plugin';
 
 const JOURNAL = process.env.FG_PROBE_JOURNAL ?? '';
 const DENY_TOOLS = new Set(
@@ -87,7 +89,7 @@ async function requestText(request) {
   }
 }
 
-export default {
+export default Plugin.define({
   id: 'flowguard.host-probe',
   async setup(ctx) {
     const controller = new AbortController();
@@ -356,4 +358,4 @@ export default {
       record('cleanup', { pid: process.pid });
     };
   },
-};
+});

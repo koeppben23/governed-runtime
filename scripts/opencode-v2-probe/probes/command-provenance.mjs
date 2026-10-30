@@ -105,9 +105,14 @@ try {
       ),
     hostExposesCommandOrigin: false,
   };
-  result.passed =
-    result.observations.shellBlockCanRunBeforePrompt &&
-    result.observations.pluginCommandHasPromptButNoHostOrigin;
+  result.tuiComparison = {
+    status: 'NOT_VERIFIED',
+    comparedTuiSlashCommandToSdk: false,
+    reason:
+      'This probe invoked native commands and raw prompts through the SDK/client path. It did not execute a real TUI slash command, so the TUI-vs-SDK distinction is NOT_VERIFIED even though no host origin field was observed.',
+  };
+  result.status = 'NOT_VERIFIED';
+  result.passed = false;
 } catch (error) {
   result.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
 }

@@ -24,6 +24,7 @@ unverified.
 | Desktop `app.asar` SHA-256           | `aaf7c79f7694268e5c10fe934fdf3870ed9dc234a3116e2e9d2a8451e91f86d7`                              |
 | Desktop code signature               | Developer ID Application: Anomaly Innovations, Inc. (5NZ4Q7NXJ4), notarized                     |
 | Isolated probe server                | `opencode serve`, private port, isolated HOME/config/data/state/cache/DB                        |
+| Probe plugin entrypoint              | `Plugin.define` from `@opencode/plugin@2.2.4`                                                   |
 | Deterministic provider               | OpenAI-compatible capture provider; Alibaba Responses fixture for the provider-executed attempt |
 | Desktop backend                      | PID 37045, child of Desktop PID 36822, `.../cli/2.2.4-arm64/opencode-cli serve --service`       |
 | Desktop sessions touched             | **No**; only `server.info` was read                                                             |
@@ -59,13 +60,20 @@ The probe package and its own lockfile live under
 - Restore integrity: `ok`.
 - Live and restored databases both contain 31 tables, including
   `session`, `session_inbox`, `session_message`, `session_part` and
-  `session_share`.
-- The backup was retained for operator inspection; the token only records
-  the temporary path and hashes.
+  `session_share`; per-table row counts match.
+- The backup is retained at
+  `/Users/koeppben/Backups/opencode-v2-2026-10-30T20-06-06-327Z`, not only in a
+  disposable temp directory.
 - No live session was used by the isolated probes.
 
-This closes the backup/restore part of P0-01. The Desktop backend identity and
-full plugin activation are recorded below.
+**Evidence boundary:** this proves SQLite integrity, table inventory and
+per-table row-count equality. It does **not** prove semantic replay of every
+session, attachment, pending inbox item or externally materialized evidence
+artifact. That remains `NOT_VERIFIED`; a full restore rehearsal would need a
+separate fixture.
+
+This closes the backup/restore part of P0-01 as a database-level check. The
+Desktop backend identity and full plugin activation are recorded below.
 
 ## Results
 
@@ -79,18 +87,24 @@ The host log records:
 loading plugin .../.opencode/plugins/flowguard-probe.js
 ```
 
-After activation, the probe observed `setup:ready`, registered plugin tools
-(`probe_echo`, `probe_direct`), and registered `probe-plugin-command`. The
-positive plugin path is therefore real, not a linked-source or unit-test
-assumption.
+The probe uses the supported installed entrypoint
+`Plugin.define({ id, setup })` from `@opencode/plugin@2.2.4`, not a plain
+lookalike object. After activation, it observed `setup:ready`, registered plugin
+tools (`probe_echo`, `probe_direct`), and registered
+`probe-plugin-command`. The positive plugin path is therefore real, not a
+linked-source or unit-test assumption.
 
-However, when `setup()` threw, the host **remained alive and accepted session
-operations**, with no `setup:ready` and no hooks. That is a host fail-open
-state. `flowguard install` and `doctor` must detect it; the runtime cannot
-retroactively install hooks that do not exist.
+However, when `setup()` threw, the host **remained alive, accepted a prompt and
+produced zero FlowGuard hook records**, with no `setup:ready`. That is a host
+fail-open state. `flowguard install` and `doctor` can detect missing activation
+at inspection time, but they are **not a runtime lock**: a later host start can
+still run without the plugin. The runtime cannot retroactively install hooks
+that do not exist.
 
-**Consequence:** missing plugin activation must be detected at install/doctor
-time and must block. A successful loader is not, by itself, a GO.
+**Consequence:** missing plugin activation must be treated as an explicit
+limited-security scope unless a launcher/runtime check can prove fail-closed
+startup. A successful loader is not, by itself, a GO, and install/doctor
+detection alone does not establish runtime protection.
 
 ### v1 tool discovery under v2
 
@@ -155,10 +169,13 @@ delivery }`;
   probe only by call path, not by a host-stamped origin field;
 - a child or SDK client can invoke the same command path.
 
-Therefore a host-verified "fresh explicit user command" was not demonstrated.
-The #1168 capacity lock cannot be released automatically under this contract.
-Only a separately operator-authorized recovery action is a viable alternative,
-and it must not be synthesized by an LLM or SDK prompt.
+**Evidence boundary:** the probe did not execute a real TUI slash command.
+The TUI-vs-SDK distinction is therefore `NOT_VERIFIED`, even though no host
+origin field was observed on the exercised paths. A host-verified "fresh
+explicit user command" was not demonstrated. The #1168 capacity lock cannot be
+released automatically under this contract. Only a separately
+operator-authorized recovery action is a viable alternative, and it must not be
+synthesized by an LLM or SDK prompt.
 
 ### Reviewer child, request lineage and completion
 
@@ -252,26 +269,28 @@ treated as active.
 
 ## Mandatory gate summary
 
-| Gate                                           | Status                            | Evidence                                                                        |
-| ---------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
-| Backup/restore                                 | PASS                              | 10.9 GB SQLite backup + restore; integrity `ok`; 31/31 tables                   |
-| Desktop backend identity                       | PASS                              | server PID 37045 child of Desktop PID 36822; version 2.2.4; no sessions touched |
-| Plugin discovery                               | PASS                              | host log + `setup:ready`                                                        |
-| Full plugin activation                         | PASS                              | tools and commands registered                                                   |
-| Plugin setup failure fail-closed               | **NOT_SUPPORTED**                 | host stayed alive with no hooks                                                 |
-| V1 tool file compatibility                     | **NOT_SUPPORTED**                 | `.opencode/tools/legacy-probe.ts` absent from tool lists                        |
-| Local file/shell/code-mode fences              | PASS                              | no file/marker/network side effect                                              |
-| MCP preventive fence                           | **NOT_VERIFIED**                  | MCP connected but tool not advertised                                           |
-| Provider-executed tool fence                   | **NOT_VERIFIED**                  | fixture did not produce stable completion; local hook is absent by source       |
-| Command shell-block prevention                 | **NOT_SUPPORTED**                 | marker created before prompt admission                                          |
-| Host command origin                            | **NOT_SUPPORTED**                 | no authoritative origin field in v2 path                                        |
-| Visible reviewer child + same-child follow-up  | PASS                              | `parentID`, explicit follow-up, idle markers                                    |
-| v5 request/assistant lineage                   | **NOT_SUPPORTED**                 | no `parentID` on v2 assistant; `generate` adds no history                       |
-| `subagent` identity/model/background controls  | Host accepts; adapter must reject | separate contract probe                                                         |
-| Parent/reviewer/serialization model wire       | PASS                              | final provider requests                                                         |
-| `finish:length` and step-ceiling host behavior | PASS as host behavior             | 1×/3× and `steps:2` probes                                                      |
-| Governance handling of length/step             | **NOT_VERIFIED**                  | no production adapter yet                                                       |
-| Mandate source activation                      | PASS                              | `core/instructions` includes probe token                                        |
+| Gate                                           | Status                             | Evidence                                                                        |
+| ---------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
+| Backup/restore                                 | PASS, semantic replay NOT_VERIFIED | 10.9 GB SQLite backup + restore; integrity `ok`; 31/31 tables; row counts match |
+| Desktop backend identity                       | PASS                               | server PID 37045 child of Desktop PID 36822; version 2.2.4; no sessions touched |
+| Plugin discovery                               | PASS                               | host log + `setup:ready`                                                        |
+| Full plugin activation                         | PASS                               | `Plugin.define` entrypoint; tools and commands registered                       |
+| Plugin setup failure fail-closed               | **NOT_SUPPORTED**                  | prompt accepted with zero hooks; install/doctor is not a runtime lock           |
+| V1 tool file compatibility                     | **NOT_SUPPORTED**                  | `.opencode/tools/legacy-probe.ts` absent from tool lists                        |
+| Local file/shell/code-mode fences              | PASS                               | no file/marker/network side effect                                              |
+| MCP preventive fence                           | **NOT_VERIFIED**                   | MCP connected but tool not advertised                                           |
+| Provider-executed tool fence                   | **NOT_VERIFIED**                   | fixture did not produce stable completion; local hook is absent by source       |
+| Command shell-block prevention                 | **NOT_SUPPORTED**                  | marker created before prompt admission                                          |
+| Host command origin on exercised paths         | **NOT_SUPPORTED**                  | no authoritative origin field in native/plugin/SDK paths                        |
+| TUI-slash-command vs SDK                       | **NOT_VERIFIED**                   | no real TUI slash command executed                                              |
+| Automatic capacity unlock                      | **NOT_SUPPORTED**                  | no verified fresh-user-command authority; lock stays closed                     |
+| Visible reviewer child + same-child follow-up  | PASS                               | `parentID`, explicit follow-up, idle markers                                    |
+| v5 request/assistant lineage                   | **NOT_SUPPORTED**                  | no `parentID` on v2 assistant; `generate` adds no history                       |
+| `subagent` identity/model/background controls  | Host accepts; adapter must reject  | separate contract probe                                                         |
+| Parent/reviewer/serialization model wire       | PASS                               | final provider requests                                                         |
+| `finish:length` and step-ceiling host behavior | PASS as host behavior              | 1×/3× and `steps:2` probes                                                      |
+| Governance handling of length/step             | **NOT_VERIFIED**                   | no production adapter yet                                                       |
+| Mandate source activation                      | PASS                               | `core/instructions` includes probe token                                        |
 
 ## Decision
 
@@ -294,8 +313,10 @@ specific:
 4. **MCP and provider-executed tools** were not proven preventively covered.
    They need either a host-supported containment mechanism or an explicit
    `NOT_SUPPORTED` limitation.
-5. **Plugin setup failure is fail-open in the host.** Install/doctor must
-   detect missing activation; runtime cannot enforce without loaded hooks.
+5. **Plugin setup failure is fail-open in the host.** A failed setup still
+   accepted a prompt with zero hooks. Install/doctor detection is not a runtime
+   lock; the protected scope must be explicitly limited or a launcher/runtime
+   fail-closed check must be proven.
 
 No production migration was started. The v1 baseline, `TESTED_OPENCODE_HOST_VERSION`
 and existing v1 tests remain unchanged.

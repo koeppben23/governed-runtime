@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const binary = process.env.OPENCODE_CLI ?? 'opencode';
 
@@ -54,6 +54,18 @@ function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+function tableRowCounts(path) {
+  const names = sqlite(path, "select name from sqlite_master where type='table' order by name;")
+    .split('\n')
+    .filter(Boolean);
+  return Object.fromEntries(
+    names.map((name) => [
+      name,
+      Number(sqlite(path, `select count(*) from "${name.replaceAll('"', '""')}";`)),
+    ]),
+  );
+}
+
 async function hashTree(root) {
   const files = [];
   async function walk(dir) {
@@ -75,7 +87,10 @@ async function hashTree(root) {
 }
 
 const live = paths();
-const backupRoot = await mkdtemp(join(tmpdir(), 'fg-oc-v2-backup-'));
+const durableBase = process.env.FG_PROBE_BACKUP_DIR;
+const backupRoot = durableBase
+  ? join(resolve(durableBase), `opencode-v2-${new Date().toISOString().replace(/[:.]/g, '-')}`)
+  : await mkdtemp(join(tmpdir(), 'fg-oc-v2-backup-'));
 const restoreRoot = await mkdtemp(join(tmpdir(), 'fg-oc-v2-restore-'));
 const reportPath = process.env.FG_PROBE_BACKUP_REPORT;
 const report = {
@@ -87,6 +102,11 @@ const report = {
   restoreRoot,
   copied: [],
   integrity: {},
+  semanticRestore: {
+    validated: false,
+    reason:
+      'Integrity and per-table row-count equality are verified. Full semantic replay of sessions, attachments, pending inbox items and externally materialized evidence is not claimed.',
+  },
   warnings: [],
 };
 
@@ -124,6 +144,7 @@ try {
       live.db,
       "select count(*) from sqlite_master where type='table';",
     );
+    report.integrity.liveRowCounts = tableRowCounts(live.db);
   } else {
     report.warnings.push(`database path missing or unset: ${live.db}`);
   }
@@ -145,6 +166,10 @@ try {
       restoreDb,
       "select count(*) from sqlite_master where type='table';",
     );
+    report.integrity.restoredRowCounts = tableRowCounts(restoreDb);
+    report.integrity.rowCountsMatch =
+      JSON.stringify(report.integrity.liveRowCounts) ===
+      JSON.stringify(report.integrity.restoredRowCounts);
     report.integrity.restoredUserTable = sqlite(
       restoreDb,
       "select name from sqlite_master where type='table' and name like '%session%' order by name limit 5;",
@@ -157,7 +182,8 @@ try {
     report.integrity.backup === 'ok' &&
     (report.integrity.restore === undefined || report.integrity.restore === 'ok') &&
     (report.integrity.liveTableCount === undefined ||
-      report.integrity.liveTableCount === report.integrity.restoredTableCount);
+      report.integrity.liveTableCount === report.integrity.restoredTableCount) &&
+    (report.integrity.rowCountsMatch === undefined || report.integrity.rowCountsMatch === true);
 } catch (error) {
   report.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
   report.passed = false;
@@ -170,8 +196,9 @@ if (reportPath) {
 console.log(JSON.stringify(report, null, 2));
 if (!report.passed) process.exitCode = 1;
 
-// Keep the backup and restored copy for operator inspection only when asked.
-if (process.env.FG_PROBE_KEEP_BACKUP !== '1') {
+// Keep the backup and restored copy for operator inspection when asked, and
+// never delete a backup written to an operator-selected durable directory.
+if (process.env.FG_PROBE_KEEP_BACKUP !== '1' && !durableBase) {
   await rm(backupRoot, { recursive: true, force: true });
   await rm(restoreRoot, { recursive: true, force: true });
 }
