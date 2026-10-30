@@ -1,0 +1,1025 @@
+diff --git a/packages/core/script/benchmark-snapshot-session.ts b/packages/core/script/benchmark-snapshot-session.ts
+index 42117d5..6429098 100644
+--- a/packages/core/script/benchmark-snapshot-session.ts
++++ b/packages/core/script/benchmark-snapshot-session.ts
+@@ -160,6 +160,7 @@ const run = (snapshots: Layer.Layer<Snapshot.Service>) =>
+           },
+           retry: () => Effect.succeed({ retry: false as const }),
+           recoverContinuation: false,
++          beforeRequest: Effect.void,
+           recoverOverflow: Effect.succeed(false),
+         })
+       }
+diff --git a/packages/core/src/config/normalize.ts b/packages/core/src/config/normalize.ts
+index 1ef0847..5a2f38c 100644
+--- a/packages/core/src/config/normalize.ts
++++ b/packages/core/src/config/normalize.ts
+@@ -215,6 +215,8 @@ export function normalize(input: unknown): Result {
+     media: Info.fields.media,
+     tool_output: Info.fields.tool_output,
+     websearch: Info.fields.websearch,
++    requiredPlugins: Info.fields.requiredPlugins,
++    providerExecution: Info.fields.providerExecution,
+     worktree: Info.fields.worktree,
+     warming: Info.fields.warming,
+   }
+diff --git a/packages/core/src/host-policy.ts b/packages/core/src/host-policy.ts
+new file mode 100644
+index 0000000..e9aef18
+--- /dev/null
++++ b/packages/core/src/host-policy.ts
+@@ -0,0 +1,242 @@
++export * as HostPolicy from "./host-policy.js"
++
++import { ConfigHost } from "@opencode/schema/config/host"
++import { FSUtil } from "@opencode/util/fs-util"
++import { makeLocationNode } from "@opencode/util/effect/app-node"
++import { Context, Effect, Layer, Option, Schema } from "effect"
++import { Config } from "./config.js"
++import { ConfigManaged } from "./config/managed.js"
++import { Plugin } from "./plugin/service.js"
++
++/**
++ * A host policy is a small, deployment-owned contract. It must not be read from
++ * project or SDK configuration: those layers can request or describe work, but
++ * they cannot decide whether the host is allowed to execute it.
++ */
++const FilePolicy = Schema.Struct({
++  requiredPlugins: Schema.Array(Schema.String).pipe(Schema.optional),
++  providerExecution: ConfigHost.ProviderExecution.pipe(Schema.optional),
++})
++type FilePolicy = typeof FilePolicy.Type
++
++type ProviderPolicy = {
++  readonly allowedProviders?: readonly string[]
++  readonly hostedTools: "allow" | "deny"
++}
++
++export type Policy = {
++  readonly requiredPlugins: readonly string[]
++  readonly provider: ProviderPolicy | undefined
++}
++
++export class DeniedError extends Schema.TaggedError<DeniedError>()("HostPolicy.DeniedError", {
++  code: Schema.String,
++  reason: Schema.String,
++  recovery: Schema.optional(Schema.Array(Schema.String)),
++}) {}
++
++export interface Interface {
++  /** Fail-closed before any governed model, command, shell, or tool action. */
++  readonly assertExecutionAllowed: () => Effect.Effect<void, never, Plugin.Service>
++  /** Fail-closed before the final provider request leaves the host. */
++  readonly assertProviderRequest: (
++    input: {
++      readonly providerID: string
++      readonly body: string
++      readonly transport: "http" | "websocket"
++    },
++    plugins?: Plugin.Interface,
++  ) => Effect.Effect<void>
++}
++
++export class Service extends Context.Service<Service, Interface>()("@opencode/HostPolicy") {}
++
++const HOSTED_TOOL_KEYS = new Set([
++  "googleSearch",
++  "googleSearchRetrieval",
++  "urlContext",
++  "codeExecution",
++  "computerUse",
++  "bash",
++  "textEditor",
++])
++
++const HOSTED_TOOL_TYPES = new Set([
++  "web_search",
++  "web_search_preview",
++  "web_search_20250305",
++  "web_extractor",
++  "file_search",
++  "file_search_call",
++  "code_interpreter",
++  "code_interpreter_call",
++  "code_execution",
++  "code_execution_20250522",
++  "code_execution_call",
++  "image_generation",
++  "image_generation_call",
++  "computer_use",
++  "computer_20250124",
++  "bash_20250124",
++  "text_editor_20250124",
++  "server_tool_use",
++  "web_search_call",
++])
++
++const isRecord = (value: unknown): value is Record<string, unknown> =>
++  typeof value === "object" && value !== null && !Array.isArray(value)
++
++function denied(code: string, reason: string, recovery?: readonly string[]) {
++  return new DeniedError({ code, reason, ...(recovery ? { recovery } : {}) })
++}
++
++function mergeProvider(policies: readonly (FilePolicy["providerExecution"] | undefined)[]): ProviderPolicy | undefined {
++  const present = policies.filter((policy) => policy !== undefined)
++  if (present.length === 0) return undefined
++  const restricted = present.some((policy) => policy.allowedProviders !== undefined)
++  const allowedProviders = restricted
++    ? present
++        .flatMap((policy) => policy.allowedProviders ?? [])
++        .filter(
++          (provider, index, all) =>
++            all.indexOf(provider) === index &&
++            present.every(
++              (policy) => policy.allowedProviders === undefined || policy.allowedProviders.includes(provider),
++            ),
++        )
++    : undefined
++  const hostedTools = present.some((policy) => policy.hostedTools !== "allow") ? "deny" : "allow"
++  return { ...(allowedProviders ? { allowedProviders } : {}), hostedTools }
++}
++
++function hostedToolDefinition(value: Record<string, unknown>) {
++  if (!Array.isArray(value.tools)) return
++  for (const [index, tool] of value.tools.entries()) {
++    if (!isRecord(tool)) continue
++    if (typeof tool.type === "string" && tool.type !== "function" && tool.type !== "custom")
++      return `tools[${index}].type=${tool.type}`
++    for (const key of HOSTED_TOOL_KEYS) if (key in tool) return `tools[${index}].${key}`
++  }
++}
++
++function hostedCall(value: unknown, path: string, depth: number): string | undefined {
++  if (depth > 8) return
++  if (Array.isArray(value)) {
++    for (const [index, item] of value.entries()) {
++      const found = hostedCall(item, `${path}[${index}]`, depth + 1)
++      if (found) return found
++    }
++    return
++  }
++  if (!isRecord(value)) return
++  if (typeof value.type === "string" && HOSTED_TOOL_TYPES.has(value.type)) return `${path}.type=${value.type}`
++  for (const [key, child] of Object.entries(value)) {
++    if (key === "tools") continue
++    const found = hostedCall(child, path === "" ? key : `${path}.${key}`, depth + 1)
++    if (found) return found
++  }
++}
++
++function inspectProviderBody(body: string) {
++  if (body.length === 0) return
++  let parsed: unknown
++  try {
++    parsed = JSON.parse(body)
++  } catch {
++    return "provider request body is not valid JSON"
++  }
++  if (!isRecord(parsed)) return
++  return hostedToolDefinition(parsed) ?? hostedCall(parsed, "", 0)
++}
++
++export const layer = Layer.effect(
++  Service,
++  Effect.gen(function* () {
++    const config = yield* Config.Service
++    const fs = yield* FSUtil.Service
++
++    // The policy file is opt-in host configuration. A configured but unreadable
++    // or malformed file is a startup defect, never an implicit allow.
++    const file = yield* Effect.gen(function* () {
++      const path = process.env.OPENCODE_HOST_POLICY
++      if (!path) return
++      const text = yield* fs.readFileStringSafe(path).pipe(Effect.orDie)
++      if (text === undefined) return yield* Effect.die(new Error(`Host policy file is missing or unreadable: ${path}`))
++      const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(FilePolicy))(text)
++      if (Option.isNone(decoded)) return yield* Effect.die(new Error(`Host policy file is invalid: ${path}`))
++      return decoded.value
++    })
++
++    const currentPolicy = Effect.fn("HostPolicy.currentPolicy")(function* () {
++      const entries = yield* config.entries()
++      const managed = entries.filter(
++        (entry): entry is ConfigManaged.Document => entry instanceof ConfigManaged.Document,
++      )
++      const requiredPlugins = Array.from(
++        new Set([...(file?.requiredPlugins ?? []), ...managed.flatMap((entry) => entry.info.requiredPlugins ?? [])]),
++      )
++      return {
++        requiredPlugins,
++        provider: mergeProvider([file?.providerExecution, ...managed.map((entry) => entry.info.providerExecution)]),
++      } satisfies Policy
++    })
++
++    const requirePlugins = (plugins: Plugin.Interface, selectors: readonly string[]) =>
++      plugins
++        .requireActive(selectors)
++        .pipe(
++          Effect.catchTag("Plugin.RequiredPluginError", (error) =>
++            Effect.die(
++              denied("REQUIRED_PLUGIN_INACTIVE", error.message, [
++                "Activate the required plugin generation and retry.",
++                "Check the host log for plugin setup or transform failures.",
++              ]),
++            ),
++          ),
++        )
++
++    const assertExecutionAllowed = Effect.fn("HostPolicy.assertExecutionAllowed")(function* () {
++      const plugins = yield* Plugin.Service
++      const current = yield* currentPolicy()
++      yield* requirePlugins(plugins, current.requiredPlugins)
++    })
++
++    const assertProviderRequest = Effect.fn("HostPolicy.assertProviderRequest")(function* (
++      input: {
++        readonly providerID: string
++        readonly body: string
++        readonly transport: "http" | "websocket"
++      },
++      plugins?: Plugin.Interface,
++    ) {
++      const current = yield* currentPolicy()
++      if (plugins) yield* requirePlugins(plugins, current.requiredPlugins)
++      const provider = current.provider
++      if (!provider) return
++      if (provider.allowedProviders && !provider.allowedProviders.includes(input.providerID))
++        return yield* Effect.die(
++          denied("PROVIDER_NOT_ALLOWED", `Provider ${input.providerID} is not allowed by the host policy.`, [
++            "Use a provider listed in the host providerExecution policy.",
++          ]),
++        )
++      if (provider.hostedTools === "allow") return
++      const found = inspectProviderBody(input.body)
++      if (found)
++        return yield* Effect.die(
++          denied(
++            "HOSTED_TOOL_NOT_ALLOWED",
++            `Provider-hosted tool execution is not allowed (${found}, ${input.transport}).`,
++            ["Remove the hosted tool definition or use a provider without provider-executed tools."],
++          ),
++        )
++    })
++
++    return Service.of({ assertExecutionAllowed, assertProviderRequest })
++  }),
++)
++
++export const node = makeLocationNode({
++  service: Service,
++  layer,
++  deps: [Config.node, FSUtil.node],
++})
+diff --git a/packages/core/src/instance.ts b/packages/core/src/instance.ts
+index 0691d63..eef877b 100644
+--- a/packages/core/src/instance.ts
++++ b/packages/core/src/instance.ts
+@@ -17,6 +17,7 @@ import { Generate } from "./generate.js"
+ import { Voice } from "./voice.js"
+ import { UsageLimits } from "./usage-limits.js"
+ import { Form } from "./form.js"
++import { HostPolicy } from "./host-policy.js"
+ import { Image } from "./image.js"
+ import { LocationWatcher } from "./filesystem/location-watcher.js"
+ import { Integration } from "./integration.js"
+@@ -76,6 +77,7 @@ const nodes = [
+   AISDK.node,
+   Plugin.node,
+   PluginHooks.node,
++  HostPolicy.node,
+   InstancePlugins.node,
+   PluginSupervisor.node,
+   WorktreeStrategies.node,
+diff --git a/packages/core/src/plugin.ts b/packages/core/src/plugin.ts
+index fc59262..4f36053 100644
+--- a/packages/core/src/plugin.ts
++++ b/packages/core/src/plugin.ts
+@@ -11,7 +11,7 @@ import { Cause, Context, Effect, Exit, Latch, Layer, Logger, Queue, References,
+ import { Bus } from "./bus.js"
+ import { KV } from "./kv.js"
+ import { PluginHost } from "./plugin/host.js"
+-import { type Failure, type Generation, Service } from "./plugin/service.js"
++import { type Failure, type Generation, RequiredPluginError, Service } from "./plugin/service.js"
+ import { State } from "./state.js"
+ 
+ export { awaitActivation, type Generation, type Interface, Service } from "./plugin/service.js"
+@@ -51,6 +51,34 @@ const layer = Layer.effect(
+     const list = Effect.fn("Plugin.list")(function* () {
+       return inventory
+     })
++    const requireActive = Effect.fn("Plugin.requireActive")(function* (selectors: readonly string[]) {
++      yield* ready.await
++      if (closed)
++        return yield* new RequiredPluginError({
++          plugin: "*",
++          message: "Plugin host is closed; governed execution is unavailable",
++        })
++      const current = Array.from(active.values())
++      const failed = inventory.filter(
++        (item): item is Plugin.Info & { readonly id: Plugin.ID } =>
++          item.state.status === "failed" && item.id !== undefined,
++      )
++      for (const selector of selectors) {
++        const found = current.some(
++          (slot) =>
++            matchesSelector(selector, slot.plugin.id) &&
++            slot.activation !== undefined &&
++            slot.activation.failure === undefined &&
++            slot.error === undefined,
++        )
++        const failedRevision = failed.some((item) => matchesSelector(selector, item.id))
++        if (!found || failedRevision)
++          return yield* new RequiredPluginError({
++            plugin: selector,
++            message: `Required plugin is not active: ${selector}`,
++          })
++      }
++    })
+     const gui = Effect.fn("Plugin.gui")(function* (id: Plugin.ID) {
+       const gui = active.get(id)?.plugin.gui
+       if (!gui) return undefined
+@@ -267,6 +295,7 @@ const layer = Layer.effect(
+       awaitActivation: ready.await,
+       hold,
+       list,
++      requireActive,
+       gui,
+     })
+   }),
+@@ -297,6 +326,12 @@ type PendingFailure = {
+   readonly release: Effect.Effect<void>
+ }
+ 
++function matchesSelector(selector: string, target: string) {
++  if (selector === "*") return true
++  if (selector.endsWith(".*")) return target.startsWith(selector.slice(0, -1))
++  return selector === target
++}
++
+ function slotInfo(slot: Slot): Plugin.Info {
+   const failure = slot.activation?.failure ?? (slot.error === undefined ? undefined : { error: slot.error })
+   return {
+diff --git a/packages/core/src/plugin/service.ts b/packages/core/src/plugin/service.ts
+index d647969..39b6326 100644
+--- a/packages/core/src/plugin/service.ts
++++ b/packages/core/src/plugin/service.ts
+@@ -4,11 +4,22 @@ export * as Plugin from "./service.js"
+ // importing the plugin host, which itself depends on Session.
+ import { Plugin } from "@opencode/schema/plugin"
+ import type { Plugin as PluginDefinition } from "@opencode/plugin/effect/plugin"
+-import { Context, type Effect, type Exit } from "effect"
++import { Context, type Effect, type Exit, Schema } from "effect"
++
++export class RequiredPluginError extends Schema.TaggedError<RequiredPluginError>()("Plugin.RequiredPluginError", {
++  plugin: Schema.String,
++  message: Schema.String,
++}) {}
+ 
+ export interface Interface {
+   readonly activate: (plugins: readonly Generation[], failures?: readonly Failure[]) => Effect.Effect<void>
+   readonly list: () => Effect.Effect<Plugin.Info[]>
++  /**
++   * Waits for the current activation generation to settle, then requires every
++   * selector to match an active, non-fallback plugin. A failed, removed, closed,
++   * or replaced generation fails even when a previous inventory looked active.
++   */
++  readonly requireActive: (selectors: readonly string[]) => Effect.Effect<void, RequiredPluginError>
+   /** An active plugin's prebuilt `./gui-experimental` bundle, or undefined when it exports none. */
+   readonly gui: (id: Plugin.ID) => Effect.Effect<Plugin.GuiBundle | undefined>
+   readonly close: (exit: Exit.Exit<unknown, unknown>) => Effect.Effect<void>
+diff --git a/packages/core/src/plugin/supervisor.ts b/packages/core/src/plugin/supervisor.ts
+index bba12a8..05b61cf 100644
+--- a/packages/core/src/plugin/supervisor.ts
++++ b/packages/core/src/plugin/supervisor.ts
+@@ -76,13 +76,16 @@ const resolve = Effect.fn("PluginSupervisor.resolve")(function* (
+       continue
+     }
+     if ("error" in plugin) {
++      // The new revision never became a generation, so the one already running keeps its place.
++      const retained = packages.get(operation.target) ?? running.get(operation.target)
+       failures.set(operation.target, {
++        // Keep the retained ID on the failure so a required-plugin gate cannot mistake the
++        // fallback generation for a healthy activation of the requested revision.
++        ...(retained ? { id: Plugin.ID.make(retained.id) } : {}),
+         source: pluginSource(operation.target),
+         state: { status: "failed", error: plugin.error, ref: plugin.ref },
+         features: { server: true },
+       })
+-      // The new revision never became a generation, so the one already running keeps its place.
+-      const retained = packages.get(operation.target) ?? running.get(operation.target)
+       if (!retained) continue
+       packages.set(operation.target, retained)
+       enabled.add(retained.id)
+diff --git a/packages/core/src/session/command.ts b/packages/core/src/session/command.ts
+index bf79c23..a3d6f70 100644
+--- a/packages/core/src/session/command.ts
++++ b/packages/core/src/session/command.ts
+@@ -5,6 +5,7 @@ import type { Session } from "@opencode/schema/session"
+ import type { SessionInbox } from "@opencode/schema/session-inbox"
+ import { Effect } from "effect"
+ import { Command } from "../command.js"
++import { HostPolicy } from "../host-policy.js"
+ import { Instance } from "../instance/service.js"
+ import { Plugin } from "../plugin/service.js"
+ 
+@@ -20,6 +21,8 @@ export const execute = Effect.fn("SessionCommand.execute")(function* (input: {
+   const instances = yield* Instance.Service
+   yield* Effect.gen(function* () {
+     yield* Plugin.awaitActivation
++    const policy = yield* HostPolicy.Service
++    yield* policy.assertExecutionAllowed()
+     const commands = yield* Command.Service
+     yield* commands.execute({
+       name: input.command,
+diff --git a/packages/core/src/session/generate.ts b/packages/core/src/session/generate.ts
+index c83baed..1ffa5fc 100644
+--- a/packages/core/src/session/generate.ts
++++ b/packages/core/src/session/generate.ts
+@@ -4,6 +4,7 @@ import type { FileSystem } from "../filesystem.js"
+ import { LLMClient, Message, type AIError } from "@opencode/ai/effect"
+ import { Effect } from "effect"
+ import { Database } from "../database/database.js"
++import { HostPolicy } from "../host-policy.js"
+ import { Instance } from "../instance/service.js"
+ import { Plugin } from "../plugin/service.js"
+ import type { Instructions } from "../instructions/index.js"
+@@ -33,6 +34,8 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input:
+ 
+   return yield* Effect.gen(function* () {
+     yield* Plugin.awaitActivation
++    const policy = yield* HostPolicy.Service
++    yield* policy.assertExecutionAllowed()
+     const context = yield* SessionContext.Service
+     const selection = yield* context.select(input.session.id)
+     const model = yield* context.resolveModel(selection.session)
+diff --git a/packages/core/src/session/model-request.ts b/packages/core/src/session/model-request.ts
+index a3bde4c..01450db 100644
+--- a/packages/core/src/session/model-request.ts
++++ b/packages/core/src/session/model-request.ts
+@@ -24,13 +24,15 @@ import type {
+ import type { Agent } from "@opencode/schema/agent"
+ import type { Model } from "@opencode/schema/model"
+ import type { Content } from "@opencode/schema/tool"
+-import { Cause, Context, Effect, Layer, Result, Stream } from "effect"
++import { Cause, Context, Effect, Layer, Option, Result, Stream } from "effect"
+ import { HttpClientRequest, HttpClientResponse } from "effect/http"
+ import { makeLocationNode } from "@opencode/util/effect/app-node"
+ import { App } from "../app.js"
++import { HostPolicy } from "../host-policy.js"
+ import { Instructions } from "../instructions/index.js"
+ import { Permission } from "../permission.js"
+ import { PluginHooks } from "../plugin/hooks.js"
++import { Plugin } from "../plugin/service.js"
+ import { QuestionTool } from "../tool/plugin/question.js"
+ import { Tool } from "../tool.js"
+ import { SessionAffinity } from "./affinity.js"
+@@ -239,9 +241,16 @@ export const layer = Layer.effect(
+     const hooks = yield* PluginHooks.Service
+     const transport = yield* SessionModelTransport.Service
+     const app = yield* App.Metadata
++    const policy = yield* HostPolicy.Service
+     const prepare = Effect.fn("SessionModelRequest.prepare")(function* <
+       S extends SessionRequest & { tools?: Definitions },
+     >(kind: SessionRequestKind, input: Input, shape: (draft: SessionRequest, tools: Definitions) => Effect.Effect<S>) {
++      // Capture the live plugin service without adding a layer dependency (Plugin
++      // also depends on Session). The final provider middleware uses it for the
++      // last required-plugin check immediately before the external send.
++      const pluginService = Option.getOrUndefined(
++        Context.getOption((yield* Effect.context<never>()) as Context.Context<Plugin.Service>, Plugin.Service),
++      )
+       const session = input.session
+       const model = input.model
+       const scope = { sessionID: session.id, agent: input.agent, model: model.ref, kind }
+@@ -334,35 +343,47 @@ export const layer = Layer.effect(
+       const hasHttpHooks =
+         (yield* hooks.has("session", "http.request", model.ref.providerID)) ||
+         (yield* hooks.has("session", "http.response", model.ref.providerID))
+-      const http: StreamOptions["http"] = hasHttpHooks
+-        ? (req, handler) =>
+-            Effect.gen(function* () {
+-              const request = yield* HttpClientRequest.toWeb(req)
+-              const before = yield* hooks.trigger("session", "http.request", { ...scope, request })
+-              // A hook that kept the request object cannot have replaced its body, so the original body is sent as is.
+-              // Reading it back would hold a second full copy of the request, screenshots included, for the whole call.
+-              const sent =
+-                before.request === request
+-                  ? HttpClientRequest.setBody(HttpClientRequest.fromWeb(request), req.body)
+-                  : before.request.body
+-                    ? HttpClientRequest.bodyUint8Array(
+-                        HttpClientRequest.fromWeb(before.request),
+-                        new Uint8Array(yield* Effect.promise(() => before.request.clone().arrayBuffer())),
+-                        before.request.headers.get("content-type") ?? undefined,
+-                      )
+-                    : HttpClientRequest.fromWeb(before.request)
+-              const res = yield* handler(sent)
+-              const after = yield* hooks.trigger("session", "http.response", {
+-                ...scope,
+-                request: before.request,
+-                response: new Response(
+-                  [204, 205, 304].includes(res.status) ? null : yield* Stream.toReadableStreamEffect(res.stream),
+-                  { status: res.status, headers: res.headers },
+-                ),
+-              })
+-              return HttpClientResponse.fromWeb(sent, after.response)
+-            })
+-        : undefined
++      const http: StreamOptions["http"] = (req, handler) =>
++        Effect.gen(function* () {
++          const request = yield* HttpClientRequest.toWeb(req)
++          const before = hasHttpHooks
++            ? yield* hooks.trigger("session", "http.request", { ...scope, request })
++            : { request }
++          // Host policy sees the final outbound request, after plugin hooks have had their say. The
++          // check runs before `handler`, so a rejected request never leaves the host.
++          const body = yield* Effect.promise(() => before.request.clone().text())
++          yield* policy.assertProviderRequest(
++            {
++              providerID: model.ref.providerID,
++              body,
++              transport: "http",
++            },
++            pluginService,
++          )
++          if (!hasHttpHooks) return yield* handler(req)
++          // A hook that kept the request object cannot have replaced its body, so the original body is sent as is.
++          // Reading it back would hold a second full copy of the request, screenshots included, for the whole call.
++          const sent =
++            before.request === request
++              ? HttpClientRequest.setBody(HttpClientRequest.fromWeb(request), req.body)
++              : before.request.body
++                ? HttpClientRequest.bodyUint8Array(
++                    HttpClientRequest.fromWeb(before.request),
++                    new Uint8Array(yield* Effect.promise(() => before.request.clone().arrayBuffer())),
++                    before.request.headers.get("content-type") ?? undefined,
++                  )
++                : HttpClientRequest.fromWeb(before.request)
++          const res = yield* handler(sent)
++          const after = yield* hooks.trigger("session", "http.response", {
++            ...scope,
++            request: before.request,
++            response: new Response(
++              [204, 205, 304].includes(res.status) ? null : yield* Stream.toReadableStreamEffect(res.stream),
++              { status: res.status, headers: res.headers },
++            ),
++          })
++          return HttpClientResponse.fromWeb(sent, after.response)
++        })
+       // HTTP hooks wrap every HTTP request, including the WebSocket fallback path. The route decides
+       // which transport actually carries the request, so both hook families are always offered.
+       const webSocket =
+@@ -379,9 +400,20 @@ export const layer = Layer.effect(
+                     })
+                     .pipe(Effect.map((event) => ({ url: event.url, headers: event.headers }))),
+                 send: (frame) =>
+-                  hooks
+-                    .trigger("session", "experimental.ws.send", { ...scope, frame })
+-                    .pipe(Effect.map((event) => event.frame)),
++                  Effect.gen(function* () {
++                    const next = yield* hooks
++                      .trigger("session", "experimental.ws.send", { ...scope, frame })
++                      .pipe(Effect.map((event) => event.frame))
++                    yield* policy.assertProviderRequest(
++                      {
++                        providerID: model.ref.providerID,
++                        body: next,
++                        transport: "websocket",
++                      },
++                      pluginService,
++                    )
++                    return next
++                  }),
+                 receive: (frame) =>
+                   hooks
+                     .trigger("session", "experimental.ws.receive", { ...scope, frame })
+@@ -394,7 +426,7 @@ export const layer = Layer.effect(
+       return {
+         event: shaped,
+         request,
+-        options: { ...(http ? { http } : {}), ...(webSocket ? { webSocket } : {}) },
++        options: { http, ...(webSocket ? { webSocket } : {}) },
+         retry: (event: Parameters<Prepared["retry"]>[0]) =>
+           hooks.trigger("session", "retry", event).pipe(Effect.asVoid),
+         // Permission.assert and the question tool throw declines as defects so tools cannot
+@@ -435,5 +467,5 @@ export const layer = Layer.effect(
+ export const node = makeLocationNode({
+   service: Service,
+   layer,
+-  deps: [PluginHooks.node, SessionModelTransport.node, App.node],
++  deps: [HostPolicy.node, PluginHooks.node, SessionModelTransport.node, App.node],
+ })
+diff --git a/packages/core/src/session/prompt.ts b/packages/core/src/session/prompt.ts
+index af4464e..b81d733 100644
+--- a/packages/core/src/session/prompt.ts
++++ b/packages/core/src/session/prompt.ts
+@@ -10,6 +10,7 @@ import { Effect, Option, Schema } from "effect"
+ import path from "path"
+ import { fileURLToPath } from "url"
+ import { Database } from "../database/database.js"
++import { HostPolicy } from "../host-policy.js"
+ import { Image } from "../image.js"
+ import { Mime } from "../mime.js"
+ import { Plugin } from "../plugin/service.js"
+@@ -38,6 +39,8 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
+ }) {
+   const fs = yield* FSUtil.Service
+   yield* Plugin.awaitActivation
++  const policy = yield* HostPolicy.Service
++  yield* policy.assertExecutionAllowed()
+   const hooks = yield* PluginHooks.Service
+   const event = yield* hooks.trigger("session", "prompt", {
+     sessionID: request.session.id,
+@@ -52,9 +55,7 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
+     delivery: request.input.delivery ?? "steer",
+   })
+   const input = event.prompt
+-  const files = input.files
+-    ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 })
+-    : undefined
++  const files = input.files ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 }) : undefined
+   const requested = input.skills
+   const selected = yield* Effect.gen(function* () {
+     if (!requested?.length) return undefined
+diff --git a/packages/core/src/session/runner/llm.ts b/packages/core/src/session/runner/llm.ts
+index 8ec498e..d669d9e 100644
+--- a/packages/core/src/session/runner/llm.ts
++++ b/packages/core/src/session/runner/llm.ts
+@@ -16,6 +16,7 @@ import { Job } from "../../job.js"
+ import { SessionHistory } from "../history.js"
+ import { SessionModelRequest } from "../model-request.js"
+ import { SessionModelTransport } from "../model-transport.js"
++import { HostPolicy } from "../../host-policy.js"
+ import { SessionMessage } from "../message.js"
+ import { SessionSchema } from "../schema.js"
+ import { SessionStore } from "../store.js"
+@@ -51,6 +52,8 @@ const layer = Layer.effect(
+     const db = (yield* Database.Service).db
+     const compaction = yield* SessionCompaction.Service
+     const plugins = yield* Plugin.Service
++    const policy = yield* HostPolicy.Service
++    const checkPolicy = policy.assertExecutionAllowed().pipe(Effect.provideService(Plugin.Service, plugins))
+     const hooks = yield* PluginHooks.Service
+     const jobs = yield* Job.Service
+     const title = yield* SessionTitle.Service
+@@ -73,6 +76,7 @@ const layer = Layer.effect(
+         if (promotable === "steer" && pending.delivery === "queue" && !control) return DrainResult.Complete()
+       }
+       yield* plugins.awaitActivation
++      yield* checkPolicy
+       yield* settleStaleCompactions(sessionID)
+       yield* settleStaleToolCalls(sessionID)
+ 
+@@ -128,6 +132,7 @@ const layer = Layer.effect(
+                 const compacted = yield* restore(
+                   Effect.gen(function* () {
+                     yield* plugins.awaitActivation
++                    yield* checkPolicy
+                     const selected = yield* context.select(sessionID)
+                     const model = yield* context.resolveModel(selected.session)
+                     // Preview updates without admitting them after the already-delivered compaction marker.
+@@ -175,7 +180,9 @@ const layer = Layer.effect(
+                 // The Session would go idle; a plugin may admit input to keep this execution working.
+                 yield* restore(
+                   SessionBackground.outstanding(jobs, store, sessionID).pipe(
+-                    Effect.flatMap((background) => hooks.trigger("session", "experimental.idle", { sessionID, background })),
++                    Effect.flatMap((background) =>
++                      hooks.trigger("session", "experimental.idle", { sessionID, background }),
++                    ),
+                   ),
+                 )
+                 if (!(yield* SessionInbox.has(db, sessionID, "input"))) return DrainResult.Complete()
+@@ -220,6 +227,7 @@ const layer = Layer.effect(
+     const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (sessionID: SessionSchema.ID) {
+       // Plugins can reload mid-turn; each step and retry must read the settled agents, models and skills.
+       yield* plugins.awaitActivation
++      yield* checkPolicy
+       const selected = yield* context.select(sessionID)
+       // A blocked initial instruction baseline must leave admitted input pending.
+       yield* InstructionState.prepare(db, bus, selected.instructions, sessionID)
+@@ -280,6 +288,7 @@ const layer = Layer.effect(
+               executeTool: prepared.executeTool,
+             })),
+           )
++        yield* checkPolicy
+         const outcome = yield* steps.attempt({
+           isLocationClosed: lifecycle.isClosed,
+           sessionID,
+@@ -289,7 +298,8 @@ const layer = Layer.effect(
+           prepared: {
+             ...prepared,
+             // A tool call can arrive during a reload; its permission check reads the session's agent.
+-            executeTool: (call) => plugins.awaitActivation.pipe(Effect.andThen(prepared.executeTool(call))),
++            executeTool: (call) =>
++              plugins.awaitActivation.pipe(Effect.andThen(checkPolicy), Effect.andThen(prepared.executeTool(call))),
+           },
+           retry: (cause, error, proposed) =>
+             retry.decide({
+@@ -301,6 +311,7 @@ const layer = Layer.effect(
+               retry: proposed,
+             }),
+           recoverContinuation,
++          beforeRequest: checkPolicy,
+           recoverOverflow: Effect.suspend(() =>
+             recoverOverflow
+               ? compaction
+@@ -446,6 +457,7 @@ export const node = makeLocationNode({
+     SessionModelTransport.node,
+     SessionStore.node,
+     SessionCompaction.node,
++    HostPolicy.node,
+     Plugin.node,
+     PluginHooks.node,
+     Job.node,
+diff --git a/packages/core/src/session/runner/step.ts b/packages/core/src/session/runner/step.ts
+index 8d1a6c0..d1b03e5 100644
+--- a/packages/core/src/session/runner/step.ts
++++ b/packages/core/src/session/runner/step.ts
+@@ -55,6 +55,8 @@ interface Input {
+     retry: boolean,
+   ) => Effect.Effect<{ readonly retry: false } | SessionRunnerRetry.Decision>
+   readonly recoverContinuation: boolean
++  /** Host policy re-check immediately before the provider request leaves this step. */
++  readonly beforeRequest: Effect.Effect<void>
+   /** The runner owns compaction policy; the attempt invokes it only before durable output. */
+   readonly recoverOverflow: Effect.Effect<boolean>
+ }
+@@ -71,6 +73,7 @@ export const make = Effect.gen(function* () {
+   const toolOutput = yield* ToolOutput.Service
+ 
+   const attempt = Effect.fn("SessionStep.attempt")(function* (input: Input) {
++    yield* input.beforeRequest
+     // The start snapshot only has to exist before local tools run, which cannot happen before Step.Started,
+     // so it is captured while the provider request is in flight instead of delaying it.
+     const pendingStartSnapshot = yield* snapshots.capture().pipe(Effect.forkScoped)
+diff --git a/packages/core/src/session/shell.ts b/packages/core/src/session/shell.ts
+index b4e2a1a..f5bd008 100644
+--- a/packages/core/src/session/shell.ts
++++ b/packages/core/src/session/shell.ts
+@@ -2,6 +2,7 @@ export * as SessionShell from "./shell.js"
+ 
+ import type { Session } from "@opencode/schema/session"
+ import { Effect } from "effect"
++import { HostPolicy } from "../host-policy.js"
+ import { Instance } from "../instance/service.js"
+ import { Plugin } from "../plugin/service.js"
+ import { Shell } from "../shell.js"
+@@ -9,7 +10,12 @@ import { ShellResult } from "../shell/result.js"
+ 
+ export const start = Effect.fn("SessionShell.start")(function* (input: { session: Session.Info; command: string }) {
+   const instances = yield* Instance.Service
+-  const shell = yield* Plugin.awaitActivation.pipe(Effect.andThen(Shell.Service), instances.provide(input.session))
++  const shell = yield* Effect.gen(function* () {
++    yield* Plugin.awaitActivation
++    const policy = yield* HostPolicy.Service
++    yield* policy.assertExecutionAllowed()
++    return yield* Shell.Service
++  }).pipe(instances.provide(input.session))
+   const info = yield* shell.create({
+     command: input.command,
+     cwd: input.session.location.directory,
+diff --git a/packages/core/src/tool/mcp.ts b/packages/core/src/tool/mcp.ts
+index 7fbce8a..261dd59 100644
+--- a/packages/core/src/tool/mcp.ts
++++ b/packages/core/src/tool/mcp.ts
+@@ -140,7 +140,22 @@ export const layer = Layer.effect(
+       Stream.runForEach(() => reconcile),
+       Effect.forkScoped({ startImmediately: true }),
+     )
+-    return Service.of({ flush: Effect.asVoid(Fiber.await(initial)) })
++    // Initial discovery can win the race against MCP connection and register an empty
++    // catalog. Re-read after the first registration settles; when a configured server
++    // exists but its catalog is still empty, give the connection one short settle window
++    // before the session snapshots tools. The event subscription owns later changes.
++    return Service.of({
++      flush: Effect.gen(function* () {
++        yield* Fiber.await(initial)
++        // A configured server can connect just after the initial discovery fiber
++        // committed an empty catalog. Give that first announcement a short settle
++        // window, then re-read once; the event subscription owns later changes.
++        if (discovered.length === 0 && (yield* mcp.servers()).length > 0) {
++          yield* Effect.sleep("500 millis")
++          yield* reconcile
++        }
++      }),
++    })
+   }),
+ )
+ 
+diff --git a/packages/core/test/host-policy.test.ts b/packages/core/test/host-policy.test.ts
+new file mode 100644
+index 0000000..3995fa6
+--- /dev/null
++++ b/packages/core/test/host-policy.test.ts
+@@ -0,0 +1,120 @@
++import { expect } from "bun:test"
++import { Config } from "@opencode/core/config"
++import { ConfigManaged } from "@opencode/core/config/managed"
++import { HostPolicy } from "@opencode/core/host-policy"
++import { Plugin } from "@opencode/core/plugin/service"
++import { ConfigHost } from "@opencode/schema/config/host"
++import { Info } from "@opencode/schema/config"
++import { FSUtil } from "@opencode/util/fs-util"
++import { Effect, Exit, Layer, Stream } from "effect"
++import { testEffect } from "./lib/effect"
++
++const it = testEffect(Layer.empty)
++
++const managed = (providerExecution: ConfigHost.ProviderExecution) =>
++  new ConfigManaged.Document({
++    type: "document",
++    info: new Info({ providerExecution }),
++  })
++
++const configLayer = (providerExecution: ConfigHost.ProviderExecution) =>
++  Layer.succeed(
++    Config.Service,
++    Config.Service.of({
++      entries: () => Effect.succeed([managed(providerExecution)]),
++      changes: () => Stream.never,
++      compatibility: () => Effect.succeed({ claude: [], agents: [] }),
++    }),
++  )
++
++const fsLayer = Layer.succeed(FSUtil.Service, {} as FSUtil.Interface)
++
++const policyLayer = (providerExecution: ConfigHost.ProviderExecution) =>
++  HostPolicy.layer.pipe(Layer.provide(Layer.merge(configLayer(providerExecution), fsLayer)))
++
++const policy = new ConfigHost.ProviderExecution({
++  allowedProviders: ["probe"],
++  hostedTools: "deny",
++})
++
++it.effect("rejects a hosted tool definition before the provider request", () =>
++  Effect.gen(function* () {
++    const host = yield* HostPolicy.Service
++    const result = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        body: JSON.stringify({ tools: [{ type: "web_search" }] }),
++        transport: "http",
++      })
++      .pipe(Effect.exit)
++    expect(Exit.isFailure(result)).toBe(true)
++  }).pipe(Effect.provide(policyLayer(policy))),
++)
++
++it.effect("rejects a hosted WebSocket frame before the socket send", () =>
++  Effect.gen(function* () {
++    const host = yield* HostPolicy.Service
++    const result = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        body: JSON.stringify({ tools: [{ type: "web_search" }] }),
++        transport: "websocket",
++      })
++      .pipe(Effect.exit)
++    expect(Exit.isFailure(result)).toBe(true)
++  }).pipe(Effect.provide(policyLayer(policy))),
++)
++
++it.effect("allows a function tool definition and rejects a provider outside the allowlist", () =>
++  Effect.gen(function* () {
++    const host = yield* HostPolicy.Service
++    const allowed = yield* host
++      .assertProviderRequest({
++        providerID: "probe",
++        body: JSON.stringify({ tools: [{ type: "function", name: "read" }] }),
++        transport: "http",
++      })
++      .pipe(Effect.exit)
++    const denied = yield* host
++      .assertProviderRequest({
++        providerID: "other",
++        body: JSON.stringify({ tools: [] }),
++        transport: "http",
++      })
++      .pipe(Effect.exit)
++    expect(Exit.isSuccess(allowed)).toBe(true)
++    expect(Exit.isFailure(denied)).toBe(true)
++  }).pipe(Effect.provide(policyLayer(policy))),
++)
++
++it.effect("rechecks the required plugin at the final provider send", () =>
++  Effect.gen(function* () {
++    const host = yield* HostPolicy.Service
++    const plugins = Plugin.Service.of({
++      activate: () => Effect.void,
++      list: () => Effect.succeed([]),
++      requireActive: () =>
++        Effect.fail(
++          new Plugin.RequiredPluginError({
++            plugin: "flowguard.host-probe",
++            message: "required plugin inactive",
++          }),
++        ),
++      gui: () => Effect.succeed(undefined),
++      close: () => Effect.void,
++      awaitActivation: Effect.void,
++      hold: () => Effect.succeed(Effect.void),
++    })
++    const result = yield* host
++      .assertProviderRequest(
++        {
++          providerID: "probe",
++          body: JSON.stringify({ tools: [{ type: "function", name: "read" }] }),
++          transport: "http",
++        },
++        plugins,
++      )
++      .pipe(Effect.exit)
++    expect(Exit.isFailure(result)).toBe(true)
++  }).pipe(Effect.provide(policyLayer(policy))),
++)
+diff --git a/packages/core/test/plugin/fixture.ts b/packages/core/test/plugin/fixture.ts
+index d3d3fce..8e53bcc 100644
+--- a/packages/core/test/plugin/fixture.ts
++++ b/packages/core/test/plugin/fixture.ts
+@@ -16,6 +16,7 @@ import { FSUtil } from "@opencode/util/fs-util"
+ import { Global } from "@opencode/util/global"
+ import { Form } from "@opencode/core/form"
+ import { Generate } from "@opencode/core/generate"
++import { HostPolicy } from "@opencode/core/host-policy"
+ import { Integration } from "@opencode/core/integration"
+ import { Job } from "@opencode/core/job"
+ import { KV } from "@opencode/core/kv"
+@@ -102,6 +103,7 @@ export const makePluginTestLayer = (permission = permissionLayer, generate = gen
+       Generate.node,
+       LayerNodePlatform.httpClient,
+       Plugin.node,
++      HostPolicy.node,
+       Agent.node,
+       Artifact.node,
+       AISDK.node,
+diff --git a/packages/core/test/session-step.test.ts b/packages/core/test/session-step.test.ts
+index 513263e..633ffd7 100644
+--- a/packages/core/test/session-step.test.ts
++++ b/packages/core/test/session-step.test.ts
+@@ -118,6 +118,7 @@ for (const fixture of [
+           retry: (_cause, _error, retry) =>
+             Effect.succeed(retry ? { retry: true, attempt: 2, delay: 0 } : { retry: false }),
+           recoverContinuation: true,
++          beforeRequest: Effect.void,
+           recoverOverflow: Effect.succeed(false),
+         })
+         .pipe(Effect.exit)
+@@ -215,6 +216,7 @@ it.effect("records the cost the endpoint reports instead of the catalog price",
+       },
+       retry: () => Effect.succeed({ retry: false }),
+       recoverContinuation: true,
++      beforeRequest: Effect.void,
+       recoverOverflow: Effect.succeed(false),
+     })
+ 
+diff --git a/packages/schema/src/config.ts b/packages/schema/src/config.ts
+index e78cbae..3102ff7 100644
+--- a/packages/schema/src/config.ts
++++ b/packages/schema/src/config.ts
+@@ -10,6 +10,7 @@ import { ConfigCompaction } from "./config/compaction.js"
+ import { ConfigCommand } from "./config/command.js"
+ import { ConfigExperimental } from "./config/experimental.js"
+ import { ConfigFormatter } from "./config/formatter.js"
++import { ConfigHost } from "./config/host.js"
+ import { ConfigLSP } from "./config/lsp.js"
+ import { ConfigMCP } from "./config/mcp.js"
+ import { ConfigModel } from "./config/model.js"
+@@ -106,6 +107,14 @@ export class Info extends Schema.Class<Info>("Config.Info")({
+   plugins: ConfigPlugin.Plugins.pipe(optional).annotate({
+     description: "Ordered plugin enablement directives and external package declarations",
+   }),
++  requiredPlugins: Schema.Array(Schema.String).pipe(optional).annotate({
++    description:
++      "Plugin IDs or wildcard selectors that must be active before governed execution. Only honored from managed configuration.",
++  }),
++  providerExecution: ConfigHost.ProviderExecution.pipe(optional).annotate({
++    description:
++      "Host-enforced provider execution limits. Only honored from managed configuration or the host policy file.",
++  }),
+   worktree: ConfigWorktree.Info.pipe(optional).annotate({
+     description: "Directory defaults for local worktree creation",
+   }),
+diff --git a/packages/schema/src/config/host.ts b/packages/schema/src/config/host.ts
+new file mode 100644
+index 0000000..d06d593
+--- /dev/null
++++ b/packages/schema/src/config/host.ts
+@@ -0,0 +1,19 @@
++export * as ConfigHost from "./host.js"
++
++import { Schema } from "effect"
++import { optional } from "../schema.js"
++
++/**
++ * Host-enforced provider execution limits. A host policy may narrow which
++ * providers can run and whether provider-hosted tools are allowed. The shape is
++ * intentionally small: provider-hosted tool execution happens outside the local
++ * tool pipeline, so the host must reject the request before it leaves.
++ */
++export class ProviderExecution extends Schema.Class<ProviderExecution>("Config.ProviderExecution")({
++  allowedProviders: Schema.Array(Schema.String).pipe(optional).annotate({
++    description: "Provider IDs allowed to receive model requests. Omit to allow every provider.",
++  }),
++  hostedTools: Schema.Literals(["allow", "deny"]).pipe(optional).annotate({
++    description: "Whether provider-hosted tool definitions are allowed. A configured policy defaults to deny.",
++  }),
++}) {}

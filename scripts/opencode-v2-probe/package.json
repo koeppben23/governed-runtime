@@ -9,6 +9,7 @@
     "desktop-backend": "node probes/desktop-backend.mjs",
     "plugin-activation": "node probes/plugin-activation.mjs",
     "p0-inactive-host": "node probes/p0-inactive-host.mjs",
+    "p0-host-enforcement": "node probes/p0-host-enforcement.mjs",
     "tool-discovery": "node probes/tool-discovery.mjs",
     "fences": "node probes/fences.mjs",
     "command-provenance": "node probes/command-provenance.mjs",
@@ -24,6 +25,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@opencode/client": "2.2.4",
     "@opencode/plugin": "2.2.4",
+    "ws": "^8.22.0",
     "zod": "^4.6.7"
   }
 }

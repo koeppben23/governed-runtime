@@ -17,6 +17,9 @@ or the repository's production runtime.
   side-effect probe is not evidence.
 - The focused P0 follow-up is
   `docs/host-probes/opencode-v2/2026-10-30-2.2.4/P0_SECURITY_GATE.md`.
+- The patched-host experiment and its adversarial regression probe are in
+  `docs/host-probes/opencode-v2/2026-10-30-2.2.4/host-enforcement/` and
+  `scripts/opencode-v2-probe/probes/p0-host-enforcement.mjs`.
 - Keep the raw JSON evidence under `evidence/` (gitignored). The committed
   report contains only sanitized facts.
 

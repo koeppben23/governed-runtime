@@ -283,6 +283,18 @@ export default Plugin.define({
 
     await ctx.session.hook('http.request', async (event) => {
       const bodyText = await event.request.clone().text();
+      if (process.env.FG_PROBE_FAIL_RELOAD_BEFORE_SEND === '1') {
+        const { writeFile } = await import('node:fs/promises');
+        await writeFile(
+          new URL(import.meta.url),
+          "export default { id: 'flowguard.host-probe', async setup() { throw new Error('toctou-reload-fail') } }\n",
+          'utf8',
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        record('hook:session.http.request:self-fail-returned', {
+          sessionID: event.sessionID,
+        });
+      }
       let hostedTool = false;
       if (process.env.FG_PROBE_DENY_HOSTED_TOOLS === '1') {
         try {

@@ -1,0 +1,7 @@
+{
+  "requiredPlugins": ["flowguard.host-probe"],
+  "providerExecution": {
+    "allowedProviders": ["probe"],
+    "hostedTools": "deny"
+  }
+}

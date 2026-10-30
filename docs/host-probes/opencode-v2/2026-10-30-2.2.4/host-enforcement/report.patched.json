@@ -1,0 +1,125 @@
+{
+  "at": "2026-10-30T21:23:39.118Z",
+  "host": "patched-opencode",
+  "policy": {
+    "requiredPlugins": ["flowguard.host-probe"],
+    "providerExecution": {
+      "allowedProviders": ["probe"],
+      "hostedTools": "deny"
+    }
+  },
+  "requiredPluginActive": {
+    "active": true,
+    "providerRequests": 1,
+    "promptAccepted": true,
+    "promptError": null,
+    "hookCount": 5,
+    "passed": true
+  },
+  "requiredPluginInactive": {
+    "active": false,
+    "providerRequests": 0,
+    "promptAccepted": false,
+    "promptError": "ClientError: UnexpectedStatus: 500",
+    "hookCount": 0,
+    "passed": true
+  },
+  "commandShellActive": {
+    "active": true,
+    "markerExists": true,
+    "commandError": null,
+    "providerRequests": 1,
+    "passed": true
+  },
+  "commandShellInactive": {
+    "active": false,
+    "markerExists": false,
+    "commandError": "ClientError: UnsupportedContentType",
+    "providerRequests": 0,
+    "passed": true
+  },
+  "hostedToolDenied": {
+    "hosted": true,
+    "providerRequests": 0,
+    "promptFinished": true,
+    "promptError": null,
+    "passed": true
+  },
+  "hostedToolAllowed": {
+    "hosted": false,
+    "providerRequests": 1,
+    "promptFinished": true,
+    "promptError": null,
+    "passed": true
+  },
+  "providerAllowlistDenied": {
+    "providerRequests": 0,
+    "promptFinished": true,
+    "passed": true
+  },
+  "mcpDenied": {
+    "deny": true,
+    "markerExists": false,
+    "exposed": true,
+    "beforeHook": true,
+    "passed": true
+  },
+  "mcpAllowed": {
+    "deny": false,
+    "markerExists": true,
+    "exposed": true,
+    "beforeHook": true,
+    "passed": true
+  },
+  "reloadFailure": {
+    "beforeProviderRequests": 1,
+    "afterProviderRequests": 0,
+    "beforeError": null,
+    "afterError": "ClientError: UnexpectedStatus: 500",
+    "passed": true
+  },
+  "pluginRemoval": {
+    "beforeProviderRequests": 1,
+    "afterProviderRequests": 0,
+    "afterError": "ClientError: UnexpectedStatus: 500",
+    "passed": true
+  },
+  "toctouBlocked": {
+    "providerRequests": 0,
+    "selfFailReturned": true,
+    "passed": true
+  },
+  "toctouControl": {
+    "providerRequests": 1,
+    "passed": true
+  },
+  "websocketAllowed": {
+    "hosted": false,
+    "providerRequests": 0,
+    "wsFrames": 1,
+    "promptFinished": true,
+    "text": "ws-probe-ok",
+    "passed": true
+  },
+  "websocketHostedDenied": {
+    "hosted": true,
+    "providerRequests": 0,
+    "wsFrames": 0,
+    "promptFinished": true,
+    "text": "",
+    "passed": true
+  },
+  "passed": true,
+  "status": "SUPPORTED",
+  "scope": {
+    "hostPatchRequired": true,
+    "stockHost": "NOT_SUPPORTED",
+    "requiredPluginSource": "OPENCODE_HOST_POLICY host file",
+    "providerPolicySource": "OPENCODE_HOST_POLICY host file",
+    "mcpControl": "real MCP tool exposed with codemode:false; permission deny uses resource ** so discovery keeps the tool",
+    "activationLoss": "failed reload and plugin removal block the next prompt with zero provider requests",
+    "toctou": "plugin fails during http.request; the final provider middleware still blocks the send",
+    "websocket": "local Open Responses WebSocket provider; hosted-tool frame is rejected before the socket send",
+    "desktop": "NOT_VERIFIED: Desktop runs the installed backend binary, not this source build"
+  }
+}

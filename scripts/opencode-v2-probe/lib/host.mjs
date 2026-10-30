@@ -1,6 +1,6 @@
 import { createServer } from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,9 +81,12 @@ function config({
   mcpServer,
   mcpCodemode,
   providerPackage = '@opencode/ai/providers/openai-compatible',
+  providerBaseURL,
+  providerSettings,
   modelId = 'probe',
   staticProvider = true,
   denyAllPermissions = false,
+  permissions,
   policies,
   providerBody,
 }) {
@@ -91,7 +94,9 @@ function config({
     $schema: 'https://opencode.ai/config.json',
     update: 'disable',
     model: `probe/${modelId}`,
-    permissions: [{ action: '*', resource: '*', effect: denyAllPermissions ? 'deny' : 'allow' }],
+    permissions: permissions ?? [
+      { action: '*', resource: '*', effect: denyAllPermissions ? 'deny' : 'allow' },
+    ],
     ...(instructions ? { instructions: [instructions] } : {}),
     ...(policies ? { policies } : {}),
     ...(mcpServer
@@ -114,8 +119,9 @@ function config({
               name: 'FlowGuard Probe',
               package: providerPackage,
               settings: {
-                baseURL: provider.baseURL,
+                baseURL: providerBaseURL ?? provider.baseURL,
                 apiKey: 'probe-only',
+                ...(providerSettings ?? {}),
               },
               ...(providerBody ? { body: providerBody } : {}),
               models: {
@@ -144,7 +150,10 @@ function config({
  */
 export async function startProbeHost(options = {}) {
   const name = options.name ?? 'probe';
-  const root = await mkdtemp(join(tmpdir(), `fg-oc-v2-probe-${name}-`));
+  // macOS exposes /var/folders through the /private symlink. Resolve the root
+  // before deriving the project and data paths so one probe host cannot create
+  // two location identities for the same directory.
+  const root = await realpath(await mkdtemp(join(tmpdir(), `fg-oc-v2-probe-${name}-`)));
   const project = join(root, 'project');
   const configDir = join(root, 'config');
   const dataDir = join(root, 'data');
@@ -170,6 +179,10 @@ export async function startProbeHost(options = {}) {
     await mkdir(dir, { recursive: true });
   }
   await writeFile(journal, '', 'utf8');
+  const hostPolicyPath = options.hostPolicy ? join(root, 'host-policy.json') : undefined;
+  if (hostPolicyPath) {
+    await writeFile(hostPolicyPath, JSON.stringify(options.hostPolicy, null, 2) + '\n', 'utf8');
+  }
   await writeFile(
     join(project, '.opencode', 'package.json'),
     JSON.stringify({ type: 'module' }, null, 2) + '\n',
@@ -230,9 +243,12 @@ export default {
         mcpServer: options.mcpServer,
         mcpCodemode: options.mcpCodemode,
         providerPackage: options.providerPackage,
+        providerBaseURL: options.providerBaseURL,
+        providerSettings: options.providerSettings,
         modelId: options.modelId,
         staticProvider: options.staticProvider !== false,
         denyAllPermissions: options.denyAllPermissions === true,
+        permissions: options.permissions,
         policies: options.policies,
         providerBody: options.providerBody,
       }),
@@ -281,9 +297,11 @@ export default {
     FG_PROBE_DENY_PROMPT: options.denyPrompt ? '1' : '0',
     FG_PROBE_FAIL_SETUP: options.failSetup ? '1' : '0',
     FG_PROBE_DENY_HOSTED_TOOLS: options.denyHostedTools ? '1' : '0',
+    FG_PROBE_FAIL_RELOAD_BEFORE_SEND: options.failReloadBeforeSend ? '1' : '0',
     FG_PROBE_REGISTER_PROVIDER: options.registerProvider ? '1' : '0',
     FG_PROBE_PROVIDER_URL: provider.baseURL,
     ...(options.disableDefaultPlugins ? { OPENCODE_DISABLE_DEFAULT_PLUGINS: '1' } : {}),
+    ...(hostPolicyPath ? { OPENCODE_HOST_POLICY: hostPolicyPath } : {}),
     ...(options.mcpMarker ? { FG_MCP_MARKER: options.mcpMarker } : {}),
   };
   const binary = process.env.OPENCODE_CLI ?? 'opencode';
