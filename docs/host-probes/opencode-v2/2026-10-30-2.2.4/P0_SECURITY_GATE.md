@@ -43,6 +43,11 @@ It is not a host-side immutable lock: a host launched with another config,
 another provider or an added static provider bypasses it. The control probe
 with a static provider still reached the local provider after plugin failure.
 
+The p0 probe runs three cases: active plugin (provider registered, one request),
+failed plugin (no provider request, no assistant, no hooks), and static-provider
+after failure (still reaches the mock provider). The static-provider case is a
+control proving why a static provider must not be present.
+
 **Decision: `NOT_SUPPORTED` for a non-bypassable runtime lock; `SUPPORTED` only
 as a managed-config/deployment gate.**
 
@@ -62,6 +67,24 @@ a provider policy** is not fail-closed. The policy deny is the part that stops
 the fallback in the tested configuration.
 
 ## P0-B: MCP and provider-executed tools
+
+### Hosted-tool request policy
+
+A plugin-level `http.request` policy can inspect the **final provider request**
+and throw before the request is sent. The probe configured a provider body with
+`{ "tools": [{ "type": "web_search" }] }` and a policy that rejects known hosted
+tool types:
+
+- denied request: policy hook fired, provider request count **0**;
+- allowed control without a hosted tool definition: provider request count
+  **1**.
+
+This proves a working **pre-request** gate for hosted-tool definitions that are
+visible in the final request. It does not prove protection against a provider
+that autonomously emits an unoffered hosted call; that requires a provider
+capability contract or exclusion of that provider. The prior hosted-tool
+fixture attempt did not reach a stable terminal completion, so the real
+response-side negative path remains `NOT_VERIFIED`.
 
 ### MCP
 
@@ -100,10 +123,13 @@ turn this into a local deny.
 - A plugin-owned provider plus a managed policy that denies the built-in
   provider is a viable **deployment-level** gate; it is not non-bypassable.
 - A static provider defeats the gate; the control case proves it.
+- A plugin `http.request` policy can reject visible hosted-tool definitions
+  before the provider request; the denied case produced zero provider requests.
 - MCP permission denial is plausible but not proven against an advertised MCP
   tool.
-- Provider-executed tools have no local preventive hook; this is a host-level
-  limitation and must be excluded or explicitly unsupported.
+- Provider-executed tools have no local post-response hook; a provider that
+  emits an unoffered hosted call remains a host-level limitation and must be
+  excluded or explicitly unsupported.
 
 ## Repro
 

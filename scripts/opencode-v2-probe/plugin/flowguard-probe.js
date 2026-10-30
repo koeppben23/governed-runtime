@@ -282,6 +282,38 @@ export default Plugin.define({
     });
 
     await ctx.session.hook('http.request', async (event) => {
+      const bodyText = await event.request.clone().text();
+      let hostedTool = false;
+      if (process.env.FG_PROBE_DENY_HOSTED_TOOLS === '1') {
+        try {
+          const parsed = JSON.parse(bodyText);
+          hostedTool = (parsed?.tools ?? []).some((tool) => {
+            const type = String(tool?.type ?? '');
+            return [
+              'web_search',
+              'web_search_preview',
+              'web_extractor',
+              'code_interpreter',
+              'image_generation',
+              'file_search',
+            ].some((name) => type.includes(name));
+          });
+        } catch {
+          /* let the host report malformed provider payloads */
+        }
+      }
+      if (hostedTool) {
+        record('hook:session.http.request:denied-hosted-tool', {
+          sessionID: event.sessionID,
+          body: limit(bodyText),
+        });
+        throw new Error(
+          JSON.stringify({
+            code: 'FG_PROBE_HOSTED_TOOL_DENIED',
+            reason: 'hosted tool definition in final provider request',
+          }),
+        );
+      }
       record('hook:session.http.request', {
         sessionID: event.sessionID,
         agent: event.agent,
@@ -294,7 +326,7 @@ export default Plugin.define({
             ([key]) => key.toLowerCase() !== 'authorization',
           ),
         ),
-        body: await requestText(event.request),
+        body: limit(bodyText),
       });
     });
 

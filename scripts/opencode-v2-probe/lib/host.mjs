@@ -85,6 +85,7 @@ function config({
   staticProvider = true,
   denyAllPermissions = false,
   policies,
+  providerBody,
 }) {
   return {
     $schema: 'https://opencode.ai/config.json',
@@ -116,6 +117,7 @@ function config({
                 baseURL: provider.baseURL,
                 apiKey: 'probe-only',
               },
+              ...(providerBody ? { body: providerBody } : {}),
               models: {
                 [modelId]: {
                   name: 'Probe',
@@ -232,6 +234,7 @@ export default {
         staticProvider: options.staticProvider !== false,
         denyAllPermissions: options.denyAllPermissions === true,
         policies: options.policies,
+        providerBody: options.providerBody,
       }),
       null,
       2,
@@ -277,6 +280,7 @@ export default {
     FG_PROBE_DENY_TOOLS: (options.denyTools ?? []).join(','),
     FG_PROBE_DENY_PROMPT: options.denyPrompt ? '1' : '0',
     FG_PROBE_FAIL_SETUP: options.failSetup ? '1' : '0',
+    FG_PROBE_DENY_HOSTED_TOOLS: options.denyHostedTools ? '1' : '0',
     FG_PROBE_REGISTER_PROVIDER: options.registerProvider ? '1' : '0',
     FG_PROBE_PROVIDER_URL: provider.baseURL,
     ...(options.disableDefaultPlugins ? { OPENCODE_DISABLE_DEFAULT_PLUGINS: '1' } : {}),

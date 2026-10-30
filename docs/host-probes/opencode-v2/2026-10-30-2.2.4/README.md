@@ -273,30 +273,31 @@ treated as active.
 
 ## Mandatory gate summary
 
-| Gate                                           | Status                             | Evidence                                                                        |
-| ---------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
-| Backup/restore                                 | PASS, semantic replay NOT_VERIFIED | 10.9 GB SQLite backup + restore; integrity `ok`; 31/31 tables; row counts match |
-| Desktop backend identity                       | PASS                               | server PID 37045 child of Desktop PID 36822; version 2.2.4; no sessions touched |
-| Plugin discovery                               | PASS                               | host log + `setup:ready`                                                        |
-| Full plugin activation                         | PASS                               | `Plugin.define` entrypoint; tools and commands registered                       |
-| Plugin setup failure fail-closed               | **NOT_SUPPORTED**                  | prompt accepted with zero hooks; install/doctor is not a runtime lock           |
-| Inactive-plugin provider gate (managed config) | **SUPPORTED only as config gate**  | no static provider + deny built-in provider; static-provider control bypasses   |
-| Non-bypassable inactive-host lock              | **NOT_SUPPORTED**                  | host falls back to built-in `opencode/big-pickle` without provider policy       |
-| V1 tool file compatibility                     | **NOT_SUPPORTED**                  | `.opencode/tools/legacy-probe.ts` absent from tool lists                        |
-| Local file/shell/code-mode fences              | PASS                               | no file/marker/network side effect                                              |
-| MCP preventive fence                           | **NOT_VERIFIED**                   | MCP connected but tool not advertised                                           |
-| Provider-executed tool fence                   | **NOT_VERIFIED**                   | fixture did not produce stable completion; local hook is absent by source       |
-| Command shell-block prevention                 | **NOT_SUPPORTED**                  | marker created before prompt admission                                          |
-| Host command origin on exercised paths         | **NOT_SUPPORTED**                  | no authoritative origin field in native/plugin/SDK paths                        |
-| TUI-slash-command vs SDK                       | **NOT_VERIFIED**                   | no real TUI slash command executed                                              |
-| Automatic capacity unlock                      | **NOT_SUPPORTED**                  | no verified fresh-user-command authority; lock stays closed                     |
-| Visible reviewer child + same-child follow-up  | PASS                               | `parentID`, explicit follow-up, idle markers                                    |
-| v5 request/assistant lineage                   | **NOT_SUPPORTED**                  | no `parentID` on v2 assistant; `generate` adds no history                       |
-| `subagent` identity/model/background controls  | Host accepts; adapter must reject  | separate contract probe                                                         |
-| Parent/reviewer/serialization model wire       | PASS                               | final provider requests                                                         |
-| `finish:length` and step-ceiling host behavior | PASS as host behavior              | 1×/3× and `steps:2` probes                                                      |
-| Governance handling of length/step             | **NOT_VERIFIED**                   | no production adapter yet                                                       |
-| Mandate source activation                      | PASS                               | `core/instructions` includes probe token                                        |
+| Gate                                           | Status                                | Evidence                                                                        |
+| ---------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
+| Backup/restore                                 | PASS, semantic replay NOT_VERIFIED    | 10.9 GB SQLite backup + restore; integrity `ok`; 31/31 tables; row counts match |
+| Desktop backend identity                       | PASS                                  | server PID 37045 child of Desktop PID 36822; version 2.2.4; no sessions touched |
+| Plugin discovery                               | PASS                                  | host log + `setup:ready`                                                        |
+| Full plugin activation                         | PASS                                  | `Plugin.define` entrypoint; tools and commands registered                       |
+| Plugin setup failure fail-closed               | **NOT_SUPPORTED**                     | prompt accepted with zero hooks; install/doctor is not a runtime lock           |
+| Inactive-plugin provider gate (managed config) | **SUPPORTED only as config gate**     | no static provider + deny built-in provider; static-provider control bypasses   |
+| Non-bypassable inactive-host lock              | **NOT_SUPPORTED**                     | host falls back to built-in `opencode/big-pickle` without provider policy       |
+| V1 tool file compatibility                     | **NOT_SUPPORTED**                     | `.opencode/tools/legacy-probe.ts` absent from tool lists                        |
+| Local file/shell/code-mode fences              | PASS                                  | no file/marker/network side effect                                              |
+| MCP preventive fence                           | **NOT_VERIFIED**                      | MCP connected but tool not advertised                                           |
+| Hosted-tool request policy                     | **SUPPORTED for visible definitions** | policy denied before provider request; zero provider calls                      |
+| Provider-executed response fence               | **NOT_VERIFIED**                      | fixture did not complete; no local post-response hook                           |
+| Command shell-block prevention                 | **NOT_SUPPORTED**                     | marker created before prompt admission                                          |
+| Host command origin on exercised paths         | **NOT_SUPPORTED**                     | no authoritative origin field in native/plugin/SDK paths                        |
+| TUI-slash-command vs SDK                       | **NOT_VERIFIED**                      | no real TUI slash command executed                                              |
+| Automatic capacity unlock                      | **NOT_SUPPORTED**                     | no verified fresh-user-command authority; lock stays closed                     |
+| Visible reviewer child + same-child follow-up  | PASS                                  | `parentID`, explicit follow-up, idle markers                                    |
+| v5 request/assistant lineage                   | **NOT_SUPPORTED**                     | no `parentID` on v2 assistant; `generate` adds no history                       |
+| `subagent` identity/model/background controls  | Host accepts; adapter must reject     | separate contract probe                                                         |
+| Parent/reviewer/serialization model wire       | PASS                                  | final provider requests                                                         |
+| `finish:length` and step-ceiling host behavior | PASS as host behavior                 | 1×/3× and `steps:2` probes                                                      |
+| Governance handling of length/step             | **NOT_VERIFIED**                      | no production adapter yet                                                       |
+| Mandate source activation                      | PASS                                  | `core/instructions` includes probe token                                        |
 
 ## Decision
 

@@ -135,6 +135,64 @@ async function runInactivePlugin() {
   return result;
 }
 
+async function runHostedToolPolicy() {
+  const host = await startProbeHost({
+    name: 'p0-hosted-policy',
+    staticProvider: true,
+    denyHostedTools: true,
+    providerBody: { tools: [{ type: 'web_search' }] },
+  });
+  const result = {
+    serverInfo: host.serverInfo,
+    providerRequests: 0,
+    deniedHook: false,
+    passed: false,
+  };
+  try {
+    await host.activate();
+    const session = await host.session('p0 hosted policy');
+    await host.prompt(session.id, 'Try to offer a hosted tool.');
+    try {
+      await waitBounded(host.client, session.id);
+    } catch (error) {
+      result.waitError = String(error);
+    }
+    const entries = await host.entries();
+    result.deniedHook = entries.some(
+      (entry) => entry.type === 'hook:session.http.request:denied-hosted-tool',
+    );
+    result.providerRequests = host.provider.requests.length;
+    result.passed = result.deniedHook && result.providerRequests === 0;
+  } catch (error) {
+    result.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  } finally {
+    await host.close();
+  }
+  return result;
+}
+
+async function runHostedToolAllowedControl() {
+  const host = await startProbeHost({
+    name: 'p0-hosted-allowed',
+    staticProvider: true,
+    denyHostedTools: true,
+  });
+  const result = { serverInfo: host.serverInfo, providerRequests: 0, passed: false };
+  try {
+    await host.activate();
+    const session = await host.session('p0 hosted allowed');
+    await host.prompt(session.id, 'Use no hosted tools.');
+    await waitBounded(host.client, session.id);
+    result.providerRequests = host.provider.requests.length;
+    result.passed = result.providerRequests > 0;
+  } catch (error) {
+    result.error = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  } finally {
+    await host.close();
+  }
+  return result;
+}
+
 async function runStaticProviderFailure() {
   const host = await startProbeHost({
     name: 'p0-static-failure',
@@ -178,9 +236,15 @@ const result = {
   at: new Date().toISOString(),
   active: await runActivePlugin(),
   inactive: await runInactivePlugin(),
+  hostedToolPolicy: await runHostedToolPolicy(),
+  hostedToolAllowedControl: await runHostedToolAllowedControl(),
   staticProviderFailureControl: await runStaticProviderFailure(),
 };
-result.passed = result.active.passed && result.inactive.passed;
+result.passed =
+  result.active.passed &&
+  result.inactive.passed &&
+  result.hostedToolPolicy.passed &&
+  result.hostedToolAllowedControl.passed;
 result.status = result.passed
   ? 'SUPPORTED'
   : result.inactive.externalProviderReached
