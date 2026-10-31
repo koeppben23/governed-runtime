@@ -55,28 +55,24 @@ afterEach(async () => {
   await workspace.cleanup();
 });
 
-// Existing completion-validator fixture, not evidence that V2 context attests
-// these fields. Production passes native history through without normalization;
-// proving/replacing that observation contract is still an installed-host gate.
+// Native raw history, deliberately not promoted to regular-error terminality.
 function hostHistory(interrupted?: boolean) {
   return [
     {
-      info: { id: 'message', sessionID: sessionId, role: 'assistant' },
-      parts: [
+      id: 'message',
+      type: 'assistant',
+      content: [
         {
           type: 'tool',
-          id: 'part',
-          messageID: 'message',
-          sessionID: sessionId,
-          callID: 'edit-call',
-          tool: 'edit',
+          id: 'edit-call',
+          name: 'edit',
           state: {
             status: 'error',
             input: {},
-            error: 'failed edit',
+            error: { type: 'tool', message: 'failed edit' },
             metadata: interrupted === undefined ? {} : { interrupted },
-            time: { start: Date.parse(at), end: Date.parse(completedAt) },
           },
+          time: { created: Date.parse(at), completed: Date.parse(completedAt) },
         },
       ],
     },
@@ -115,7 +111,7 @@ describe('mutation completion authority and reconciliation', () => {
     const host = runtime();
     await reconcileMutationEvent(host.value, {
       type: 'message.part.updated',
-      properties: { part: hostHistory()[0]!.parts[0] },
+      properties: { part: hostHistory()[0]!.content[0] },
     });
     expect(host.messages).not.toHaveBeenCalled();
     expect((await readState(sessDir))!.mutationEpisodes[0]!.status).toBe('dispatch_authorized');
@@ -301,7 +297,7 @@ describe('mutation completion authority and reconciliation', () => {
       expect((await readState(sessDir))!.mutationEpisodes[0]!.status).toBe('dispatch_authorized');
     },
   );
-  it('recovers a regular error with one audited write; event and query are idempotent', async () => {
+  it('does not close or audit a completion from concurrent native history reads without terminality proof', async () => {
     const before = await readState(sessDir);
     // Both reads must observe the unresolved dispatch before either can commit.
     // Promise.all alone does not guarantee that scheduling: one reconciliation
@@ -328,16 +324,38 @@ describe('mutation completion authority and reconciliation', () => {
     ]);
     const state = await readState(sessDir);
     expect(state!.mutationEpisodes[0]).toMatchObject({
-      status: 'completed',
-      outcome: 'failure',
-      completedAt,
+      status: 'dispatch_authorized',
+      outcome: null,
+      completedAt: null,
       implementationDigest: null,
       evidenceStatus: 'ineligible',
     });
-    expect(state!.pendingAuditOperations).toHaveLength(before!.pendingAuditOperations.length + 1);
+    expect(state!.pendingAuditOperations).toEqual(before!.pendingAuditOperations);
     await reconcileHostMutationEpisodes(host.value, sessionId);
-    expect(host.messages).toHaveBeenCalledTimes(2);
+    expect(host.messages).toHaveBeenCalledTimes(3);
     expect(host.messages).toHaveBeenCalledWith(sessionId);
+    expect(await readState(sessDir)).toEqual(state);
+  });
+
+  it('commits one canonical observed completion and one outbox intent under concurrent commits', async () => {
+    const before = (await readState(sessDir))!;
+    const first = await completionInput();
+    const second = await completionInput();
+    const results = await Promise.all([
+      commitMutationCompletion(first),
+      commitMutationCompletion(second),
+    ]);
+    expect(results.sort()).toEqual(['completed', 'unchanged']);
+    const state = (await readState(sessDir))!;
+    expect(state.mutationEpisodes[0]).toMatchObject({
+      status: 'completed',
+      outcome: 'failure',
+      completedAt,
+    });
+    expect(state.pendingAuditOperations).toHaveLength(before.pendingAuditOperations.length + 1);
+    const host = runtime();
+    await reconcileHostMutationEpisodes(host.value, sessionId);
+    expect(host.messages).not.toHaveBeenCalled();
     expect(await readState(sessDir)).toEqual(state);
   });
 
@@ -391,7 +409,7 @@ describe('mutation completion authority and reconciliation', () => {
     );
     await reconcileHostMutationEpisodes(host.value, sessionId);
     expect((await readState(sessDir))!.mutationEpisodes.map((episode) => episode.status)).toEqual([
-      'completed',
+      'dispatch_authorized',
       'dispatch_authorized',
     ]);
   });

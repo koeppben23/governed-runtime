@@ -9,6 +9,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
 const hostVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
 const shouldTrigger = process.argv.includes('--trigger');
+if (shouldTrigger) {
+  console.error(
+    'BLOCKED: native API updates cannot certify installed host versions. Complete the pinned V2 Desktop/CLI acceptance gates in docs/host-probes/opencode-v2/; no host update workflow is available.',
+  );
+  process.exit(1);
+}
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -77,29 +83,8 @@ if (comparison < 0) {
   );
 }
 
-const recoveryCommand = `gh workflow run opencode-sdk-update.yml --ref main -f version=latest -f opencode_version=${localVersion}`;
 console.error(`OpenCode host drift detected: local ${localVersion}, baseline ${baselineVersion}.`);
-console.error(`Recovery: ${recoveryCommand}`);
-
-if (!shouldTrigger) {
-  process.exit(1);
-}
-
-const gh = run('gh', [
-  'workflow',
-  'run',
-  'opencode-sdk-update.yml',
-  '--ref',
-  'main',
-  '-f',
-  'version=latest',
-  '-f',
-  `opencode_version=${localVersion}`,
-]);
-
-if (gh.status !== 0) {
-  const detail = [gh.stdout, gh.stderr].filter(Boolean).join('\n').trim();
-  fail(`failed to trigger OpenCode SDK Update workflow. ${detail}`.trim());
-}
-
-console.log(`Triggered OpenCode SDK Update workflow for opencode-ai@${localVersion}.`);
+console.error(
+  'Recovery: complete installed V2 acceptance; update:opencode-sdk updates API declarations only and cannot accept host drift.',
+);
+process.exit(1);

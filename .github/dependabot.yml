@@ -15,7 +15,7 @@ updates:
       - dependencies
       - automated
     ignore:
-      - dependency-name: '@opencode-ai/*'
+      - dependency-name: '@opencode/*'
     groups:
       production-dependencies:
         dependency-type: production
@@ -25,7 +25,7 @@ updates:
       dev-dependencies:
         dependency-type: development
         exclude-patterns:
-          - '@opencode-ai/*'
+          - '@opencode/*'
         update-types:
           - minor
           - patch

@@ -12,7 +12,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import { makeState } from '../../../fixtures.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
@@ -22,7 +22,7 @@ import {
   validateCapturedFindings,
   type NativeReviewRuntimePort,
 } from './native-task-review-bindings.js';
-import { _resetAgentResolutionCache } from './agent-resolution.js';
+import { createReviewClient } from '../../opencode-v2-test-helpers.js';
 import { ReviewerCaptureController } from '../../reviewer-capture.js';
 import { CAPTURE_MODEL, observedPrompt } from '../../reviewer-capture-test-helpers.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
@@ -384,44 +384,38 @@ describe('native capture - structured follow-up timing diagnostics', () => {
     'followupPromptMsUnavailable',
   ]);
 
-  afterEach(() => {
-    _resetAgentResolutionCache();
-  });
-
   function runtimeWith(info: (...args: unknown[]) => void): NativeReviewRuntimePort {
     const reviewerCapture = new ReviewerCaptureController();
     return {
       orchestratorDeps: {
         reviewerCapture,
-        client: {
-          app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
-          session: {
-            prompt: vi.fn(async (opts) => observedPrompt(reviewerCapture, opts, '{} {}')),
-            messages: vi.fn(async () => ({
-              data: [
-                {
-                  info: {
-                    role: 'user',
-                    id: 'msg_review',
-                    sessionID: 'ses_child_1',
-                    model: CAPTURE_MODEL,
-                  },
-                },
-                {
-                  info: {
-                    role: 'assistant',
-                    id: 'msg_done',
-                    parentID: 'msg_review',
-                    sessionID: 'ses_child_1',
-                    ...CAPTURE_MODEL,
-                    finish: 'stop',
-                  },
-                  parts: [{ type: 'text', text: 'Final review answer.' }],
-                },
-              ],
-            })),
-          },
-        },
+        client: createReviewClient({
+          listAgents: vi.fn(async () => [{ id: REVIEWER_SUBAGENT_TYPE }]),
+          executeReviewerPrompt: vi.fn(async (opts) =>
+            observedPrompt(reviewerCapture, opts, '{} {}'),
+          ),
+          readHistory: vi.fn(async () => [
+            {
+              info: {
+                role: 'user',
+                id: 'msg_review',
+                sessionID: 'ses_child_1',
+                model: CAPTURE_MODEL,
+              },
+            },
+            {
+              info: {
+                role: 'assistant',
+                id: 'msg_done',
+                parentID: 'msg_review',
+                sessionID: 'ses_child_1',
+                ...CAPTURE_MODEL,
+                finish: 'stop',
+              },
+              parts: [{ type: 'text', text: 'Final review answer.' }],
+            },
+          ]),
+        }),
       },
       log: { info, warn: vi.fn() },
       logError: vi.fn(),
@@ -459,7 +453,6 @@ describe('native capture - structured follow-up timing diagnostics', () => {
       CONTRACT,
       { attemptId: ATTEMPT_ID },
     );
-    _resetAgentResolutionCache();
     const reference = await capturePreparedFindings(
       runtimeWith(vi.fn()),
       obligation,
@@ -481,29 +474,27 @@ describe('native capture - reviewer task completion gate for every obligation ty
       ),
       'utf8',
     ),
-  ) as unknown;
-
-  afterEach(() => {
-    _resetAgentResolutionCache();
-  });
+  ) as { data: unknown };
 
   const AT_LIMIT = JSON.parse(
     readFileSync(
       new URL('./__fixtures__/reviewer-plan-2026-10-21-at-limit-redacted.json', import.meta.url),
       'utf8',
     ),
-  ) as unknown;
+  ) as { data: unknown };
 
   it.each(['plan', 'architecture', 'implement', 'review'] as const)(
     '%s: the at-limit 2026-10-21 child is never serialized',
     async (obligationType) => {
-      const prompt = vi.fn(async () => ({ data: { info: { structured: {} } } }));
+      const prompt = vi.fn(async () => {
+        throw new Error('Serialization must not execute');
+      });
       const runtime = {
         orchestratorDeps: {
-          client: {
-            app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
-            session: { prompt, messages: vi.fn(async () => AT_LIMIT) },
-          },
+          client: createReviewClient({
+            executeReviewerPrompt: prompt,
+            readHistory: vi.fn(async () => AT_LIMIT.data),
+          }),
         },
         log: { info: vi.fn(), warn: vi.fn() },
         logError: vi.fn(),
@@ -525,13 +516,15 @@ describe('native capture - reviewer task completion gate for every obligation ty
   it.each(['plan', 'architecture', 'implement', 'review'] as const)(
     '%s: the truncated 2026-10-19 child is never serialized',
     async (obligationType) => {
-      const prompt = vi.fn(async () => ({ data: { info: { structured: {} } } }));
+      const prompt = vi.fn(async () => {
+        throw new Error('Serialization must not execute');
+      });
       const runtime = {
         orchestratorDeps: {
-          client: {
-            app: { agents: vi.fn(async () => ({ data: [{ name: REVIEWER_SUBAGENT_TYPE }] })) },
-            session: { prompt, messages: vi.fn(async () => OCT19) },
-          },
+          client: createReviewClient({
+            executeReviewerPrompt: prompt,
+            readHistory: vi.fn(async () => OCT19.data),
+          }),
         },
         log: { info: vi.fn(), warn: vi.fn() },
         logError: vi.fn(),

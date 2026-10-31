@@ -869,10 +869,21 @@ stop`, reviewer child reported it could not complete the falsification).
   Cleanup drains owned in-flight operations; lifecycle availability is rechecked
   after asynchronous scope resolution. Removed the V1 output-token rewrite;
   host budgeting is untouched and explicit overrides remain blocked without V2
-  headroom/wire proof. Native boundary tests do not certify installed behavior:
-  V1 test/SDK-tooling removal and regression migration are unfinished; operator
-  UI provenance, reviewer execution/capture, lifecycle and INACTIVE parity remain
-  unverified. PR #1190 stays Draft and supported ACTIVE V2/merge remain NO-GO.
+  headroom/wire proof. Read-only completion diagnostics reuse only an already
+  scoped runtime and preserve native rich content without another authority read;
+  before-hooks, mutations and FlowGuard completions retain fresh scope lookup.
+  Authoritative rich results retain attachments/native fields while projecting
+  exactly one text part; ambiguous or text-free results fail explicitly.
+  Ported root, bootstrap, mutation/recovery and SDK contracts to native hooks;
+  canonical review positives/negatives now use explicit semantic fixtures rather
+  than manufactured V1 callback provenance. Removed the old SDK dependency,
+  factory fixtures and active V1 API baselines. Snapshot/update tooling pins native
+  plugin/client contracts without a latest-version bypass, silent metadata fallback
+  or inferred installed-host certification. Unproved V2 regular edit-error history
+  cannot complete a mutation; native error notifications remain wakeups only.
+  These API/domain tests do not certify installed behavior: operator UI provenance,
+  reviewer execution/capture, lifecycle and INACTIVE parity remain unverified.
+  PR #1190 stays Draft and supported ACTIVE V2/merge remain NO-GO.
 
 - **Single-owner plugin hook composition (#1169).** Removed post-construction
   hook replacement for reviewer capture, output caps and execution monitoring.

@@ -1,192 +1,139 @@
-/**
- * @module integration/sdk-contract-events.test
- * @description Contract guard for the OpenCode event union consumed by plugin-events.ts.
- *
- * The event handler must track the pinned SDK contract:
- * - the event is `session.deleted`, not the API command name `session.delete`
- * - the terminated session id lives at `properties.info.id`
- * - `session.error.properties.error` is the SDK error object union
- *
- * Evidence source: `@opencode-ai/plugin` re-exports the SDK `Event` union
- * through `Hooks['event']`. If the pinned SDK renames an event or changes a
- * payload, the compile-time assertions below stop compiling.
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
- * @version v1
- */
+/** Pinned native V2 event union -> notification projection -> application handler.
+ * Notifications are not operator, completion or reviewer-capture evidence. */
+import { describe, expect, it, vi } from 'vitest';
+import type { OpenCodeEvent } from '@opencode/client';
+import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
+import { projectOpenCodeEvent } from './opencode-host-adapter.js';
 
-import { describe, expect, it } from 'vitest';
-import type { Hooks } from '@opencode-ai/plugin';
-
-import { handleEvent, type EventHandlerDeps, type PluginEvent } from './plugin-events.js';
-
-// ── Compile-time contract derivations ────────────────────────────────────────
-
-type EventHook = NonNullable<Hooks['event']>;
-type HostEvent = Parameters<EventHook>[0]['event'];
-type SessionDeletedEvent = Extract<HostEvent, { type: 'session.deleted' }>;
-type SessionErrorEvent = Extract<HostEvent, { type: 'session.error' }>;
-type SessionErrorPayload = NonNullable<SessionErrorEvent['properties']['error']>;
-
-/** Fails compilation when the SDK shape stops satisfying the expected contract. */
+type Deleted = Extract<OpenCodeEvent, { type: 'session.deleted' }>;
+type Failed = Extract<OpenCodeEvent, { type: 'session.execution.failed' }>;
+type StructuredError = Failed['data']['error'];
 type AssertExtends<T extends U, U> = T;
-type AssertKeyOf<T, K extends keyof T> = K;
+type _deleted = AssertExtends<Deleted['data']['sessionID'], string>;
+type _error = AssertExtends<StructuredError, { type: string; message: string }>;
+const envelope = { created: 1, durable: { aggregateID: 'session', seq: 1, version: 1 as const } };
 
-type _deletedType = AssertExtends<SessionDeletedEvent['type'], 'session.deleted'>;
-type _deletedInfo = AssertKeyOf<SessionDeletedEvent['properties'], 'info'>;
-type _deletedInfoId = AssertKeyOf<SessionDeletedEvent['properties']['info'], 'id'>;
-type _deletedInfoIdType = AssertExtends<SessionDeletedEvent['properties']['info']['id'], string>;
-type _errorType = AssertExtends<SessionErrorEvent['type'], 'session.error'>;
-type _errorSessionId = AssertExtends<
-  SessionErrorEvent['properties']['sessionID'],
-  string | undefined
->;
-type _errorIsObjectUnion = AssertExtends<SessionErrorPayload, { name: string; data: unknown }>;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function createMockDeps(): EventHandlerDeps & { calls: { method: string; args: unknown[] }[] } {
-  const calls: { method: string; args: unknown[] }[] = [];
+function deps(): EventHandlerDeps {
   return {
-    calls,
-    log: {
-      info(service, message, extra) {
-        calls.push({ method: 'log.info', args: [service, message, extra] });
-      },
-      warn(service, message, extra) {
-        calls.push({ method: 'log.warn', args: [service, message, extra] });
-      },
-      error(service, message, extra) {
-        calls.push({ method: 'log.error', args: [service, message, extra] });
-      },
-    },
-    observeMutationEvent: async () => {},
-    resumePendingSystemWork(sessionId: string) {
-      calls.push({ method: 'resumePendingSystemWork', args: [sessionId] });
-      return Promise.resolve();
-    },
-    cleanupSession(sessionId: string) {
-      calls.push({ method: 'cleanupSession', args: [sessionId] });
-    },
-    async emitSessionErrorAudit(sessionId, errorMessage, detail) {
-      calls.push({
-        method: 'emitSessionErrorAudit',
-        args: [sessionId, errorMessage, detail],
-      });
-    },
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    cleanupSession: vi.fn(),
+    resumePendingSystemWork: vi.fn(async () => {}),
+    observeMutationEvent: vi.fn(async () => {}),
+    emitSessionErrorAudit: vi.fn(async () => {}),
   };
 }
 
-/**
- * Build the canonical SDK event shape. The cast localizes the gap between the
- * full `Session` object the SDK carries and the `id` the handler consumes.
- */
-function sdkDeletedEvent(id: string): PluginEvent {
-  const event = {
-    type: 'session.deleted',
-    properties: { info: { id } },
-  } as unknown as SessionDeletedEvent;
-  return event;
-}
+describe('native V2 event contract', () => {
+  it('cleans the exact data.sessionID from session.deleted', async () => {
+    const event = {
+      ...envelope,
+      durable: { ...envelope.durable, version: 2 as const },
+      type: 'session.deleted',
+      id: 'deleted',
+      data: { sessionID: 'session' },
+    } satisfies Deleted;
+    const projected = projectOpenCodeEvent(event)!;
+    const d = deps();
+    await handleEvent(d, projected.event);
+    expect(projected.sessionId).toBe('session');
+    expect(d.cleanupSession).toHaveBeenCalledExactlyOnceWith('session');
+    expect(d.log.info).toHaveBeenCalledWith('event', 'session cleanup completed', {
+      sessionId: 'session',
+    });
+  });
 
-function sdkSessionErrorEvent(error: SessionErrorPayload): PluginEvent {
-  const event = {
-    type: 'session.error',
-    properties: { sessionID: 'sess-1', error },
-  } as unknown as SessionErrorEvent;
-  return event;
-}
-
-// ── Tests ────────────────────────────────────────────────────────────────────
-
-describe('SDK Contract: event union consumed by plugin-events', () => {
-  describe('HAPPY', () => {
-    it('session.deleted canonical payload resolves info.id and cleans up', async () => {
-      const deps = createMockDeps();
-
-      await handleEvent(deps, sdkDeletedEvent('sess-contract'));
-
-      expect(deps.calls.find((c) => c.method === 'cleanupSession')?.args[0]).toBe('sess-contract');
-      expect(deps.calls.find((c) => c.method === 'log.info')?.args[2]).toEqual({
-        sessionId: 'sess-contract',
+  it.each([
+    { type: 'unknown', message: 'boom' },
+    { type: 'provider', message: 'auth failed', status: 401 },
+    { type: 'provider', message: 'rate limited', status: 429, retryAfterMs: 1000 },
+    { type: 'aborted', message: 'aborted' },
+  ] satisfies StructuredError[])(
+    'preserves the native structured error discriminant: %j',
+    async (error) => {
+      const event = {
+        ...envelope,
+        type: 'session.execution.failed',
+        id: 'failure',
+        data: { sessionID: 'session', error },
+      } satisfies Failed;
+      const d = deps();
+      await handleEvent(d, projectOpenCodeEvent(event)!.event);
+      expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('session', error.message, {
+        eventType: event.type,
+        errorType: error.type,
+        supplementary: { hostEventId: event.id },
       });
-    });
+      expect(d.cleanupSession).not.toHaveBeenCalled();
+    },
+  );
 
-    const errorCases: ReadonlyArray<readonly [string, SessionErrorPayload, string]> = [
-      ['UnknownError', { name: 'UnknownError', data: { message: 'boom' } }, 'boom'],
-      [
-        'ProviderAuthError',
-        { name: 'ProviderAuthError', data: { providerID: 'anthropic', message: 'auth failed' } },
-        'auth failed',
-      ],
-      [
-        'APIError',
-        { name: 'APIError', data: { message: 'rate limited', statusCode: 429, isRetryable: true } },
-        'rate limited',
-      ],
-      [
-        'MessageAbortedError',
-        { name: 'MessageAbortedError', data: { message: 'aborted' } },
-        'aborted',
-      ],
-    ];
-
-    it.each(errorCases)(
-      'session.error %s object error surfaces its message',
-      async (_name, error, expected) => {
-        const deps = createMockDeps();
-
-        await handleEvent(deps, sdkSessionErrorEvent(error));
-
-        const audit = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-        expect(audit?.args[1]).toBe(expected);
+  it('routes tool failure as a history-read wakeup, not a completion or session error', async () => {
+    const d = deps();
+    // Required payload is tied to the installed generated declaration.
+    const event = {
+      ...envelope,
+      durable: { ...envelope.durable, version: 2 as const },
+      type: 'session.tool.failed',
+      id: 'failure',
+      data: {
+        sessionID: 'session',
+        assistantMessageID: 'message',
+        id: 'call',
+        executed: false,
+        error: { type: 'tool', message: 'failed' },
       },
-    );
+    } satisfies Extract<OpenCodeEvent, { type: 'session.tool.failed' }>;
+    const projected = projectOpenCodeEvent(event)!;
+    await handleEvent(d, projected.event);
+    expect(d.observeMutationEvent).toHaveBeenCalledExactlyOnceWith(projected.event);
+    expect(d.emitSessionErrorAudit).not.toHaveBeenCalled();
+    expect(d.resumePendingSystemWork).not.toHaveBeenCalled();
   });
 
-  describe('BAD', () => {
-    it('the API command name session.delete is not a host event and stays ignored', async () => {
-      const deps = createMockDeps();
-
-      await handleEvent(deps, { type: 'session.delete', properties: { info: { id: 's' } } });
-
-      expect(deps.calls).toHaveLength(0);
-    });
+  it('routes idle only to canonical pending system work', async () => {
+    const event = {
+      created: 1,
+      type: 'session.idle',
+      id: 'idle',
+      data: { sessionID: 'session' },
+    } satisfies Extract<OpenCodeEvent, { type: 'session.idle' }>;
+    const d = deps();
+    await handleEvent(d, projectOpenCodeEvent(event)!.event);
+    expect(d.resumePendingSystemWork).toHaveBeenCalledExactlyOnceWith('session');
+    expect(d.observeMutationEvent).not.toHaveBeenCalled();
+    expect(d.emitSessionErrorAudit).not.toHaveBeenCalled();
   });
 
-  describe('CORNER', () => {
-    it('session.error audit records the SDK error discriminant', async () => {
-      const deps = createMockDeps();
-
-      await handleEvent(
-        deps,
-        sdkSessionErrorEvent({
-          name: 'APIError',
-          data: { message: 'x', isRetryable: false },
-        }),
-      );
-
-      const audit = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-      expect((audit?.args[2] as Record<string, unknown>).errorName).toBe('APIError');
-    });
-
-    it('session.deleted with a Session-shaped info but no id does not clean up', async () => {
-      const deps = createMockDeps();
-
-      await handleEvent(deps, { type: 'session.deleted', properties: { info: {} } });
-
-      expect(deps.calls).toHaveLength(0);
-    });
+  it.each([
+    { type: 'session.delete', data: { sessionID: 'session' } },
+    { type: 'session.deleted', properties: { info: { id: 'session' } } },
+    { type: 'session.deleted', data: {} },
+    {
+      type: 'session.error',
+      properties: {
+        sessionID: 'session',
+        error: { name: 'APIError', data: { message: 'old envelope' } },
+      },
+    },
+  ])('never accepts removed event names or identity envelopes: %j', async (event) => {
+    const d = deps();
+    await handleEvent(d, event);
+    expect(d.cleanupSession).not.toHaveBeenCalled();
+    expect(d.emitSessionErrorAudit).not.toHaveBeenCalled();
+    expect(d.resumePendingSystemWork).not.toHaveBeenCalled();
   });
 
-  describe('EDGE', () => {
-    it('other SDK session events stay ignored', async () => {
-      const deps = createMockDeps();
-
-      await handleEvent(deps, { type: 'session.idle' });
-      await handleEvent(deps, { type: 'session.created' });
-
-      expect(deps.calls).toHaveLength(0);
+  it('does not interpret an obsolete error envelope as native structured diagnostics', async () => {
+    const d = deps();
+    await handleEvent(d, {
+      type: 'session.execution.failed',
+      data: {
+        sessionID: 'session',
+        error: { name: 'APIError', data: { message: 'not authority' } },
+      },
+    });
+    expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('session', 'unspecified session error', {
+      eventType: 'session.execution.failed',
     });
   });
 });

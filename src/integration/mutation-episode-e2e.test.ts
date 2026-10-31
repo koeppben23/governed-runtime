@@ -14,10 +14,11 @@
  *   -> tool.execute.after(same callID)
  *   -> /implement binding / crash recovery
  *
+ * Native V2 context callbacks are fixtures, not installed-host certification.
  * No part of the plugin, persistence, or hook pipeline is mocked.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -27,12 +28,12 @@ import { hashText } from '../shared/hashing.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import {
   canonicalBinding,
-  createBootableHostClient,
   createTestWorkspace,
   createToolContext,
   parseToolResult,
   type TestWorkspace,
 } from './test-helpers.js';
+import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -98,22 +99,32 @@ async function boundProgressedState(
   };
 }
 
-function createMockInput(overrides: Record<string, unknown> = {}) {
-  return {
-    project: {} as unknown,
-    client: createBootableHostClient() as unknown,
-    $: {} as unknown,
-    directory: '/tmp/mock-dir',
-    worktree: '/tmp/mock-worktree',
-    serverUrl: new URL('http://localhost:3000'),
-    ...overrides,
-  } as Parameters<typeof FlowGuardAuditPlugin>[0];
+const pluginDisposers: Array<() => void | Promise<void>> = [];
+async function disposeHosts() {
+  for (const dispose of pluginDisposers.splice(0).reverse()) await dispose();
+}
+afterEach(disposeHosts);
+
+async function cleanupWorkspace(ws: TestWorkspace) {
+  try {
+    await disposeHosts();
+  } finally {
+    await ws.cleanup();
+  }
+}
+
+async function openHost(directory: string) {
+  const host = createV2Host(directory);
+  const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
+  if (dispose) pluginDisposers.push(dispose);
+  return host;
 }
 
 async function recordMutationOutcome(
   tool: 'bash' | 'write' | 'edit' | 'apply_patch',
   metadata: Record<string, unknown>,
   output: string,
+  rich = false,
 ): Promise<'success' | 'failure' | 'unknown' | null> {
   const ws = await createTestWorkspace();
   try {
@@ -125,24 +136,33 @@ async function recordMutationOutcome(
       sessDir,
       await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
     );
-    const hooks = await FlowGuardAuditPlugin(
-      createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-    );
+    const host = await openHost(ws.tmpDir);
     const callID = crypto.randomUUID();
-    await hooks['tool.execute.before']!({ tool, sessionID, callID }, { args: {} });
-    await hooks['tool.execute.after']!(
-      { tool, sessionID, callID, args: {} },
-      { title: tool, output, metadata },
-    );
+    const event = v2ToolEvent({
+      tool: tool === 'bash' ? 'shell' : tool,
+      sessionID,
+      id: callID,
+      input: {},
+    });
+    await host.before(event);
+    const content = rich
+      ? [
+          { type: 'text', text: output },
+          { type: 'file', uri: 'file:///artifact', mime: 'text/plain' },
+        ]
+      : output;
+    const completed = { ...event, status: 'completed', result: { content, metadata } };
+    await host.after(completed);
+    expect(completed.result.content).toEqual(content);
     return (await readState(sessDir))!.mutationEpisodes[0]?.outcome ?? null;
   } finally {
-    await ws.cleanup();
+    await cleanupWorkspace(ws);
   }
 }
 
 describe('mutation episode end-to-end (real plugin runtime)', () => {
   it.each(['event', 'pre-implement barrier'])(
-    'MUT4: %s closes an edit error and binds actual partial worktree contents',
+    'MUT4: %s cannot promote unproved native error history into a completed mutation',
     async (channel) => {
       const ws = await createTestWorkspace();
       try {
@@ -164,62 +184,55 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         const callID = crypto.randomUUID();
         const part = () => ({
           type: 'tool',
-          id: 'part-edit',
-          messageID: 'message-edit',
-          sessionID,
-          callID,
-          tool: 'edit',
+          name: 'edit',
+          id: callID,
           state: {
             status: 'error',
             input: {},
-            error: 'edit failed after partial mutation',
-            time: { start: Date.now(), end: Date.now() },
+            error: { type: 'tool', message: 'edit failed after partial mutation' },
           },
+          time: { created: Date.now(), completed: Date.now() },
         });
-        const messages = vi.fn(async () => ({
-          data: [{ info: { id: 'message-edit', sessionID, role: 'assistant' }, parts: [part()] }],
-        }));
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: createBootableHostClient({ session: { messages } }),
-          }),
-        );
-        await hooks['tool.execute.before']!({ tool: 'edit', sessionID, callID }, { args: {} });
+        const host = await openHost(ws.tmpDir);
+        host.sessionContext.mockResolvedValue([
+          { id: 'message-edit', type: 'assistant', content: [part()] },
+        ]);
+        await host.before(v2ToolEvent({ tool: 'edit', sessionID, id: callID, input: {} }));
         // Real filesystem mutation before the host's failing completion; no After hook runs.
         await fs.writeFile(path.join(ws.tmpDir, 'src/auth.ts'), 'export const partial = 2;\n');
         if (channel === 'event')
-          await hooks.event!({
-            event: { type: 'message.part.updated', properties: { part: part() } },
-          } as never);
-        await hooks['tool.execute.before']!(
-          { tool: TOOL_FLOWGUARD_IMPLEMENT, sessionID, callID: crypto.randomUUID() },
-          { args: {} },
+          host.emit({
+            type: 'session.tool.failed',
+            id: crypto.randomUUID(),
+            data: { sessionID, id: callID, error: { type: 'tool', message: 'edit failed' } },
+          });
+        await host.before(
+          v2ToolEvent({
+            tool: TOOL_FLOWGUARD_IMPLEMENT,
+            sessionID,
+            id: crypto.randomUUID(),
+            input: {},
+          }),
         );
         const result = parseToolResult<{ code?: string }>(
           await implement.execute({}, createToolContext({ sessionID, worktree: ws.tmpDir })),
         );
-        expect(result.code, JSON.stringify(result)).not.toBe('MUTATION_EPISODE_UNRESOLVED');
+        expect(result.code, JSON.stringify(result)).toBe('MUTATION_EPISODE_UNRESOLVED');
         const state = (await readState(sessDir))!;
-        expect(state.implementation, JSON.stringify(result)).not.toBeNull();
+        expect(state.implementation).toBeNull();
         expect(state.mutationEpisodes[0]).toMatchObject({
-          status: 'completed',
-          outcome: 'failure',
-          implementationDigest: state.implementation?.digest,
-          evidenceStatus: 'eligible',
+          status: 'dispatch_authorized',
+          outcome: null,
+          implementationDigest: null,
+          evidenceStatus: 'ineligible',
         });
-        expect(state.implementation?.digest).toBe(
-          await computeImplementationDigest({
-            worktree: ws.tmpDir,
-            files: ['src/auth.ts', 'src/auth.test.ts'],
-            digest: hashText,
-          }),
+        expect(await fs.readFile(path.join(ws.tmpDir, 'src/auth.ts'), 'utf8')).toBe(
+          'export const partial = 2;\n',
         );
         expect(state.mutationEpisodeResolutions).toEqual([]);
-        expect(messages).toHaveBeenCalledTimes(1);
+        expect(host.sessionContext).toHaveBeenCalled();
       } finally {
-        await ws.cleanup();
+        await cleanupWorkspace(ws);
       }
     },
   );
@@ -235,17 +248,17 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const hooks = await FlowGuardAuditPlugin(
-        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-      );
-      const beforeHook = hooks['tool.execute.before']!;
-      const afterHook = hooks['tool.execute.after']!;
+      const host = await openHost(ws.tmpDir);
 
       const callID = crypto.randomUUID();
       await expect(
-        beforeHook(
-          { tool: 'bash', sessionID, callID },
-          { args: { command: 'echo host-mutation' } },
+        host.before(
+          v2ToolEvent({
+            tool: 'shell',
+            sessionID,
+            id: callID,
+            input: { command: 'echo host-mutation' },
+          }),
         ),
       ).resolves.toBeUndefined();
 
@@ -262,7 +275,9 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       // Replaying the same hostCallId is never idempotent success — blocked.
       await expect(
-        beforeHook({ tool: 'bash', sessionID, callID }, { args: { command: 'echo replay' } }),
+        host.before(
+          v2ToolEvent({ tool: 'shell', sessionID, id: callID, input: { command: 'echo replay' } }),
+        ),
       ).rejects.toThrow('MUTATION_EPISODE_REPLAY_BLOCKED');
       const afterReplay = await readState(sessDir);
       expect(afterReplay!.mutationEpisodes).toHaveLength(1);
@@ -271,10 +286,16 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       await fs.writeFile(path.join(ws.tmpDir, 'host-mutation.txt'), 'changed by host', 'utf-8');
 
       // The After-hook completes the episode with the observed outcome.
-      await afterHook(
-        { tool: 'bash', sessionID, callID, args: { command: 'echo host-mutation' } },
-        { title: 'bash', output: 'host-mutation', metadata: { exit: 0 } },
-      );
+      await host.after({
+        ...v2ToolEvent({
+          tool: 'shell',
+          sessionID,
+          id: callID,
+          input: { command: 'echo host-mutation' },
+        }),
+        status: 'completed',
+        result: { content: 'host-mutation', metadata: { exit: 0 } },
+      });
       const completed = await readState(sessDir);
       expect(
         completed!.mutationEpisodes.find((episode) => episode.hostCallId === callID),
@@ -283,7 +304,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         outcome: 'success',
       });
     } finally {
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 
@@ -299,30 +320,24 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const hooks = await FlowGuardAuditPlugin(
-        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-      );
-      const beforeHook = hooks['tool.execute.before']!;
-      const afterHook = hooks['tool.execute.after']!;
+      const host = await openHost(ws.tmpDir);
       const callID = crypto.randomUUID();
 
-      await beforeHook(
-        { tool: 'apply_patch', sessionID, callID },
-        { args: { patchText: '*** Begin Patch\n*** End Patch' } },
-      );
-      await afterHook(
-        {
-          tool: 'apply_patch',
-          sessionID,
-          callID,
-          args: { patchText: '*** Begin Patch\n*** End Patch' },
-        },
-        {
-          title: 'Success. Updated the following files:\nM example.ts',
-          output: 'Success. Updated the following files:\nM example.ts',
+      const event = v2ToolEvent({
+        tool: 'apply_patch',
+        sessionID,
+        id: callID,
+        input: { patchText: '*** Begin Patch\n*** End Patch' },
+      });
+      await host.before(event);
+      await host.after({
+        ...event,
+        status: 'completed',
+        result: {
+          content: 'Success. Updated the following files:\nM example.ts',
           metadata: { files: [{ filePath: '/repo/example.ts', relativePath: 'example.ts' }] },
         },
-      );
+      });
 
       expect(
         (await readState(sessDir))!.mutationEpisodes.find(
@@ -330,43 +345,46 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         ),
       ).toMatchObject({ status: 'completed', outcome: 'success' });
     } finally {
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 
-  it('recognizes the exact OpenCode success contracts for every canonical mutator', async () => {
-    const cases = [
-      ['bash', { exit: 0 }, 'command output'],
-      [
-        'apply_patch',
-        { files: [], diff: '', diagnostics: [] },
-        'Success. Updated the following files:',
-      ],
-      [
-        'write',
-        { filepath: '/repo/example.ts', exists: false, diagnostics: {} },
-        'Wrote file successfully.',
-      ],
-      [
-        'edit',
-        {
-          diff: '--- a/example.ts',
-          filediff: {
-            file: '/repo/example.ts',
-            patch: '@@ -1 +1 @@',
-            additions: 1,
-            deletions: 1,
+  it.each([false, true])(
+    'recognizes canonical application success payloads through native registered completions (rich=%s)',
+    async (rich) => {
+      const cases = [
+        ['bash', { exit: 0 }, 'command output'],
+        [
+          'apply_patch',
+          { files: [], diff: '', diagnostics: [] },
+          'Success. Updated the following files:',
+        ],
+        [
+          'write',
+          { filepath: '/repo/example.ts', exists: false, diagnostics: {} },
+          'Wrote file successfully.',
+        ],
+        [
+          'edit',
+          {
+            diff: '--- a/example.ts',
+            filediff: {
+              file: '/repo/example.ts',
+              patch: '@@ -1 +1 @@',
+              additions: 1,
+              deletions: 1,
+            },
+            diagnostics: {},
           },
-          diagnostics: {},
-        },
-        'Edit applied successfully.',
-      ],
-    ] as const;
+          'Edit applied successfully.',
+        ],
+      ] as const;
 
-    for (const [tool, metadata, output] of cases) {
-      await expect(recordMutationOutcome(tool, metadata, output)).resolves.toBe('success');
-    }
-  });
+      for (const [tool, metadata, output] of cases) {
+        await expect(recordMutationOutcome(tool, metadata, output, rich)).resolves.toBe('success');
+      }
+    },
+  );
 
   it('keeps incomplete canonical-mutator payloads unknown', async () => {
     const cases = [
@@ -410,18 +428,22 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const hooks = await FlowGuardAuditPlugin(
-        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-      );
-      const beforeHook = hooks['tool.execute.before']!;
-      const afterHook = hooks['tool.execute.after']!;
+      const host = await openHost(ws.tmpDir);
       const callID = crypto.randomUUID();
 
-      await beforeHook({ tool: 'bash', sessionID, callID }, { args: { command: 'echo governed' } });
-      await afterHook(
-        { tool: 'apply_patch', sessionID, callID, args: { patchText: '*** Begin Patch' } },
-        { title: 'Success', output: 'Success', metadata: { files: [] } },
+      await host.before(
+        v2ToolEvent({ tool: 'shell', sessionID, id: callID, input: { command: 'echo governed' } }),
       );
+      await host.after({
+        ...v2ToolEvent({
+          tool: 'apply_patch',
+          sessionID,
+          id: callID,
+          input: { patchText: '*** Begin Patch' },
+        }),
+        status: 'completed',
+        result: { content: 'Success', metadata: { files: [] } },
+      });
 
       expect(
         (await readState(sessDir))!.mutationEpisodes.find(
@@ -429,7 +451,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         ),
       ).toMatchObject({ status: 'dispatch_authorized', outcome: null });
     } finally {
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 
@@ -445,10 +467,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const hooks = await FlowGuardAuditPlugin(
-        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-      );
-      const beforeHook = hooks['tool.execute.before']!;
+      const host = await openHost(ws.tmpDir);
 
       // Non-Git worktree: the git prerequisite gate must fail closed BEFORE the
       // dispatch is authorized — no MutationEpisode, no repository mutation.
@@ -457,16 +476,20 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       const callID = crypto.randomUUID();
       await expect(
-        beforeHook(
-          { tool: 'bash', sessionID, callID },
-          { args: { command: 'echo blocked-mutation' } },
+        host.before(
+          v2ToolEvent({
+            tool: 'shell',
+            sessionID,
+            id: callID,
+            input: { command: 'echo blocked-mutation' },
+          }),
         ),
       ).rejects.toThrow('NOT_GIT_REPO');
 
       const persisted = await readState(sessDir);
       expect(persisted!.mutationEpisodes).toHaveLength(0);
     } finally {
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 
@@ -501,18 +524,18 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         },
       });
 
-      const hooks = await FlowGuardAuditPlugin(
-        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-      );
-      const beforeHook = hooks['tool.execute.before']!;
-      const afterHook = hooks['tool.execute.after']!;
+      const host = await openHost(ws.tmpDir);
 
       // A governed host mutation runs against the git control plane itself —
       // invisible to `git status`, invisible to the reviewer subject.
       const callID = crypto.randomUUID();
-      await beforeHook(
-        { tool: 'bash', sessionID, callID },
-        { args: { command: 'git config core.hooksPath .malicious-hooks' } },
+      await host.before(
+        v2ToolEvent({
+          tool: 'shell',
+          sessionID,
+          id: callID,
+          input: { command: 'git config core.hooksPath .malicious-hooks' },
+        }),
       );
       await fs.mkdir(path.join(ws.tmpDir, '.git'), { recursive: true });
       await fs.writeFile(
@@ -520,10 +543,11 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         '[core]\n\thooksPath = .malicious-hooks\n',
         'utf8',
       );
-      await afterHook(
-        { tool: 'bash', sessionID, callID, args: { command: 'git config' } },
-        { title: 'bash', output: 'git config', metadata: { exit: 0 } },
-      );
+      await host.after({
+        ...v2ToolEvent({ tool: 'shell', sessionID, id: callID, input: { command: 'git config' } }),
+        status: 'completed',
+        result: { content: 'git config', metadata: { exit: 0 } },
+      });
 
       // Recording must fail closed: the control-plane mutation cannot be part
       // of the implementation subject, so no digest may be certified over it.
@@ -543,7 +567,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         ),
       ).toBe(true);
     } finally {
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 
@@ -559,22 +583,23 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         const implementationState = await boundProgressedState(ws, sessionID, 'IMPLEMENTATION');
         await writeStateWithArtifacts(sessDir, { ...implementationState, phase });
 
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
+        const host = await openHost(ws.tmpDir);
 
         await expect(
-          beforeHook(
-            { tool: 'apply_patch', sessionID, callID: crypto.randomUUID() },
-            { args: { patch: '*** Begin Patch\n*** End Patch' } },
+          host.before(
+            v2ToolEvent({
+              tool: 'apply_patch',
+              sessionID,
+              id: crypto.randomUUID(),
+              input: { patch: '*** Begin Patch\n*** End Patch' },
+            }),
           ),
         ).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
 
         const persisted = await readState(sessDir);
         expect(persisted!.mutationEpisodes).toHaveLength(0);
       } finally {
-        await ws.cleanup();
+        await cleanupWorkspace(ws);
       }
     },
   );
@@ -593,16 +618,11 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const hooks = await FlowGuardAuditPlugin(
-        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-      );
-      const beforeHook = hooks['tool.execute.before']!;
-      const afterHook = hooks['tool.execute.after']!;
+      const host = await openHost(ws.tmpDir);
 
       const crashedCallID = crypto.randomUUID();
-      await beforeHook(
-        { tool: 'apply_patch', sessionID, callID: crashedCallID },
-        { args: { patch: 'x' } },
+      await host.before(
+        v2ToolEvent({ tool: 'apply_patch', sessionID, id: crashedCallID, input: { patch: 'x' } }),
       );
       // Simulate the crash: no After-hook ever runs.
 
@@ -667,10 +687,16 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       // Delayed host delivery is historical after fenced recovery. It cannot
       // rewrite the episode and invalidate the append-only resolution.
-      await afterHook(
-        { tool: 'apply_patch', sessionID, callID: crashedCallID, args: { patch: 'x' } },
-        { title: 'Success', output: 'Success', metadata: { files: [] } },
-      );
+      await host.after({
+        ...v2ToolEvent({
+          tool: 'apply_patch',
+          sessionID,
+          id: crashedCallID,
+          input: { patch: 'x' },
+        }),
+        status: 'completed',
+        result: { content: 'Success', metadata: { files: [] } },
+      });
       expect(
         (await readState(sessDir))!.mutationEpisodes.find(
           (episode) => episode.hostCallId === crashedCallID,
@@ -696,7 +722,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       expect(afterDouble!.mutationEpisodeResolutions).toHaveLength(1);
     } finally {
       resetRuntimeInstanceIdForTest();
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 
@@ -711,15 +737,16 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const reviewState = await boundProgressedState(ws, sessionID, 'IMPL_REVIEW');
       await writeStateWithArtifacts(sessDir, { ...reviewState, phase: 'IMPLEMENTATION' });
 
-      const hooks = await FlowGuardAuditPlugin(
-        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-      );
-      const beforeHook = hooks['tool.execute.before']!;
+      const host = await openHost(ws.tmpDir);
 
       const crashedCallID = crypto.randomUUID();
-      await beforeHook(
-        { tool: 'edit', sessionID, callID: crashedCallID },
-        { args: { filePath: 'x.ts', old: 'a', new: 'b' } },
+      await host.before(
+        v2ToolEvent({
+          tool: 'edit',
+          sessionID,
+          id: crashedCallID,
+          input: { filePath: 'x.ts', old: 'a', new: 'b' },
+        }),
       );
 
       // Model a host crash after dispatch while the workflow has moved to the
@@ -759,7 +786,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       expect(freshVerdict.code).not.toBe('MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED');
     } finally {
       resetRuntimeInstanceIdForTest();
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 
@@ -845,7 +872,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       expect(completion.error).not.toBe(true);
       expect((await readState(sessDir))!.phase).toBe('COMPLETE');
     } finally {
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 });
@@ -970,7 +997,7 @@ describe('reconcile mutation episode fail-closed branches', () => {
       expect(schema.safeParse('').success).toBe(false);
       expect(schema.safeParse('host-call-1').success).toBe(true);
     } finally {
-      await ws.cleanup();
+      await cleanupWorkspace(ws);
     }
   });
 });

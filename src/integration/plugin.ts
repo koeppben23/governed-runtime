@@ -27,6 +27,7 @@ import { validateNativeReviewerOutputLimit } from './reviewer-output-cap.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { reconcileHostMutationEpisodes } from './plugin-mutation-reconciliation.js';
+import { READ_ONLY_HOST_TOOLS } from './phase-tool-gate.js';
 import {
   FLOWGUARD_TOOL_NAMES,
   FLOWGUARD_TOOL_PREFIX,
@@ -96,12 +97,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
         assertAvailable();
         return action(entry);
       });
-      operations.add(operation);
-      try {
-        return await operation;
-      } finally {
-        operations.delete(operation);
-      }
+      return trackOperation(operations, operation);
     };
 
     const dispose = (): Promise<void> => {
@@ -117,7 +113,13 @@ export const FlowGuardAuditPlugin = Plugin.define({
       await adapter.initialize();
       const capabilities = await adapter.validateCapabilities();
       if (!capabilities.valid) throw new HostCapabilityMismatchError(capabilities.mismatches);
-      await createFlowGuardPluginHooks(ctx, invoke, registrations);
+      await createFlowGuardPluginHooks(
+        ctx,
+        invoke,
+        (event) =>
+          observeReadOnlyCompletion(event, runtimes, sessionRoots, operations, assertAvailable),
+        registrations,
+      );
       eventLoop = consumeEvents(
         ctx,
         controller.signal,
@@ -145,6 +147,46 @@ export const FlowGuardAuditPlugin = Plugin.define({
 });
 
 export default FlowGuardAuditPlugin;
+
+async function trackOperation<T>(
+  operations: Set<Promise<unknown>>,
+  operation: Promise<T>,
+): Promise<T> {
+  operations.add(operation);
+  try {
+    return await operation;
+  } finally {
+    operations.delete(operation);
+  }
+}
+
+/** Positive read-only tool vocabulary only. Cached scope is diagnostic context,
+ * never state/approval authority; the before-hook still resolves fresh scope.
+ * Keep rich native content intact: diagnostics for these tools never parse it. */
+async function observeReadOnlyCompletion(
+  event: NativeToolCompletion,
+  runtimes: ReadonlyMap<string, Promise<RuntimeEntry>>,
+  sessionRoots: ReadonlyMap<string, string>,
+  operations: Set<Promise<unknown>>,
+  assertAvailable: () => void,
+): Promise<void> {
+  assertAvailable();
+  if (event.status !== 'completed') return;
+  const root = sessionRoots.get(event.sessionID);
+  const runtime = root === undefined ? undefined : runtimes.get(root);
+  if (!runtime) return;
+  await trackOperation(
+    operations,
+    runtime.then(async (entry) => {
+      assertAvailable();
+      await toolAfter(
+        entry.runtime,
+        { tool: event.tool, sessionID: event.sessionID, callID: event.id, args: event.input },
+        { title: '', output: event.result.content, metadata: event.result.metadata },
+      );
+    }),
+  );
+}
 
 async function loadRuntime(
   adapter: OpenCodeHostAdapter,
@@ -311,6 +353,7 @@ function assertReviewerBoundary(tool: string, input: unknown): void {
 async function createFlowGuardPluginHooks(
   ctx: Plugin.Context,
   invoke: Invoke,
+  observeCompletion: (event: NativeToolCompletion) => Promise<void>,
   registrations: Registration[],
 ): Promise<void> {
   registrations.push(
@@ -342,9 +385,10 @@ async function createFlowGuardPluginHooks(
     ),
   );
   registrations.push(
-    await ctx.tool.hook('execute.after', (event) =>
-      invoke(event.sessionID, ({ runtime }) => handleNativeCompletion(runtime, event)),
-    ),
+    await ctx.tool.hook('execute.after', (event) => {
+      if (READ_ONLY_HOST_TOOLS.has(event.tool)) return observeCompletion(event);
+      return invoke(event.sessionID, ({ runtime }) => handleNativeCompletion(runtime, event));
+    }),
   );
   registrations.push(
     await ctx.session.hook('context', (event) =>
@@ -376,6 +420,7 @@ async function handleNativeCompletion(
   runtime: FlowGuardPluginRuntime,
   event: NativeToolCompletion,
 ): Promise<void> {
+  assertReviewerBoundary(event.tool, event.input);
   if (event.status === 'error') {
     await reconcileHostMutationEpisodes(runtime, event.sessionID, event.id);
     return;
@@ -386,13 +431,8 @@ async function handleNativeCompletion(
       'The governed tool completion input is not an object.',
     );
   const content = event.result.content;
-  if (content !== undefined && typeof content !== 'string') {
-    throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Non-text tool completion cannot be projected without losing native content.',
-    );
-  }
-  const output = { title: '', output: content ?? '', metadata: { ...event.result.metadata } };
+  const text = nativeCompletionText(content);
+  const output = { title: '', output: text, metadata: { ...event.result.metadata } };
   await toolAfter(
     runtime,
     {
@@ -403,7 +443,48 @@ async function handleNativeCompletion(
     },
     output,
   );
-  event.result = { ...event.result, content: output.output, metadata: output.metadata };
+  event.result = {
+    ...event.result,
+    content:
+      typeof content === 'object'
+        ? content.map((part) => (part.type === 'text' ? { ...part, text: output.output } : part))
+        : output.output,
+    metadata: output.metadata,
+  };
+}
+
+/** A semantic text view, never concatenation or replacement of native evidence. */
+function nativeCompletionText(
+  content: Extract<NativeToolCompletion, { status: 'completed' }>['result']['content'],
+): string {
+  if (content === undefined) return '';
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content))
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'Native tool completion content is neither text nor a content array.',
+    );
+  if (
+    content.some(
+      (part) =>
+        !record(part) ||
+        (part.type === 'text'
+          ? typeof part.text !== 'string'
+          : part.type !== 'file' || typeof part.uri !== 'string' || typeof part.mime !== 'string'),
+    )
+  )
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'Native tool completion contains a malformed content part.',
+    );
+  const textParts = content.filter((part) => part.type === 'text');
+  const text = textParts[0];
+  if (!text || textParts.length !== 1)
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'Rich tool completion requires exactly one unambiguous text part.',
+    );
+  return text.text;
 }
 
 async function registerTools(

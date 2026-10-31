@@ -1,34 +1,16 @@
-/**
- * @module integration/plugin-integration.test
- * @description Integration tests for the FlowGuard audit plugin.
- *
- * Tests the plugin's tool.execute.after handler against real filesystem
- * persistence. Each test initializes a workspace, writes session state to disk,
- * then calls the handler with simulated tool input/output to verify:
- * - Audit events are persisted to audit.jsonl
- * - Hash chain integrity across multiple events
- * - Policy-aware emission (tool_call, transition, chain hash)
- * - Lifecycle events (session_created, session_completed, session_aborted)
- * - Error events on tool failures
- * - Mode-correct completion archival
- * - Solo fire-and-forget error handling (no crashes)
- *
- * Git adapter functions are selectively mocked (same as tools-execute.test.ts).
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
- */
-
+/** Native V2 completion registration through real persistence/audit. Seeded state
+ * tests audit projection only, not operator attribution or installed-host proof. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
-  createBootableHostClient,
+  canonicalBinding,
   createTestWorkspace,
-  isTarAvailable,
   GIT_MOCK_DEFAULTS,
   type TestWorkspace,
 } from './test-helpers.js';
+import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { PERF_ENABLED } from '../test-policy.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { readState, writeState } from '../adapters/persistence.js';
@@ -44,8 +26,6 @@ import { verifyChain } from '../audit/integrity.js';
 import { makeState, makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
 import { Transition, type Phase, type SessionState } from '../state/schema.js';
 
-// ─── Git Mock ────────────────────────────────────────────────────────────────
-
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
@@ -56,337 +36,178 @@ vi.mock('../adapters/git', async (importOriginal) => {
   };
 });
 
-// ─── Capability Gates ────────────────────────────────────────────────────────
-
-const tarOk = await isTarAvailable();
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-/** Shape of plugin tool.execute.after input. */
-interface PluginInput {
-  tool: string;
-  sessionID: string;
-  callID?: string;
-  args?: Record<string, unknown>;
-}
-
-/** Shape of plugin tool.execute.after output. */
-interface PluginOutput {
-  title: string;
-  output: string;
-  metadata: Record<string, unknown>;
-}
-
-// ─── Test Setup ──────────────────────────────────────────────────────────────
-
 let ws: TestWorkspace;
 let sessionId: string;
 let sessDir: string;
 let fingerprint: string;
-let handler: (input: PluginInput, output: PluginOutput) => Promise<void>;
-let logEntries: Array<{ level: string; message: string }>;
+let host: ReturnType<typeof createV2Host>;
+const cleanups: Array<() => void | Promise<void>> = [];
+
+async function openHost(directory: string) {
+  const native = createV2Host(directory);
+  const dispose = await FlowGuardAuditPlugin.setup(native.ctx);
+  if (dispose) cleanups.push(dispose);
+  return native;
+}
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
   sessionId = `ses_${crypto.randomUUID().replace(/-/g, '')}`;
-
-  // Initialize workspace + resolve paths
-  const fp = await computeFingerprint(ws.tmpDir);
-  fingerprint = fp.fingerprint;
+  fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
   await initWorkspace(ws.tmpDir, sessionId);
   sessDir = resolveSessionDir(fingerprint, sessionId);
-
-  // Write initial state to disk (TICKET phase with team policy for audit)
-  const state = makeState('TICKET', {
-    id: crypto.randomUUID(),
-    binding: {
-      hostSessionId: sessionId,
-      worktree: ws.tmpDir,
-      fingerprint,
-      resolvedAt: new Date().toISOString(),
-    },
-    policySnapshot: {
-      ...POLICY_SNAPSHOT,
-      mode: 'team',
-      resolvedAt: new Date().toISOString(),
-      requestedMode: 'team',
-      effectiveGateBehavior: 'human_gated',
-      requireHumanGates: true,
-      reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
-      allowSelfApproval: true,
-      audit: {
-        ...POLICY_SNAPSHOT.audit,
+  await writeState(
+    sessDir,
+    makeState('TICKET', {
+      binding: await canonicalBinding(ws.tmpDir, sessionId),
+      policySnapshot: {
+        ...POLICY_SNAPSHOT,
+        mode: 'team',
+        requestedMode: 'team',
+        effectiveGateBehavior: 'human_gated',
+        requireHumanGates: true,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
+        allowSelfApproval: true,
+        actorClassification: { flowguard_decision: 'human' },
       },
-      actorClassification: { flowguard_decision: 'human' },
-    },
-  });
-  await writeState(sessDir, state);
-
-  // Initialize plugin with real worktree
-  logEntries = [];
-  const hooks = await FlowGuardAuditPlugin({
-    project: {} as never,
-    client: createBootableHostClient({
-      app: {
-        log: async (entry: unknown) => {
-          const e = entry as { body?: { level?: string; message?: string } };
-          logEntries.push({
-            level: e.body?.level ?? 'info',
-            message: e.body?.message ?? '',
-          });
-        },
-      },
-    }) as never,
-    $: {} as never,
-    directory: ws.tmpDir,
-    worktree: ws.tmpDir,
-    serverUrl: new URL('http://localhost:3000'),
-    experimental_workspace: undefined as never,
-  });
-
-  handler = hooks['tool.execute.after']! as (
-    input: PluginInput,
-    output: PluginOutput,
-  ) => Promise<void>;
+    }),
+  );
+  host = await openHost(ws.tmpDir);
 });
 
 afterEach(async () => {
-  vi.clearAllMocks();
-  await ws.cleanup();
+  try {
+    for (const dispose of cleanups.splice(0)) await dispose();
+  } finally {
+    vi.clearAllMocks();
+    await ws.cleanup();
+  }
 });
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Extract event kind from an audit event.
- *
- * AuditEvent stores the kind inside `detail.kind` (structural)
- * and as the prefix of `event` (e.g., "tool_call:flowguard_status").
- * Use `detail.kind` as the primary source since it's the typed field.
- */
-function eventKind(e: { detail: Record<string, unknown>; event: string }): string {
-  return (e.detail.kind as string) ?? e.event.split(':')[0];
+function eventKind(event: { detail: Record<string, unknown>; event: string }): string {
+  return (event.detail.kind as string) ?? event.event.split(':')[0];
 }
 
-/** Build a tool output JSON string with the given fields. */
-function makeToolOutput(fields: {
-  phase?: string;
-  status?: string;
-  error?: boolean;
-  errorMessage?: string;
-  policyResolution?: Record<string, unknown>;
-  reviewDecision?: Record<string, unknown>;
-  _audit?: {
-    transitions?: Array<{
-      from: string;
-      to: string;
-      event: string;
-      at: string;
-    }>;
+function output(fields: Record<string, unknown> = {}): string {
+  return JSON.stringify({ phase: 'TICKET', status: 'ok', ...fields });
+}
+
+/** Build one native completion event, not a V1 hook-input/output adapter. */
+function completion(tool: string, content: string, sid = sessionId) {
+  return {
+    ...v2ToolEvent({ tool, sessionID: sid, id: crypto.randomUUID(), input: {} }),
+    status: 'completed',
+    result: { content, metadata: {} },
   };
-}): string {
-  return JSON.stringify({
-    phase: fields.phase ?? 'TICKET',
-    status: fields.status ?? 'ok',
-    ...fields,
-  });
-}
-
-/** Read audit events from session directory. */
-async function getEvents() {
-  return await readAuditTrail(sessDir);
 }
 
 async function persistTransition(
   transition: { from: string; to: string; event: string; at: string },
   state?: SessionState,
 ) {
-  const current = await readState(sessDir);
-  const persistedTransition = Transition.parse(transition);
-  const base = state ?? makeState(transition.to as Phase, { id: current!.id });
+  const current = (await readState(sessDir))!;
+  const persisted = Transition.parse(transition);
+  const base = state ?? makeState(transition.to as Phase, { id: current.id });
   await writeStateWithArtifactsAndAuditOperations(
     sessDir,
     {
       ...base,
-      id: current!.id,
-      flowguardSessionId: current!.id,
-      binding: current!.binding,
-      policySnapshot: current!.policySnapshot,
-      transition: persistedTransition,
+      id: current.id,
+      flowguardSessionId: current.id,
+      binding: current.binding,
+      policySnapshot: current.policySnapshot,
+      transition: persisted,
     },
     [transition],
   );
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
-
-describe('plugin-integration', () => {
-  // ─── HAPPY ─────────────────────────────────────────────────
-
+describe('native V2 plugin audit integration', () => {
   describe('HAPPY', () => {
-    it('persists a tool_call event for a FlowGuard tool', async () => {
-      await handler(
-        { tool: 'flowguard_status', sessionID: sessionId },
-        { title: 'status', output: makeToolOutput({ phase: 'TICKET' }), metadata: {} },
-      );
-
-      const events = await getEvents();
-      expect(events.length).toBeGreaterThanOrEqual(1);
-      const toolCallEvents = events.filter((e) => eventKind(e) === 'tool_call');
-      expect(toolCallEvents.length).toBe(1);
-      expect(toolCallEvents[0]!.event).toBe('tool_call:flowguard_status');
+    it('persists exactly one tool_call for a FlowGuard completion', async () => {
+      await host.after(completion('flowguard_status', output()));
+      const events = await readAuditTrail(sessDir);
+      const calls = events.filter((e) => eventKind(e) === 'tool_call');
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.event).toBe('tool_call:flowguard_status');
     });
 
-    it('does not materialize a session directory for an unhydrated child tool attempt', async () => {
-      const childSessionId = `ses_${crypto.randomUUID().replace(/-/g, '')}`;
-
-      await handler(
-        { tool: 'flowguard_abort_session', sessionID: childSessionId },
-        { title: 'abort', output: makeToolOutput({ phase: 'unknown' }), metadata: {} },
-      );
-
-      await expect(fs.stat(resolveSessionDir(fingerprint, childSessionId))).rejects.toMatchObject({
+    it('does not materialize workflow state for an unhydrated child completion', async () => {
+      const child = `ses_${crypto.randomUUID()}`;
+      await host.after(completion('flowguard_abort_session', output({ phase: 'unknown' }), child));
+      await expect(fs.stat(resolveSessionDir(fingerprint, child))).rejects.toMatchObject({
         code: 'ENOENT',
       });
     });
 
-    it('persists transition events for phase changes', async () => {
-      const transitions = [
-        {
-          from: 'TICKET',
-          to: 'PLAN',
-          event: 'PLAN_READY',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await persistTransition(transitions[0]!);
-
-      await handler(
-        { tool: 'flowguard_plan', sessionID: sessionId },
-        {
-          title: 'plan',
-          output: makeToolOutput({ phase: 'PLAN' }),
-          metadata: {},
-        },
-      );
-
-      const events = await getEvents();
-      const transEvents = events.filter((e) => eventKind(e) === 'transition');
-      expect(transEvents.length).toBe(1);
-      expect(transEvents[0]!.event).toBe('transition:PLAN_READY');
-    });
-
-    it('emits lifecycle session_created for hydrate', async () => {
-      const transitions = [
-        {
-          from: 'INIT',
-          to: 'TICKET',
-          event: 'SESSION_BOUND',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await handler(
-        { tool: 'flowguard_hydrate', sessionID: sessionId },
-        {
-          title: 'hydrate',
-          output: makeToolOutput({
-            phase: 'TICKET',
-            _audit: { transitions },
-          }),
-          metadata: {},
-        },
-      );
-
-      const events = await getEvents();
-      const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
-      expect(lifecycle.length).toBeGreaterThanOrEqual(1);
-      const created = lifecycle.find((e) => e.event.includes('session_created'));
-      expect(created).toBeDefined();
-    });
-
-    it('emits lifecycle session_completed on COMPLETE transition', async () => {
-      // Update state to EVIDENCE_REVIEW so COMPLETE transition makes sense
-      const state = makeProgressedState('EVIDENCE_REVIEW');
-      await writeState(sessDir, {
-        ...state,
-        binding: {
-          hostSessionId: sessionId,
-          worktree: ws.tmpDir,
-          fingerprint,
-          resolvedAt: new Date().toISOString(),
-        },
-        policySnapshot: {
-          ...POLICY_SNAPSHOT,
-          mode: 'team',
-          resolvedAt: new Date().toISOString(),
-          requestedMode: 'team',
-          effectiveGateBehavior: 'human_gated',
-          requireHumanGates: true,
-          reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
-          allowSelfApproval: true,
-          audit: {
-            ...POLICY_SNAPSHOT.audit,
-          },
-          actorClassification: { flowguard_decision: 'human' },
-        },
+    it('persists canonical transitions rather than trusting the tool output', async () => {
+      await persistTransition({
+        from: 'TICKET',
+        to: 'PLAN',
+        event: 'PLAN_READY',
+        at: new Date().toISOString(),
       });
-
-      const transitions = [
-        {
-          from: 'EVIDENCE_REVIEW',
-          to: 'COMPLETE',
-          event: 'APPROVE',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await persistTransition(transitions[0]!, makeProgressedState('COMPLETE'));
-
-      await handler(
-        { tool: 'flowguard_decision', sessionID: sessionId },
-        {
-          title: 'decision',
-          output: makeToolOutput({ phase: 'COMPLETE' }),
-          metadata: {},
-        },
+      await host.after(completion('flowguard_plan', output({ phase: 'PLAN' })));
+      const transitions = (await readAuditTrail(sessDir)).filter(
+        (e) => eventKind(e) === 'transition',
       );
-
-      const events = await getEvents();
-      const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
-      const completed = lifecycle.find((e) => e.event.includes('session_completed'));
-      expect(completed).toBeDefined();
-      const archivePath = path.join(
-        workspacesHome(),
-        fingerprint,
-        'sessions',
-        'archive',
-        `${sessionId}.tar.gz`,
-      );
-      await expect(fs.stat(archivePath)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(transitions).toHaveLength(1);
+      expect(transitions[0]!.event).toBe('transition:PLAN_READY');
     });
 
-    it('actor classification matches policy', async () => {
-      // In team mode, flowguard_decision is classified as "human"
-      await handler(
-        { tool: 'flowguard_decision', sessionID: sessionId },
-        {
-          title: 'decision',
-          output: makeToolOutput({ phase: 'VALIDATION' }),
-          metadata: {},
-        },
+    it('emits session_created for hydrate of an existing bound session', async () => {
+      await host.after(
+        completion(
+          'flowguard_hydrate',
+          output({
+            _audit: {
+              transitions: [
+                {
+                  from: 'INIT',
+                  to: 'TICKET',
+                  event: 'SESSION_BOUND',
+                  at: new Date().toISOString(),
+                },
+              ],
+            },
+          }),
+        ),
       );
-
-      const events = await getEvents();
-      const toolCall = events.find((e) => eventKind(e) === 'tool_call');
-      expect(toolCall).toBeDefined();
-      expect(toolCall!.actor).toBe('human');
+      expect((await readAuditTrail(sessDir)).some((e) => e.event.includes('session_created'))).toBe(
+        true,
+      );
     });
 
-    it('names the deciding actor on a decision tool call while the transition keeps the principal', async () => {
+    it('emits session_completed on a persisted COMPLETE transition without team archival', async () => {
+      const state = (await readState(sessDir))!;
+      await writeState(sessDir, {
+        ...makeProgressedState('EVIDENCE_REVIEW'),
+        binding: state.binding,
+        policySnapshot: state.policySnapshot,
+      });
+      await persistTransition(
+        { from: 'EVIDENCE_REVIEW', to: 'COMPLETE', event: 'APPROVE', at: new Date().toISOString() },
+        makeProgressedState('COMPLETE'),
+      );
+      await host.after(completion('flowguard_decision', output({ phase: 'COMPLETE' })));
+      expect(
+        (await readAuditTrail(sessDir)).some((e) => e.event.includes('session_completed')),
+      ).toBe(true);
+      await expect(
+        fs.stat(
+          path.join(workspacesHome(), fingerprint, 'sessions', 'archive', `${sessionId}.tar.gz`),
+        ),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('projects actor classification from the frozen policy, not a native event claim', async () => {
+      await host.after(completion('flowguard_decision', output({ phase: 'VALIDATION' })));
+      expect((await readAuditTrail(sessDir)).find((e) => eventKind(e) === 'tool_call')!.actor).toBe(
+        'human',
+      );
+    });
+
+    it('keeps deciding actor identity separate from the transition principal', async () => {
       const initiator = {
         id: 'alice-initiator',
         email: 'alice@example.com',
@@ -399,95 +220,74 @@ describe('plugin-integration', () => {
         actorSource: 'oidc' as const,
         actorAssurance: 'idp_verified' as const,
       };
-      await writeState(sessDir, { ...(await readState(sessDir))!, actorInfo: initiator });
-      const reviewDecision = {
-        verdict: 'approve' as const,
-        rationale: 'four eyes satisfied',
-        decidedAt: new Date().toISOString(),
-        decisionIdentity: reviewer,
-      };
       const current = (await readState(sessDir))!;
       await persistTransition(
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: new Date().toISOString() },
         {
-          from: 'TICKET',
-          to: 'PLAN',
-          event: 'PLAN_READY',
-          at: new Date().toISOString(),
+          ...current,
+          actorInfo: initiator,
+          reviewDecision: {
+            verdict: 'approve',
+            rationale: 'four eyes satisfied',
+            decidedAt: new Date().toISOString(),
+            decisionIdentity: reviewer,
+          },
         },
-        { ...current, actorInfo: initiator, reviewDecision },
       );
-
-      await handler(
-        { tool: 'flowguard_decision', sessionID: sessionId },
-        { title: 'decision', output: makeToolOutput({ phase: 'PLAN' }), metadata: {} },
-      );
-
-      const events = await getEvents();
-      const toolCall = events.find(
+      await host.after(completion('flowguard_decision', output({ phase: 'PLAN' })));
+      const events = await readAuditTrail(sessDir);
+      const call = events.find(
         (e) => eventKind(e) === 'tool_call' && e.detail.tool === 'flowguard_decision',
-      );
-      expect(toolCall).toBeDefined();
-      expect(toolCall!.actor).toBe('human');
-      expect(toolCall!.actorInfo).toEqual({
+      )!;
+      expect(call.actor).toBe('human');
+      expect(call.actorInfo).toEqual({
         id: 'bob-reviewer',
         email: 'bob@example.com',
         source: 'oidc',
         assurance: 'idp_verified',
       });
-
-      // The machine-applied transition still names the session principal.
-      const transition = events.find((e) => eventKind(e) === 'transition');
-      expect(transition).toBeDefined();
-      expect(transition!.actor).toBe('machine');
-      expect(transition!.actorInfo).toEqual(initiator);
-      expect(toolCall!.actorInfo?.id).not.toBe(transition!.actorInfo?.id);
+      const transition = events.find((e) => eventKind(e) === 'transition')!;
+      expect(transition.actor).toBe('machine');
+      expect(transition.actorInfo).toEqual(initiator);
+      expect(call.actorInfo?.id).not.toBe(transition.actorInfo?.id);
     });
 
-    it('omits actorInfo on a blocked decision call instead of attributing the initiator', async () => {
+    it('does not attribute a blocked decision to a previous reviewer or the initiator', async () => {
       await writeState(sessDir, {
         ...(await readState(sessDir))!,
         actorInfo: {
-          id: 'alice-initiator',
+          id: 'alice',
           email: 'alice@example.com',
-          source: 'env' as const,
-          assurance: 'best_effort' as const,
+          source: 'env',
+          assurance: 'best_effort',
         },
         reviewDecision: {
           verdict: 'approve',
           rationale: 'previous decision',
           decidedAt: new Date().toISOString(),
           decisionIdentity: {
-            actorId: 'bob-reviewer',
+            actorId: 'bob',
             actorEmail: 'bob@example.com',
-            actorSource: 'oidc' as const,
-            actorAssurance: 'idp_verified' as const,
+            actorSource: 'oidc',
+            actorAssurance: 'idp_verified',
           },
         },
       });
-
-      await handler(
-        { tool: 'flowguard_decision', sessionID: sessionId },
-        {
-          title: 'decision',
-          output: makeToolOutput({ phase: 'TICKET', error: true, errorMessage: 'blocked' }),
-          metadata: {},
-        },
+      await host.after(
+        completion('flowguard_decision', output({ error: true, errorMessage: 'blocked' })),
       );
-
-      const events = await getEvents();
-      const toolCall = events.find(
+      const call = (await readAuditTrail(sessDir)).find(
         (e) => eventKind(e) === 'tool_call' && e.detail.tool === 'flowguard_decision',
-      );
-      expect(toolCall).toBeDefined();
-      expect(toolCall!.actorInfo).toBeUndefined();
+      )!;
+      expect(call).toBeDefined();
+      expect(call.actorInfo).toBeUndefined();
     });
 
-    it('session_created lifecycle reason includes policy resolution fields', async () => {
-      await handler(
-        { tool: 'flowguard_hydrate', sessionID: sessionId },
-        {
-          title: 'hydrate',
-          output: makeToolOutput({
+    it('keeps policy-resolution detail on the session_created diagnostic', async () => {
+      await host.after(
+        completion(
+          'flowguard_hydrate',
+          output({
             phase: 'READY',
             policyResolution: {
               requestedMode: 'team-ci',
@@ -497,414 +297,200 @@ describe('plugin-integration', () => {
               reason: 'ci_context_missing',
             },
           }),
-          metadata: {},
-        },
+        ),
       );
-
-      const events = await getEvents();
-      const lifecycle = events.find((e) => e.event === 'lifecycle:session_created');
-      expect(lifecycle).toBeDefined();
-      expect(String(lifecycle!.detail.reason)).toContain('requested_mode:team-ci');
-      expect(String(lifecycle!.detail.reason)).toContain('effective_mode:team');
-      expect(String(lifecycle!.detail.reason)).toContain('source:repo');
-      expect(String(lifecycle!.detail.reason)).toContain('reason:ci_context_missing');
+      const event = (await readAuditTrail(sessDir)).find(
+        (e) => e.event === 'lifecycle:session_created',
+      )!;
+      expect(event).toBeDefined();
+      for (const detail of [
+        'requested_mode:team-ci',
+        'effective_mode:team',
+        'source:repo',
+        'reason:ci_context_missing',
+      ])
+        expect(String(event.detail.reason)).toContain(detail);
     });
   });
-
-  // ─── BAD ───────────────────────────────────────────────────
 
   describe('BAD', () => {
-    it('ignores non-FlowGuard tools completely', async () => {
-      await handler(
-        { tool: 'bash', sessionID: sessionId },
-        { title: 'bash', output: 'some output', metadata: {} },
-      );
-
-      const events = await getEvents();
-      expect(events.length).toBe(0);
+    it('does not invent FlowGuard audit events for native shell completions', async () => {
+      await host.after(completion('shell', 'some output'));
+      expect(await readAuditTrail(sessDir)).toHaveLength(0);
     });
 
-    it('handles invalid JSON output without crashing', async () => {
-      await handler(
-        { tool: 'flowguard_status', sessionID: sessionId },
-        { title: 'status', output: 'not valid json {{', metadata: {} },
-      );
-
-      // Should not throw — fire-and-forget
-      const events = await getEvents();
-      // A tool_call event should still be written (with phase="unknown")
-      expect(events.length).toBeGreaterThanOrEqual(1);
+    it('records a tool_call even when the result is not valid JSON', async () => {
+      await host.after(completion('flowguard_status', 'not valid json {{'));
+      expect((await readAuditTrail(sessDir)).length).toBeGreaterThanOrEqual(1);
     });
 
-    it('handles missing session directory gracefully', async () => {
-      // Create a new plugin pointing to a nonexistent worktree
-      const hooks = await FlowGuardAuditPlugin({
-        project: {} as never,
-        client: createBootableHostClient() as never,
-        $: {} as never,
-        directory: '/nonexistent/path',
-        worktree: '/nonexistent/path',
-        serverUrl: new URL('http://localhost:3000'),
-        experimental_workspace: undefined as never,
-      });
-      const badHandler = hooks['tool.execute.after']! as (
-        input: PluginInput,
-        output: PluginOutput,
-      ) => Promise<void>;
-
-      // Should not throw
-      await badHandler(
-        { tool: 'flowguard_status', sessionID: 'fake' },
-        { title: 'status', output: '{}', metadata: {} },
-      );
+    it('fails explicitly when the host session location cannot resolve a worktree', async () => {
+      const badHost = await openHost('/nonexistent/path');
+      await expect(
+        badHost.after(completion('flowguard_status', '{}', 'fake')),
+      ).rejects.toHaveProperty('code');
+      expect(await readAuditTrail(sessDir)).toHaveLength(0);
     });
   });
 
-  // ─── CORNER ────────────────────────────────────────────────
-
   describe('CORNER', () => {
-    it('hash chain is valid across multiple events', async () => {
-      // Emit several tool calls to build a chain
-      for (let i = 0; i < 5; i++) {
-        await handler(
-          { tool: 'flowguard_status', sessionID: sessionId },
-          {
-            title: 'status',
-            output: makeToolOutput({ phase: 'TICKET' }),
-            metadata: {},
-          },
-        );
-      }
-
-      const events = await getEvents();
-      expect(events.length).toBe(5);
-
-      // Verify chain integrity
-      const chainResult = verifyChain(events);
-      expect(chainResult.valid).toBe(true);
-      expect(chainResult.verifiedCount).toBe(5);
+    it('retains valid chain linkage across five native completions', async () => {
+      for (let i = 0; i < 5; i++) await host.after(completion('flowguard_status', output()));
+      const events = await readAuditTrail(sessDir);
+      expect(events).toHaveLength(5);
+      expect(verifyChain(events)).toMatchObject({ valid: true, verifiedCount: 5 });
     });
 
-    it('solo policy disables chain hash but still writes events', async () => {
-      // Write state with solo policy (enableChainHash: false)
-      const soloState = makeState('TICKET', {
-        id: crypto.randomUUID(),
-        binding: {
-          hostSessionId: sessionId,
-          worktree: ws.tmpDir,
-          fingerprint,
-          resolvedAt: new Date().toISOString(),
-        },
-        policySnapshot: {
-          ...POLICY_SNAPSHOT,
-          mode: 'solo',
-          resolvedAt: new Date().toISOString(),
-          requestedMode: 'solo',
-          effectiveGateBehavior: 'auto_approve',
-          requireHumanGates: false,
-          reviewBudget: { plan: 1, architecture: 1, implementation: 1 },
-          allowSelfApproval: true,
-          audit: {
-            ...POLICY_SNAPSHOT.audit,
-            enableChainHash: false,
+    it('uses solo snapshot chain policy while still writing events', async () => {
+      const current = (await readState(sessDir))!;
+      await writeState(
+        sessDir,
+        makeState('TICKET', {
+          ...current,
+          policySnapshot: {
+            ...current.policySnapshot,
+            mode: 'solo',
+            requestedMode: 'solo',
+            effectiveGateBehavior: 'auto_approve',
+            requireHumanGates: false,
+            reviewBudget: { plan: 1, architecture: 1, implementation: 1 },
+            audit: { ...POLICY_SNAPSHOT.audit, enableChainHash: false },
+            actorClassification: { flowguard_decision: 'system' },
           },
-          actorClassification: { flowguard_decision: 'system' },
-        },
-      });
-      await writeState(sessDir, soloState);
-
-      // Create a new plugin instance to pick up the solo config
-      const hooks = await FlowGuardAuditPlugin({
-        project: {} as never,
-        client: createBootableHostClient() as never,
-        $: {} as never,
-        directory: ws.tmpDir,
-        worktree: ws.tmpDir,
-        serverUrl: new URL('http://localhost:3000'),
-        experimental_workspace: undefined as never,
-      });
-      const soloHandler = hooks['tool.execute.after']! as (
-        input: PluginInput,
-        output: PluginOutput,
-      ) => Promise<void>;
-
-      // Emit events
-      await soloHandler(
-        { tool: 'flowguard_status', sessionID: sessionId },
-        { title: 'status', output: makeToolOutput({ phase: 'TICKET' }), metadata: {} },
+        }),
       );
-      await soloHandler(
-        { tool: 'flowguard_ticket', sessionID: sessionId },
-        { title: 'ticket', output: makeToolOutput({ phase: 'TICKET' }), metadata: {} },
-      );
-
-      const events = await getEvents();
-      expect(events.length).toBe(2);
-
-      // Events should have chainHash but chain is NOT linked (each uses genesis)
-      // Each event's prevHash should be "genesis" — chain verification will
-      // still pass because each event independently chains from genesis.
+      const solo = await openHost(ws.tmpDir);
+      await solo.after(completion('flowguard_status', output()));
+      await solo.after(completion('flowguard_ticket', output()));
+      const events = await readAuditTrail(sessDir);
+      expect(events).toHaveLength(2);
       expect(events[0]!.chainHash).toBeTruthy();
       expect(events[1]!.chainHash).toBeTruthy();
     });
 
-    it('policy is resolved from snapshot fields (frozen session authority)', async () => {
-      // Write state with mode=team but snapshot claims emitToolCalls=false.
-      // The snapshot is authoritative for this session, so tool_call should be suppressed.
-      const customState = makeState('TICKET', {
-        id: crypto.randomUUID(),
-        binding: {
-          hostSessionId: sessionId,
-          worktree: ws.tmpDir,
-          fingerprint,
-          resolvedAt: new Date().toISOString(),
-        },
-        policySnapshot: {
-          ...POLICY_SNAPSHOT,
-          mode: 'team',
-          resolvedAt: new Date().toISOString(),
-          requestedMode: 'team',
-          effectiveGateBehavior: 'human_gated',
-          requireHumanGates: true,
-          reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
-          allowSelfApproval: true,
-          audit: {
-            ...POLICY_SNAPSHOT.audit,
-            emitToolCalls: false, // snapshot says false...
+    it('honors frozen emitToolCalls=false while still reconciling a transition', async () => {
+      const current = (await readState(sessDir))!;
+      await writeState(
+        sessDir,
+        makeState('TICKET', {
+          ...current,
+          policySnapshot: {
+            ...current.policySnapshot,
+            audit: { ...POLICY_SNAPSHOT.audit, emitToolCalls: false },
           },
-          actorClassification: { flowguard_decision: 'human' },
-        },
-      });
-      await writeState(sessDir, customState);
-
-      // New plugin instance to pick up the custom state
-      const hooks = await FlowGuardAuditPlugin({
-        project: {} as never,
-        client: createBootableHostClient() as never,
-        $: {} as never,
-        directory: ws.tmpDir,
-        worktree: ws.tmpDir,
-        serverUrl: new URL('http://localhost:3000'),
-        experimental_workspace: undefined as never,
-      });
-      const customHandler = hooks['tool.execute.after']! as (
-        input: PluginInput,
-        output: PluginOutput,
-      ) => Promise<void>;
-
-      const transitions = [
-        {
-          from: 'TICKET',
-          to: 'PLAN',
-          event: 'PLAN_READY',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await persistTransition(transitions[0]!);
-
-      await customHandler(
-        { tool: 'flowguard_plan', sessionID: sessionId },
-        {
-          title: 'plan',
-          output: makeToolOutput({ phase: 'PLAN' }),
-          metadata: {},
-        },
+        }),
       );
-
-      const events = await getEvents();
-      // Snapshot says emitToolCalls=false, so tool_call is suppressed.
-      const toolCalls = events.filter((e) => eventKind(e) === 'tool_call');
-      const trans = events.filter((e) => eventKind(e) === 'transition');
-      expect(toolCalls.length).toBe(0);
-      expect(trans.length).toBe(1);
+      await persistTransition({
+        from: 'TICKET',
+        to: 'PLAN',
+        event: 'PLAN_READY',
+        at: new Date().toISOString(),
+      });
+      const custom = await openHost(ws.tmpDir);
+      await custom.after(completion('flowguard_plan', output({ phase: 'PLAN' })));
+      const events = await readAuditTrail(sessDir);
+      expect(events.filter((e) => eventKind(e) === 'tool_call')).toHaveLength(0);
+      expect(events.filter((e) => eventKind(e) === 'transition')).toHaveLength(1);
     });
   });
 
-  // ─── EDGE ──────────────────────────────────────────────────
-
   describe('EDGE', () => {
-    it('error event is emitted on tool failure', async () => {
-      await handler(
-        { tool: 'flowguard_plan', sessionID: sessionId },
-        {
-          title: 'plan',
-          output: makeToolOutput({
-            phase: 'TICKET',
-            error: true,
-            errorMessage: 'Plan submission failed: empty plan',
-          }),
-          metadata: {},
-        },
+    it('emits the canonical tool failure error event', async () => {
+      await host.after(
+        completion(
+          'flowguard_plan',
+          output({ error: true, errorMessage: 'Plan submission failed: empty plan' }),
+        ),
       );
-
-      const events = await getEvents();
-      const errors = events.filter((e) => eventKind(e) === 'error');
-      expect(errors.length).toBe(1);
+      const errors = (await readAuditTrail(sessDir)).filter((e) => eventKind(e) === 'error');
+      expect(errors).toHaveLength(1);
       expect(errors[0]!.event).toContain('TOOL_ERROR');
     });
 
-    it('multiple independent plugin instances have separate chain states', async () => {
-      // Plugin instance 2 with different session
-      const sessionId2 = crypto.randomUUID();
-      await initWorkspace(ws.tmpDir, sessionId2);
-      const sessDir2 = resolveSessionDir(fingerprint, sessionId2);
-      const state2 = makeState('TICKET', {
-        id: crypto.randomUUID(),
-        binding: {
-          hostSessionId: sessionId2,
-          worktree: ws.tmpDir,
-          fingerprint,
-          resolvedAt: new Date().toISOString(),
-        },
-        policySnapshot: {
-          ...POLICY_SNAPSHOT,
-          mode: 'team',
-          resolvedAt: new Date().toISOString(),
-          requestedMode: 'team',
-          effectiveGateBehavior: 'human_gated',
-          requireHumanGates: true,
-          reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
-          allowSelfApproval: true,
-          audit: {
-            ...POLICY_SNAPSHOT.audit,
-          },
-          actorClassification: { flowguard_decision: 'human' },
-        },
-      });
-      await writeState(sessDir2, state2);
-
-      const hooks2 = await FlowGuardAuditPlugin({
-        project: {} as never,
-        client: createBootableHostClient() as never,
-        $: {} as never,
-        directory: ws.tmpDir,
-        worktree: ws.tmpDir,
-        serverUrl: new URL('http://localhost:3000'),
-        experimental_workspace: undefined as never,
-      });
-      const handler2 = hooks2['tool.execute.after']! as (
-        input: PluginInput,
-        output: PluginOutput,
-      ) => Promise<void>;
-
-      // Write events to each session
-      await handler(
-        { tool: 'flowguard_status', sessionID: sessionId },
-        { title: 'status', output: makeToolOutput({ phase: 'TICKET' }), metadata: {} },
+    it('keeps independent native plugin/session chain states separate', async () => {
+      const sid = crypto.randomUUID();
+      await initWorkspace(ws.tmpDir, sid);
+      const secondDir = resolveSessionDir(fingerprint, sid);
+      await writeState(
+        secondDir,
+        makeState('TICKET', {
+          binding: await canonicalBinding(ws.tmpDir, sid),
+          policySnapshot: (await readState(sessDir))!.policySnapshot,
+        }),
       );
-      await handler2(
-        { tool: 'flowguard_status', sessionID: sessionId2 },
-        { title: 'status', output: makeToolOutput({ phase: 'TICKET' }), metadata: {} },
-      );
-
-      // Both should have independent events
-      const trail1 = await readAuditTrail(sessDir);
-      const trail2 = await readAuditTrail(sessDir2);
-      expect(trail1.length).toBe(1);
-      expect(trail2.length).toBe(1);
-      // Chain hashes should be different (different session IDs in events)
-      expect(trail1[0]!.chainHash).not.toBe(trail2[0]!.chainHash);
+      const second = await openHost(ws.tmpDir);
+      await host.after(completion('flowguard_status', output()));
+      await second.after(completion('flowguard_status', output(), sid));
+      const firstTrail = await readAuditTrail(sessDir);
+      const secondTrail = await readAuditTrail(secondDir);
+      expect(firstTrail).toHaveLength(1);
+      expect(secondTrail).toHaveLength(1);
+      expect(firstTrail[0]!.chainHash).not.toBe(secondTrail[0]!.chainHash);
     });
 
-    it('lifecycle guard: hydrate produces session_created but NOT session_completed', async () => {
-      const transitions = [
-        {
-          from: 'INIT',
-          to: 'TICKET',
-          event: 'SESSION_BOUND',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await handler(
-        { tool: 'flowguard_hydrate', sessionID: sessionId },
-        {
-          title: 'hydrate',
-          output: makeToolOutput({
-            phase: 'TICKET',
-            _audit: { transitions },
+    it('hydrate emits session_created, never session_completed', async () => {
+      await host.after(
+        completion(
+          'flowguard_hydrate',
+          output({
+            _audit: {
+              transitions: [
+                {
+                  from: 'INIT',
+                  to: 'TICKET',
+                  event: 'SESSION_BOUND',
+                  at: new Date().toISOString(),
+                },
+              ],
+            },
           }),
-          metadata: {},
-        },
+        ),
       );
-
-      const events = await getEvents();
-      const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
-      expect(lifecycle.some((e) => e.event.includes('session_created'))).toBe(true);
-      expect(lifecycle.some((e) => e.event.includes('session_completed'))).toBe(false);
+      const events = await readAuditTrail(sessDir);
+      expect(events.some((e) => e.event.includes('session_created'))).toBe(true);
+      expect(events.some((e) => e.event.includes('session_completed'))).toBe(false);
     });
 
-    it('abort produces session_aborted lifecycle event', async () => {
-      const transitions = [
-        {
-          from: 'TICKET',
-          to: 'COMPLETE',
-          event: 'SESSION_ABORTED',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await handler(
-        { tool: 'flowguard_abort_session', sessionID: sessionId },
-        {
-          title: 'abort',
-          output: makeToolOutput({
+    it('abort emits session_aborted, never session_completed', async () => {
+      await host.after(
+        completion(
+          'flowguard_abort_session',
+          output({
             phase: 'COMPLETE',
-            _audit: { transitions },
+            _audit: {
+              transitions: [
+                {
+                  from: 'TICKET',
+                  to: 'COMPLETE',
+                  event: 'SESSION_ABORTED',
+                  at: new Date().toISOString(),
+                },
+              ],
+            },
           }),
-          metadata: {},
-        },
+        ),
       );
-
-      const events = await getEvents();
-      const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
-      const aborted = lifecycle.find((e) => e.event.includes('session_aborted'));
-      expect(aborted).toBeDefined();
-      // Should NOT also emit session_completed (abort is in LIFECYCLE_TOOLS)
-      const completed = lifecycle.find((e) => e.event.includes('session_completed'));
-      expect(completed).toBeUndefined();
+      const events = await readAuditTrail(sessDir);
+      expect(events.some((e) => e.event.includes('session_aborted'))).toBe(true);
+      expect(events.some((e) => e.event.includes('session_completed'))).toBe(false);
     });
   });
 
-  // ─── PERF ──────────────────────────────────────────────────
-
   describe.skipIf(!PERF_ENABLED)('PERF', () => {
     it('1000 non-mutating non-FlowGuard tool calls stay on the near-instant path', async () => {
-      const callOnce = async (): Promise<number> => {
+      const callOnce = async () => {
         const start = performance.now();
-        for (let i = 0; i < 1000; i++) {
-          await handler(
-            { tool: 'read', sessionID: sessionId },
-            { title: 'read', output: '', metadata: {} },
-          );
-        }
+        for (let i = 0; i < 1000; i++) await host.after(completion('read', ''));
         return performance.now() - start;
       };
-
-      // Prefix-filtered hot path. Best-of-3 after a warm-up rejects sporadic
-      // shared-runner scheduler noise; a real regression (state I/O, artifact
-      // writes per call) is an order of magnitude over this budget.
       await callOnce();
-      const best = Math.min(await callOnce(), await callOnce(), await callOnce());
-      expect(best).toBeLessThan(150);
+      expect(Math.min(await callOnce(), await callOnce(), await callOnce())).toBeLessThan(150);
     });
 
     it('10 FlowGuard tool calls with persistence complete reasonably', async () => {
       const start = performance.now();
-      for (let i = 0; i < 10; i++) {
-        await handler(
-          { tool: 'flowguard_status', sessionID: sessionId },
-          {
-            title: 'status',
-            output: makeToolOutput({ phase: 'TICKET' }),
-            metadata: {},
-          },
-        );
-      }
-      const elapsed = performance.now() - start;
-      // 10 calls with real FS I/O — generous budget
-      expect(elapsed).toBeLessThan(5000);
+      for (let i = 0; i < 10; i++) await host.after(completion('flowguard_status', output()));
+      expect(performance.now() - start).toBeLessThan(5000);
     });
   });
 });

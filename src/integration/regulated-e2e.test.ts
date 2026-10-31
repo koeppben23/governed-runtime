@@ -16,7 +16,6 @@ import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
-  createBootableHostClient,
   parseToolResult,
   withStrictReviewFindings,
   GIT_MOCK_DEFAULTS,
@@ -44,6 +43,7 @@ import { verifyRegulatedArchive } from '../adapters/workspace/archive-verify-cha
 import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
+import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('./git-control-plane', async (importOriginal) => {
@@ -234,23 +234,22 @@ async function decideWithReviewer(
 
 /** Run the real plugin after-hook for a decision tool output. */
 async function runDecisionAfterHook(output: Record<string, unknown>): Promise<void> {
-  const hooks = await FlowGuardAuditPlugin({
-    project: {} as never,
-    client: createBootableHostClient({ app: { log: async () => {} } }) as never,
-    $: {} as never,
-    directory: ws.tmpDir,
-    worktree: ws.tmpDir,
-    serverUrl: new URL('http://localhost:3000'),
-    experimental_workspace: undefined as never,
-  });
-  const handler = hooks['tool.execute.after']! as (
-    input: { tool: string; sessionID: string },
-    output: { title: string; output: string; metadata: Record<string, unknown> },
-  ) => Promise<void>;
-  await handler(
-    { tool: 'flowguard_decision', sessionID: ctx.sessionID },
-    { title: 'decision', output: JSON.stringify(output), metadata: {} },
-  );
+  const host = createV2Host(ws.tmpDir);
+  const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
+  try {
+    await host.after({
+      ...v2ToolEvent({
+        tool: 'flowguard_decision',
+        sessionID: ctx.sessionID,
+        id: crypto.randomUUID(),
+        input: {},
+      }),
+      status: 'completed',
+      result: { content: JSON.stringify(output), metadata: {} },
+    });
+  } finally {
+    await dispose?.();
+  }
 }
 
 describe('regulated-e2e critical path', () => {

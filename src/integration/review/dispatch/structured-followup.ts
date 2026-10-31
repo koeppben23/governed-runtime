@@ -93,6 +93,12 @@ function serializationPrompt(input: Input): string {
 function responseFailure(input: Input, response: Response): Blocked | null {
   const data = replyRecord(response);
   const info = replyRecord(data.info);
+  if ('data' in data || 'error' in data) {
+    input.controller.quarantine(input.childSessionId);
+    throw new ReviewerCaptureOutcomeUnknownError(
+      'SDK response envelopes cannot attest a semantic reviewer completion.',
+    );
+  }
   const classified = classifyReviewerProviderError(info.error);
   if (classified) {
     // A terminal code is not proof that the host finished the exact request.

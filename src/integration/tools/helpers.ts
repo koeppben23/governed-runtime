@@ -30,22 +30,9 @@ const lockedSessionDir = new AsyncLocalStorage<string>();
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 /**
- * Tool definition shape expected by OpenCode.
- *
- * OpenCode accepts plain objects with { description, args, execute }.
- * The `tool()` helper from @opencode-ai/plugin is a passthrough (identity function)
- * that only provides TypeScript type safety — it adds no runtime behavior.
- *
- * By defining ToolDefinition ourselves and exporting plain objects, we eliminate
- * the runtime dependency on @opencode-ai/plugin. This is critical because:
- * - The thin wrappers in .opencode/ use relative imports back into src/
- * - .opencode/ resolves bare specifiers from .opencode/node_modules/
- * - src/ resolves bare specifiers from the project root node_modules/
- * - A freshly-cloned repo may not have root node_modules/ (no npm install yet)
- * - OpenCode's bun install only runs on .opencode/package.json, not the root
- *
- * The @opencode-ai/plugin docs explicitly support plain object exports:
- * "You can also import Zod directly and return a plain object"
+ * Host-neutral application context. Native OpenCode V2 registrations adapt
+ * signal/progress and resolve canonical worktree authority in plugin.ts;
+ * this application contract is not a native SDK ToolContext.
  */
 export interface ToolContext {
   sessionID: string;
@@ -68,11 +55,11 @@ export type WorkspaceToolContext = Pick<ToolContext, 'sessionID' | 'worktree' | 
 /**
  * Result type for FlowGuard tools.
  *
- * Matches the OpenCode SDK `ToolResult` union:
+ * Application result, adapted by the native root to Tool.Result.content:
  * - `string`: plain text result (current default for all FlowGuard tools)
  * - `{ output, metadata? }`: structured result with optional metadata
  *
- * @see https://opencode.ai/docs/custom-tools
+ * @see https://opencode.ai/v2/docs/build/plugins/server
  */
 export type ToolResult = string | { output: string; metadata?: Record<string, unknown> };
 

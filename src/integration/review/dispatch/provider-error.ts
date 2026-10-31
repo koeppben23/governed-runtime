@@ -1,4 +1,4 @@
-/** Classify ONLY SDK/host error channels. Reviewer output must never enter this function. */
+/** Classify ONLY native host/thrown error channels. Reviewer output is never authority. */
 import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
 
 function object(value: unknown): Record<string, unknown> {
@@ -7,9 +7,8 @@ function object(value: unknown): Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   const value = object(error);
-  const data = object(value.data);
-  const messages = [value.message, data.message];
-  const body = data.responseBody ?? value.responseBody;
+  const messages = [value.message];
+  const body = object(value.response).body;
   if (typeof body === 'string') {
     try {
       messages.push(object(object(JSON.parse(body)).error).message);

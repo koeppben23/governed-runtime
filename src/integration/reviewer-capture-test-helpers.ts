@@ -1,7 +1,16 @@
-/** Host-contract fixtures. These simulate hooks, not provider compatibility. */
+/** Canonical capture-validator fixtures, never evidence of installed V2 provenance. */
 import type { OrchestratorClient } from './review/types.js';
-import type { Hooks } from '@opencode-ai/plugin';
 import { ReviewerCaptureController } from './reviewer-capture.js';
+import { createWorkspace } from './plugin-workspace.js';
+import { createNoopLogger } from '../logging/logger.js';
+import type { NativeReviewTransportRuntime } from './review/dispatch/native-task-review-types.js';
+import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
+import { renderPlanClaimDeclarations } from '../presentation/plan-claim-declarations.js';
+
+export const REVIEW_TEST_PROOF_GRAPH_AUTHORITIES = {
+  evaluateProofGraphGate,
+  renderPlanClaimDeclarations,
+};
 
 export const CAPTURE_OBLIGATION = '44444444-4444-4444-8444-444444444444';
 export const CAPTURE_ATTEMPT = '55555555-5555-4555-8555-555555555555';
@@ -28,136 +37,97 @@ export function reviewerInputFixture() {
 }
 
 export function completedReviewMessages(child: string, model = CAPTURE_MODEL) {
+  return [
+    {
+      info: {
+        id: 'msg_native_request',
+        sessionID: child,
+        role: 'user',
+        agent: 'flowguard-reviewer',
+        model,
+      },
+    },
+    {
+      info: {
+        id: 'msg_native_answer',
+        parentID: 'msg_native_request',
+        sessionID: child,
+        role: 'assistant',
+        agent: 'flowguard-reviewer',
+        ...model,
+        finish: 'stop',
+      },
+      parts: [{ type: 'text', text: 'Final review answer.' }],
+    },
+  ];
+}
+
+/** Test the current canonical review contract directly, with real persistence.
+ * This is not a host adapter, a plugin factory or a V2 completion attestation. */
+export function createReviewRuntime(
+  root: string,
+  client: OrchestratorClient,
+  reviewerCapture = new ReviewerCaptureController(),
+): NativeReviewTransportRuntime {
+  const ws = createWorkspace({ auditWorktree: root });
+  const log = createNoopLogger();
   return {
-    data: [
-      {
-        info: {
-          id: 'msg_native_request',
-          sessionID: child,
-          role: 'user',
-          agent: 'flowguard-reviewer',
-          model,
-        },
-      },
-      {
-        info: {
-          id: 'msg_native_answer',
-          parentID: 'msg_native_request',
-          sessionID: child,
-          role: 'assistant',
-          agent: 'flowguard-reviewer',
-          ...model,
-          finish: 'stop',
-        },
-        parts: [{ type: 'text', text: 'Final review answer.' }],
-      },
-    ],
-  };
-}
-
-export function hostJsonReply(payload: unknown) {
-  return { data: { parts: [{ type: 'text', text: JSON.stringify(payload) }] } };
-}
-
-/** Run the actual product hooks around a mock SDK operation, as the host does. */
-export function wireReviewerHostFixture(
-  client: { session: Record<string, unknown> },
-  hooks: Hooks,
-): void {
-  const original = client.session.prompt;
-  if (typeof original !== 'function') throw new Error('Host fixture requires session.prompt.');
-  client.session.prompt = async (opts: Parameters<OrchestratorClient['session']['prompt']>[0]) => {
-    const { messageID, model, variant, agent } = opts.body;
-    if (!messageID || !model || !agent) throw new Error('Missing fixture request identity.');
-    const message = {
-      id: messageID,
-      sessionID: opts.path.id,
-      role: 'user',
-      agent,
-      time: { created: Date.now() },
-      model: { ...model, ...(variant === undefined ? {} : { variant }) },
-    };
-    const output = { message, parts: opts.body.parts };
-    await hooks['chat.message']?.({ sessionID: opts.path.id }, output as never);
-    await hooks['experimental.chat.messages.transform']?.({}, {
-      messages: [{ info: message, parts: opts.body.parts }],
-    } as never);
-    await hooks['chat.params']?.(
-      {
-        sessionID: opts.path.id,
-        agent,
-        message,
-        provider: {},
-        model: {
-          id: model.modelID,
-          providerID: model.providerID,
-          limit: { context: 1_000_000, output: 1_000_000 },
-        },
-      } as never,
-      { temperature: 0, topP: 1, topK: 1, maxOutputTokens: 8192, options: {} },
-    );
-    const response = (await original.call(client.session, opts)) as Awaited<
-      ReturnType<OrchestratorClient['session']['prompt']>
-    >;
-    if (!response.data) return response;
-    return {
-      ...response,
-      data: {
-        ...response.data,
-        info: {
-          id: `msg_response_${messageID}`,
-          parentID: messageID,
-          sessionID: opts.path.id,
-          role: 'assistant',
-          agent,
-          providerID: model.providerID,
-          modelID: model.modelID,
-          ...(variant === undefined ? {} : { variant }),
-          finish: 'stop',
-          time: { completed: Date.now() },
-          ...response.data.info,
-        },
-      },
-    };
+    ws,
+    log,
+    logError: (message, error) => log.error('review-test', message, { error }),
+    reviewerOutputCapFailures: new Map(),
+    reviewerExecutionFailures: new Map(),
+    orchestratorDeps: {
+      client,
+      reviewerCapture,
+      log,
+      resolveSessionAuthority: (id) => ws.resolveSessionAuthority(id),
+      updateReviewAssurance: ws.updateReviewAssurance,
+      blockReviewOutcome: ws.blockReviewOutcome,
+      getEnforcementState: ws.getEnforcementState,
+    },
   };
 }
 
 export function observedPrompt(
   controller: ReviewerCaptureController,
-  opts: Parameters<OrchestratorClient['session']['prompt']>[0],
+  opts: Parameters<OrchestratorClient['executeReviewerPrompt']>[0],
   text: string,
 ) {
-  const { messageID, model: selected, agent, variant } = opts.body;
-  if (!messageID || !selected || !agent)
+  const { requestId, sessionId, model: selected, agent } = opts;
+  if (!requestId || !selected || !agent)
     throw new Error('Host fixture requires explicit request identity.');
-  const model = { ...selected, ...(variant === undefined ? {} : { variant }) };
-  const user = { id: messageID, sessionID: opts.path.id, role: 'user', agent, model };
-  controller.onMessage({ sessionID: opts.path.id }, { message: user, parts: opts.body.parts });
-  controller.onMessages({ messages: [{ info: user, parts: opts.body.parts }] });
+  const model = {
+    providerID: selected.providerID,
+    modelID: selected.modelID,
+    ...(selected.variant === null ? {} : { variant: selected.variant }),
+  };
+  const parts = [{ type: 'text', text: opts.text }];
+  const user = { id: requestId, sessionID: sessionId, role: 'user', agent, model };
+  controller.onMessage({ sessionID: sessionId }, { message: user, parts });
+  controller.onMessages({ messages: [{ info: user, parts }] });
   controller.onParams(
     {
-      sessionID: opts.path.id,
-      agent: opts.body.agent,
+      sessionID: sessionId,
+      agent,
       message: user,
       model: { providerID: model.providerID, id: model.modelID },
     },
     { options: {} },
   );
   return {
-    data: {
-      info: {
-        id: `msg_response_${messageID}`,
-        parentID: messageID,
-        sessionID: opts.path.id,
-        role: 'assistant',
-        agent,
-        providerID: model.providerID,
-        modelID: model.modelID,
-        ...(variant === undefined ? {} : { variant }),
-        finish: 'stop',
-        time: { completed: Date.now() },
-      },
-      parts: [{ type: 'text', text }],
+    info: {
+      id: `msg_response_${requestId}`,
+      parentID: requestId,
+      sessionID: sessionId,
+      role: 'assistant',
+      agent,
+      providerID: model.providerID,
+      modelID: model.modelID,
+      ...(selected.variant === null ? {} : { variant: selected.variant }),
+      finish: 'stop',
+      time: { completed: Date.now() },
     },
+    parts: [{ type: 'text', text }],
   };
 }

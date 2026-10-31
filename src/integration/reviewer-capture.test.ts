@@ -7,6 +7,7 @@ import {
   textOf,
 } from './reviewer-capture.js';
 import type { OrchestratorClient } from './review/types.js';
+import { createReviewClient } from './opencode-v2-test-helpers.js';
 import {
   CAPTURE_MODEL,
   CAPTURE_ATTEMPT,
@@ -22,16 +23,13 @@ function fixture() {
     obligationId: CAPTURE_OBLIGATION,
   });
   const text = 'serialize';
-  const messageID = controller.request('child', text);
+  const requestId = controller.request('child', text);
   const opts = {
-    path: { id: 'child' },
-    body: {
-      messageID,
-      model: CAPTURE_MODEL,
-      variant: CAPTURE_MODEL.variant,
-      agent: 'flowguard-reviewer',
-      parts: [{ type: 'text', text }],
-    },
+    sessionId: 'child',
+    requestId,
+    model: CAPTURE_MODEL,
+    agent: 'flowguard-reviewer',
+    text,
   };
   const payload = JSON.stringify(reviewerInputFixture());
   return { controller, opts, payload, lease };
@@ -39,13 +37,13 @@ function fixture() {
 
 function requestContext(h: ReturnType<typeof fixture>) {
   const message: Record<string, unknown> = {
-    id: h.opts.body.messageID,
+    id: h.opts.requestId,
     sessionID: 'child',
     role: 'user',
     agent: 'flowguard-reviewer',
     model: { ...CAPTURE_MODEL },
   };
-  return { message, parts: h.opts.body.parts };
+  return { message, parts: [{ type: 'text', text: h.opts.text }] };
 }
 
 describe('capture hook identity and execution boundaries', () => {
@@ -149,7 +147,7 @@ describe('capture hook identity and execution boundaries', () => {
         h.controller.onMessages({ messages: [{ info: output.message, parts: output.parts }] });
       const info = {
         id: 'msg_plausible',
-        parentID: h.opts.body.messageID,
+        parentID: h.opts.requestId,
         sessionID: 'child',
         role: 'assistant',
         agent: 'flowguard-reviewer',
@@ -171,12 +169,12 @@ describe('capture hook identity and execution boundaries', () => {
     'never accepts an invalid final response: %s',
     (mismatch) => {
       const h = fixture();
-      const response = observedPrompt(h.controller, h.opts, h.payload).data;
+      const response = observedPrompt(h.controller, h.opts, h.payload);
       const info = { ...response.info } as Record<string, unknown>;
       if (mismatch === 'role') info.role = 'user';
       if (mismatch === 'length') info.finish = 'length';
       if (mismatch === 'error') info.error = { name: 'MessageAbortedError' };
-      if (mismatch === 'id-equals-request') info.id = h.opts.body.messageID;
+      if (mismatch === 'id-equals-request') info.id = h.opts.requestId;
       if (mismatch === 'time') info.time = {};
       expect(() => h.controller.verify('child', { ...response, info }, h.payload)).toThrow();
     },
@@ -271,8 +269,8 @@ describe('synchronous reviewer capture fence', () => {
   it('binds exact request, child, model and raw payload', () => {
     const { controller, opts, payload } = fixture();
     const result = observedPrompt(controller, opts, payload);
-    expect(controller.verify('child', result.data, payload)).toMatchObject({
-      requestMessageId: opts.body.messageID,
+    expect(controller.verify('child', result, payload)).toMatchObject({
+      requestMessageId: opts.requestId,
       childSessionId: 'child',
       model: CAPTURE_MODEL,
       obligationId: CAPTURE_OBLIGATION,
@@ -284,8 +282,8 @@ describe('synchronous reviewer capture fence', () => {
     (field) => {
       const { controller, opts, payload } = fixture();
       const result = observedPrompt(controller, opts, payload);
-      const info = { ...result.data.info, [field]: 'wrong' };
-      expect(() => controller.verify('child', { ...result.data, info }, payload)).toThrow(
+      const info = { ...result.info, [field]: 'wrong' };
+      expect(() => controller.verify('child', { ...result, info }, payload)).toThrow(
         field === 'agent' ? ReviewerCaptureError : ReviewerCaptureOutcomeUnknownError,
       );
     },
@@ -296,7 +294,7 @@ describe('synchronous reviewer capture fence', () => {
       const { controller, opts, payload } = fixture();
       const result = observedPrompt(controller, opts, payload);
       expect(() => controller.beforeTool({ sessionID: 'child', tool })).toThrow();
-      expect(() => controller.verify('child', result.data, payload)).toThrow();
+      expect(() => controller.verify('child', result, payload)).toThrow();
       expect(controller.isSafe('child')).toBe(false);
     },
   );
@@ -307,8 +305,8 @@ describe('synchronous reviewer capture fence', () => {
       controller.verify(
         'child',
         {
-          ...result.data,
-          parts: [{ type: 'tool', metadata: { providerExecuted: true } }, ...result.data.parts],
+          ...result,
+          parts: [{ type: 'tool', metadata: { providerExecuted: true } }, ...result.parts],
         },
         payload,
       ),
@@ -319,7 +317,7 @@ describe('synchronous reviewer capture fence', () => {
     observedPrompt(controller, opts, payload);
     expect(() =>
       controller.onMessages({
-        messages: [{ info: { sessionID: 'child', id: opts.body.messageID } }],
+        messages: [{ info: { sessionID: 'child', id: opts.requestId } }],
       }),
     ).toThrow();
   });
@@ -371,30 +369,30 @@ describe('synchronous reviewer capture fence', () => {
   });
 });
 
-type HostHistoryEntry = NonNullable<
-  Awaited<ReturnType<NonNullable<OrchestratorClient['session']['messages']>>>['data']
->[number];
+// Canonical capture-proof fixtures only; native V2 history is never synthesized
+// into this contract by the production adapter.
+type HostHistoryEntry = { info: Record<string, unknown>; parts?: Array<Record<string, unknown>> };
 
 function quarantineHarness() {
   const h = fixture();
   const response = observedPrompt(h.controller, h.opts, h.payload);
-  const history: Array<HostHistoryEntry & { info: NonNullable<HostHistoryEntry['info']> }> = [
+  const history: HostHistoryEntry[] = [
     {
-      info: { id: h.opts.body.messageID, sessionID: 'child', role: 'user', model: CAPTURE_MODEL },
-      parts: h.opts.body.parts,
+      info: { id: h.opts.requestId, sessionID: 'child', role: 'user', model: CAPTURE_MODEL },
+      parts: [{ type: 'text', text: h.opts.text }],
     },
-    response.data,
+    response,
   ];
-  const client: OrchestratorClient = {
-    app: { agents: async () => ({ data: [] }) },
-    session: {
-      prompt: vi.fn(),
-      get: vi.fn(async () => ({ data: { id: 'child', parentID: 'parent' } })),
-      abort: vi.fn(async () => ({ data: true })),
-      status: vi.fn(async () => ({ data: {} })),
-      messages: vi.fn(async () => ({ data: history })),
-    },
-  };
+  const client = createReviewClient({
+    getSession: vi.fn(async () => ({
+      sessionId: 'child',
+      parentSessionId: 'parent',
+      directory: '/worktree',
+    })),
+    interrupt: vi.fn(async () => true),
+    quiescence: vi.fn(async () => 'idle' as const),
+    readHistory: vi.fn(async () => history),
+  });
   h.controller.quarantine('child');
   return { ...h, client, history };
 }
@@ -407,9 +405,9 @@ describe('identity-bound quarantine reconciliation', () => {
     controller.release('child', lease);
     expect(controller.isQuarantined('child')).toBe(true);
     expect(await controller.reconcileQuarantine(client, 'child')).toBe(true);
-    expect(client.session.get).toHaveBeenCalledWith({ path: { id: 'child' } });
-    expect(client.session.abort).toHaveBeenCalledWith({ path: { id: 'child' } });
-    expect(client.session.messages).toHaveBeenCalledTimes(2);
+    expect(client.getSession).toHaveBeenCalledWith('child');
+    expect(client.interrupt).toHaveBeenCalledWith('child');
+    expect(client.readHistory).toHaveBeenCalledTimes(2);
     const nextLease = controller.begin('child', CAPTURE_MODEL, {
       attemptId: CAPTURE_ATTEMPT,
       obligationId: CAPTURE_OBLIGATION,
@@ -436,20 +434,18 @@ describe('identity-bound quarantine reconciliation', () => {
           },
         });
       if (mismatch === 'prior-running' || mismatch === 'prior-pending') {
-        client.session.messages = vi.fn(async () => ({
-          data: [
-            {
-              info: { sessionID: 'child', id: 'msg_previous', role: 'assistant' },
-              parts: [
-                {
-                  type: 'tool',
-                  state: { status: mismatch === 'prior-running' ? 'running' : 'pending' },
-                },
-              ],
-            },
-            ...history,
-          ],
-        }));
+        client.readHistory = vi.fn(async () => [
+          {
+            info: { sessionID: 'child', id: 'msg_previous', role: 'assistant' },
+            parts: [
+              {
+                type: 'tool',
+                state: { status: mismatch === 'prior-running' ? 'running' : 'pending' },
+              },
+            ],
+          },
+          ...history,
+        ]);
       }
       expect(await controller.reconcileQuarantine(client, 'child')).toBe(false);
       expect(controller.isQuarantined('child')).toBe(true);
@@ -464,49 +460,44 @@ describe('identity-bound quarantine reconciliation', () => {
     'aborted-assistant',
   ])('accepts positively confirmed %s without manufacturing a successful review', async (valid) => {
     const { controller, client, history } = quarantineHarness();
-    if (valid === 'explicit-idle')
-      client.session.status = vi.fn(async () => ({ data: { child: { type: 'idle' } } }));
+    if (valid === 'explicit-idle') client.quiescence = vi.fn(async () => 'idle' as const);
     if (valid === 'aborted-assistant')
       Object.assign(history[1]!.info, {
         finish: undefined,
         error: { name: 'MessageAbortedError', data: { message: 'Stopped' } },
       });
     if (valid.includes('tool') || valid === 'non-tool-status')
-      client.session.messages = vi.fn(async () => ({
-        data: [
-          {
-            info: { id: 'msg_previous', sessionID: 'child', role: 'assistant' },
-            parts: [
-              {
-                type: valid === 'non-tool-status' ? 'text' : 'tool',
-                state: {
-                  status:
-                    valid === 'completed-tool'
-                      ? 'completed'
-                      : valid === 'error-tool'
-                        ? 'error'
-                        : 'pending',
-                },
+      client.readHistory = vi.fn(async () => [
+        {
+          info: { id: 'msg_previous', sessionID: 'child', role: 'assistant' },
+          parts: [
+            {
+              type: valid === 'non-tool-status' ? 'text' : 'tool',
+              state: {
+                status:
+                  valid === 'completed-tool'
+                    ? 'completed'
+                    : valid === 'error-tool'
+                      ? 'error'
+                      : 'pending',
               },
-            ],
-          },
-          ...history,
-        ],
-      }));
+            },
+          ],
+        },
+        ...history,
+      ]);
     expect(await controller.reconcileQuarantine(client, 'child')).toBe(true);
     expect(controller.isSafe('child')).toBe(false);
   });
 
-  it.each(['get', 'abort', 'status', 'messages'] as const)(
-    'does not send a control request without the %s verification capability',
+  it.each(['getSession', 'interrupt', 'quiescence', 'readHistory'] as const)(
+    'retains quarantine when the semantic %s operation fails',
     async (capability) => {
       const { controller, client } = quarantineHarness();
-      const metadata = client.session.get;
-      const abort = client.session.abort;
-      delete client.session[capability];
+      vi.mocked(client[capability]).mockRejectedValueOnce(new Error('host operation unavailable'));
       expect(await controller.reconcileQuarantine(client, 'child')).toBe(false);
-      expect(metadata).not.toHaveBeenCalled();
-      expect(abort).not.toHaveBeenCalled();
+      expect(controller.isQuarantined('child')).toBe(true);
+      if (capability === 'getSession') expect(client.interrupt).not.toHaveBeenCalled();
     },
   );
 
@@ -515,17 +506,11 @@ describe('identity-bound quarantine reconciliation', () => {
     async (failure) => {
       const { controller, client } = quarantineHarness();
       if (failure === 'metadata-error')
-        client.session.get = vi.fn(async () => ({
-          data: { id: 'child' },
-          error: 'ambiguous metadata',
-        }));
+        client.getSession = vi.fn().mockRejectedValue(new Error('ambiguous metadata'));
       if (failure === 'status-error')
-        client.session.status = vi.fn(async () => ({ data: {}, error: 'unavailable status' }));
-      if (failure === 'missing-status') client.session.status = vi.fn(async () => ({}));
-      if (failure === 'array-status')
-        client.session.status = vi.fn(async () => ({
-          data: [] as unknown as Record<string, { type: string }>,
-        }));
+        client.quiescence = vi.fn().mockRejectedValue(new Error('unavailable status'));
+      if (failure === 'missing-status') client.quiescence = vi.fn().mockResolvedValue(undefined);
+      if (failure === 'array-status') client.quiescence = vi.fn().mockResolvedValue([]);
       expect(await controller.reconcileQuarantine(client, 'child')).toBe(false);
       expect(controller.isQuarantined('child')).toBe(true);
     },
@@ -533,11 +518,11 @@ describe('identity-bound quarantine reconciliation', () => {
 
   it.each([
     'busy',
-    'retry',
+    'unknown',
     'abort-refused',
     'abort-error',
     'metadata',
-    'missing-capability',
+    'old-status-envelope',
     'history-error',
     'wrong-session',
     'wrong-request',
@@ -551,45 +536,45 @@ describe('identity-bound quarantine reconciliation', () => {
     'retains quarantine for %s even when an idle event or owner release is available',
     async (scenario) => {
       const { controller, client, lease, history } = quarantineHarness();
-      if (scenario === 'busy' || scenario === 'retry')
-        client.session.status = vi.fn(async () => ({ data: { child: { type: scenario } } }));
-      if (scenario === 'abort-refused') client.session.abort = vi.fn(async () => ({ data: false }));
+      if (scenario === 'busy' || scenario === 'unknown')
+        client.quiescence = vi.fn(async () => scenario);
+      if (scenario === 'abort-refused') client.interrupt = vi.fn(async () => false);
       if (scenario === 'abort-error')
-        client.session.abort = vi.fn(async () => ({ data: true, error: 'unknown' }));
+        client.interrupt = vi.fn().mockRejectedValue(new Error('unknown'));
       if (scenario === 'metadata')
-        client.session.get = vi.fn(async () => ({ data: { id: 'another-child' } }));
-      if (scenario === 'missing-capability') delete client.session.status;
+        client.getSession = vi.fn(async () => ({
+          sessionId: 'another-child',
+          directory: '/worktree',
+        }));
+      if (scenario === 'old-status-envelope')
+        client.quiescence = vi.fn().mockResolvedValue({ data: {} });
       if (scenario === 'history-error')
-        client.session.messages = vi.fn(async () => ({ data: history, error: 'unreadable' }));
+        client.readHistory = vi.fn().mockRejectedValue(new Error('unreadable'));
       if (scenario === 'wrong-session') history[1]!.info.sessionID = 'another-child';
       if (scenario === 'wrong-request') Object.assign(history[1]!.info, { parentID: 'msg_other' });
       if (scenario === 'missing-request') history.splice(0, 1);
       if (scenario === 'running-tool' || scenario === 'pending-tool') {
-        client.session.messages = vi.fn(async () => ({
-          data: [
-            ...history,
-            {
-              info: { sessionID: 'child', role: 'assistant' },
-              parts: [
-                {
-                  type: 'tool',
-                  state: { status: scenario === 'running-tool' ? 'running' : 'pending' },
-                },
-              ],
-            },
-          ],
-        }));
+        client.readHistory = vi.fn(async () => [
+          ...history,
+          {
+            info: { sessionID: 'child', role: 'assistant' },
+            parts: [
+              {
+                type: 'tool',
+                state: { status: scenario === 'running-tool' ? 'running' : 'pending' },
+              },
+            ],
+          },
+        ]);
       }
       if (scenario === 'unfinished')
         Object.assign(history[1]!.info, { time: {}, finish: 'tool-calls' });
       if (scenario === 'changing-history')
-        vi.mocked(client.session.messages!)
-          .mockImplementationOnce(async () => ({ data: history }))
-          .mockImplementationOnce(async () => ({
-            data: history.map((entry) => ({ ...entry, parts: [] })),
-          }));
+        vi.mocked(client.readHistory)
+          .mockImplementationOnce(async () => history)
+          .mockImplementationOnce(async () => history.map((entry) => ({ ...entry, parts: [] })));
       if (scenario === 'throw')
-        client.session.status = vi.fn(async () => {
+        client.quiescence = vi.fn(async () => {
           throw new Error('host unavailable');
         });
       expect(await controller.reconcileQuarantine(client, 'child')).toBe(false);
@@ -602,10 +587,11 @@ describe('identity-bound quarantine reconciliation', () => {
   it('can retry after a bounded hanging observation, but time alone never unlocks', async () => {
     vi.useFakeTimers();
     const { controller, client, history } = quarantineHarness();
-    let resolveOld: ((value: { data: { id: string } }) => void) | undefined;
-    client.session.get = vi.fn(
+    let resolveOld:
+      ((value: Awaited<ReturnType<OrchestratorClient['getSession']>>) => void) | undefined;
+    client.getSession = vi.fn(
       () =>
-        new Promise<{ data: { id: string } }>((resolve) => {
+        new Promise<Awaited<ReturnType<OrchestratorClient['getSession']>>>((resolve) => {
           resolveOld = resolve;
         }),
     );
@@ -613,15 +599,15 @@ describe('identity-bound quarantine reconciliation', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(await oldProbe).toBe(false);
     expect(controller.isQuarantined('child')).toBe(true);
-    client.session.get = vi.fn(async () => ({ data: { id: 'child' } }));
+    client.getSession = vi.fn(async () => ({ sessionId: 'child', directory: '/worktree' }));
     expect(await controller.reconcileQuarantine(client, 'child')).toBe(true);
     controller.begin('child', CAPTURE_MODEL, {
       attemptId: CAPTURE_ATTEMPT,
       obligationId: CAPTURE_OBLIGATION,
     });
-    resolveOld?.({ data: { id: 'child' } });
+    resolveOld?.({ sessionId: 'child', directory: '/worktree' });
     await vi.advanceTimersByTimeAsync(0);
-    expect(client.session.abort).toHaveBeenCalledTimes(1);
+    expect(client.interrupt).toHaveBeenCalledTimes(1);
     expect(controller.isSafe('child')).toBe(true);
     expect(history).toHaveLength(2);
   });
@@ -634,35 +620,35 @@ describe('identity-bound quarantine reconciliation', () => {
       obligationId: CAPTURE_OBLIGATION,
     });
     expect(await controller.reconcileQuarantine(client, 'normal-child')).toBe(false);
-    expect(client.session.abort).not.toHaveBeenCalled();
+    expect(client.interrupt).not.toHaveBeenCalled();
   });
 
   it('bounds idle-triggered probes and can reconcile on a later exact terminal message', async () => {
     const { controller, client, history } = quarantineHarness();
-    client.session.status = vi.fn(async () => ({ data: { child: { type: 'busy' } } }));
+    client.quiescence = vi.fn(async () => 'busy' as const);
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
     // Bound reached: further idle events no longer abort the still-busy child.
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
-    expect(client.session.abort).toHaveBeenCalledTimes(3);
+    expect(client.interrupt).toHaveBeenCalledTimes(3);
     const terminal = history[1]!.info;
     expect(
       await controller.reconcileOnTerminalMessage(client, { ...terminal, parentID: 'msg_other' }),
     ).toBe(false);
-    client.session.status = vi.fn(async () => ({ data: {} }));
+    client.quiescence = vi.fn(async () => 'idle' as const);
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(true);
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
-    expect(client.session.abort).toHaveBeenCalledTimes(4);
+    expect(client.interrupt).toHaveBeenCalledTimes(4);
     expect(controller.isQuarantined('child')).toBe(false);
   });
 
   it('retries a transiently failed idle observation on the next host event', async () => {
     const { controller, client } = quarantineHarness();
-    client.session.get = vi
+    client.getSession = vi
       .fn()
       .mockRejectedValueOnce(new Error('host status unavailable'))
-      .mockResolvedValue({ data: { id: 'child', parentID: 'parent' } });
+      .mockResolvedValue({ sessionId: 'child', parentSessionId: 'parent', directory: '/worktree' });
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(false);
     expect(controller.isQuarantined('child')).toBe(true);
     expect(await controller.reconcileOnIdle(client, 'child')).toBe(true);
@@ -671,10 +657,10 @@ describe('identity-bound quarantine reconciliation', () => {
 
   it('retries the same terminal message after a transiently failed observation', async () => {
     const { controller, client, history } = quarantineHarness();
-    client.session.get = vi
+    client.getSession = vi
       .fn()
       .mockRejectedValueOnce(new Error('host status unavailable'))
-      .mockResolvedValue({ data: { id: 'child', parentID: 'parent' } });
+      .mockResolvedValue({ sessionId: 'child', parentSessionId: 'parent', directory: '/worktree' });
     const terminal = history[1]!.info;
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
     expect(controller.isQuarantined('child')).toBe(true);
@@ -684,13 +670,13 @@ describe('identity-bound quarantine reconciliation', () => {
 
   it('deduplicates the same terminal event while retaining a still-busy quarantine', async () => {
     const { controller, client, history } = quarantineHarness();
-    client.session.status = vi.fn(async () => ({ data: { child: { type: 'busy' } } }));
+    client.quiescence = vi.fn(async () => 'busy' as const);
     const terminal = history[1]!.info;
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
     expect(await controller.reconcileOnTerminalMessage(client, terminal)).toBe(false);
-    expect(client.session.abort).toHaveBeenCalledTimes(3);
+    expect(client.interrupt).toHaveBeenCalledTimes(3);
     expect(controller.isQuarantined('child')).toBe(true);
   });
 
@@ -700,7 +686,7 @@ describe('identity-bound quarantine reconciliation', () => {
       const h = fixture();
       const response = observedPrompt(h.controller, h.opts, h.payload);
       const info: Record<string, unknown> = {
-        ...response.data.info,
+        ...response.info,
         finish: 'error',
         error: { name: 'APIError' },
       };
@@ -719,7 +705,7 @@ describe('identity-bound quarantine reconciliation', () => {
     const h = fixture();
     const response = observedPrompt(h.controller, h.opts, h.payload);
     h.controller.settleClassifiedFailure('child', {
-      info: { ...response.data.info, finish: 'error', error: { name: 'APIError' } },
+      info: { ...response.info, finish: 'error', error: { type: 'provider', message: 'failed' } },
     });
     expect(h.controller.isQuarantined('child')).toBe(false);
     h.controller.release('child', h.lease);

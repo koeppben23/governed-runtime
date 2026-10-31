@@ -1,7 +1,7 @@
 /**
  * SDK Type Baseline Snapshot Tool.
  *
- * Compares the installed @opencode-ai/plugin type definitions against
+ * Compares the pinned native @opencode/plugin + @opencode/client contracts against
  * committed baseline files. Fails with exit 1 if any drift is detected.
  *
  * Usage:
@@ -21,8 +21,8 @@
  *   .sdk-baselines/governance/     — HAI governance surface schemas
  *
  * Source files (opencode):
- *   node_modules/@opencode-ai/plugin/dist/index.d.ts
- *   node_modules/@opencode-ai/plugin/dist/tool.d.ts
+ *   node_modules/@opencode/plugin/dist/promise/*.d.ts
+ *   node_modules/@opencode/client/dist/promise/generated/types.d.ts
  */
 
 import fs from 'node:fs';
@@ -33,55 +33,53 @@ import { createHash } from 'node:crypto';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
 
+export class SdkContractError extends Error {
+  code = 'SDK_CONTRACT_INVALID';
+}
+
 // ── Platform Definitions ─────────────────────────────────────────────────────
 
-const PLATFORMS = {
+const nativePluginFile = (name) => ({
+  source: path.join(root, 'node_modules', '@opencode', 'plugin', 'dist', 'promise', `${name}.d.ts`),
+  baseline: path.join(root, '.sdk-baselines', 'opencode', `plugin-${name}.d.ts`),
+  label: `@opencode/plugin/dist/promise/${name}.d.ts`,
+});
+const clientTypes = path.join(
+  root,
+  'node_modules',
+  '@opencode',
+  'client',
+  'dist',
+  'promise',
+  'generated',
+  'types.d.ts',
+);
+
+export const PLATFORMS = {
   opencode: {
     files: [
+      ...['index', 'plugin', 'tool', 'session', 'event', 'registration'].map(nativePluginFile),
       {
-        source: path.join(root, 'node_modules', '@opencode-ai', 'plugin', 'dist', 'index.d.ts'),
-        baseline: path.join(root, '.sdk-baselines', 'opencode', 'plugin-index.d.ts'),
-        label: 'plugin/dist/index.d.ts',
-      },
-      {
-        source: path.join(root, 'node_modules', '@opencode-ai', 'plugin', 'dist', 'tool.d.ts'),
-        baseline: path.join(root, '.sdk-baselines', 'opencode', 'plugin-tool.d.ts'),
-        label: 'plugin/dist/tool.d.ts',
-      },
-      {
-        // The plugin hook surface imports `Event` transitively from
-        // @opencode-ai/sdk, so the plugin snapshot alone cannot detect an
-        // event rename or payload-shape change. Snapshot the derived event
-        // contract instead of the whole (76 KB) generated SDK file.
-        source: path.join(
-          root,
-          'node_modules',
-          '@opencode-ai',
-          'sdk',
-          'dist',
-          'gen',
-          'types.gen.d.ts',
-        ),
-        baseline: path.join(root, '.sdk-baselines', 'opencode', 'plugin-event-contract.d.ts'),
-        label: 'sdk/gen/types.gen.d.ts#Event',
+        source: clientTypes,
+        baseline: path.join(root, '.sdk-baselines', 'opencode', 'client-event-contract.d.ts'),
+        label: '@opencode/client#EventSubscribeOutput/V2Event',
         derive: deriveEventContract,
       },
       {
-        source: path.join(
-          root,
-          'node_modules',
-          '@opencode-ai',
-          'sdk',
-          'dist',
-          'gen',
-          'types.gen.d.ts',
-        ),
-        baseline: path.join(root, '.sdk-baselines', 'opencode', 'plugin-tool-part-contract.d.ts'),
-        label: 'sdk/gen/types.gen.d.ts#ToolPart',
-        derive: deriveToolPartContract,
+        source: clientTypes,
+        baseline: path.join(root, '.sdk-baselines', 'opencode', 'client-message-contract.d.ts'),
+        label: '@opencode/client#SessionMessageInfo/ToolContent',
+        derive: deriveMessageContract,
+      },
+      {
+        source: path.join(root, 'node_modules', '@opencode', 'schema', 'dist', 'tool.d.ts'),
+        baseline: path.join(root, '.sdk-baselines', 'opencode', 'schema-tool.d.ts'),
+        label: '@opencode/schema/dist/tool.d.ts',
       },
     ],
-    versionSource: path.join(root, 'node_modules', '@opencode-ai', 'plugin', 'package.json'),
+    versionSources: ['plugin', 'client'].map((name) =>
+      path.join(root, 'node_modules', '@opencode', name, 'package.json'),
+    ),
     versionFile: path.join(root, '.sdk-baselines', 'opencode', 'version.json'),
   },
   'claude-code': {
@@ -126,14 +124,14 @@ function sha256(content) {
 export { sha256 };
 
 /**
- * Extract the `Event` union plus its member declarations from the generated
+ * Extract the native event union plus its member declarations from the generated
  * OpenCode SDK types. The result is a compact, reviewable contract snapshot:
  * referenced helper types stay in the SDK file and are not duplicated.
  */
 function deriveEventContract(content) {
-  const unionMatch = content.match(/^export type Event = ([\s\S]*?);$/m);
+  const unionMatch = content.match(/^export type V2Event = ([^\n]+);$/m);
   if (!unionMatch) {
-    throw new Error('deriveEventContract: Event union not found in SDK types');
+    throw new SdkContractError('deriveEventContract: V2Event union not found in client types');
   }
   const members = unionMatch[1]
     .split('|')
@@ -141,48 +139,51 @@ function deriveEventContract(content) {
     .filter(Boolean);
 
   const declarations = members.map((member) => {
-    const declaration = content.match(
-      new RegExp(`^export type ${member} = \\{[\\s\\S]*?^\\};$`, 'm'),
-    );
-    if (!declaration) {
-      throw new Error(`deriveEventContract: declaration for ${member} not found`);
-    }
-    return declaration[0];
+    return declaration(content, member);
   });
 
   return [
-    '// Derived OpenCode event contract (Event union + member payloads).',
-    '// Source: node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts',
+    '// Native OpenCode V2 event contract; SDK declarations are not installed-host proof.',
+    '// Source: @opencode/client/dist/promise/generated/types.d.ts',
     '// Generated by scripts/sdk-type-snapshot.mjs --update. Do not edit manually.',
-    '// Referenced helper types (Session, error unions, ...) remain in the SDK file.',
+    '// Referenced helper types remain in the client; structured errors are pinned here.',
     '',
     unionMatch[0],
+    declaration(content, 'EventSubscribeOutput'),
+    declaration(content, 'SessionStructuredError'),
     '',
     declarations.join('\n\n'),
   ].join('\n');
 }
 export { deriveEventContract };
 
-/** Pin the nested lifecycle shapes consumed by mutation reconciliation, not only Event's Part reference. */
-export function deriveToolPartContract(content) {
+function declaration(content, name) {
+  const match = content.match(
+    new RegExp(`^export type ${name} = (?:\\{[\\s\\S]*?^\\};|[^\\n]+;)`, 'm'),
+  );
+  if (!match) throw new SdkContractError(`Native declaration for ${name} not found`);
+  return match[0];
+}
+
+/** Pin native raw history and tool states without synthesizing old message/part identities. */
+export function deriveMessageContract(content) {
   const names = [
-    'ToolPart',
-    'ToolState',
-    'ToolStatePending',
-    'ToolStateRunning',
-    'ToolStateCompleted',
-    'ToolStateError',
+    'SessionMessageInfo',
+    'SessionMessageAssistant',
+    'SessionMessageAssistantTool',
+    'SessionMessageToolStateStreaming',
+    'SessionMessageToolStateRunning',
+    'SessionMessageToolStateCompleted',
+    'SessionMessageToolStateError',
+    'ToolContent',
+    'ToolTextContent',
+    'ToolFileContent',
+    'SessionStructuredError',
   ];
-  const declarations = names.map((name) => {
-    const match = content.match(
-      new RegExp(`^export type ${name} = (?:\\{[\\s\\S]*?^\\};|[^\\n]+;)`, 'm'),
-    );
-    if (!match) throw new Error(`deriveToolPartContract: declaration for ${name} not found`);
-    return match[0];
-  });
+  const declarations = names.map((name) => declaration(content, name));
   return [
     '// Generated by scripts/sdk-type-snapshot.mjs --update. Do not edit manually.',
-    '// OpenCode ToolPart lifecycle contract; FilePart remains in the SDK file.',
+    '// Native V2 history contract, not release/capture or regular termination proof.',
     '',
     ...declarations,
   ].join('\n\n');
@@ -280,19 +281,11 @@ function run() {
     }
 
     // Write version metadata
-    let version = 'unknown';
-    if (config.versionSource) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(config.versionSource, 'utf-8'));
-        version = pkg.version;
-      } catch {
-        /* best-effort */
-      }
-    }
+    const packages = readNativeVersions(config);
     const meta = {
       platform,
       updated: new Date().toISOString(),
-      version,
+      packages,
       files: FILES.map((f) => ({
         label: f.label,
         hash: sha256(normalize(readConfiguredSource(f))),
@@ -300,12 +293,31 @@ function run() {
     };
     fs.mkdirSync(path.dirname(config.versionFile), { recursive: true });
     fs.writeFileSync(config.versionFile, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
-    console.log(`Baseline updated for platform "${platform}" @ ${version}`);
+    console.log(`Baseline updated for platform "${platform}" (${JSON.stringify(packages)})`);
     process.exit(0);
   }
 
   // ── Check mode ─────────────────────────────────────────────────────────────
   let drifted = false;
+  const packages = readNativeVersions(config);
+  const metadata = JSON.parse(fs.readFileSync(config.versionFile, 'utf-8'));
+  if (JSON.stringify(metadata.packages) !== JSON.stringify(packages)) {
+    console.error('DRIFT DETECTED: native package version metadata');
+    drifted = true;
+  }
+  const expectedFiles = FILES.map((file) => ({
+    label: file.label,
+    hash: sha256(normalize(readConfiguredSource(file))),
+  }));
+  if (JSON.stringify(metadata.files) !== JSON.stringify(expectedFiles)) {
+    console.error('DRIFT DETECTED: declaration inventory or metadata hashes');
+    drifted = true;
+  }
+  const pins = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).dependencies;
+  if (Object.entries(packages).some(([name, version]) => pins[name] !== version)) {
+    console.error('DRIFT DETECTED: native dependency pins do not match the installed packages');
+    drifted = true;
+  }
   for (const f of FILES) {
     if (!fs.existsSync(f.baseline)) {
       console.error(`ERROR: Baseline file missing: ${path.relative(root, f.baseline)}`);
@@ -341,6 +353,21 @@ function run() {
 
   console.log(`All SDK type baselines match for platform "${platform}".`);
   process.exit(0);
+}
+
+/** Missing/malformed metadata is a failure, never an "unknown" baseline. */
+export function readNativeVersions(config) {
+  return Object.fromEntries(
+    config.versionSources.map((source) => {
+      const pkg = JSON.parse(fs.readFileSync(source, 'utf-8'));
+      if (
+        !/^@opencode\/(plugin|client)$/.test(pkg.name) ||
+        !/^2\.\d+\.\d+(?:-[\w.-]+)?$/.test(pkg.version)
+      )
+        throw new SdkContractError(`Invalid native package metadata: ${source}`);
+      return [pkg.name, pkg.version];
+    }),
+  );
 }
 
 // Only run the CLI when executed directly; importing the module for tests must

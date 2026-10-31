@@ -1,162 +1,64 @@
 #!/usr/bin/env node
-
+/** Native API package update only. Never updates host certification, runtime
+ * support constants, historical probes or installed-product documentation pins. */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SdkContractError } from './sdk-type-snapshot.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.join(__dirname, '..');
-const packageJsonPath = path.join(root, 'package.json');
-const installedPackageJsonPath = path.join(
-  root,
-  'node_modules',
-  '@opencode-ai',
-  'plugin',
-  'package.json',
-);
-const baselineVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'version.json');
-const hostVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
-const runtimeCompatPath = path.join(root, 'src', 'cli', 'opencode-runtime-compat.ts');
-const TESTED_HOST_VERSION_PATTERN = /(export const TESTED_OPENCODE_HOST_VERSION = ')([^']+)(';)/;
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const packages = ['@opencode/plugin', '@opencode/client'];
+const read = (file) => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+const run = (command, args) => execFileSync(command, args, { cwd: root, stdio: 'inherit' });
 
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+export function validateTarget(version) {
+  if (!/^2\.\d+\.\d+(?:-[\w.-]+)?$/.test(version))
+    throw new SdkContractError(`Expected one exact OpenCode V2 version, received ${version}`);
+  return version;
 }
 
-function run(command, args) {
-  execFileSync(command, args, { cwd: root, stdio: 'inherit' });
-}
-
-function resolvePackageVersion(packageName, rawTarget) {
-  const target = rawTarget || 'latest';
-  try {
-    return execFileSync('npm', ['view', `${packageName}@${target}`, 'version'], {
-      cwd: root,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`ERROR: Failed to resolve ${packageName}@${target}: ${message}`);
-    process.exit(1);
-  }
-}
-
-function readTestedHostVersion() {
-  const match = fs.readFileSync(runtimeCompatPath, 'utf-8').match(TESTED_HOST_VERSION_PATTERN);
-  return match ? match[2] : null;
-}
-
-/**
- * Keep the canonical tested-host constant in sync with the host baseline.
- * The constant is the runtime authority for host compatibility classification;
- * the baseline alone does not update it, which previously left the update
- * workflow's live smoke test asserting the old version.
- */
-function writeTestedHostVersion(version) {
-  const content = fs.readFileSync(runtimeCompatPath, 'utf-8');
-  const matches = content.match(
-    new RegExp(TESTED_HOST_VERSION_PATTERN.source, TESTED_HOST_VERSION_PATTERN.flags + 'g'),
-  );
-  if (!matches || matches.length !== 1) {
-    console.error(
-      `ERROR: expected exactly one TESTED_OPENCODE_HOST_VERSION declaration in ` +
-        `${path.relative(root, runtimeCompatPath)}, found ${matches ? matches.length : 0}.`,
+function main() {
+  if (process.argv.length > 3)
+    throw new SdkContractError(
+      'Usage: npm run update:opencode-sdk -- [V2-version-or-tag]. Host targets are not accepted.',
     );
-    process.exit(1);
-  }
-  fs.writeFileSync(
-    runtimeCompatPath,
-    content.replace(TESTED_HOST_VERSION_PATTERN, `$1${version}$3`),
-    'utf-8',
+  const requested = process.argv[2] ?? 'latest';
+  const targets = packages.map((name) =>
+    validateTarget(
+      execFileSync('npm', ['view', `${name}@${requested}`, 'version'], {
+        cwd: root,
+        encoding: 'utf8',
+      }).trim(),
+    ),
   );
-  if (readTestedHostVersion() !== version) {
-    console.error(
-      `ERROR: failed to update TESTED_OPENCODE_HOST_VERSION to ${version} in ` +
-        `${path.relative(root, runtimeCompatPath)}.`,
+  if (targets[0] !== targets[1])
+    throw new SdkContractError(
+      'Native plugin/client versions must match; review the release before updating.',
     );
-    process.exit(1);
+  const pkg = read('package.json');
+  for (const name of packages) validateTarget(pkg.dependencies[name]);
+  run('npm', ['install', '--save-exact', ...packages.map((name, i) => `${name}@${targets[i]}`)]);
+  run('node', ['scripts/sdk-type-snapshot.mjs', '--platform', 'opencode', '--update']);
+  const updated = read('package.json');
+  const lock = read('package-lock.json');
+  const baseline = read('.sdk-baselines/opencode/version.json');
+  for (const [i, name] of packages.entries()) {
+    const installed = read(`node_modules/${name}/package.json`);
+    if (
+      [
+        updated.dependencies[name],
+        lock.packages[`node_modules/${name}`]?.version,
+        installed.version,
+        baseline.packages[name],
+      ].some((version) => version !== targets[i])
+    )
+      throw new SdkContractError(`Native package/lock/install/baseline mismatch for ${name}`);
   }
-}
-
-function writeHostVersion(version) {
-  const meta = {
-    platform: 'opencode',
-    package: 'opencode-ai',
-    updated: new Date().toISOString(),
-    version,
-    evidence:
-      'OpenCode Desktop/host compatibility is verified via the opencode-ai package with autoupdate disabled during CI.',
-    docs: ['https://opencode.ai/docs/cli/#upgrade', 'https://opencode.ai/docs/config/#autoupdate'],
-  };
-  fs.writeFileSync(hostVersionPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
-}
-
-const currentPackage = readJson(packageJsonPath);
-const currentVersion = currentPackage.devDependencies?.['@opencode-ai/plugin'];
-if (!currentVersion) {
-  console.error('ERROR: package.json devDependencies must include @opencode-ai/plugin.');
-  process.exit(1);
-}
-
-if (/^[~^]/.test(currentVersion)) {
-  console.error(`ERROR: @opencode-ai/plugin must be exact-pinned, found ${currentVersion}.`);
-  process.exit(1);
-}
-
-const targetVersion = resolvePackageVersion('@opencode-ai/plugin', process.argv[2]);
-const targetHostVersion = resolvePackageVersion('opencode-ai', process.argv[3]);
-console.log(`OpenCode SDK update: ${currentVersion} -> ${targetVersion}`);
-console.log(`OpenCode host/Desktop compatibility target: opencode-ai@${targetHostVersion}`);
-
-run('npm', ['install', `@opencode-ai/plugin@${targetVersion}`, '--save-dev', '--save-exact']);
-run('node', ['scripts/sdk-type-snapshot.mjs', '--platform', 'opencode', '--update']);
-writeHostVersion(targetHostVersion);
-writeTestedHostVersion(targetHostVersion);
-// Refresh the docs baseline at the NEW pinned tag. Fails closed on any fetch
-// failure, so a version bump can never leave docs pinned to the old host.
-run('node', ['scripts/docs-drift.mjs', '--update']);
-
-const installedVersion = readJson(installedPackageJsonPath).version;
-const baselineVersion = readJson(baselineVersionPath).version;
-const hostVersion = readJson(hostVersionPath).version;
-const updatedPackage = readJson(packageJsonPath);
-const pinnedVersion = updatedPackage.devDependencies?.['@opencode-ai/plugin'];
-
-if (pinnedVersion !== targetVersion) {
-  console.error(
-    `ERROR: package.json pins @opencode-ai/plugin@${pinnedVersion}, expected ${targetVersion}.`,
+  run('node', ['scripts/sdk-type-snapshot.mjs', '--platform', 'opencode']);
+  console.log(
+    `Native API baselines synchronized at ${targets[0]}. Installed Desktop/CLI, operator UI and reviewer assurance remain separate acceptance gates.`,
   );
-  process.exit(1);
 }
 
-if (installedVersion !== targetVersion) {
-  console.error(
-    `ERROR: installed @opencode-ai/plugin@${installedVersion}, expected ${targetVersion}.`,
-  );
-  process.exit(1);
-}
-
-if (baselineVersion !== targetVersion) {
-  console.error(`ERROR: opencode baseline version ${baselineVersion}, expected ${targetVersion}.`);
-  process.exit(1);
-}
-
-if (hostVersion !== targetHostVersion) {
-  console.error(
-    `ERROR: opencode host baseline version ${hostVersion}, expected ${targetHostVersion}.`,
-  );
-  process.exit(1);
-}
-
-if (readTestedHostVersion() !== targetHostVersion) {
-  console.error(
-    `ERROR: TESTED_OPENCODE_HOST_VERSION is ${readTestedHostVersion()}, expected ` +
-      `${targetHostVersion}.`,
-  );
-  process.exit(1);
-}
-
-console.log(`OpenCode SDK baseline synchronized at @opencode-ai/plugin@${targetVersion}.`);
-console.log(`OpenCode host/Desktop baseline synchronized at opencode-ai@${targetHostVersion}.`);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

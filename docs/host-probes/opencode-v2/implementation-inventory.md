@@ -31,8 +31,9 @@ becomes PASS; actual product/installed acceptance and release remain NOT_VERIFIE
 
 ## Native entrypoint/client implementation in progress
 
-This section describes the subsequent **work-in-progress implementation**, not the
-baseline table below, a completed cutover or installed acceptance. The native
+This section describes the subsequent native API implementation and local
+verification, not the baseline table below, a completed product cutover or
+installed acceptance. The native
 SDK dependencies are pinned to `@opencode/plugin@2.2.4` and
 `@opencode/client@2.2.4`.
 
@@ -46,6 +47,10 @@ SDK dependencies are pinned to `@opencode/plugin@2.2.4` and
   availability is checked both before and after asynchronous scope resolution.
   Cleanup aborts the subscription, disposes registrations, drains owned hook and
   notification operations, then disposes runtime logging; failures are surfaced.
+- Read-only after-hook diagnostics use only an already scoped runtime, preserving
+  native rich content and avoiding repeated authority I/O. This cache grants no
+  before-hook, mutation, approval or completion authority: those paths retain
+  fresh scope resolution. Unmatched reads neither create runtimes nor state.
 - `OpenCodeHostAdapter` owns native agent/session/context/interrupt mechanics.
   `OrchestratorClient` now names semantic operations rather than V1 SDK request
   and response envelopes. Agent resolution is per session/location with no
@@ -70,22 +75,65 @@ serialization execution. Admission, idle, `wait()` and terminal-looking native
 responses do not become capture proof. The existing transport-v5 and
 `review-assurance.v7` contracts are not advanced or silently normalized.
 
-**Cutover is still incomplete.** Migrated registration, event, agent-resolution,
-completion-reading, watchdog, budgeting and logging tests exercise mocked native
-boundaries/semantic ports, not the installed host. Other V1 root-plugin and
-capture fixtures, SDK contract tests/baselines/tooling and the old SDK dependency
-remain unported; full typecheck/lint/regression verification is not green.
-Native rich completion content is currently rejected explicitly rather than
-silently flattened or dropped. This is an unresolved native-behavior surface,
-not proof of INACTIVE parity. Installer/lifecycle, operator UI attribution and
-complete reviewer assurance remain separate, unmet acceptance boundaries.
+**API cutover versus acceptance.** Root/bootstrap/mutation/recovery suites now
+use native registrations, id/input/result and type/data notifications. Canonical
+schema binding, challenge repair, durable closure, budgets and quarantine use
+explicit semantic-port/domain fixtures, not replayed V1 callbacks presented as
+V2 provenance. The old SDK dependency, bootable client factory and active V1
+declaration baselines are removed. Snapshot/update tooling pins native packages,
+raw event/message contracts and plugin registrations; candidate checks have no
+baseline bypass or silent unknown metadata. The updater does not modify host
+support constants or host/docs provenance. Old-generation host/docs baselines and
+installed smoke infrastructure are retained only pending their separate port,
+not as V2 certification.
+
+Native rich content is preserved for read-only tools. Authoritative rich
+completions project exactly one text part through the canonical application
+pipeline while retaining native attachments, ordering and other result fields;
+text-free or multiple-text results are rejected rather than guessed or flattened.
+Unproved regular edit-error history cannot close a mutation episode: old
+message/part formats are not accepted and native errors alone do not establish
+regular terminality. Successful intercepted completion and canonical fenced
+recovery tests remain separate. Neither this conservative failure behavior nor
+API/domain checks establish INACTIVE parity. Installer/lifecycle, operator UI
+attribution and complete reviewer assurance remain unmet acceptance boundaries.
+Full required regression and mutation outcomes must be recorded for the final
+candidate, not inferred from focused suites or a preceding WIP commit.
 Historical probe/evidence bytes are unchanged. No V2 support, merge readiness or
 complete simplification is claimed.
+
+### Local API-step verification (not installed acceptance)
+
+The uncommitted implementation on the same integration branch was checked with:
+
+- `npm test`: 12,466 passed, with the same two existing skips; no new exclusions.
+- `npm run test:scripts`: 305 passed. SDK contracts: 195 passed; architecture:
+  538 passed (the latter two are also included in their owning regression projects).
+- `npm run check`, `npm run lint:strict`, `npm run check:format`,
+  `npm run check:doc-drift` (including build), unused-dependency and exact SDK
+  baseline checks passed. The built native definition imports successfully.
+- The bounded `npm run mutation -- --mutate
+'src/integration/plugin.ts,src/integration/host-mutation-observation.ts,src/integration/review/dispatch/structured-followup.ts'
+--concurrency 8` run passed at 85.71%, with the unchanged 80% breaking threshold:
+  `plugin.ts` 84.44%, structured follow-up 91.67%; the unsupported error-observation
+  stub has no scorable mutants. Its three production-source snapshots match the
+  current working tree exactly. This is not a full-repository mutation result.
+
+The first bounded mutation run failed at 74.17%; executor, capability, metadata,
+cleanup and native-result tests were strengthened rather than lowering the gate.
+A concurrent regression run exceeded the existing workflow performance budget;
+the final full regression without the mutation load passed the unchanged budget.
+Historical probe files and retained host/docs provenance are unchanged.
+
+These local checks complete the API/test/tooling step, not CI certification of a
+new commit or the current-`develop` merge candidate. Operator UI attribution,
+reviewer release/capture and quiescence, regular native edit-error observation,
+installer/lifecycle and installed Desktop/CLI INACTIVE parity remain unverified.
 
 ## Baseline control flow and required simplification
 
 Paths in this section are relative to the repository root. The table describes
-the current baseline, its directly dependent surfaces and the required final
+the original inspected baseline, its directly dependent surfaces and the required final
 cutover, not a permanently supported V1/V2 dual path.
 
 | Path / owner                                                                                                                                                  | Current dependency and authority                                                                                                                                                                                        | Final action and proof                                                                                                                                                                                                                                                                                                                                    |

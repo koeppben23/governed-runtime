@@ -1,13 +1,9 @@
+/** Missing pinned-host terminality proof must not become API-shape acceptance. */
 import { describe, expect, it } from 'vitest';
-import type { Hooks } from '@opencode-ai/plugin';
+import type { SessionMessageAssistantTool } from '@opencode/client';
 import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
 import { observeEditFailure } from './host-mutation-observation.js';
 
-type Event = Parameters<NonNullable<Hooks['event']>>[0]['event'];
-type ToolPart = Extract<
-  Extract<Event, { type: 'message.part.updated' }>['properties']['part'],
-  { type: 'tool' }
->;
 const result = authorizeMutationEpisode([], {
   episodeId: '11111111-1111-4111-8111-111111111111',
   hostCallId: 'call-1',
@@ -18,120 +14,76 @@ const result = authorizeMutationEpisode([], {
 });
 if (result.kind !== 'authorized' || !result.episodes[0]) throw new Error('fixture authorization');
 const episode = result.episodes[0];
-const end = Date.parse(episode.authorizedAt) + 100;
-function part(): ToolPart {
-  return {
-    id: 'part-1',
-    messageID: 'message-1',
-    sessionID: 'session-1',
-    callID: episode.hostCallId,
-    type: 'tool',
-    tool: 'edit',
-    state: {
-      status: 'error',
-      input: {},
-      error: 'oldString not found',
-      time: { start: end - 200, end },
-    },
-  };
-}
-function history(value: unknown = part()) {
-  return [{ info: { id: 'message-1', sessionID: 'session-1', role: 'assistant' }, parts: [value] }];
-}
+const native = {
+  type: 'tool',
+  id: 'call-1',
+  name: 'edit',
+  state: {
+    status: 'error',
+    input: {},
+    error: { type: 'tool', message: 'edit failed after partial mutation' },
+  },
+  time: {
+    created: Date.parse(episode.authorizedAt),
+    completed: Date.parse(episode.authorizedAt) + 100,
+  },
+} satisfies SessionMessageAssistantTool;
 
-describe('pinned host edit failure observation', () => {
-  it('admits the exact SDK-shaped regular error and host completion time', () => {
-    expect(observeEditFailure(history(), 'session-1', episode)).toEqual({
-      kind: 'observed',
-      completedAt: new Date(end).toISOString(),
-    });
-  });
-  it('admits explicit false markers and an execution ending exactly at authorization', () => {
-    const value = part();
-    const time = Date.parse(episode.authorizedAt);
-    expect(
-      observeEditFailure(
-        history({
-          ...value,
-          metadata: { providerExecuted: false },
-          state: {
-            ...value.state,
-            metadata: { interrupted: false },
-            time: { start: time, end: time },
-          },
-        }),
-        'session-1',
-        episode,
-      ),
-    ).toEqual({ kind: 'observed', completedAt: episode.authorizedAt });
-  });
-
-  it.each([true, 'false', null, 0])(
-    'never admits interrupted marker %j, even with an end date',
-    (interrupted) => {
-      const value = part();
+describe('unverified native V2 edit-error observation boundary', () => {
+  it.each([
+    native,
+    { ...native, executed: false },
+    { ...native, executed: true },
+    { ...native, state: { ...native.state, metadata: { interrupted: false } } },
+    { ...native, state: { ...native.state, metadata: { interrupted: true } } },
+  ])(
+    'does not promote terminal-looking native content into regular completion proof: %j',
+    (content) => {
       expect(
         observeEditFailure(
-          history({ ...value, state: { ...value.state, metadata: { interrupted } } }),
+          [{ type: 'assistant', id: 'message-1', content: [content] }],
           'session-1',
           episode,
-        ).kind,
-      ).toBe('unobserved');
+        ),
+      ).toMatchObject({ kind: 'unobserved', reason: expect.stringContaining('NOT_VERIFIED') });
     },
   );
 
   it.each([
-    { sessionID: 'foreign' },
-    { messageID: 'foreign' },
-    { tool: 'bash' },
-    { id: '' },
-    { callID: 'other-call' },
-    { metadata: { providerExecuted: true } },
-    { state: { status: 'running', input: {}, time: { start: end } } },
-    {
-      state: {
-        status: 'completed',
-        input: {},
-        metadata: {},
-        output: '',
-        title: '',
-        time: { start: end, end },
+    undefined,
+    null,
+    {},
+    [],
+    [{ parts: [native] }],
+    [
+      {
+        info: { role: 'assistant', sessionID: 'session-1', id: 'message-1' },
+        parts: [
+          {
+            type: 'tool',
+            id: 'part',
+            messageID: 'message-1',
+            sessionID: 'session-1',
+            callID: 'call-1',
+            tool: 'edit',
+            state: {
+              status: 'error',
+              input: {},
+              error: 'old format',
+              time: { start: 0, end: Date.now() },
+            },
+          },
+        ],
       },
-    },
-    { state: { status: 'error', input: {}, error: 'x', time: { start: end, end: end - 1 } } },
-    { state: { status: 'error', input: {}, error: 'x', time: { start: 0, end: 1 } } },
-    { state: { status: 'error', input: {}, error: 'x', time: { start: 0, end: Infinity } } },
-  ])('rejects malformed, stale, foreign or non-terminal parts: %j', (patch) => {
-    expect(observeEditFailure(history({ ...part(), ...patch }), 'session-1', episode).kind).toBe(
-      'unobserved',
-    );
+    ],
+  ])('rejects malformed or removed host-history contracts: %j', (history) => {
+    expect(observeEditFailure(history, 'session-1', episode).kind).toBe('unobserved');
   });
 
-  it('rejects ambiguous call identities even if only one matching part is a valid error', () => {
-    const messages = history();
-    messages[0]!.parts.push({ ...part(), tool: 'bash' });
-    expect(observeEditFailure(messages, 'session-1', episode).kind).toBe('unobserved');
-  });
-
-  it('does not treat another message session as a valid source', () => {
-    const messages = history();
-    messages[0]!.info.sessionID = 'foreign';
-    expect(observeEditFailure(messages, 'session-1', episode).kind).toBe('unobserved');
-  });
-  it('never treats a user-owned part as an execution observation', () => {
-    const messages = history();
-    messages[0]!.info.role = 'user';
-    expect(observeEditFailure(messages, 'session-1', episode).kind).toBe('unobserved');
-  });
-
-  it.each([undefined, {}, [], [{ parts: [part()] }]])('rejects malformed history %j', (value) => {
-    expect(observeEditFailure(value, 'session-1', episode).kind).toBe('unobserved');
-  });
-
-  it.each(['bash', 'write', 'apply_patch'])(
-    'does not widen the proven tool contract to %s',
+  it.each(['bash', 'write', 'apply_patch', 'edit'])(
+    'never widens the admitted error-history contract to %s',
     (toolName) => {
-      expect(observeEditFailure(history(), 'session-1', { ...episode, toolName }).kind).toBe(
+      expect(observeEditFailure([native], 'session-1', { ...episode, toolName }).kind).toBe(
         'unobserved',
       );
     },

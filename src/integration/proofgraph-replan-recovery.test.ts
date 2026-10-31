@@ -38,12 +38,14 @@ import { buildImplementRuntime } from './tools/implementation/implement-shared.j
 import { handleImplRecord } from './tools/implementation/implement-record.js';
 import type { ToolContext, ToolDefinition } from './tools/helpers.js';
 import {
-  createBootableHostClient,
   createToolContext,
   fulfillStrictReviewObligation,
   parseToolResult,
   withTestEnv,
 } from './test-helpers.js';
+import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
+
+const pluginDisposers: Array<() => void | Promise<void>> = [];
 
 const SUBJECT = 'src/state/value.cjs';
 const ORIGINAL = 'exports.reject = value => value === null;\n';
@@ -181,34 +183,38 @@ async function approvePlan(session: Session, covered: boolean) {
 }
 
 async function hooksFor(session: Session) {
-  return FlowGuardAuditPlugin({
-    client: createBootableHostClient(),
-    directory: session.worktree,
-    worktree: session.worktree,
-    serverUrl: new URL('http://localhost:3000'),
-  } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0]);
+  const host = createV2Host(session.worktree);
+  const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
+  if (dispose) pluginDisposers.push(dispose);
+  return host;
 }
 
 async function governedReapply(session: Session) {
   const hooks = await hooksFor(session);
-  const before = hooks['tool.execute.before'];
-  const after = hooks['tool.execute.after'];
-  if (!before || !after) throw new Error('mutation hooks missing');
   const filePath = join(session.worktree, SUBJECT);
   const args = { filePath, content: REPAIRED };
-  const input = { tool: 'write', sessionID: session.context.sessionID, callID: randomUUID() };
-  await before(input, { args });
+  const input = v2ToolEvent({
+    tool: 'edit',
+    sessionID: session.context.sessionID,
+    id: randomUUID(),
+    input: args,
+  });
+  await hooks.before(input);
   const dispatched = await stateOf(session);
   expect(dispatched.mutationEpisodes.at(-1)?.status).toBe('dispatch_authorized');
   await writeFile(filePath, REPAIRED);
-  await after(
-    { ...input, args },
-    {
-      title: 'write',
-      output: 'Wrote file successfully.',
-      metadata: { filepath: filePath, exists: true, diagnostics: {} },
+  await hooks.after({
+    ...input,
+    status: 'completed',
+    result: {
+      content: 'Edit applied successfully.',
+      metadata: {
+        diff: 'reapplied approved patch',
+        filediff: { file: filePath, patch: 'reapplied', additions: 1, deletions: 1 },
+        diagnostics: {},
+      },
     },
-  );
+  });
   expect((await stateOf(session)).mutationEpisodes.at(-1)?.status).toBe('completed');
 }
 
@@ -242,6 +248,7 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
+  for (const dispose of pluginDisposers.splice(0).reverse()) await dispose();
   restoreEnv();
   await rm(root, { recursive: true, force: true });
 });
@@ -319,25 +326,26 @@ describe('governed new-session authority recovery', () => {
     );
 
     const abortHooks = await hooksFor(a);
-    const abortInput = {
+    const abortInput = v2ToolEvent({
       tool: 'flowguard_abort_session',
       sessionID: a.context.sessionID,
-      callID: randomUUID(),
-    };
+      id: randomUUID(),
+      input: {},
+    });
     const abortArgs = {
       reason: 'Explicit user recovery: replace missing approved state coverage.',
     };
-    await abortHooks['tool.execute.before']!(abortInput, { args: abortArgs });
+    await abortHooks.before({ ...abortInput, input: abortArgs });
     const abortResult = await abort_session.execute(abortArgs, a.context);
     expect(parseToolResult(abortResult)).not.toHaveProperty('error', true);
-    await abortHooks['tool.execute.after']!(
-      { ...abortInput, args: abortArgs },
-      {
-        title: 'abort',
-        output: typeof abortResult === 'string' ? abortResult : abortResult.output,
+    await abortHooks.after({
+      ...abortInput,
+      status: 'completed',
+      result: {
+        content: typeof abortResult === 'string' ? abortResult : abortResult.output,
         metadata: {},
       },
-    );
+    });
     const aborted = await stateOf(a);
     expect(aborted.phase).toBe('ABORTED');
     expect(aborted.plan).toEqual(blocked.plan);
@@ -496,15 +504,15 @@ describe('governed new-session authority recovery', () => {
   it('refuses reapplication before the new plan is approved without a mutation dispatch or partial write', async () => {
     const b = await boot(await repository());
     const hooks = await hooksFor(b);
-    const before = hooks['tool.execute.before'];
-    if (!before) throw new Error('before hook missing');
     const previous = await stateOf(b);
     await expect(
-      before(
-        { tool: 'write', sessionID: b.context.sessionID, callID: randomUUID() },
-        {
-          args: { filePath: join(b.worktree, SUBJECT), content: REPAIRED },
-        },
+      hooks.before(
+        v2ToolEvent({
+          tool: 'edit',
+          sessionID: b.context.sessionID,
+          id: randomUUID(),
+          input: { filePath: join(b.worktree, SUBJECT), content: REPAIRED },
+        }),
       ),
     ).rejects.toThrow();
     expect((await stateOf(b)).mutationEpisodes).toEqual(previous.mutationEpisodes);

@@ -43,42 +43,6 @@ import { buildInvocationFixture as buildInvocationEvidence } from '../review-inv
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 
 /**
- * Structural OpenCode client stub that satisfies plugin boot validation.
- *
- * `FlowGuardAuditPlugin` fail-closes at boot unless the client exposes
- * `session.create`, `session.prompt`, and the agent registry. Tests that only
- * exercise hook behavior use this base and override the fields they need.
- */
-export function createBootableHostClient(overrides?: {
-  session?: Record<string, unknown>;
-  app?: Record<string, unknown>;
-}): { session: Record<string, unknown>; app: Record<string, unknown> } {
-  return {
-    session: {
-      create: async () => ({}),
-      prompt: async () => ({}),
-      // A normally concluded child stays below the reviewer step budget; tests
-      // that exercise a host stop override this with the exact limit shape.
-      messages: async () => ({
-        data: [
-          { info: { role: 'user' } },
-          {
-            info: { role: 'assistant', finish: 'stop' },
-            parts: [{ type: 'text', text: 'Final review answer.' }],
-          },
-        ],
-      }),
-      ...(overrides?.session ?? {}),
-    },
-    app: {
-      log: async () => {},
-      agents: async () => ({ data: [] }),
-      ...(overrides?.app ?? {}),
-    },
-  };
-}
-
-/**
  * Assert that OPENCODE_CONFIG_DIR is set and points to a temporary directory.
  *
  * Tests that mutate workspace state MUST run with an isolated config root.

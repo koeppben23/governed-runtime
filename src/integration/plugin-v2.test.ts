@@ -1,10 +1,16 @@
 /** Native V2 setup/registration contracts. Mocks do not certify installed governance or provenance. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as path from 'node:path';
-import { FlowGuardAuditPlugin } from './plugin.js';
+import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { FLOWGUARD_TOOL_NAMES } from './tool-names.js';
+import * as tools from './tools/index.js';
+import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
+import { makeState } from '../fixtures.js';
+import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 
 const h = vi.hoisted(() => ({
   before: vi.fn(async (..._args: unknown[]) => {}),
@@ -55,9 +61,12 @@ beforeEach(() => {
   );
 });
 afterEach(async () => {
-  await cleanup?.();
-  cleanup = undefined;
-  vi.restoreAllMocks();
+  try {
+    await cleanup?.();
+  } finally {
+    cleanup = undefined;
+    vi.restoreAllMocks();
+  }
 });
 
 async function setup() {
@@ -85,6 +94,203 @@ describe('native V2 entrypoint', () => {
     expect(host.subscribe).toHaveBeenCalledOnce();
     expect(host.context.command.transform).not.toHaveBeenCalled();
     expect(h.createLogger).not.toHaveBeenCalled();
+    expect(host.definitions.get('flowguard_status')).toMatchObject({
+      name: 'flowguard_status',
+      description: tools.status.description,
+      input: z.toJSONSchema(z.object(tools.status.args), { io: 'input' }),
+      options: { codemode: false },
+    });
+  });
+
+  it('never accepts an existing regular file as a usable worktree', () => {
+    expect(isUsableWorktree(fileURLToPath(import.meta.url))).toBe(false);
+  });
+
+  it('shares a single scoped runtime across native calls and distinct sessions in the same worktree', async () => {
+    const host = await setup();
+    await host.before(v2ToolEvent());
+    await host.before(v2ToolEvent({ sessionID: 'second', id: 'second' }));
+    expect(h.createLogger).toHaveBeenCalledOnce();
+    expect(h.before.mock.calls[0]?.[0]).toBe(h.before.mock.calls[1]?.[0]);
+    expect(host.sessionGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses native callbacks during partial setup before any scope or governance effect', async () => {
+    const host = createV2Host(process.cwd());
+    const register = host.context.tool.hook.getMockImplementation()!;
+    host.context.tool.hook.mockImplementationOnce(async (name, callback) => {
+      await expect(callback(v2ToolEvent())).rejects.toThrow('not ready');
+      expect(host.sessionGet).not.toHaveBeenCalled();
+      expect(h.before).not.toHaveBeenCalled();
+      return register(name, callback);
+    });
+    cleanup = (await FlowGuardAuditPlugin.setup(host.ctx)) || undefined;
+    await host.before(v2ToolEvent());
+    expect(h.before).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a claimed canonical root that is not a usable directory before creating runtime logging', async () => {
+    const host = await setup();
+    h.resolve.mockResolvedValueOnce({
+      status: 'absent',
+      worktreeRoot: '/nonexistent/native-worktree',
+      fingerprint: 'fingerprint',
+      sessDir: '/session',
+    });
+    await expect(host.before(v2ToolEvent())).rejects.toThrow('no usable worktree');
+    expect(h.createLogger).not.toHaveBeenCalled();
+    const dispose = cleanup!;
+    cleanup = undefined;
+    await expect(dispose()).rejects.toHaveProperty('code', 'PLUGIN_CLEANUP_FAILED');
+  });
+
+  it('rejects a host capability mismatch before publishing registrations', async () => {
+    const host = createV2Host(process.cwd());
+    vi.spyOn(OpenCodeHostAdapter.prototype, 'validateCapabilities').mockResolvedValueOnce({
+      valid: false,
+      mismatches: [{ capability: 'preToolBlock', expected: true, actual: false }],
+      contractAttested: [],
+      runtimeVerified: [],
+    });
+    await expect(FlowGuardAuditPlugin.setup(host.ctx)).rejects.toHaveProperty(
+      'code',
+      'HOST_CAPABILITY_MISMATCH',
+    );
+    expect(host.registrations).toHaveLength(0);
+  });
+
+  it('surfaces both setup failure and cleanup failure instead of losing either cause', async () => {
+    const host = createV2Host(process.cwd());
+    host.failAt(3);
+    const error = new Error('shutdown failed');
+    vi.spyOn(OpenCodeHostAdapter.prototype, 'shutdown').mockRejectedValueOnce(error);
+    await expect(FlowGuardAuditPlugin.setup(host.ctx)).rejects.toMatchObject({
+      code: 'PLUGIN_CLEANUP_FAILED',
+      errors: [
+        expect.objectContaining({ message: 'registration failed' }),
+        expect.objectContaining({ code: 'PLUGIN_CLEANUP_FAILED', errors: [error] }),
+      ],
+    });
+    expect(host.registrations.every((item) => item.dispose.mock.calls.length === 1)).toBe(true);
+  });
+
+  it.each(['string', 'structured'] as const)(
+    'adapts actual canonical executor context and %s result through native registration',
+    async (kind) => {
+      const host = await setup();
+      const signal = new AbortController().signal;
+      const execute = vi
+        .spyOn(tools.status, 'execute')
+        .mockImplementationOnce(async (args, context) => {
+          expect(args).toEqual({});
+          expect(context).toMatchObject({
+            sessionID: 'session',
+            messageID: 'message',
+            agent: 'build',
+            directory: process.cwd(),
+            worktree: process.cwd(),
+            abort: signal,
+          });
+          context.metadata({ metadata: { first: true } });
+          context.metadata({ title: 'Status', metadata: { second: true } });
+          return kind === 'string'
+            ? 'canonical result'
+            : { output: 'canonical result', metadata: { result: true } };
+        });
+      const result = await host.definitions
+        .get('flowguard_status')!
+        .execute(
+          { view: 'current', ignored: true },
+          { sessionID: 'session', messageID: 'message', agent: 'build', id: 'call', signal },
+        );
+      expect(result).toEqual({
+        content: 'canonical result',
+        metadata: {
+          first: true,
+          second: true,
+          title: 'Status',
+          ...(kind === 'structured' ? { result: true } : {}),
+        },
+      });
+      expect(execute).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('blocks the registered executor on unavailable fresh authority even when its hook is skipped', async () => {
+    const host = await setup();
+    h.resolve
+      .mockResolvedValueOnce({
+        status: 'absent',
+        worktreeRoot: process.cwd(),
+        fingerprint: 'fingerprint',
+        sessDir: '/session',
+      })
+      .mockResolvedValueOnce({
+        status: 'unavailable',
+        code: 'BINDING_INVALID',
+        reason: 'changed before execution',
+      });
+    const execute = vi.spyOn(tools.status, 'execute');
+    await expect(
+      host.definitions.get('flowguard_status')!.execute({}, { sessionID: 'session' }),
+    ).rejects.toThrow('BINDING_INVALID');
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('permits hydrate of an existing bound session through hook and executor without inventing activation', async () => {
+    const host = await setup();
+    h.resolve.mockResolvedValue({
+      status: 'resolved',
+      worktreeRoot: process.cwd(),
+      fingerprint: 'fingerprint',
+      sessDir: '/session',
+      state: makeState('TICKET'),
+    });
+    const execute = vi.spyOn(tools.hydrate, 'execute').mockResolvedValueOnce('existing session');
+    await host.before(v2ToolEvent({ tool: 'flowguard_hydrate', input: {} }));
+    const result = await host.definitions.get('flowguard_hydrate')!.execute(
+      {},
+      {
+        sessionID: 'session',
+        messageID: 'message',
+        agent: 'build',
+        signal: new AbortController().signal,
+      },
+    );
+    expect(result).toMatchObject({ content: 'existing session' });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it('reports the actual runtime diagnostic cause without discarding serialized error details', async () => {
+    const host = await setup();
+    await host.before(v2ToolEvent());
+    const runtime = h.before.mock.calls[0]![0] as FlowGuardPluginRuntime;
+    runtime.logError('boundary diagnostic', new Error('original cause'));
+    expect(h.log.error).toHaveBeenCalledWith('audit', 'boundary diagnostic', {
+      error: expect.objectContaining({ message: 'original cause' }),
+    });
+  });
+
+  it('passes actual config-read failure to reviewer cap validation without a silent default', async () => {
+    const host = await setup();
+    h.createLogger.mockResolvedValueOnce({
+      log: h.log,
+      config: DEFAULT_CONFIG,
+      configReadError: new Error('unreadable config'),
+      disposeLogging: h.dispose,
+    });
+    await expect(
+      host.request({ sessionID: 'session', agent: 'flowguard-reviewer' }),
+    ).rejects.toHaveProperty('code', 'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE');
+    expect(host.prompt).not.toHaveBeenCalled();
+  });
+
+  it('leaves a non-reviewer native subagent on the ordinary governance path', async () => {
+    const host = await setup();
+    const event = v2ToolEvent({ tool: 'subagent', input: { agent: 'general' } });
+    await host.before(event);
+    expect(h.before).toHaveBeenCalledOnce();
+    expect(h.before.mock.calls[0]?.[1]).toMatchObject({ tool: 'subagent' });
   });
 
   it('resolves actual session location before invoking canonical tool governance', async () => {
@@ -229,7 +435,7 @@ describe('native V2 entrypoint', () => {
       (output as { output: string; metadata: Record<string, unknown> }).output = 'changed';
     });
     const event = {
-      ...v2ToolEvent(),
+      ...v2ToolEvent({ tool: 'flowguard_status' }),
       status: 'completed',
       result: { content: 'native', metadata: { retained: true } },
     };
@@ -237,10 +443,30 @@ describe('native V2 entrypoint', () => {
     expect(h.after).toHaveBeenCalledOnce();
     expect(event.result).toEqual({ content: 'changed', metadata: { retained: true } });
     expect(h.after.mock.calls[0]?.[1]).toEqual({
-      tool: 'read',
+      tool: 'flowguard_status',
       sessionID: 'session',
       callID: 'call',
       args: event.input,
+    });
+  });
+
+  it('handles a valid metadata-only native result as an empty application text without losing fields', async () => {
+    const host = await setup();
+    const event = {
+      ...v2ToolEvent({ tool: 'flowguard_status' }),
+      status: 'completed',
+      result: { metadata: { native: true }, output: { data: 'native' } },
+    };
+    await host.after(event);
+    expect(h.after.mock.calls[0]?.[2]).toEqual({
+      title: '',
+      output: '',
+      metadata: { native: true },
+    });
+    expect(event.result).toEqual({
+      content: '',
+      metadata: { native: true },
+      output: { data: 'native' },
     });
   });
 
@@ -254,15 +480,163 @@ describe('native V2 entrypoint', () => {
     expect(h.after).not.toHaveBeenCalled();
   });
 
-  it('fails explicitly instead of dropping native rich content', async () => {
+  it('preserves authoritative rich content and native fields while projecting the single application text', async () => {
     const host = await setup();
-    await expect(
-      host.after({
-        ...v2ToolEvent(),
+    const attachment = { type: 'file', uri: 'file:///artifact', mime: 'text/plain' };
+    const event = {
+      ...v2ToolEvent({ tool: 'flowguard_status' }),
+      status: 'completed',
+      result: {
+        content: [{ type: 'text', text: '{}' }, attachment],
+        metadata: { retained: true },
+        output: { native: true },
+      },
+    };
+    await host.after(event);
+    expect(h.after.mock.calls[0]?.[2]).toEqual({
+      title: '',
+      output: '{}',
+      metadata: { retained: true },
+    });
+    expect(event.result.content).toEqual([{ type: 'text', text: '{}' }, attachment]);
+    expect(event.result.content[1]).toBe(attachment);
+    expect(event.result.output).toEqual({ native: true });
+    expect(event.result.metadata).toEqual({ retained: true });
+  });
+
+  it('replaces only the canonical text when application processing blocks a native rich completion', async () => {
+    const host = await setup();
+    h.after.mockImplementationOnce(async (_runtime, _input, output) => {
+      (output as { output: string }).output = '{"error":true,"code":"BLOCKED"}';
+    });
+    const attachment = { type: 'file', uri: 'file:///artifact', mime: 'text/plain' };
+    const event = {
+      ...v2ToolEvent({ tool: 'shell', input: { command: 'test' } }),
+      status: 'completed',
+      result: { content: [attachment, { type: 'text', text: 'original' }], metadata: {} },
+    };
+    await host.after(event);
+    expect(h.after.mock.calls[0]?.[1]).toMatchObject({ tool: 'bash', callID: 'call' });
+    expect(event.result.content).toEqual([
+      attachment,
+      { type: 'text', text: '{"error":true,"code":"BLOCKED"}' },
+    ]);
+    expect(event.result.content[0]).toBe(attachment);
+  });
+
+  it.each([
+    { content: [] },
+    { content: [{ type: 'file', uri: 'file:///artifact', mime: 'text/plain' }] },
+    {
+      content: [
+        { type: 'text', text: '{}' },
+        { type: 'text', text: '{}' },
+      ],
+    },
+  ])(
+    'refuses ambiguous or text-free authoritative rich content without modifying it: %j',
+    async ({ content }) => {
+      const host = await setup();
+      const event = {
+        ...v2ToolEvent({ tool: 'flowguard_status' }),
         status: 'completed',
-        result: { content: [{ type: 'file', uri: 'file:///artifact', mime: 'text/plain' }] },
-      }),
-    ).rejects.toThrow(/losing native content/);
+        result: { content },
+      };
+      const original = structuredClone(event);
+      await expect(host.after(event)).rejects.toThrow(/exactly one unambiguous text part/);
+      expect(event).toEqual(original);
+      expect(h.after).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    null,
+    {},
+    1,
+    [null],
+    [{ type: 'text', text: 1 }],
+    [{ type: 'file', uri: 1, mime: 'text/plain' }],
+    [{ type: 'file', uri: 'file:///artifact' }],
+    [{ type: 'unknown' }],
+  ])('rejects malformed native authoritative content with a typed error: %j', async (content) => {
+    const host = await setup();
+    const event = {
+      ...v2ToolEvent({ tool: 'flowguard_status' }),
+      status: 'completed',
+      result: { content },
+    };
+    const original = structuredClone(event);
+    await expect(host.after(event)).rejects.toHaveProperty(
+      'code',
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    );
+    expect(event).toEqual(original);
+    expect(h.after).not.toHaveBeenCalled();
+  });
+
+  it('retains native rich read-only results and drains diagnostics without another authority lookup', async () => {
+    const host = await setup();
+    await host.before(v2ToolEvent());
+    const lookups = host.sessionGet.mock.calls.length;
+    const authorities = h.resolve.mock.calls.length;
+    const result = {
+      content: [
+        { type: 'text', text: 'file contents' },
+        { type: 'file', uri: 'file:///artifact', mime: 'text/plain' },
+      ],
+      metadata: { native: true },
+    };
+    const event = { ...v2ToolEvent(), status: 'completed', result };
+    await host.after(event);
+    expect(event.result).toBe(result);
+    expect(h.after).toHaveBeenCalledOnce();
+    expect(h.after.mock.calls[0]?.[1]).toEqual({
+      tool: 'read',
+      sessionID: 'session',
+      callID: 'call',
+      args: event.input,
+    });
+    expect(h.after.mock.calls[0]?.[2]).toEqual({
+      title: '',
+      output: result.content,
+      metadata: result.metadata,
+    });
+    expect(host.sessionGet).toHaveBeenCalledTimes(lookups);
+    expect(h.resolve).toHaveBeenCalledTimes(authorities);
+  });
+
+  it.each([null, undefined, 'input', 1, []])(
+    'rejects malformed authoritative completion input before application processing: %j',
+    async (input) => {
+      const host = await setup();
+      const event = {
+        ...v2ToolEvent({ tool: 'flowguard_status', input }),
+        status: 'completed',
+        result: { content: '{}' },
+      };
+      const original = structuredClone(event);
+      await expect(host.after(event)).rejects.toHaveProperty(
+        'code',
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      );
+      expect(event).toEqual(original);
+      expect(h.after).not.toHaveBeenCalled();
+    },
+  );
+
+  it('never creates a runtime or authority merely to observe an unmatched read-only completion', async () => {
+    const host = await setup();
+    const event = {
+      ...v2ToolEvent(),
+      status: 'completed',
+      result: { content: [{ type: 'text', text: 'native' }] },
+    };
+    const original = structuredClone(event);
+    await host.after(event);
+    expect(event).toEqual(original);
+    expect(host.sessionGet).not.toHaveBeenCalled();
+    expect(h.resolve).not.toHaveBeenCalled();
+    expect(h.createLogger).not.toHaveBeenCalled();
     expect(h.after).not.toHaveBeenCalled();
   });
 
@@ -306,6 +680,8 @@ describe('native V2 entrypoint', () => {
     host.emit({ type: 'session.deleted', id: 'deleted', data: { sessionID: 'session' } });
     await vi.waitFor(() => expect(h.event).toHaveBeenCalledOnce());
     expect(host.sessionGet).toHaveBeenCalledTimes(count);
+    await host.after({ ...v2ToolEvent(), status: 'completed', result: { content: 'late read' } });
+    expect(h.after).not.toHaveBeenCalled();
   });
 
   it.each([new Error('lost stream'), undefined])(
@@ -415,11 +791,42 @@ describe('native V2 entrypoint', () => {
     const pending = host.before(v2ToolEvent());
     await vi.waitFor(() => expect(h.before).toHaveBeenCalledOnce());
     const disposing = cleanup!();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(h.dispose).not.toHaveBeenCalled();
     await expect(host.before(v2ToolEvent())).rejects.toThrow(/not ready/);
     finish();
     await pending;
     await disposing;
+    expect(h.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('cleanup drains cached read-only completion diagnostics and fences stale read callbacks', async () => {
+    const host = await setup();
+    await host.before(v2ToolEvent());
+    const lookups = host.sessionGet.mock.calls.length;
+    let finish: () => void = () => {};
+    h.after.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const event = {
+      ...v2ToolEvent(),
+      status: 'completed',
+      result: { content: [{ type: 'text', text: 'native read' }] },
+    };
+    const pending = host.after(event);
+    await vi.waitFor(() => expect(h.after).toHaveBeenCalledOnce());
+    const disposing = cleanup!();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(h.dispose).not.toHaveBeenCalled();
+    await expect(host.after(event)).rejects.toThrow(/not ready/);
+    finish();
+    await pending;
+    await disposing;
+    expect(host.sessionGet).toHaveBeenCalledTimes(lookups);
+    expect(h.after).toHaveBeenCalledOnce();
     expect(h.dispose).toHaveBeenCalledOnce();
   });
 
@@ -463,6 +870,26 @@ describe('native V2 entrypoint', () => {
     host.emit({ type: 'session.idle', id: 'idle', data: { sessionID: 'session' } });
     await vi.waitFor(() => expect(h.event).toHaveBeenCalledOnce());
     const disposing = cleanup!();
+    expect(h.dispose).not.toHaveBeenCalled();
+    finish();
+    await disposing;
+    expect(h.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('cleanup also drains a cached deletion notification that performs no fresh invocation', async () => {
+    const host = await setup();
+    await host.before(v2ToolEvent());
+    let finish: () => void = () => {};
+    h.event.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    host.emit({ type: 'session.deleted', id: 'delete', data: { sessionID: 'session' } });
+    await vi.waitFor(() => expect(h.event).toHaveBeenCalledOnce());
+    const disposing = cleanup!();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(h.dispose).not.toHaveBeenCalled();
     finish();
     await disposing;

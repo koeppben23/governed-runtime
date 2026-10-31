@@ -31,29 +31,25 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Install latest SDK
+      - name: Resolve native V2 API package candidate
         id: install-latest
         run: |
-          npm install --no-save --prefer-offline --no-audit --no-fund @opencode-ai/plugin@latest
-          git diff --exit-code package.json package-lock.json
-          INSTALLED=$(node -e "console.log(require('./node_modules/@opencode-ai/plugin/package.json').version)")
-          echo "sdk_version=$INSTALLED" >> "$GITHUB_OUTPUT"
-          echo "Installed @opencode-ai/plugin@$INSTALLED"
+          TARGET=$(npm view @opencode/plugin@latest version)
+          echo "sdk_version=$TARGET" >> "$GITHUB_OUTPUT"
+          npm run update:opencode-sdk -- "$TARGET"
+          echo "Testing regenerated candidate API baselines, not installed-host certification."
       - name: Typecheck against latest
         run: npm run check
         env:
           FORCE_COLOR: 0
-          FLOWGUARD_SDK_COMPAT_LATEST: '1'
       - name: Contract tests against latest
         run: npm run test:sdk-contract
         env:
           FORCE_COLOR: 0
-          FLOWGUARD_SDK_COMPAT_LATEST: '1'
       - name: Integration tests against latest
         run: npm run test:integration
         env:
           FORCE_COLOR: 0
-          FLOWGUARD_SDK_COMPAT_LATEST: '1'
       - name: Create issue on failure
         if: failure()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
@@ -77,12 +73,13 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `SDK compat: @opencode-ai/plugin@${version} breaks build`,
+              title: `SDK compat: native V2 API ${version} requires review`,
               labels: ['sdk-drift', 'automated'],
               body: [
                 '## SDK Compatibility Failure',
                 '',
-                `The scheduled SDK compatibility check against \`@opencode-ai/plugin@${version}\` failed.`,
+                `The scheduled API check against \`@opencode/plugin@${version}\` and \`@opencode/client@${version}\` failed.`,
+                'This is not installed Desktop/CLI, operator UI or reviewer-assurance certification.',
                 '',
                 `**Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
                 `**Installed version**: ${version}`,

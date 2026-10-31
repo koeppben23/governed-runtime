@@ -8,14 +8,13 @@
  * @test-policy BAD, CORNER
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as crypto from 'node:crypto';
-import { FlowGuardAuditPlugin } from './plugin.js';
 import type { SessionState } from '../state/schema.js';
-import { createBootableHostClient, createTestWorkspace } from './test-helpers.js';
+import { createTestWorkspace } from './test-helpers.js';
+import { createReviewClient } from './opencode-v2-test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
-import { _resetAgentResolutionCache } from './review/dispatch/agent-resolution.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
@@ -23,24 +22,20 @@ import {
 import { seedStrictImplementationSession } from './plugin-host-task-diagnostics-test-helpers.js';
 import {
   completedReviewMessages,
-  hostJsonReply,
-  wireReviewerHostFixture,
+  createReviewRuntime,
+  observedPrompt,
+  REVIEW_TEST_PROOF_GRAPH_AUTHORITIES,
 } from './reviewer-capture-test-helpers.js';
+import { ReviewerCaptureController } from './reviewer-capture.js';
+import {
+  nativeReviewTaskBefore,
+  nativeReviewTaskAfter,
+} from './review/dispatch/native-task-review.js';
+import { onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
+import { isTerminalPhase } from '../machine/topology.js';
 
 const CHILD_SESSION_ID = 'child-session-native-1';
 const CALL_ID = 'call-native-1';
-
-function mockInput(worktree: string, overrides: Record<string, unknown> = {}) {
-  return {
-    project: {} as unknown,
-    client: createBootableHostClient(),
-    $: {} as unknown,
-    directory: worktree,
-    worktree,
-    serverUrl: new URL('http://localhost:3000'),
-    ...overrides,
-  } as unknown as Parameters<typeof FlowGuardAuditPlugin>[0];
-}
 
 function nativeFindings(
   obligationId: string,
@@ -63,19 +58,25 @@ function nativeFindings(
 }
 
 async function dispatchReviewerTask(
-  hooks: Awaited<ReturnType<typeof FlowGuardAuditPlugin>>,
+  runtime: ReturnType<typeof createReviewRuntime>,
   sessionID: string,
   callID = CALL_ID,
 ) {
   const output: { args: Record<string, unknown> } = {
     args: { subagent_type: 'flowguard-reviewer', prompt: 'agent-authored prompt' },
   };
-  await hooks['tool.execute.before']!({ tool: 'task', sessionID, callID }, output);
+  await nativeReviewTaskBefore(
+    runtime,
+    { tool: 'task', sessionID, callID },
+    output,
+    async () => undefined,
+    REVIEW_TEST_PROOF_GRAPH_AUTHORITIES,
+  );
   return output;
 }
 
 async function completeReviewerTask(
-  hooks: Awaited<ReturnType<typeof FlowGuardAuditPlugin>>,
+  runtime: ReturnType<typeof createReviewRuntime>,
   sessionID: string,
   callID = CALL_ID,
 ) {
@@ -84,18 +85,15 @@ async function completeReviewerTask(
     output: 'Free-form reviewer transcript text is not findings authority.',
     metadata: { sessionId: CHILD_SESSION_ID },
   };
-  await hooks['tool.execute.after']!(
+  await nativeReviewTaskAfter(
+    runtime,
     { tool: 'task', sessionID, callID, args: { subagent_type: 'flowguard-reviewer' } },
     output,
   );
   return output;
 }
 
-describe('native challenge-evidence retry', () => {
-  beforeEach(() => {
-    _resetAgentResolutionCache();
-  });
-
+describe('canonical challenge-evidence retry through a semantic host fixture, not installed V2 proof', () => {
   it('re-arms after a challenge without validation-attempt evidence and binds the corrected retry', async () => {
     const ws = await createTestWorkspace();
     try {
@@ -141,23 +139,19 @@ describe('native challenge-evidence retry', () => {
         ],
       } as SessionState);
 
-      const structuredPrompt = vi.fn();
-      const agents = vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] }));
-      const client = createBootableHostClient({
-        app: { log: async () => {}, agents },
-        session: {
-          prompt: structuredPrompt,
-          messages: async () => completedReviewMessages(CHILD_SESSION_ID),
-        },
-      });
-      const hooks = await FlowGuardAuditPlugin(
-        mockInput(ws.tmpDir, {
-          worktree: ws.tmpDir,
-          directory: ws.tmpDir,
-          client,
-        }),
+      const capture = new ReviewerCaptureController();
+      let findings: Record<string, unknown> = {};
+      const structuredPrompt = vi.fn(
+        async (
+          input: Parameters<ReturnType<typeof createReviewClient>['executeReviewerPrompt']>[0],
+        ) => observedPrompt(capture, input, JSON.stringify(findings)),
       );
-      wireReviewerHostFixture(client, hooks);
+      const client = createReviewClient({
+        listAgents: vi.fn(async () => [{ id: 'flowguard-reviewer' }]),
+        executeReviewerPrompt: structuredPrompt,
+        readHistory: async () => completedReviewMessages(CHILD_SESSION_ID),
+      });
+      const runtime = createReviewRuntime(ws.tmpDir, client, capture);
 
       const state = await readState(sessDir);
       if (!state) throw new Error('expected persisted session state');
@@ -174,11 +168,14 @@ describe('native challenge-evidence retry', () => {
         }),
         metadata: {},
       };
-      await hooks['tool.execute.after']!(
-        { tool: 'flowguard_implement', sessionID, callID: 'c1', args: {} },
-        dispatchOutput,
+      onFlowGuardToolAfter(
+        runtime.ws.getEnforcementState(sessionID),
+        'flowguard_implement',
+        {},
+        dispatchOutput.output,
+        { now: new Date().toISOString(), isTerminalPhase },
       );
-      await dispatchReviewerTask(hooks, sessionID);
+      await dispatchReviewerTask(runtime, sessionID);
 
       // c1 is a passing implementation challenge with only implementation
       // evidence; c2 carries a valid current-digest validation attempt.
@@ -205,14 +202,10 @@ describe('native challenge-evidence retry', () => {
         evidenceRefs: [implementationRef, validationRef],
       };
 
-      structuredPrompt.mockResolvedValue(
-        hostJsonReply(
-          nativeFindings(obligationId, {
-            challenges: [invalidChallenge, validChallenge],
-          }),
-        ),
-      );
-      const first = await completeReviewerTask(hooks, sessionID);
+      findings = nativeFindings(obligationId, {
+        challenges: [invalidChallenge, validChallenge],
+      });
+      const first = await completeReviewerTask(runtime, sessionID);
 
       const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
       const reviewRetry = retry.reviewRetry as Record<string, unknown>;
@@ -235,19 +228,15 @@ describe('native challenge-evidence retry', () => {
         ...invalidChallenge,
         evidenceRefs: [implementationRef, validationRef],
       };
-      structuredPrompt.mockResolvedValue(
-        hostJsonReply(
-          nativeFindings(obligationId, {
-            challenges: [correctedChallenge, validChallenge],
-          }),
-        ),
-      );
-      const secondTask = await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
+      findings = nativeFindings(obligationId, {
+        challenges: [correctedChallenge, validChallenge],
+      });
+      const secondTask = await dispatchReviewerTask(runtime, sessionID, 'call-native-2');
       const secondPrompt = String(secondTask.args.prompt);
       expect(secondPrompt).toContain('challenges.0.evidenceRefs');
       expect(secondPrompt).toContain('validation_attempt_missing');
 
-      const second = await completeReviewerTask(hooks, sessionID, 'call-native-2');
+      const second = await completeReviewerTask(runtime, sessionID, 'call-native-2');
       const completed = JSON.parse(String(second.output)) as Record<string, unknown>;
       expect(completed.error).toBeUndefined();
       expect(completed.reviewDispatch).toEqual({

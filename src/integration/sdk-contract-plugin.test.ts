@@ -1,371 +1,137 @@
-/**
- * @module integration/sdk-contract-plugin.test
- * @description Plugin factory resilience, smoke tests, and type baseline infrastructure.
- *
- * Validates that:
- * 1. FlowGuardAuditPlugin handles edge cases in PluginInput gracefully
- * 2. Calling hooks with SDK-shaped payloads doesn't crash (smoke)
- * 3. The snapshot script infrastructure works correctly
- *
- * Evidence sources:
- * - @opencode-ai/plugin/dist/index.d.ts (PluginInput, Hooks, Plugin)
- * - .sdk-baselines/opencode/ (baseline files)
- *
- * Split from sdk-contract.test.ts Sections D + E + F for ≤400 LOC compliance.
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE — all applicable categories present.
- * @version v1
- */
-
-import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+/** Native setup/cleanup, real registration smoke and exact API baseline integrity.
+ * Package declarations are not installed Desktop/CLI certification. */
+import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
-
-// ── SDK imports ──────────────────────────────────────────────────────────────
-import type { PluginInput, Hooks } from '@opencode-ai/plugin';
-
-// ── Our plugin export ────────────────────────────────────────────────────────
+import type { Plugin } from '@opencode/plugin';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
-import { createBootableHostClient } from './test-helpers.js';
+import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
+import {
+  PLATFORMS,
+  normalize,
+  readConfiguredSource,
+  readNativeVersions,
+  sha256,
+} from '../../scripts/sdk-type-snapshot.mjs';
 
-const isLatestSdkCompatRun = process.env.FLOWGUARD_SDK_COMPAT_LATEST === '1';
-
-// Explicit, auditable bypass: the CI sdk-compat workflow intentionally tests
-// against the latest SDK, where the pinned byte baseline cannot match. The
-// bypass only relaxes the byte comparison — contract-shape assertions and the
-// derived event-contract baseline still run.
-if (isLatestSdkCompatRun) {
-  process.stderr.write(
-    '[sdk-contract] FLOWGUARD_SDK_COMPAT_LATEST=1 active: pinned baseline ' +
-      'byte-comparison is bypassed; contract-shape assertions still run.\n',
-  );
+const disposers: Plugin.Cleanup[] = [];
+afterEach(async () => {
+  for (const dispose of disposers.splice(0).reverse()) await dispose();
+});
+async function setup(directory: string) {
+  const host = createV2Host(directory);
+  const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
+  expect(typeof dispose).toBe('function');
+  if (dispose) disposers.push(dispose);
+  return host;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// D) PLUGIN FACTORY RESILIENCE
-//
-// Validates that FlowGuardAuditPlugin handles edge cases in PluginInput
-// gracefully without crashing.
-// ═══════════════════════════════════════════════════════════════════════════════
+describe('native V2 plugin definition resilience', () => {
+  it.each(['/nonexistent/path', '', '/'])(
+    'registers lazily at %j and owns every cleanup',
+    async (directory) => {
+      const host = await setup(directory);
+      expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
+      expect([...host.sessionHooks.keys()]).toEqual(['context', 'compaction']);
+      expect(host.sessionGet).not.toHaveBeenCalled();
+      expect(host.context.command.transform).not.toHaveBeenCalled();
+      await disposers.at(-1)!();
+      expect(host.registrations.every((r) => r.dispose.mock.calls.length === 1)).toBe(true);
+    },
+  );
 
-describe('SDK Contract: Plugin factory resilience', () => {
-  /**
-   * Create a mock PluginInput with all 7 required fields.
-   * Fields we don't use (project, $, experimental_workspace, serverUrl) are stubs.
-   */
-  function createMockPluginInput(overrides: Partial<PluginInput> = {}): PluginInput {
-    return {
-      client: createBootableHostClient({
-        app: { log: async () => ({}) },
-      }) as unknown as PluginInput['client'],
-      project: {} as PluginInput['project'],
-      directory: '/tmp/sdk-contract-test',
-      worktree: '/tmp/sdk-contract-test',
-      experimental_workspace: { register: () => {} },
-      serverUrl: new URL('http://localhost:4096'),
-      $: (() => {}) as unknown as PluginInput['$'],
-      ...overrides,
-    };
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // HAPPY PATH
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('HAPPY: plugin returns hooks with expected shape', () => {
-    it('returns an object with tool.execute.before and tool.execute.after', async () => {
-      const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
-      expect(hooks).toBeDefined();
-      expect(typeof hooks['tool.execute.before']).toBe('function');
-      expect(typeof hooks['tool.execute.after']).toBe('function');
-    });
-
-    it('returned hooks satisfy the Hooks interface', async () => {
-      const hooks: Hooks = await FlowGuardAuditPlugin(createMockPluginInput());
-      // This assignment compiles only if the return satisfies Hooks
-      expect(hooks).toBeDefined();
-    });
+  it.each(['', undefined, '/', 'C:\\', 'D:/'])('rejects unusable worktree %j', (directory) => {
+    expect(isUsableWorktree(directory)).toBe(false);
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BAD PATH
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('BAD: plugin degrades gracefully with non-repo worktree', () => {
-    it('does not crash with non-existent worktree path', async () => {
-      const hooks = await FlowGuardAuditPlugin(
-        createMockPluginInput({ worktree: '/nonexistent/path/abc123' }),
-      );
-      expect(hooks).toBeDefined();
-      expect(typeof hooks['tool.execute.before']).toBe('function');
-      expect(typeof hooks['tool.execute.after']).toBe('function');
-    });
-
-    it('does not crash with empty worktree string', async () => {
-      const hooks = await FlowGuardAuditPlugin(
-        createMockPluginInput({ worktree: '', directory: '' }),
-      );
-      expect(hooks).toBeDefined();
-    });
+  it('accepts an existing non-root directory as usable, not as Git or governance proof', () => {
+    expect(isUsableWorktree(process.cwd())).toBe(true);
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CORNER PATH
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('CORNER: isUsableWorktree boundary conditions', () => {
-    it('empty string returns false', () => {
-      expect(isUsableWorktree('')).toBe(false);
-    });
-
-    it('undefined returns false', () => {
-      expect(isUsableWorktree(undefined)).toBe(false);
-    });
-
-    it('filesystem root returns false', () => {
-      expect(isUsableWorktree('/')).toBe(false);
-    });
-
-    it('Windows drive root returns false', () => {
-      expect(isUsableWorktree('C:\\')).toBe(false);
-      expect(isUsableWorktree('D:/')).toBe(false);
-    });
-
-    it('existing non-Git directory returns true', () => {
-      expect(isUsableWorktree('/tmp')).toBe(true);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // EDGE PATH
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('EDGE: plugin with stub-only unused fields', () => {
-    it('does not access project, $, experimental_workspace, serverUrl', async () => {
-      // We provide trap proxies for unused fields. If the plugin accesses
-      // any property on them, the proxy throws — proving we don't use them.
-      const trapHandler: ProxyHandler<object> = {
-        get(_target, prop) {
-          // Allow Symbol.toPrimitive and similar internal JS operations
-          if (typeof prop === 'symbol') return undefined;
-          // Allow toString/valueOf for error messages
-          if (prop === 'toString' || prop === 'valueOf') return () => '[trap]';
-          throw new Error(`Unexpected access to unused field property: ${String(prop)}`);
+  it('does not query absent V1 context fields', async () => {
+    const host = createV2Host('/nonexistent/path');
+    for (const key of [
+      'client',
+      'project',
+      '$',
+      'serverUrl',
+      'experimental_workspace',
+      'worktree',
+    ]) {
+      Object.defineProperty(host.ctx, key, {
+        get() {
+          throw new Error(`Removed field read: ${key}`);
         },
-      };
-
-      const input = createMockPluginInput({
-        project: new Proxy({}, trapHandler) as PluginInput['project'],
-        $: new Proxy(() => {}, trapHandler) as unknown as PluginInput['$'],
-        experimental_workspace: new Proxy(
-          { register: () => {} },
-          trapHandler,
-        ) as PluginInput['experimental_workspace'],
-        // serverUrl is a URL — can't easily proxy, but we can verify
-        // it's not accessed by using a valid but unusual URL
-        serverUrl: new URL('http://trap.invalid:9999'),
       });
-
-      // If this doesn't throw, the plugin doesn't access unused fields
-      const hooks = await FlowGuardAuditPlugin(input);
-      expect(hooks).toBeDefined();
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// E) SMOKE: End-to-end hook invocation
-//
-// Validates that calling the hooks with SDK-shaped payloads doesn't crash.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('SDK Contract: Smoke — hook invocation with SDK payloads', () => {
-  function createMockPluginInput(): PluginInput {
-    return {
-      client: createBootableHostClient({
-        app: { log: async () => ({}) },
-      }) as unknown as PluginInput['client'],
-      project: {} as PluginInput['project'],
-      directory: '/tmp/sdk-smoke',
-      worktree: '/tmp/sdk-smoke',
-      experimental_workspace: { register: () => {} },
-      serverUrl: new URL('http://localhost:4096'),
-      $: (() => {}) as unknown as PluginInput['$'],
-    };
-  }
-
-  it('SMOKE: before-hook fail-closes unknown SDK-shaped tools without session evidence', async () => {
-    const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
-    const beforeHook = hooks['tool.execute.before'];
-    expect(beforeHook).toBeDefined();
-
-    // Call with full SDK shape (including callID which our types omit)
-    const input = { tool: 'unknown_tool', sessionID: 'sess-smoke', callID: 'call-smoke' };
-    const output = { args: {} };
-
-    await expect(beforeHook!(input, output)).rejects.toThrow('NO_WORKTREE');
-  });
-
-  it('SMOKE: before-hook fail-closes an empty SDK tool identity', async () => {
-    const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
-    const beforeHook = hooks['tool.execute.before'];
-    expect(beforeHook).toBeDefined();
-
-    const input = { tool: '', sessionID: 'sess-smoke', callID: 'call-smoke' };
-    const output = { args: {} };
-
-    await expect(beforeHook!(input, output)).rejects.toThrow('NO_WORKTREE');
-  });
-
-  it('SMOKE: after-hook accepts SDK-shaped output without crashing', async () => {
-    const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
-    const afterHook = hooks['tool.execute.after'];
-    expect(afterHook).toBeDefined();
-
-    // Call with full SDK shape (including title + metadata)
-    const input = {
-      tool: 'unknown_tool',
-      sessionID: 'sess-smoke',
-      callID: 'call-smoke',
-      args: {},
-    };
-    const output = { title: 'Unknown', output: 'some output', metadata: null };
-
-    await expect(afterHook!(input, output)).resolves.not.toThrow();
-  });
-
-  it('SMOKE: before-hook handles flowguard-prefixed tool', async () => {
-    const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
-    const beforeHook = hooks['tool.execute.before'];
-
-    const input = { tool: 'flowguard_status', sessionID: 'sess-fg', callID: 'call-fg' };
-    const output = { args: {} };
-
-    // FlowGuard tools are handled by the plugin — should not crash
-    await expect(beforeHook!(input, output)).resolves.not.toThrow();
-  });
-
-  it('SMOKE: after-hook handles flowguard-prefixed tool', async () => {
-    const hooks = await FlowGuardAuditPlugin(createMockPluginInput());
-    const afterHook = hooks['tool.execute.after'];
-
-    const input = {
-      tool: 'flowguard_status',
-      sessionID: 'sess-fg',
-      callID: 'call-fg',
-      args: {},
-    };
-    const output = { title: 'Status', output: '{}', metadata: null };
-
-    await expect(afterHook!(input, output)).resolves.not.toThrow();
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// F) SDK TYPE BASELINE INTEGRITY
-//
-// Validates the snapshot script infrastructure works correctly.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('SDK Contract: Type baseline infrastructure', () => {
-  const root = path.resolve(import.meta.dirname, '..', '..');
-
-  it('HAPPY: baseline files exist in .sdk-baselines/opencode/', () => {
-    expect(existsSync(path.join(root, '.sdk-baselines', 'opencode', 'plugin-index.d.ts'))).toBe(
-      true,
-    );
-    expect(existsSync(path.join(root, '.sdk-baselines', 'opencode', 'plugin-tool.d.ts'))).toBe(
-      true,
-    );
-    expect(
-      existsSync(path.join(root, '.sdk-baselines', 'opencode', 'plugin-event-contract.d.ts')),
-    ).toBe(true);
-    expect(existsSync(path.join(root, '.sdk-baselines', 'opencode', 'host-version.json'))).toBe(
-      true,
-    );
-  });
-
-  it('HAPPY: baseline files match installed SDK outside latest compatibility mode', () => {
-    const indexBaseline = readFileSync(
-      path.join(root, '.sdk-baselines', 'opencode', 'plugin-index.d.ts'),
-      'utf-8',
-    );
-    const indexInstalled = readFileSync(
-      path.join(root, 'node_modules', '@opencode-ai', 'plugin', 'dist', 'index.d.ts'),
-      'utf-8',
-    );
-
-    if (isLatestSdkCompatRun) {
-      expect(indexBaseline.length).toBeGreaterThan(0);
-      expect(indexInstalled.length).toBeGreaterThan(0);
-      return;
     }
-
-    // Normalize for comparison
-    const norm = (s: string) => s.replace(/\r\n/g, '\n').trimEnd();
-    expect(norm(indexBaseline)).toBe(norm(indexInstalled));
+    const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
+    if (dispose) disposers.push(dispose);
+    expect(host.context.tool.hook).toHaveBeenCalledTimes(2);
   });
 
-  it('HAPPY: version.json exists and records correct version', () => {
-    const versionPath = path.join(root, '.sdk-baselines', 'opencode', 'version.json');
-    const sdkPackagePath = path.join(
-      root,
-      'node_modules',
-      '@opencode-ai',
-      'plugin',
-      'package.json',
+  it.each(['unknown_tool', ''])(
+    'fails closed for %j before effect with no worktree authority',
+    async (tool) => {
+      const host = await setup('/nonexistent/path');
+      await expect(host.before(v2ToolEvent({ tool, input: {} }))).rejects.toHaveProperty('code');
+    },
+  );
+
+  it('does not create authority merely to observe an unmatched read-only completion', async () => {
+    const host = await setup('/nonexistent/path');
+    await host.after({ ...v2ToolEvent(), status: 'completed', result: { content: 'native' } });
+    expect(host.sessionGet).not.toHaveBeenCalled();
+  });
+
+  it('does not swallow authoritative after-hook location failures', async () => {
+    const host = await setup('/nonexistent/path');
+    await expect(
+      host.after({
+        ...v2ToolEvent({ tool: 'flowguard_status', input: {} }),
+        status: 'completed',
+        result: { content: '{}' },
+      }),
+    ).rejects.toHaveProperty('code');
+  });
+});
+
+describe('native V2 SDK baseline infrastructure', () => {
+  const root = path.resolve(import.meta.dirname, '..', '..');
+  const config = PLATFORMS.opencode;
+  const json = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
+
+  it('checks every active baseline byte contract without a latest-SDK bypass', () => {
+    for (const file of config.files) {
+      expect(normalize(readFileSync(file.baseline, 'utf8')), file.label).toBe(
+        normalize(readConfiguredSource(file)),
+      );
+    }
+  });
+
+  it('records exact plugin/client versions and hashes, independently of host support', () => {
+    const metadata = json(config.versionFile);
+    const packages = readNativeVersions(config);
+    expect(metadata.platform).toBe('opencode');
+    expect(metadata.packages).toEqual(packages);
+    const pkg = json(path.join(root, 'package.json'));
+    for (const [name, version] of Object.entries(packages))
+      expect(pkg.devDependencies[name] ?? pkg.dependencies[name]).toBe(version);
+    expect(metadata.files).toEqual(
+      config.files.map((file) => ({
+        label: file.label,
+        hash: sha256(normalize(readConfiguredSource(file))),
+      })),
     );
-    expect(existsSync(versionPath)).toBe(true);
-    expect(existsSync(sdkPackagePath)).toBe(true);
-
-    const meta = JSON.parse(readFileSync(versionPath, 'utf-8'));
-    // Version integrity is enforced by the update:opencode-sdk workflow (which
-    // validates full consistency between package.json, lockfile, and baseline).
-    // This test checks that the baseline has a valid, non-empty version.
-    expect(typeof meta.version).toBe('string');
-    expect(meta.version.length).toBeGreaterThan(0);
-
-    expect(meta.files).toHaveLength(4);
-    expect(meta.files[0].label).toBe('plugin/dist/index.d.ts');
-    expect(meta.files[1].label).toBe('plugin/dist/tool.d.ts');
-    expect(meta.files[3].label).toBe('sdk/gen/types.gen.d.ts#ToolPart');
-    expect(meta.files[2].label).toBe('sdk/gen/types.gen.d.ts#Event');
+    expect(metadata).not.toHaveProperty('hostVersion');
+    expect(metadata).not.toHaveProperty('installedSupport');
   });
 
-  it('HAPPY: host-version.json records OpenCode Desktop compatibility package', () => {
-    const hostVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
-    expect(existsSync(hostVersionPath)).toBe(true);
-
-    const meta = JSON.parse(readFileSync(hostVersionPath, 'utf-8'));
-    expect(meta.platform).toBe('opencode');
-    expect(meta.package).toBe('opencode-ai');
-    expect(typeof meta.version).toBe('string');
-    expect(meta.version.length).toBeGreaterThan(0);
-  });
-
-  it('BAD: installed SDK at wrong path would be detected by snapshot script', () => {
-    // The snapshot script looks at plugin/dist/index.d.ts, not sdk/dist/gen/types.gen.d.ts.
-    // This test verifies the correct path is used.
-
-    // Correct path exists
-    expect(
-      existsSync(path.join(root, 'node_modules', '@opencode-ai', 'plugin', 'dist', 'index.d.ts')),
-    ).toBe(true);
-
-    // The OLD (wrong) path from the original plan does NOT exist in the plugin package
-    expect(
-      existsSync(
-        path.join(root, 'node_modules', '@opencode-ai', 'plugin', 'dist', 'gen', 'types.gen.d.ts'),
-      ),
-    ).toBe(false);
-  });
-
-  it('EDGE: SDK gen types live in @opencode-ai/sdk, not @opencode-ai/plugin', () => {
-    // gen types are in the SDK package, not the plugin package
-    expect(
-      existsSync(
-        path.join(root, 'node_modules', '@opencode-ai', 'sdk', 'dist', 'gen', 'types.gen.d.ts'),
-      ),
-    ).toBe(true);
+  it('rejects missing or malformed package metadata rather than publishing unknown versions', () => {
+    expect(() =>
+      readNativeVersions({ versionSources: ['/nonexistent/native-package.json'] }),
+    ).toThrow();
+    expect(() => readNativeVersions({ versionSources: [path.join(root, 'package.json')] })).toThrow(
+      'Invalid native package metadata',
+    );
   });
 });

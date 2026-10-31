@@ -346,8 +346,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          baseline_version=$(node -p "JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).version")
-          installed_version=$(node -p "JSON.parse(require('fs').readFileSync('node_modules/@opencode-ai/plugin/package.json','utf8')).version")
+          baseline_version=$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).packages)")
+          installed_version=$(node -p "JSON.stringify(Object.fromEntries(['plugin','client'].map(n=>['@opencode/'+n,JSON.parse(require('fs').readFileSync('node_modules/@opencode/'+n+'/package.json','utf8')).version])))")
           if [ "$baseline_version" != "$installed_version" ]; then
             echo "SDK version mismatch: baseline=$baseline_version installed=$installed_version"
             gh workflow run opencode-sdk-update.yml
