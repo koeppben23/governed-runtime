@@ -36,6 +36,7 @@ From `.github/workflows/ci.yml`:
 - `typecheck`
 - `lint`
 - `format`
+- `doc-drift`
 - `architecture`
 - `build`
 - `build-clean`
@@ -60,6 +61,8 @@ runs the same suite as its second step.
 approval/recovery suites on Windows and is merge-blocking through the required
 `ci-gate` aggregator, so platform-specific path, CRLF, and timing defects in
 those trust boundaries cannot merge unobserved.
+
+The `doc-drift` check MUST be configured as a required status check in the live branch ruleset; declaring it here or adding CI alone does not change GitHub settings. It checks every-PR changelog presence and existing generated documentation consistency; semantic documentation review remains mandatory.
 
 The `format` check is the merge-blocking Prettier gate for both protected
 branches. Mutation testing is deliberately NOT a PR gate: it runs on the
