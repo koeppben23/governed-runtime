@@ -134,6 +134,66 @@ CLI and presentation output must not be treated as the decision authority when s
 
 The following sections are the review contract. Changes touching a boundary must preserve the listed authorities, failure modes, audit evidence, and logging separation.
 
+### OpenCode V2 Phase-02 Probe Threat Model (#1169)
+
+This bounded assessment applies to the feasibility probes, **not a new product
+security guarantee**. [ADR-010](./decisions/010-host-neutral-opt-in-governance.md)
+and the [P0 gate matrix](./host-probes/opencode-v2/phase0-contract-gates.md) own
+acceptance. No operator channel is selected or certified by this model.
+
+**Assets:** operator sessions/configuration/credentials; exact activation scope
+and generation; policy/state/audit authority; frozen review subjects; exact
+review invocation-to-terminal lineage; native INACTIVE behavior and native model
+selection. The probes must not modify operator configuration or attach to the
+shared service. Backup copies are sensitive, not publishable test fixtures.
+
+| Actor / input                                           | Capabilities assumed for adversarial evaluation                                                                                                                                                                         | Trust decision                                                                                                                                        |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parent model, child model, tool caller, project content | Arbitrary prompt/tool/command text; fabricate IDs or approval claims; replay requests; attempt concurrent submissions, delayed results and cross-session reuse; use advertised tools and shell as permitted by the host | Untrusted; never proves operator intent or review completion                                                                                          |
+| Agent-accessible process under the same OS account      | Read/write accessible files, environment and credentials; execute a local CLI; call reachable loopback/API endpoints with accessible credentials                                                                        | No independent human-authority boundary. Do not reinterpret the ordinary same-user agent as an excluded external attacker                             |
+| Provider and MCP service                                | Return arbitrary text/tool proposals, omit or delay completion, perform actions on their own side before returning data                                                                                                 | Untrusted source of claims. Local interception does not establish preventive control over remote actions                                              |
+| Sibling session or external writer                      | Change shared worktree/resources independently of the governed session                                                                                                                                                  | No exclusive resource ownership; prevention is NOT_SUPPORTED without an independent demonstrated boundary; freshness validation is separate           |
+| Missing, stale or malicious host/plugin                 | Omit hooks, forge or omit diagnostics, mutate output, unload or crash, report stale status                                                                                                                              | A hook cannot constrain an absent host or attest honesty of a compromised host. Required assurance remains unproved; no successful self-certification |
+
+**Trusted computing base for interpreting an individual probe:** the inspected
+probe source and runner; the pinned installed host binary and pinned client/plugin
+packages executing honestly for that observation; OS/filesystem/process/network
+primitives; Git and dependency executables resolved from the explicit fixture
+PATH. The local capture provider is an instrument, not a real-provider security
+certification. Hashes identify observed artifacts; they are not signatures or a
+proof of supply-chain integrity. Dependency symlinks share installed package bytes
+with the runner and are not a hermetic dependency sandbox.
+
+The runner uses fresh HOME/XDG/database/temp paths, an explicit environment and
+private loopback server; it rejects detected ancestor/system/managed discovery
+inputs rather than deleting or overriding operator settings. These controls
+reduce accidental test contamination, **not malicious same-user access**. Discovery
+checks are snapshots, not a race-free OS containment boundary. External egress
+is not independently sandboxed. No credential is inherited to exercise a real
+provider; a mock-provider result cannot certify all providers or models.
+
+**Unresolved mandatory proof, not an accepted exclusion:** the operator channel
+must demonstrate custody unavailable to agent tools/processes, bind actor, exact
+action, root/child session, worktree and activation generation, and reject replay,
+expiry, cross-scope and concurrent reuse. A valid IdP login alone does not prove
+intent. An agent-readable token, SDK `session.command`, plugin callback, TUI-like
+text, or same-user CLI is insufficient. Until that proof exists, P0-01 and
+security-critical activation/approval/recovery implementation remain **BLOCKED**.
+
+**Excluded claims for these probes:** universal provider containment; prevention
+after plugin loss; OS-level protection from other writers; hostile kernel or
+compromised-host resistance; hardware-backed human presence; installed FlowGuard
+INACTIVE parity based on a passive fixture. These exclusions describe what the
+probe cannot establish, not a waiver of a mandatory product gate. Actual product
+transactions, restart/recovery, EndGovernance context reset and installed
+Desktop/CLI integration still require G-04/G-05. Missing proof stays
+NOT_VERIFIED/NO-GO, never a synthesized evidence record.
+
+Probe journals, timestamps, API credentials and raw host outputs are mutable
+diagnostics. Journal parse/read/write failures must surface rather than count as
+absence. Only the existing product validators may admit eventual governance
+evidence. No probe `passed` flag grants authorization or rewrites old evidence.
+
 ### Session State And Policy Snapshot Boundary
 
 | Field                                     | Contract                                                                                                                                                                                                                                                                                                                         |

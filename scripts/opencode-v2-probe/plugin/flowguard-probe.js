@@ -19,19 +19,16 @@ const DENY_TOOLS = new Set(
 const MAX_TEXT = 200_000;
 
 function record(type, data = {}) {
-  if (!JOURNAL) return;
-  try {
-    appendFileSync(
-      JOURNAL,
-      `${JSON.stringify({
-        at: new Date().toISOString(),
-        type,
-        ...data,
-      })}\n`,
-    );
-  } catch {
-    // The probe must not alter host behavior when its journal is unavailable.
-  }
+  if (!JOURNAL)
+    throw Object.assign(new Error('Missing probe journal'), { code: 'PROBE_JOURNAL_MISSING' });
+  appendFileSync(
+    JOURNAL,
+    `${JSON.stringify({
+      at: new Date().toISOString(),
+      type,
+      ...data,
+    })}\n`,
+  );
 }
 
 function limit(value) {
@@ -173,6 +170,7 @@ export default Plugin.define({
         description: 'Probe command registered by the plugin.',
         async execute(input) {
           record('command:probe-plugin-command', {
+            keys: Object.keys(input).sort(),
             sessionID: input.sessionID,
             prompt: limit(input.prompt?.text),
             delivery: input.delivery,

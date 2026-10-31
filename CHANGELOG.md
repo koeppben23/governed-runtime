@@ -858,6 +858,16 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Bounded V2 feasibility infrastructure (#1169).** Defined the Phase-02 probe
+  threat model without treating same-user credentials as human authorization.
+  Isolated probe processes now use an explicit environment, reject detected
+  ambient discovery inputs, pin host/SDK versions and distinguish absent,
+  passive and diagnostic plugins. Added a native-parity fixture separate from
+  installed FlowGuard INACTIVE acceptance; no V2 product security gate is claimed.
+  A real model-driven shell reproduced plugin command admission with an
+  agent-accessible fixture credential, refuting human-origin inference from
+  that API/callback alone; independent operator authorization remains blocked.
+
 - **Host-neutral opt-in governance architecture contract (#1169).** Documented
   explicit operator-authorized activation, STRICT security/evidence boundaries,
   unrestricted host-native models and effort levels, and versioned Phase-0
