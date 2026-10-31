@@ -389,12 +389,16 @@ jobs:
   doc-drift:
     name: doc-drift
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
+      - name: Require changelog update for every PR
+        run: npm run check:pr-documentation -- "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
       - name: Check documentation inventory drift
         run: npm run check:doc-drift
         env:
