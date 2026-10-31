@@ -107,6 +107,22 @@ duplicate lookups and DTO hops, import direction and justified remaining
 complexity. LOC alone or arbitrary file splitting does not establish improvement.
 Production simplification is **NOT_IMPLEMENTED** at this Phase-01 checkpoint.
 
+### First implemented preparatory simplification (#1169)
+
+The later branch checkpoint removes the three no-op HAI delivery methods
+(`deliverArgMutation`, `mutateToolResult`, `injectCompactionContext`), their unused
+`ToolResultMutation` DTO and the `createOpenCodeHostAdapter` forwarding factory.
+The plugin constructs its concrete adapter directly. No production caller used
+the removed methods; actual hook mutation, block delivery, initialization,
+capability/reviewer checks and cleanup are unchanged. The live HAI baseline and
+negative contract tests reject the removed surface; no compatibility aliases or
+fallback paths remain for it.
+
+This is actual but **partial** code simplification, not the complete V2 adapter,
+installer or lifecycle port. Remaining V1 APIs, pins, closed capability/transport
+contracts and installed product behavior still require the final breaking
+cutover; no V2 support or operator/reviewer acceptance is certified here.
+
 ## Phase-01 impact matrix
 
 | Changed contract                           | Owner / implementation                                                                | Verification and documentation                                                                                                                                                                 |

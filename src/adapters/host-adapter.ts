@@ -118,14 +118,6 @@ export interface AllowDecision {
 
 export type EnforcementDecision = BlockDecision | AllowDecision;
 
-// ─── Tool Result Mutation ────────────────────────────────────────────────────
-
-export interface ToolResultMutation {
-  readonly replaceOutput?: string;
-  readonly appendContext?: string;
-  readonly systemMessage?: string;
-}
-
 // ─── Governance State Projection ──────────────────────────────────────────────
 
 export interface GovernanceStateProjection {
@@ -165,12 +157,8 @@ export interface HostAdapter {
   shutdown(): Promise<void>;
 
   deliverBlockDecision(event: HostToolEvent, decision: BlockDecision): void;
-  deliverArgMutation(event: HostToolEvent, args: Record<string, unknown>): void;
-  mutateToolResult(event: HostToolEvent, mutation: ToolResultMutation): void;
 
   isReviewerSupported(): boolean;
 
   log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): void;
-
-  injectCompactionContext?(context: string): void;
 }

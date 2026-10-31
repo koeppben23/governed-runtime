@@ -858,6 +858,13 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **V2 preparatory HAI simplification (#1169).** Removed three ineffective
+  argument/result/compaction delivery methods, their unused mutation DTO and the
+  pass-through OpenCode adapter factory. The composition root now constructs the
+  adapter directly; actual hook mutation, synchronous block delivery, capability
+  validation and lifecycle cleanup retain their existing owners and behavior.
+  Updated the live HAI baseline and rejection tests without compatibility aliases.
+  This is preparatory cleanup, not a completed V2 runtime or installed support.
 - **Explicit V2 governance-scope correction (#1169).** Revised ADR-010, trust
   documentation, acceptance gates and the decision report to require strict
   FlowGuard decision/evidence integrity and preventive gates on controlled host

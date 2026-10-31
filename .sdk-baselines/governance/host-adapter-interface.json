@@ -14,8 +14,6 @@
     "validateCapabilities",
     "shutdown",
     "deliverBlockDecision",
-    "deliverArgMutation",
-    "mutateToolResult",
     "isReviewerSupported",
     "log"
   ],
@@ -38,11 +36,8 @@
     },
     "shutdown": { "type": "string", "const": "() => Promise<void>" },
     "deliverBlockDecision": { "type": "string", "const": "(event, decision) => void" },
-    "deliverArgMutation": { "type": "string", "const": "(event, args) => void" },
-    "mutateToolResult": { "type": "string", "const": "(event, mutation) => void" },
     "isReviewerSupported": { "type": "string", "const": "() => boolean" },
-    "log": { "type": "string", "const": "(level, message, data?) => void" },
-    "injectCompactionContext": { "type": "string", "const": "(context) => void" }
+    "log": { "type": "string", "const": "(level, message, data?) => void" }
   },
   "$defs": {
     "HostCapabilities": {

@@ -30,7 +30,7 @@ import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import type { OrchestratorDeps } from './plugin-orchestrator.js';
 import type { RiskEnforcementDeps } from './plugin-risk.js';
 import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-shared.js';
-import { createOpenCodeHostAdapter, HostCapabilityMismatchError } from './opencode-host-adapter.js';
+import { OpenCodeHostAdapter, HostCapabilityMismatchError } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
 import type { OrchestratorClient, ReviewerExecutionFailure } from './review/types.js';
 import {
@@ -109,7 +109,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   const typedClient = client as OrchestratorClient;
 
-  const adapter = createOpenCodeHostAdapter({
+  const adapter = new OpenCodeHostAdapter({
     client: typedClient,
     directory: candidateWorktree ?? '',
     worktree: candidateWorktree ?? '',
@@ -156,7 +156,7 @@ async function resolveWorkspaceFingerprint(ws: PluginWorkspaceRuntime): Promise<
 }
 
 async function initializeHostAdapter(
-  adapter: ReturnType<typeof createOpenCodeHostAdapter>,
+  adapter: OpenCodeHostAdapter,
   log: PluginLogger,
   disposeLogging: PluginLoggingRuntime['disposeLogging'],
 ): Promise<void> {

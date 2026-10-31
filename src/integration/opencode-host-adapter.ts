@@ -20,7 +20,6 @@ import type {
   HostReviewTransportCapability,
   HostToolEvent,
   BlockDecision,
-  ToolResultMutation,
   CapabilityValidationResult,
   EnforcementLevel,
 } from '../adapters/host-adapter.js';
@@ -144,14 +143,6 @@ export class OpenCodeHostAdapter implements HostAdapter {
     throw buildEnforcementError(decision.code, decision.reason);
   }
 
-  deliverArgMutation(_event: HostToolEvent, _args: Record<string, unknown>): void {
-    // OpenCode argument mutation is performed directly on the hook output ref.
-  }
-
-  mutateToolResult(_event: HostToolEvent, _mutation: ToolResultMutation): void {
-    // OpenCode result mutation is performed directly on the hook output ref.
-  }
-
   isReviewerSupported(): boolean {
     return this.capabilities.reviewTransports.some((transport) =>
       reviewTransportSatisfies(transport, REQUIRED_INDEPENDENT_REVIEW_TRANSPORT),
@@ -173,12 +164,4 @@ export class OpenCodeHostAdapter implements HostAdapter {
     }
     void data;
   }
-
-  injectCompactionContext(_context: string): void {
-    // OpenCode compaction context is injected directly by the hook handler.
-  }
-}
-
-export function createOpenCodeHostAdapter(config: OpenCodeAdapterConfig): HostAdapter {
-  return new OpenCodeHostAdapter(config);
 }

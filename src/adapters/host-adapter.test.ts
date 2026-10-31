@@ -148,11 +148,10 @@ describe('HostAdapter Contract', () => {
       );
     });
 
-    it('HAPPY: argument and result projections remain non-throwing host hooks', () => {
-      expect(() => adapter.deliverArgMutation(createTestEvent(), { command: 'ls' })).not.toThrow();
-      expect(() =>
-        adapter.mutateToolResult(createTestEvent(), { replaceOutput: 'blocked' }),
-      ).not.toThrow();
+    it('BAD: does not expose ineffective mutation or compaction delivery', () => {
+      expect(adapter).not.toHaveProperty('deliverArgMutation');
+      expect(adapter).not.toHaveProperty('mutateToolResult');
+      expect(adapter).not.toHaveProperty('injectCompactionContext');
     });
   });
 
@@ -210,10 +209,9 @@ describe('HostAdapter Contract', () => {
       expect(() => adap.log('error', 'critical')).not.toThrow();
     });
 
-    it('HAPPY: shutdown is idempotent and compaction injection is non-throwing', async () => {
+    it('HAPPY: shutdown is idempotent', async () => {
       await adapter.shutdown();
       await expect(adapter.shutdown()).resolves.toBeUndefined();
-      expect(() => adapter.injectCompactionContext?.('governance state')).not.toThrow();
     });
   });
 });
