@@ -3,54 +3,30 @@
  * @description OpenCode event hook handlers for the FlowGuard plugin.
  *
  * Implements handlers for:
- * - session.error: Logs unhandled session errors to the audit trail
+ * - session.execution.failed: Logs unhandled session errors to the audit trail
  * - session.deleted: Cleans stale in-memory caches for terminated sessions
- * - session idle (session.idle / session.status idle): resumes interrupted
+ * - session.idle: resumes interrupted
  *   canonical system work. `system_work` phases have no commands, so the
  *   runtime — not a later user command — owns the continuation.
  *
  * All handlers are fail-safe: errors are logged but never thrown.
  * This prevents event-hook failures from breaking the host runtime.
  *
- * @see https://opencode.ai/docs/plugins (Hooks > event)
+ * @see https://opencode.ai/v2/docs/build/plugins/server
  * @version v2
  */
 
-import type { Hooks } from '@opencode-ai/plugin';
-
 import { serializeError } from '../logging/error-serialize.js';
 import { redactExtra, sanitizeDiagnosticString } from '../logging/redact.js';
+import type { OpenCodeEvent } from '@opencode/client';
 
 /**
- * Canonical OpenCode event contract, derived from the pinned
- * `@opencode-ai/plugin` hook surface. If the SDK renames an event or changes a
- * payload shape, these derivations stop compiling — the event names below are
- * pinned to the real union instead of hand-written strings.
- */
-type HostEvent = Parameters<NonNullable<Hooks['event']>>[0]['event'];
-type HandledEventType = Extract<
-  HostEvent,
-  {
-    type:
-      | 'session.error'
-      | 'session.deleted'
-      | 'session.idle'
-      | 'session.status'
-      | 'message.part.updated';
-  }
->['type'];
-
-/**
- * OpenCode Event shape (from @opencode-ai/sdk, used by plugin event hooks).
- *
- * Intentionally defined here as a subset of the SDK Event type rather than
- * imported. Event dispatch consumes { type, properties }; mutation wakeups
- * additionally pass through the strict terminal-part/history boundary before
- * any state write. Unconsumed event fields are never completion evidence.
+ * Native V2 notification projection. Mutation wakeups additionally require a
+ * fresh history read before any state write; notifications are not evidence.
  */
 export interface PluginEvent {
   readonly type: string;
-  readonly properties?: Record<string, unknown>;
+  readonly data?: Record<string, unknown>;
 }
 
 /**
@@ -98,13 +74,12 @@ export interface EventHandlerDeps {
  * OpenCode emits many event types; we only act on a targeted subset
  * to minimize coupling and runtime overhead.
  */
-const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set<HandledEventType>([
-  'session.error',
+const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'session.execution.failed',
   'session.deleted',
   'session.idle',
-  'session.status',
-  'message.part.updated',
-]);
+  'session.tool.failed',
+] satisfies readonly OpenCodeEvent['type'][]);
 
 /**
  * Copy host-supplied properties that are not already modelled explicitly.
@@ -118,7 +93,7 @@ const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set<HandledEventType>([
 function collectSupplementaryContext(
   properties: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  const KNOWN_KEYS = new Set(['sessionID', 'error', 'message', 'code', 'stack']);
+  const KNOWN_KEYS = new Set(['sessionID', 'error']);
   const supplementary: Record<string, unknown> = {};
   if (!properties) return supplementary;
   for (const [key, value] of Object.entries(properties)) {
@@ -141,27 +116,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Extract a diagnostic message from the SDK `session.error` error union
- * (`ProviderAuthError | UnknownError | MessageOutputLengthError |
- * MessageAbortedError | ApiError`). All union members carry
- * `{ name: string; data: { message?: string } }`. A bare string is accepted as
- * defensive host input; non-conforming shapes yield `undefined`.
+ * Native SessionStructuredError has type/message, not a V1 name/data envelope.
  */
 function extractErrorMessage(error: unknown): string | undefined {
-  if (typeof error === 'string') return error.length > 0 ? error : undefined;
   if (!isRecord(error)) return undefined;
-  const data = error.data;
-  if (isRecord(data)) {
-    const message = data.message;
-    if (typeof message === 'string' && message.length > 0) return message;
-  }
   return typeof error.message === 'string' && error.message.length > 0 ? error.message : undefined;
-}
-
-/** Extract the SDK error discriminant (`UnknownError`, `APIError`, ...). */
-function extractErrorName(error: unknown): string | undefined {
-  if (!isRecord(error)) return undefined;
-  return typeof error.name === 'string' && error.name.length > 0 ? error.name : undefined;
 }
 
 async function handleSessionError(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
@@ -176,14 +135,13 @@ function buildSessionErrorDetails(event: PluginEvent): {
   logDetail: Record<string, unknown>;
   auditDetail: Record<string, unknown>;
 } {
-  const properties = event.properties;
+  const properties = event.data;
   const sessionId = strOr(properties?.sessionID, 'unknown');
   // Host-supplied error text is unstructured and reaches the raw audit trail
   // via error:SESSION_ERROR. The logger redacts centrally before its sinks;
   // the audit append does not, so redact at the source for both consumers.
   const errorMessage = sanitizeDiagnosticString(
-    extractErrorMessage(properties?.error) ??
-      strOr(properties?.message, 'unspecified session error'),
+    extractErrorMessage(properties?.error) ?? 'unspecified session error',
   );
   const optionalDetails = buildOptionalErrorDetails(properties);
   return {
@@ -198,32 +156,15 @@ function buildOptionalErrorDetails(
   properties: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
   const detail: Record<string, unknown> = {};
-  const errorName = extractErrorName(properties?.error);
-  const errorCode = str(properties?.code);
-  const errorStack = str(properties?.stack);
+  const errorType = str(isRecord(properties?.error) ? properties.error.type : undefined);
   const supplementary = collectSupplementaryContext(properties);
-  if (errorName) detail.errorName = sanitizeDiagnosticString(errorName);
-  if (errorCode) detail.errorCode = errorCode;
-  if (errorStack) detail.errorStack = sanitizeDiagnosticString(errorStack);
+  if (errorType) detail.errorType = sanitizeDiagnosticString(errorType);
   if (Object.keys(supplementary).length > 0) detail.supplementary = supplementary;
   return detail;
 }
 
-/**
- * Resolve the terminated session id from the SDK `session.deleted` payload
- * (`properties.info.id`). Missing or non-string ids are ignored fail-safe.
- */
-function extractDeletedSessionId(
-  properties: Record<string, unknown> | undefined,
-): string | undefined {
-  const info = properties?.info;
-  if (!isRecord(info)) return undefined;
-  const id = info.id;
-  return typeof id === 'string' && id.length > 0 ? id : undefined;
-}
-
 async function handleSessionDelete(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
-  const sessionId = extractDeletedSessionId(event.properties);
+  const sessionId = extractEventSessionId(event.data);
   if (sessionId) {
     deps.cleanupSession(sessionId);
     deps.log.info('event', 'session cleanup completed', { sessionId });
@@ -231,7 +172,7 @@ async function handleSessionDelete(deps: EventHandlerDeps, event: PluginEvent): 
 }
 
 /**
- * Resolve the event session id (`properties.sessionID`). Missing or non-string
+ * Resolve the event session id (`data.sessionID`). Missing or non-string
  * ids are ignored fail-safe.
  */
 function extractEventSessionId(
@@ -241,19 +182,8 @@ function extractEventSessionId(
   return typeof id === 'string' && id.length > 0 ? id : undefined;
 }
 
-/**
- * Whether this event reports an idle/ready session: the lifecycle point at
- * which interrupted system work may be resumed.
- */
-function isSessionIdleEvent(event: PluginEvent): boolean {
-  if (event.type === 'session.idle') return true;
-  if (event.type !== 'session.status') return false;
-  const status = event.properties?.status;
-  return isRecord(status) && status.type === 'idle';
-}
-
 async function handleSessionIdle(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
-  const sessionId = extractEventSessionId(event.properties);
+  const sessionId = extractEventSessionId(event.data);
   if (!sessionId) return;
   await deps.resumePendingSystemWork(sessionId);
 }
@@ -267,10 +197,10 @@ export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): P
   if (!event || !event.type) return;
   if (!HANDLED_EVENT_TYPES.has(event.type)) return;
   try {
-    if (event.type === 'message.part.updated') await deps.observeMutationEvent(event);
-    else if (event.type === 'session.error') await handleSessionError(deps, event);
+    if (event.type === 'session.tool.failed') await deps.observeMutationEvent(event);
+    else if (event.type === 'session.execution.failed') await handleSessionError(deps, event);
     else if (event.type === 'session.deleted') await handleSessionDelete(deps, event);
-    else if (isSessionIdleEvent(event)) await handleSessionIdle(deps, event);
+    else if (event.type === 'session.idle') await handleSessionIdle(deps, event);
   } catch (err) {
     deps.log.warn('event', 'event handler failed (non-blocking)', {
       eventType: event.type,

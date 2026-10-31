@@ -27,6 +27,7 @@ import {
 } from './reviewer-task-completion.js';
 import { REVIEWER_STEP_LIMIT } from '../../../templates/mandates-reviewer-criteria.js';
 import type { OrchestratorClient, ReviewerCompletionFailureCode } from '../types.js';
+import { createReviewClient } from '../../opencode-v2-test-helpers.js';
 
 type Part = Record<string, unknown>;
 
@@ -65,13 +66,7 @@ const YPE7QR = fixture('reviewer-step-budget-yPE7Qr.json');
 const OCT21_AT_LIMIT = fixture('reviewer-plan-2026-10-21-at-limit-redacted.json');
 
 function clientReturning(entry: unknown): OrchestratorClient {
-  return {
-    app: { agents: async () => ({ data: [] }) },
-    session: {
-      prompt: vi.fn(async () => ({ data: { info: {} } })),
-      messages: async () => entry as never,
-    },
-  };
+  return createReviewClient({ readHistory: vi.fn(async () => entry) });
 }
 
 describe('reviewer task completion - real host fixtures', () => {
@@ -257,41 +252,38 @@ describe('reviewer task completion - classification order', () => {
 });
 
 describe('reviewer task completion - host messages authority', () => {
-  it('HAPPY: reads the host messages through the SDK receiver', async () => {
-    const session = {
-      _client: { transport: 'host' },
-      prompt: async () => ({ data: { info: {} } }),
-      async messages(this: { _client?: unknown }) {
-        if (this._client === undefined) throw new TypeError('detached receiver');
-        return {
-          data: [
-            {
-              info: {
-                role: 'user',
-                id: 'msg_request',
-                sessionID: 'c',
-                model: { providerID: 'p', modelID: 'm' },
-              },
+  it('HAPPY: reads history through the semantic host receiver and exact child id', async () => {
+    const client = {
+      ...createReviewClient(),
+      transport: 'host',
+      async readHistory(this: { transport: string }, sessionId: string) {
+        if (this.transport !== 'host') throw new TypeError('detached receiver');
+        expect(sessionId).toBe('c');
+        return [
+          {
+            info: {
+              role: 'user',
+              id: 'msg_request',
+              sessionID: 'c',
+              model: { providerID: 'p', modelID: 'm' },
             },
-            {
-              info: {
-                role: 'assistant',
-                id: 'msg_answer',
-                parentID: 'msg_request',
-                sessionID: 'c',
-                providerID: 'p',
-                modelID: 'm',
-                finish: 'stop',
-              },
-              parts: [ANSWER],
+          },
+          {
+            info: {
+              role: 'assistant',
+              id: 'msg_answer',
+              parentID: 'msg_request',
+              sessionID: 'c',
+              providerID: 'p',
+              modelID: 'm',
+              finish: 'stop',
             },
-          ],
-        };
+            parts: [ANSWER],
+          },
+        ];
       },
-    } as unknown as OrchestratorClient['session'];
-    await expect(
-      readReviewerTaskCompletion({ app: { agents: async () => ({ data: [] }) }, session }, 'c'),
-    ).resolves.toEqual({
+    };
+    await expect(readReviewerTaskCompletion(client, 'c')).resolves.toEqual({
       kind: 'completed',
       steps: 1,
       model: { providerID: 'p', modelID: 'm', variant: null },
@@ -299,31 +291,26 @@ describe('reviewer task completion - host messages authority', () => {
   });
 
   it('BAD: the 2026-10-19 child read from the host is truncated', async () => {
-    await expect(readReviewerTaskCompletion(clientReturning(OCT19), 'c')).resolves.toMatchObject({
+    await expect(
+      readReviewerTaskCompletion(clientReturning(OCT19.data), 'c'),
+    ).resolves.toMatchObject({
       kind: 'incomplete',
       code: 'REVIEWER_OUTPUT_TRUNCATED',
     });
   });
 
-  it('EDGE: missing, throwing, erroring or null messages are unverifiable', async () => {
-    const withoutMessages: OrchestratorClient = {
-      app: { agents: async () => ({ data: [] }) },
-      session: { prompt: async () => ({ data: { info: {} } }) },
-    };
-    const throwing: OrchestratorClient = {
-      app: { agents: async () => ({ data: [] }) },
-      session: {
-        prompt: async () => ({ data: { info: {} } }),
-        messages: async () => {
-          throw new Error('host down');
-        },
+  it('EDGE: throwing, old envelopes or null history are unverifiable', async () => {
+    const throwing = createReviewClient({
+      readHistory: async () => {
+        throw new Error('host down');
       },
-    };
+    });
     for (const client of [
-      withoutMessages,
       throwing,
       clientReturning({ error: new Error('unavailable') }),
+      clientReturning({ data: OCT19.data }),
       clientReturning(null),
+      clientReturning(undefined),
     ]) {
       await expect(readReviewerTaskCompletion(client, 'c')).resolves.toMatchObject({
         kind: 'incomplete',

@@ -3,6 +3,9 @@
 - **Release status:** NO-GO for supported ACTIVE V2 integration and merge; the
   revised product contract is not implemented/installed-tested.
 - **Work status:** Phase-02 bounded evidence collection is complete.
+  Native entrypoint/client replacement is implementation WIP, with
+  mocked boundary tests but unfinished V1 fixture/SDK-tooling migration and
+  failing full regression gates; see the [inventory](./implementation-inventory.md#native-entrypointclient-implementation-in-progress).
   Adapter porting and simplification may proceed against the revised contract;
   unresolved authority/reviewer assumptions block their affected operations,
   not all V2 work. No broad containment-probe campaign is required.

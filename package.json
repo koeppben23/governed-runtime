@@ -127,6 +127,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@opencode/client": "2.2.4",
+    "@opencode/plugin": "2.2.4",
     "@opentelemetry/api": "^1.10.0",
     "asn1js": "^4.0.0",
     "jose": "^6.2.13",

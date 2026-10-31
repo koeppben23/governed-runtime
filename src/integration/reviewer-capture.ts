@@ -425,15 +425,13 @@ async function confirmCaptureTermination(
   capture: Capture,
   owned: () => boolean,
 ): Promise<boolean> {
-  const session = client.session;
-  if (!hasTerminationCapabilities(session)) return false;
-  const metadata = await session.get({ path: { id: capture.childSessionId } });
-  if (!owned() || !matchesChildMetadata(metadata, capture.childSessionId)) return false;
-  const aborted = await session.abort({ path: { id: capture.childSessionId } });
-  if (!owned() || aborted.error != null || aborted.data !== true) return false;
+  const metadata = await client.getSession(capture.childSessionId);
+  if (!owned() || metadata.sessionId !== capture.childSessionId) return false;
+  const aborted = await client.interrupt(capture.childSessionId);
+  if (!owned() || aborted !== true) return false;
   let previousDigest: string | undefined;
   for (let probe = 0; probe < 2; probe++) {
-    const digest = await captureSnapshotDigest(session, capture, owned);
+    const digest = await captureSnapshotDigest(client, capture, owned);
     if (digest === null) return false;
     if (previousDigest !== undefined && previousDigest !== digest) return false;
     previousDigest = digest;
@@ -441,53 +439,17 @@ async function confirmCaptureTermination(
   return true;
 }
 
-type TerminationSession = OrchestratorClient['session'] &
-  Required<Pick<OrchestratorClient['session'], 'get' | 'abort' | 'status' | 'messages'>>;
-
-function hasTerminationCapabilities(
-  session: OrchestratorClient['session'],
-): session is TerminationSession {
-  return (
-    typeof session.get === 'function' &&
-    typeof session.abort === 'function' &&
-    typeof session.status === 'function' &&
-    typeof session.messages === 'function'
-  );
-}
-
-function matchesChildMetadata(
-  metadata: Awaited<ReturnType<TerminationSession['get']>>,
-  child: string,
-): boolean {
-  return metadata.error == null && metadata.data?.id === child;
-}
-
 async function captureSnapshotDigest(
-  session: TerminationSession,
+  client: OrchestratorClient,
   capture: Capture,
   owned: () => boolean,
 ): Promise<string | null> {
   const [status, history] = await Promise.all([
-    session.status(),
-    session.messages({ path: { id: capture.childSessionId } }),
+    client.quiescence(capture.childSessionId),
+    client.readHistory(capture.childSessionId),
   ]);
-  if (
-    !owned() ||
-    !idleCaptureStatus(status, capture.childSessionId) ||
-    history.error != null ||
-    !terminalCaptureHistory(history.data, capture)
-  )
-    return null;
-  return hashText(canonicalJsonStringify(history.data));
-}
-
-function idleCaptureStatus(
-  status: Awaited<ReturnType<NonNullable<OrchestratorClient['session']['status']>>>,
-  childSessionId: string,
-): boolean {
-  if (status.error != null || !status.data || Array.isArray(status.data)) return false;
-  // OpenCode's status map is sparse: idle sessions are removed from the map.
-  return status.data[childSessionId] === undefined || status.data[childSessionId]?.type === 'idle';
+  if (!owned() || status !== 'idle' || !terminalCaptureHistory(history, capture)) return null;
+  return hashText(canonicalJsonStringify(history));
 }
 
 /** Resolve only the actual final child call, linked to its own host user request. */

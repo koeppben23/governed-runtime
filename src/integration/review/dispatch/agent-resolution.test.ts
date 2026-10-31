@@ -1,155 +1,90 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  _resetAgentResolutionCache,
   REVIEWER_AGENT_PRIMARY,
   ReviewerAgentUnavailableError,
   resolveReviewerAgent,
 } from './agent-resolution.js';
-import type { OrchestratorClient } from '../types.js';
+import { createReviewClient } from '../../opencode-v2-test-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 
-function makeClient(opts: {
-  agents?: Array<Record<string, unknown>>;
-  agentsThrows?: boolean;
-  agentsError?: unknown;
-}): OrchestratorClient {
-  return {
-    app: {
-      agents: vi.fn(async () => {
-        if (opts.agentsThrows) throw new Error('registry unavailable');
-        return { data: opts.agents, error: opts.agentsError };
-      }),
-    },
-    session: { prompt: vi.fn() },
-  };
-}
-
-describe('reviewer agent resolution', () => {
-  beforeEach(() => {
-    _resetAgentResolutionCache();
-  });
-
-  it('uses the canonical reviewer subagent identifier', () => {
+describe('session-scoped reviewer agent resolution', () => {
+  it('uses the canonical reviewer identifier', () => {
     expect(REVIEWER_AGENT_PRIMARY).toBe(REVIEWER_SUBAGENT_TYPE);
-    expect(REVIEWER_AGENT_PRIMARY).toBe('flowguard-reviewer');
   });
 
-  it('resolves the isolated reviewer by id', async () => {
-    const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-    await expect(resolveReviewerAgent(client)).resolves.toBe(REVIEWER_AGENT_PRIMARY);
+  it('resolves by native id in the exact child location', async () => {
+    const client = createReviewClient({
+      listAgents: vi.fn(async () => [{ id: REVIEWER_AGENT_PRIMARY }]),
+    });
+    await expect(resolveReviewerAgent(client, 'child')).resolves.toBe(REVIEWER_AGENT_PRIMARY);
+    expect(client.listAgents).toHaveBeenCalledWith('child');
+    expect(client.executeReviewerPrompt).not.toHaveBeenCalled();
   });
 
-  it('resolves the isolated reviewer by name', async () => {
-    const client = makeClient({ agents: [{ name: 'flowguard-reviewer' }] });
-    await expect(resolveReviewerAgent(client)).resolves.toBe(REVIEWER_AGENT_PRIMARY);
-  });
-
-  it('fails closed when the isolated reviewer is missing', async () => {
-    const client = makeClient({ agents: [{ id: 'general' }] });
-    await expect(resolveReviewerAgent(client)).rejects.toMatchObject({
+  it.each(
+    [[], [{ id: 'general' }], [{ name: REVIEWER_SUBAGENT_TYPE }]].map((agents) => ({ agents })),
+  )('never substitutes general or accepts a removed name alias: $agents', async ({ agents }) => {
+    const client = createReviewClient({ listAgents: vi.fn().mockResolvedValue(agents) });
+    await expect(resolveReviewerAgent(client, 'child')).rejects.toMatchObject({
       name: 'ReviewerAgentUnavailableError',
       code: 'REVIEWER_AGENT_UNAVAILABLE',
     });
-    expect(client.session.prompt).not.toHaveBeenCalled();
+    expect(client.executeReviewerPrompt).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the registry probe throws', async () => {
-    const client = makeClient({ agentsThrows: true });
-    await expect(resolveReviewerAgent(client)).rejects.toBeInstanceOf(
+  it.each([null, undefined, {}, { data: [{ id: REVIEWER_AGENT_PRIMARY }] }])(
+    'rejects malformed registry results and old envelopes: %j',
+    async (agents) => {
+      const client = createReviewClient({ listAgents: vi.fn().mockResolvedValue(agents) });
+      await expect(resolveReviewerAgent(client, 'child')).rejects.toThrow(/NOT_VERIFIED/);
+    },
+  );
+
+  it('re-reads capability after reload rather than retaining process-lifetime approval', async () => {
+    const listAgents = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: REVIEWER_AGENT_PRIMARY }])
+      .mockResolvedValueOnce([]);
+    const client = createReviewClient({ listAgents });
+    await expect(resolveReviewerAgent(client, 'child')).resolves.toBe(REVIEWER_AGENT_PRIMARY);
+    await expect(resolveReviewerAgent(client, 'child')).rejects.toBeInstanceOf(
       ReviewerAgentUnavailableError,
     );
+    expect(listAgents).toHaveBeenCalledTimes(2);
   });
 
-  it('fails closed when the registry returns an error', async () => {
-    const client = makeClient({ agentsError: { message: 'unauthorized' } });
-    await expect(resolveReviewerAgent(client)).rejects.toThrow(/unable to verify/i);
-  });
-
-  it('fails closed when the registry does not return a verifiable array', async () => {
-    const client: OrchestratorClient = {
-      app: { agents: vi.fn().mockResolvedValue({ data: undefined }) },
-      session: { prompt: vi.fn() },
-    };
-    await expect(resolveReviewerAgent(client)).rejects.toThrow(/not_verified/i);
-  });
-
-  it('caches a successful capability resolution for the process lifetime', async () => {
-    const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-    await expect(resolveReviewerAgent(client)).resolves.toBe(REVIEWER_AGENT_PRIMARY);
-    await expect(resolveReviewerAgent(client)).resolves.toBe(REVIEWER_AGENT_PRIMARY);
-    await expect(resolveReviewerAgent(client)).resolves.toBe(REVIEWER_AGENT_PRIMARY);
-    expect(client.app.agents).toHaveBeenCalledTimes(1);
-  });
-
-  it('caches an unavailable capability without silently re-probing another client', async () => {
-    const unavailable = makeClient({ agents: [] });
-    await expect(resolveReviewerAgent(unavailable)).rejects.toBeInstanceOf(
+  it('does not carry a denial or approval into another session/location/client', async () => {
+    const listAgents = vi.fn(async (sessionId: string) =>
+      sessionId === 'available' ? [{ id: REVIEWER_AGENT_PRIMARY }] : [],
+    );
+    const client = createReviewClient({ listAgents });
+    await expect(resolveReviewerAgent(client, 'absent')).rejects.toBeInstanceOf(
       ReviewerAgentUnavailableError,
     );
-
-    const laterClient = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-    await expect(resolveReviewerAgent(laterClient)).rejects.toBeInstanceOf(
+    await expect(resolveReviewerAgent(client, 'available')).resolves.toBe(REVIEWER_AGENT_PRIMARY);
+    const other = createReviewClient({ listAgents: vi.fn(async () => []) });
+    await expect(resolveReviewerAgent(other, 'available')).rejects.toBeInstanceOf(
       ReviewerAgentUnavailableError,
     );
-    expect(laterClient.app.agents).not.toHaveBeenCalled();
+    expect(other.listAgents).toHaveBeenCalledOnce();
   });
 
-  it('allows a deliberate cache reset to re-probe host capability', async () => {
-    const unavailable = makeClient({ agents: [] });
-    await expect(resolveReviewerAgent(unavailable)).rejects.toBeInstanceOf(
-      ReviewerAgentUnavailableError,
-    );
-
-    _resetAgentResolutionCache();
-    const available = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-    await expect(resolveReviewerAgent(available)).resolves.toBe(REVIEWER_AGENT_PRIMARY);
-    expect(available.app.agents).toHaveBeenCalledTimes(1);
-  });
-
-  it('never substitutes general even when general is explicitly registered', async () => {
-    const client = makeClient({ agents: [{ id: 'general', name: 'general' }] });
-    await expect(resolveReviewerAgent(client)).rejects.toBeInstanceOf(
-      ReviewerAgentUnavailableError,
-    );
-  });
-});
-
-describe('reviewer agent resolution error provenance', () => {
-  beforeEach(() => {
-    _resetAgentResolutionCache();
-  });
-
-  it('preserves the underlying cause when the registry probe throws', async () => {
+  it('preserves the underlying host failure as cause', async () => {
     const cause = new Error('transport down');
-    const client: OrchestratorClient = {
-      app: { agents: vi.fn().mockRejectedValue(cause) },
-      session: { prompt: vi.fn() },
-    };
-
-    const error = await resolveReviewerAgent(client).catch((caught: unknown) => caught);
-
+    const client = createReviewClient({ listAgents: vi.fn().mockRejectedValue(cause) });
+    const error: unknown = await resolveReviewerAgent(client, 'child').catch(
+      (caught: unknown) => caught,
+    );
     expect(error).toBeInstanceOf(ReviewerAgentUnavailableError);
     expect((error as Error).cause).toBe(cause);
   });
 
-  it('does not fabricate a cause on registry error results', async () => {
-    const client = makeClient({ agentsError: { message: 'unauthorized' } });
-
-    const error = await resolveReviewerAgent(client).catch((caught: unknown) => caught);
-
+  it('does not fabricate a cause for a missing reviewer', async () => {
+    const client = createReviewClient({ listAgents: vi.fn(async () => []) });
+    const error: unknown = await resolveReviewerAgent(client, 'child').catch(
+      (caught: unknown) => caught,
+    );
     expect(error).toBeInstanceOf(ReviewerAgentUnavailableError);
     expect((error as Error).cause).toBeUndefined();
-  });
-
-  it('echoes the registry error message when one is present', async () => {
-    const client = makeClient({ agentsError: { message: 'unauthorized' } });
-
-    await expect(resolveReviewerAgent(client)).rejects.toThrow(/unauthorized/);
-  });
-
-  it('falls back to the raw registry error when it carries no message', async () => {
-    const client = makeClient({ agentsError: 'denied' });
-
-    await expect(resolveReviewerAgent(client)).rejects.toThrow(/denied/);
   });
 });

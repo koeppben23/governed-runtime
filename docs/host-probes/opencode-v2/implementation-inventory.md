@@ -29,7 +29,60 @@ operator source is a host-UI interaction distinguishable from agent/SDK calls;
 the actual V2 mechanism remains NOT_VERIFIED. No old probe
 becomes PASS; actual product/installed acceptance and release remain NOT_VERIFIED.
 
-## Observed control flow and required simplification
+## Native entrypoint/client implementation in progress
+
+This section describes the subsequent **work-in-progress implementation**, not the
+baseline table below, a completed cutover or installed acceptance. The native
+SDK dependencies are pinned to `@opencode/plugin@2.2.4` and
+`@opencode/client@2.2.4`.
+
+- `plugin.ts` now default-exports one `Plugin.define({ id, setup })` definition.
+  Setup registers tool before/after, session context/compaction and one canonical
+  tool transform, then subscribes to native events. There is no callable V1
+  factory, returned V1 hook object, wrapper chain or command-origin approval hook.
+- Runtime lookup starts with exact native session metadata and its actual
+  directory, then delegates to `resolveSessionAuthority`; worktree runtimes are
+  lazy and owned by setup. A subsequent session move is re-resolved. Lifecycle
+  availability is checked both before and after asynchronous scope resolution.
+  Cleanup aborts the subscription, disposes registrations, drains owned hook and
+  notification operations, then disposes runtime logging; failures are surfaced.
+- `OpenCodeHostAdapter` owns native agent/session/context/interrupt mechanics.
+  `OrchestratorClient` now names semantic operations rather than V1 SDK request
+  and response envelopes. Agent resolution is per session/location with no
+  process-global capability cache. Recovery removes session-list fallback and
+  part-id/call-id interchangeability. Native history is passed through, never
+  rewritten to synthesize assistant `parentID` or completion provenance.
+- Events use native `type/data`; deletion uses `data.sessionID`, and execution
+  failure uses structured `error.type/message`. Error diagnostics and nested
+  supplementary context are sanitized before raw audit emission. Tool failures
+  are wakeups for fresh history reads, not terminal evidence themselves.
+- V1 `app.log` envelopes and the `maxOutputTokens` rewrite are removed from
+  production. UI logging is an explicit optional sink; the unavailable V2 sink
+  is reported. Native host budgeting is untouched; explicit numeric reviewer
+  overrides fail until native headroom and final-wire proof exist.
+
+**Unsupported authority/evidence paths remain blocked.** Hydrate cannot create
+activation through either a tool hook or its registered executor; caller
+arguments do not establish operator UI origin. Reviewer subagent release and
+reviewer context requests are blocked. The adapter advertises no review
+transport, returns unknown quiescence and refuses unproved release mapping or
+serialization execution. Admission, idle, `wait()` and terminal-looking native
+responses do not become capture proof. The existing transport-v5 and
+`review-assurance.v7` contracts are not advanced or silently normalized.
+
+**Cutover is still incomplete.** Migrated registration, event, agent-resolution,
+completion-reading, watchdog, budgeting and logging tests exercise mocked native
+boundaries/semantic ports, not the installed host. Other V1 root-plugin and
+capture fixtures, SDK contract tests/baselines/tooling and the old SDK dependency
+remain unported; full typecheck/lint/regression verification is not green.
+Native rich completion content is currently rejected explicitly rather than
+silently flattened or dropped. This is an unresolved native-behavior surface,
+not proof of INACTIVE parity. Installer/lifecycle, operator UI attribution and
+complete reviewer assurance remain separate, unmet acceptance boundaries.
+Historical probe/evidence bytes are unchanged. No V2 support, merge readiness or
+complete simplification is claimed.
+
+## Baseline control flow and required simplification
 
 Paths in this section are relative to the repository root. The table describes
 the current baseline, its directly dependent surfaces and the required final
@@ -136,9 +189,10 @@ fence still precedes all tool handling, including downstream denial; failure
 never becomes a successful completion, and idle/terminal reconciliation remains
 non-blocking to avoid abort/event deadlock.
 
-Composition-order contract tests cover positive and failing paths. This is not
-V2 hook registration, new reviewer proof or lifecycle-disposal acceptance: the
-current SDK entrypoint/client, installer and installed-host cutover remain open.
+Composition-order contract tests covered positive and failing paths at that
+checkpoint. It did not establish V2 hook registration, new reviewer proof or
+lifecycle-disposal acceptance. The subsequent native-entrypoint working tree is
+described above; installer and installed-host cutover remain open.
 
 ## Phase-01 impact matrix
 

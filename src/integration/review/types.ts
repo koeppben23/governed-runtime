@@ -154,111 +154,26 @@ export interface ReviewVerificationEvidenceItem {
   readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
 }
 
-/**
- * Minimal SDK client interface for the review orchestrator.
- *
- * Mirrors the subset of OpencodeClient used by review modules.
- * Defined as an interface (not imported from SDK) so these modules
- * have zero runtime SDK dependency — testable with plain mocks.
- */
+/** Semantic host operations, not an SDK client or a wire-response adapter. */
 export interface OrchestratorClient {
-  app: {
-    agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
-  };
-  session: {
-    /** Request cancellation of exactly one host session. */
-    abort?(opts: { path: { id: string } }): Promise<{ data?: boolean; error?: unknown }>;
-    /** Host session metadata, used to resolve a reviewer child's parent. */
-    get?(opts: { path: { id: string } }): Promise<{
-      data?: { id?: string; parentID?: string } | undefined;
-      error?: unknown;
-    }>;
-    /** List sessions; used as a parent-resolution fallback when get races creation. */
-    list?(): Promise<{
-      data?: Array<{ id?: string; parentID?: string }> | undefined;
-      error?: unknown;
-    }>;
-    /** Host status map; `idle` is the only quiescent state. */
-    status?(): Promise<{ data?: Record<string, { type?: string }> | undefined; error?: unknown }>;
-    /** Host-recorded session messages; used to verify reviewer task completion. */
-    messages?(opts: { path: { id: string } }): Promise<{
-      data?:
-        | Array<{
-            info?: {
-              id?: string;
-              parentID?: string;
-              sessionID?: string;
-              role?: string;
-              model?: { providerID: string; modelID: string; variant?: string };
-              providerID?: string;
-              modelID?: string;
-              variant?: string;
-              finish?: string;
-              error?: unknown;
-            };
-            parts?: Array<{
-              id?: string;
-              type?: string;
-              text?: string;
-              synthetic?: boolean;
-              ignored?: boolean;
-              callID?: string;
-              tool?: string;
-              state?: { status?: string; metadata?: { sessionId?: string } };
-            }>;
-          }>
-        | undefined;
-      error?: unknown;
-    }>;
-    prompt(opts: {
-      path: { id: string };
-      body: {
-        agent?: string;
-        messageID?: string;
-        model?: { providerID: string; modelID: string };
-        variant?: string;
-        system?: string;
-        parts: Array<{ type: string; text: string }>;
-      };
-    }): Promise<{
-      data?:
-        | {
-            /** Response parts are diagnostics only, never reviewer authority. */
-            parts?: Array<{
-              id?: string;
-              type?: string;
-              text?: string;
-              synthetic?: boolean;
-              ignored?: boolean;
-            }>;
-            info?: {
-              id?: string;
-              parentID?: string;
-              sessionID?: string;
-              role?: string;
-              agent?: string;
-              providerID?: string;
-              modelID?: string;
-              variant?: string;
-              finish?: string;
-              time?: { completed?: number };
-              error?: {
-                name: string;
-                message?: string;
-                data?: { message?: string; retries?: number };
-              };
-            };
-          }
-        | undefined;
-      error?: unknown;
-    }>;
-  };
-  /** Optional TUI client for toast notifications. Not available in headless/CLI mode. */
-  tui?: {
-    showToast(opts: {
-      body: { message: string; variant?: 'info' | 'success' | 'error' };
-    }): Promise<unknown>;
-  };
+  listAgents(sessionId: string): Promise<readonly { readonly id: string }[]>;
+  getSession(sessionId: string): Promise<{
+    readonly sessionId: string;
+    readonly parentSessionId?: string;
+    readonly directory: string;
+  }>;
+  readHistory(sessionId: string): Promise<unknown>;
+  interrupt(sessionId: string): Promise<boolean>;
+  quiescence(sessionId: string): Promise<'idle' | 'busy' | 'unknown'>;
+  reviewerCall(parentSessionId: string, childSessionId: string): Promise<string | null>;
+  /** An admitted prompt is not a completed/correlated serialization reply. */
+  executeReviewerPrompt(input: {
+    readonly sessionId: string;
+    readonly requestId: string;
+    readonly agent: string;
+    readonly model: import('../../state/review-message-capture.js').ReviewerModelSelection;
+    readonly text: string;
+  }): Promise<unknown>;
 }
 
 /**

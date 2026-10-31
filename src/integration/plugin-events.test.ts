@@ -1,712 +1,264 @@
-/**
- * @module integration/plugin-events.test
- * @description Tests for the OpenCode event hook handlers (plugin-events.ts).
- *
- * Validates:
- * - session.error events are logged via deps.log.error
- * - session.deleted events call cleanupSession
- * - Unhandled event types are silently ignored (no-op)
- * - Fail-safe behavior: handler never throws
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE ÔÇö all applicable categories present.
- * @version v1
- */
-
+/** Native V2 notifications: diagnostics, redaction, ordering and lifecycle wakeups, not completion proof. */
 import { describe, it, expect, vi } from 'vitest';
 import { handleEvent, type EventHandlerDeps, type PluginEvent } from './plugin-events.js';
 
-// ÔöÇÔöÇÔöÇ Helpers ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-
-function createMockDeps(): EventHandlerDeps & {
-  calls: { method: string; args: unknown[] }[];
-} {
-  const calls: { method: string; args: unknown[] }[] = [];
+function deps(): EventHandlerDeps {
   return {
-    calls,
-    log: {
-      info(service, message, extra) {
-        calls.push({ method: 'log.info', args: [service, message, extra] });
-      },
-      warn(service, message, extra) {
-        calls.push({ method: 'log.warn', args: [service, message, extra] });
-      },
-      error(service, message, extra) {
-        calls.push({ method: 'log.error', args: [service, message, extra] });
-      },
-    },
-    observeMutationEvent: async () => {},
-    resumePendingSystemWork(sessionId: string) {
-      calls.push({ method: 'resumePendingSystemWork', args: [sessionId] });
-      return Promise.resolve();
-    },
-    cleanupSession(sessionId: string) {
-      calls.push({ method: 'cleanupSession', args: [sessionId] });
-    },
-    async emitSessionErrorAudit(sessionId, errorMessage, detail) {
-      calls.push({
-        method: 'emitSessionErrorAudit',
-        args: [sessionId, errorMessage, detail],
-      });
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    cleanupSession: vi.fn(),
+    observeMutationEvent: vi.fn(async () => {}),
+    resumePendingSystemWork: vi.fn(async () => {}),
+    emitSessionErrorAudit: vi.fn(async () => {}),
+  };
+}
+
+function failure(data: Record<string, unknown> = {}): PluginEvent {
+  return {
+    type: 'session.execution.failed',
+    data: {
+      sessionID: 'session',
+      error: { type: 'provider', message: 'failed' },
+      ...data,
     },
   };
 }
 
-// ÔöÇÔöÇÔöÇ Tests ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-
-describe('integration/plugin-events', () => {
-  // ÔöÇÔöÇÔöÇ HAPPY ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  describe('HAPPY', () => {
-    it('session.error event logs error with sessionId and message', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'sess-abc', error: 'Something went wrong' },
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      expect(errorCall!.args[0]).toBe('event');
-      expect(errorCall!.args[1]).toBe('session error received');
-      expect(errorCall!.args[2]).toEqual({
-        sessionId: 'sess-abc',
-        error: 'Something went wrong',
-        eventType: 'session.error',
-      });
+describe('native V2 event dispatch', () => {
+  it('logs native structured failure before emitting the same sanitized audit detail', async () => {
+    const d = deps();
+    await handleEvent(d, failure());
+    expect(d.log.error).toHaveBeenCalledWith('event', 'session error received', {
+      sessionId: 'session',
+      error: 'failed',
+      eventType: 'session.execution.failed',
+      errorType: 'provider',
     });
-
-    it('session.deleted event calls cleanupSession with sessionId', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.deleted',
-        properties: { info: { id: 'sess-xyz' } },
-      };
-
-      await handleEvent(deps, event);
-
-      const cleanupCall = deps.calls.find((c) => c.method === 'cleanupSession');
-      expect(cleanupCall).toBeDefined();
-      expect(cleanupCall!.args[0]).toBe('sess-xyz');
-
-      const infoCall = deps.calls.find((c) => c.method === 'log.info');
-      expect(infoCall).toBeDefined();
-      expect(infoCall!.args[2]).toEqual({ sessionId: 'sess-xyz' });
+    expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('session', 'failed', {
+      eventType: 'session.execution.failed',
+      errorType: 'provider',
     });
-
-    it('session.idle resumes pending system work for the session', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, { type: 'session.idle', properties: { sessionID: 'sess-idle' } });
-
-      const resumeCall = deps.calls.find((c) => c.method === 'resumePendingSystemWork');
-      expect(resumeCall).toBeDefined();
-      expect(resumeCall!.args[0]).toBe('sess-idle');
-    });
-
-    it('session.status idle resumes pending system work; busy does not', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, {
-        type: 'session.status',
-        properties: { sessionID: 'sess-status', status: { type: 'idle' } },
-      });
-      await handleEvent(deps, {
-        type: 'session.status',
-        properties: { sessionID: 'sess-status', status: { type: 'busy' } },
-      });
-
-      const resumeCalls = deps.calls.filter((c) => c.method === 'resumePendingSystemWork');
-      expect(resumeCalls).toHaveLength(1);
-      expect(resumeCalls[0]!.args[0]).toBe('sess-status');
-    });
-
-    it('session.idle without a session id is ignored fail-safe', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, { type: 'session.idle', properties: {} });
-      expect(deps.calls.some((c) => c.method === 'resumePendingSystemWork')).toBe(false);
-    });
-
-    it('session.error falls back to message property if error is missing', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'sess-1', message: 'Fallback message' },
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      expect((errorCall!.args[2] as Record<string, unknown>).error).toBe('Fallback message');
-    });
+    expect(vi.mocked(d.log.error).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(d.emitSessionErrorAudit).mock.invocationCallOrder[0]!,
+    );
   });
 
-  // ÔöÇÔöÇÔöÇ BAD ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  describe('BAD', () => {
-    it('null event is a no-op', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, null as unknown as PluginEvent);
-      expect(deps.calls).toHaveLength(0);
+  it('cleans exactly the native deleted session, without error-audit emission', async () => {
+    const d = deps();
+    await handleEvent(d, { type: 'session.deleted', data: { sessionID: 'deleted' } });
+    expect(d.cleanupSession).toHaveBeenCalledWith('deleted');
+    expect(d.log.info).toHaveBeenCalledWith('event', 'session cleanup completed', {
+      sessionId: 'deleted',
     });
-
-    it('undefined event is a no-op', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, undefined as unknown as PluginEvent);
-      expect(deps.calls).toHaveLength(0);
-    });
-
-    it('event with empty type is a no-op', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, { type: '' });
-      expect(deps.calls).toHaveLength(0);
-    });
-
-    it('session.deleted with no info does not call cleanup', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.deleted',
-        properties: {},
-      };
-
-      await handleEvent(deps, event);
-
-      const cleanupCall = deps.calls.find((c) => c.method === 'cleanupSession');
-      expect(cleanupCall).toBeUndefined();
-    });
-
-    it('session.error with no properties logs "unknown" sessionId', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      expect((errorCall!.args[2] as Record<string, unknown>).sessionId).toBe('unknown');
-      expect((errorCall!.args[2] as Record<string, unknown>).error).toBe(
-        'unspecified session error',
-      );
-    });
+    expect(d.emitSessionErrorAudit).not.toHaveBeenCalled();
   });
 
-  // ÔöÇÔöÇÔöÇ CORNER ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  describe('CORNER', () => {
-    it('unhandled event types are silently ignored', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, { type: 'session.start' });
-      await handleEvent(deps, { type: 'tool.execute' });
-      await handleEvent(deps, { type: 'unknown.custom.event' });
-      expect(deps.calls).toHaveLength(0);
-    });
-
-    it('session.error with non-string error and message properties logs fallback', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'sess-2', error: 42, message: { nested: true } },
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      // Both error and message are non-string ÔåÆ falls through to default
-      expect((errorCall!.args[2] as Record<string, unknown>).error).toBe(
-        'unspecified session error',
-      );
-    });
-
-    it('session.deleted with non-string info.id does not call cleanup', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.deleted',
-        properties: { info: { id: 12345 } },
-      };
-
-      await handleEvent(deps, event);
-
-      const cleanupCall = deps.calls.find((c) => c.method === 'cleanupSession');
-      expect(cleanupCall).toBeUndefined();
-    });
+  it('uses idle only as a canonical system-work wakeup, not a review result', async () => {
+    const d = deps();
+    await handleEvent(d, { type: 'session.idle', data: { sessionID: 'idle' } });
+    expect(d.resumePendingSystemWork).toHaveBeenCalledWith('idle');
+    expect(d.cleanupSession).not.toHaveBeenCalled();
+    expect(d.emitSessionErrorAudit).not.toHaveBeenCalled();
   });
 
-  // ÔöÇÔöÇÔöÇ EDGE ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  describe('EDGE', () => {
-    it('fail-safe: handler catches and logs cleanupSession exceptions', async () => {
-      const deps = createMockDeps();
-      // Override cleanupSession to throw
-      deps.cleanupSession = () => {
-        throw new Error('cleanup exploded');
-      };
-
-      const event: PluginEvent = {
-        type: 'session.deleted',
-        properties: { info: { id: 'sess-boom' } },
-      };
-
-      // Must not throw
-      await expect(handleEvent(deps, event)).resolves.toBeUndefined();
-
-      // Should have logged the warning
-      const warnCall = deps.calls.find((c) => c.method === 'log.warn');
-      expect(warnCall).toBeDefined();
-      expect(warnCall!.args[1]).toBe('event handler failed (non-blocking)');
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
-        message: 'cleanup exploded',
-      });
-    });
-
-    it('fail-safe: handler catches and logs log.error exceptions', async () => {
-      const deps = createMockDeps();
-      // Override log.error to throw
-      deps.log.error = () => {
-        throw new Error('logging exploded');
-      };
-
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'sess-err', error: 'test' },
-      };
-
-      // Must not throw ÔÇö the outer catch uses log.warn which still works
-      await expect(handleEvent(deps, event)).resolves.toBeUndefined();
-
-      const warnCall = deps.calls.find((c) => c.method === 'log.warn');
-      expect(warnCall).toBeDefined();
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
-        message: 'logging exploded',
-      });
-    });
-
-    it('handles event with readonly frozen properties', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = Object.freeze({
-        type: 'session.error',
-        properties: Object.freeze({ sessionID: 'frozen-sess', error: 'frozen error' }),
-      });
-
-      await expect(handleEvent(deps, event)).resolves.toBeUndefined();
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      expect((errorCall!.args[2] as Record<string, unknown>).sessionId).toBe('frozen-sess');
-    });
+  it('forwards the exact failed-tool notification to the fresh-history reconciliation boundary', async () => {
+    const d = deps();
+    const event = {
+      type: 'session.tool.failed',
+      data: { sessionID: 'session', id: 'call', executed: true },
+    };
+    await handleEvent(d, event);
+    expect(d.observeMutationEvent).toHaveBeenCalledExactlyOnceWith(event);
+    expect(d.emitSessionErrorAudit).not.toHaveBeenCalled();
+    expect(d.resumePendingSystemWork).not.toHaveBeenCalled();
   });
 
-  // ÔöÇÔöÇÔöÇ SMOKE ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  describe('SMOKE', () => {
-    it('handles 1000 rapid events without memory leaks or throws', async () => {
-      const deps = createMockDeps();
-
-      const events: PluginEvent[] = Array.from({ length: 1000 }, (_, i) => {
-        if (i % 3 === 0) {
-          return {
-            type: 'session.error',
-            properties: { sessionID: `sess-${i}`, error: `error-${i}` },
-          };
-        }
-        if (i % 3 === 1) {
-          return {
-            type: 'session.deleted',
-            properties: { info: { id: `sess-${i}` } },
-          };
-        }
-        return { type: 'session.start' };
-      });
-
-      const start = performance.now();
-      await Promise.all(events.map((e) => handleEvent(deps, e)));
-      const elapsed = performance.now() - start;
-
-      // Should complete 1000 events in < 100ms (they're all sync I/O)
-      expect(elapsed).toBeLessThan(100);
-      // Approximately 333 error events + 333 delete events (each producing calls)
-      expect(deps.calls.length).toBeGreaterThan(600);
-    });
-
-    it('PluginEvent interface is structurally compatible with SDK Event shape', () => {
-      // Compile-time check: PluginEvent matches the minimal shape
-      // that the SDK would deliver for event hooks
-      const sdkLikeEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'test', error: 'boom' },
-        timestamp: Date.now(), // extra field — should not break PluginEvent compatibility
-      };
-
-      // PluginEvent only requires { type, properties? } — extra fields are allowed
-      const event: PluginEvent = sdkLikeEvent;
-      expect(event.type).toBe('session.error');
-    });
-  });
-
-  // --- BUG-06: error detail extraction -------------------------------------------
-  describe('BUG-06: error detail extraction', () => {
-    // T1 -- HAPPY: error code and stack are extracted
-    it('session.error with code and stack properties extracts them into log', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: {
-          sessionID: 'S1',
-          error: 'boom',
-          code: 'E42',
-          stack: 'Error: boom\n    at foo.ts:1:1',
-        },
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      const extra = errorCall!.args[2] as Record<string, unknown>;
-      expect(extra.errorCode).toBe('E42');
-      // The stack is sanitized at the source (it is shared with the audit
-      // detail, which is not redacted downstream). sanitizeDiagnosticString
-      // strips line:column references, so the frame keeps its file but not
-      // its position.
-      expect(extra.errorStack).toBe('Error: boom\n    at foo.ts');
-    });
-
-    // T2 -- HAPPY: unknown properties land in supplementary
-    it('session.error with unknown extra properties includes supplementary', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: {
-          sessionID: 'S1',
-          error: 'x',
-          retryCount: 3,
-          context: { a: 1 },
-        },
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      const extra = errorCall!.args[2] as Record<string, unknown>;
-      expect(extra.supplementary).toEqual({ retryCount: 3, context: { a: 1 } });
-    });
-
-    // T3 -- CORNER: non-string code/stack are not extracted, land in supplementary
-    it('non-string code and stack are not extracted, land in supplementary', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'S1', error: 'x', code: 42, stack: { deep: true } },
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      const extra = errorCall!.args[2] as Record<string, unknown>;
-      // Non-string code/stack are not in KNOWN_KEYS extraction but ARE in KNOWN_KEYS set,
-      // so they are excluded from supplementary too. This is intentional: primary fields
-      // are "handled" even when non-string (the handler falls back to defaults).
-      expect(extra).not.toHaveProperty('errorCode');
-      expect(extra).not.toHaveProperty('errorStack');
-      // code and stack are in KNOWN_KEYS so they stay out of supplementary
-      expect(extra).not.toHaveProperty('supplementary');
-    });
-
-    // T4 -- CORNER: empty string code is not included (falsy spread guard)
-    it('empty string code is not included in log extra', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'S1', error: 'x', code: '', stack: '' },
-      };
-
-      await handleEvent(deps, event);
-
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      const extra = errorCall!.args[2] as Record<string, unknown>;
-      // Empty strings are falsy, so spread guard filters them out
-      expect(extra).not.toHaveProperty('errorCode');
-      expect(extra).not.toHaveProperty('errorStack');
-    });
-
-    // T5 -- EDGE: many supplementary keys
-    it('50 unknown properties all land in supplementary', async () => {
-      const deps = createMockDeps();
-      const extraProps: Record<string, unknown> = {};
-      for (let i = 0; i < 50; i++) {
-        extraProps[`custom_${i}`] = `value_${i}`;
+  it.each(['session.deleted', 'session.idle'])(
+    'ignores missing/malformed %s identities',
+    async (type) => {
+      for (const data of [
+        undefined,
+        {},
+        { sessionID: 42 },
+        { sessionID: '' },
+        { info: { id: 'old-shape' } },
+      ]) {
+        const d = deps();
+        await handleEvent(d, { type, ...(data === undefined ? {} : { data }) });
+        expect(d.cleanupSession).not.toHaveBeenCalled();
+        expect(d.resumePendingSystemWork).not.toHaveBeenCalled();
       }
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'S1', error: 'x', ...extraProps },
-      };
+    },
+  );
 
-      await handleEvent(deps, event);
+  it.each([null, undefined, { type: '' }])('ignores a malformed event: %j', async (event) => {
+    const d = deps();
+    await handleEvent(d, event as PluginEvent);
+    expect(d.log.error).not.toHaveBeenCalled();
+    expect(d.cleanupSession).not.toHaveBeenCalled();
+  });
 
-      const errorCall = deps.calls.find((c) => c.method === 'log.error');
-      expect(errorCall).toBeDefined();
-      const extra = errorCall!.args[2] as Record<string, unknown>;
-      const supplementary = extra.supplementary as Record<string, unknown>;
-      expect(supplementary).toBeDefined();
-      expect(Object.keys(supplementary)).toHaveLength(50);
-      expect(supplementary.custom_0).toBe('value_0');
-      expect(supplementary.custom_49).toBe('value_49');
+  it.each([
+    'session.error',
+    'session.status',
+    'message.part.updated',
+    'session.execution.succeeded',
+    'session.step.ended',
+    'unknown',
+  ])('does not accept a V1 alias or promote %s to completion', async (type) => {
+    const d = deps();
+    await handleEvent(d, { type, data: { sessionID: 'session', status: { type: 'idle' } } });
+    for (const method of [
+      d.cleanupSession,
+      d.resumePendingSystemWork,
+      d.emitSessionErrorAudit,
+      d.observeMutationEvent,
+    ])
+      expect(method).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    undefined,
+    42,
+    'old error string',
+    {},
+    { name: 'APIError', data: { message: 'old SDK envelope' } },
+    { message: '' },
+  ])('uses explicit diagnostic uncertainty for malformed native errors: %j', async (error) => {
+    const d = deps();
+    await handleEvent(d, failure({ error }));
+    expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('session', 'unspecified session error', {
+      eventType: 'session.execution.failed',
     });
   });
 
-  // --- BUG-01: audit trail emission --------------------------------------------
-  describe('BUG-01: audit trail emission', () => {
-    // T6 -- HAPPY: emitSessionErrorAudit is called with correct args
-    it('session.error calls emitSessionErrorAudit with sessionId and errorMessage', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'S1', error: 'Something failed' },
-      };
-
-      await handleEvent(deps, event);
-
-      const auditCall = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-      expect(auditCall).toBeDefined();
-      expect(auditCall!.args[0]).toBe('S1');
-      expect(auditCall!.args[1]).toBe('Something failed');
-      expect(auditCall!.args[2]).toEqual({ eventType: 'session.error' });
+  it('reports missing failure identity as unknown rather than inventing a session', async () => {
+    const d = deps();
+    await handleEvent(d, { type: 'session.execution.failed' });
+    expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('unknown', 'unspecified session error', {
+      eventType: 'session.execution.failed',
     });
+  });
 
-    // T7 -- HAPPY: audit call receives extended properties
-    it('audit call includes errorCode and errorStack when present', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: {
-          sessionID: 'S1',
-          error: 'x',
-          code: 'E99',
-          stack: 'trace...',
+  it('accepts frozen native notifications without mutation', async () => {
+    const d = deps();
+    const event = Object.freeze(failure(Object.freeze({ sessionID: 'frozen' })));
+    await handleEvent(d, event);
+    expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('frozen', 'failed', expect.anything());
+  });
+
+  it.each(['cleanup', 'idle', 'mutation', 'audit-sync', 'audit-async', 'logging'])(
+    'surfaces %s callback failure diagnostically without crashing the host',
+    async (kind) => {
+      const d = deps();
+      const error = new Error('callback failed');
+      const sync = () => {
+        throw error;
+      };
+      let event = failure();
+      if (kind === 'cleanup') {
+        d.cleanupSession = sync;
+        event = { type: 'session.deleted', data: { sessionID: 'session' } };
+      }
+      if (kind === 'idle') {
+        d.resumePendingSystemWork = vi.fn().mockRejectedValue(error);
+        event = { type: 'session.idle', data: { sessionID: 'session' } };
+      }
+      if (kind === 'mutation') {
+        d.observeMutationEvent = vi.fn().mockRejectedValue(error);
+        event = { type: 'session.tool.failed', data: { sessionID: 'session', id: 'call' } };
+      }
+      if (kind === 'audit-sync') d.emitSessionErrorAudit = sync;
+      if (kind === 'audit-async') d.emitSessionErrorAudit = vi.fn().mockRejectedValue(error);
+      if (kind === 'logging') d.log.error = sync;
+      await expect(handleEvent(d, event)).resolves.toBeUndefined();
+      expect(d.log.warn).toHaveBeenCalledWith('event', 'event handler failed (non-blocking)', {
+        eventType: event.type,
+        error: expect.objectContaining({ message: 'callback failed' }),
+      });
+    },
+  );
+
+  it('retains rapid-notification handling without throwing', async () => {
+    const d = deps();
+    const start = performance.now();
+    await Promise.all(
+      Array.from({ length: 1000 }, (_, i) =>
+        handleEvent(
+          d,
+          i % 2 === 0 ? failure() : { type: 'session.deleted', data: { sessionID: String(i) } },
+        ),
+      ),
+    );
+    expect(performance.now() - start).toBeLessThan(100);
+    expect(d.emitSessionErrorAudit).toHaveBeenCalledTimes(500);
+    expect(d.cleanupSession).toHaveBeenCalledTimes(500);
+  });
+});
+
+describe('native failure audit confidentiality', () => {
+  it('redacts the native error type/message at source, before both log and raw audit consumers', async () => {
+    const d = deps();
+    await handleEvent(
+      d,
+      failure({
+        error: {
+          type: 'password=hunter2',
+          message:
+            'Bearer abcdef0123456789 sk-proj-0123456789abcdef /Users/alice/private-project/secrets.env',
         },
-      };
-
-      await handleEvent(deps, event);
-
-      const auditCall = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-      expect(auditCall).toBeDefined();
-      const detail = auditCall!.args[2] as Record<string, unknown>;
-      expect(detail.errorCode).toBe('E99');
-      expect(detail.errorStack).toBe('trace...');
-    });
-
-    // T8 -- BAD: audit throws synchronously -- handler is fail-safe
-    it('handler does not throw when emitSessionErrorAudit throws sync error', async () => {
-      const deps = createMockDeps();
-      deps.emitSessionErrorAudit = () => {
-        throw new Error('audit boom');
-      };
-
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'S1', error: 'test' },
-      };
-
-      await expect(handleEvent(deps, event)).resolves.toBeUndefined();
-
-      const warnCall = deps.calls.find((c) => c.method === 'log.warn');
-      expect(warnCall).toBeDefined();
-      expect(warnCall!.args[1]).toBe('event handler failed (non-blocking)');
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
-        message: 'audit boom',
-      });
-    });
-
-    // T9 -- BAD: audit returns rejected promise -- handler is fail-safe
-    it('handler does not throw when emitSessionErrorAudit returns rejected promise', async () => {
-      const deps = createMockDeps();
-      deps.emitSessionErrorAudit = () => Promise.reject(new Error('audit rejected'));
-
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'S1', error: 'test' },
-      };
-
-      await expect(handleEvent(deps, event)).resolves.toBeUndefined();
-
-      const warnCall = deps.calls.find((c) => c.method === 'log.warn');
-      expect(warnCall).toBeDefined();
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
-        message: 'audit rejected',
-      });
-    });
-
-    // T10 -- CORNER: unknown sessionId still triggers audit
-    it('emitSessionErrorAudit is called even when sessionId is "unknown"', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: {},
-      };
-
-      await handleEvent(deps, event);
-
-      const auditCall = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-      expect(auditCall).toBeDefined();
-      expect(auditCall!.args[0]).toBe('unknown');
-      expect(auditCall!.args[1]).toBe('unspecified session error');
-    });
-
-    // T11 -- CORNER: session.deleted does NOT call emitSessionErrorAudit
-    it('session.deleted does not call emitSessionErrorAudit', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.deleted',
-        properties: { info: { id: 'S1' } },
-      };
-
-      await handleEvent(deps, event);
-
-      const auditCalls = deps.calls.filter((c) => c.method === 'emitSessionErrorAudit');
-      expect(auditCalls).toHaveLength(0);
-    });
-
-    // T12 -- EDGE: log.error is called BEFORE emitSessionErrorAudit (ordering)
-    it('log.error is called before emitSessionErrorAudit', async () => {
-      const deps = createMockDeps();
-      const event: PluginEvent = {
-        type: 'session.error',
-        properties: { sessionID: 'S1', error: 'test' },
-      };
-
-      await handleEvent(deps, event);
-
-      const logIdx = deps.calls.findIndex((c) => c.method === 'log.error');
-      const auditIdx = deps.calls.findIndex((c) => c.method === 'emitSessionErrorAudit');
-      expect(logIdx).toBeGreaterThanOrEqual(0);
-      expect(auditIdx).toBeGreaterThanOrEqual(0);
-      expect(logIdx).toBeLessThan(auditIdx);
-    });
-  });
-
-  // ─── Audit confidentiality ──────────────────────────────────
-  describe('session.error diagnostics are redacted before reaching the audit trail', () => {
-    // The logger redacts centrally before its sinks, but the audit append
-    // does not — so anything handed to emitSessionErrorAudit must already be
-    // sanitized, or credentials land verbatim in the raw audit.jsonl.
-    const SECRETS = [
-      'Bearer abcdef0123456789',
-      'password=hunter2',
+      }),
+    );
+    const text = JSON.stringify([
+      vi.mocked(d.log.error).mock.calls,
+      vi.mocked(d.emitSessionErrorAudit).mock.calls,
+    ]);
+    for (const secret of [
+      'hunter2',
+      'abcdef0123456789',
       'sk-proj-0123456789abcdef',
-      '/Users/alice/private-project/secrets.env',
-    ];
+      '/Users/alice/private-project',
+    ])
+      expect(text).not.toContain(secret);
+  });
 
-    async function auditPayload(properties: Record<string, unknown>): Promise<string> {
-      const deps = createMockDeps();
-      await handleEvent(deps, { type: 'session.error', properties });
-      const call = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-      expect(call).toBeDefined();
-      return JSON.stringify([call!.args[1], call!.args[2]]);
-    }
-
-    it('redacts secrets in the error message', async () => {
-      const payload = await auditPayload({
-        sessionID: 'S1',
-        error: `auth failed: ${SECRETS[0]} ${SECRETS[1]}`,
-      });
-      expect(payload).not.toContain('abcdef0123456789');
-      expect(payload).not.toContain('hunter2');
+  it('deeply redacts supplementary context and preserves arrays, numbers and booleans', async () => {
+    const d = deps();
+    await handleEvent(
+      d,
+      failure({
+        request: { headers: { authorization: 'Bearer abcdef0123456789' }, retries: 2 },
+        attempts: [{ ok: false, note: 'password=hunter2' }],
+        stack: 'at /Users/alice/private-project/secrets.env:1:1',
+        url: 'https://user:pass@internal.example.com/v2/api',
+      }),
+    );
+    const detail = vi.mocked(d.emitSessionErrorAudit).mock.calls[0]![2];
+    expect(detail.supplementary).toMatchObject({
+      request: { headers: { authorization: 'Bearer [redacted]' }, retries: 2 },
+      attempts: [{ ok: false }],
     });
+    const text = JSON.stringify(detail);
+    for (const secret of [
+      'abcdef0123456789',
+      'hunter2',
+      '/Users/alice/private-project',
+      'user:pass',
+    ])
+      expect(text).not.toContain(secret);
+  });
 
-    it('redacts secrets and absolute paths in the stack', async () => {
-      const payload = await auditPayload({
-        sessionID: 'S1',
-        error: 'boom',
-        stack: `Error: boom\n    at ${SECRETS[3]}\n    ${SECRETS[2]}`,
-      });
-      expect(payload).not.toContain('/Users/alice/private-project');
-      expect(payload).not.toContain('sk-proj-0123456789abcdef');
-    });
+  it('preserves all supplementary keys, not only a diagnostic allowlist', async () => {
+    const d = deps();
+    const extra = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`key_${i}`, i]));
+    await handleEvent(d, failure(extra));
+    expect(vi.mocked(d.emitSessionErrorAudit).mock.calls[0]![2].supplementary).toEqual(extra);
+  });
 
-    it('redacts secrets in supplementary host context', async () => {
-      const payload = await auditPayload({
-        sessionID: 'S1',
-        error: 'boom',
-        requestUrl: 'https://user:pass@internal.example.com/v1/keys',
-        upstreamAuth: SECRETS[0],
-      });
-      expect(payload).not.toContain('user:pass');
-      expect(payload).not.toContain('abcdef0123456789');
-    });
-
-    it('redacts secrets nested inside supplementary objects and arrays', async () => {
-      // detail is z.record(z.string(), z.unknown()), so host context reaches
-      // the raw trail with its structure intact. A shallow string-only pass
-      // would leave everything below the top level unredacted.
-      const payload = await auditPayload({
-        sessionID: 'S1',
-        error: 'boom',
-        request: { headers: { authorization: SECRETS[0] } },
-        attempts: [{ token: SECRETS[2] }, { note: SECRETS[1] }],
-        deep: { a: { b: { c: SECRETS[3] } } },
-      });
-      expect(payload).not.toContain('abcdef0123456789');
-      expect(payload).not.toContain('sk-proj-0123456789abcdef');
-      expect(payload).not.toContain('hunter2');
-      expect(payload).not.toContain('/Users/alice/private-project');
-    });
-
-    it('preserves supplementary structure while redacting', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, {
-        type: 'session.error',
-        properties: {
-          sessionID: 'S1',
-          error: 'boom',
-          request: { headers: { authorization: SECRETS[0] }, retries: 2 },
-          attempts: [{ ok: false }],
-        },
-      });
-
-      const call = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-      const supplementary = (call!.args[2] as Record<string, unknown>).supplementary as Record<
-        string,
-        unknown
-      >;
-      const request = supplementary.request as Record<string, unknown>;
-      // Shape survives: nesting, non-string values, and arrays are preserved.
-      expect(request.retries).toBe(2);
-      expect((request.headers as Record<string, unknown>).authorization).toBe('Bearer [redacted]');
-      expect(supplementary.attempts).toEqual([{ ok: false }]);
-    });
-
-    it('does not throw on cyclic supplementary context', async () => {
-      const cyclic: Record<string, unknown> = { name: 'ctx' };
-      cyclic.self = cyclic;
-      const deps = createMockDeps();
-
-      await expect(
-        handleEvent(deps, {
-          type: 'session.error',
-          properties: { sessionID: 'S1', error: 'boom', cyclic },
-        }),
-      ).resolves.not.toThrow();
-      expect(deps.calls.find((c) => c.method === 'emitSessionErrorAudit')).toBeDefined();
-    });
-
-    it('preserves non-string supplementary values and the diagnostic shape', async () => {
-      const deps = createMockDeps();
-      await handleEvent(deps, {
-        type: 'session.error',
-        properties: {
-          sessionID: 'S1',
-          error: 'plain failure',
-          code: 'E_BOOM',
-          attempt: 3,
-          retriable: true,
-        },
-      });
-
-      const call = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
-      expect(call!.args[1]).toBe('plain failure');
-      const detail = call!.args[2] as Record<string, unknown>;
-      expect(detail.errorCode).toBe('E_BOOM');
-      expect(detail.supplementary).toEqual({ attempt: 3, retriable: true });
-    });
+  it('handles cyclic supplementary context without dropping the failure audit', async () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const d = deps();
+    await expect(handleEvent(d, failure({ cyclic }))).resolves.toBeUndefined();
+    expect(d.emitSessionErrorAudit).toHaveBeenCalledOnce();
   });
 });

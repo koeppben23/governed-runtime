@@ -27,31 +27,6 @@ import {
 } from '../logging/level-reloader.js';
 import { createOtlpLogSink, type OtlpSinkHandle } from '../logging/otlp-sink.js';
 
-/**
- * Shape of the log message accepted by the OpenCode SDK client.log().
- * Extracted from actual call site at buildLogSinks() — service, level, message
- * are always present; extra is an optional Record.
- */
-interface PluginLogMessage {
-  body: {
-    service: string;
-    level: 'debug' | 'info' | 'warn' | 'error';
-    message: string;
-    extra?: Record<string, unknown>;
-  };
-}
-
-/**
- * Compatibility type for the OpenCode plugin client.
- * Only the app.log method is used — the rest of the client surface is ignored.
- * The log signature matches our actual call shape and the SDK return type.
- */
-interface PluginLogClient {
-  app?: {
-    log: (msg: PluginLogMessage) => Promise<unknown>;
-  };
-}
-
 type BuildLogSinksConfig = Pick<
   FlowGuardConfig['logging'],
   'mode' | 'retentionDays' | 'consoleFormat' | 'maxFileSizeMb'
@@ -78,10 +53,10 @@ class LogSinkError extends Error {
 }
 
 /**
- * Build logging sinks based on config mode, client, and workspace.
+ * Build logging sinks based on config mode, an explicit UI sink, and workspace.
  *
  * @param config - FlowGuard config with logging.mode, logging.level, logging.retentionDays
- * @param client - OpenCode client (optional, for UI logging)
+ * @param uiSink - Optional host-provided diagnostic sink; not an SDK client
  * @param workspaceDir - Absolute workspace directory (optional, for file logging)
  * @returns Array of LogSink functions
  */
@@ -93,7 +68,7 @@ export interface BuiltLogSinks {
 
 export function buildLogSinks(
   config: { logging: BuildLogSinksConfig },
-  client: PluginLogClient | undefined,
+  uiSink: LogSink | undefined,
   workspaceDir: string | null,
 ): BuiltLogSinks {
   const sinks: LogSink[] = [];
@@ -132,20 +107,12 @@ export function buildLogSinks(
   }
 
   if (mode === 'ui' || mode === 'both') {
-    if (client?.app?.log) {
-      const clientLog = client.app.log.bind(client.app);
+    if (uiSink) {
       let uiSinkFailures = 0;
       let lastHealthReport = 0;
       sinks.push(async (entry: LogEntry) => {
         try {
-          await clientLog({
-            body: {
-              service: entry.service,
-              level: entry.level,
-              message: entry.message,
-              ...(entry.extra ? { extra: entry.extra } : {}),
-            },
-          });
+          await uiSink(entry);
         } catch {
           uiSinkFailures++;
           const now = Date.now();
@@ -159,7 +126,10 @@ export function buildLogSinks(
           throw new LogSinkError('UI log sink failure'); // rethrow for central counting (G10)
         }
       });
-    }
+    } else
+      process.stderr.write(
+        '[FlowGuard] UI logging is unavailable: OpenCode V2 has no app.log sink. Configure file or console logging.\n',
+      );
   }
 
   if (mode === 'console' || mode === 'file+console') {
@@ -230,7 +200,7 @@ export function addOtlpSinkIfEnabled(
  * Reads FlowGuardConfig from the repo or global config file. Falls back to
  * DEFAULT_CONFIG if the directory is unavailable or the config is unreadable.
  *
- * @param client - OpenCode plugin client (for UI logging)
+ * @param uiSink - Optional host-provided diagnostic sink
  * @param workspaceDir - Resolved workspace directory (may be null)
  * @param worktree - Project worktree path (for init log context)
  * @param fingerprint - Workspace fingerprint (for init log context)
@@ -238,7 +208,7 @@ export function addOtlpSinkIfEnabled(
  * @returns Logger instance, resolved config, and optional dispose callback
  */
 export async function createPluginLogger(
-  client: PluginLogClient | undefined,
+  uiSink: LogSink | undefined,
   workspaceDir: string | null,
   worktree: string | undefined,
   fingerprint: string | null,
@@ -270,9 +240,9 @@ export async function createPluginLogger(
 
   // Create logger: supports file, ui, or both modes, filtered by config level.
   // File sink: {workspace}/.opencode/logs/flowguard-{date}.log (JSONL)
-  // UI sink: delegates to client.app.log() (OpenCode UI)
+  // Native V2 has no app.log API. A host UI sink must be supplied explicitly.
   // Non-blocking: logging errors never block the plugin
-  const { sinks, disposables } = buildLogSinks(config, client, workspaceDir);
+  const { sinks, disposables } = buildLogSinks(config, uiSink, workspaceDir);
 
   const log =
     sinks.length > 0

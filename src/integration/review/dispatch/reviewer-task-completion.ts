@@ -138,19 +138,15 @@ export async function readReviewerTaskCompletion(
   client: OrchestratorClient,
   childSessionId: string,
 ): Promise<ReviewerTaskCompletion> {
-  const session = client.session;
-  if (typeof session.messages !== 'function') return unreadable(null);
-  let response: Awaited<ReturnType<NonNullable<typeof session.messages>>>;
+  let history: unknown;
   try {
-    // Keep the SDK receiver: generated methods access this._client.
-    response = await session.messages({ path: { id: childSessionId } });
+    history = await client.readHistory(childSessionId);
   } catch (error) {
     return unreadable(error);
   }
-  if (response?.error !== undefined) return unreadable(response.error);
-  const completion = classifyReviewerTaskMessages(response?.data);
+  const completion = classifyReviewerTaskMessages(history);
   if (completion.kind !== 'completed') return completion;
-  const model = completedReviewerModel(response?.data, childSessionId);
+  const model = completedReviewerModel(history, childSessionId);
   return model
     ? { ...completion, model }
     : incomplete('REVIEWER_COMPLETION_UNVERIFIABLE', {

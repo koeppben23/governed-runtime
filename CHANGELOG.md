@@ -858,6 +858,22 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Native V2 entrypoint/client work (#1169, not release-ready).** Replaced the
+  callable OpenCode factory with `Plugin.define({ id, setup })`, single native
+  hook/tool registrations, event subscription and owned cleanup. Review consumers
+  use semantic host operations instead of V1 `path/body` requests and SDK response
+  envelopes. Agent lookup follows the actual session location without a
+  process-global capability cache; recovery no longer searches a session list or
+  accepts a part-id alias. Native failure notifications use `type/data` and
+  structured `error.type/message`, with diagnostics redacted before audit writes.
+  Cleanup drains owned in-flight operations; lifecycle availability is rechecked
+  after asynchronous scope resolution. Removed the V1 output-token rewrite;
+  host budgeting is untouched and explicit overrides remain blocked without V2
+  headroom/wire proof. Native boundary tests do not certify installed behavior:
+  V1 test/SDK-tooling removal and regression migration are unfinished; operator
+  UI provenance, reviewer execution/capture, lifecycle and INACTIVE parity remain
+  unverified. PR #1190 stays Draft and supported ACTIVE V2/merge remain NO-GO.
+
 - **Single-owner plugin hook composition (#1169).** Removed post-construction
   hook replacement for reviewer capture, output caps and execution monitoring.
   The composition root now registers each handler once with explicit

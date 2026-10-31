@@ -637,33 +637,25 @@ The independent reviewer's output ceiling is configured in `flowguard.json`:
 }
 ```
 
-`"host"` is the model-neutral default: OpenCode's resolved output budget is used
-unchanged, including for smaller or locally hosted agent models. A fresh install
-writes it; an existing config without the field resolves to it through the config
-schema. An explicit numeric value such as `32000` is preserved, including across
-`install --force`, and is validated against the model's reported output limit.
+`"host"` is the model-neutral default: the native output budget is left unchanged,
+including for smaller or locally hosted models. Numeric values remain valid
+configuration inputs, but **the V2 adapter does not apply them**. They fail with
+`REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN` until native budgeting/headroom and
+final provider-wire proof exist. An unreadable configuration fails explicitly;
+no requested value is silently clamped and no model/variant is substituted.
 
-The FlowGuard OpenCode plugin applies the value through the `chat.params` hook to
-the `flowguard-reviewer` agent only. The parent and every other agent keep the
-host default. The reviewer model, selected variant/reasoning options, step limit,
-and all governance gates are unchanged. OpenCode calls the hook
-after it computes its own `maxOutputTokens`, and the hook's value is passed to the
-provider request.
-
-In `"host"` mode the hook leaves `maxOutputTokens` untouched. The hook fails the
-reviewer request closed — before the provider call — when the configuration
-cannot be read, is invalid, or an explicitly configured numeric cap exceeds the
-model's reported output limit. It never silently clamps the requested cap.
-Correct `reviewer.outputTokenMax` to the reported model limit (or choose a
-compatible model) and restart OpenCode. The plugin reads the config at startup.
-
-`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback for hosts
-where the FlowGuard plugin hook is not active. It is not required for the
-reviewer baseline; when it is set, the plugin still applies
-`reviewer.outputTokenMax` to the reviewer. The fallback affects the whole host
-process, not only the reviewer.
+The V1 `chat.params`/`maxOutputTokens` workaround has been removed from the native
+entrypoint. No host-wide environment fallback is implemented by FlowGuard's V2
+adapter. Selecting `"host"` avoids an unsupported numeric override; it does not
+enable reviewer execution or establish completion/capture assurance. The V2
+reviewer remains blocked and the entrypoint/client cutover is still WIP; see the
+[implementation inventory](./host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
 
 ### Reviewer Execution Budgets (OpenCode)
+
+**V2 status:** the following describes the canonical execution-budget contract.
+The current native adapter does not yet provide a verified reviewer transport or
+joint recovery-quiescence proof. These settings do not bypass that block.
 
 The reviewer execution path has independent upper bounds and one absolute deadline:
 
@@ -711,20 +703,19 @@ The productive OpenCode reviewer may use `read` and
 review context and observation authority must supply the required evidence. A
 missing-evidence review blocks rather than silently searching the repository.
 
-The hook changes the model request only. OpenCode's internal context/compaction
-reservation is not changed by this setting; that remains a documented limitation
-for very large contexts. A plugin loaded after FlowGuard can also overwrite
-`maxOutputTokens`; the final provider-request capture in the reviewer reference
-suite is the acceptance authority.
+#### Historical V1 reference-suite results (not V2 acceptance)
 
-This is a **conditional baseline**, not a statistical validation. Evidence is the
+The removed V1 hook changed the request cap, not the internal compaction
+reservation. Its final provider-request capture was the acceptance authority,
+since later plugins could overwrite the cap. This is historical evidence only;
+the V2 adapter does not claim equivalent headroom or wire behavior.
+
+This was a **conditional baseline**, not a statistical validation. Evidence is the
 reviewer reference suite: 65K single-review matrix 9/9 expected, full-loop B 3/3
 bound `changes_requested`, and full-loop R 3/3 `accept` in the targeted
 three-repetition run (3/4 accept including the earlier R-B false positive). The
-32K fallback is selected by setting `reviewer.outputTokenMax` to `32000`. Monitor
-reasoning-token use, truncations, capacity closures, and runtime on demo runs;
-the R-B counterexample interpretation remains a documented residual semantic
-risk.
+historical 32K arm does not authorize a V2 numeric override. The R-B counterexample
+interpretation remains a documented residual semantic risk.
 
 The reference-suite runner may additionally set `FLOWGUARD_REFERENCE_SUITE=1`
 and `FLOWGUARD_REVIEWER_STEPS=16` to test a larger step budget. That override is

@@ -164,6 +164,12 @@ These references describe official **interfaces**, not FlowGuard-certified behav
 
 ## Consequences and release gate
 
+- Implementation status: the native `Plugin.define` entrypoint and semantic
+  client replacement are work in progress in PR #1190, not completed
+  cutover or installed support. Native boundary tests cannot establish D3
+  operator origin or D7 reviewer assurance. Remaining fixture/SDK-tooling removal,
+  regression failures and native-content/lifecycle limits are tracked in the
+  [implementation inventory](../host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
 - OpenCode V1 is not retained as a product path after the V2 breaking replacement; other host integrations retain their currently **verified** support rather than inferred parity.
 - Porting/simplification may proceed against the revised contract without a sandbox, second runtime or universal provider-prevention proof. Actual authority acceptance still requires proof of the selected D3 distinguishable host-UI source; reviewer binding requires exact provenance and completion proof. No unresolved high-risk assumption may enter implementation.
 - Release still requires installed INACTIVE noninterference, explicit scope-bound activation/decisions, deterministic gates, controlled-path negative tests, reviewer/evidence/audit integrity, native model/effort fidelity, durable recovery, conformance, simplification and full installed Desktop/CLI acceptance. These remain NOT_VERIFIED, so supported ACTIVE V2 governance and merge remain NO-GO. Missing out-of-scope containment alone is no longer a release blocker.

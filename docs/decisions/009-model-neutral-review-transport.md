@@ -66,6 +66,12 @@ Host-selected output capacity is the default. An explicit numeric FlowGuard cap
 continues to require a verifiable, sufficient model limit. Aborts, truncation and
 capacity failures remain terminal under the existing execution contract.
 
+V2 implementation note: this ADR's verified transport below is the historical
+V1 baseline. Native V2 release/completion/capture and numeric-cap headroom/wire
+proof are not established; the V2 adapter blocks those operations instead of
+reusing V1 callbacks or synthesizing `parentID`. Transport generation 5 is not
+silently upgraded. See [ADR-010](./010-host-neutral-opt-in-governance.md).
+
 ## Consequences
 
 - One implementation serves PLAN, ARCHITECTURE, IMPLEMENTATION and REVIEW.

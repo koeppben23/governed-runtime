@@ -132,18 +132,16 @@ criteria, evidence requirements, or validators:
 
 ### Reviewer output cap
 
-On OpenCode, `reviewer.outputTokenMax` defaults to `"host"`: the plugin leaves
-OpenCode's resolved output budget unchanged, so smaller and locally hosted agent
-models are not excluded by a FlowGuard-specific ceiling. An explicit numeric cap
-is applied to the `flowguard-reviewer` agent through the official `chat.params`
-hook and is validated against the model's reported output limit; a mismatch fails
-the reviewer request closed before the provider call instead of silently lowering
-the cap. The parent and other agents are unchanged.
-`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` remains a host-wide fallback for hosts
-where the plugin hook is not active. The hook changes the request output ceiling
-only; OpenCode's internal compaction reservation is not changed. The final
-provider-request capture in the reference suite is the acceptance authority
-because a later plugin can still overwrite `maxOutputTokens`.
+`reviewer.outputTokenMax` defaults to `"host"`, leaving native budgeting unchanged.
+The V2 entrypoint no longer implements the V1 `chat.params`/`maxOutputTokens`
+rewrite or a host-wide fallback. Explicit numeric overrides are blocked with
+`REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN` pending native headroom/final-wire proof;
+unreadable configuration also fails explicitly. No cap is silently clamped and
+no parent/reviewer model or reasoning variant is substituted.
+
+The native V2 reviewer release/completion/capture chain remains unverified and
+blocked, regardless of budgeting configuration. These are implementation limits,
+not installed support; see the [V2 inventory](./host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
 
 ### Terminal reviewer capacity failures
 
@@ -153,14 +151,14 @@ as `outcome_unknown`, stales the spent attempt, blocks the obligation with the
 original code, and records one semantic `review:obligation_blocked` event in the
 same durable mutation. It also sets a persisted capacity lock for that session.
 
-The lock prevents the same parent user turn from minting another review
-obligation or starting another reviewer Task. It is released only by the
-host-observed `command.execute.before` of a new explicit review command
-(`/plan`, `/architecture`, `/review`, or `/implement`), under the session lock;
-free text and child/SDK messages do not release it. The command hook proves
-command provenance, not human identity — if an internal host command could
-simulate the same invocation, that boundary remains `NOT_VERIFIED` rather than
-being claimed as a human-origin guarantee.
+The canonical lock prevents the same parent user turn from minting another review
+obligation or starting another reviewer Task. V2 requires verified explicit
+recovery authority under the session lock; that acceptance is not implemented.
+The native V2
+entrypoint registers no command-origin approval/recovery hook: an SDK/API/CLI
+command callback cannot substitute for distinguishable host-UI origin. The old
+V1 command-hook release path is not a V2 operator-provenance mechanism. No idle
+event, timeout or owner cleanup releases an unknown-outcome fence.
 
 ### Reviewer authority boundaries and reference suite
 

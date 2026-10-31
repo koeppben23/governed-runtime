@@ -20,14 +20,16 @@ host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 ADR-009 added `plugin-reviewer-capture.ts` as hook composition and
 `reviewer-capture.ts` as the synchronous request-provenance/capture-fence authority.
 The #1169 lifecycle simplification removes the hook-wrapper module: `plugin.ts`
-now registers the capture, governance and watchdog handlers once in explicit
-order. Review modules still consume the unchanged capture authority; they do not
+owns single native V2 registrations. Unsupported reviewer execution is blocked
+instead of registering a V1 capture/watchdog hook chain. Review modules still
+consume the unchanged capture authority; they do not
 import plugin composition. No replacement module or new authority was added.
 
-The reviewer output-cap `chat.params` hook and its terminal-persistence path live
-in `integration/reviewer-output-cap.ts` and
-`integration/reviewer-output-cap-failure.ts` at the root composition boundary;
-they are host transport adapters, not a new review authority. The bounded
+`integration/reviewer-output-cap.ts` now validates native budgeting without
+rewriting model options. The V1 `chat.params` hook is removed; the existing
+`integration/reviewer-output-cap-failure.ts` terminal-persistence consumer uses
+semantic session lookup, not SDK envelopes. These remain host integration,
+not a new review authority. The bounded
 execution watchdog and its terminal-persistence adapter live in
 `integration/reviewer-execution-watchdog.ts` and
 `integration/reviewer-execution-failure.ts`.
