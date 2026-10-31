@@ -44,19 +44,35 @@ describe('documentation/project-governance', () => {
         const content = readRepoFile(`.github/ISSUE_TEMPLATE/${template}`);
 
         expect(content).toContain('Clean conventional branch');
-        expect(content).toContain('Documentation');
+        expect(content).toMatch(/documentation/i);
         expect(content).toContain('CHANGELOG.md');
+        expect(content).toContain(
+          'CHANGELOG.md updated under [Unreleased] (mandatory for every PR)',
+        );
+        expect(content).not.toMatch(/CHANGELOG\.md[^\n]*not needed/i);
         expect(content).toContain('Verification');
       }
     });
 
-    it('requires docs and changelog decisions in the PR template', () => {
+    it('requires impacted docs and an unconditional Unreleased entry in the PR template', () => {
       const content = readRepoFile('.github/PULL_REQUEST_TEMPLATE.md');
 
       expect(content).toContain('## Documentation');
       expect(content).toContain('## Changelog');
-      expect(content).toContain('Reason if not needed');
+      expect(content).toContain('All impacted docs');
+      expect(content).toContain('Checked for semantic drift');
+      expect(content).toContain(
+        'Updated `CHANGELOG.md` under `[Unreleased]` (mandatory for every PR)',
+      );
+      expect(content).not.toContain('Reason if not needed');
       expect(content).toContain('## Verification');
+    });
+
+    it('does not exempt release PRs from the Unreleased entry requirement', () => {
+      expect(readRepoFile('.github/ISSUE_TEMPLATE/release.yml')).toContain(
+        'CHANGELOG.md updated under [Unreleased] (mandatory for every PR)',
+      );
+      expect(readRepoFile('CONTRIBUTING.md')).toContain('Release PRs have no changelog');
     });
   });
 
@@ -80,6 +96,8 @@ describe('documentation/project-governance', () => {
       expect(content).toContain('## Documentation Contract');
       expect(content).toContain('## Changelog Contract');
       expect(content).toContain('## High-Risk Contract');
+      expect(content).toContain('Every PR MUST update `CHANGELOG.md` under `[Unreleased]`');
+      expect(content).not.toContain('`CHANGELOG.md` is not required');
     });
   });
 });

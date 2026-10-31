@@ -45,7 +45,7 @@ The host-neutral domain operation is `StartGovernance` (or `Approve`, `OverrideA
 FlowGuard currently defines **one** strict, evidence-backed active-governance contract. No relaxed/best-effort mode may mint equivalent approvals.
 
 1. **Governance/evidence integrity:** invalid identity, authorization, reviewer completion, evidence, policy or audit prevents a valid FlowGuard authorization/export.
-2. **Preventive host control:** prohibited side effects are refused *before* execution only for execution paths with **real, tested** interception or an independent host/OS guard.
+2. **Preventive host control:** prohibited side effects are refused _before_ execution only for execution paths with **real, tested** interception or an independent host/OS guard.
 
 An absent/crashed/unloaded plugin cannot enforce host hooks. Its absence is harmless to INACTIVE native usage, but cannot silently validate formerly ACTIVE work. Without an independent host/OS mechanism, do **not** assert post-unload prevention, external API containment, or security against ungoverned sibling processes.
 
@@ -80,7 +80,7 @@ Session-scoped opt-in must not affect an unrelated ungoverned session. Shared wo
 
 ### D9. Simplicity, canonical ownership and no legacy
 
-The migration **MUST remove accidental complexity in every touched and directly dependent surface**: obsolete V1 hooks/shims, duplicate SSOT, redundant branches, speculative abstractions and pointless pass-through layers. The easiest *correct final architecture*, not smallest diff, determines acceptance. Preserve audit/evidence semantics, mutation-negative tests and comprehensible error/recovery paths. Keep unrelated core/ISO work outside #1169.
+The migration **MUST remove accidental complexity in every touched and directly dependent surface**: obsolete V1 hooks/shims, duplicate SSOT, redundant branches, speculative abstractions and pointless pass-through layers. The easiest _correct final architecture_, not smallest diff, determines acceptance. Preserve audit/evidence semantics, mutation-negative tests and comprehensible error/recovery paths. Keep unrelated core/ISO work outside #1169.
 
 ### D10. Documentation, changelog and drift are merge contracts
 

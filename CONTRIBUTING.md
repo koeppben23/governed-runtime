@@ -220,6 +220,9 @@ Run this protected-main release procedure:
 1. Start from current `main`: `git switch main && git pull --ff-only origin main`.
 2. Create `release/vX.Y.Z` and integrate the release candidate from `develop`.
 3. Prepare files without committing or tagging: `npm run release:prepare -- X.Y.Z`.
+   The cut creates an empty `[Unreleased]` section; add a truthful entry about the
+   completed release preparation before committing. Release PRs have no changelog
+   exemption; do not claim publication before the protected release completes.
 4. Update release-pinned documentation tests when the changelog cut moves entries out of `[Unreleased]`.
 5. Run `npm run release:verify` and the required contributor checks.
 6. Commit with hooks enabled: `git commit -m "chore(release): cut vX.Y.Z"`.
@@ -354,7 +357,7 @@ Recommended GitHub Project fields:
 | `Risk Class`         | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                          |
 | `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests` |
 | `Docs Required`      | `Yes`, `No`, `Unknown`                                                                      |
-| `Changelog Required` | `Yes`, `No`, `Unknown`                                                                      |
+| `Changelog Required` | `Yes` (every PR)                                                                            |
 | `Verification Level` | `Targeted`, `Full`, `Release`                                                               |
 | `Release Impact`     | `None`, `Patch`, `Minor`, `Major`, `RC`                                                     |
 | `Status`             | `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, `Done`                              |
@@ -380,12 +383,15 @@ docs-only, test, refactor, CI, formatting, removal and internal cleanup changes;
 there is no "not needed" exception. Entries must describe completed changes
 truthfully, without asserting unverified product or host support.
 
-The required PR documentation check is `npm run check:pr-documentation`;
-generated documentation/inventory consistency remains checked by
-`npm run check:doc-drift`. In addition, reviewers must establish semantic
+Run `npm run check:pr-documentation -- <base-sha> <head-sha>` against the PR
+commits. It compares committed changelog entries against the merge base and
+requires a new or revised nonempty entry in a known Unreleased category;
+historical-only edits, deletions and formatting do not qualify. The `doc-drift`
+job runs it and `npm run check:doc-drift`, and blocks through the required
+`ci-gate`. In addition, reviewers must establish semantic
 alignment of code, tests, docs, CLI/help, templates, shipped artifacts and
-changelog on the final commit. A green file-presence check does not prove
-semantic consistency.
+changelog on the final merge candidate against current `develop`. A green
+structural check does not prove semantic consistency.
 
 ### High-Risk Contract
 

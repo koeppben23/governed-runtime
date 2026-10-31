@@ -5,14 +5,14 @@ follows the MADR-style structure used by
 [ADR-002](./002-documentation-platform.md): status, context, options, decision,
 consequences.
 
-| ADR                                                | Status   | Topic                                     |
-| -------------------------------------------------- | -------- | ----------------------------------------- |
-| [ADR-002](./002-documentation-platform.md)         | Proposed | Documentation platform (Markdown vs. MDX) |
-| [ADR-003](./003-review-zone-budgets.md)            | Proposed | Review zone file budgets                  |
-| [ADR-004](./004-root-matrix.md)                    | Accepted | Frozen root matrix (23 + 4 + 13 = 40)     |
-| [ADR-005](./005-review-facades.md)                 | Accepted | Review facade retention and removal       |
-| [ADR-006](./006-ranking-helpers.md)                | Proposed | Ranking helper consolidation              |
-| [ADR-007](./007-persistence-consolidation.md)      | Proposed | Persistence module consolidation          |
-| [ADR-008](./008-reviewer-authority-boundaries.md)  | Accepted | Reviewer authority boundaries             |
-| [ADR-009](./009-model-neutral-review-transport.md) | Accepted | Model-neutral correlated reviewer JSON    |
+| ADR                                                | Status   | Topic                                                                      |
+| -------------------------------------------------- | -------- | -------------------------------------------------------------------------- |
+| [ADR-002](./002-documentation-platform.md)         | Proposed | Documentation platform (Markdown vs. MDX)                                  |
+| [ADR-003](./003-review-zone-budgets.md)            | Proposed | Review zone file budgets                                                   |
+| [ADR-004](./004-root-matrix.md)                    | Accepted | Frozen root matrix (23 + 4 + 13 = 40)                                      |
+| [ADR-005](./005-review-facades.md)                 | Accepted | Review facade retention and removal                                        |
+| [ADR-006](./006-ranking-helpers.md)                | Proposed | Ranking helper consolidation                                               |
+| [ADR-007](./007-persistence-consolidation.md)      | Proposed | Persistence module consolidation                                           |
+| [ADR-008](./008-reviewer-authority-boundaries.md)  | Accepted | Reviewer authority boundaries                                              |
+| [ADR-009](./009-model-neutral-review-transport.md) | Accepted | Model-neutral correlated reviewer JSON                                     |
 | [ADR-010](./010-host-neutral-opt-in-governance.md) | Accepted | Opt-in host-neutral governance and mandatory documentation synchronization |

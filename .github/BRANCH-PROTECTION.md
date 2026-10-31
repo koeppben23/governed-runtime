@@ -32,11 +32,10 @@ names exactly in the `Protect main and develop` ruleset.
 
 From `.github/workflows/ci.yml`:
 
-- `ci-gate` (aggregates `unit` + `scripts-windows` + `critical-windows` + `coverage` + `integration-perf` + `provider-conformance` + `regulated-e2e`)
+- `ci-gate` (aggregates `unit` + `scripts-windows` + `critical-windows` + `coverage` + `integration-perf` + `provider-conformance` + `regulated-e2e` + `doc-drift`)
 - `typecheck`
 - `lint`
 - `format`
-- `doc-drift`
 - `architecture`
 - `build`
 - `build-clean`
@@ -62,7 +61,13 @@ approval/recovery suites on Windows and is merge-blocking through the required
 `ci-gate` aggregator, so platform-specific path, CRLF, and timing defects in
 those trust boundaries cannot merge unobserved.
 
-The `doc-drift` check MUST be configured as a required status check in the live branch ruleset; declaring it here or adding CI alone does not change GitHub settings. It checks every-PR changelog presence and existing generated documentation consistency; semantic documentation review remains mandatory.
+`doc-drift` is transitively merge-blocking through the required `ci-gate`, not a
+separate required ruleset context. The aggregator accepts only `success`, never
+failure, cancellation, skipped or missing results. This is guarded by executable
+workflow tests. The job requires a new or revised nonempty Unreleased changelog
+entry relative to the PR merge base and checks generated documentation
+consistency. Semantic documentation review remains mandatory. Repository edits
+do not themselves change the live GitHub ruleset.
 
 The `format` check is the merge-blocking Prettier gate for both protected
 branches. Mutation testing is deliberately NOT a PR gate: it runs on the
@@ -128,6 +133,7 @@ The following jobs run but are intentionally **not** required by the live rulese
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `unit`                 | Runs as a direct job, but the required `ci-gate` aggregator is the branch-protection check.                                                                                                                                                                         |
 | `coverage`             | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
+| `doc-drift`            | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
 | `integration-perf`     | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
 | `provider-conformance` | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |
 | `regulated-e2e`        | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                               |

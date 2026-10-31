@@ -4,6 +4,7 @@
 - **Scope:** Pinned Desktop + CLI/server V2.2.4 candidate, each independently installed/probed.
 - **Normative design:** [ADR-010](../../decisions/010-host-neutral-opt-in-governance.md).
 - **Existing evidence:** [2026-10-30 real-host report](./2026-10-30-2.2.4/README.md) and [P0 security follow-up](./2026-10-30-2.2.4/P0_SECURITY_GATE.md). These are historical observations; do not relabel old probes to fit the new opt-in contract.
+- **Implementation inventory:** [Phase-01 ownership and simplification findings](./implementation-inventory.md). No production V2 port or new host-security PASS is implied.
 
 ## Evidence vocabulary
 
@@ -16,19 +17,19 @@ Each gate records host build, Desktop/CLI surface, SDK/adapter artifact hash, of
 
 ## Mandatory gates
 
-| Gate | Required demonstrated result | Current known evidence / next action |
-| --- | --- | --- |
-| P0-00 **Native parity** | Host without FlowGuard and installed-but-INACTIVE host both allow normal commands, shell/edit, native providers, models/variants, without injected mandates or implicit hydrate. Plugin failure before activation does not block native use. | **NOT_VERIFIED** against the new opt-in contract. Existing inactive-provider lockdown probe tests an **obsolete** requirement; rerun parity without global deny. |
-| P0-01 **Operator authority** | Human `/start` and subsequent approve/recover/end actions have independently verifiable, nonreplayable origin. SDK/child/model text/direct `/hydrate` cannot produce that authority. | **NOT_VERIFIED**: v2.2.4 probe found no trusted origin in observed event shapes; TUI-vs-SDK was not fully tested. A separate authenticated channel is only a candidate. |
-| P0-02 **Atomic scope/lifecycle** | Durable INACTIVE/ACTIVATING/ACTIVE/BLOCKED semantics, child propagation, restart, deactivation and corrupt-state handling; no ACTIVE→INACTIVE on error; unrelated sessions unaffected. | **NOT_VERIFIED**; must verify exact session/worktree mapping and races. |
-| P0-03 **Local pre-effect controls** | Governed file edit, shell, custom and Code Mode tool side effects denied *before* execution and audited, including failures/reloads. | Local edit/shell/Code Mode **SUPPORTED in limited probe scope** when plugin hooks loaded; full ACTIVE lifecycle **NOT_VERIFIED**. |
-| P0-04 **MCP and provider-hosted actions** | Advertised MCP tool and hosted/provider-executed tool effects gated or isolated before any effect. Unoffered provider actions and native shell interpolation accounted for. | MCP advertised-tool negative **NOT_VERIFIED**; local before-hook absent for provider-executed path. Native Markdown shell interpolation observed **before** prompt admission. Universal preventive guarantee **NOT_SUPPORTED** with hook-only design. |
-| P0-05 **Reviewer identity/completion** | Verified isolated visible reviewer, model/variant/effort, single coherent structured capture, exact request→terminal assistant chain and bounded fail-closed recovery. | Visible same-child follow-up demonstrated; V2 assistant `parentID` missing, so V1 evidence-generation-5 equivalence **NOT_SUPPORTED**. Replacement host proof and a new evidence generation **NOT_VERIFIED**. `session.wait()`/idle alone not success. |
-| P0-06 **All native models/variants** | Host-reported catalog and model-specific effort choices remain selectable in ACTIVE/INACTIVE; representative actual final request options match selected/effective reviewer/parent/JSON variants; no FlowGuard allowlist. | Selected V2 wire variant demonstrated in probe; **full selection/nonfilter contract NOT_VERIFIED**. Test unspecified/default and max where supported; do not pretend all providers were live certified. |
-| P0-07 **Mixed sessions and resource safety** | ACTIVE & INACTIVE concurrently, no policy/context leakage; shared resources either independently prevented or stale evidence quarantined, with prevention explicitly NOT_SUPPORTED. | **NOT_VERIFIED**; session isolation alone does not mean exclusive resource control. |
-| P0-08 **Plugin failure/unknown outcomes** | Formerly ACTIVE lost hooks/state cannot produce valid approval/export; unknown reviewer and capacity outcomes remain durable, restart-safe and recover only via verified operator authority. | **NOT_VERIFIED**; plugin disappearance cannot itself stop the host. |
-| P0-09 **Documentation and build** | Official vendor docs + installed evidence matrix, versioned host capability, new evidence format, tests, docs, CHANGELOG and package agreement; no stale V1 claims in shipped adapter. | **NOT_VERIFIED**; requirements tracked by ADR-010 and #1169. |
-| P0-10 **Portability architecture** | HAI permits a separate minimal non-OpenCode conformance adapter without duplicated core policy and without native OpenCode Task dependence. | Current HAI uses closed platform IDs and native Task transport; **NOT_VERIFIED** until refactored and contract-tested. |
+| Gate                                         | Required demonstrated result                                                                                                                                                                                                                 | Current known evidence / next action                                                                                                                                                                                                                   |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0-00 **Native parity**                      | Host without FlowGuard and installed-but-INACTIVE host both allow normal commands, shell/edit, native providers, models/variants, without injected mandates or implicit hydrate. Plugin failure before activation does not block native use. | **NOT_VERIFIED** against the new opt-in contract. Existing inactive-provider lockdown probe tests an **obsolete** requirement; rerun parity without global deny.                                                                                       |
+| P0-01 **Operator authority**                 | Human `/start` and subsequent approve/recover/end actions have independently verifiable, nonreplayable origin. SDK/child/model text/direct `/hydrate` cannot produce that authority.                                                         | **NOT_VERIFIED**: v2.2.4 probe found no trusted origin in observed event shapes; TUI-vs-SDK was not fully tested. A separate authenticated channel is only a candidate.                                                                                |
+| P0-02-H **Host scope/lifecycle feasibility** | Prove authoritative session/worktree identity, child lineage, lifecycle/restart observations and the host mechanisms needed for durable activation. A bounded probe tests mechanisms, not later FlowGuard correctness.                       | **NOT_VERIFIED**; exact mapping, races and failure observations need real-host evidence.                                                                                                                                                               |
+| P0-03 **Local pre-effect controls**          | Governed file edit, shell, custom and Code Mode tool side effects denied _before_ execution and audited, including failures/reloads.                                                                                                         | Local edit/shell/Code Mode **SUPPORTED in limited probe scope** when plugin hooks loaded; full ACTIVE lifecycle **NOT_VERIFIED**.                                                                                                                      |
+| P0-04 **MCP and provider-hosted actions**    | Advertised MCP tool and hosted/provider-executed tool effects gated or isolated before any effect. Unoffered provider actions and native shell interpolation accounted for.                                                                  | MCP advertised-tool negative **NOT_VERIFIED**; local before-hook absent for provider-executed path. Native Markdown shell interpolation observed **before** prompt admission. Universal preventive guarantee **NOT_SUPPORTED** with hook-only design.  |
+| P0-05 **Reviewer identity/completion**       | Verified isolated visible reviewer, model/variant/effort, single coherent structured capture, exact request→terminal assistant chain and bounded fail-closed recovery.                                                                       | Visible same-child follow-up demonstrated; V2 assistant `parentID` missing, so V1 evidence-generation-5 equivalence **NOT_SUPPORTED**. Replacement host proof and a new evidence generation **NOT_VERIFIED**. `session.wait()`/idle alone not success. |
+| P0-06 **All native models/variants**         | Host-reported catalog and model-specific effort choices remain selectable in ACTIVE/INACTIVE; representative actual final request options match selected/effective reviewer/parent/JSON variants; no FlowGuard allowlist.                    | Selected V2 wire variant demonstrated in probe; **full selection/nonfilter contract NOT_VERIFIED**. Test unspecified/default and max where supported; do not pretend all providers were live certified.                                                |
+| P0-07 **Mixed sessions and resource safety** | ACTIVE & INACTIVE concurrently, no policy/context leakage; shared resources either independently prevented or stale evidence quarantined, with prevention explicitly NOT_SUPPORTED.                                                          | **NOT_VERIFIED**; session isolation alone does not mean exclusive resource control.                                                                                                                                                                    |
+| P0-08 **Plugin failure/unknown outcomes**    | Formerly ACTIVE lost hooks/state cannot produce valid approval/export; unknown reviewer and capacity outcomes remain durable, restart-safe and recover only via verified operator authority.                                                 | **NOT_VERIFIED**; plugin disappearance cannot itself stop the host.                                                                                                                                                                                    |
+| P0-09 **Documentation and build**            | Official vendor docs + installed evidence matrix, versioned host capability, new evidence format, tests, docs, CHANGELOG and package agreement; no stale V1 claims in shipped adapter.                                                       | **NOT_VERIFIED**; requirements tracked by ADR-010 and #1169.                                                                                                                                                                                           |
+| P0-10 **Portability architecture**           | HAI permits a separate minimal non-OpenCode conformance adapter without duplicated core policy and without native OpenCode Task dependence.                                                                                                  | Current HAI uses closed platform IDs and native Task transport; **NOT_VERIFIED** until refactored and contract-tested.                                                                                                                                 |
 
 ## Decision algorithm
 
@@ -37,6 +38,37 @@ Each gate records host build, Desktop/CLI surface, SDK/adapter artifact hash, of
 3. If all **mandatory** capabilities for the proposed STRICT scope are demonstrated, record **GO for that precisely enumerated scope**; other paths remain unsupported. If the only route to a universal-prevention claim is an independently enforced launcher/OS boundary, decide and probe that explicitly. Never assume the plugin can enforce after unloading.
 4. Keep the normal host unrestricted when FlowGuard is not installed or is INACTIVE. The scope of limitations must be visible to the operator.
 5. Re-run version-bound tests after host or adapter updates. Documented APIs alone do not authorize `SUPPORTED`.
+
+## Feasibility versus product acceptance
+
+**G-P0 proves host-mechanism feasibility only.** P0-02-H does not certify an
+unimplemented FlowGuard transaction, activation record or recovery path. Likewise,
+probe tests for P0-07/P0-08 establish available isolation/failure mechanisms, not
+the correctness of the eventual production integration. P0-09/P0-10 product
+conformance and distribution checks must be completed after implementation.
+
+**G-04 / P0-02-P proves product correctness:** actual INACTIVE/ACTIVATING/ACTIVE/
+BLOCKED authority, atomic authorization consumption and persistence, audit
+coupling, concurrent starts, restart, child propagation, corrupt/deleted records,
+capacity locks and authorized deactivation. A missing single state file must not
+erase the fact that a scope was previously ACTIVE.
+
+**G-05 proves installed integration:** repeat the security and lifecycle cases
+with the built/installed FlowGuard artifact on Desktop and CLI/server separately.
+No probe, successful inbox admission, idle event or `session.wait()` alone can
+replace exact reviewer completion proof.
+
+Before choosing an operator channel, resolve the trust boundaries in the
+[inventory](./implementation-inventory.md#trust-boundaries-before-security-implementation).
+An agent-callable CLI or readable token is not independent operator authority.
+After `EndGovernance`, removing an instruction entry does not erase conversation
+history or compacted mandates. Prove an adequate context reset or require a new
+session for native INACTIVE use; retain the old governed transcript and audit.
+
+Final acceptance uses the actual merge candidate against current `develop`, with
+commit/build/artifact-bound verification rerun after relevant changes. No second
+integration PR or partial merge is allowed; PR #1190 remains Draft while any
+mandatory gate is unresolved.
 
 ## Implementation order and verification
 

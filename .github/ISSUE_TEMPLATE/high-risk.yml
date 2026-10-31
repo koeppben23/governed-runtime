@@ -66,8 +66,8 @@ body:
         - [ ] Conventional commit and PR title used.
         - [ ] Tests added or updated where needed.
         - [ ] Negative-path tests added for governance/fail-closed behavior.
-        - [ ] Documentation updated or explicitly marked not needed with reason.
-        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] All impacted documentation synchronized, or no-impact assessment recorded.
+        - [ ] CHANGELOG.md updated under [Unreleased] (mandatory for every PR).
         - [ ] Verification commands recorded in PR.
         - [ ] PR links/closes this issue.
     validations:

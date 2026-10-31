@@ -293,7 +293,22 @@ describe('mutation completion authority and reconciliation', () => {
   );
   it('recovers a regular error with one audited write; event and query are idempotent', async () => {
     const before = await readState(sessDir);
-    const host = runtime();
+    // Both reads must observe the unresolved dispatch before either can commit.
+    // Promise.all alone does not guarantee that scheduling: one reconciliation
+    // can finish before the other's authority lookup, legitimately avoiding I/O.
+    let releaseReads: (() => void) | undefined;
+    const bothReading = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    let reads = 0;
+    const host = runtime(
+      vi.fn(async () => {
+        reads += 1;
+        if (reads === 2) releaseReads?.();
+        await bothReading;
+        return { data: hostHistory() };
+      }),
+    );
     await Promise.all([
       reconcileHostMutationEpisodes(host.value, sessionId),
       reconcileMutationEvent(host.value, {

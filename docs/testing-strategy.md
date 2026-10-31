@@ -68,6 +68,7 @@ npm run mutation
 
 ```sh
 npm run check:doc-drift
+npm run check:pr-documentation -- origin/develop HEAD
 ```
 
 | Change                   | Minimum additional verification                 |
@@ -117,25 +118,32 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each test and check job maps to its npm script(s) for clear diagnosis:
 
-| CI Job                   | npm Script                                                      | Scope                                                                                                            | Requires Build |
-| ------------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
-| **unit**                 | `npm run test:unit`                                             | All `*.test.ts` outside `integration/`, including T1 and T2                                                      | No             |
-| **unit (scripts)**       | `npm run test:scripts`                                          | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job             | No             |
-| **scripts-windows**      | `npm run test:scripts`                                          | Same script suite on `windows-latest`; merge-blocking through the `ci-gate` aggregator                           | No             |
-| **critical-windows**     | `npx vitest run` (selected suites)                              | State, hook, ProofGraph, and real-Git approval/recovery suites on `windows-latest`; merge-blocking via `ci-gate` | No             |
-| **unit (assertions)**    | `npm run test:assertion-conformance`                            | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                    | No             |
-| **deterministic-evals**  | `npm run test:evals`                                            | Deterministic eval harness and transport-template contracts; no live provider                                    | No             |
-| **coverage**             | `npm run test:coverage:ci`                                      | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                           | No             |
-| **integration-perf**     | `npm run test:integration:perf`                                 | All integration PERF tests without v8 instrumentation                                                            | No             |
-| **provider-conformance** | `npm run test:provider-conformance`                             | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go     | No             |
-| **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites) | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                               | No             |
-| **smoke**                | `npm run test:smoke`                                            | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                                 | Yes            |
-| **install-verify**       | `npm run test:install-verify`                                   | Tarball pack/install/doctor verification                                                                         | Yes            |
-| **mutation**             | `npm run mutation`                                              | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                          | No             |
-| **actions-pinning**      | `npm run check:actions-pinned`                                  | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                      | No             |
+| CI Job                   | npm Script                                                                            | Scope                                                                                                                      | Requires Build |
+| ------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| **unit**                 | `npm run test:unit`                                                                   | All `*.test.ts` outside `integration/`, including T1 and T2                                                                | No             |
+| **unit (scripts)**       | `npm run test:scripts`                                                                | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job                       | No             |
+| **doc-drift**            | `npm run check:pr-documentation -- <base-sha> <head-sha>` + `npm run check:doc-drift` | Committed Unreleased entry changes against the PR merge base and generated documentation; merge-blocking through `ci-gate` | Yes            |
+| **scripts-windows**      | `npm run test:scripts`                                                                | Same script suite on `windows-latest`; merge-blocking through the `ci-gate` aggregator                                     | No             |
+| **critical-windows**     | `npx vitest run` (selected suites)                                                    | State, hook, ProofGraph, and real-Git approval/recovery suites on `windows-latest`; merge-blocking via `ci-gate`           | No             |
+| **unit (assertions)**    | `npm run test:assertion-conformance`                                                  | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                              | No             |
+| **deterministic-evals**  | `npm run test:evals`                                                                  | Deterministic eval harness and transport-template contracts; no live provider                                              | No             |
+| **coverage**             | `npm run test:coverage:ci`                                                            | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                                     | No             |
+| **integration-perf**     | `npm run test:integration:perf`                                                       | All integration PERF tests without v8 instrumentation                                                                      | No             |
+| **provider-conformance** | `npm run test:provider-conformance`                                                   | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go               | No             |
+| **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites)                       | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                                         | No             |
+| **smoke**                | `npm run test:smoke`                                                                  | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                                           | Yes            |
+| **install-verify**       | `npm run test:install-verify`                                                         | Tarball pack/install/doctor verification                                                                                   | Yes            |
+| **mutation**             | `npm run mutation`                                                                    | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                                    | No             |
+| **actions-pinning**      | `npm run check:actions-pinned`                                                        | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                                | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
+
+The documentation gate rejects historical-only, deletion-only and formatting-only
+changelog changes; semantic accuracy still requires review. `scripts/ci-gate.test.ts`
+executes the workflow's gate script and proves every dependency, including
+`doc-drift`, rejects failure, cancellation, skipped and missing results. A green
+documentation job alone does not certify host security or current runtime support.
 
 The reviewer-capability smoke uses the pinned OpenCode host with isolated global
 directories and the repository's installed, locked dependency graph. It checks
