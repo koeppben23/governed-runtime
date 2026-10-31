@@ -15,3 +15,4 @@ consequences.
 | [ADR-007](./007-persistence-consolidation.md)      | Proposed | Persistence module consolidation          |
 | [ADR-008](./008-reviewer-authority-boundaries.md)  | Accepted | Reviewer authority boundaries             |
 | [ADR-009](./009-model-neutral-review-transport.md) | Accepted | Model-neutral correlated reviewer JSON    |
+| [ADR-010](./010-host-neutral-opt-in-governance.md) | Accepted | Opt-in host-neutral governance and mandatory documentation synchronization |
