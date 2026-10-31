@@ -173,9 +173,17 @@ links **4 tests PASS**. `npm run check`, `npm run lint:strict`,
 full-suite run hit an unrelated pre-existing PERF threshold
 (`executeReview < 5ms`, observed 7.9ms); the isolated test passed and a full
 rerun passed **694 files / 12,400 tests, 2 skipped** without lowering the
-threshold. Final committed-head PR/CI verification is reported separately in
-PR #1190; older green CI is not used as proof for this change. No fresh local
-coverage or product mutation result is claimed here.
+threshold. A full local coverage run passed **694 files / 12,391 tests, 11
+skipped** with **83.48% branches** and unchanged 80% thresholds.
+
+The first pushed-SHA GitHub coverage attempt was red on an unrelated
+pre-existing concurrency test (`iso27001-java-demo.test.ts`, expected publication
+outcomes `[0,1]`, received `[0,0]`). The isolated test passed 10/10 non-instrumented
+runs and the full local coverage run passed; the failed CI job was rerun and the
+exact SHA then passed. This is recorded as a residual concurrency-test flake, not
+as evidence that concurrent publication is safe or stable. Final committed-head
+PR/CI verification is reported separately in PR #1190; older green CI is not used
+as proof for this change. No product mutation result is claimed here.
 
 ## Remaining NO-GO / NOT_VERIFIED
 
