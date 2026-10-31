@@ -7,6 +7,16 @@ or the repository's production runtime.
 
 ## Scope
 
+The bounded Phase-02 collection is complete. The
+[explicit ADR-010 scope correction](../../docs/decisions/010-host-neutral-opt-in-governance.md#explicit-scope-amendment-2026-10-31)
+and [current gates](../../docs/host-probes/opencode-v2/phase0-contract-gates.md)
+now require governed-decision/evidence integrity and claimed controlled-path
+prevention, not universal OS/provider containment or a second runtime/auth service.
+The commands below reproduce historical observations; they are not a mandatory
+new broad probe phase. Preserve their original evidence/status bytes. The selected
+operator source is distinguishable host UI; these SDK counterexamples do not
+prove it or become passing operator decisions under the revised scope.
+
 - Run against a disposable project with an isolated `HOME`, config, data,
   state, cache and SQLite database.
 - Use a constructed environment, not inherited `process.env`. NODE/BUN options,

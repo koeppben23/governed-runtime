@@ -134,12 +134,54 @@ CLI and presentation output must not be treated as the decision authority when s
 
 The following sections are the review contract. Changes touching a boundary must preserve the listed authorities, failure modes, audit evidence, and logging separation.
 
+### OpenCode V2 Revised Product Trust Scope (#1169)
+
+The operator's explicit **2026-10-31 scope correction**, recorded in
+[ADR-010](./decisions/010-host-neutral-opt-in-governance.md#explicit-scope-amendment-2026-10-31),
+replaces the earlier requirement to establish independent operator/local/remote
+containment boundaries before all V2 porting. This is a deliberate architecture
+change, not a new installed-host test or a passing historical gate.
+
+OpenCode, installed FlowGuard validators and the OS are trusted executing
+infrastructure. LLM text, provider replies, caller IDs and tool arguments are not
+governance authority. This does not imply an authenticated human behind every
+host API action. Agent use of accessible shell/API/files remains possible and
+is not silently relabelled as human consent or prevented activity.
+
+The product boundary is canonical governance/approval/evidence validation and
+pre-effect gates on the host paths FlowGuard actually intercepts and claims to
+control. It is **not** universal protection from external native/OS/provider
+effects, sibling writers, plugin-less execution, compromised infrastructure or
+same-user tampering with trusted local code/state. Existing validation, audit,
+freshness and quarantine checks remain required; their absence/error cannot
+become successful authority. No OS sandbox, second runtime or external identity
+service is mandatory or authorized as a compensating implementation.
+
+Explicit decisions still require actual source/action/scope/policy/generation
+binding, actor/policy validation, replay protection and durable audit. The selected
+source for activation/approve/recover/end is an attributable host-UI interaction
+distinguishable from agent/SDK invocation; SDK/CLI/API callbacks alone are
+inadmissible. The actual V2 mechanism remains **NOT_VERIFIED**; block the affected
+acceptance path until demonstrated, and do not infer a human from a callback.
+This is not a blanket block on adapter/API
+porting and simplification independent of that choice.
+
+Required independent-review provenance, frozen subject, full completion,
+uncontaminated same-child capture and canonical atomic evidence binding are not
+relaxed. An unobserved external action is not evidence of execution or prevention;
+an observed capture tool attempt invalidates capture even if denied. Document
+all coverage gaps and reject stale/incomplete/unknown evidence. The
+[revised report](./host-probes/opencode-v2/p0-feasibility-decision.md) and
+[gates](./host-probes/opencode-v2/phase0-contract-gates.md) distinguish these
+current requirements from the historical probe threat model below.
+
 ### OpenCode V2 Phase-02 Probe Threat Model (#1169)
 
-This bounded assessment applies to the feasibility probes, **not a new product
-security guarantee**. [ADR-010](./decisions/010-host-neutral-opt-in-governance.md)
-and the [P0 gate matrix](./host-probes/opencode-v2/phase0-contract-gates.md) own
-acceptance. No operator channel is selected or certified by this model.
+This is the **historical assessment scope** of the completed feasibility probes,
+not the revised product threat model or new support. Dated probe reports/facts
+remain unchanged. The current product scope above and ADR-010 replace the former
+expanded prerequisites; no old negative observation becomes a positive result.
+No operator channel is selected or certified by the probes.
 
 **Assets:** operator sessions/configuration/credentials; exact activation scope
 and generation; policy/state/audit authority; frozen review subjects; exact
@@ -172,19 +214,20 @@ checks are snapshots, not a race-free OS containment boundary. External egress
 is not independently sandboxed. No credential is inherited to exercise a real
 provider; a mock-provider result cannot certify all providers or models.
 
-**Unresolved mandatory proof, not an accepted exclusion:** the operator channel
-must demonstrate custody unavailable to agent tools/processes, bind actor, exact
-action, root/child session, worktree and activation generation, and reject replay,
-expiry, cross-scope and concurrent reuse. A valid IdP login alone does not prove
-intent. An agent-readable token, SDK `session.command`, plugin callback, TUI-like
-text, or same-user CLI is insufficient. Until that proof exists, P0-01 and
-security-critical activation/approval/recovery implementation remain **BLOCKED**.
+**Former prerequisite, explicitly replaced for current product scope:** these
+probes investigated independently protected operator custody, action/root/child/
+worktree/generation binding and replay/expiry/concurrent-use resistance. They
+did not demonstrate human origin from SDK commands, callbacks, same-user CLI or
+readable tokens. That counterexample remains valid. The old blanket
+activation/approval/recovery implementation block is replaced by the current
+source-admissibility decision and affected-path block above; external operator
+authentication infrastructure is not mandatory.
 
 **Excluded claims for these probes:** universal provider containment; prevention
 after plugin loss; OS-level protection from other writers; hostile kernel or
 compromised-host resistance; hardware-backed human presence; installed FlowGuard
 INACTIVE parity based on a passive fixture. These exclusions describe what the
-probe cannot establish, not a waiver of a mandatory product gate. Actual product
+probe cannot establish; they are not proof of the revised product contract. Actual product
 transactions, restart/recovery, EndGovernance context reset and installed
 Desktop/CLI integration still require G-04/G-05. Missing proof stays
 NOT_VERIFIED/NO-GO, never a synthesized evidence record.
@@ -218,6 +261,14 @@ tool-free terminal, but the host permits later SDK prompts to the same child and
 a naive latest-answer capture then returns a forged answer. Exact invocation
 binding and tool-attempt rejection are mandatory; a terminal, `wait()` result or
 session ID alone is not review authority.
+
+The revised P0 decision retains the local/remote prevention distinction: neither
+a local sandbox nor response filtering controls autonomous remote effects.
+Those are now documented limits, not demands to build independent containment.
+Documented shell hooks, policy and GUI/IPC remain adapter mechanisms to validate
+only where needed; a bundle-loading credential or client permission reply is
+not automatically human attestation. Release remains NO-GO for unimplemented/
+untested required governance behavior, not merely for absent universal safety.
 
 ### Session State And Policy Snapshot Boundary
 

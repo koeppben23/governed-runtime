@@ -858,6 +858,20 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Explicit V2 governance-scope correction (#1169).** Revised ADR-010, trust
+  documentation, acceptance gates and the decision report to require strict
+  FlowGuard decision/evidence integrity and preventive gates on controlled host
+  paths, not universal host/OS/provider containment. A sandbox, second runtime
+  or external authentication service is not a porting prerequisite. Real reviewer
+  provenance, audit/recovery, explicit decisions, native models and actual V1
+  removal/simplification remain required. Operator decisions require an explicit
+  host-UI interaction distinguishable from agent/SDK calls; the concrete V2
+  mechanism remains unverified, and SDK callbacks alone are inadmissible.
+  Historical probe bytes and
+  results and the unresolved concurrent-publication stability finding remain
+  unchanged; no product gate, support release or merge is certified. A targeted
+  Issue #1169 body/checklists now publish the accepted scope correction; the
+  host-UI distinction assumes trusted OpenCode/OS, not compromised-OS resistance.
 - **V2 prevention/reviewer feasibility observations (#1169).** Added isolated
   probes for an advertised MCP tool deny with an executable control, visible
   hosted-definition pre-request denial, command-template shell interpolation,

@@ -2,13 +2,40 @@
 
 - **Status:** Accepted as architecture; runtime conformance **NOT_VERIFIED**
 - **Date:** 2026-10-31
+- **Scope revision:** 2026-10-31, explicit operator correction from host containment to governed-decision integrity; see the amendment below.
 - **Deciders:** FlowGuard operator
 - **Scope:** FlowGuard product semantics and future adapters; OpenCode V2 implementation tracked by [#1169](https://github.com/koeppben23/governed-runtime/issues/1169)
 - **Related:** [ADR-008](./008-reviewer-authority-boundaries.md), [ADR-009](./009-model-neutral-review-transport.md), [Phase-0 gates](../host-probes/opencode-v2/phase0-contract-gates.md)
 
 ## Context
 
-The OpenCode V2 migration is intentionally breaking and must simplify the touched FlowGuard implementation without weakening evidence, audit, or review authority. The current OpenCode V2.2.4 [installed-host probe](../host-probes/opencode-v2/2026-10-30-2.2.4/README.md) is **NO-GO** for full active governance. Prompt- or plugin-level checks are not equivalent to host-independent prevention. Prior issue comments suggesting a provider/model whitelist are superseded by this decision.
+The OpenCode V2 migration is intentionally breaking and must simplify the touched FlowGuard implementation without weakening evidence, audit, or review authority. The OpenCode V2.2.4 [installed-host probe](../host-probes/opencode-v2/2026-10-30-2.2.4/README.md) recorded **NO-GO** against its then-current acceptance contract. Those observations remain unchanged; they are not a passing product test under the revised contract. Prompt- or plugin-level checks are not host-independent prevention. Prior issue comments suggesting a provider/model whitelist remain superseded.
+
+## Explicit scope amendment (2026-10-31)
+
+This is an intentional architecture change, not a reinterpretation of old PASS,
+NO-GO or BLOCKED evidence. It replaces the earlier D3 requirement for independent
+human-origin attestation as a universal activation/porting prerequisite and the
+earlier D4/release-gate interpretation that every reachable host/OS/provider
+side-effect path must be independently contained before V2 porting can proceed.
+The revised D3/D4 and release criteria below are authoritative. D1/D2 and
+D5–D10 remain in force except for the explicit prevention-scope clarification.
+
+**Product contract:** explicit activation; deterministic phases/policies/evidence
+and approval validation; actual independent reviewer execution; fail-closed
+FlowGuard decisions; host-neutral core; all native models/effort choices; actual
+V1 removal and simplification. OpenCode, the installed FlowGuard code and the OS
+are trusted infrastructure for these checks. Model text, tool arguments and
+provider replies are inputs, not governance or provenance authority.
+
+FlowGuard controls its authorized workflows through supported host interfaces.
+It does not promise an unbypassable boundary around the entire host, filesystem,
+process tree or remote provider. A second runtime, OS sandbox, independent
+authentication service or general security framework is **not required or
+authorized as compensation** for missing host guarantees. Explicit controlled-path
+prevention and honest limits remain mandatory; reviewer/evidence correctness is
+not relaxed. See the [revised decision report](../host-probes/opencode-v2/p0-feasibility-decision.md)
+for changed requirements, retained blockers and the selected operator-source contract.
 
 ## Options
 
@@ -34,28 +61,68 @@ The existing [HAI](../../src/adapters/host-adapter.ts) is a starting point, **no
 
 A **verified absence** of an activation record differs from a storage/read error. Activation authority survives host restart and is not inherited by arbitrary sessions in the same repository. `/finish` and `/abort` terminate their workflow, not the activation implicitly. An explicitly authorized `EndGovernance` closes activation only after safe resolution of open obligations; interrupted/ambiguous transitions remain BLOCKED. Model prompts, SDK-generated `/start` text, direct `/hydrate` and plugin installation do not activate governance.
 
-### D3. Human decisions use independent operator authorization
+### D3. Explicit, attributable operator decisions within trusted infrastructure
 
-The host-neutral domain operation is `StartGovernance` (or `Approve`, `OverrideApprove`, `RecoverCapacity`, `EndGovernance`). `/start` is the OpenCode user-facing command spelling, not proof of human origin. Every security-significant operator decision needs a non-replayable, action/scope/generation-bound attestation from a **host-authoritative human UI channel** or **independently authenticated operator channel**. A locally executed CLI command or agent-writable token is insufficient if an agent can invoke it with the same authority. The latter mechanism is a design option, not a feature already implemented or a proved OS boundary.
+The host-neutral operations are `StartGovernance`, `Approve`, `OverrideApprove`,
+`RecoverCapacity` and `EndGovernance`; `/start` is the OpenCode activation action.
+Each accepted decision must be explicit, attributable to its actual source,
+bound to its action/session/worktree/policy/activation generation, validated by
+the existing actor/policy authority and durably audited with replay/concurrent-use
+protection. Installation, ordinary prompts and model assertions are not decisions.
+Direct hydrate cannot create activation; automatic capacity-lock release remains
+prohibited. No external authentication service or hardware attestation is a
+product prerequisite.
 
-**P0 blocker:** OpenCode V2.2.4 has not demonstrated trustworthy command origin. No automatic capacity-lock release or active start may be claimed before it is proven.
+Trusting the host/OS to execute correctly does **not** authenticate a human behind
+every API request. An SDK command callback proves command execution, not human
+origin. Record that distinction; never relabel an agent-accessible host API as
+human proof. **Operator-source decision (2026-10-31):** activation, approvals,
+overrides, capacity recovery and deactivation require an explicit, attributable
+**host-UI interaction distinguishable from agent/SDK invocation**. SDK/CLI/API
+callbacks alone are not admissible operator decisions, even when explicit and
+audited. This is a host-interface source requirement, not a demand for an
+independent authentication service or hardware/OS isolation.
+
+The source distinction is evaluated with OpenCode and the OS trusted. It does
+not require preventing a compromised OS from synthesizing UI input; do not grow
+this adapter requirement into a universal anti-spoofing platform.
+
+The concrete V2 UI-to-adapter source distinction remains **NOT_VERIFIED**; no
+undocumented source flag or ordinary callback may be invented as its substitute.
+Authority-bearing acceptance is BLOCKED until that mechanism is demonstrated.
+Only the affected decision path is blocked; this does not stop adapter
+simplification/porting work independent of that proof.
 
 ### D4. One STRICT governance profile; two separate assurances
 
 FlowGuard currently defines **one** strict, evidence-backed active-governance contract. No relaxed/best-effort mode may mint equivalent approvals.
 
 1. **Governance/evidence integrity:** invalid identity, authorization, reviewer completion, evidence, policy or audit prevents a valid FlowGuard authorization/export.
-2. **Preventive host control:** prohibited side effects are refused _before_ execution only for execution paths with **real, tested** interception or an independent host/OS guard.
+2. **Controlled-path prevention:** on host paths FlowGuard actually intercepts and claims to govern, prohibited operations are refused _before_ execution with real, tested gates. This is not universal host/OS/provider containment.
 
-An absent/crashed/unloaded plugin cannot enforce host hooks. Its absence is harmless to INACTIVE native usage, but cannot silently validate formerly ACTIVE work. Without an independent host/OS mechanism, do **not** assert post-unload prevention, external API containment, or security against ungoverned sibling processes.
+An absent/crashed/unloaded plugin cannot enforce host hooks. Its absence is harmless to INACTIVE native usage, but cannot silently validate formerly ACTIVE work. Do **not** assert post-unload prevention, external API containment or protection against ungoverned sibling processes. Trusted infrastructure is an operational assumption, not a claim that local same-user code or state is tamper-proof.
 
-A mandatory unsafe path must be disabled/prevented, or the affected governed action/certification is `NOT_SUPPORTED` / **NO-GO**. Evidence quarantine alone cannot retroactively prevent side effects.
+Paths outside interception, including native command shell expansion and
+autonomous remote actions, must have explicit coverage/limitation reporting.
+Their lack of universal preventive coverage is not by itself a V2 cutover
+blocker and must not cause model/provider bans. If a FlowGuard-owned operation
+needs an unavailable capability, or outside activity makes required evidence
+stale, incomplete, contaminated or ambiguous, block that operation/approval.
+No unobserved effect may be represented as prevented, executed or audited.
+Evidence quarantine cannot undo an already completed side effect. During review
+serialization, any observed tool attempt contaminates capture even if denied;
+if complete required capture assurance is unavailable, no review may bind.
 
 ### D5. All host-native models and effort variants remain available
 
 The host owns its selectable model catalogue and per-model reasoning/effort variants, including unset/default and host-specific values. FlowGuard MUST NOT introduce provider/model allowlists, silent replacements, reasoning reduction or a universal token cap. The operator's selected parent/reviewer configuration, **effective** host resolution and **attested** evidence execution are separate facts. Native host-authorized fallbacks may occur, but review evidence must bind the exact effective model/effort for each execution; an unproved mid-review switch invalidates the required assurance.
 
-Host capability gates are about **execution paths, not model names**. A model can be selectable while its governed workflow is explicitly unsupported (e.g. unpreventable hosted side effects, missing review execution capability). Selection is not a guarantee of task quality, eventual completion or universal provider containment.
+Host capability gates are about **execution paths, not model names**. A model
+remains selectable even if a particular required workflow or review capture
+cannot be completed with valid assurance. Uncontrolled remote activity is a
+documented prevention limit, not an automatic model/workflow ban; missing required
+review capability still blocks review approval. Selection is not a guarantee of
+task quality, eventual completion or universal provider containment.
 
 ### D6. Host capability evidence is granular and versioned
 
@@ -98,6 +165,7 @@ These references describe official **interfaces**, not FlowGuard-certified behav
 ## Consequences and release gate
 
 - OpenCode V1 is not retained as a product path after the V2 breaking replacement; other host integrations retain their currently **verified** support rather than inferred parity.
-- P0 must first prove inactive noninterference, operator authorization, preventive boundaries, exact reviewer provenance, model/effort fidelity and recovery. Until then **NO-GO** for supported active V2 governance.
+- Porting/simplification may proceed against the revised contract without a sandbox, second runtime or universal provider-prevention proof. Actual authority acceptance still requires proof of the selected D3 distinguishable host-UI source; reviewer binding requires exact provenance and completion proof. No unresolved high-risk assumption may enter implementation.
+- Release still requires installed INACTIVE noninterference, explicit scope-bound activation/decisions, deterministic gates, controlled-path negative tests, reviewer/evidence/audit integrity, native model/effort fidelity, durable recovery, conformance, simplification and full installed Desktop/CLI acceptance. These remain NOT_VERIFIED, so supported ACTIVE V2 governance and merge remain NO-GO. Missing out-of-scope containment alone is no longer a release blocker.
 - [Phase-0 test plan](../host-probes/opencode-v2/phase0-contract-gates.md) is the executable gate; it does not assert that any unrun test passed.
 - Scope, historical proof artifacts, evidence generations and migration decisions must be truthful. Existing ADRs/probe reports remain historical records, not silently rewritten claims.
