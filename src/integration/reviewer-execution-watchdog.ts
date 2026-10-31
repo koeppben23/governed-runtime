@@ -382,9 +382,3 @@ export class ReviewerExecutionWatchdog {
     return true;
   }
 }
-
-export function createReviewerExecutionWatchdog(
-  deps: ReviewerExecutionWatchdogDeps,
-): ReviewerExecutionWatchdog {
-  return new ReviewerExecutionWatchdog(deps);
-}

@@ -4,12 +4,7 @@
  * operations use the authorized parent/call identity, never a fresh SDK lookup.
  */
 
-import {
-  abandonAndBlockByHostCall,
-  executionDispatchIsTerminal,
-  resolveExecutionDispatch,
-} from './review/dispatch/durable-dispatch.js';
-import { ensureReviewAssurance } from '../state/review-dispatch.js';
+import { abandonAndBlockByHostCall } from './review/dispatch/durable-dispatch.js';
 import { clearPendingReviewForObligation } from './review/dispatch/capture-failure-routing.js';
 import type { OrchestratorDeps } from './review/pipeline-types.js';
 import type {
@@ -60,19 +55,5 @@ export function createReviewerExecutionFailurePersister(deps: ReviewerExecutionF
       });
       return false;
     }
-  };
-}
-
-/** A normal after-hook may clean up only its exact persisted terminal execution. */
-export function createReviewerExecutionTerminalReader(deps: ReviewerExecutionFailureDeps) {
-  return async (identity: ReviewerExecutionIdentity): Promise<boolean> => {
-    const resolution = await deps.ws.resolveSessionAuthority(identity.parentSessionId);
-    if (resolution.status !== 'resolved') return false;
-    const assurance = ensureReviewAssurance(resolution.state.reviewAssurance);
-    const dispatch = resolveExecutionDispatch(assurance, identity.callId, identity);
-    return (
-      dispatch !== undefined &&
-      executionDispatchIsTerminal(assurance, dispatch, identity.childSessionId)
-    );
   };
 }

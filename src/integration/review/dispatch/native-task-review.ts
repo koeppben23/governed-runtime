@@ -90,12 +90,7 @@ export type NativeReviewAuditReconciler = (
 
 type BindableAttempt = NonNullable<ReturnType<typeof findBindableAttempt>>;
 
-export function isNativeReviewerTaskBefore(output: unknown): boolean {
-  const args = (output as ToolHookBeforeOutput | undefined)?.args;
-  return args?.subagent_type === REVIEWER_SUBAGENT_TYPE;
-}
-
-export function isNativeReviewerTaskAfter(input: unknown): boolean {
+function isNativeReviewerTaskAfter(input: unknown): boolean {
   const hook = input as ToolHookAfterInput | undefined;
   return hook?.tool === TASK_TOOL && hook.args?.subagent_type === REVIEWER_SUBAGENT_TYPE;
 }

@@ -71,7 +71,7 @@ vi.mock('./reviewer-capture.js', () => ({
 }));
 vi.mock('./reviewer-output-cap.js', () => ({ validateNativeReviewerOutputLimit: h.cap }));
 vi.mock('./reviewer-execution-watchdog.js', () => ({
-  createReviewerExecutionWatchdog: h.watchdog,
+  ReviewerExecutionWatchdog: h.watchdog,
 }));
 
 let host: ReturnType<typeof createV2Host>;

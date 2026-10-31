@@ -85,7 +85,21 @@ jobs:
         env:
           TARGET: ${{ steps.resolve.outputs.target }}
         run: |
-          node --input-type=module -e 'import fs from "node:fs"; const p="CHANGELOG.md"; const s=fs.readFileSync(p,"utf8"); const marker="### Changed"; const start=s.indexOf("## [Unreleased]"); const end=s.indexOf("\n## ",start+1); const at=s.indexOf(marker,start); if(start<0||at<0||(end>=0&&at>end)) throw new Error("Missing Unreleased Changed heading"); fs.writeFileSync(p,s.slice(0,at)+s.slice(at).replace(marker,`${marker}\n\n- Updated native OpenCode API packages and type baselines to ${process.env.TARGET}; installed Desktop/CLI support is not certified by this update.`));'
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { SdkContractError } from './scripts/sdk-type-snapshot.mjs';
+          const file = 'CHANGELOG.md';
+          const content = fs.readFileSync(file, 'utf8');
+          const marker = '### Changed';
+          const start = content.indexOf('## [Unreleased]');
+          const end = content.indexOf('\n## ', start + 1);
+          const at = content.indexOf(marker, start);
+          if (start < 0 || at < 0 || (end >= 0 && at > end)) {
+            throw new SdkContractError('Missing Unreleased Changed heading');
+          }
+          const entry = `${marker}\n\n- Updated native OpenCode API packages and type baselines to ${process.env.TARGET}; installed Desktop/CLI support is not certified by this update.`;
+          fs.writeFileSync(file, content.slice(0, at) + content.slice(at).replace(marker, entry));
+          NODE
       - name: Documentation and formatting gates
         if: steps.resolve.outputs.needs_update == 'true'
         run: |

@@ -858,6 +858,14 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Native V2 CI follow-up (#1169).** The API-update workflow writes its
+  changelog entry through a quoted JavaScript heredoc, with executable positive
+  and missing-heading tests, rather than shell-ambiguous inline quoting. Removed
+  unused pre-cutover reviewer factories, a task predicate, telemetry bootstrap
+  and test scaffolding; module-private helpers no longer expose unused API.
+  Unused-export and ShellCheck gates remain enforced without baseline expansion
+  or warning suppressions.
+
 - **Native V2 entrypoint/client work (#1169, not release-ready).** Replaced the
   callable OpenCode factory with `Plugin.define({ id, setup })`, single native
   hook/tool registrations, event subscription and owned cleanup. Review consumers

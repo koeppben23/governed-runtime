@@ -226,7 +226,7 @@ export interface ExecutionClosureIdentity {
 }
 
 /** Resolve only recorded execution identities, including a dispatch rebound to its child. */
-export function resolveExecutionDispatch(
+function resolveExecutionDispatch(
   assurance: ReturnType<typeof ensureReviewAssurance>,
   hostCallId: string,
   identity: ExecutionClosureIdentity,
@@ -247,7 +247,7 @@ export function resolveExecutionDispatch(
 }
 
 /** Terminal evidence must belong to this exact dispatch, attempt and child. */
-export function executionDispatchIsTerminal(
+function executionDispatchIsTerminal(
   assurance: ReturnType<typeof ensureReviewAssurance>,
   record: ReviewDispatchRecord,
   childSessionId?: string,

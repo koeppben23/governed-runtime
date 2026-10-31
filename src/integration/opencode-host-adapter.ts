@@ -25,7 +25,7 @@ export class HostCapabilityMismatchError extends Error {
   }
 }
 
-export class HostReviewProofUnavailableError extends Error {
+class HostReviewProofUnavailableError extends Error {
   readonly code = 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
 }
 

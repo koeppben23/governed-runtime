@@ -130,6 +130,52 @@ new commit or the current-`develop` merge candidate. Operator UI attribution,
 reviewer release/capture and quiescence, regular native edit-error observation,
 installer/lifecycle and installed Desktop/CLI INACTIVE parity remain unverified.
 
+### CI follow-up to the published API step
+
+[CI run 41241094244](https://github.com/koeppben23/governed-runtime/actions/runs/41241094244)
+tests head `99b9c218428779fca3811bb0201ebcf3df3d24d5` on merge candidate
+`632e98f57f6a01becded8a9d3b6ffa8240ed7310`. Its observed failures include
+`actionlint`, `unused-exports`, `smoke` and `independent-review-e2e`; this is not
+green installed acceptance.
+
+The follow-up fixes the SDK-update workflow's ShellCheck SC2016 quoting with a
+quoted JavaScript heredoc. Tests execute the actual workflow shell for a valid
+Unreleased entry and reject a missing current Changed heading without editing
+historical entries. Dead reviewer factories, an unused task predicate, telemetry
+bootstrap and test scaffolding are removed; internally used dispatch helpers
+remain private. No unused-export baseline, warning suppression, test exclusion
+or coverage threshold changes are used.
+
+The other failures expose unfinished installed-host migration, not just stale
+test titles:
+
+- `ci.yml` still installs the historical `opencode-ai@1.19.5` host; mutation and
+  capture fixtures still call a V1 plugin factory. Those cannot load the native
+  `Plugin.define` product. Retained host/docs provenance is not V2 certification.
+- Output-cap smoke tests still demand the removed V1 65K rewrite. Native V2
+  budgeting and explicit-cap rejection must be verified against an actually
+  loaded native plugin, not a V1 host which ignores it.
+- The independent-review verifier requires positive release and binding tests
+  which the native root cannot currently satisfy. It also uses V1 config/API
+  mechanics for its installed-runtime stage. Renaming the required tests to
+  domain-fixture positives or fail-closed negatives would conceal missing proof.
+- Native reviewer release/context callbacks deliberately block, the adapter
+  advertises no review transport and unknown quiescence, and native regular
+  edit-error observations remain unobserved. Positive installed reviewer capture
+  and regular-error recovery therefore remain **BLOCKED** until their actual
+  provenance contracts are established. Distinguishable operator-UI attribution
+  independently remains **NOT_VERIFIED**.
+
+Local follow-up regression passed 12,466 tests with the same two existing skips;
+the CI coverage command passed at 90.24% statements, 83.27% branches, 95.15%
+functions and 91.75% lines. Actionlint, unchanged unused-export comparison,
+typecheck, strict lint, format, build/doc drift, unused dependencies, 307 script
+tests and 538 architecture tests passed. A local rerun of
+`npm run test:independent-review-e2e` still fails on the two missing positive
+contracts before installed-runtime verification. These checks do not close
+either installed acceptance failure or establish certification of a new
+published candidate.
+
 ## Baseline control flow and required simplification
 
 Paths in this section are relative to the repository root. The table describes
