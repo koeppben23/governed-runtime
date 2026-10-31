@@ -867,6 +867,8 @@ stop`, reviewer child reported it could not complete the falsification).
   A real model-driven shell reproduced plugin command admission with an
   agent-accessible fixture credential, refuting human-origin inference from
   that API/callback alone; independent operator authorization remains blocked.
+  Probe-source checkout rules preserve exact LF evidence bytes on Windows;
+  an autocrlf regression test protects the byte-level source binding.
 
 - **Host-neutral opt-in governance architecture contract (#1169).** Documented
   explicit operator-authorized activation, STRICT security/evidence boundaries,

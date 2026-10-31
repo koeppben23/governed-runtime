@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const facts = JSON.parse(
@@ -29,6 +32,41 @@ describe('Phase-02 observation scope and source-byte binding', () => {
     for (const [path, expected] of Object.entries(facts.probeSourceSha256)) {
       const bytes = readFileSync(new URL(`./${path}`, import.meta.url));
       expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(expected);
+    }
+  });
+
+  it('preserves exact LF source bytes even with Git autocrlf enabled', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fg-probe-checkout-'));
+    try {
+      const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+      git('init', '--quiet');
+      git('config', 'core.autocrlf', 'true');
+      git('config', 'core.eol', 'crlf');
+      writeFileSync(
+        join(root, '.gitattributes'),
+        readFileSync(new URL('../../.gitattributes', import.meta.url)),
+      );
+      const bytes = Buffer.from('// evidence fixture\nexport const value = 1;\n');
+      // Control proves this checkout would convert an unprotected text file.
+      writeFileSync(join(root, 'unbound.mjs'), bytes);
+      git('add', 'unbound.mjs');
+      unlinkSync(join(root, 'unbound.mjs'));
+      git('checkout-index', '--force', '--', 'unbound.mjs');
+      expect(readFileSync(join(root, 'unbound.mjs'), 'utf8')).toBe(
+        bytes.toString('utf8').replaceAll('\n', '\r\n'),
+      );
+      for (const path of ['lib/fixture.mjs', 'plugin/fixture.js', 'probes/fixture.mjs']) {
+        const relative = `scripts/opencode-v2-probe/${path}`;
+        const target = join(root, relative);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, bytes);
+        git('add', '.gitattributes', relative);
+        unlinkSync(target);
+        git('checkout-index', '--force', '--', relative);
+        expect(readFileSync(target), path).toEqual(bytes);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

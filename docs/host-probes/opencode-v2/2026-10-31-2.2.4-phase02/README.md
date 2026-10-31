@@ -139,7 +139,7 @@ separation, replay/expiry/concurrent reuse tests remain NOT_VERIFIED.
 ## Reproduction and remaining gates
 
 Local checks on this checkpoint (Node 22.22.2): `npm run test:scripts`
-**19 files / 269 tests PASS**; `npm run test:architecture` **51 files / 538 tests
+**19 files / 270 tests PASS**; `npm run test:architecture` **51 files / 538 tests
 PASS**; `npm test` **694 files / 12,400 tests PASS, 2 skipped**;
 `npm run check`, `npm run lint:strict`, `npm run check:format`,
 `npm run check:unused-dependencies`, `git diff --check`, and
@@ -149,6 +149,18 @@ host or convert diagnostics into product evidence. Future probe changes need a
 new dated observation and an updated current binding test, not rewritten
 historical facts. Full local test and pushed-SHA CI outcomes are recorded in the
 PR checkpoint report; older green CI does not certify this change.
+
+The first pushed checkpoint (`c124bbac`) failed `scripts-windows`: Git's CRLF
+checkout changed the source-byte hash. Reproducing LF→CRLF locally gives exactly
+the received Windows hash. Scoped `.gitattributes` now preserves LF for probe
+libraries, plugins and probe executables, with an actual autocrlf-enabled Git
+checkout regression test. Evidence hashes were not changed or normalized, and
+the byte-binding test still runs on Windows. The Unix-only isolation suite is
+separate and remains explicitly skipped there. The initial red CI is not counted
+as a passing run.
+The full local unit/integration run preceded this checkout-only correction;
+product and observed probe-source bytes did not change. Final-SHA CI outcomes
+are reported separately in the PR.
 
 From the repository root, use Node from `.node-version` and install the separate
 probe package using its lockfile as described in the

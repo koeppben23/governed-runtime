@@ -20,6 +20,9 @@ or the repository's production runtime.
   version; record binary SHA-256 and package-manifest digests. Check reported
   mutable paths remain inside the fixture root. This is not a dependency sandbox,
   egress firewall, signed build attestation or same-user security boundary.
+- Scoped `.gitattributes` preserves LF for the byte-bound libraries, plugins and
+  executables even on Windows checkouts; the evidence guard never normalizes
+  source bytes to excuse a mismatch. This does not certify Windows host isolation.
 - Spawn a private `opencode serve` process; never attach to the operator's
   shared background service.
 - Use a deterministic OpenAI-compatible local provider for parent, reviewer and
