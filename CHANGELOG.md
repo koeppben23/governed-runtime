@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Host-neutral opt-in governance architecture contract (#1169).** Documented the explicit operator-authorized activation, STRICT security/evidence boundaries, unrestricted host-native models and effort levels, versioned host capability probes and OpenCode V2 phase-0 NO-GO gates; made changelog and affected documentation synchronization mandatory in contributor and PR checks. No OpenCode V2 runtime support is claimed by this documentation change.
+
+
 ### Added
 
 - **ISO/IEC 27001:2022 evidence-to-control mapping (#1083).** New opt-in,
