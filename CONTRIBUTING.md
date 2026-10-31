@@ -369,23 +369,23 @@ semantics, install/upgrade/release steps, error codes, recovery guidance, or
 support expectations change. Update developer docs when architecture boundaries,
 SSOT ownership, test strategy, release process, or contribution workflow changes.
 
-If docs are not updated, the PR must state why no documentation change is needed.
+Every affected user/developer document must be updated in the same PR.
+If no document is affected, record the impact assessment; do not add a
+meaningless cosmetic change. Contradictory or stale affected docs block merge.
 
 ### Changelog Contract
 
-Update `CHANGELOG.md` for release-relevant changes:
+**Every PR MUST update `CHANGELOG.md` under `[Unreleased]`.** This includes
+docs-only, test, refactor, CI, formatting, removal and internal cleanup changes;
+there is no "not needed" exception. Entries must describe completed changes
+truthfully, without asserting unverified product or host support.
 
-- user-visible behavior
-- CLI, API, or config changes
-- policy or governance semantics
-- release, install, upgrade, or rollback behavior
-- security or fail-closed behavior
-- error or recovery text
-- meaningful test or quality gate changes
-
-`CHANGELOG.md` is not required for typo-only docs, formatting, internal-only
-cleanup without behavior change, or test refactors without new release-relevant
-coverage. If not updated, the PR must state why no changelog entry is needed.
+The required PR documentation check is `npm run check:pr-documentation`;
+generated documentation/inventory consistency remains checked by
+`npm run check:doc-drift`. In addition, reviewers must establish semantic
+alignment of code, tests, docs, CLI/help, templates, shipped artifacts and
+changelog on the final commit. A green file-presence check does not prove
+semantic consistency.
 
 ### High-Risk Contract
 
