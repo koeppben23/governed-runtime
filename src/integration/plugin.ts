@@ -48,10 +48,7 @@ import {
   type ReviewerOutputCapFailure,
 } from './reviewer-output-cap.js';
 import { createReviewerOutputCapFailurePersister } from './reviewer-output-cap-failure.js';
-import {
-  createReviewerExecutionWatchdog,
-  type ReviewerExecutionWatchdog,
-} from './reviewer-execution-watchdog.js';
+import { createReviewerExecutionWatchdog } from './reviewer-execution-watchdog.js';
 import {
   createReviewerExecutionFailurePersister,
   createReviewerExecutionTerminalReader,
@@ -59,7 +56,6 @@ import {
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { ReviewerCaptureController } from './reviewer-capture.js';
-import { attachReviewerCaptureHooks } from './plugin-reviewer-capture.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -238,17 +234,8 @@ interface CreateFlowGuardHooksInput {
 }
 
 function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnType<Plugin>> {
-  const {
-    ws,
-    log,
-    adapterLog,
-    config,
-    configReadError,
-    client,
-    auditWorktree,
-    resolveSessionPolicy,
-    logError,
-  } = input;
+  const { ws, log, adapterLog, config, client, auditWorktree, resolveSessionPolicy, logError } =
+    input;
   const orchestratorDeps = createOrchestratorDeps(ws, log, client);
   const toolTraceIds = new Map<string, string>();
   const toolLatencyStarts = new Map<string, number>();
@@ -271,7 +258,7 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
     resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
     getWorkspaceDir: () => ws.cachedWsDir,
   };
-  const hooks = createFlowGuardPluginHooks({
+  const runtime: FlowGuardPluginRuntime = {
     ws,
     log,
     adapterLog,
@@ -287,160 +274,124 @@ function createFlowGuardHooks(input: CreateFlowGuardHooksInput): Awaited<ReturnT
     reviewerExecutionFailures,
     reviewerExecutionTimeoutMs: config.reviewer.executionTimeoutMs,
     logError,
-  });
-  attachReviewerOutputCapHook(hooks, {
-    config,
-    configReadError,
-    log,
-    failures: reviewerOutputCapFailures,
-    client,
-    ws,
-    orchestratorDeps,
-  });
-  attachReviewerExecutionWatchdog(hooks, {
-    config,
-    log,
-    client,
-    ws,
-    orchestratorDeps,
-    failures: reviewerExecutionFailures,
-  });
-  if (orchestratorDeps.reviewerCapture) {
-    attachReviewerCaptureHooks(hooks, orchestratorDeps.reviewerCapture, client);
-  }
-  return hooks;
+  };
+  return createFlowGuardPluginHooks(runtime, createReviewerServices(input, runtime));
 }
 
-function attachReviewerOutputCapHook(
-  hooks: Awaited<ReturnType<Plugin>>,
-  deps: {
-    readonly config: FlowGuardConfig;
-    readonly configReadError?: unknown;
-    readonly log: PluginLogger;
-    readonly failures: Map<string, ReviewerOutputCapFailure>;
-    readonly client: OrchestratorClient;
-    readonly ws: PluginWorkspaceRuntime;
-    readonly orchestratorDeps: OrchestratorDeps;
-  },
-): void {
-  hooks['chat.params'] = createReviewerOutputCapHook({
-    config: deps.config,
-    configReadError: deps.configReadError,
-    log: deps.log,
-    failures: deps.failures,
-    persistFailure: createReviewerOutputCapFailurePersister({
-      client: deps.client,
-      ws: deps.ws,
-      orchestratorDeps: deps.orchestratorDeps,
-      log: deps.log,
-    }),
+/** Construct services before registration; never replace already-registered hooks. */
+function createReviewerServices(input: CreateFlowGuardHooksInput, runtime: FlowGuardPluginRuntime) {
+  const deps = {
+    client: input.client,
+    ws: runtime.ws,
+    orchestratorDeps: runtime.orchestratorDeps,
+    log: runtime.log,
+  };
+  const cap = createReviewerOutputCapHook({
+    config: input.config,
+    configReadError: input.configReadError,
+    log: runtime.log,
+    failures: runtime.reviewerOutputCapFailures,
+    persistFailure: createReviewerOutputCapFailurePersister(deps),
   });
-}
-
-function finishNativeTaskWatchdog(
-  watchdog: ReviewerExecutionWatchdog,
-  input: { readonly sessionID: string; readonly callID?: string },
-  childSessionId: string | undefined,
-): void {
-  watchdog.finishTask({
-    ...(typeof input.callID === 'string' && input.callID.length > 0
-      ? { callId: input.callID }
-      : {}),
-    parentSessionId: input.sessionID,
-    ...(childSessionId === undefined ? {} : { childSessionId }),
-  });
-}
-
-function attachReviewerExecutionWatchdog(
-  hooks: Awaited<ReturnType<Plugin>>,
-  deps: {
-    readonly config: FlowGuardConfig;
-    readonly log: PluginLogger;
-    readonly client: OrchestratorClient;
-    readonly ws: PluginWorkspaceRuntime;
-    readonly orchestratorDeps: OrchestratorDeps;
-    readonly failures: Map<string, ReviewerExecutionFailure>;
-  },
-): ReviewerExecutionWatchdog {
   const watchdog = createReviewerExecutionWatchdog({
-    config: deps.config.reviewer,
-    client: deps.client,
-    log: deps.log,
-    failures: deps.failures,
-    capture: deps.orchestratorDeps.reviewerCapture,
+    config: input.config.reviewer,
+    client: input.client,
+    log: runtime.log,
+    failures: runtime.reviewerExecutionFailures,
+    capture: runtime.orchestratorDeps.reviewerCapture,
     persistFailure: createReviewerExecutionFailurePersister(deps),
   });
-  const isTerminal = createReviewerExecutionTerminalReader(deps);
-
-  const cap = hooks['chat.params'];
-  hooks['chat.params'] = async (input, output) => {
-    await cap?.(input, output);
-    if (input.agent === REVIEWER_SUBAGENT_TYPE) await watchdog.onReviewerRequest(input.sessionID);
+  return {
+    cap,
+    watchdog,
+    isTerminal: createReviewerExecutionTerminalReader(deps),
+    client: input.client,
   };
-
-  const before = hooks['tool.execute.before'];
-  hooks['tool.execute.before'] = async (input, output) => {
-    await before?.(input, output);
-    if (isNativeReviewerTaskBefore(output)) {
-      if (typeof input.callID === 'string' && input.callID.length > 0) {
-        watchdog.onTaskAuthorized(input.sessionID, input.callID);
-      }
-      return;
-    }
-    watchdog.onToolStart(input.sessionID, input.callID);
-  };
-
-  const after = hooks['tool.execute.after'];
-  hooks['tool.execute.after'] = async (input, output) => {
-    if (isNativeReviewerTaskAfter(input)) {
-      const childSessionId = output.metadata?.sessionId;
-      if (typeof childSessionId === 'string' && childSessionId.length > 0) {
-        watchdog.onSerializationStart(childSessionId);
-      }
-      if (!input.callID) {
-        throw buildEnforcementError(
-          'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-          'Task completion has no exact authorized call ID; its watchdog was retained.',
-        );
-      }
-      const identity = {
-        parentSessionId: input.sessionID,
-        callId: input.callID,
-        ...(typeof childSessionId === 'string' ? { childSessionId } : {}),
-      };
-      try {
-        await after?.(input, output);
-        if (await isTerminal(identity)) {
-          finishNativeTaskWatchdog(watchdog, input, identity.childSessionId);
-          return;
-        }
-      } catch (err) {
-        await watchdog.failTask(identity);
-        throw err;
-      }
-      if (!(await watchdog.failTask(identity))) {
-        throw buildEnforcementError(
-          'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-          'Task outcome is unresolved; execution monitoring and the failure fence were retained.',
-        );
-      }
-      return;
-    }
-    try {
-      await after?.(input, output);
-    } finally {
-      watchdog.onToolEnd(input.sessionID, input.callID);
-    }
-  };
-
-  return watchdog;
 }
 
-function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<ReturnType<Plugin>> {
+type ReviewerServices = ReturnType<typeof createReviewerServices>;
+
+async function handleNativeTaskCompletion(
+  runtime: FlowGuardPluginRuntime,
+  services: ReviewerServices,
+  input: Parameters<NonNullable<Awaited<ReturnType<Plugin>>['tool.execute.after']>>[0],
+  output: Parameters<NonNullable<Awaited<ReturnType<Plugin>>['tool.execute.after']>>[1],
+): Promise<void> {
+  const { watchdog, isTerminal } = services;
+  const childSessionId = output.metadata?.sessionId;
+  if (typeof childSessionId === 'string' && childSessionId.length > 0) {
+    watchdog.onSerializationStart(childSessionId);
+  }
+  if (!input.callID) {
+    throw buildEnforcementError(
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      'Task completion has no exact authorized call ID; its watchdog was retained.',
+    );
+  }
+  const identity = {
+    parentSessionId: input.sessionID,
+    callId: input.callID,
+    ...(typeof childSessionId === 'string' ? { childSessionId } : {}),
+  };
+  try {
+    await nativeReviewTaskAfter(runtime, input, output);
+    if (await isTerminal(identity)) {
+      watchdog.finishTask(identity);
+      return;
+    }
+  } catch (err) {
+    await watchdog.failTask(identity);
+    throw err;
+  }
+  if (!(await watchdog.failTask(identity))) {
+    throw buildEnforcementError(
+      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+      'Task outcome is unresolved; execution monitoring and the failure fence were retained.',
+    );
+  }
+}
+
+function handleCaptureEvent(
+  capture: ReviewerCaptureController | undefined,
+  client: OrchestratorClient,
+  event: Parameters<NonNullable<Awaited<ReturnType<Plugin>>['event']>>[0]['event'],
+): void {
+  const childSessionId =
+    event.type === 'session.idle'
+      ? event.properties.sessionID
+      : event.type === 'session.status' && event.properties.status.type === 'idle'
+        ? event.properties.sessionID
+        : undefined;
+  // Abort can publish idle itself. Never await its reconciliation from an event subscriber.
+  if (childSessionId) void capture?.reconcileOnIdle(client, childSessionId);
+  if (event.type === 'message.updated') {
+    void capture?.reconcileOnTerminalMessage(client, event.properties.info);
+  }
+}
+
+function createFlowGuardPluginHooks(
+  runtime: FlowGuardPluginRuntime,
+  services: ReviewerServices,
+): Awaited<ReturnType<Plugin>> {
+  const capture = runtime.orchestratorDeps.reviewerCapture;
+  const { cap, watchdog } = services;
   return {
+    'chat.message': async (input, output) => {
+      capture?.onMessage(input, output);
+    },
+    'experimental.chat.messages.transform': async (_input, output) => {
+      capture?.onMessages(output);
+    },
+    'chat.params': async (input, output) => {
+      await cap(input, output);
+      if (input.agent === REVIEWER_SUBAGENT_TYPE) await watchdog.onReviewerRequest(input.sessionID);
+      capture?.onParams(input, output);
+    },
     'command.execute.before': (input: unknown, output: unknown) =>
       commandBefore(runtime, input, output),
-    'tool.execute.before': async (input: unknown, output: unknown) => {
+    'tool.execute.before': async (input, output) => {
+      // The capture fence always runs first, including before another handler denies.
+      capture?.beforeTool(input);
       // The governed reviewer Task is its own host-transport boundary. It must
       // not traverse the generic host-tool path because that path has no child
       // identity/dispatch semantics; nativeReviewTaskBefore performs the exact
@@ -454,21 +405,32 @@ function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<Re
             reconcilePendingAuditOperations(runtime.auditDeps, sessionId, toolName),
           { evaluateProofGraphGate, renderPlanClaimDeclarations },
         );
+        if (typeof input.callID === 'string' && input.callID.length > 0) {
+          watchdog.onTaskAuthorized(input.sessionID, input.callID);
+        }
         return;
       }
       await toolBefore(runtime, input, output);
+      watchdog.onToolStart(input.sessionID, input.callID);
     },
-    'tool.execute.after': async (input: unknown, output: unknown) => {
+    'tool.execute.after': async (input, output) => {
       // Native Task text is transcript-only. Its dedicated after boundary
       // performs same-child structured capture and evidence binding before the
       // result reaches the parent agent.
       if (isNativeReviewerTaskAfter(input)) {
-        await nativeReviewTaskAfter(runtime, input, output);
+        await handleNativeTaskCompletion(runtime, services, input, output);
         return;
       }
-      await toolAfter(runtime, input, output);
+      try {
+        await toolAfter(runtime, input, output);
+      } finally {
+        watchdog.onToolEnd(input.sessionID, input.callID);
+      }
     },
-    event: ({ event }) => handlePluginEvent(runtime, event),
+    event: async ({ event }) => {
+      await handlePluginEvent(runtime, event);
+      handleCaptureEvent(capture, services.client, event);
+    },
     'experimental.session.compacting': (input, output) => handleCompaction(runtime, input, output),
   };
 }

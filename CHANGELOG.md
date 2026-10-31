@@ -858,6 +858,12 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Single-owner plugin hook composition (#1169).** Removed post-construction
+  hook replacement for reviewer capture, output caps and execution monitoring.
+  The composition root now registers each handler once with explicit
+  fence-before-governance, cap-before-capture and exact-completion ordering.
+  Removed the capture wrapper module; authorization, evidence, recovery and host
+  contracts remain unchanged. This prepares, but does not complete, the V2 port.
 - **V2 preparatory HAI simplification (#1169).** Removed three ineffective
   argument/result/compaction delivery methods, their unused mutation DTO and the
   pass-through OpenCode adapter factory. The composition root now constructs the

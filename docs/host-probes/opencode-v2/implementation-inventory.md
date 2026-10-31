@@ -123,6 +123,23 @@ installer or lifecycle port. Remaining V1 APIs, pins, closed capability/transpor
 contracts and installed product behavior still require the final breaking
 cutover; no V2 support or operator/reviewer acceptance is certified here.
 
+### Hook composition simplification (#1169)
+
+`plugin.ts` now constructs reviewer services before registering handlers and
+explicitly orders capture, governance and watchdog calls in one registration
+site. The output-cap/watchdog attachment functions and the separate
+`plugin-reviewer-capture.ts` wrapper module are removed, including its placement
+entry. Before: handlers were repeatedly captured and replaced by three attachment
+passes. After: no hook replacement or wrapper chain; the same canonical handlers,
+exact identities and failure/terminal predicates remain in use. The capture
+fence still precedes all tool handling, including downstream denial; failure
+never becomes a successful completion, and idle/terminal reconciliation remains
+non-blocking to avoid abort/event deadlock.
+
+Composition-order contract tests cover positive and failing paths. This is not
+V2 hook registration, new reviewer proof or lifecycle-disposal acceptance: the
+current SDK entrypoint/client, installer and installed-host cutover remain open.
+
 ## Phase-01 impact matrix
 
 | Changed contract                           | Owner / implementation                                                                | Verification and documentation                                                                                                                                                                 |
