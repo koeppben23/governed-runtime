@@ -246,7 +246,7 @@ describe('handlePluginEvent', () => {
 
     await handlePluginEvent(runtime, {
       type: 'session.deleted',
-      properties: { info: { id: SESSION_ID } },
+      data: { sessionID: SESSION_ID },
     });
 
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith(SESSION_ID);
@@ -271,8 +271,8 @@ describe('handlePluginEvent', () => {
         ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
       });
       await handlePluginEvent(runtime, {
-        type: 'session.error',
-        properties: { sessionID: SESSION_ID, errorMessage: 'host stalled' },
+        type: 'session.execution.failed',
+        data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
       });
       const entries = await fs.readdir(sessDir);
       expect(entries).toContain('audit.jsonl');
@@ -289,8 +289,8 @@ describe('handlePluginEvent', () => {
   it('skips the session error audit when no mapping exists', async () => {
     const runtime = makeRuntime();
     await handlePluginEvent(runtime, {
-      type: 'session.error',
-      properties: { sessionID: SESSION_ID, errorMessage: 'host stalled' },
+      type: 'session.execution.failed',
+      data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
     });
     expect(runtime.log.warn).not.toHaveBeenCalled();
   });

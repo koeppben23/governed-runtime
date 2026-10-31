@@ -1,312 +1,212 @@
-/**
- * @module adapters/host-adapter.test
- * @description Contract and negative-path tests for the Host-Agnostic Adapter Interface.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type {
-  HostAdapter,
-  HostCapabilities,
-  BlockDecision,
-  HostToolEvent,
-  CapabilityValidationResult,
-  EnforcementLevel,
-} from './host-adapter.js';
+/** HAI and native OpenCode V2 client boundary; no live-host assurance is inferred. */
+import { describe, expect, it, vi } from 'vitest';
+import { OpenCodeHostAdapter, projectOpenCodeEvent } from '../integration/opencode-host-adapter.js';
+import { createV2Host } from '../integration/opencode-v2-test-helpers.js';
 import { REQUIRED_INDEPENDENT_REVIEW_TRANSPORT, reviewTransportSatisfies } from './host-adapter.js';
-import { OpenCodeHostAdapter } from '../integration/opencode-host-adapter.js';
+import type { OpenCodeEvent } from '@opencode/client';
 
-function createMockClient(overrides: Record<string, unknown> = {}) {
-  return {
-    session: {
-      create: vi.fn().mockResolvedValue({ sessionId: 'reviewer-session-1' }),
-      prompt: vi.fn().mockResolvedValue({ text: '{}' }),
-    },
-    app: {
-      agents: vi.fn().mockResolvedValue({ agents: ['flowguard-reviewer'], error: undefined }),
-    },
-    tui: {
-      showToast: vi.fn().mockResolvedValue(undefined),
-    },
-    ...overrides,
-  };
+function fixture() {
+  const host = createV2Host('/worktree');
+  const controller = new AbortController();
+  return { host, controller, adapter: new OpenCodeHostAdapter(host.ctx, controller.signal) };
 }
 
-function createTestEvent(): HostToolEvent {
-  return {
-    tool: 'bash',
-    sessionID: 'session-1',
-    callID: 'call-1',
-    args: { command: 'echo hello' },
-  };
-}
-
-function createAdapter(clientOverrides?: Record<string, unknown>): OpenCodeHostAdapter {
-  return new OpenCodeHostAdapter({
-    client: createMockClient(clientOverrides),
-    directory: '/project/root',
-    worktree: '/project/worktree',
-  });
-}
-
-describe('HostAdapter Contract', () => {
-  let adapter: HostAdapter;
-
-  beforeEach(() => {
-    adapter = createAdapter();
-  });
-
-  describe('Interface compliance', () => {
-    it('HAPPY: exposes host identity and scalar capabilities', () => {
-      expect(adapter.platform).toBe('opencode');
-      expect(adapter.enforcementLevel).toBe('synchronous');
-      const caps: HostCapabilities = adapter.capabilities;
-      expect(caps.preToolBlock).toBe(true);
-      expect(caps.argMutation).toBe(true);
-      expect(caps.outputReplacement).toBe(true);
-      expect(caps.contextInjection).toBe(true);
-      expect(caps.compactionInjection).toBe(true);
-    });
-
-    it('HAPPY: exposes one native visible structured reviewer transport', () => {
-      expect(adapter.capabilities.reviewTransports).toEqual([
-        {
-          kind: 'native_task_message_json',
-          validatedResult: true,
-          parentVisible: true,
-          transcriptNavigable: true,
-          isolatedAgentIdentity: true,
-          permissionIsolation: true,
-          assurance: 'host_message_validated',
-        },
-      ]);
-    });
-
-    it('HAPPY: the single advertised transport satisfies the complete product contract', () => {
-      const native = adapter.capabilities.reviewTransports[0];
-      expect(native).toBeDefined();
-      expect(reviewTransportSatisfies(native!, REQUIRED_INDEPENDENT_REVIEW_TRANSPORT)).toBe(true);
-    });
-
-    it('HAPPY: exposes configured session paths and reviewer transport support', () => {
-      expect(adapter.getWorkingDirectory()).toBe('/project/root');
-      expect(adapter.getWorktree()).toBe('/project/worktree');
-      expect(adapter.isReviewerSupported()).toBe(true);
+describe('native V2 host adapter', () => {
+  it('accepts the V2 context and advertises interception, not reviewer proof', async () => {
+    const { adapter } = fixture();
+    await adapter.initialize();
+    expect(adapter.platform).toBe('opencode');
+    expect(adapter.enforcementLevel).toBe('synchronous');
+    expect(adapter.getWorkingDirectory()).toBe('/worktree');
+    expect(adapter.getWorktree()).toBe('/worktree');
+    expect(adapter.isReviewerSupported()).toBe(false);
+    expect(adapter.capabilities.reviewTransports).toEqual([]);
+    expect(await adapter.validateCapabilities()).toMatchObject({
+      valid: true,
+      runtimeVerified: [],
     });
   });
 
-  describe('Initialization — fail-closed', () => {
-    it('BAD: rejects a missing client', async () => {
-      const broken = new OpenCodeHostAdapter({
-        client: null as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-      await expect(broken.initialize()).rejects.toThrow(/initialization failed/i);
-    });
+  it.each([
+    ['agent', 'list'],
+    ['session', 'get'],
+    ['session', 'context'],
+    ['session', 'interrupt'],
+    ['tool', 'hook'],
+    ['tool', 'transform'],
+    ['session', 'hook'],
+    ['event', 'subscribe'],
+  ])('fails closed without native %s.%s', async (domain, method) => {
+    const { host, adapter } = fixture();
+    const ctx = host.ctx as unknown as Record<string, Record<string, unknown>>;
+    delete ctx[domain]![method];
+    await expect(adapter.initialize()).rejects.toMatchObject({ code: 'HOST_ADAPTER_INIT_FAILED' });
+  });
 
-    it('BAD: rejects a missing same-child structured prompt capability', async () => {
-      const missingPrompt = new OpenCodeHostAdapter({
-        client: { session: {}, app: { agents: vi.fn() } } as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-      await expect(missingPrompt.initialize()).rejects.toThrow(/session\.prompt/);
-    });
+  it('does not expose removed no-op delivery methods', () => {
+    const { adapter } = fixture();
+    for (const field of ['deliverArgMutation', 'mutateToolResult', 'injectCompactionContext'])
+      expect(adapter).not.toHaveProperty(field);
+  });
 
-    it('BAD: rejects a missing reviewer registry capability', async () => {
-      const missingAgents = new OpenCodeHostAdapter({
-        client: { session: { prompt: vi.fn() }, app: {} } as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-      await expect(missingAgents.initialize()).rejects.toThrow(/app\.agents/);
-    });
+  it('reads the native agent registry without a name alias or process-global cache', async () => {
+    const { host, adapter, controller } = fixture();
+    expect(await adapter.listAgents('child')).toEqual([{ id: 'flowguard-reviewer' }]);
+    expect(host.listAgents).toHaveBeenCalledWith(
+      { location: { directory: '/worktree' } },
+      { signal: controller.signal },
+    );
+    await adapter.listAgents('child');
+    expect(host.listAgents).toHaveBeenCalledTimes(2);
+  });
 
-    it('HAPPY: does not require direct session.create because native Task owns child creation', async () => {
-      const nativeOnly = new OpenCodeHostAdapter({
-        client: { session: { prompt: vi.fn() }, app: { agents: vi.fn() } },
-        directory: '/x',
-        worktree: '/x',
-      });
-      await expect(nativeOnly.initialize()).resolves.toBeUndefined();
+  it('uses exact native session lookup and actual per-session location', async () => {
+    const { host, adapter, controller } = fixture();
+    expect(await adapter.getSession('child')).toEqual({
+      sessionId: 'child',
+      parentSessionId: 'parent',
+      directory: '/worktree',
     });
-
-    it('HAPPY: accepts a valid client', async () => {
-      await expect(adapter.initialize()).resolves.toBeUndefined();
+    expect(host.sessionGet).toHaveBeenCalledWith(
+      { sessionID: 'child' },
+      { signal: controller.signal },
+    );
+    host.sessionGet.mockResolvedValueOnce({
+      id: 'foreign',
+      parentID: 'parent',
+      location: { directory: '/other' },
+    });
+    await expect(adapter.getSession('child')).rejects.toMatchObject({
+      code: 'HOST_ADAPTER_INIT_FAILED',
     });
   });
 
-  describe('Synchronous enforcement', () => {
-    it('HAPPY: delivers a block synchronously with its code', () => {
-      const decision: BlockDecision = {
-        blocked: true,
-        reason: 'Risk classification required',
-        code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+  it('passes native history through unchanged, including absence of V1 parentID', async () => {
+    const { host, adapter } = fixture();
+    const history = [{ type: 'assistant', id: 'response', requestID: 'request', finish: 'stop' }];
+    host.sessionContext.mockResolvedValueOnce(history);
+    expect(await adapter.readHistory('child')).toBe(history);
+    expect(history[0]).not.toHaveProperty('parentID');
+  });
+
+  it('requests interruption of only the exact child with resume disabled', async () => {
+    const { host, adapter, controller } = fixture();
+    expect(await adapter.interrupt('child')).toBe(true);
+    expect(host.interrupt).toHaveBeenCalledWith(
+      { sessionID: 'child', resume: false },
+      { signal: controller.signal },
+    );
+    host.interrupt.mockResolvedValueOnce({ interrupted: false });
+    expect(await adapter.interrupt('child')).toBe(false);
+  });
+
+  it.each(['listAgents', 'getSession', 'readHistory', 'interrupt'] as const)(
+    'propagates %s host failures',
+    async (method) => {
+      const { host, adapter } = fixture();
+      const error = new Error('native failure');
+      const spies = {
+        listAgents: host.listAgents,
+        getSession: host.sessionGet,
+        readHistory: host.sessionContext,
+        interrupt: host.interrupt,
       };
-      expect(() => adapter.deliverBlockDecision(createTestEvent(), decision)).toThrow(
-        /RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE/,
-      );
-    });
+      spies[method].mockRejectedValueOnce(error);
+      const operation = adapter[method]('child');
+      await expect(operation).rejects.toBe(error);
+    },
+  );
 
-    it('HAPPY: argument and result projections remain non-throwing host hooks', () => {
-      expect(() => adapter.deliverArgMutation(createTestEvent(), { command: 'ls' })).not.toThrow();
-      expect(() =>
-        adapter.mutateToolResult(createTestEvent(), { replaceOutput: 'blocked' }),
-      ).not.toThrow();
+  it('does not equate admission, wait or idle with reviewer provenance or quiescence', async () => {
+    const { host, adapter } = fixture();
+    expect(await adapter.quiescence('child')).toBe('unknown');
+    await expect(adapter.reviewerCall('parent', 'child')).rejects.toMatchObject({
+      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
     });
+    await expect(
+      adapter.executeReviewerPrompt({
+        sessionId: 'child',
+        requestId: 'request',
+        agent: 'flowguard-reviewer',
+        model: { providerID: 'provider', modelID: 'model', variant: null },
+        text: '{}',
+      }),
+    ).rejects.toMatchObject({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' });
+    expect(host.prompt).not.toHaveBeenCalled();
   });
 
-  describe('validateCapabilities', () => {
-    it('HAPPY: contract-attests the exact native review transport without runtime overclaim', async () => {
-      const result: CapabilityValidationResult = await adapter.validateCapabilities();
-      expect(result).toEqual({
-        valid: true,
-        mismatches: [],
-        runtimeVerified: [],
-        contractAttested: [
-          'preToolBlock',
-          'argMutation',
-          'outputReplacement',
-          'contextInjection',
-          'reviewTransports.native_task_message_json',
-          'compactionInjection',
-        ],
-      });
-    });
-
-    it('HAPPY: does not perform re-entrant host I/O during boot validation', async () => {
-      const client = createMockClient();
-      client.app.agents.mockRejectedValue(new Error('must not run'));
-      const adap = new OpenCodeHostAdapter({
-        client: client,
-        directory: '/x',
-        worktree: '/x',
-      });
-      await adap.validateCapabilities();
-      expect(client.app.agents).not.toHaveBeenCalled();
-    });
+  it('delivers synchronous block decisions with the canonical enforcement code', () => {
+    const { adapter } = fixture();
+    expect(() =>
+      adapter.deliverBlockDecision(
+        { tool: 'shell', sessionID: 'session', callID: 'call', args: {} },
+        {
+          blocked: true,
+          code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          reason: 'unavailable',
+        },
+      ),
+    ).toThrow(/PLUGIN_ENFORCEMENT_UNAVAILABLE/);
   });
 
-  describe('Logging and lifecycle', () => {
-    it('HAPPY: warn/error may notify the TUI without becoming authority', () => {
-      const client = createMockClient();
-      const adap = new OpenCodeHostAdapter({
-        client: client,
-        directory: '/x',
-        worktree: '/x',
-      });
-      adap.log('warn', 'test warning');
-      expect(client.tui.showToast).toHaveBeenCalled();
-    });
-
-    it('BAD: a toast failure never propagates', () => {
-      const client = createMockClient();
-      client.tui.showToast.mockRejectedValue(new Error('UI crash'));
-      const adap = new OpenCodeHostAdapter({
-        client: client,
-        directory: '/x',
-        worktree: '/x',
-      });
-      expect(() => adap.log('error', 'critical')).not.toThrow();
-    });
-
-    it('HAPPY: shutdown is idempotent and compaction injection is non-throwing', async () => {
-      await adapter.shutdown();
-      await expect(adapter.shutdown()).resolves.toBeUndefined();
-      expect(() => adapter.injectCompactionContext?.('governance state')).not.toThrow();
-    });
+  it('shutdown is idempotent and performs no authority or lease recovery', async () => {
+    const { host, adapter } = fixture();
+    await adapter.shutdown();
+    await adapter.shutdown();
+    expect(host.interrupt).not.toHaveBeenCalled();
+    expect(host.prompt).not.toHaveBeenCalled();
   });
 });
 
-describe('HAI Type Contract', () => {
-  it('HAPPY: EnforcementLevel accepts all valid values', () => {
-    const levels: EnforcementLevel[] = ['synchronous', 'hook_gated', 'advisory'];
-    expect(levels).toHaveLength(3);
-  });
-});
+describe('native V2 notification projection', () => {
+  it.each(['session.deleted', 'session.idle', 'session.execution.failed', 'session.tool.failed'])(
+    'preserves %s identity and data without creating completion proof',
+    (type) => {
+      const data = {
+        sessionID: 'child',
+        id: 'call',
+        executed: false,
+        error: { code: 'failed', message: 'error' },
+      };
+      const projected = projectOpenCodeEvent({
+        id: 'event',
+        type,
+        data,
+      } as unknown as OpenCodeEvent);
+      expect(projected).toEqual({
+        sessionId: 'child',
+        event: { type, data: { ...data, hostEventId: 'event' } },
+      });
+      expect(projected?.event).not.toHaveProperty('properties');
+    },
+  );
 
-describe('reviewTransportSatisfies contract', () => {
-  const TRANSPORT_FLAGS = [
-    'validatedResult',
-    'parentVisible',
-    'transcriptNavigable',
-    'isolatedAgentIdentity',
-    'permissionIsolation',
-  ] as const;
-
-  type TransportFlag = (typeof TRANSPORT_FLAGS)[number];
-
-  function transport(
-    overrides: Partial<Record<TransportFlag, boolean>> = {},
-  ): Parameters<typeof reviewTransportSatisfies>[0] {
-    return {
-      kind: 'native_task_message_json',
-      validatedResult: true,
-      parentVisible: true,
-      transcriptNavigable: true,
-      isolatedAgentIdentity: true,
-      permissionIsolation: true,
-      assurance: 'host_message_validated',
-      ...overrides,
-    };
-  }
-
-  function requirements(
-    overrides: Partial<Record<TransportFlag, boolean>> = {},
-  ): Parameters<typeof reviewTransportSatisfies>[1] {
-    return {
-      validatedResult: false,
-      parentVisible: false,
-      transcriptNavigable: false,
-      isolatedAgentIdentity: false,
-      permissionIsolation: false,
-      ...overrides,
-    };
-  }
-
-  it('HAPPY: the fully required product contract is satisfied by a complete transport', () => {
-    expect(reviewTransportSatisfies(transport(), REQUIRED_INDEPENDENT_REVIEW_TRANSPORT)).toBe(true);
+  it.each([
+    'session.execution.succeeded',
+    'session.step.ended',
+    'message.updated',
+    'server.connected',
+  ])('does not promote %s into review approval or another event shape', (type) => {
+    expect(
+      projectOpenCodeEvent({
+        type,
+        id: 'event',
+        data: { sessionID: 'child' },
+      } as unknown as OpenCodeEvent),
+    ).toBeNull();
   });
 
-  it('BAD: rejects any transport missing one required flag', () => {
-    for (const flag of TRANSPORT_FLAGS) {
-      expect(
-        reviewTransportSatisfies(
-          transport({ [flag]: false }),
-          REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
-        ),
-        flag,
-      ).toBe(false);
-    }
-  });
-
-  it('HAPPY: an unrequired flag does not constrain the transport', () => {
-    const allMissing = transport({
-      validatedResult: false,
-      parentVisible: false,
-      transcriptNavigable: false,
-      isolatedAgentIdentity: false,
-      permissionIsolation: false,
-    });
-
-    expect(reviewTransportSatisfies(allMissing, requirements())).toBe(true);
-  });
-
-  it('HAPPY: only the required subset is evaluated', () => {
-    for (const requiredFlag of TRANSPORT_FLAGS) {
-      const required = requirements({ [requiredFlag]: true });
-      expect(reviewTransportSatisfies(transport(), required), requiredFlag).toBe(true);
-      expect(
-        reviewTransportSatisfies(transport({ [requiredFlag]: false }), required),
-        requiredFlag,
-      ).toBe(false);
-    }
-  });
-
-  it('BAD: a satisfied subset never upgrades a missing required flag', () => {
-    const required = requirements({ permissionIsolation: true });
-    const almostComplete = transport({ permissionIsolation: false });
-
-    expect(reviewTransportSatisfies(almostComplete, required)).toBe(false);
+  it('retains transport-bound capability checks rather than joining incomplete transports', () => {
+    expect(
+      reviewTransportSatisfies(
+        {
+          ...REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
+          kind: 'native_task_message_json',
+          assurance: 'unstructured',
+          validatedResult: false,
+        },
+        REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
+      ),
+    ).toBe(false);
   });
 });

@@ -92,11 +92,21 @@ jobs:
   test:
     name: ci-gate
     runs-on: ubuntu-latest
-    needs: [unit, scripts-windows, critical-windows, coverage, integration_perf, provider-conformance, regulated_e2e]
+    needs:
+      [
+        unit,
+        scripts-windows,
+        critical-windows,
+        coverage,
+        integration_perf,
+        provider-conformance,
+        regulated_e2e,
+        doc-drift,
+      ]
     if: always()
     timeout-minutes: 1
     steps:
-      - name: Confirm test, Windows, coverage, PERF, regulated e2e, and provider conformance jobs passed
+      - name: Confirm tests and documentation checks passed
         run: |
           echo "unit: ${{ needs.unit.result }}"
           echo "scripts-windows: ${{ needs.scripts-windows.result }}"
@@ -105,8 +115,9 @@ jobs:
           echo "integration-perf: ${{ needs.integration_perf.result }}"
           echo "provider-conformance: ${{ needs.provider-conformance.result }}"
           echo "regulated-e2e: ${{ needs.regulated_e2e.result }}"
-          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ]; then
-            echo "Blocked: unit, scripts-windows, critical-windows, coverage, integration-perf, provider-conformance, or regulated-e2e job failed"
+          echo "doc-drift: ${{ needs.doc-drift.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.scripts-windows.result }}" != "success" ] || [ "${{ needs.critical-windows.result }}" != "success" ] || [ "${{ needs.coverage.result }}" != "success" ] || [ "${{ needs.integration_perf.result }}" != "success" ] || [ "${{ needs.provider-conformance.result }}" != "success" ] || [ "${{ needs.regulated_e2e.result }}" != "success" ] || [ "${{ needs.doc-drift.result }}" != "success" ]; then
+            echo "Blocked: a required test or documentation job did not succeed"
             exit 1
           fi
 
@@ -389,12 +400,16 @@ jobs:
   doc-drift:
     name: doc-drift
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          fetch-depth: 0
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
+      - name: Require changelog update for every PR
+        run: npm run check:pr-documentation -- "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
       - name: Check documentation inventory drift
         run: npm run check:doc-drift
         env:

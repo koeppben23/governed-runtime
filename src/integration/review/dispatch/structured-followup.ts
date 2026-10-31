@@ -43,7 +43,12 @@ export type StructuredFollowupResult =
     };
 type Blocked = Extract<StructuredFollowupResult, { readonly kind: 'blocked' }>;
 type Parsed = { readonly kind: 'ok'; readonly findings: Record<string, unknown> } | Blocked;
-type Response = Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
+type Response = Awaited<ReturnType<OrchestratorClient['executeReviewerPrompt']>>;
+function replyRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
 type Input = {
   readonly childSessionId: string;
   readonly obligationId: string;
@@ -86,18 +91,16 @@ function serializationPrompt(input: Input): string {
 }
 
 function responseFailure(input: Input, response: Response): Blocked | null {
-  const data = response?.data;
-  const sdkError = response?.error;
-  const classified =
-    classifyReviewerProviderError(sdkError) ?? classifyReviewerProviderError(data?.info?.error);
+  const data = replyRecord(response);
+  const info = replyRecord(data.info);
+  const classified = classifyReviewerProviderError(info.error);
   if (classified) {
     // A terminal code is not proof that the host finished the exact request.
     // Only an exact terminal assistant record may release the fence.
-    if (sdkError == null) input.controller.settleClassifiedFailure(input.childSessionId, data);
-    else input.controller.quarantine(input.childSessionId);
+    input.controller.settleClassifiedFailure(input.childSessionId, data);
     return classified;
   }
-  if (sdkError != null || !data || data.info?.error != null) {
+  if (Object.keys(data).length === 0 || info.error != null) {
     input.controller.quarantine(input.childSessionId);
     throw new ReviewerCaptureOutcomeUnknownError(
       'OpenCode did not establish the reviewer prompt execution outcome; its capture fence is retained.',
@@ -131,10 +134,10 @@ function semanticProjection(value: Record<string, unknown>): Record<string, unkn
 function promptBody(input: Input, agent: string, text: string) {
   return {
     agent,
-    messageID: input.controller.request(input.childSessionId, text),
-    model: { providerID: input.model.providerID, modelID: input.model.modelID },
-    ...(input.model.variant === null ? {} : { variant: input.model.variant }),
-    parts: [{ type: 'text', text }],
+    sessionId: input.childSessionId,
+    requestId: input.controller.request(input.childSessionId, text),
+    model: input.model,
+    text,
   };
 }
 
@@ -161,10 +164,9 @@ async function invoke(
   const started = performance.now();
   let promptOutcome: 'responded' | 'threw' = 'threw';
   try {
-    const response = await client.session.prompt({
-      path: { id: input.childSessionId },
-      body: promptBody(input, agent, serializationPrompt(input)),
-    });
+    const response = await client.executeReviewerPrompt(
+      promptBody(input, agent, serializationPrompt(input)),
+    );
     promptOutcome = 'responded';
     return { kind: 'response', response };
   } catch (error) {
@@ -180,8 +182,8 @@ async function invoke(
 function captureResponse(input: Input, response: Response): ReviewMessageCapture {
   return input.controller.verify(
     input.childSessionId,
-    response.data,
-    textOf(response.data?.parts) ?? '',
+    response,
+    textOf(replyRecord(response).parts) ?? '',
   );
 }
 
@@ -201,10 +203,7 @@ async function repair(
     `Set attestation.toolObligationId exactly to "${input.obligationId}".`,
   ].join('\n');
   try {
-    const response = await client.session.prompt({
-      path: { id: input.childSessionId },
-      body: promptBody(input, agent, text),
-    });
+    const response = await client.executeReviewerPrompt(promptBody(input, agent, text));
     const failure = responseFailure(input, response);
     if (failure) return failure;
     const capture = captureResponse(input, response);
@@ -272,7 +271,7 @@ export async function captureStructuredFindingsFromVisibleChild(
 ): Promise<StructuredFollowupResult> {
   let agent: string;
   try {
-    agent = await resolveReviewerAgent(client);
+    agent = await resolveReviewerAgent(client, input.childSessionId);
   } catch {
     reportTiming(observe, { followupPromptMsUnavailable: 'not_invoked' });
     return {

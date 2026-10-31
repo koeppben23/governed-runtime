@@ -112,34 +112,17 @@ export class ReviewerExecutionWatchdog {
     });
   }
 
-  /** Resolve parent identity with get first, then a list fallback for creation races. */
+  /** Resolve the exact child; never substitute a process-wide session-list cache. */
   private async resolveParentSession(childSessionId: string): Promise<string | undefined> {
-    const session = this.deps.client.session;
-    let getReason = 'unavailable';
-    if (typeof session.get === 'function') {
-      try {
-        const response = await session.get({ path: { id: childSessionId } });
-        const parent = response.data?.parentID;
-        if (parent) return parent;
-        getReason = response.error ? 'error' : 'missing_parent';
-      } catch (err) {
-        getReason = err instanceof Error ? err.message : 'error';
-      }
+    try {
+      const child = await this.deps.client.getSession(childSessionId);
+      if (child.sessionId === childSessionId) return child.parentSessionId;
+    } catch (error) {
+      this.deps.log.warn('review', 'reviewer parent session could not be resolved', {
+        childSessionId,
+        reason: error instanceof Error ? error.message : 'unavailable',
+      });
     }
-    if (typeof session.list === 'function') {
-      try {
-        const response = await session.list();
-        const parent = response.data?.find((item) => item.id === childSessionId)?.parentID;
-        if (parent) return parent;
-      } catch {
-        // Fall through to the diagnostic below.
-      }
-    }
-    this.deps.log.warn('review', 'reviewer parent session could not be resolved', {
-      childSessionId,
-      getReason,
-      hasList: typeof session.list === 'function',
-    });
     return undefined;
   }
 
@@ -155,27 +138,9 @@ export class ReviewerExecutionWatchdog {
         !candidate.expired,
     );
     if (candidates.length === 0) return undefined;
-    const session = this.deps.client.session;
-    if (typeof session.messages !== 'function') return undefined;
     try {
-      const response = await session.messages({ path: { id: parentSessionId } });
-      const callIds = new Set(
-        (response.data ?? []).flatMap((message) =>
-          (message.parts ?? []).flatMap((part) => {
-            if (part.type !== 'tool' || part.state?.metadata?.sessionId !== childSessionId)
-              return [];
-            // OpenCode exposes both the Task part id and callID. The live host
-            // passes callID to the before-hook; older/other Task paths pass id.
-            // Accept only a unique exact match against either observed field.
-            return [part.callID, part.id].filter(
-              (value): value is string => typeof value === 'string',
-            );
-          }),
-        ),
-      );
-      const matches = candidates.filter(
-        (candidate) => candidate.callId && callIds.has(candidate.callId),
-      );
+      const callId = await this.deps.client.reviewerCall(parentSessionId, childSessionId);
+      const matches = candidates.filter((candidate) => candidate.callId === callId);
       return matches.length === 1 ? matches[0] : undefined;
     } catch {
       return undefined;
@@ -374,40 +339,31 @@ export class ReviewerExecutionWatchdog {
       return this.deps.capture.reconcileQuarantine(this.deps.client, childSessionId);
     }
     let acknowledged = false;
-    const session = this.deps.client.session;
-    if (typeof session.abort === 'function') {
-      try {
-        const response = await session.abort({ path: { id: childSessionId } });
-        acknowledged = response.data === true;
-      } catch (err) {
-        this.deps.log.warn('review', 'reviewer host abort failed', {
-          childSessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    } else {
-      this.deps.log.warn('review', 'reviewer host abort unavailable', { childSessionId });
+    try {
+      acknowledged = await this.deps.client.interrupt(childSessionId);
+    } catch (err) {
+      this.deps.log.warn('review', 'reviewer host abort failed', {
+        childSessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     return acknowledged && this.confirmTerminal(childSessionId);
   }
 
-  // eslint-disable-next-line complexity -- quiescence requires all positive host signals.
   private async confirmTerminal(childSessionId: string): Promise<boolean> {
-    const session = this.deps.client.session;
-    if (typeof session.messages !== 'function') return false;
-    if (typeof session.status !== 'function') return false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const [status, history] = await Promise.all([
-          session.status(),
-          session.messages({ path: { id: childSessionId } }),
+          this.deps.client.quiescence(childSessionId),
+          this.deps.client.readHistory(childSessionId),
         ]);
-        if (status.error || !status.data) return false;
-        const hostState = status.data[childSessionId]?.type ?? 'idle';
-        if (hostState !== 'idle') return false;
-        const messages = history.data;
-        if (!Array.isArray(messages) || messages.length === 0) return false;
+        if (status !== 'idle') return false;
+        if (!Array.isArray(history) || history.length === 0) return false;
+        const messages = history as Array<{
+          info?: { role?: string; finish?: string; error?: unknown };
+          parts?: Array<{ type?: string; state?: { status?: string } }>;
+        }>;
         const running = messages.some((message) =>
           (message.parts ?? []).some(
             (part) =>

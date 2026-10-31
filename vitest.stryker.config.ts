@@ -92,6 +92,7 @@ export default defineConfig({
       'src/integration/plugin-bootstrap.test.ts',
       'src/integration/plugin-integration.test.ts',
       'src/integration/plugin.test.ts',
+      'src/integration/plugin-hook-order.test.ts',
       'src/integration/session-state-upgrade.test.ts',
       'src/integration/reviewer-contract-e2e.test.ts',
       'src/integration/tools/helpers.test.ts',

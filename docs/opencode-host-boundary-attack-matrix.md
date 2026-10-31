@@ -304,16 +304,19 @@ contract.
 **Severity:** P1. **Status:** Partially fixed — no capability is reported as runtime-verified at boot, so the assurance claim is now honest; host mutation still lives in hook code outside the adapter (PL-06). **Scenarios:** PL-03, PL-06.
 
 `OpenCodeHostAdapter.capabilities` claims `preToolBlock`, `argMutation`,
-`outputReplacement`, `contextInjection`, `reviewerSpawn`, and
+`outputReplacement`, `contextInjection`, the native review transport, and
 `compactionInjection`. The adapter makes no host call at boot, so
 `validateCapabilities()` reports all six as `contractAttested` with
 `runtimeVerified: []`; a successful agent-registry listing would not have
 proven that `flowguard-reviewer` is resolvable anyway. Reviewer capability
 verifies lazily on the real invocation path.
 
-The HAI remains leaky for mutation: `deliverArgMutation`, `mutateToolResult`,
-and compaction delivery are no-ops while OpenCode hook handlers mutate host
-references directly.
+The ineffective HAI mutation/compaction delivery methods and their unused result
+DTO have been removed in the #1169 preparatory simplification. Host hook handlers
+remain the actual mutation owners; the capability fields describe those host
+mechanisms, not a second adapter delivery path. The pass-through adapter factory
+was also removed. This cleanup does not port the existing entrypoint to V2 or
+certify V2 reviewer/runtime capabilities; those remain separate migration work.
 
 ### F-05 — Host compatibility is open-world (deny-list only)
 

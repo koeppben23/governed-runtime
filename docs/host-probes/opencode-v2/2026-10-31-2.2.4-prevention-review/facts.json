@@ -1,0 +1,97 @@
+{
+  "scope": "P0-04 prevention surfaces, command shell interpolation and P0-05 reviewer-chain observations; not product certification",
+  "at": "2026-10-31T11:19:05.792Z",
+  "preventionAt": "2026-10-31T11:14:03.993Z",
+  "reviewerAt": "2026-10-31T11:19:05.792Z",
+  "decision": "NO-GO",
+  "p004": "NOT_VERIFIED",
+  "p005": "NOT_VERIFIED",
+  "p001": "BLOCKED",
+  "host": {
+    "version": "2.2.4",
+    "binarySha256": "03fc30769f28dd346d2279baae77ef71308175cd49eb7a5be339d3860ee99ec1",
+    "clientVersion": "2.2.4",
+    "pluginVersion": "2.2.4",
+    "surface": "macOS private CLI/server; deterministic local provider"
+  },
+  "mcp": {
+    "advertised": true,
+    "warmupAttemptsBeforeAdvertised": 2,
+    "denyHookObserved": true,
+    "denyMarkerAbsent": true,
+    "positiveControlExecuted": true,
+    "positiveControlMarkerPresent": true,
+    "positiveControlAfterHookObserved": true,
+    "preEffectControl": "SUPPORTED_BOUNDED",
+    "scope": "one local advertised MCP tool, one plugin/agent fixture, direct tool path"
+  },
+  "hosted": {
+    "visibleDefinitionPreventedBeforeProvider": true,
+    "controlReachedProvider": true,
+    "providerExecutedStatus": "NOT_VERIFIED",
+    "providerExecutedRequests": 1,
+    "providerExecutedTerminal": true,
+    "providerExecutedToolParts": 0,
+    "universalProviderContainment": "NOT_SUPPORTED"
+  },
+  "shell": {
+    "shellBlockRan": true,
+    "shellBeforePromptHook": true,
+    "shellLeadMs": 3,
+    "toolFenceObserved": false,
+    "surface": "SDK-invoked native file command, not a real TUI slash command"
+  },
+  "reviewer": {
+    "simpleChainValid": true,
+    "simpleAssuranceValid": true,
+    "childModelVariant": "chosen",
+    "childReasoningEffort": "high",
+    "childRequestCount": 1,
+    "childToolParts": 0,
+    "parentToolFreeTerminal": true,
+    "forgedReuseHostAccepted": true,
+    "naiveLatestAnswerAfterReuse": "FORGED_AFTER_TERMINAL",
+    "exactOriginalChainStillBound": true,
+    "toolAttemptDeniedBeforeEffect": true,
+    "toolAttemptChildTerminalObserved": true,
+    "toolAttemptParentCompleted": true,
+    "toolAttemptFlowCompleted": true,
+    "toolAttemptCleanReviewEligible": false,
+    "toolAttemptLoopGuardTriggered": true,
+    "toolAttemptSubagentParts": 3,
+    "toolAttemptParentRequests": 4,
+    "toolAttemptChildRequests": 2,
+    "fullReviewerAssurance": "NOT_VERIFIED"
+  },
+  "notVerified": [
+    "Universal MCP prevention across Code Mode, other servers, absent/unloaded plugins and installed product policy",
+    "Provider-hosted actions emitted without a visible request definition",
+    "Real TUI slash-command behavior and interactive operator channel",
+    "Independent reviewer identity, frozen subject, exact request-to-terminal evidence generation and installed FlowGuard review",
+    "Desktop/TUI installed-host acceptance and Windows isolation",
+    "Full P0-02-H, G-04/G-05, product mutation and final current-develop merge candidate"
+  ],
+  "probeSourceSha256": {
+    "lib/host.mjs": "7b60e6d87a279dcb643032b9fd90b24a897e92712562a3217e653fa5d0426bb4",
+    "lib/isolation.mjs": "b10f5afa1be60bd5c5796235878ddf7cb77a936e969982e392de8c3c1b391ff1",
+    "lib/provider.mjs": "188afd6c49c89092fea994daa62297da8c4f92a19259513b4cbb67aae3a13600",
+    "lib/review-evidence.mjs": "fc75402077e98f6731a8360442cfa703aff9e54dd4c460c36d1cf4d3f4d47be5",
+    "lib/scope-evidence.mjs": "2d82ab22f0c796b408ebfdcb709f39048be474f98e33cb9f877b575d7f1d8898",
+    "lib/mcp-server.mjs": "9bdb044f6e7fbabc7be0dfa9bc4855fce3b6d50db4c91c79437e2f0c94c7e9a5",
+    "plugin/flowguard-probe.js": "2dc71f49f38217fd3260750ee0cd5cf0923ba212b80012127d01475bd0c1246e",
+    "probes/p0-prevention-surfaces.mjs": "7e61203e7c2e113c04bfebd9a7aa4c85152efca0adc90949564efb56d2478342",
+    "probes/p0-reviewer-provenance.mjs": "a02d7eaa63e1fcb4d9df73b7dc668b25e556259b251ddd284b19b97533083f36"
+  },
+  "privateEvidence": {
+    "prevention": {
+      "directory": "phase02/p0-prevention-final4/2026-10-31T11-14-03-993Z",
+      "rawSha256": "2c979de17898d4101e3c5db095f3669758bd1b9ada8ed5b4cdcdd0e4d4f5082e",
+      "reportSha256": "2c979de17898d4101e3c5db095f3669758bd1b9ada8ed5b4cdcdd0e4d4f5082e"
+    },
+    "reviewer": {
+      "directory": "phase02/p0-reviewer-final5/2026-10-31T11-19-04-844Z",
+      "rawSha256": "1b0aaa484a3bc18fcd346e35ba80f6be382f587fc6af83e1370bfb29263d8608",
+      "reportSha256": "1b0aaa484a3bc18fcd346e35ba80f6be382f587fc6af83e1370bfb29263d8608"
+    }
+  }
+}

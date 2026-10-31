@@ -17,16 +17,11 @@ import {
   clearPendingReviewForObligation,
 } from './review/dispatch/capture-failure-routing.js';
 import type { OrchestratorDeps } from './review/pipeline-types.js';
-import type { ReviewerOutputCapFailure, SessionEnforcementState } from './review/types.js';
-
-interface ReviewerOutputCapFailureClient {
-  readonly session: {
-    get?(opts: { path: { id: string } }): Promise<{
-      data?: { id?: string; parentID?: string } | undefined;
-      error?: unknown;
-    }>;
-  };
-}
+import type {
+  OrchestratorClient,
+  ReviewerOutputCapFailure,
+  SessionEnforcementState,
+} from './review/types.js';
 
 interface ReviewerOutputCapFailureWorkspace {
   resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
@@ -40,7 +35,7 @@ interface ReviewerOutputCapFailureLogger {
 }
 
 export interface ReviewerOutputCapFailureDeps {
-  readonly client: ReviewerOutputCapFailureClient;
+  readonly client: Pick<OrchestratorClient, 'getSession'>;
   readonly ws: ReviewerOutputCapFailureWorkspace;
   readonly orchestratorDeps: OrchestratorDeps;
   readonly log: ReviewerOutputCapFailureLogger;
@@ -63,19 +58,10 @@ async function resolveParentContext(
   deps: ReviewerOutputCapFailureDeps,
   childSessionId: string,
 ): Promise<ResolvedParentContext | null> {
-  const session = deps.client.session;
-  if (typeof session.get !== 'function') {
-    deps.log.warn('review', 'reviewer output cap terminal persistence unavailable', {
-      childSessionId,
-      reason: 'session.get unavailable',
-    });
-    return null;
-  }
-
   let parentId: string | undefined;
   try {
-    const child = await session.get({ path: { id: childSessionId } });
-    parentId = child.data?.parentID;
+    const child = await deps.client.getSession(childSessionId);
+    parentId = child.parentSessionId;
   } catch (err) {
     deps.log.warn('review', 'reviewer output cap parent lookup failed', {
       childSessionId,

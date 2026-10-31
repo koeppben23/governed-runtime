@@ -145,9 +145,11 @@ describe('integration/tools', () => {
       }
     });
 
-    it('barrel re-exports FlowGuardAuditPlugin', () => {
+    it('barrel re-exports the native V2 FlowGuardAuditPlugin definition, not a factory', () => {
       expect(barrel.FlowGuardAuditPlugin).toBeDefined();
-      expect(typeof barrel.FlowGuardAuditPlugin).toBe('function');
+      expect(typeof barrel.FlowGuardAuditPlugin).toBe('object');
+      expect(barrel.FlowGuardAuditPlugin.id).toBe('flowguard');
+      expect(typeof barrel.FlowGuardAuditPlugin.setup).toBe('function');
     });
   });
 

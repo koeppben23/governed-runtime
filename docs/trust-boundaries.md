@@ -134,6 +134,142 @@ CLI and presentation output must not be treated as the decision authority when s
 
 The following sections are the review contract. Changes touching a boundary must preserve the listed authorities, failure modes, audit evidence, and logging separation.
 
+### OpenCode V2 Revised Product Trust Scope (#1169)
+
+The operator's explicit **2026-10-31 scope correction**, recorded in
+[ADR-010](./decisions/010-host-neutral-opt-in-governance.md#explicit-scope-amendment-2026-10-31),
+replaces the earlier requirement to establish independent operator/local/remote
+containment boundaries before all V2 porting. This is a deliberate architecture
+change, not a new installed-host test or a passing historical gate.
+
+OpenCode, installed FlowGuard validators and the OS are trusted executing
+infrastructure. LLM text, provider replies, caller IDs and tool arguments are not
+governance authority. This does not imply an authenticated human behind every
+host API action. Agent use of accessible shell/API/files remains possible and
+is not silently relabelled as human consent or prevented activity.
+
+The product boundary is canonical governance/approval/evidence validation and
+pre-effect gates on the host paths FlowGuard actually intercepts and claims to
+control. It is **not** universal protection from external native/OS/provider
+effects, sibling writers, plugin-less execution, compromised infrastructure or
+same-user tampering with trusted local code/state. Existing validation, audit,
+freshness and quarantine checks remain required; their absence/error cannot
+become successful authority. No OS sandbox, second runtime or external identity
+service is mandatory or authorized as a compensating implementation.
+
+Explicit decisions still require actual source/action/scope/policy/generation
+binding, actor/policy validation, replay protection and durable audit. The selected
+source for activation/approve/recover/end is an attributable host-UI interaction
+distinguishable from agent/SDK invocation; SDK/CLI/API callbacks alone are
+inadmissible. The actual V2 mechanism remains **NOT_VERIFIED**; block the affected
+acceptance path until demonstrated, and do not infer a human from a callback.
+This is not a blanket block on adapter/API
+porting and simplification independent of that choice.
+
+Required independent-review provenance, frozen subject, full completion,
+uncontaminated same-child capture and canonical atomic evidence binding are not
+relaxed. An unobserved external action is not evidence of execution or prevention;
+an observed capture tool attempt invalidates capture even if denied. Document
+all coverage gaps and reject stale/incomplete/unknown evidence. The
+[revised report](./host-probes/opencode-v2/p0-feasibility-decision.md) and
+[gates](./host-probes/opencode-v2/phase0-contract-gates.md) distinguish these
+current requirements from the historical probe threat model below.
+
+### OpenCode V2 Phase-02 Probe Threat Model (#1169)
+
+This is the **historical assessment scope** of the completed feasibility probes,
+not the revised product threat model or new support. Dated probe reports/facts
+remain unchanged. The current product scope above and ADR-010 replace the former
+expanded prerequisites; no old negative observation becomes a positive result.
+No operator channel is selected or certified by the probes.
+
+**Assets:** operator sessions/configuration/credentials; exact activation scope
+and generation; policy/state/audit authority; frozen review subjects; exact
+review invocation-to-terminal lineage; native INACTIVE behavior and native model
+selection. The probes must not modify operator configuration or attach to the
+shared service. Backup copies are sensitive, not publishable test fixtures.
+
+| Actor / input                                           | Capabilities assumed for adversarial evaluation                                                                                                                                                                         | Trust decision                                                                                                                                        |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parent model, child model, tool caller, project content | Arbitrary prompt/tool/command text; fabricate IDs or approval claims; replay requests; attempt concurrent submissions, delayed results and cross-session reuse; use advertised tools and shell as permitted by the host | Untrusted; never proves operator intent or review completion                                                                                          |
+| Agent-accessible process under the same OS account      | Read/write accessible files, environment and credentials; execute a local CLI; call reachable loopback/API endpoints with accessible credentials                                                                        | No independent human-authority boundary. Do not reinterpret the ordinary same-user agent as an excluded external attacker                             |
+| Provider and MCP service                                | Return arbitrary text/tool proposals, omit or delay completion, perform actions on their own side before returning data                                                                                                 | Untrusted source of claims. Local interception does not establish preventive control over remote actions                                              |
+| Sibling session or external writer                      | Change shared worktree/resources independently of the governed session                                                                                                                                                  | No exclusive resource ownership; prevention is NOT_SUPPORTED without an independent demonstrated boundary; freshness validation is separate           |
+| Missing, stale or malicious host/plugin                 | Omit hooks, forge or omit diagnostics, mutate output, unload or crash, report stale status                                                                                                                              | A hook cannot constrain an absent host or attest honesty of a compromised host. Required assurance remains unproved; no successful self-certification |
+
+**Trusted computing base for interpreting an individual probe:** the inspected
+probe source and runner; the pinned installed host binary and pinned client/plugin
+packages executing honestly for that observation; OS/filesystem/process/network
+primitives; Git and dependency executables resolved from the explicit fixture
+PATH. The local capture provider is an instrument, not a real-provider security
+certification. Hashes identify observed artifacts; they are not signatures or a
+proof of supply-chain integrity. Dependency symlinks share installed package bytes
+with the runner and are not a hermetic dependency sandbox.
+
+The runner uses fresh HOME/XDG/database/temp paths, an explicit environment and
+private loopback server; it rejects detected ancestor/system/managed discovery
+inputs rather than deleting or overriding operator settings. These controls
+reduce accidental test contamination, **not malicious same-user access**. Discovery
+checks are snapshots, not a race-free OS containment boundary. External egress
+is not independently sandboxed. No credential is inherited to exercise a real
+provider; a mock-provider result cannot certify all providers or models.
+
+**Former prerequisite, explicitly replaced for current product scope:** these
+probes investigated independently protected operator custody, action/root/child/
+worktree/generation binding and replay/expiry/concurrent-use resistance. They
+did not demonstrate human origin from SDK commands, callbacks, same-user CLI or
+readable tokens. That counterexample remains valid. The old blanket
+activation/approval/recovery implementation block is replaced by the current
+source-admissibility decision and affected-path block above; external operator
+authentication infrastructure is not mandatory.
+
+**Excluded claims for these probes:** universal provider containment; prevention
+after plugin loss; OS-level protection from other writers; hostile kernel or
+compromised-host resistance; hardware-backed human presence; installed FlowGuard
+INACTIVE parity based on a passive fixture. These exclusions describe what the
+probe cannot establish; they are not proof of the revised product contract. Actual product
+transactions, restart/recovery, EndGovernance context reset and installed
+Desktop/CLI integration still require G-04/G-05. Missing proof stays
+NOT_VERIFIED/NO-GO, never a synthesized evidence record.
+
+Probe journals, timestamps, API credentials and raw host outputs are mutable
+diagnostics. Journal parse/read/write failures must surface rather than count as
+absence. Only the existing product validators may admit eventual governance
+evidence. No probe `passed` flag grants authorization or rewrites old evidence.
+
+The [bounded scope/lifecycle follow-up](./host-probes/opencode-v2/2026-10-31-2.2.4-scope-lifecycle/README.md)
+examines host session identity separately from caller assertions. `projectID`
+alone does not identify a worktree; a caller-supplied `parentID` alone does not
+prove native subagent dispatch. Session locations can change, and raw aliases
+require canonical filesystem binding by the existing session authority, not a
+competing host-name/path resolver. Live event subscription is not durable replay;
+restart recovery must re-read authoritative state and cannot assume continuity.
+Neither `session.wait()` returning nor a retained Busy timestamp is terminal
+review-completion proof. A session instruction entry must not be assumed to reach
+a descendant without actual propagation evidence. These findings constrain the
+future adapter; they do not introduce a product activation or evidence authority.
+
+The [prevention/reviewer follow-up](./host-probes/opencode-v2/2026-10-31-2.2.4-prevention-review/README.md)
+adds three constraints. A bounded MCP before-hook deny with an executable control
+does not prove universal MCP prevention; MCP catalog advertisement can lag the
+executor. A visible hosted-tool definition can be rejected before a provider
+request, but a provider-emitted unoffered hosted action remains outside the local
+tool fence. A command-template shell block can execute before prompt admission
+and outside tool hooks, so such blocks cannot carry a security-significant
+operator decision. Separately, a native reviewer child can reach a coherent
+tool-free terminal, but the host permits later SDK prompts to the same child and
+a naive latest-answer capture then returns a forged answer. Exact invocation
+binding and tool-attempt rejection are mandatory; a terminal, `wait()` result or
+session ID alone is not review authority.
+
+The revised P0 decision retains the local/remote prevention distinction: neither
+a local sandbox nor response filtering controls autonomous remote effects.
+Those are now documented limits, not demands to build independent containment.
+Documented shell hooks, policy and GUI/IPC remain adapter mechanisms to validate
+only where needed; a bundle-loading credential or client permission reply is
+not automatically human attestation. Release remains NO-GO for unimplemented/
+untested required governance behavior, not merely for absent universal safety.
+
 ### Session State And Policy Snapshot Boundary
 
 | Field                                     | Contract                                                                                                                                                                                                                                                                                                                         |

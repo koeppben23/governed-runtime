@@ -6,15 +6,10 @@ import { commitMutationCompletion } from './plugin-mutation-episodes.js';
 import { IntegrationInvariantError } from './errors.js';
 
 const EventTrigger = z.object({
-  type: z.literal('message.part.updated'),
-  properties: z.object({
-    part: z.object({
-      type: z.literal('tool'),
-      tool: z.literal('edit'),
-      sessionID: z.string().min(1),
-      callID: z.string().min(1),
-      state: z.object({ status: z.literal('error') }),
-    }),
+  type: z.literal('session.tool.failed'),
+  data: z.object({
+    sessionID: z.string().min(1),
+    id: z.string().min(1),
   }),
 });
 
@@ -25,8 +20,8 @@ export async function reconcileMutationEvent(
 ): Promise<void> {
   const trigger = EventTrigger.safeParse(event);
   if (!trigger.success) return;
-  const part = trigger.data.properties.part;
-  await reconcileHostMutationEpisodes(runtime, part.sessionID, part.callID);
+  const failed = trigger.data.data;
+  await reconcileHostMutationEpisodes(runtime, failed.sessionID, failed.id);
 }
 
 /** Synchronous barrier before /implement; host I/O is deliberately outside the state write lock. */
@@ -45,29 +40,23 @@ export async function reconcileHostMutationEpisodes(
       episode.toolName === 'edit' && (callId === undefined || episode.hostCallId === callId),
   );
   if (episodes.length === 0) return;
-  const session = runtime.orchestratorDeps.client.session;
-  if (typeof session.messages !== 'function')
-    throw new IntegrationInvariantError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Host message access is required to observe the open edit outcome.',
-    );
-  const readMessages = session.messages.bind(session);
-  let response: Awaited<ReturnType<NonNullable<typeof session.messages>>>;
+  const client = runtime.orchestratorDeps.client;
+  let history: unknown;
   try {
-    response = await boundedHistoryRead(() => readMessages({ path: { id: sessionId } }));
+    history = await boundedHistoryRead(() => client.readHistory(sessionId));
   } catch (error) {
     throw new IntegrationInvariantError(
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       `Host mutation outcome query failed: ${error instanceof Error ? error.message : 'unavailable'}`,
     );
   }
-  if (response?.error || !response?.data)
+  if (!Array.isArray(history))
     throw new IntegrationInvariantError(
       'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       'Host mutation outcome history is unavailable.',
     );
   for (const episode of episodes) {
-    const observation = observeEditFailure(response.data, sessionId, episode);
+    const observation = observeEditFailure(history, sessionId, episode);
     if (observation.kind === 'unobserved') {
       runtime.log.info('mutation', 'host mutation remains unresolved', {
         sessionId,

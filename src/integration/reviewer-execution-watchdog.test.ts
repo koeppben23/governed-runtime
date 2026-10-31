@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReviewerExecutionWatchdog } from './reviewer-execution-watchdog.js';
 import type { OrchestratorClient, ReviewerExecutionFailure } from './review/types.js';
+import { createReviewClient } from './opencode-v2-test-helpers.js';
 
 const config = {
   toolTimeoutMs: 20,
@@ -19,42 +20,28 @@ function client(
   taskCallIds: string[] = ['call-1'],
   runningTool = false,
 ): OrchestratorClient {
-  const value: OrchestratorClient = {
-    app: { agents: async () => ({ data: [] }) },
-    session: {
-      abort: vi.fn(async () => ({ data: true })),
-      get: vi.fn(async () => ({ data: { id: 'child', parentID: 'parent' } })),
-      prompt: vi.fn(async () => ({ data: {} })),
-      status: vi.fn(async () => ({ data: { child: { type: 'idle' } } })),
-      messages: vi.fn(async (opts: { path: { id: string } }) => ({
-        data:
-          opts.path.id === 'parent'
-            ? [
-                {
-                  info: { role: 'assistant' },
-                  parts: taskCallIds.map((callID) => ({
-                    id: `part-${callID}`,
-                    type: 'tool',
-                    tool: 'task',
-                    callID,
-                    state: { status: 'completed', metadata: { sessionId: 'child' } },
-                  })),
-                },
-              ]
-            : terminal
-              ? [
-                  {
-                    info: { role: 'assistant', finish: 'stop' },
-                    parts: runningTool
-                      ? [{ type: 'tool', state: { status: 'running' } }]
-                      : [{ type: 'text', text: 'done' }],
-                  },
-                ]
-              : [],
-      })),
-    },
-  };
-  return value;
+  return createReviewClient({
+    interrupt: vi.fn(async () => true),
+    getSession: vi.fn(async (sessionId) => ({
+      sessionId,
+      parentSessionId: 'parent',
+      directory: '/worktree',
+    })),
+    quiescence: vi.fn(async () => 'idle' as const),
+    reviewerCall: vi.fn(async () => (taskCallIds.length === 1 ? taskCallIds[0]! : null)),
+    readHistory: vi.fn(async () =>
+      terminal
+        ? [
+            {
+              info: { role: 'assistant', finish: 'stop' },
+              parts: runningTool
+                ? [{ type: 'tool', state: { status: 'running' } }]
+                : [{ type: 'text', text: 'done' }],
+            },
+          ]
+        : [],
+    ),
+  });
 }
 
 function harness(
@@ -85,7 +72,7 @@ describe('reviewer execution watchdog', () => {
   it('bounds a hanging abort and persists unknown instead of losing monitoring', async () => {
     vi.useFakeTimers();
     const h = harness();
-    h.c.session.abort = vi.fn(async () => new Promise<never>(() => {}));
+    h.c.interrupt = vi.fn(async () => new Promise<never>(() => {}));
     await h.watchdog.onReviewerRequest('child');
     await vi.advanceTimersByTimeAsync(80);
     expect(h.failures.get('child')?.code).toBe('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
@@ -99,7 +86,7 @@ describe('reviewer execution watchdog', () => {
       }),
       { parentSessionId: 'parent', callId: 'call-1', childSessionId: 'child' },
     );
-    expect(h.c.session.abort).toHaveBeenCalledTimes(1);
+    expect(h.c.interrupt).toHaveBeenCalledTimes(1);
   });
 
   it('retries failed durable closure and retains the synchronous binding fence', async () => {
@@ -128,7 +115,7 @@ describe('reviewer execution watchdog', () => {
     const { c, watchdog, persistFailure } = harness();
     await watchdog.onReviewerRequest('child');
     await vi.advanceTimersByTimeAsync(80);
-    expect(c.session.abort).toHaveBeenCalledWith({ path: { id: 'child' } });
+    expect(c.interrupt).toHaveBeenCalledWith('child');
     expect(persistFailure).toHaveBeenCalledWith(
       expect.objectContaining({
         code: 'REVIEWER_EXECUTION_TIMEOUT',
@@ -160,13 +147,13 @@ describe('reviewer execution watchdog', () => {
     await watchdog.onReviewerRequest('child');
     watchdog.onToolStart('child', 'call-1');
     await vi.advanceTimersByTimeAsync(20);
-    expect(c.session.abort).toHaveBeenCalledTimes(1);
+    expect(c.interrupt).toHaveBeenCalledTimes(1);
     const fresh = harness();
     await fresh.watchdog.onReviewerRequest('child');
     fresh.watchdog.onToolStart('child', 'call-2');
     fresh.watchdog.onToolEnd('child', 'call-2');
     await vi.advanceTimersByTimeAsync(20);
-    expect(fresh.c.session.abort).not.toHaveBeenCalled();
+    expect(fresh.c.interrupt).not.toHaveBeenCalled();
   });
 
   it('enforces the serialization budget inside the absolute deadline', async () => {
@@ -175,7 +162,7 @@ describe('reviewer execution watchdog', () => {
     await watchdog.onReviewerRequest('child');
     watchdog.onSerializationStart('child');
     await vi.advanceTimersByTimeAsync(25);
-    expect(c.session.abort).toHaveBeenCalledWith({ path: { id: 'child' } });
+    expect(c.interrupt).toHaveBeenCalledWith('child');
   });
 
   it('normal completion clears all timers and does not abort', async () => {
@@ -185,7 +172,7 @@ describe('reviewer execution watchdog', () => {
     watchdog.onSerializationStart('child');
     watchdog.complete('child');
     await vi.advanceTimersByTimeAsync(500);
-    expect(c.session.abort).not.toHaveBeenCalled();
+    expect(c.interrupt).not.toHaveBeenCalled();
   });
 
   it('starts the absolute deadline at dispatch and persists unknown before a child is observed', async () => {
@@ -222,7 +209,7 @@ describe('reviewer execution watchdog', () => {
     await vi.advanceTimersByTimeAsync(100);
     await watchdog.onReviewerRequest('child');
     await vi.advanceTimersByTimeAsync(20);
-    expect(c.session.abort).toHaveBeenCalledWith({ path: { id: 'child' } });
+    expect(c.interrupt).toHaveBeenCalledWith('child');
   });
 
   it('a second reviewer request does not reset the absolute deadline', async () => {
@@ -232,7 +219,7 @@ describe('reviewer execution watchdog', () => {
     await vi.advanceTimersByTimeAsync(70);
     await watchdog.onReviewerRequest('child');
     await vi.advanceTimersByTimeAsync(50);
-    expect(c.session.abort).toHaveBeenCalledTimes(1);
+    expect(c.interrupt).toHaveBeenCalledTimes(1);
   });
 
   it('does not assign a child arbitrarily when two task calls match the parent', async () => {
@@ -242,7 +229,7 @@ describe('reviewer execution watchdog', () => {
     });
     watchdog.onTaskAuthorized('parent', 'call-2');
     await watchdog.onReviewerRequest('child');
-    expect(c.session.abort).not.toHaveBeenCalled();
+    expect(c.interrupt).not.toHaveBeenCalled();
     expect(persistFailure).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(120);
     expect(persistFailure).toHaveBeenCalledTimes(2);
@@ -262,6 +249,53 @@ describe('reviewer execution watchdog', () => {
     );
   });
 
+  it.each(['busy', 'unknown'] as const)(
+    'never treats %s quiescence as confirmed termination despite terminal-looking history',
+    async (state) => {
+      vi.useFakeTimers();
+      const { c, watchdog, persistFailure } = harness();
+      c.quiescence = vi.fn(async () => state);
+      await watchdog.onReviewerRequest('child');
+      await vi.advanceTimersByTimeAsync(80);
+      expect(persistFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+          abortConfirmed: false,
+        }),
+        { parentSessionId: 'parent', callId: 'call-1', childSessionId: 'child' },
+      );
+    },
+  );
+
+  it('does not accept a single pending task as a substitute for an unproved release mapping', async () => {
+    vi.useFakeTimers();
+    const { c, watchdog, persistFailure } = harness();
+    c.reviewerCall = vi.fn().mockRejectedValue(new Error('V2 proof unavailable'));
+    await watchdog.onReviewerRequest('child');
+    expect(c.interrupt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(120);
+    expect(persistFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+        abortConfirmed: false,
+      }),
+      { parentSessionId: 'parent', callId: 'call-1' },
+    );
+  });
+
+  it('does not attach a foreign session returned by an exact lookup', async () => {
+    vi.useFakeTimers();
+    const { c, watchdog } = harness();
+    c.getSession = vi.fn(async () => ({
+      sessionId: 'foreign',
+      parentSessionId: 'parent',
+      directory: '/worktree',
+    }));
+    await watchdog.onReviewerRequest('child');
+    expect(c.reviewerCall).not.toHaveBeenCalled();
+    expect(c.interrupt).not.toHaveBeenCalled();
+  });
+
   it('clears the dispatch timer when the native Task completes without child attachment', async () => {
     vi.useFakeTimers();
     const failures = new Map<string, ReviewerExecutionFailure>();
@@ -279,21 +313,30 @@ describe('reviewer execution watchdog', () => {
     expect(persistTaskFailure).not.toHaveBeenCalled();
   });
 
-  it('falls back to session.list when session.get has no parent yet', async () => {
+  it('does not attach or interrupt a child when exact metadata has no parent', async () => {
     vi.useFakeTimers();
     const c = client();
-    c.session.get = vi.fn(async () => ({ data: { id: 'child' } }));
-    c.session.list = vi.fn(async () => ({ data: [{ id: 'child', parentID: 'parent' }] }));
+    c.getSession = vi.fn(async () => ({ sessionId: 'child', directory: '/worktree' }));
+    const persistFailure = vi.fn(async () => true);
     const watchdog = new ReviewerExecutionWatchdog({
       config,
       client: c,
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      persistFailure: vi.fn(async () => true),
+      persistFailure,
     });
     watchdog.onTaskAuthorized('parent', 'call-1');
     await watchdog.onReviewerRequest('child');
     await vi.advanceTimersByTimeAsync(80);
-    expect(c.session.abort).toHaveBeenCalledWith({ path: { id: 'child' } });
+    expect(c.interrupt).not.toHaveBeenCalled();
+    expect(c.reviewerCall).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(40);
+    expect(persistFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+        abortConfirmed: false,
+      }),
+      { parentSessionId: 'parent', callId: 'call-1' },
+    );
   });
 
   it('retains a foreign unbound task when no exact completion identity matches', async () => {
@@ -341,60 +384,23 @@ describe('reviewer execution watchdog', () => {
     });
   });
 
-  it('preserves SDK session method receiver context', async () => {
+  it('preserves semantic host method receiver context', async () => {
     vi.useFakeTimers();
     let aborted = false;
-    const session = {
-      _client: {},
-      async get(this: { _client: unknown }, opts: { path: { id: string } }) {
-        if (!this._client) throw new Error('lost session receiver');
-        return { data: { id: opts.path.id, parentID: 'parent' } };
+    const c = {
+      ...client(),
+      transport: 'host',
+      async getSession(this: { transport: string }, sessionId: string) {
+        if (this.transport !== 'host') throw new Error('lost host receiver');
+        return { sessionId, parentSessionId: 'parent', directory: '/worktree' };
       },
-      async list(this: { _client: unknown }) {
-        if (!this._client) throw new Error('lost session receiver');
-        return { data: [] };
-      },
-      async messages(this: { _client: unknown }, opts: { path: { id: string } }) {
-        if (!this._client) throw new Error('lost session receiver');
-        return {
-          data:
-            opts.path.id === 'parent'
-              ? [
-                  {
-                    info: { role: 'assistant' },
-                    parts: [
-                      {
-                        id: 'part-1',
-                        callID: 'call-1',
-                        type: 'tool',
-                        tool: 'task',
-                        state: { status: 'completed', metadata: { sessionId: 'child' } },
-                      },
-                    ],
-                  },
-                ]
-              : [
-                  {
-                    info: { role: 'assistant', finish: 'stop' },
-                    parts: [{ type: 'text', text: 'done' }],
-                  },
-                ],
-        };
-      },
-      async status(this: { _client: unknown }) {
-        if (!this._client) throw new Error('lost session receiver');
-        return { data: { child: { type: 'idle' } } };
-      },
-      async abort(this: { _client: unknown }) {
-        if (!this._client) throw new Error('lost session receiver');
+      async interrupt(this: { transport: string }, sessionId: string) {
+        if (this.transport !== 'host') throw new Error('lost host receiver');
+        expect(sessionId).toBe('child');
         aborted = true;
-        return { data: true };
+        return true;
       },
     };
-    const c = {
-      app: { agents: async () => ({ data: [] }) },
-      session,
-    } as unknown as OrchestratorClient;
     const watchdog = new ReviewerExecutionWatchdog({
       config,
       client: c,

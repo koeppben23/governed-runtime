@@ -75,8 +75,6 @@ describe('SDK Contract: HAI governance surface', () => {
         'validateCapabilities',
         'shutdown',
         'deliverBlockDecision',
-        'deliverArgMutation',
-        'mutateToolResult',
         'isReviewerSupported',
         'log',
       ]) {
@@ -213,12 +211,14 @@ describe('SDK Contract: HAI governance surface', () => {
       expect(capProps).toHaveProperty('preToolBlock');
     });
 
-    it('injectCompactionContext is optional but declared', () => {
+    it('does not advertise ineffective delivery methods', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const required = schema.required as string[];
       const props = schema.properties as Record<string, unknown>;
-      expect(required).not.toContain('injectCompactionContext');
-      expect(props).toHaveProperty('injectCompactionContext');
+      for (const field of ['deliverArgMutation', 'mutateToolResult', 'injectCompactionContext']) {
+        expect(required).not.toContain(field);
+        expect(props).not.toHaveProperty(field);
+      }
     });
   });
 

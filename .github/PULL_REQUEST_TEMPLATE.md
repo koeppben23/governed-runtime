@@ -29,19 +29,17 @@ Closes #
 
 Notes:
 
-## Documentation
+## Documentation / Drift
 
-- [ ] Updated relevant docs.
-- [ ] Not needed.
+- [ ] All impacted docs, examples, help, architecture and support claims are
+      synchronized with implementation, tests, config and shipped artifacts.
+- [ ] Checked for semantic drift (automated checks alone are insufficient).
 
-Reason if not needed:
+Impacted contracts → canonical owner → docs/tests (or explicit no-impact reason):
 
 ## Changelog
 
-- [ ] Updated `CHANGELOG.md`.
-- [ ] Not needed.
-
-Reason if not needed:
+- [ ] Updated `CHANGELOG.md` under `[Unreleased]` (mandatory for every PR).
 
 ## Verification
 

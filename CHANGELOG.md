@@ -159,6 +159,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Migration baseline checks (#1169).** Condensed contributor instructions
+  within existing loading budgets without removing requirements; removed stale
+  changelog exemptions from governance templates and corrected duplicate
+  Unreleased categories. The mutation-reconciliation concurrency test now uses
+  an explicit read barrier while retaining exactly-once audit and idempotence
+  assertions, rather than depending on filesystem scheduling.
+
 - **Security audit closure for transitive runtime/dev dependencies:** align the
   OpenCode plugin's pinned `zod` with the application's patched `4.6.7`, move
   `fast-uri` to patched `3.1.9`, and refresh `body-parser` (2.4.0), `hono`
@@ -850,6 +857,86 @@ stop`, reviewer child reported it could not complete the falsification).
   the derived outcome (`applied`, `skipped`, or `failed`).
 
 ### Changed
+
+- **Native V2 entrypoint/client work (#1169, not release-ready).** Replaced the
+  callable OpenCode factory with `Plugin.define({ id, setup })`, single native
+  hook/tool registrations, event subscription and owned cleanup. Review consumers
+  use semantic host operations instead of V1 `path/body` requests and SDK response
+  envelopes. Agent lookup follows the actual session location without a
+  process-global capability cache; recovery no longer searches a session list or
+  accepts a part-id alias. Native failure notifications use `type/data` and
+  structured `error.type/message`, with diagnostics redacted before audit writes.
+  Cleanup drains owned in-flight operations; lifecycle availability is rechecked
+  after asynchronous scope resolution. Removed the V1 output-token rewrite;
+  host budgeting is untouched and explicit overrides remain blocked without V2
+  headroom/wire proof. Native boundary tests do not certify installed behavior:
+  V1 test/SDK-tooling removal and regression migration are unfinished; operator
+  UI provenance, reviewer execution/capture, lifecycle and INACTIVE parity remain
+  unverified. PR #1190 stays Draft and supported ACTIVE V2/merge remain NO-GO.
+
+- **Single-owner plugin hook composition (#1169).** Removed post-construction
+  hook replacement for reviewer capture, output caps and execution monitoring.
+  The composition root now registers each handler once with explicit
+  fence-before-governance, cap-before-capture and exact-completion ordering.
+  Removed the capture wrapper module; authorization, evidence, recovery and host
+  contracts remain unchanged. This prepares, but does not complete, the V2 port.
+- **V2 preparatory HAI simplification (#1169).** Removed three ineffective
+  argument/result/compaction delivery methods, their unused mutation DTO and the
+  pass-through OpenCode adapter factory. The composition root now constructs the
+  adapter directly; actual hook mutation, synchronous block delivery, capability
+  validation and lifecycle cleanup retain their existing owners and behavior.
+  Updated the live HAI baseline and rejection tests without compatibility aliases.
+  This is preparatory cleanup, not a completed V2 runtime or installed support.
+- **Explicit V2 governance-scope correction (#1169).** Revised ADR-010, trust
+  documentation, acceptance gates and the decision report to require strict
+  FlowGuard decision/evidence integrity and preventive gates on controlled host
+  paths, not universal host/OS/provider containment. A sandbox, second runtime
+  or external authentication service is not a porting prerequisite. Real reviewer
+  provenance, audit/recovery, explicit decisions, native models and actual V1
+  removal/simplification remain required. Operator decisions require an explicit
+  host-UI interaction distinguishable from agent/SDK calls; the concrete V2
+  mechanism remains unverified, and SDK callbacks alone are inadmissible.
+  Historical probe bytes and
+  results and the unresolved concurrent-publication stability finding remain
+  unchanged; no product gate, support release or merge is certified. A targeted
+  Issue #1169 body/checklists now publish the accepted scope correction; the
+  host-UI distinction assumes trusted OpenCode/OS, not compromised-OS resistance.
+- **V2 prevention/reviewer feasibility observations (#1169).** Added isolated
+  probes for an advertised MCP tool deny with an executable control, visible
+  hosted-definition pre-request denial, command-template shell interpolation,
+  and an exact V2 reviewer request→terminal chain with child-reuse and
+  tool-attempt counterexamples. MCP denial is bounded to the tested fixture;
+  provider-executed actions remain unproven, shell blocks run before prompt
+  admission outside tool hooks, and a later SDK prompt can make a naive latest
+  answer forged. No P0-04/P0-05 product PASS or reviewer evidence generation is
+  claimed.
+- **V2 scope/lifecycle feasibility observations (#1169).** Added isolated
+  Session/Worktree/Child-Lineage and graceful/in-flight-crash restart probes,
+  with exact native-tool/event correlation and adversarial SDK parent/ID cases.
+  Reports keep caller-supplied parentage, mutable locations, instruction-entry
+  non-propagation and post-crash `wait()` without terminal success distinct from
+  product authorization. No V2 product support or passing full P0-02-H is claimed.
+
+- **Bounded V2 feasibility infrastructure (#1169).** Defined the Phase-02 probe
+  threat model without treating same-user credentials as human authorization.
+  Isolated probe processes now use an explicit environment, reject detected
+  ambient discovery inputs, pin host/SDK versions and distinguish absent,
+  passive and diagnostic plugins. Added a native-parity fixture separate from
+  installed FlowGuard INACTIVE acceptance; no V2 product security gate is claimed.
+  A real model-driven shell reproduced plugin command admission with an
+  agent-accessible fixture credential, refuting human-origin inference from
+  that API/callback alone; independent operator authorization remains blocked.
+  Probe-source checkout rules preserve exact LF evidence bytes on Windows;
+  an autocrlf regression test protects the byte-level source binding.
+
+- **Host-neutral opt-in governance architecture contract (#1169).** Documented
+  explicit operator-authorized activation, STRICT security/evidence boundaries,
+  unrestricted host-native models and effort levels, and versioned Phase-0
+  NO-GO gates. Changelog and affected documentation synchronization are mandatory.
+  The PR check requires a new or revised nonempty Unreleased entry relative to
+  the PR merge base; historical-only, deletion-only and formatting-only changes
+  do not satisfy it. Documentation drift is enforced through `ci-gate`.
+  No OpenCode V2 runtime support or passing host-security gate is claimed.
 
 - **Model-neutral reviewer JSON transport.** OpenCode reviews no longer require
   `format: json_schema` or its forced StructuredOutput tool call. After a normal

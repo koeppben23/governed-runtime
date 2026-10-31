@@ -220,6 +220,9 @@ Run this protected-main release procedure:
 1. Start from current `main`: `git switch main && git pull --ff-only origin main`.
 2. Create `release/vX.Y.Z` and integrate the release candidate from `develop`.
 3. Prepare files without committing or tagging: `npm run release:prepare -- X.Y.Z`.
+   The cut creates an empty `[Unreleased]` section; add a truthful entry about the
+   completed release preparation before committing. Release PRs have no changelog
+   exemption; do not claim publication before the protected release completes.
 4. Update release-pinned documentation tests when the changelog cut moves entries out of `[Unreleased]`.
 5. Run `npm run release:verify` and the required contributor checks.
 6. Commit with hooks enabled: `git commit -m "chore(release): cut vX.Y.Z"`.
@@ -354,7 +357,7 @@ Recommended GitHub Project fields:
 | `Risk Class`         | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                          |
 | `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests` |
 | `Docs Required`      | `Yes`, `No`, `Unknown`                                                                      |
-| `Changelog Required` | `Yes`, `No`, `Unknown`                                                                      |
+| `Changelog Required` | `Yes` (every PR)                                                                            |
 | `Verification Level` | `Targeted`, `Full`, `Release`                                                               |
 | `Release Impact`     | `None`, `Patch`, `Minor`, `Major`, `RC`                                                     |
 | `Status`             | `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, `Done`                              |
@@ -369,23 +372,26 @@ semantics, install/upgrade/release steps, error codes, recovery guidance, or
 support expectations change. Update developer docs when architecture boundaries,
 SSOT ownership, test strategy, release process, or contribution workflow changes.
 
-If docs are not updated, the PR must state why no documentation change is needed.
+Every affected user/developer document must be updated in the same PR.
+If no document is affected, record the impact assessment; do not add a
+meaningless cosmetic change. Contradictory or stale affected docs block merge.
 
 ### Changelog Contract
 
-Update `CHANGELOG.md` for release-relevant changes:
+**Every PR MUST update `CHANGELOG.md` under `[Unreleased]`.** This includes
+docs-only, test, refactor, CI, formatting, removal and internal cleanup changes;
+there is no "not needed" exception. Entries must describe completed changes
+truthfully, without asserting unverified product or host support.
 
-- user-visible behavior
-- CLI, API, or config changes
-- policy or governance semantics
-- release, install, upgrade, or rollback behavior
-- security or fail-closed behavior
-- error or recovery text
-- meaningful test or quality gate changes
-
-`CHANGELOG.md` is not required for typo-only docs, formatting, internal-only
-cleanup without behavior change, or test refactors without new release-relevant
-coverage. If not updated, the PR must state why no changelog entry is needed.
+Run `npm run check:pr-documentation -- <base-sha> <head-sha>` against the PR
+commits. It compares committed changelog entries against the merge base and
+requires a new or revised nonempty entry in a known Unreleased category;
+historical-only edits, deletions and formatting do not qualify. The `doc-drift`
+job runs it and `npm run check:doc-drift`, and blocks through the required
+`ci-gate`. In addition, reviewers must establish semantic
+alignment of code, tests, docs, CLI/help, templates, shipped artifacts and
+changelog on the final merge candidate against current `develop`. A green
+structural check does not prove semantic consistency.
 
 ### High-Risk Contract
 
