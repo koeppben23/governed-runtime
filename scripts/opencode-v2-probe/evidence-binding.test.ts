@@ -40,6 +40,32 @@ const scopeFacts = JSON.parse(
   };
 };
 
+const preventionFacts = JSON.parse(
+  readFileSync(
+    new URL(
+      '../../docs/host-probes/opencode-v2/2026-10-31-2.2.4-prevention-review/facts.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+) as {
+  decision: string;
+  p004: string;
+  p005: string;
+  p001: string;
+  probeSourceSha256: Record<string, string>;
+  mcp: { preEffectControl: string; positiveControlExecuted: boolean };
+  hosted: { universalProviderContainment: string; providerExecutedStatus: string };
+  shell: { shellBeforePromptHook: boolean; toolFenceObserved: boolean };
+  reviewer: {
+    simpleAssuranceValid: boolean;
+    naiveLatestAnswerAfterReuse: string;
+    exactOriginalChainStillBound: boolean;
+    toolAttemptDeniedBeforeEffect: boolean;
+    fullReviewerAssurance: string;
+  };
+};
+
 describe('Phase-02 observation scope and source-byte binding', () => {
   it('does not promote a passive fixture or negative-origin observation to product certification', () => {
     expect(facts.decision).toBe('NO-GO');
@@ -63,6 +89,32 @@ describe('Phase-02 observation scope and source-byte binding', () => {
     expect(scopeFacts.observations.crashWaitReturned).toBe(true);
     expect(scopeFacts.observations.crashOutcomeAfterWait).toBeNull();
     for (const [path, expected] of Object.entries(scopeFacts.probeSourceSha256)) {
+      expect(
+        createHash('sha256')
+          .update(readFileSync(new URL(`./${path}`, import.meta.url)))
+          .digest('hex'),
+        path,
+      ).toBe(expected);
+    }
+  });
+
+  it('keeps the prevention/reviewer results bounded and rejects latest-answer capture', () => {
+    expect(preventionFacts.decision).toBe('NO-GO');
+    expect(preventionFacts.p004).toBe('NOT_VERIFIED');
+    expect(preventionFacts.p005).toBe('NOT_VERIFIED');
+    expect(preventionFacts.p001).toBe('BLOCKED');
+    expect(preventionFacts.mcp.preEffectControl).toBe('SUPPORTED_BOUNDED');
+    expect(preventionFacts.mcp.positiveControlExecuted).toBe(true);
+    expect(preventionFacts.hosted.universalProviderContainment).toBe('NOT_SUPPORTED');
+    expect(preventionFacts.hosted.providerExecutedStatus).toBe('NOT_VERIFIED');
+    expect(preventionFacts.shell.shellBeforePromptHook).toBe(true);
+    expect(preventionFacts.shell.toolFenceObserved).toBe(false);
+    expect(preventionFacts.reviewer.simpleAssuranceValid).toBe(true);
+    expect(preventionFacts.reviewer.naiveLatestAnswerAfterReuse).toBe('FORGED_AFTER_TERMINAL');
+    expect(preventionFacts.reviewer.exactOriginalChainStillBound).toBe(true);
+    expect(preventionFacts.reviewer.toolAttemptDeniedBeforeEffect).toBe(true);
+    expect(preventionFacts.reviewer.fullReviewerAssurance).toBe('NOT_VERIFIED');
+    for (const [path, expected] of Object.entries(preventionFacts.probeSourceSha256)) {
       expect(
         createHash('sha256')
           .update(readFileSync(new URL(`./${path}`, import.meta.url)))

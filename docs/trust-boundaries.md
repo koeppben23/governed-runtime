@@ -206,6 +206,19 @@ review-completion proof. A session instruction entry must not be assumed to reac
 a descendant without actual propagation evidence. These findings constrain the
 future adapter; they do not introduce a product activation or evidence authority.
 
+The [prevention/reviewer follow-up](./host-probes/opencode-v2/2026-10-31-2.2.4-prevention-review/README.md)
+adds three constraints. A bounded MCP before-hook deny with an executable control
+does not prove universal MCP prevention; MCP catalog advertisement can lag the
+executor. A visible hosted-tool definition can be rejected before a provider
+request, but a provider-emitted unoffered hosted action remains outside the local
+tool fence. A command-template shell block can execute before prompt admission
+and outside tool hooks, so such blocks cannot carry a security-significant
+operator decision. Separately, a native reviewer child can reach a coherent
+tool-free terminal, but the host permits later SDK prompts to the same child and
+a naive latest-answer capture then returns a forged answer. Exact invocation
+binding and tool-attempt rejection are mandatory; a terminal, `wait()` result or
+session ID alone is not review authority.
+
 ### Session State And Policy Snapshot Boundary
 
 | Field                                     | Contract                                                                                                                                                                                                                                                                                                                         |

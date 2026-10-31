@@ -858,6 +858,15 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **V2 prevention/reviewer feasibility observations (#1169).** Added isolated
+  probes for an advertised MCP tool deny with an executable control, visible
+  hosted-definition pre-request denial, command-template shell interpolation,
+  and an exact V2 reviewer request→terminal chain with child-reuse and
+  tool-attempt counterexamples. MCP denial is bounded to the tested fixture;
+  provider-executed actions remain unproven, shell blocks run before prompt
+  admission outside tool hooks, and a later SDK prompt can make a naive latest
+  answer forged. No P0-04/P0-05 product PASS or reviewer evidence generation is
+  claimed.
 - **V2 scope/lifecycle feasibility observations (#1169).** Added isolated
   Session/Worktree/Child-Lineage and graceful/in-flight-crash restart probes,
   with exact native-tool/event correlation and adversarial SDK parent/ID cases.

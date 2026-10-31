@@ -119,6 +119,31 @@ were recorded; `p002H` remains NOT_VERIFIED, never an implicit PASS.
 See the [dated scope report](../../docs/host-probes/opencode-v2/2026-10-31-2.2.4-scope-lifecycle/README.md).
 The prior isolation/command-origin report and its source bytes remain unchanged.
 
+### Prevention and reviewer-chain follow-up (P0-04/P0-05)
+
+```sh
+umask 077
+node scripts/opencode-v2-probe/probes/p0-prevention-surfaces.mjs
+node scripts/opencode-v2-probe/probes/p0-reviewer-provenance.mjs
+```
+
+`p0-prevention-surfaces` warms the MCP catalog until the actual session context
+advertises `mcprobe_echo`, then runs a deny case and an executable allow control.
+Without that readiness barrier, a missing advertisement or a `No tool named`
+error is not a valid prevention result. It also tests a visible hosted-tool
+definition before the provider request and a command-template shell block. The
+shell test is an SDK-invoked native command, not a real TUI slash command.
+
+`p0-reviewer-provenance` creates a native child through the `subagent` tool,
+binds the exact child request and terminal, then deliberately prompts the same
+child after terminal to show that a latest-answer capture would take a forged
+answer. Its reviewer tool-attempt case is capped after three subagent calls; the
+cap is a probe safety guard, not a product control. An unbounded adversarial run
+is not valid evidence and is retained privately. Neither probe writes product
+state or grants operator/reviewer authority.
+
+See the [dated prevention/reviewer report](../../docs/host-probes/opencode-v2/2026-10-31-2.2.4-prevention-review/README.md).
+
 ### Historical observation runner (not current acceptance)
 
 From the repository root:
