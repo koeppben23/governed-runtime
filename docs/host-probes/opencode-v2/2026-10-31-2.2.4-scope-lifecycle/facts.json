@@ -1,0 +1,76 @@
+{
+  "scope": "P0-02-H bounded CLI/server identity, native-child correlation and restart observations; not product certification",
+  "at": "2026-10-31T10:45:53.603Z",
+  "decision": "NO-GO",
+  "p002H": "NOT_VERIFIED",
+  "operatorAuthority": "BLOCKED",
+  "host": {
+    "version": "2.2.4",
+    "binarySha256": "03fc30769f28dd346d2279baae77ef71308175cd49eb7a5be339d3860ee99ec1",
+    "clientVersion": "2.2.4",
+    "pluginVersion": "2.2.4",
+    "surface": "macOS private CLI/server; deterministic capture provider"
+  },
+  "observations": {
+    "nativeChildReferenceCount": 1,
+    "nativeChildCorrelated": true,
+    "nativeToolExecutedFlag": false,
+    "nativeToolSuccessEventExecutedFlag": false,
+    "nativeParentNormalAnswer": true,
+    "nativeChildNormalAnswer": true,
+    "rootAndWorktreeShareProjectID": true,
+    "worktreeDirectoriesDistinct": true,
+    "aliasLocationPreservesAliasSpelling": true,
+    "sdkParentClaimAccepted": true,
+    "deletedParentClaimAccepted": false,
+    "idCollisionReturnedExistingSessionUnchanged": true,
+    "overlappingCreateRequests": 2,
+    "overlappingCreateReturnsEqualPersistedSession": true,
+    "sessionMoveObserved": true,
+    "moveChangedSiblingBinding": false,
+    "nativeChildHasRootInstructionEntry": false,
+    "nativeChildWireRequestCount": 1,
+    "nativeChildWireHasRootSentinel": false,
+    "idleSessionsComparedAcrossRestarts": 6,
+    "gracefulSnapshotsEqual": true,
+    "crashIdleSnapshotsEqual": true,
+    "crashedBindingUnchanged": true,
+    "crashWaitReturned": true,
+    "crashOutcomeAfterWait": null,
+    "crashBusyTimestampRetained": true,
+    "lateAnswerObservedAfterCrashWait": false,
+    "postRestartNormalAnswer": true,
+    "gapSessionsCreatedWithoutSubscriber": 2,
+    "gapSessionCreatedEventsObservedAfterReconnect": 0,
+    "streamFailuresRetained": 2,
+    "ownedServerProcessesStopped": 3,
+    "fixtureRootAbsentAfterCleanup": true
+  },
+  "counterexampleClaims": {
+    "projectIDAloneIdentifiesExactWorktree": "NOT_SUPPORTED",
+    "callerParentIDAloneProvesNativeChildDispatch": "NOT_SUPPORTED",
+    "waitReturningAloneProvesNormalCompletion": "NOT_SUPPORTED",
+    "automaticRootInstructionEntryPropagationInTestedChild": "NOT_SUPPORTED"
+  },
+  "notVerified": [
+    "Full P0-02-H, cross-parent/worktree child-reuse and parent/child move cases",
+    "Host-internal concurrency interleavings, corruption/deletion and broader crash recovery",
+    "Exact V2 reviewer request-to-terminal provenance and new product evidence generation",
+    "Independent operator authorization, installed FlowGuard INACTIVE/ACTIVE, G-04/G-05",
+    "Real Desktop/TUI, Windows isolation and final merge-candidate acceptance",
+    "Fresh MCP, hosted-action and shell-interpolation prevention"
+  ],
+  "probeSourceSha256": {
+    "lib/host.mjs": "7b60e6d87a279dcb643032b9fd90b24a897e92712562a3217e653fa5d0426bb4",
+    "lib/isolation.mjs": "b10f5afa1be60bd5c5796235878ddf7cb77a936e969982e392de8c3c1b391ff1",
+    "lib/provider.mjs": "188afd6c49c89092fea994daa62297da8c4f92a19259513b4cbb67aae3a13600",
+    "lib/scope-evidence.mjs": "2d82ab22f0c796b408ebfdcb709f39048be474f98e33cb9f877b575d7f1d8898",
+    "plugin/flowguard-probe.js": "2dc71f49f38217fd3260750ee0cd5cf0923ba212b80012127d01475bd0c1246e",
+    "probes/p0-scope-lifecycle.mjs": "7cbf5e7d3b39e88fe0ee8c32e7902f33cccd5e3ef0ddfaa4aa0763de1b77055a"
+  },
+  "privateEvidenceDirectory": "phase02/p0-02-h/2026-10-31T10-45-53-603Z",
+  "privateEvidenceSha256": {
+    "raw.json": "65ecb365dbfbf45f39f6f9c9fe8e8ec5298a1deb142e69305507ada66df6f4f6",
+    "report.json": "d6c758e0c57336357e247441c3d7fdda88c4d065f0eff635b5410a013bb77bd6"
+  }
+}

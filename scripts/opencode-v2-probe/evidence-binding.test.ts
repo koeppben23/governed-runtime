@@ -20,6 +20,26 @@ const facts = JSON.parse(
   commandOrigin: { candidateStatus: string; p001: string };
 };
 
+const scopeFacts = JSON.parse(
+  readFileSync(
+    new URL(
+      '../../docs/host-probes/opencode-v2/2026-10-31-2.2.4-scope-lifecycle/facts.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+) as {
+  decision: string;
+  p002H: string;
+  operatorAuthority: string;
+  probeSourceSha256: Record<string, string>;
+  observations: {
+    sdkParentClaimAccepted: boolean;
+    crashWaitReturned: boolean;
+    crashOutcomeAfterWait: null;
+  };
+};
+
 describe('Phase-02 observation scope and source-byte binding', () => {
   it('does not promote a passive fixture or negative-origin observation to product certification', () => {
     expect(facts.decision).toBe('NO-GO');
@@ -32,6 +52,23 @@ describe('Phase-02 observation scope and source-byte binding', () => {
     for (const [path, expected] of Object.entries(facts.probeSourceSha256)) {
       const bytes = readFileSync(new URL(`./${path}`, import.meta.url));
       expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(expected);
+    }
+  });
+
+  it('binds the scope follow-up without upgrading caller parentage or a post-crash wait to assurance', () => {
+    expect(scopeFacts.decision).toBe('NO-GO');
+    expect(scopeFacts.p002H).toBe('NOT_VERIFIED');
+    expect(scopeFacts.operatorAuthority).toBe('BLOCKED');
+    expect(scopeFacts.observations.sdkParentClaimAccepted).toBe(true);
+    expect(scopeFacts.observations.crashWaitReturned).toBe(true);
+    expect(scopeFacts.observations.crashOutcomeAfterWait).toBeNull();
+    for (const [path, expected] of Object.entries(scopeFacts.probeSourceSha256)) {
+      expect(
+        createHash('sha256')
+          .update(readFileSync(new URL(`./${path}`, import.meta.url)))
+          .digest('hex'),
+        path,
+      ).toBe(expected);
     }
   });
 

@@ -858,6 +858,13 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **V2 scope/lifecycle feasibility observations (#1169).** Added isolated
+  Session/Worktree/Child-Lineage and graceful/in-flight-crash restart probes,
+  with exact native-tool/event correlation and adversarial SDK parent/ID cases.
+  Reports keep caller-supplied parentage, mutable locations, instruction-entry
+  non-propagation and post-crash `wait()` without terminal success distinct from
+  product authorization. No V2 product support or passing full P0-02-H is claimed.
+
 - **Bounded V2 feasibility infrastructure (#1169).** Defined the Phase-02 probe
   threat model without treating same-user credentials as human authorization.
   Isolated probe processes now use an explicit environment, reject detected

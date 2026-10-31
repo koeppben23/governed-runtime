@@ -194,6 +194,18 @@ diagnostics. Journal parse/read/write failures must surface rather than count as
 absence. Only the existing product validators may admit eventual governance
 evidence. No probe `passed` flag grants authorization or rewrites old evidence.
 
+The [bounded scope/lifecycle follow-up](./host-probes/opencode-v2/2026-10-31-2.2.4-scope-lifecycle/README.md)
+examines host session identity separately from caller assertions. `projectID`
+alone does not identify a worktree; a caller-supplied `parentID` alone does not
+prove native subagent dispatch. Session locations can change, and raw aliases
+require canonical filesystem binding by the existing session authority, not a
+competing host-name/path resolver. Live event subscription is not durable replay;
+restart recovery must re-read authoritative state and cannot assume continuity.
+Neither `session.wait()` returning nor a retained Busy timestamp is terminal
+review-completion proof. A session instruction entry must not be assumed to reach
+a descendant without actual propagation evidence. These findings constrain the
+future adapter; they do not introduce a product activation or evidence authority.
+
 ### Session State And Policy Snapshot Boundary
 
 | Field                                     | Contract                                                                                                                                                                                                                                                                                                                         |

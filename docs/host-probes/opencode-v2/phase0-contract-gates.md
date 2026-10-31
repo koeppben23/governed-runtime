@@ -7,6 +7,7 @@
 - **Implementation inventory:** [Phase-01 ownership and simplification findings](./implementation-inventory.md). No production V2 port or new host-security PASS is implied.
 - **Probe trust model:** [Phase-02 attacker capabilities and trusted components](../../trust-boundaries.md#opencode-v2-phase-02-probe-threat-model-1169). This bounds feasibility observations; it does not exempt mandatory product guarantees or establish an operator channel.
 - **Current bounded checkpoint:** [2026-10-31 Phase-02 observations](./2026-10-31-2.2.4-phase02/README.md): absent/passive fixture parity only; model-driven shell reproduced command admission. Overall gates remain NO-GO.
+- **Scope/lifecycle follow-up:** [2026-10-31 P0-02-H observations](./2026-10-31-2.2.4-scope-lifecycle/README.md): exact native-child correlation and restart snapshots, with caller-controlled parentage, alias/move, instruction propagation and incomplete post-crash wait counterexamples. Full P0-02-H remains NOT_VERIFIED.
 
 ## Evidence vocabulary
 

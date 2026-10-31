@@ -93,6 +93,32 @@ surface explicitly. Startup failure attempts owned-child/provider/root cleanup;
 normal close is idempotent. This does not prove cleanup of all host-managed
 grandchildren after forced termination.
 
+### Scope/lifecycle follow-up (P0-02-H)
+
+```sh
+umask 077
+node scripts/opencode-v2-probe/probes/p0-scope-lifecycle.mjs
+```
+
+This creates a fresh timestamped evidence directory per run; previous observations
+are not overwritten. It uses only owned disposable Git worktrees/sessions and
+restarts/kills only its private server child, preserving that fixture's HOME/DB
+and local provider across the restart. It never restarts the shared service or
+restores operator data. SIGKILL is sent only after the capture provider has
+observed the deliberately held fixture request; no real provider is contacted.
+
+The probe records exact root/worktree/nested/alias mappings, native tool→child
+and durable-event correlation, SDK parent claims, a deleted-parent rejection,
+ID collision and an overlapping two-request create trial, session move,
+instruction entries, full-context snapshot digests, live-stream gaps, and
+post-crash wait/state/answer observations. Client overlap is not proof of a
+host-internal transaction race. Digests are byte-level API diagnostics, not
+FlowGuard canonical content digests. Successful execution means the observations
+were recorded; `p002H` remains NOT_VERIFIED, never an implicit PASS.
+
+See the [dated scope report](../../docs/host-probes/opencode-v2/2026-10-31-2.2.4-scope-lifecycle/README.md).
+The prior isolation/command-origin report and its source bytes remain unchanged.
+
 ### Historical observation runner (not current acceptance)
 
 From the repository root:
