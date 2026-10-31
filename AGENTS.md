@@ -130,6 +130,24 @@ removed behavior. Reviewers MUST treat newly introduced or knowingly retained
 production compatibility code on the touched FlowGuard surface as a review
 blocker.
 
+## Mandatory Changelog and Documentation Consistency
+
+- **Every PR MUST change `CHANGELOG.md` under `[Unreleased]`**, including
+  docs-only, refactor, test, CI and internal cleanup changes. No "not needed"
+  exception. The entry must describe completed behavior truthfully.
+- All **impacted** documentation, examples, CLI/help text, architecture decisions,
+  schemas, config descriptions, support matrices, installation/recovery guides
+  and distributed artifacts MUST change together with their owning code in
+  the same PR. Unaffected documents do not require cosmetic edits.
+- Run `npm run check:doc-drift` for documentation or generated artifact changes
+  and `npm run check:pr-documentation` against the PR base for all PRs.
+  Inspect semantic drift manually where scripts cannot prove equivalence.
+  Missing changelog or stale affected docs blocks merge regardless of green tests.
+- For governance changes, [ADR-010](docs/decisions/010-host-neutral-opt-in-governance.md)
+  defines product architecture; [Issue #1169](https://github.com/koeppben23/governed-runtime/issues/1169)
+  owns the OpenCode V2 migration. These repository guidance rules MUST NOT be
+  injected as mandatory mandates into ordinary ungoverned user sessions.
+
 ## Canonical Authorities
 
 Before implementing a change, identify the canonical authority. Change the authority, not a local duplicate.
