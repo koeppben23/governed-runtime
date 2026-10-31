@@ -106,7 +106,8 @@
     "setup-hooks": "node scripts/setup-git-hooks.js",
     "prepare": "npm run setup-hooks",
     "release:verify": "npm run check && npm run lint && npm test && npm run build && npm run check:esm && npm run test:install-verify",
-    "release:assert-main-tag": "node scripts/assert-main-release-tag.js"
+    "release:assert-main-tag": "node scripts/assert-main-release-tag.js",
+    "check:pr-documentation": "node scripts/check-pr-documentation.mjs"
   },
   "engines": {
     "node": "^20.0.0 || ^22.0.0 || ^24.0.0",
