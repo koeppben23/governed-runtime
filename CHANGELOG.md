@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   granting parent decision authority or treating delegation as mutation success.
   Settled receipt replays cannot rebind a child to an older call after continuation;
   bounded-wait and independent scope/journal negatives exercise this boundary.
-  Root operator activation/deactivation, reviewer provenance and regular edit-error
-  completion remain separate blocked acceptance paths; this is not ACTIVE V2 support.
+  Root operator activation/deactivation and reviewer provenance remain separate
+  blocked acceptance paths; this is not ACTIVE V2 support.
 
 - **Native authority-source mechanism probes (#1190).** Actual V2 host tests
   establish private plugin-storage persistence across reload, graceful restart
@@ -199,6 +199,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   structured report.
 
 ### Fixed
+
+- **Native regular edit-error recovery (#1190).** Exact current native
+  session/message/call history can close a local typed edit failure through the
+  existing root-owned completion and audit writer, including delegated calls.
+  Missing, ambiguous, hosted, interrupted and historical raw-ID observations stay
+  unresolved. Process-lifetime runtime identity now survives native plugin reload
+  without weakening live-holder lease fencing. The retained event/reload positives
+  and a real child regression use explicit component-only activation, not operator
+  or reviewer authority; full ACTIVE V2 acceptance remains NO-GO.
 
 - **Governed event failures fence their ACTIVE scope (#1190).** The canonical
   event handler no longer swallows session-error audit, failed-tool mutation

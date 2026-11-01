@@ -124,6 +124,7 @@ export default defineConfig({
       // covering tests for newly mutated authorities and must run, otherwise
       // those files would be mutated without any test able to kill a mutant.
       'src/integration/runtime-lease.test.ts',
+      'src/integration/runtime-instance.test.ts',
       'src/integration/review/enforcement/challenge-binding.test.ts',
       'src/state/state.test.ts',
       'src/state/evidence-mutation-episode.test.ts',

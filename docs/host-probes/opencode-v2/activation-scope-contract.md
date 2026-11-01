@@ -2,7 +2,9 @@
 
 Implementation contract for PR #1190, 2026-11-01. This is not an operator-source
 attestation or a passing ACTIVE V2 release decision. Draft / **ACTIVE V2 NO-GO**
-remains in force. Findings 5–7 and the separate #1191/#1192 work are not closed here.
+remains in force. Findings 5/6 and the separate #1191/#1192 work remain open;
+Finding 7's [bounded edit-error correction](./edit-error-terminality.md) is
+available for re-review, not operator/reviewer or full-cutover acceptance.
 
 The [pinned operator-handoff investigation](./operator-handoff.md) demonstrates
 that the local keyboard distinction is lost through ordinary plugin RPC:
@@ -117,12 +119,13 @@ product hooks; its RPC is never installed by the product and is not operator UI
 acceptance. It must not replace a required reviewer or operator positive.
 
 Actual trusted root Start/End, attributable approval/capacity recovery, full
-Desktop/CLI acceptance, reviewer provenance and regular edit-error completion
-remain **NOT_VERIFIED / BLOCKED** at their existing owners. Historical host probe
+Desktop/CLI acceptance and reviewer provenance remain **NOT_VERIFIED / BLOCKED**
+at their existing owners. The exact native local-edit failure contract and
+component recovery positives are documented separately above. Historical host probe
 bytes are unchanged. Verification outcomes belong to the exact candidate run,
 not this contract description or an earlier green checkpoint.
 
-### Local candidate verification (2026-11-01)
+### Historical activation checkpoint verification (2026-11-01)
 
 - `npm test`: **12,741 passed**, the same two existing skips, 700 passing files.
 - Full pinned-host smoke with `OPENCODE_LIVE=1 RUN_OPENCODE_ACP_TESTS=1`:

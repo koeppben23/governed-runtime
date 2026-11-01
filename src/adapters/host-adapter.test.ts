@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   OpenCodeHostAdapter,
   nativeHostCallId,
+  readNativeHostCallIdentity,
   projectOpenCodeEvent,
 } from '../integration/opencode-host-adapter.js';
 import { createV2Host } from '../integration/opencode-v2-test-helpers.js';
@@ -171,6 +172,28 @@ describe('native V2 host adapter', () => {
 });
 
 describe('native V2 notification projection', () => {
+  it('reads only the exact canonical native tuple, without normalizing stored IDs', () => {
+    const id = nativeHostCallId('session', 'message', 'call');
+    expect(readNativeHostCallIdentity(id)).toEqual({
+      sessionId: 'session',
+      messageId: 'message',
+      callId: 'call',
+    });
+    for (const unsupported of [
+      'call',
+      '',
+      'null',
+      '[]',
+      '{}',
+      '{"sessionId":"session","messageId":"message","callId":"call"}',
+      ` ${id}`,
+      id.replace('"callId"', '"callID"'),
+      JSON.stringify({ callId: '', messageId: 'message', sessionId: 'session' }),
+      JSON.stringify({ callId: 'call', messageId: 'message', sessionId: 'session', origin: 'ui' }),
+    ])
+      expect(readNativeHostCallIdentity(unsupported)).toBeNull();
+  });
+
   it('binds native call identity to session and host assistant message, not the provider ID alone', () => {
     const base = nativeHostCallId('session', 'message', 'call_0');
     expect(nativeHostCallId('session', 'message', 'call_0')).toBe(base);

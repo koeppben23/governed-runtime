@@ -15,8 +15,15 @@ ordinary-subagent receipt enrollment replace the reviewed defects in Findings
 2–4/8. The current contract and verification limits are in
 [Activation and scope](./activation-scope-contract.md). Older dated snapshots
 below describe their inspected commits, not the current implementation. Root
-operator decisions and complete reviewer/error provenance remain blocked;
+operator decisions and complete reviewer provenance remain blocked;
 PR #1190 stays Draft and ACTIVE V2 remains NO-GO.
+
+**Finding 7 follow-up:** the [version-bound native edit-error contract](./edit-error-terminality.md)
+now connects exact regular local failures to the existing completion writer and
+preserves the runtime identity across actual plugin reload. The two retained MUT4
+positives and a real delegated-child regression exercise the product hooks with
+explicit component-only activation, not UI authority. Earlier dated descriptions
+of the unobserved error stub and failed MUT4 runs below remain historical results.
 
 ## Delivery boundary
 

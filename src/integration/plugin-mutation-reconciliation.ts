@@ -4,6 +4,7 @@ import { unresolvedMutationEpisodes } from '../state/evidence-mutation-episode.j
 import { observeEditFailure } from './host-mutation-observation.js';
 import { commitMutationCompletion } from './plugin-mutation-episodes.js';
 import { IntegrationInvariantError } from './errors.js';
+import { readNativeHostCallIdentity } from './opencode-host-adapter.js';
 
 const EventTrigger = z.object({
   type: z.literal('session.tool.failed'),
@@ -40,22 +41,32 @@ export async function reconcileHostMutationEpisodes(
   );
   if (episodes.length === 0) return;
   const client = runtime.orchestratorDeps.client;
-  let history: unknown;
-  try {
-    history = await boundedHistoryRead(() => client.readHistory(sessionId));
-  } catch (error) {
-    throw new IntegrationInvariantError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      `Host mutation outcome query failed: ${error instanceof Error ? error.message : 'unavailable'}`,
-    );
-  }
-  if (!Array.isArray(history))
-    throw new IntegrationInvariantError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Host mutation outcome history is unavailable.',
-    );
+  const histories = new Map<string, unknown>();
   for (const episode of episodes) {
-    const observation = observeEditFailure(history, sessionId, episode);
+    const identity = readNativeHostCallIdentity(episode.hostCallId);
+    if (identity === null) continue; // Historical/invalid IDs stay unresolved, never migrated.
+    if (!histories.has(identity.sessionId)) {
+      let history: unknown;
+      try {
+        history = await boundedHistoryRead(() => client.readHistory(identity.sessionId));
+      } catch (error) {
+        throw new IntegrationInvariantError(
+          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          `Host mutation outcome query failed: ${error instanceof Error ? error.message : 'unavailable'}`,
+        );
+      }
+      if (!Array.isArray(history))
+        throw new IntegrationInvariantError(
+          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          'Host mutation outcome history is unavailable.',
+        );
+      histories.set(identity.sessionId, history);
+    }
+    const observation = observeEditFailure(
+      histories.get(identity.sessionId),
+      identity.sessionId,
+      episode,
+    );
     if (observation.kind === 'unobserved') {
       runtime.log.info('mutation', 'host mutation remains unresolved', {
         sessionId,

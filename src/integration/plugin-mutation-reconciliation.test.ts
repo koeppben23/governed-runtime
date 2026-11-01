@@ -17,21 +17,24 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import * as outbox from './audit-outbox.js';
 import { acquireSessionWriteLock } from '../adapters/persistence-lock.js';
 import { createReviewClient } from './opencode-v2-test-helpers.js';
+import { nativeHostCallId } from './opencode-host-adapter.js';
 
 let workspace: Awaited<ReturnType<typeof createTestWorkspace>>;
 let sessDir: string;
 let sessionId: string;
+let hostCallId: string;
 const at = '2026-10-01T00:00:00.000Z';
 const completedAt = '2026-10-01T00:00:01.000Z';
 
 beforeEach(async () => {
   workspace = await createTestWorkspace();
   sessionId = randomUUID();
+  hostCallId = nativeHostCallId(sessionId, 'message', 'edit-call');
   const binding = await canonicalBinding(workspace.tmpDir, sessionId);
   sessDir = sessionDir(binding.fingerprint, sessionId);
   const authorized = authorizeMutationEpisode([], {
     episodeId: randomUUID(),
-    hostCallId: 'edit-call',
+    hostCallId,
     toolName: 'edit',
     runtimeInstanceId: getRuntimeInstanceId(),
     leaseGeneration: 1,
@@ -79,6 +82,27 @@ function hostHistory(interrupted?: boolean) {
   ];
 }
 
+function regularHistory() {
+  const message = hostHistory()[0]!;
+  const part = message.content[0]!;
+  return [
+    {
+      ...message,
+      content: [
+        {
+          ...part,
+          executed: false,
+          state: {
+            ...part.state,
+            error: { type: 'tool.execution', message: 'oldString not found' },
+          },
+          time: { ...part.time, ran: part.time.created },
+        },
+      ],
+    },
+  ];
+}
+
 function runtime(messages = vi.fn(async (): Promise<unknown> => hostHistory())) {
   return {
     value: {
@@ -107,6 +131,118 @@ async function completionInput() {
 }
 
 describe('mutation completion authority and reconciliation', () => {
+  it.each(['event', 'barrier'])(
+    'closes a proven exact native edit failure through %s',
+    async (path) => {
+      const before = (await readState(sessDir))!;
+      const host = runtime(vi.fn(async () => regularHistory()));
+      if (path === 'event')
+        await reconcileMutationEvent(
+          host.value,
+          { type: 'session.tool.failed', data: { hostCallId } },
+          sessionId,
+        );
+      else await reconcileHostMutationEpisodes(host.value, sessionId);
+      const after = (await readState(sessDir))!;
+      expect(after.mutationEpisodes[0]).toMatchObject({
+        status: 'completed',
+        outcome: 'failure',
+        completedAt,
+      });
+      expect(after.mutationEpisodeResolutions).toEqual([]);
+      expect(after.pendingAuditOperations).toHaveLength(before.pendingAuditOperations.length + 1);
+      await reconcileHostMutationEpisodes(host.value, sessionId);
+      expect(host.messages).toHaveBeenCalledTimes(1);
+      expect(await readState(sessDir)).toEqual(after);
+    },
+  );
+
+  it('reads the persisted native child identity, not the governed root history', async () => {
+    const input = await completionInput();
+    const childCall = nativeHostCallId('child', 'message', 'edit-call');
+    await writeState(sessDir, {
+      ...input.resolution.state,
+      mutationEpisodes: [{ ...input.expected, hostCallId: childCall }],
+    });
+    const host = runtime(vi.fn(async () => regularHistory()));
+    await reconcileMutationEvent(
+      host.value,
+      { type: 'session.tool.failed', data: { hostCallId: childCall } },
+      sessionId,
+    );
+    expect(host.messages).toHaveBeenCalledExactlyOnceWith('child');
+    expect((await readState(sessDir))!.mutationEpisodes[0]).toMatchObject({
+      hostCallId: childCall,
+      status: 'completed',
+      outcome: 'failure',
+    });
+  });
+
+  it('does not read or reinterpret a historical raw ID as a current native tuple', async () => {
+    const input = await completionInput();
+    await writeState(sessDir, {
+      ...input.resolution.state,
+      mutationEpisodes: [{ ...input.expected, hostCallId: 'edit-call' }],
+    });
+    const before = await readState(sessDir);
+    const host = runtime(vi.fn(async () => regularHistory()));
+    await reconcileHostMutationEpisodes(host.value, sessionId);
+    expect(host.messages).not.toHaveBeenCalled();
+    expect(await readState(sessDir)).toEqual(before);
+  });
+
+  it('shares one history read across exact calls of the same native session only', async () => {
+    const input = await completionInput();
+    const second = {
+      ...input.expected,
+      episodeId: randomUUID(),
+      hostCallId: nativeHostCallId(sessionId, 'second-message', 'edit-call'),
+    };
+    await writeState(sessDir, {
+      ...input.resolution.state,
+      mutationEpisodes: [input.expected, second],
+    });
+    const regular = regularHistory()[0]!;
+    const host = runtime(vi.fn(async () => [regular, { ...regular, id: 'second-message' }]));
+    await reconcileHostMutationEpisodes(host.value, sessionId);
+    expect(host.messages).toHaveBeenCalledExactlyOnceWith(sessionId);
+    expect((await readState(sessDir))!.mutationEpisodes.map((episode) => episode.status)).toEqual([
+      'completed',
+      'completed',
+    ]);
+  });
+
+  it('commits only once when event and barrier read the same regular native completion concurrently', async () => {
+    const before = (await readState(sessDir))!;
+    let release: () => void = () => {};
+    const bothReading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reads = 0;
+    const host = runtime(
+      vi.fn(async () => {
+        if (++reads === 2) release();
+        await bothReading;
+        return regularHistory();
+      }),
+    );
+    await Promise.all([
+      reconcileHostMutationEpisodes(host.value, sessionId),
+      reconcileMutationEvent(
+        host.value,
+        { type: 'session.tool.failed', data: { hostCallId } },
+        sessionId,
+      ),
+    ]);
+    const after = (await readState(sessDir))!;
+    expect(after.mutationEpisodes[0]).toMatchObject({
+      status: 'completed',
+      outcome: 'failure',
+      completedAt,
+    });
+    expect(after.pendingAuditOperations).toHaveLength(before.pendingAuditOperations.length + 1);
+  });
+
   it('ignores old event envelopes instead of translating them into native wakeups', async () => {
     const host = runtime();
     await reconcileMutationEvent(
@@ -321,7 +457,7 @@ describe('mutation completion authority and reconciliation', () => {
       reconcileHostMutationEpisodes(host.value, sessionId),
       reconcileMutationEvent(
         host.value,
-        { type: 'session.tool.failed', data: { hostCallId: 'edit-call' } },
+        { type: 'session.tool.failed', data: { hostCallId } },
         sessionId,
       ),
     ]);
@@ -366,7 +502,7 @@ describe('mutation completion authority and reconciliation', () => {
     const host = runtime(vi.fn(async () => hostHistory(true)));
     await reconcileMutationEvent(
       host.value,
-      { type: 'session.tool.failed', data: { hostCallId: 'edit-call' } },
+      { type: 'session.tool.failed', data: { hostCallId } },
       sessionId,
     );
     await reconcileHostMutationEpisodes(host.value, sessionId);
@@ -374,7 +510,7 @@ describe('mutation completion authority and reconciliation', () => {
     expect(host.value.log.info).toHaveBeenCalledWith(
       'mutation',
       'host mutation remains unresolved',
-      expect.objectContaining({ sessionId, hostCallId: 'edit-call', reason: expect.any(String) }),
+      expect.objectContaining({ sessionId, hostCallId, reason: expect.any(String) }),
     );
   });
 
@@ -389,6 +525,7 @@ describe('mutation completion authority and reconciliation', () => {
       );
       await expect(reconcileHostMutationEpisodes(host.value, sessionId)).rejects.toMatchObject({
         code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        ...(mode === 'throw' ? { message: expect.stringContaining('wire failed') } : {}),
       });
       expect((await readState(sessDir))!.mutationEpisodes[0]!.status).toBe('dispatch_authorized');
     },
@@ -457,7 +594,7 @@ describe('mutation completion authority and reconciliation', () => {
       mutationEpisodeResolutions: [
         {
           resolutionId: randomUUID(),
-          hostCallId: 'edit-call',
+          hostCallId,
           status: 'reconciled_after_unknown_outcome',
           basis: 'worktree_recapture',
           resolvedAt: completedAt,

@@ -12,6 +12,7 @@ import type { OrchestratorClient } from './review/types.js';
 import type { PluginEvent } from './plugin-events.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { z } from 'zod';
 
 export class HostAdapterInitError extends Error {
   readonly code = 'HOST_ADAPTER_INIT_FAILED';
@@ -214,4 +215,25 @@ export function nativeHostCallId(sessionId: string, messageId: string, callId: s
       'A native tool call requires host session, assistant-message and call identities.',
     );
   return canonicalJsonStringify({ callId, messageId, sessionId });
+}
+
+const NativeCallIdentity = z.strictObject({
+  sessionId: z.string().min(1),
+  messageId: z.string().min(1),
+  callId: z.string().min(1),
+});
+
+/** Read an exact current identity to select native history. Never normalize an
+ * old/raw ID or rewrite a persisted episode into the current tuple contract. */
+export function readNativeHostCallIdentity(
+  value: string,
+): z.infer<typeof NativeCallIdentity> | null {
+  try {
+    const parsed = NativeCallIdentity.safeParse(JSON.parse(value));
+    if (!parsed.success) return null;
+    const { sessionId, messageId, callId } = parsed.data;
+    return nativeHostCallId(sessionId, messageId, callId) === value ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
