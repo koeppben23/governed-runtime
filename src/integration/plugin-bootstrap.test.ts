@@ -280,29 +280,36 @@ describe('native V2 phase and integrity gates', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('fails closed when the workflow directory is absent', async () => {
+  it('leaves an ordinary shell call untouched before any FlowGuard start', async () => {
     const h = await fixture();
-    await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow('SESSION_DIR_NOT_FOUND');
+    const event = beforeEvent(h.sessionID);
+    const input = event.input;
+    await expect(h.host.before(event)).resolves.toBeUndefined();
+    expect(event.input).toBe(input);
   });
 
   it('fails closed when the workflow directory disappears after native setup', async () => {
     const h = await fixture('IMPLEMENTATION', {
       implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
     });
+    await h.host.before(beforeEvent(h.sessionID, 'read', { path: 'README.md' }));
     await fs.rm(h.sessDir, { recursive: true, force: true });
     await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow('SESSION_DIR_NOT_FOUND');
   });
 
-  it('fails closed when the exact host location is not a Git worktree', async () => {
+  it('does not require Git for ordinary unstarted host usage', async () => {
     const directory = path.join(configDir, 'no-git');
     await fs.mkdir(directory);
     const host = await openHost(directory);
-    await expect(host.before(beforeEvent(crypto.randomUUID()))).rejects.toThrow('NOT_GIT_REPO');
+    await expect(host.before(beforeEvent(crypto.randomUUID()))).resolves.toBeUndefined();
   });
 
-  it('fails closed when the workflow directory exists but state is missing', async () => {
-    const h = await fixture();
-    await fs.mkdir(h.sessDir, { recursive: true });
+  it('fails closed when previously observed workflow state goes missing', async () => {
+    const h = await fixture('IMPLEMENTATION', {
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+    });
+    await h.host.before(beforeEvent(h.sessionID, 'read', { path: 'README.md' }));
+    await fs.unlink(path.join(h.sessDir, 'session-state.json'));
     await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow('SESSION_DIR_NOT_FOUND');
   });
 
@@ -314,8 +321,11 @@ describe('native V2 phase and integrity gates', () => {
   });
 
   it('retains the structured missing-state denial diagnostics', async () => {
-    const h = await fixture();
-    await fs.mkdir(h.sessDir, { recursive: true });
+    const h = await fixture('IMPLEMENTATION', {
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+    });
+    await h.host.before(beforeEvent(h.sessionID, 'read', { path: 'README.md' }));
+    await fs.unlink(path.join(h.sessDir, 'session-state.json'));
     const error: unknown = await h.host
       .before(beforeEvent(h.sessionID, 'edit', { filePath: 'file.ts', content: 'x' }))
       .catch((caught: unknown) => caught);

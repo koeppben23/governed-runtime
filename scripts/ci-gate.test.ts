@@ -47,6 +47,16 @@ function executeGate(overrides: Record<string, string> = {}) {
 }
 
 describe('required ci-gate documentation enforcement', () => {
+  it('serializes critical Windows unit workers without dropping suites or changing PERF budgets', () => {
+    const commands = requiredJob('critical-windows').steps.flatMap((step) =>
+      step.run ? [step.run] : [],
+    );
+    expect(commands).toEqual([
+      'npx vitest run --maxWorkers=1 --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts',
+      'npx vitest run --project integration src/integration/proofgraph-replan-recovery.test.ts src/integration/evidence-approval-persistence.test.ts src/integration/reduced-ceremony-subject-artifacts-e2e.test.ts',
+    ]);
+    expect(commands.join(' ')).not.toMatch(/FLOWGUARD_PERF|PERF_BUDGET|testNamePattern|exclude/);
+  });
   it('waits for documentation and every existing test dependency even on upstream failures', () => {
     expect(gate.name).toBe('ci-gate');
     expect(gate.needs).toEqual(dependencies);

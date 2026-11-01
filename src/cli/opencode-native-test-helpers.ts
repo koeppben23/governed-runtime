@@ -37,6 +37,7 @@ export async function createNativeHostProbe(
   options: {
     agent?: string;
     product?: boolean;
+    git?: boolean;
     plugin?: string;
     modelOutput?: number;
     body?: Record<string, unknown>;
@@ -128,7 +129,7 @@ export async function createNativeHostProbe(
   };
   try {
     await mkdir(project, { recursive: true });
-    execFileSync('git', ['init', '--quiet', project]);
+    if (options.git !== false) execFileSync('git', ['init', '--quiet', project]);
     const reportedVersion = execFileSync(host.command, [...host.argsPrefix, '--version'], {
       env,
       encoding: 'utf8',

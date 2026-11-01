@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const workspaceRoot = process.cwd();
 if (!existsSync(path.join(workspaceRoot, 'dist', 'cli', 'install.js'))) {
@@ -48,10 +49,19 @@ const testTitleFilter = mustPassTestTitles
   .join('|');
 
 try {
+  // Resolve the local package's declared executable, not an npm shell shim.
+  // cmd.exe must never parse the test-name filter's pipes or metacharacters.
+  const vitestManifestPath = createRequire(path.join(workspaceRoot, 'package.json')).resolve(
+    'vitest/package.json',
+  );
+  const vitestManifest = JSON.parse(readFileSync(vitestManifestPath, 'utf8'));
+  if (typeof vitestManifest.bin?.vitest !== 'string')
+    throw new Error('The local Vitest package has no declared CLI executable.');
+  const vitestCli = path.resolve(path.dirname(vitestManifestPath), vitestManifest.bin.vitest);
   const run = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    process.execPath,
     [
-      'vitest',
+      vitestCli,
       'run',
       '--project',
       'integration',
@@ -67,7 +77,7 @@ try {
     {
       cwd: workspaceRoot,
       stdio: 'inherit',
-      shell: process.platform === 'win32',
+      shell: false,
       env: {
         ...process.env,
         FORCE_COLOR: '0',

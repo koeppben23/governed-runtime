@@ -1,9 +1,8 @@
 /** Verifier plumbing only. Synthetic reports test rejection, never native reviewer provenance. */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const verifier = resolve('scripts/verify-independent-review-e2e.js');
@@ -16,18 +15,31 @@ const required = [
 ].map((match) => match[1]!);
 
 function run(assertions: Array<{ title: string; status: string }>, exit = 0, raw?: string) {
-  const root = mkdtempSync(join(tmpdir(), 'fg-review-verifier-'));
+  // Spaces, ampersands and parentheses exercise argument/path preservation on
+  // Windows as well as Unix. No PATH shim may intercept this subprocess.
+  const root = mkdtempSync(join(tmpdir(), 'fg review verifier & (literal)-'));
   try {
     mkdirSync(join(root, 'dist/cli'), { recursive: true });
     writeFileSync(
       join(root, 'dist/cli/install.js'),
       '// Build prerequisite fixture, never executed.\n',
     );
-    const script = join(root, 'probe.cjs');
+    const vitest = join(root, 'node_modules', 'vitest');
+    mkdirSync(vitest, { recursive: true });
+    writeFileSync(
+      join(vitest, 'package.json'),
+      JSON.stringify({
+        name: 'vitest',
+        version: '0.0.0-test',
+        bin: { vitest: './native probe.cjs' },
+      }),
+    );
+    const script = join(vitest, 'native probe.cjs');
     writeFileSync(
       script,
       `const fs = require('node:fs');
 const args = process.argv.slice(2);
+if (args[0] !== 'run' || args[args.indexOf('--testNamePattern') + 1] !== process.env.PROBE_FILTER) process.exit(98);
 if (args.includes('--project') && args.includes('integration') && args.includes('smoke') && args.includes('--passWithNoTests=false') && process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1' && args.includes('src/cli/opencode-reviewer-capture-live.smoke.test.ts') && args.includes('src/cli/opencode-native-install.smoke.test.ts')) {
   const target = args.find(arg => arg.startsWith('--outputFile=')).slice('--outputFile='.length);
   fs.writeFileSync(target, process.env.PROBE_REPORT);
@@ -35,20 +47,13 @@ if (args.includes('--project') && args.includes('integration') && args.includes(
 }
 process.exit(99);\n`,
     );
-    const command = join(root, process.platform === 'win32' ? 'npx.cmd' : 'npx');
-    writeFileSync(
-      command,
-      process.platform === 'win32'
-        ? `@"${process.execPath}" "${script}" %*\r\n`
-        : `#!${process.execPath}\nimport(${JSON.stringify(pathToFileURL(script).href)});\n`,
-    );
-    chmodSync(command, 0o755);
     return spawnSync(process.execPath, [verifier], {
       cwd: root,
       encoding: 'utf8',
       env: {
         ...process.env,
-        PATH: `${root}${delimiter}${process.env.PATH}`,
+        PATH: '',
+        PROBE_FILTER: `(${required.map((title) => title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
         PROBE_EXIT: String(exit),
         PROBE_REPORT: raw ?? JSON.stringify({ testResults: [{ assertionResults: assertions }] }),
       },

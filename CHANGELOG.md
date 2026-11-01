@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Executable opt-in conformance regressions (#1190).** Real native-host
+  comparisons exercise shell/edit effects in Git and non-Git directories and
+  compare the effective provider-wire tool catalogue before any FlowGuard start.
+  A component fault-injection test checks that event-stream loss cannot veto an
+  unrelated unstarted session. These tests currently fail on confirmed product
+  violations; they do not invent activation authority or certify a packed install.
+  Bootstrap tests now require fresh unstarted/Git-free calls to pass; missing-state
+  safety tests instead exercise loss of previously observed workflow state.
+
 - **ISO/IEC 27001:2022 evidence-to-control mapping (#1083).** New opt-in,
   read-only companion report `flowguard inspect --session <id>
 --iso27001-mapping <file>` links organization-owned policy requirements to
@@ -158,6 +167,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   structured report.
 
 ### Fixed
+
+- **Critical Windows scheduling (#1190).** The complete critical unit suite runs
+  with one Vitest worker to avoid competition with the warm state-serialization
+  benchmark. The existing test set, p99 budget and performance enforcement remain
+  unchanged; hosted Windows timing still requires verification.
+
+- **Shell-free independent-review verifier (#1190).** The verifier launches the
+  locally installed Vitest package's declared CLI with Node and an argument array,
+  never `npx.cmd` or a shell. Test-name regex pipes remain literal arguments on
+  Windows. Regression fixtures use paths with spaces and shell metacharacters,
+  an empty PATH and exact filter checks; all required acceptance titles and
+  failure exit codes remain enforced.
 
 - **Native ACP smoke lifecycle (#1190).** ACP probes keep stdio input open,
   require the exact native CLI pin and isolate global paths. Premature exit and

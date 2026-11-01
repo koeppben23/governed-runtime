@@ -366,6 +366,104 @@ the four actual reviewer/capture/recovery contracts and the two MUT4 regular-err
 recovery paths; they remain product acceptance blockers, not harness-version
 errors.
 
+## Lead-architect findings against published `46671919`
+
+The review adds confirmed defects, not additional product requirements. These
+findings supersede any reading of the bounded lifecycle result as INACTIVE parity.
+
+- **P1 / Windows verifier:** CI run `41288765542`, job `124795530365`, reports
+  `'records' is not recognized` and nine failing verifier tests. Windows command
+  shell parsing split the required-title regex at `|`. The fix uses Node plus
+  the local Vitest manifest's declared CLI with `shell: false`; regression
+  fixtures check the complete filter and use metacharacter-containing paths with
+  no executable lookup through PATH. Required positives are unchanged.
+- **P0 / activation boundary:** `src/adapters/session-authority.ts` is the
+  canonical workflow-location/binding authority, **not an activation authority**.
+  The current source has no implemented durable activation generation, enrollment
+  or deactivation/recovery contract. `plugin.ts` applies workflow gates to ordinary
+  native tools before a verified INACTIVE/ACTIVE/BLOCKED distinction. Existing
+  absent-state/non-Git component denials therefore demonstrate a contract
+  violation, not passing INACTIVE safety. This is **BLOCKED**, not merely unrun
+  parity testing; the additional packed-host side-effect comparison is still
+  **NOT_VERIFIED**.
+- **P1 / event-failure scope:** the global `eventFailed` fence precedes activation
+  resolution and can veto unrelated ungoverned callbacks. Event-stream failure
+  must remain explicit, but the governance fence needs the same activation owner
+  as ordinary hooks, not a second status machine or a worktree-wide opt-in flag.
+- **P1 / catalogue:** setup currently publishes every FlowGuard tool before start.
+  The installed inventory observation confirms that deviation. Effective provider
+  wire parity still needs its own comparison; raw registry presence and actual
+  model exposure are distinct observations. The pinned tool-transform API has
+  no session parameter, while `session.context` exposes per-request tools. A
+  global register/unregister toggle alone is not proof of mixed-session parity.
+- **Windows performance:** job `124795530282` failed the existing state-roundtrip
+  p99 budget (about 28.3 ms versus 10 ms). This is a CI failure, not established
+  PR-caused regression. No timing budget, test scope or acceptance gate is raised
+  or removed. The critical unit command now uses one worker with its full test
+  set intact. **ASSUMPTION:** eliminating competing Vitest workers reduces
+  scheduling-related tail latency; this is not an established root cause.
+  **NOT_VERIFIED:** the same 10 ms Windows p99 gate must pass on the new CI head.
+
+Findings 2–4 require one durable activation/scope authority before canonical
+workflow gates, with loss/corruption/restart and mixed-session negatives. Missing
+workflow state must not be promoted to INACTIVE, existing state must not be
+promoted to trusted operator activation, and an SDK callback must not be promoted
+to a host-UI decision. No such authority or source proof is fabricated by this
+bounded CI fix. PR #1190 remains Draft and P0-blocked.
+
+The follow-up adds executable conformance tests rather than relabeling the old
+denials as correct INACTIVE behavior:
+
+- `src/cli/opencode-inactive-parity.smoke.test.ts`: five real-host comparisons
+  fail against the loaded product. Every absent-product shell/edit control
+  succeeds, with and without Git. With the product, Git-backed calls have
+  `executed: false` and `SESSION_DIR_NOT_FOUND`; non-Git prompts fail with
+  `NOT_GIT_REPO` before provider dispatch. The target remains `original` instead
+  of receiving the control's `native-effect`.
+- The same suite confirms that ordinary parent requests actually carry additional
+  FlowGuard tools on the provider wire before start, not just in the raw registry.
+  Only the optional help affordance is excluded from the comparison. This is now
+  an observed effective-catalogue violation.
+- `src/integration/plugin-inactive-event-scope.test.ts`: one component test
+  reproduces `PLUGIN_ENFORCEMENT_UNAVAILABLE` for a never-started, unrelated
+  session after a global event-stream fault. It requires native pass-through;
+  the current product fails. This is fault-injection evidence, not a claim about
+  an installed server's loss mechanism.
+
+These are ordinary failing assertions, never `it.fails`, skipped tests or
+replacement reviewer evidence. The real-host suite uses the workspace-built
+product through a native plugin entrypoint; the packed-install and operator-UI
+dimensions remain separate and unverified. Production authority is unchanged;
+the common activation fix remains outstanding.
+
+The two bootstrap expectations called out in the review now require ordinary
+unstarted and non-Git usage to pass, rather than passing tests for the forbidden
+denial. The state-loss negatives first observe existing bound workflow state and
+then remove it or its directory; they retain fail-closed and diagnostic checks
+without treating a fresh unstarted session as governed. Observed workflow state
+is still not labeled proof of a trusted operator activation.
+
+Verification of the review follow-up (local Node 22.22.2):
+
+- Scripts: **319 passed**, including all nine shell-free verifier gate tests.
+- Architecture: **538 passed**. Typecheck, strict lint, format, build/doc drift,
+  unchanged unused-export baseline, unused dependencies and actionlint passed.
+- Full integration: **4,199 passed / 3 failed**. The failures are the two corrected
+  fresh/non-Git bootstrap contracts and the unstarted-session event-fault contract.
+  The state-loss and corruption negatives remain passing.
+- Full smoke with both CI flags: **103 passed / 11 failed / no skips**. Five new
+  native-parity failures expose the existing P0; the other six remain the known
+  reviewer/capture and regular-error recovery failures.
+- The actual shell-free independent-review command starts local Vitest correctly
+  and still fails its four required product contracts, not shell parsing.
+- The unchanged state-serialization test passes in an isolated local run with
+  `CI=1`; this does not establish Windows timing or a PR-caused regression.
+- **NOT_VERIFIED:** hosted Windows verifier/performance results for this follow-up;
+  re-run `scripts-windows` and `critical-windows` on its published head. Full
+  coverage was not re-run locally after adding the failing P0 contracts
+  (`npm run test:coverage:ci`); the earlier green coverage result does not certify
+  this now stricter conformance set.
+
 ## Baseline control flow and required simplification
 
 Paths in this section are relative to the repository root. The table describes

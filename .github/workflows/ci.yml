@@ -59,7 +59,9 @@ jobs:
       - name: Prepare Node
         uses: ./.github/actions/prepare-node
       - name: Verify critical state and hook boundaries
-        run: npx vitest run --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts
+        # Preserve the full critical set and its p99 budgets; avoid concurrent
+        # Vitest workers competing with the warm state-serialization benchmark.
+        run: npx vitest run --maxWorkers=1 --project unit src/hooks src/state src/audit/proofgraph src/adapters/git-porcelain.test.ts src/verification/implementation-subject.test.ts
       - name: Verify real-Git approval and recovery paths
         run: npx vitest run --project integration src/integration/proofgraph-replan-recovery.test.ts src/integration/evidence-approval-persistence.test.ts src/integration/reduced-ceremony-subject-artifacts-e2e.test.ts
 

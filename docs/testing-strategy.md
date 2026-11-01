@@ -153,6 +153,11 @@ the complete unit/integration projects with the same 80% gates and 15-second tes
 budget, including the actual production TypeScript program-graph guard. Local
 coverage retains Vitest's default concurrency.
 
+The `critical-windows` unit invocation uses one worker, retaining its full test
+set and unchanged p99 performance budgets. This bounds worker competition;
+it does not establish the cause of a Windows latency spike or waive a failed
+performance assertion. Its real-Git integration invocation is unchanged.
+
 The independent-review verifier retains both mandatory positive release/capture
 titles and runs them against the real native host and product, alongside the
 domain validation tests. Its packed installation test checks native command/tool
@@ -160,6 +165,9 @@ inventories, reload and uninstall without rewriting customer config. An isolated
 read-only observer inspects the actual tool registry; it never wraps the product
 or registers FlowGuard tools. Missing, skipped, duplicate or failing required
 results fail the verifier. Catalogue/lifecycle success alone is not review proof.
+The verifier resolves the local Vitest package's declared CLI and starts it with
+`process.execPath` without a shell. The test-name regex is one unchanged argument,
+including on Windows; `npx.cmd` and command-shell quoting are not part of this path.
 
 The documentation gate rejects historical-only, deletion-only and formatting-only
 changelog changes; semantic accuracy still requires review. `scripts/ci-gate.test.ts`
@@ -177,6 +185,16 @@ and without the real product; they do not certify a removed V1 65K rewrite or
 reviewer headroom. Startup failures remain failures under a bounded startup deadline.
 Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.
+
+`src/cli/opencode-inactive-parity.smoke.test.ts` compares ordinary shell/edit
+effects and provider-wire tool names with and without the actual product on the
+native host, before start and without seeded workflow or activation state. Its
+Git and non-Git controls must succeed without FlowGuard. This uses workspace-built
+product bytes, not a packed installation or host-UI activation proof.
+`src/integration/plugin-inactive-event-scope.test.ts` injects an event-stream
+fault at the component boundary and requires unrelated unstarted usage to stay
+native. These are required conformance assertions, not expected-failure tests:
+the current product violates them and their failures block acceptance.
 
 The technical sources are the workflow files: `.github/workflows/ci.yml` for the
 main PR-CI jobs, `.github/workflows/agent-instruction-evals-pr.yml` for deterministic
