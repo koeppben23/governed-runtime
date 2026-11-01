@@ -4,6 +4,11 @@ Implementation contract for PR #1190, 2026-11-01. This is not an operator-source
 attestation or a passing ACTIVE V2 release decision. Draft / **ACTIVE V2 NO-GO**
 remains in force. Findings 5–7 and the separate #1191/#1192 work are not closed here.
 
+The [pinned operator-handoff investigation](./operator-handoff.md) demonstrates
+that the local keyboard distinction is lost through ordinary plugin RPC:
+SDK payload replays have the same handler-visible context. It does not authorize
+root decisions or replace the outstanding product positives.
+
 ## Canonical ownership
 
 - `src/state/governance-activation.ts`: strict revision, enrollment, head and

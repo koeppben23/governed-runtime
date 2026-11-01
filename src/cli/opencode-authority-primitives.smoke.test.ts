@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SessionLogItem } from '@opencode/client';
+import { Rpc } from '@opencode/plugin/rpc';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
 
@@ -128,23 +129,56 @@ export default Plugin.define({ id: 'flowguard-storage-probe', async setup(ctx) {
     }
   }, 120_000);
 
-  it('distinguishes a native keyboard callback from programmatic TUI command dispatch', async () => {
+  it('distinguishes native keyboard input locally but loses that distinction through ordinary plugin RPC', async () => {
     probe = await createNativeHostProbe({
-      plugin: `export default Plugin.define({ id: 'flowguard-source-probe', setup() {} });`,
+      plugin: `
+import { Source } from './rpc.ts';
+import { appendFileSync } from 'node:fs';
+export default Plugin.define({ id: 'flowguard-source-probe', async setup(ctx) {
+  await ctx.rpc.register(Source, { observe: async (input, context) => {
+    const result = {
+      input,
+      contextKeys: Reflect.ownKeys(context).map(String).sort(),
+      contextPrototype: Object.getPrototypeOf(context) === Object.prototype ? 'Object' : 'other',
+      signal: context.signal instanceof AbortSignal,
+      errorType: typeof context.error,
+    };
+    appendFileSync('observer.jsonl', JSON.stringify(result) + '\\n');
+    return result;
+  } });
+} });`,
       async prepare(project) {
         const plugin = join(project, '.opencode/plugins/00-observer');
         await mkdir(plugin, { recursive: true });
         await writeFile(
+          join(plugin, 'rpc.ts'),
+          `import { Rpc } from '@opencode/plugin/rpc';
+export const Source = Rpc.define(${JSON.stringify(SOURCE_RPC_DEFINITION)});\n`,
+        );
+        await writeFile(
           join(plugin, 'tui.ts'),
           `
 import { Plugin } from '@opencode/plugin/tui';
+import { Source } from './rpc.ts';
 import { appendFileSync } from 'node:fs';
 const file = ${JSON.stringify(join(project, 'ui-source.jsonl'))};
 const record = value => appendFileSync(file, JSON.stringify(value) + '\\n');
 export default Plugin.define({ id: 'flowguard-source-probe', setup(ctx) {
   ctx.keymap.layer(() => ({ mode: 'global', priority: 100, commands: [{
     id: 'flowguard-source-probe.observe', bind: 'ctrl+g', slash: { name: 'authority-probe' },
-    run(input, event) { record({ type: 'callback', input: input ?? null, event: event ? { name: event.name, ctrl: event.ctrl, sequence: event.sequence } : null }); },
+    async run(input, event) {
+      const key = event ? { name: event.name, ctrl: event.ctrl, sequence: event.sequence } : null;
+      record({ type: 'callback', input: input ?? null, event: key });
+      // A local distinction is not a server-side authority. This fixture only
+      // observes the ordinary RPC projection; it never activates FlowGuard.
+      if (event?.name !== 'g' || !event.ctrl || event.sequence !== '\\x07') return;
+      const route = ctx.ui.router.current();
+      const result = await ctx.client.rpc(Source).observe({
+        action: 'StartGovernance', sessionID: route.sessionID,
+        origin: 'host-ui', event: key,
+      }, { location: ctx.location });
+      record({ type: 'rpc-result', result });
+    },
   }] }));
   ctx.keymap.dispatch('flowguard-source-probe.observe', 'programmatic');
   ctx.keymap.dispatch('flowguard-source-probe.observe', '\\x07');
@@ -237,6 +271,7 @@ export default Plugin.define({ id: 'flowguard-source-probe', setup(ctx) {
       ),
     ).toBe(true);
     expect(await records()).toEqual(beforeSDK);
+    expect(await probe.entries()).toEqual([]);
     ui.stdin?.write('\x07');
     await vi.waitFor(
       async () => {
@@ -250,8 +285,50 @@ export default Plugin.define({ id: 'flowguard-source-probe', setup(ctx) {
       },
       { timeout: 10_000 },
     );
+    await vi.waitFor(
+      async () => {
+        expect(await records(), output).toContainEqual(
+          expect.objectContaining({ type: 'rpc-result' }),
+        );
+      },
+      { timeout: 10_000 },
+    );
+    const payload = {
+      action: 'StartGovernance',
+      sessionID: session.id,
+      origin: 'host-ui',
+      event: { name: 'g', ctrl: true, sequence: '\x07' },
+    };
+    const expected = {
+      input: payload,
+      contextKeys: ['error', 'signal'],
+      contextPrototype: 'Object',
+      signal: true,
+      errorType: 'function',
+    };
+    expect(await probe.entries()).toEqual([expected]);
+    expect(await records()).toContainEqual({ type: 'rpc-result', result: expected });
+    // Identical caller claims arrive with the identical handler-visible context.
+    // Repeating an ordinary SDK call neither needs nor triggers another UI action.
+    const beforeReplay = await records();
+    for (let replay = 0; replay < 2; replay++)
+      expect(
+        await probe.client.rpc(SourceRPC).observe(payload, { location: probe.location }),
+      ).toEqual(expected);
+    expect(await probe.entries()).toEqual([expected, expected, expected]);
+    expect(await records()).toEqual(beforeReplay);
+    expect(probe.errors).toEqual([]);
   }, 120_000);
 });
+
+const SOURCE_RPC_DEFINITION = {
+  id: 'flowguard-source-probe',
+  methods: {
+    observe: { input: { type: 'object' }, output: { type: 'object' } },
+  },
+  events: {},
+} as const;
+const SourceRPC = Rpc.define(SOURCE_RPC_DEFINITION);
 
 // Isolated UI harness only. The real host parses bytes from a real PTY; no
 // mocked UI callbacks or application-supplied origin fields are used.

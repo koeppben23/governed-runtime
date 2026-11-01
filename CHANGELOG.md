@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pinned UI-to-RPC source counterexample (#1190).** The real PTY/TUI probe now
+  follows a keyboard callback through ordinary plugin RPC and replays its payload
+  through the SDK without another UI interaction. Both reach the same
+  handler-visible context; copied origin/key fields do not establish operator
+  authority. The version-bound source trace and canonical handoff inventory retain
+  Finding 5 as blocked; no product decision endpoint or acceptance is introduced.
+
 - **Explicit native governance scope (#1190).** A host-private, digest-bound
   activation journal separates verified INACTIVE sessions from ACTIVE and blocked
   authority before workflow, Git, logging or enforcement access. Enrollment
