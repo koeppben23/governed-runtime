@@ -1,10 +1,10 @@
 /** Actual packed plugin on a private native V2 host. No fixture substitutes for
  * operator/reviewer proof, and catalogue/lifecycle checks are not INACTIVE parity. */
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OpenCode } from '@opencode/client';
@@ -71,17 +71,49 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
       join(project, 'CUSTOM.md'),
       'Customer instructions, not FlowGuard governance.\n',
     );
-    const packed = JSON.parse(
-      execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', root], {
-        cwd: REPO,
-        encoding: 'utf8',
-        timeout: 60_000,
+    let tarball: string;
+    if (process.env.FLOWGUARD_TARBALL) {
+      const supplied = resolve(process.env.FLOWGUARD_TARBALL);
+      tarball = join(root, basename(supplied));
+      await copyFile(supplied, tarball);
+      await copyFile(join(dirname(supplied), 'checksums.sha256'), join(root, 'checksums.sha256'));
+    } else {
+      const packed = JSON.parse(
+        execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', root], {
+          cwd: REPO,
+          encoding: 'utf8',
+          timeout: 60_000,
+        }),
+      ) as Array<{ filename: string }>;
+      tarball = join(root, packed[0]!.filename);
+      await writeFile(
+        join(root, 'checksums.sha256'),
+        `${hashBuffer(await readFile(tarball))}  ${packed[0]!.filename}\n`,
+      );
+    }
+    console.info(
+      'native-install-artifact',
+      JSON.stringify({
+        file: basename(tarball),
+        sha256: hashBuffer(await readFile(tarball)),
       }),
-    ) as Array<{ filename: string }>;
-    const tarball = join(root, packed[0]!.filename);
-    await writeFile(
-      join(root, 'checksums.sha256'),
-      `${hashBuffer(await readFile(tarball))}  ${packed[0]!.filename}\n`,
+    );
+    // Bootstrap the CLI from these exact packed bytes, never workspace dist.
+    const bootstrap = join(root, 'bootstrap');
+    execFileSync(
+      'npm',
+      ['install', '--prefix', bootstrap, '--ignore-scripts', '--no-audit', '--no-fund', tarball],
+      {
+        cwd: root,
+        env,
+        encoding: 'utf8',
+        timeout: 300_000,
+      },
+    );
+    const packedRoot = join(bootstrap, 'node_modules/@flowguard/core');
+    console.info(
+      'native-install-build',
+      await readFile(join(packedRoot, 'dist/build-info.json'), 'utf8'),
     );
     const runInstaller = (command: 'install' | 'uninstall', installer: string) =>
       execFileSync(
@@ -95,7 +127,7 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
         ],
         { cwd: project, env, encoding: 'utf8', timeout: 300_000 },
       );
-    const installed = runInstaller('install', join(REPO, 'dist/cli/install.js'));
+    const installed = runInstaller('install', join(packedRoot, 'dist/cli/install.js'));
     expect(installed).not.toContain('[error]');
     const target = join(project, '.opencode');
     expect(await readFile(join(target, PLUGIN_RELATIVE_PATH), 'utf8')).toBe(PLUGIN_WRAPPER);

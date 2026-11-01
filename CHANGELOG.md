@@ -858,6 +858,14 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Published V2 installer provenance (#1169).** Corrected the stale pre-push
+  description of checkpoint `1750b6b1` and linked its exact source tree, CI merge,
+  failing checks and CI artifact digest. The installed lifecycle smoke can now
+  consume a named tarball/checksum and bootstraps its installer from that packed
+  package rather than workspace dist. A new bounded run binds the verified CI
+  dist bytes to the tested npm tarball without claiming green CI, reviewer/UI
+  acceptance or ACTIVE V2 support.
+
 - **Native V2 installation checkpoint (#1169, not release-ready).** OpenCode
   installation now writes one default-export plugin directory; the plugin owns
   all tool registrations. Removed V1 tool-file discovery, always-on mandate

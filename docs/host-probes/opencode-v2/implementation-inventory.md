@@ -176,7 +176,7 @@ contracts before installed-runtime verification. These checks do not close
 either installed acceptance failure or establish certification of a new
 published candidate.
 
-## Native installer/lifecycle checkpoint (subsequent working tree)
+## Native installer/lifecycle checkpoint (published as `1750b6b1`)
 
 The installer now writes one native default-export directory at
 `plugins/flowguard/index.ts`; `Plugin.define.setup` remains the only tool/hook
@@ -218,8 +218,14 @@ assurance/recovery independently remain unverified; the Draft PR remains NO-GO.
 
 ### Final local installer verification (2026-11-01)
 
-This checkpoint is local and uncommitted on the same integration branch, not
-certification of a published CI candidate or a current-`develop` merge result.
+The following checks ran locally before publication. Their implementation was
+subsequently committed and pushed as
+`1750b6b1e31d08a979a4e12932d9d0d5f3c2fd23` on the same integration branch.
+The earlier present-tense “local and uncommitted” wording was a stale pre-push
+description, not the current publication state. Local outcomes alone do not
+certify CI or a current-`develop` merge result. The subsequent
+[published-source/CI/artifact verification](./2026-11-01-1750b6b1-checkpoint/README.md)
+records the exact head, CI merge/tree identity, artifact digests and failing jobs.
 Final review also tightened two failure paths: current provenance belonging to
 another host/scope blocks installation before artifact writes, and package
 write/unlink failures during uninstall are surfaced rather than misclassified as
@@ -257,9 +263,9 @@ recovery; uninstall is not claimed to be atomic.
 - `npm run check:pr-documentation -- origin/develop HEAD` passed for the existing
   committed PR head; the same canonical validator also passed against the local
   working-tree changelog and that PR merge base. The commit-based check for a new
-  installer commit remains NOT_VERIFIED until explicitly authorized publication;
-  re-run it against the resulting head rather than treating the old-head result
-  as new-commit certification. Affected documentation was reviewed semantically.
+  installer commit was subsequently run against `1750b6b1` and passed before its
+  push. Affected documentation was reviewed semantically. Neither result proves
+  runtime acceptance.
 
 **Remaining acceptance:** complete installed INACTIVE mutation/model parity,
 Desktop, all in-flight/restart behavior and Java workflow are NOT_VERIFIED.
@@ -276,8 +282,8 @@ The final local `npm run test:independent-review-e2e` rerun failed explicitly on
 the two missing/pending positive contracts, before installed-runtime validation:
 “leaves the review-required output pending and authorizes the native Task before
 release” and “records bound same-child evidence and fulfills the obligation”.
-PR #1190 remains Draft; no commit, push, merge or supported ACTIVE V2 release is
-claimed by this verification record.
+PR #1190 remains Draft. The installer checkpoint was committed and pushed;
+no merge or supported ACTIVE V2 release is claimed.
 
 ## Baseline control flow and required simplification
 
