@@ -18,7 +18,12 @@ import {
 } from './install.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
-import { COMMANDS, MANDATES_FILENAME, mandatesInstructionEntry } from './templates.js';
+import {
+  COMMANDS,
+  MANDATES_FILENAME,
+  mandatesInstructionEntry,
+  PLUGIN_RELATIVE_PATH,
+} from './templates.js';
 import { measureAsync } from '../test-policy.js';
 import { SHIPPED_EXECUTABLE_CHECK } from './install-types.js';
 import { checkShippedExecutables } from './doctor-executables.js';
@@ -91,7 +96,7 @@ describe('cli/doctor', () => {
         (c) =>
           !c.file.startsWith('trust://') &&
           c.check !== SHIPPED_EXECUTABLE_CHECK &&
-          c.check !== 'opencode-instruction-source-activation' &&
+          c.check !== 'opencode-native-v2-installation' &&
           !c.file.includes('build-info.json'),
       );
       const allOk = fileChecks.every((c) => c.status === 'ok');
@@ -146,11 +151,14 @@ describe('cli/doctor', () => {
       await install(repoArgs({ coreTarball: tarball }));
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const ocCheck = checks.find((c) => c.file.endsWith('opencode.jsonc') && c.status === 'ok');
+      const ocCheck = checks.find(
+        (c) => c.file.endsWith('opencode.jsonc') && c.check === 'opencode-native-v2-installation',
+      );
       expect(ocCheck).toBeDefined();
+      expect(ocCheck?.status).toBe('warn');
     });
 
-    it('returns correct check count', async () => {
+    it('returns the current native installation check count', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -159,20 +167,7 @@ describe('cli/doctor', () => {
       const executableChecks = checkShippedExecutables().length;
       const buildInfoChecks = checkBuildInfo().length;
       const expectedChecks =
-        1 +
-        1 +
-        1 +
-        Object.keys(COMMANDS).length +
-        1 +
-        1 +
-        1 +
-        1 +
-        1 +
-        1 +
-        1 + // opencode-instruction-source-activation (instruction-source gate)
-        12 + // platform-trust rows for opencode (7 fixed + 5 receipt-preservation)
-        executableChecks +
-        buildInfoChecks;
+        Object.keys(COMMANDS).length + 8 + 12 + executableChecks + buildInfoChecks;
       expect(checks.length).toBe(expectedChecks);
     });
   });
@@ -190,20 +185,19 @@ describe('cli/doctor', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
       await fs.writeFile(jsoncPath, '{ "instructions": [ }', 'utf-8');
-      await fs.unlink(path.join(tmpDir, 'opencode.json'));
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const errorCheck = checks.find(
         (c) => c.file.endsWith('opencode.jsonc') && c.status === 'error',
       );
-      expect(errorCheck?.detail).toBe('malformed JSON');
+      expect(errorCheck?.detail).toContain('Cannot validate');
     });
 
-    it('reports error not missing when tool wrapper is unreadable (EACCES)', async () => {
+    it('reports error not missing for native plugin read failures including Buffer paths', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
 
-      const toolPath = path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts');
+      const toolPath = path.join(tmpDir, '.opencode', PLUGIN_RELATIVE_PATH);
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
       vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p =
@@ -212,7 +206,7 @@ describe('cli/doctor', () => {
             : typeof args[0] === 'string'
               ? args[0]
               : (args[0] as URL).pathname;
-        if (p.replace(/\\/g, '/').includes('tools/flowguard.ts'))
+        if (p.replace(/\\/g, '/').includes(PLUGIN_RELATIVE_PATH))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
       });
@@ -220,7 +214,7 @@ describe('cli/doctor', () => {
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
         const toolCheck = checks.find(
-          (c) => c.file === toolPath || c.file.replace(/\\/g, '/').includes('tools/flowguard.ts'),
+          (c) => c.file === toolPath || c.file.replace(/\\/g, '/').includes(PLUGIN_RELATIVE_PATH),
         );
         expect(toolCheck).toBeDefined();
         expect(toolCheck!.status).toBe('error');
@@ -233,11 +227,11 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
 
-      const pluginPath = path.join(tmpDir, '.opencode', 'plugins', 'flowguard-audit.ts');
+      const pluginPath = path.join(tmpDir, '.opencode', PLUGIN_RELATIVE_PATH);
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
       vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
-        if (p.replace(/\\/g, '/').includes('plugins/flowguard-audit.ts'))
+        if (p.replace(/\\/g, '/').includes(PLUGIN_RELATIVE_PATH))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
       });
@@ -245,7 +239,7 @@ describe('cli/doctor', () => {
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
         const pluginCheck = checks.find(
-          (c) => c.file && c.file.replace(/\\/g, '/').includes('plugins/flowguard-audit.ts'),
+          (c) => c.file && c.file.replace(/\\/g, '/').includes(PLUGIN_RELATIVE_PATH),
         );
         expect(pluginCheck).toBeDefined();
         expect(pluginCheck!.status).toBe('error');
@@ -309,6 +303,7 @@ describe('cli/doctor', () => {
       await install(repoArgs({ coreTarball: tarball }));
 
       const opencodePath = path.join(tmpDir, 'opencode.json');
+      await fs.writeFile(opencodePath, '{}');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
       vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
@@ -332,15 +327,15 @@ describe('cli/doctor', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('detects modified tool wrapper', async () => {
+    it('detects a modified native plugin', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
-      const toolPath = path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts');
+      const toolPath = path.join(tmpDir, '.opencode', PLUGIN_RELATIVE_PATH);
       await fs.writeFile(toolPath, '// tampered content', 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const toolCheck = checks.find(
-        (c) => c.file.includes('flowguard.ts') && c.file.includes('tools'),
+      const toolCheck = checks.find((c) =>
+        c.file.replace(/\\/g, '/').endsWith(PLUGIN_RELATIVE_PATH),
       );
       expect(toolCheck?.status).toBe('modified');
     });
@@ -349,11 +344,13 @@ describe('cli/doctor', () => {
     it('P12: missing plugin file reports missing', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
-      const pluginPath = path.join(tmpDir, '.opencode', 'plugins', 'flowguard-audit.ts');
+      const pluginPath = path.join(tmpDir, '.opencode', PLUGIN_RELATIVE_PATH);
       await fs.unlink(pluginPath);
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const pluginCheck = checks.find((c) => c.file.includes('flowguard-audit.ts'));
+      const pluginCheck = checks.find((c) =>
+        c.file.replace(/\\/g, '/').endsWith(PLUGIN_RELATIVE_PATH),
+      );
       expect(pluginCheck?.status).toBe('missing');
     });
 
@@ -500,32 +497,29 @@ describe('cli/doctor', () => {
       expect(pkgCheck?.status).toBe('error');
     });
 
-    it('detects instruction_missing in opencode.json', async () => {
+    it('rejects obsolete global FlowGuard instructions instead of requiring them', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
-      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
-      content.instructions = ['other-stuff.md'];
+      const content = { instructions: [mandatesInstructionEntry('repo')] };
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const ocCheck = checks.find(
-        (c) => c.file.includes('opencode.json') && c.status === 'instruction_missing',
-      );
+      const ocCheck = checks.find((c) => c.file.includes('opencode.json') && c.status === 'error');
       expect(ocCheck).toBeDefined();
-      expect(ocCheck?.detail).toContain(mandatesInstructionEntry('repo'));
+      expect(ocCheck?.detail).toContain('fresh V2 install');
     });
 
     it('activation: reports warn — activation is NOT_VERIFIED (never claims supported)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
+      const compat = checks.find((c) => c.check === 'opencode-native-v2-installation');
       expect(compat).toBeDefined();
       expect(compat?.status).toBe('warn');
-      expect(compat?.detail).toContain('host contract');
-      expect(compat?.detail).toContain('activation is NOT_VERIFIED');
-      expect(compat?.detail).toContain('cannot prove');
+      expect(compat?.detail).toContain('INACTIVE parity');
+      expect(compat?.detail).toContain('NOT_VERIFIED');
+      expect(compat?.detail).toContain('does not activate');
       expect(compat?.detail).not.toContain('supported');
       expect(compat?.detail).not.toContain('instruction source configured');
     });
@@ -534,20 +528,18 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
-      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
+      const content: Record<string, unknown> = {};
       // Simulate a desktop-owned config (plugin field present).
       content.plugin = ['some-desktop-plugin'];
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
+      const compat = checks.find((c) => c.check === 'opencode-native-v2-installation');
       expect(compat?.status).toBe('warn');
-      expect(compat?.detail).toContain('activation');
+      expect(compat?.detail).toContain('does not activate');
       expect(compat?.detail).not.toContain('instruction source configured');
       expect(
-        checks.some(
-          (c) => c.check === 'opencode-instruction-source-activation' && c.status === 'error',
-        ),
+        checks.some((c) => c.check === 'opencode-native-v2-installation' && c.status === 'error'),
       ).toBe(false);
     });
 
@@ -555,12 +547,13 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
-      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
-      content.instructions.push('AGENTS.md');
+      const content = { instructions: ['AGENTS.md'] };
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const configCheck = checks.find((c) => c.file.includes('opencode.json') && c.status === 'ok');
+      const configCheck = checks.find(
+        (c) => c.file.includes('opencode.json') && c.status === 'warn',
+      );
       expect(configCheck).toBeDefined();
     });
 
@@ -664,7 +657,7 @@ describe('cli/doctor', () => {
     });
 
     // ─── #107: desktop task-hardening warning ──────────────────
-    it('#107: desktop config with plugin field and no task hardening reports warn', async () => {
+    it('rejects duplicate obsolete FlowGuard configuration without endorsing task permissions', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       // Overwrite opencode.json to simulate desktop-owned config with plugin but no hardening
@@ -683,17 +676,17 @@ describe('cli/doctor', () => {
       );
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const warnCheck = checks.find(
-        (c) => c.status === 'warn' && c.detail?.includes('task hardening'),
+      const conflict = checks.find(
+        (c) => c.status === 'error' && c.detail?.includes('duplicate FlowGuard'),
       );
-      expect(warnCheck).toBeDefined();
+      expect(conflict).toBeDefined();
     });
 
-    it('#107: desktop config with task hardening does not report warn', async () => {
+    it('does not treat old task hardening as native plugin load proof', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
-      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
+      const content: Record<string, unknown> = {};
       content.plugin = ['flowguard-audit'];
       content.agent = {
         build: {
@@ -709,14 +702,17 @@ describe('cli/doctor', () => {
         (c) => c.status === 'warn' && c.detail?.includes('task hardening'),
       );
       expect(warnCheck).toBeUndefined();
+      expect(
+        checks.some((c) => c.status === 'error' && c.detail?.includes('duplicate FlowGuard')),
+      ).toBe(true);
     });
 
-    it('#107: standard FlowGuard config (no plugin field) does not get task hardening warn', async () => {
+    it('does not demand a global task-permission rewrite for native discovery', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       // Remove plugin field from opencode.json
       const ocPath = path.join(tmpDir, 'opencode.json');
-      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
+      const content: Record<string, unknown> = {};
       delete content.plugin;
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
@@ -727,7 +723,7 @@ describe('cli/doctor', () => {
       expect(warnCheck).toBeUndefined();
     });
 
-    it('#107: config with desktop instructions but no plugin field reports warn', async () => {
+    it('keeps customer instructions without requiring task hardening', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       // Overwrite: no plugin field, but has non-FlowGuard instruction → desktop-owned
@@ -748,10 +744,10 @@ describe('cli/doctor', () => {
       const warnCheck = checks.find(
         (c) => c.status === 'warn' && c.detail?.includes('task hardening'),
       );
-      expect(warnCheck).toBeDefined();
+      expect(warnCheck).toBeUndefined();
     });
 
-    it('#107: desktop config missing FlowGuard instruction still reports instruction_missing alongside warn', async () => {
+    it('rejects an obsolete FlowGuard registration instead of requesting global mandate instructions', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       // Overwrite with desktop-owned config: has plugin, no instruction, no hardening
@@ -770,12 +766,14 @@ describe('cli/doctor', () => {
       );
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const missingCheck = checks.find((c) => c.status === 'instruction_missing');
       const warnCheck = checks.find(
         (c) => c.status === 'warn' && c.detail?.includes('task hardening'),
       );
-      expect(missingCheck).toBeDefined();
-      expect(warnCheck).toBeDefined();
+      expect(checks.map((c) => c.status)).not.toContain('instruction_missing');
+      expect(warnCheck).toBeUndefined();
+      expect(
+        checks.some((c) => c.status === 'error' && c.detail?.includes('duplicate FlowGuard')),
+      ).toBe(true);
     });
   });
 
@@ -806,7 +804,9 @@ describe('cli/doctor', () => {
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
 
-      expect(checks.some((c) => c.file.endsWith('opencode.jsonc') && c.status === 'ok')).toBe(true);
+      expect(checks.some((c) => c.file.endsWith('opencode.jsonc') && c.status === 'warn')).toBe(
+        true,
+      );
       expect(checks.some((c) => c.file.endsWith('opencode.json') && c.status === 'ok')).toBe(false);
     });
 
@@ -847,7 +847,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
-              c.check !== 'opencode-instruction-source-activation' &&
+              c.check !== 'opencode-native-v2-installation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),
@@ -868,7 +868,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
-              c.check !== 'opencode-instruction-source-activation' &&
+              c.check !== 'opencode-native-v2-installation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),
@@ -876,7 +876,12 @@ describe('cli/doctor', () => {
 
       await uninstall(repoArgs({ action: 'uninstall' }));
       const uninstalledChecks = await doctor(repoArgs({ action: 'doctor' }));
-      expect(uninstalledChecks.some((c) => c.status === 'instruction_missing')).toBe(true);
+      expect(
+        uninstalledChecks.some(
+          (c) =>
+            c.file.replace(/\\/g, '/').endsWith(PLUGIN_RELATIVE_PATH) && c.status === 'missing',
+        ),
+      ).toBe(true);
       expect(uninstalledChecks.some((c) => c.detail?.includes('CONFIG_MISSING'))).toBe(true);
     });
   });

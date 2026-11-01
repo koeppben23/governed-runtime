@@ -691,13 +691,16 @@ The `flowguard install` command deploys:
 | Artifact        | Path                                                        | Purpose                                                                       |
 | --------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Review subagent | `.opencode/agents/flowguard-reviewer.md`                    | Hidden subagent definition with adversarial review prompt                     |
-| Task permission | `opencode.jsonc` (merged)                                   | Explicitly allows flowguard-reviewer, denies all others                       |
 | Slash commands  | `.opencode/commands/plan.md`, `implement.md`, `continue.md` | Review-loop routing: submit the bound verdict / follow host-dispatch recovery |
-| Plugin          | `.opencode/plugins/flowguard-audit.ts`                      | Re-exports FlowGuardAuditPlugin (orchestration + enforcement)                 |
+| Plugin          | `.opencode/plugins/flowguard/index.ts`                      | Default-exports the native V2 plugin; setup owns tool registrations           |
 
 ### Security Model Clarification
 
-**Task tool permissions** use OpenCode's last-matching-rule semantics. The explicit allow for `flowguard-reviewer` combined with deny for `*` ensures no other subagent can be invoked via the Task tool by the build agent. <!-- NOT_VERIFIED: the claim that @subagent direct calls bypass permission.task has not been confirmed against the OpenCode permissions implementation. -->
+The native installer does not rewrite build-agent permissions. Reviewer-local
+permissions use V2 ordered rules; they do not establish reviewer execution or
+capture provenance. Native reviewer release remains blocked until its complete
+assurance chain is verified. Installed files and canonical-domain fixtures are
+not installed-host acceptance.
 
 ---
 

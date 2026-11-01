@@ -10,7 +10,6 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { CliInstallError } from './errors.js';
 import type { CliArgs, CliError, CliResult, FileOp } from './install-types.js';
@@ -19,7 +18,7 @@ import { rollbackArtifacts, snapshotForRollback } from './install-helpers-rollba
 import { InstallError, toCliError } from './install-helpers.js';
 import {
   assertManagedMandatesOwnership,
-  assertNoAmbiguousLegacyInstruction,
+  assertNativeOpenCodeInstallTarget,
   deriveInstallOwnershipManifest,
   ownershipManifestPath,
   readInstallOwnershipManifest,
@@ -49,8 +48,6 @@ import {
   recoverOrAbort,
   rollbackDependencyTransaction,
 } from './install-transaction-rollback.js';
-import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
-import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
 
 const DEFAULT_LOCK = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
 
@@ -289,57 +286,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
   }
 }
 
-async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void> {
-  if (ctx.installPlatform !== 'opencode') return;
-
-  const evidence = await detectOpenCodeRuntimeEvidence({
-    scope: ctx.args.installScope,
-    platform: 'opencode',
-    target: ctx.target,
-  });
-  const classification = classifyOpenCodeRuntime(evidence);
-
-  if (classification.status === 'known-unsupported') {
-    const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
-      runtimeLine: evidence.runtimeLine ?? 'unknown',
-      version: evidence.version ?? 'unknown',
-    });
-    ctx.warnings.push(
-      'The detected OpenCode runtime is known not to resolve instruction sources — installation was blocked before artifacts were written.',
-    );
-    ctx.errors.push(formatted.reason);
-    ctx.errorDetails.push({ message: formatted.reason });
-    return;
-  }
-
-  ctx.notices.push({
-    kind: 'status',
-    message:
-      'FlowGuard mandates are configured for OpenCode. Activation depends on the runtime ' +
-      'loading instructions[] into the agent context; install does not verify this. ' +
-      'A present instructions[] entry does not prove activation.',
-  });
-}
-
-function assertLegacyBoundary(ctx: InstallContext, snapshot: SnapshotResult): void {
-  const configPreState = snapshotEntry(snapshot, snapshot.cfgPath);
-  const opencodePreState = snapshot.opencodeJsonPath
-    ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
-    : null;
-  assertNoAmbiguousLegacyInstruction({
-    platform: ctx.installPlatform,
-    verifiedReinstall: ctx.args.force && configPreState.existed,
-    ...(opencodePreState?.originalContent !== undefined
-      ? { opencodeOriginalContent: opencodePreState.originalContent }
-      : {}),
-  });
-}
-
 function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): InstallOwnershipManifest {
   const packagePreState = snapshotEntry(snapshot, snapshot.pkgPath);
-  const opencodePreState = snapshot.opencodeJsonPath
-    ? snapshotEntry(snapshot, snapshot.opencodeJsonPath)
-    : null;
   return deriveInstallOwnershipManifest({
     platform: ctx.installPlatform,
     scope: ctx.args.installScope,
@@ -348,12 +296,6 @@ function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): Install
       ? { packageJsonOriginalContent: packagePreState.originalContent }
       : {}),
     packageJsonCurrentContent: readFileSync(snapshot.pkgPath, 'utf-8'),
-    ...(opencodePreState?.originalContent !== undefined
-      ? { opencodeOriginalContent: opencodePreState.originalContent }
-      : {}),
-    opencodeCurrentContent: snapshot.opencodeJsonPath
-      ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')
-      : null,
   });
 }
 
@@ -381,8 +323,27 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
   try {
     const configTargetDir = resolveConfigTargetDir(ctx);
     await recoverOrAbort(configTargetDir);
-    await enforceInstructionSourceCompat(ctx);
-    if (ctx.errors.length > 0) return resultFromContext(ctx);
+    if (ctx.installPlatform === 'opencode') {
+      await assertNativeOpenCodeInstallTarget(ctx.target, [
+        ctx.target,
+        ...(args.installScope === 'repo' ? [process.cwd()] : []),
+      ]);
+    }
+    if (existsSync(ownershipManifestPath(ctx.target))) {
+      const ownership = await readInstallOwnershipManifest(ctx.target);
+      if (!ownership) {
+        throw new CliInstallError(
+          'OWNERSHIP_MANIFEST_INVALID',
+          'Unsupported installer ownership format; archive the old installation and evidence byte-for-byte before a fresh installation. --force does not migrate provenance.',
+        );
+      }
+      if (ownership.platform !== ctx.installPlatform || ownership.scope !== args.installScope) {
+        throw new CliInstallError(
+          'OWNERSHIP_MANIFEST_SCOPE_MISMATCH',
+          'Existing installer provenance belongs to another host/scope; preserving it.',
+        );
+      }
+    }
 
     const cfgPath = join(configTargetDir, 'flowguard.json');
     if (existsSync(cfgPath) && !args.force) return alreadyInstalledResult(ctx);
@@ -394,7 +355,6 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await assertManagedMandatesOwnership(snapshot.mandatesPath);
-    assertLegacyBoundary(ctx, snapshot);
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
     const ownership = deriveOwnership(ctx, snapshot);

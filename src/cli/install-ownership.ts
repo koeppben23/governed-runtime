@@ -4,34 +4,34 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { lstat, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { Stats } from 'node:fs';
 import { z } from 'zod';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { CliInstallError } from './errors.js';
 import { InstallError } from './install-recovery.js';
 import { parseJsonc } from './install-json.js';
-import { isManagedArtifact } from './templates.js';
-import type { InstallPlatform, InstallScope } from './install-types.js';
+import { isManagedArtifact, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
+import {
+  FLOWGUARD_INSTRUCTION_ENTRIES,
+  OPENCODE_CONFIG_FILENAMES,
+  type InstallPlatform,
+  type InstallScope,
+} from './install-types.js';
 
 export const INSTALL_OWNERSHIP_FILENAME = '.flowguard-install-ownership.json';
 
 const InstallOwnershipManifestSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     platform: z.enum(['opencode', 'claude-code', 'codex']),
     scope: z.enum(['global', 'repo']),
     packageJson: z.object({
       created: z.boolean(),
       zodAdded: z.boolean(),
       previousCoreDependency: z.string().nullable(),
-      installedCoreDependency: z.string().min(1).optional(),
+      installedCoreDependency: z.string().min(1),
     }),
-    opencode: z
-      .object({
-        taskHardeningAdded: z.boolean(),
-      })
-      .optional(),
   })
   .strict();
 
@@ -46,8 +46,6 @@ interface DeriveOwnershipInput {
   packageJsonExisted: boolean;
   packageJsonOriginalContent?: Buffer;
   packageJsonCurrentContent?: string;
-  opencodeOriginalContent?: Buffer;
-  opencodeCurrentContent?: string | null;
 }
 
 export function ownershipManifestPath(target: string): string {
@@ -82,49 +80,105 @@ function parsedDependencies(content: Buffer | undefined): Record<string, unknown
   }
 }
 
-function parsedOpencode(content: Buffer | undefined): Record<string, unknown> | null {
-  if (!content) return null;
-  try {
-    return parseJsonc<Record<string, unknown>>(content.toString('utf-8'));
-  } catch {
-    return null;
+/** Reject obsolete FlowGuard installs, never migrate them or edit user config. */
+export async function assertNoObsoleteOpenCodeInstallation(
+  target: string,
+  configDirectories: readonly string[],
+): Promise<void> {
+  for (const relative of ['tools/flowguard.ts', 'plugins/flowguard-audit.ts']) {
+    if (await installationEntry(join(target, relative)))
+      freshInstallRequired(join(target, relative));
+  }
+  const manifestPath = ownershipManifestPath(target);
+  if (
+    (await installationEntry(manifestPath)) &&
+    (await readExistingManifestState(target)).kind !== 'valid'
+  ) {
+    freshInstallRequired(manifestPath);
+  }
+  for (const directory of new Set(configDirectories)) {
+    for (const name of OPENCODE_CONFIG_FILENAMES) {
+      await assertNoFlowGuardConfigRegistration(join(directory, name));
+    }
   }
 }
 
-function taskPermissions(parsed: Record<string, unknown> | null): Record<string, unknown> | null {
-  const agent = parsed?.['agent'];
-  if (!agent || typeof agent !== 'object') return null;
-  const build = (agent as Record<string, unknown>)['build'];
-  if (!build || typeof build !== 'object') return null;
-  const permission = (build as Record<string, unknown>)['permission'];
-  if (!permission || typeof permission !== 'object') return null;
-  const task = (permission as Record<string, unknown>)['task'];
-  return task && typeof task === 'object' ? (task as Record<string, unknown>) : null;
+export async function assertNativeOpenCodeInstallTarget(
+  target: string,
+  configDirectories: readonly string[],
+): Promise<void> {
+  await assertNoObsoleteOpenCodeInstallation(target, configDirectories);
+  const plugin = join(target, PLUGIN_RELATIVE_PATH);
+  const entry = await installationEntry(plugin);
+  if (
+    entry &&
+    (entry.isSymbolicLink() ||
+      !entry.isFile() ||
+      (await readFile(plugin, 'utf8')) !== PLUGIN_WRAPPER)
+  ) {
+    throw new InstallError(
+      'MANAGED_ARTIFACT_CONFLICT',
+      `${plugin} differs from the native FlowGuard plugin; preserve or archive it before a fresh installation. --force does not establish ownership.`,
+    );
+  }
 }
 
-function instructions(parsed: Record<string, unknown> | null): string[] {
-  const value = parsed?.['instructions'];
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
+/** lstat preserves dangling/symlink evidence instead of classifying it absent. */
+async function installationEntry(file: string): Promise<Stats | null> {
+  try {
+    return await lstat(file);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    throw new InstallError(
+      'INSTALL_OWNERSHIP_UNAVAILABLE',
+      `Cannot inspect installation entry ${file}: ${String(error)}`,
+    );
+  }
 }
 
-/**
- * Historical FlowGuard versions referenced AGENTS.md but did not own/create that file.
- * Therefore a reinstall cannot safely infer whether the entry is legacy FlowGuard or
- * customer authority. Fail before any mutation instead of deleting ambiguous content.
- */
-export function assertNoAmbiguousLegacyInstruction(input: {
-  platform: InstallPlatform;
-  verifiedReinstall: boolean;
-  opencodeOriginalContent?: Buffer;
-}): void {
-  if (input.platform !== 'opencode' || !input.verifiedReinstall) return;
-  const previous = parsedOpencode(input.opencodeOriginalContent);
-  if (!instructions(previous).includes('AGENTS.md')) return;
+async function assertNoFlowGuardConfigRegistration(file: string): Promise<void> {
+  if (!(await installationEntry(file))) return;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = parseJsonc(await readFile(file, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new TypeError('Expected a config object');
+  } catch (cause) {
+    throw new InstallError(
+      'OPENCODE_CONFIG_INVALID',
+      `Cannot validate ${file}; preserve and repair the OpenCode config before installation: ${String(cause)}`,
+    );
+  }
+  if (
+    Array.isArray(parsed.instructions) &&
+    parsed.instructions.some((entry) => FLOWGUARD_INSTRUCTION_ENTRIES.includes(entry))
+  )
+    freshInstallRequired(file);
+  const configured = [parsed.plugins, parsed.plugin].flatMap((value) =>
+    Array.isArray(value) ? value : [],
+  );
+  if (configured.some(isFlowGuardRegistration)) freshInstallRequired(file);
+}
+
+/** Obsolete shapes are recognized only to reject them, never to load/migrate. */
+function isFlowGuardRegistration(entry: unknown): boolean {
+  const source = Array.isArray(entry)
+    ? entry[0]
+    : typeof entry === 'object' && entry !== null
+      ? Reflect.get(entry, 'package')
+      : entry;
+  return (
+    typeof source === 'string' &&
+    (/^@flowguard\/core(?:@[^/]+)?(?:\/integration(?:\/plugin)?)?$/.test(source) ||
+      /(?:^|\/)flowguard-audit(?:\.ts)?$/.test(source) ||
+      /(?:^|\/)plugins\/flowguard(?:\/index\.ts)?\/?$/.test(source))
+  );
+}
+
+function freshInstallRequired(path: string): never {
   throw new InstallError(
-    'LEGACY_INSTRUCTION_AMBIGUOUS',
-    'LEGACY_INSTRUCTION_AMBIGUOUS: existing OpenCode instructions include AGENTS.md from a historical FlowGuard-era configuration, but FlowGuard cannot prove ownership of that file. Remove only the obsolete FlowGuard reference after confirming AGENTS.md is not customer authority, then rerun install.',
+    'OPENCODE_FRESH_INSTALL_REQUIRED',
+    `Obsolete or duplicate FlowGuard installation at ${path}. Archive the old installation and governance evidence without changing their bytes; remove only confirmed old FlowGuard registrations, then perform a fresh V2 install. --force cannot migrate old formats.`,
   );
 }
 
@@ -153,31 +207,14 @@ function derivePackageOwnership(
   };
 }
 
-function deriveTaskHardeningOwnership(input: DeriveOwnershipInput): boolean {
-  if (input.platform !== 'opencode') return false;
-  const previousTask = taskPermissions(parsedOpencode(input.opencodeOriginalContent));
-  const currentOpencode = input.opencodeCurrentContent
-    ? parseJsonc<Record<string, unknown>>(input.opencodeCurrentContent)
-    : null;
-  const currentTask = taskPermissions(currentOpencode);
-  return (
-    previousTask === null &&
-    currentTask?.['*'] === 'deny' &&
-    currentTask?.[REVIEWER_SUBAGENT_TYPE] === 'allow'
-  );
-}
-
 export function deriveInstallOwnershipManifest(
   input: DeriveOwnershipInput,
 ): InstallOwnershipManifest {
   return InstallOwnershipManifestSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     platform: input.platform,
     scope: input.scope,
     packageJson: derivePackageOwnership(input),
-    ...(input.platform === 'opencode'
-      ? { opencode: { taskHardeningAdded: deriveTaskHardeningOwnership(input) } }
-      : {}),
   });
 }
 

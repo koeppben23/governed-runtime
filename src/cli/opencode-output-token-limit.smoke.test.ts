@@ -20,12 +20,12 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildReviewerAgentContent } from './install-helpers.js';
-import { PLUGIN_WRAPPER, REVIEWER_AGENT } from '../templates/index.js';
+import { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER, REVIEWER_AGENT } from '../templates/index.js';
 
 import { TESTED_OPENCODE_HOST_VERSION } from './opencode-runtime-compat.js';
 import {
@@ -304,9 +304,9 @@ async function writeFlowGuardProject(
   options: { readonly cap: number; readonly invalidConfig?: boolean },
 ): Promise<void> {
   const opencodeDir = join(projectDir, '.opencode');
-  await mkdir(join(opencodeDir, 'plugins'), { recursive: true });
+  await mkdir(dirname(join(opencodeDir, PLUGIN_RELATIVE_PATH)), { recursive: true });
   await mkdir(join(opencodeDir, 'agents'), { recursive: true });
-  await writeFile(join(opencodeDir, 'plugins', 'flowguard-audit.ts'), PLUGIN_WRAPPER, 'utf8');
+  await writeFile(join(opencodeDir, PLUGIN_RELATIVE_PATH), PLUGIN_WRAPPER, 'utf8');
   await writeFile(
     join(opencodeDir, 'agents', 'flowguard-reviewer.md'),
     buildReviewerAgentContent(REVIEWER_AGENT, 'opencode'),

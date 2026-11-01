@@ -12,8 +12,6 @@ import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { CliInstallError } from './errors.js';
 import {
   computeMandatesDigest,
-  findParallelOpencodeConfig,
-  resolveOpencodeConfigPath,
   resolveTarget,
   reviewerDefinitionForPlatform,
   safeRead,
@@ -21,11 +19,11 @@ import {
   sha256,
   toCliError,
 } from './install-helpers.js';
-import type { CliArgs, CliResult, FileOp, InstallPlatform } from './install-types.js';
+import type { CliArgs, CliError, CliResult, FileOp, InstallPlatform } from './install-types.js';
 import { FLOWGUARD_OWNED_FILES, FLOWGUARD_TARBALL_PATTERN } from './install-types.js';
-import { removeFromOpencodeJson } from './install-json.js';
 import {
   ownershipManifestPath,
+  assertNoObsoleteOpenCodeInstallation,
   readInstallOwnershipManifest,
   type InstallOwnershipManifest,
 } from './install-ownership.js';
@@ -34,7 +32,7 @@ import {
   COMMANDS,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
-  TOOL_WRAPPER,
+  PLUGIN_RELATIVE_PATH,
   extractManagedBody,
   extractManagedDigest,
   isManagedArtifact,
@@ -93,8 +91,7 @@ async function mayRemoveMandate(fullPath: string, warnings: string[]): Promise<b
 }
 
 function expectedOpenCodeFile(relPath: string): string | null {
-  if (relPath === 'tools/flowguard.ts') return TOOL_WRAPPER;
-  if (relPath === 'plugins/flowguard-audit.ts') return PLUGIN_WRAPPER;
+  if (relPath === PLUGIN_RELATIVE_PATH) return PLUGIN_WRAPPER;
   const reviewer = reviewerDefinitionForPlatform('opencode');
   if (relPath === reviewer.relativePath) return reviewer.content;
   if (relPath.startsWith('commands/')) return COMMANDS[basename(relPath)] ?? null;
@@ -106,6 +103,17 @@ async function removeExactManagedFile(
   expectedContent: string,
   warnings: string[],
 ): Promise<FileOp> {
+  try {
+    const entry = await lstat(fullPath);
+    if (entry.isSymbolicLink() || !entry.isFile()) {
+      warnings.push(`${fullPath} is not a regular managed file — preserved`);
+      return { path: fullPath, action: 'skipped', reason: 'ownership/type mismatch' };
+    }
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return { path: fullPath, action: 'not_found' };
+    throw error;
+  }
   const content = await safeRead(fullPath);
   if (content === null) return { path: fullPath, action: 'not_found' };
   if (content !== expectedContent) {
@@ -222,43 +230,42 @@ async function cleanupPackageJson(
     ];
   }
 
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-    const packageOwnership = ownership.packageJson;
-    restorePackageDependencies(parsed, packageOwnership, pkgPath, warnings);
-
-    const restoreAbsent =
-      packageOwnership.created === true &&
-      isGeneratedPackageShell(parsed) &&
-      !parsed['dependencies'];
-    if (restoreAbsent) {
-      await safeUnlink(pkgPath);
-      return [
-        {
-          path: pkgPath,
-          action: 'removed',
-          reason: 'installer-created package restored to absent pre-state',
-        },
-      ];
-    }
-
-    const updated = JSON.stringify(parsed, null, 2) + '\n';
-    if (updated === pkgContent) {
-      return [
-        { path: pkgPath, action: 'skipped', reason: 'owned dependency state already restored' },
-      ];
-    }
-    await writeFile(pkgPath, updated, 'utf-8');
-    return [
-      {
-        path: pkgPath,
-        action: 'merged',
-        reason: 'restored installer-owned dependency changes from provenance',
-      },
-    ];
+    parsed = JSON.parse(pkgContent) as Record<string, unknown>;
   } catch {
     return [{ path: pkgPath, action: 'skipped', reason: 'malformed JSON' }];
   }
+  const packageOwnership = ownership.packageJson;
+  restorePackageDependencies(parsed, packageOwnership, pkgPath, warnings);
+
+  const restoreAbsent =
+    packageOwnership.created === true && isGeneratedPackageShell(parsed) && !parsed['dependencies'];
+  if (restoreAbsent) {
+    await safeUnlink(pkgPath);
+    return [
+      {
+        path: pkgPath,
+        action: 'removed',
+        reason: 'installer-created package restored to absent pre-state',
+      },
+    ];
+  }
+
+  const updated = JSON.stringify(parsed, null, 2) + '\n';
+  if (updated === pkgContent) {
+    return [
+      { path: pkgPath, action: 'skipped', reason: 'owned dependency state already restored' },
+    ];
+  }
+  await writeFile(pkgPath, updated, 'utf-8');
+  return [
+    {
+      path: pkgPath,
+      action: 'merged',
+      reason: 'restored installer-owned dependency changes from provenance',
+    },
+  ];
 }
 
 async function cleanupOwnedDependencyTree(
@@ -300,23 +307,9 @@ async function cleanupOwnedDependencyTree(
   }
 }
 
-async function cleanupOpencodeConfig(
-  args: CliArgs,
-  target: string,
-  ownership: InstallOwnershipManifest | null,
-): Promise<FileOp[]> {
+async function cleanupOpencodeConfig(args: CliArgs, target: string): Promise<FileOp[]> {
   const installPlatform = args.installPlatform ?? 'opencode';
-  if (installPlatform === 'opencode') {
-    const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
-    const ops = [
-      await removeFromOpencodeJson(opencodeJsonPath, args.installScope, {
-        removeManagedTaskHardening: ownership?.opencode?.taskHardeningAdded === true,
-      }),
-    ];
-    const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
-    if (parallelConfig) ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
-    return ops;
-  }
+  if (installPlatform === 'opencode') return [];
   if (installPlatform === 'claude-code') return uninstallClaudeCodePlugin(target);
   return uninstallCodexPlugin(args.installScope);
 }
@@ -340,28 +333,53 @@ async function cleanupEmptyCodexTarget(target: string): Promise<FileOp> {
   }
 }
 
+async function resolveUninstallOwnership(
+  args: CliArgs,
+  target: string,
+): Promise<InstallOwnershipManifest | null> {
+  const manifestPath = ownershipManifestPath(target);
+  const ownership = await readInstallOwnershipManifest(target);
+  if (ownership === null && existsSync(manifestPath)) {
+    throw new CliInstallError(
+      'OWNERSHIP_MANIFEST_INVALID',
+      `${manifestPath} exists but is not a valid FlowGuard ownership manifest; refusing uninstall because ownership cannot be proven`,
+    );
+  }
+  if (
+    ownership &&
+    (ownership.platform !== (args.installPlatform ?? 'opencode') ||
+      ownership.scope !== args.installScope)
+  ) {
+    throw new CliInstallError(
+      'OWNERSHIP_MANIFEST_SCOPE_MISMATCH',
+      `${manifestPath} belongs to another host/scope; preserving installation and evidence.`,
+    );
+  }
+  if ((args.installPlatform ?? 'opencode') === 'opencode') {
+    await assertNoObsoleteOpenCodeInstallation(target, [
+      target,
+      ...(args.installScope === 'repo' ? [resolve('.')] : []),
+    ]);
+  }
+  return ownership;
+}
+
 export async function uninstall(args: CliArgs): Promise<CliResult> {
   const installPlatform = args.installPlatform ?? 'opencode';
   const target = resolveTarget(args.installScope, installPlatform);
   const ops: FileOp[] = [];
   const errors: string[] = [];
+  const errorDetails: CliError[] = [];
   const warnings: string[] = [];
 
   try {
     const manifestPath = ownershipManifestPath(target);
-    const ownership = await readInstallOwnershipManifest(target);
-    if (ownership === null && existsSync(manifestPath)) {
-      throw new CliInstallError(
-        'OWNERSHIP_MANIFEST_INVALID',
-        `${manifestPath} exists but is not a valid FlowGuard ownership manifest; refusing uninstall because ownership cannot be proven`,
-      );
-    }
-
+    const ownership = await resolveUninstallOwnership(args, target);
     await removeManagedFiles(target, installPlatform, ops, warnings);
     const packageOps = await cleanupPackageJson(target, ownership, warnings);
     ops.push(...packageOps);
     ops.push(...(await cleanupOwnedDependencyTree(target, packageOps)));
-    ops.push(...(await cleanupOpencodeConfig(args, target, ownership)));
+    ops.push(...(await cleanupOpencodeConfig(args, target)));
 
     const cfgPath =
       installPlatform !== 'opencode'
@@ -380,7 +398,8 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       error: err instanceof Error ? err.message : String(err),
     });
     errors.push(err instanceof Error ? err.message : String(err));
+    errorDetails.push(toCliError(err));
   }
 
-  return { target, ops, errors, errorDetails: errors.map(toCliError), warnings, notices: [] };
+  return { target, ops, errors, errorDetails, warnings, notices: [] };
 }

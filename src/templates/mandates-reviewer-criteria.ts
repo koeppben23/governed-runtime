@@ -88,19 +88,11 @@ description: Independent reviewer for FlowGuard plan, implementation, architectu
 mode: subagent
 hidden: true
 steps: ${REVIEWER_STEP_LIMIT}
-permission:
-  flowguard_*: deny
-  mcp__flowguard__*: deny
-  task: deny
-  edit: deny
-  bash: deny
-  webfetch: deny
-  read: allow
-  glob: deny
-  grep: deny
-  list: deny
-  flowguard_observe_repository: allow
-  mcp__flowguard__flowguard_observe_repository: allow
+permissions:
+  - { action: "*", resource: "*", effect: deny }
+  - { action: read, resource: "*", effect: allow }
+  - { action: flowguard_observe_repository, resource: "*", effect: allow }
+  - { action: mcp__flowguard__flowguard_observe_repository, resource: "*", effect: allow }
 ---
 
 ${REVIEWER_SYSTEM_BODY}

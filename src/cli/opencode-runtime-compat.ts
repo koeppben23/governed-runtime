@@ -2,10 +2,10 @@
  * @module cli/opencode-runtime-compat
  * @description Canonical authority for OpenCode instruction-source classification.
  *
- * FlowGuard installs its mandates by registering an entry in the OpenCode
- * `instructions[]` array (see src/templates/mandates.ts). Per the official
- * OpenCode documentation this is the documented mechanism for loading custom
- * instruction sources, exposed to both the CLI and the Desktop app:
+ * Read-only instruction-source diagnostics. The native V2 installer no longer
+ * registers global mandate instructions; these classifications do not activate
+ * governance or certify the native plugin. Historical documentation references
+ * below describe the retained diagnostic evidence vocabulary, not V2 support:
  *   - https://opencode.ai/docs/config#instructions  (retrieved 2026-07)
  *   - https://opencode.ai/docs/rules                 (retrieved 2026-07)
  *

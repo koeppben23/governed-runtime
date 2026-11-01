@@ -858,6 +858,20 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Native V2 installation checkpoint (#1169, not release-ready).** OpenCode
+  installation now writes one default-export plugin directory; the plugin owns
+  all tool registrations. Removed V1 tool-file discovery, always-on mandate
+  instruction installation and build-agent task-permission rewrites. Existing
+  OpenCode JSON/JSONC is preserved byte-for-byte; obsolete FlowGuard installs
+  require explicit archival and fresh installation, not `--force` migration.
+  Ownership manifests use the current format only; foreign host/scope provenance
+  blocks before artifact writes, and uninstall surfaces package restoration
+  failures while retaining recovery provenance. Reviewer model selection
+  preserves native `provider/model#variant` references without an effort
+  allowlist; the removed OpenCode effort translation fails explicitly. Doctor
+  and reload notices distinguish installed artifacts from runtime/activation
+  proof. INACTIVE parity, operator UI and reviewer acceptance remain unverified.
+
 - **Native V2 CI follow-up (#1169).** The API-update workflow writes its
   changelog entry through a quoted JavaScript heredoc, with executable positive
   and missing-heading tests, rather than shell-ambiguous inline quoting. Removed

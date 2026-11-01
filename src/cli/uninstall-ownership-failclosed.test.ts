@@ -2,13 +2,87 @@ import { existsSync, realpathSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { uninstall } from './install.js';
+import { install, uninstall, resolveTarget } from './install.js';
 import { INSTALL_OWNERSHIP_FILENAME } from './install-ownership.js';
-import { repoArgs, setupCliTestEnvironment, tmpDir } from './install-test-helpers.test.js';
+import {
+  deriveInstallOwnershipManifest,
+  writeInstallOwnershipManifest,
+} from './install-ownership.js';
+import {
+  repoArgs,
+  setupCliTestEnvironment,
+  tmpDir,
+  createMockTarball,
+} from './install-test-helpers.test.js';
 
 setupCliTestEnvironment();
 
 describe('uninstall ownership fail-closed', () => {
+  it.each(['claude-code', 'codex'] as const)(
+    'also rejects obsolete %s installer provenance before writes, without a migration fallback',
+    async (platform) => {
+      const target = resolveTarget('repo', platform);
+      await fs.mkdir(target, { recursive: true });
+      const file = path.join(target, INSTALL_OWNERSHIP_FILENAME);
+      const original = JSON.stringify({
+        schemaVersion: 1,
+        platform,
+        scope: 'repo',
+        packageJson: { created: true, zodAdded: true, previousCoreDependency: null },
+      });
+      await fs.writeFile(file, original);
+      const result = await install(
+        repoArgs({
+          installPlatform: platform,
+          coreTarball: await createMockTarball(),
+          force: true,
+        }),
+      );
+      expect(result.ops).toEqual([]);
+      expect(result.errorDetails).toContainEqual(
+        expect.objectContaining({ code: 'OWNERSHIP_MANIFEST_INVALID' }),
+      );
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+    },
+  );
+  it.each([
+    { platform: 'opencode' as const, scope: 'global' as const },
+    { platform: 'codex' as const, scope: 'repo' as const },
+  ])(
+    'preserves current-format provenance owned by another host/scope: %j',
+    async ({ platform, scope }) => {
+      const target = path.join(tmpDir, '.opencode');
+      await fs.mkdir(target, { recursive: true });
+      const manifest = deriveInstallOwnershipManifest({
+        platform,
+        scope,
+        packageJsonExisted: false,
+        packageJsonCurrentContent: JSON.stringify({
+          dependencies: { '@flowguard/core': 'file:./vendor/flowguard-core-2.0.0.tgz' },
+        }),
+      });
+      await writeInstallOwnershipManifest(target, manifest);
+      const sentinel = path.join(target, 'flowguard.json');
+      await fs.writeFile(sentinel, 'scope-bound config bytes');
+      const result = await uninstall(repoArgs({ action: 'uninstall' }));
+      expect(result.ops).toEqual([]);
+      expect(result.errorDetails).toContainEqual(
+        expect.objectContaining({ code: 'OWNERSHIP_MANIFEST_SCOPE_MISMATCH' }),
+      );
+      expect(await fs.readFile(sentinel, 'utf8')).toBe('scope-bound config bytes');
+      const installation = await install(
+        repoArgs({ coreTarball: await createMockTarball(), force: true }),
+      );
+      expect(installation.ops).toEqual([]);
+      expect(installation.errorDetails).toContainEqual(
+        expect.objectContaining({ code: 'OWNERSHIP_MANIFEST_SCOPE_MISMATCH' }),
+      );
+      expect(await fs.readFile(sentinel, 'utf8')).toBe('scope-bound config bytes');
+      expect(
+        JSON.parse(await fs.readFile(path.join(target, INSTALL_OWNERSHIP_FILENAME), 'utf8')),
+      ).toEqual(manifest);
+    },
+  );
   it('preserves an invalid ownership manifest and refuses destructive cleanup', async () => {
     const target = path.join(tmpDir, '.opencode');
     await fs.mkdir(target, { recursive: true });

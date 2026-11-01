@@ -639,11 +639,13 @@ breakpoint mapping.
    the pinned source checkout and uses the Bun inspector for that process.
 
 6. First FlowGuard breakpoints (in the `debug.bun.sh` session):
-   - `<playground>/.opencode/plugins/flowguard-audit.ts` — the wrapper; proves
+   - `<playground>/.opencode/plugins/flowguard/index.ts` — the native wrapper; proves
      that the host discovered the repo-scoped plugin.
    - `<playground>/.opencode/node_modules/@flowguard/core/dist/integration/plugin.js`
-     — `FlowGuardAuditPlugin` execution.
-7. Trigger `/start` or `/hydrate` in the host TUI.
+     — `FlowGuardAuditPlugin.setup` execution.
+7. Observe native setup/reload/cleanup. Do not treat a `/start` or `/hydrate`
+   callback as operator provenance: activation remains blocked pending the UI
+   source proof, and installed INACTIVE parity remains NOT_VERIFIED.
 
 FlowGuard TS-level breakpoints are not available for the installed copy: the
 published tarball ships only `dist/` and `VERSION`, so breakpoints bind in the

@@ -37,7 +37,6 @@ export {
   computeMandatesDigest,
   resolveOpencodeConfigPath,
 } from './install-helpers.js';
-export { mergeReviewerTaskPermission } from './install-json.js';
 export { hasNonFlowGuardInstructions, FLOWGUARD_INSTRUCTION_ENTRIES } from './install-types.js';
 export { doctor } from './doctor-command.js';
 export { checkLastSessionHandshake } from './doctor-handshake.js';

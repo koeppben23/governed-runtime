@@ -247,52 +247,30 @@ governed capability is lost.
 
 ## OpenCode instruction-source: configured is not activated
 
-FlowGuard installs its mandates by registering an entry in the OpenCode
-`instructions[]` array. Per the official OpenCode documentation this is the
-documented mechanism for loading instruction sources, exposed to both the CLI
-and the Desktop app:
+The native V2 installer deliberately does **not** register mandates in
+`instructions[]`. It writes one default-export plugin directory and passive
+managed artifacts, leaving customer JSON/JSONC, instructions, models, variants
+and permissions byte-for-byte unchanged. It creates no activation or session
+state. See [native installation](./installation.md#native-v2-layout-and-fresh-install-boundary)
+and the [official V2 plugin contract](https://opencode.ai/v2/docs/build/plugins).
 
-- <https://opencode.ai/docs/config#instructions> (retrieved 2026-07)
-- <https://opencode.ai/docs/rules> (retrieved 2026-07)
+Doctor reports file/import checks separately from native host load and ACTIVE
+governance. Importability, plugin setup and a successful reload are not operator
+intent or reviewer proof. Its native installation check warns that runtime
+acceptance, INACTIVE parity, operator UI provenance and reviewer assurance remain
+NOT_VERIFIED. Native activation cannot be inferred from a command callback.
 
-**A present `instructions[]` entry means the instruction source is _configured_.
-It does not prove the runtime loaded the mandates into the model context.**
-FlowGuard has no reliable surface to verify activation: the Desktop app exposes
-no `opencode --version` executable and OpenCode offers no documented API that
-reports the resolved instruction sources or the composed system prompt.
-FlowGuard therefore never claims the mandates are "active", "supported", or that
-a runtime is "compatible".
+Obsolete FlowGuard wrappers, global mandate registrations and ownership formats
+are rejected, not rewritten or migrated with `--force`. Archive old installation
+and governance evidence without changing their bytes before a fresh V2 install.
+An intact historical archive is neither automatically valid current evidence nor
+automatically tampered data.
 
-What the tools report honestly:
-
-- `flowguard doctor` — the instruction-source check is `ok` only in the sense
-  that the entry is **configured**. Its detail states explicitly that
-  activation is not verifiable by FlowGuard. It does not turn the installation
-  green under a false "supported" claim.
-- `flowguard install` — writes the config and mandate file, then emits a notice
-  that mandates are **configured** and that activation is not verified by
-  install. It does not claim the runtime is governed.
-- An unknown or Desktop runtime is **never** classified as compatible. It is
-  simply `configured` (present, activation unverified).
-
-Fail-closed exception (deny-list): if a runtime is _positively known_ — with
-cited evidence — to accept the `instructions[]` entry without resolving it, it
-yields the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason in `flowguard
-doctor` and a non-clean `flowguard install` result (artifacts are written but
-mandates are reported as NOT active — "write but refuse"). The deny-list
-(`KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES` in
-`src/cli/opencode-runtime-compat.ts`) is seeded empty; no such runtime is
-currently known.
-
-`flowguard doctor` and `flowguard install` record the detected OpenCode version
-(best-effort, CLI only), runtime kind, executable path, OS, install method, and
-install date to the FlowGuard logs. The Desktop app exposes no
-`opencode --version` executable, so its version is logged as `null`; this is a
-detection limitation and does not by itself imply activation either way.
-
-`NOT_VERIFIED`: FlowGuard does not prove instruction-source activation on any
-runtime. A future mechanism could verify activation if OpenCode exposes the
-resolved instruction sources or the composed agent system prompt.
+The remaining no-start parity gap is also explicit: the canonical session
+authority's `absent` result alone does not distinguish never-activated sessions
+from formerly ACTIVE sessions whose state is missing. The installer does not
+invent a second activation registry or convert that absence into runtime
+permission. Complete installed Desktop/CLI INACTIVE parity remains NOT_VERIFIED.
 
 ## References
 

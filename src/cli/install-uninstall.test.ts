@@ -12,12 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { measureAsync } from '../test-policy.js';
 import { resolveCodexMarketplaceRoot } from './codex-plugin-install.js';
-import {
-  computeMandatesDigest,
-  install,
-  mergeReviewerTaskPermission,
-  uninstall,
-} from './install.js';
+import { computeMandatesDigest, install, uninstall } from './install.js';
 import {
   VERSION,
   createMockTarball,
@@ -30,11 +25,12 @@ import {
   COMMANDS,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
-  TOOL_WRAPPER,
+  PLUGIN_RELATIVE_PATH,
   extractManagedDigest,
   isManagedArtifact,
   mandatesInstructionEntry,
 } from './templates.js';
+import { parseJsonc } from './install-json.js';
 
 // ─── Mock: child_process ──────────────────────────────────────────────────────
 vi.mock('node:child_process', async (importOriginal) => {
@@ -110,7 +106,7 @@ describe('cli/uninstall', () => {
       const oc = path.join(tmpDir, '.opencode');
       expect(existsSync(path.join(oc, MANDATES_FILENAME))).toBe(false);
       expect(existsSync(path.join(oc, 'tools', 'flowguard.ts'))).toBe(false);
-      expect(existsSync(path.join(oc, 'plugins', 'flowguard-audit.ts'))).toBe(false);
+      expect(existsSync(path.join(oc, PLUGIN_RELATIVE_PATH))).toBe(false);
       for (const name of Object.keys(COMMANDS)) {
         expect(existsSync(path.join(oc, 'commands', name))).toBe(false);
       }
@@ -126,14 +122,11 @@ describe('cli/uninstall', () => {
       expect(existsSync(pkgPath)).toBe(false);
     });
 
-    it('removes FlowGuard instruction from opencode.json', async () => {
+    it('does not create an OpenCode config on install or uninstall', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: 'uninstall' }));
-      const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
-      const parsed = JSON.parse(content);
-      const entry = mandatesInstructionEntry('repo');
-      expect(parsed.instructions).not.toContain(entry);
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
     });
 
     // Claude Code assurance is intentionally deferred while OpenCode is the product merge scope.
@@ -196,7 +189,7 @@ describe('cli/uninstall', () => {
       ]);
     });
 
-    it('HAPPY: uninstall removes FlowGuard instruction from opencode.jsonc', async () => {
+    it('HAPPY: install/uninstall preserves customer instruction entries', async () => {
       const tarball = await createMockTarball();
       const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
       await fs.writeFile(jsoncPath, '{ "instructions": ["user.md"] }', 'utf-8');
@@ -226,7 +219,7 @@ describe('cli/uninstall', () => {
       await uninstall(repoArgs({ action: 'uninstall' }));
 
       const content = await fs.readFile(jsoncPath, 'utf-8');
-      const parsed = JSON.parse(content);
+      const parsed = parseJsonc(content);
       expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
       expect(parsed.instructions).toEqual(['user.md']);
     });
@@ -251,9 +244,9 @@ describe('cli/uninstall', () => {
       expect(result.errors).toEqual([]);
       expect(await findBackupFor(jsoncPath)).toBeNull();
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
-      const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      const parsed = parseJsonc(await fs.readFile(jsoncPath, 'utf-8'));
       expect(parsed.model).toBe('anthropic/claude');
-      expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
+      expect(parsed.instructions).toBeUndefined();
     });
 
     it('uninstall reports error when file cannot be removed (EPERM)', async () => {
@@ -263,7 +256,7 @@ describe('cli/uninstall', () => {
       const realImpl = vi.mocked(fs.unlink).getMockImplementation()!;
       vi.mocked(fs.unlink).mockImplementation((...args: Parameters<typeof fs.unlink>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
-        if (p.replace(/\\/g, '/').includes('tools/flowguard.ts')) {
+        if (p.replace(/\\/g, '/').includes(PLUGIN_RELATIVE_PATH)) {
           return Promise.reject(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
         }
         return realImpl(...args);
@@ -276,7 +269,7 @@ describe('cli/uninstall', () => {
           result.errors.some((e) => e.includes('EPERM') || e.includes('operation not permitted')),
         ).toBe(true);
         const toolOps = result.ops.filter((o) =>
-          o.path.replace(/\\/g, '/').includes('tools/flowguard.ts'),
+          o.path.replace(/\\/g, '/').includes(PLUGIN_RELATIVE_PATH),
         );
         const removedOrNotFound = toolOps.filter(
           (o) => o.action === 'removed' || o.action === 'not_found',
@@ -286,6 +279,49 @@ describe('cli/uninstall', () => {
         vi.mocked(fs.unlink).mockImplementation(realImpl);
       }
     });
+
+    it.each(['write', 'unlink'] as const)(
+      'surfaces package %s failures and preserves recovery provenance',
+      async (operation) => {
+        const tarball = await createMockTarball();
+        const target = path.join(tmpDir, '.opencode');
+        await fs.mkdir(target, { recursive: true });
+        const packagePath = path.join(target, 'package.json');
+        if (operation === 'write')
+          await fs.writeFile(packagePath, '{"dependencies":{"customer":"1.0.0"}}');
+        expect((await install(repoArgs({ coreTarball: tarball }))).errors).toEqual([]);
+        const original = await fs.readFile(packagePath, 'utf8');
+        const manifestPath = path.join(target, '.flowguard-install-ownership.json');
+        const provenance = await fs.readFile(manifestPath, 'utf8');
+        const writeImplementation = vi.mocked(fs.writeFile).getMockImplementation()!;
+        const unlinkImplementation = vi.mocked(fs.unlink).getMockImplementation()!;
+        const implementation = operation === 'write' ? writeImplementation : unlinkImplementation;
+        const failPackageOperation = (...args: unknown[]) => {
+          if (path.basename(String(args[0])) === 'package.json') {
+            return Promise.reject(
+              Object.assign(new Error('EACCES package recovery failed'), { code: 'EACCES' }),
+            );
+          }
+          return Reflect.apply(implementation, undefined, args);
+        };
+        if (operation === 'write') vi.mocked(fs.writeFile).mockImplementation(failPackageOperation);
+        else vi.mocked(fs.unlink).mockImplementation(failPackageOperation);
+        try {
+          const result = await uninstall(repoArgs({ action: 'uninstall' }));
+          expect(result.errors).toEqual([
+            expect.stringContaining('EACCES package recovery failed'),
+          ]);
+          expect(result.ops).not.toContainEqual(
+            expect.objectContaining({ reason: 'malformed JSON' }),
+          );
+          expect(await fs.readFile(packagePath, 'utf8')).toBe(original);
+          expect(await fs.readFile(manifestPath, 'utf8')).toBe(provenance);
+        } finally {
+          vi.mocked(fs.writeFile).mockImplementation(writeImplementation);
+          vi.mocked(fs.unlink).mockImplementation(unlinkImplementation);
+        }
+      },
+    );
 
     it('foreign file in vendor survives while FlowGuard tarball is removed', async () => {
       const tarball = await createMockTarball();
@@ -392,7 +428,7 @@ describe('cli/uninstall', () => {
       expect(result.warnings[0]).toContain('no valid managed envelope');
     });
 
-    it('CORNER: opencode.jsonc wins when both OpenCode config files exist', async () => {
+    it('CORNER: both adjacent OpenCode config documents are preserved', async () => {
       const tarball = await createMockTarball();
       const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
       const jsonPath = path.join(tmpDir, 'opencode.json');
@@ -403,7 +439,7 @@ describe('cli/uninstall', () => {
 
       const jsonc = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
       const json = JSON.parse(await fs.readFile(jsonPath, 'utf-8'));
-      expect(jsonc.instructions).toContain(mandatesInstructionEntry('repo'));
+      expect(jsonc.instructions).toEqual(['jsonc.md']);
       expect(json.instructions).toEqual(['json.md']);
     });
 
@@ -447,9 +483,7 @@ describe('cli/uninstall', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: 'uninstall' }));
-      const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
-      const parsed = JSON.parse(content);
-      expect(parsed.plugin).toBeUndefined();
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
     });
 
     it('uninstall does not touch foreign plugin array', async () => {
@@ -487,20 +521,18 @@ describe('cli/uninstall', () => {
       expect(existsSync(cfgPath)).toBe(false);
     });
 
-    it('uninstall removes task-hardening from opencode.json', async () => {
+    it('uninstall preserves native permissions exactly', async () => {
       const tarball = await createMockTarball();
+      const configPath = path.join(tmpDir, 'opencode.json');
+      const original = '{"permissions":[{"action":"subagent","resource":"*","effect":"ask"}]}\n';
+      await fs.writeFile(configPath, original);
       await install(repoArgs({ coreTarball: tarball }));
-      const beforeContent = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
-      const beforeParsed = JSON.parse(beforeContent);
-      expect(beforeParsed.agent?.build?.permission?.task?.['*']).toBe('deny');
-
+      expect(await fs.readFile(configPath, 'utf8')).toBe(original);
       await uninstall(repoArgs({ action: 'uninstall' }));
-      const afterContent = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
-      const afterParsed = JSON.parse(afterContent);
-      expect(afterParsed.agent).toBeUndefined();
+      expect(await fs.readFile(configPath, 'utf8')).toBe(original);
     });
 
-    it('EDGE: global install merges opencode.jsonc in OPENCODE_CONFIG_DIR', async () => {
+    it('EDGE: global install preserves opencode.jsonc in OPENCODE_CONFIG_DIR', async () => {
       const tarball = await createMockTarball();
       const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
       await fs.writeFile(jsoncPath, '{ "instructions": [] }', 'utf-8');
@@ -510,16 +542,14 @@ describe('cli/uninstall', () => {
       expect(result.errors).toEqual([]);
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
       const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
-      expect(parsed.instructions).toContain(mandatesInstructionEntry('global'));
+      expect(parsed.instructions).toEqual([]);
     });
 
     it('uninstall does not create plugin field when none existed', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: 'uninstall' }));
-      const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
-      const parsed = JSON.parse(content);
-      expect(parsed.plugin).toBeUndefined();
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
     });
 
     it('uninstall restores customer @flowguard/core when foreign dependencies exist', async () => {
@@ -611,24 +641,27 @@ describe('cli/uninstall', () => {
       expect(parsed.dependencies['@flowguard/core']).toBe('file:./vendor/x.tgz');
     });
 
-    it('uninstall removes FlowGuard task hardening and preserves foreign task permissions', async () => {
+    it('uninstall preserves customer task permissions, including reviewer-named entries', async () => {
       const tarball = await createMockTarball();
-      await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
-      const ocContent = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
-      expect(ocContent.agent.build.permission.task['flowguard-reviewer']).toBe('allow');
-      expect(ocContent.agent.build.permission.task['*']).toBe('deny');
-      ocContent.agent.build.permission.task['custom-reviewer'] = 'allow';
+      const ocContent = {
+        agent: {
+          build: {
+            permission: {
+              task: { '*': 'deny', 'flowguard-reviewer': 'allow', 'custom-reviewer': 'allow' },
+            },
+          },
+        },
+      };
       await fs.writeFile(ocPath, JSON.stringify(ocContent, null, 2) + '\n', 'utf-8');
-
+      expect((await install(repoArgs({ coreTarball: tarball }))).errors).toEqual([]);
       await uninstall(repoArgs({ action: 'uninstall' }));
       const afterContent = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
       expect(afterContent.agent.build.permission.task['custom-reviewer']).toBe('allow');
-      expect(afterContent.agent.build.permission.task['*']).toBeUndefined();
-      expect(afterContent.agent?.build?.permission?.task?.['flowguard-reviewer']).toBeUndefined();
+      expect(afterContent).toEqual(ocContent);
     });
 
-    it('EDGE: uninstall from opencode.jsonc cleans parallel opencode.json with old FlowGuard entries', async () => {
+    it('EDGE: obsolete parallel FlowGuard registration blocks installation without rewriting either config', async () => {
       const tarball = await createMockTarball();
       const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
       const jsonPath = path.join(tmpDir, 'opencode.json');
@@ -640,14 +673,17 @@ describe('cli/uninstall', () => {
         'utf-8',
       );
 
-      await install(repoArgs({ coreTarball: tarball }));
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errorDetails).toContainEqual(
+        expect.objectContaining({ code: 'OPENCODE_FRESH_INSTALL_REQUIRED' }),
+      );
       await uninstall(repoArgs({ action: 'uninstall' }));
 
       const jsonc = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
       expect(jsonc.instructions).toEqual(['user.md']);
 
       const json = JSON.parse(await fs.readFile(jsonPath, 'utf-8'));
-      expect(json.instructions).not.toContain(mandatesInstructionEntry('repo'));
+      expect(json.instructions).toContain(mandatesInstructionEntry('repo'));
       expect(json.instructions).toContain('legacy.md');
     });
   });
@@ -671,10 +707,8 @@ describe('cli/uninstall', () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
 
       expect(result.errors).toEqual([]);
-      expect(existsSync(path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts'))).toBe(true);
-      expect(existsSync(path.join(tmpDir, '.opencode', 'plugins', 'flowguard-audit.ts'))).toBe(
-        true,
-      );
+      expect(existsSync(path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts'))).toBe(false);
+      expect(existsSync(path.join(tmpDir, '.opencode', PLUGIN_RELATIVE_PATH))).toBe(true);
       expect(existsSync(path.join(tmpDir, 'opencode.jsonc'))).toBe(true);
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
     });

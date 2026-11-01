@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile, unlink, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { ensureDir } from '../adapters/persistence.js';
-import { join, resolve, dirname, basename, relative as relativePath } from 'node:path';
+import { join, resolve, dirname, relative as relativePath } from 'node:path';
 import { homedir } from 'node:os';
 import { hashText } from '../shared/hashing.js';
 import {
@@ -23,6 +23,7 @@ import {
   REVIEWER_AGENT,
   FLOWGUARD_MANDATES_KERNEL,
   MANDATES_FILENAME,
+  PLUGIN_RELATIVE_PATH,
 } from './templates.js';
 
 // ─── Typed Errors ────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ export function computeMandatesDigest(): string {
 // touching governance verbosity. Both knobs are operator-controlled env vars.
 //
 // Host support (verified against official host docs):
-//   - opencode:    `model:` + passthrough `reasoningEffort:` frontmatter.
+//   - opencode:    native `model: provider/model#variant`; no effort translation.
 //   - claude-code: `model:` + `effort:` frontmatter.
 //   - codex:       custom-agent tuning is configured via native TOML under
 //                  `.codex/agents/` (model + model_reasoning_effort), NOT via the
@@ -113,19 +114,7 @@ export function computeMandatesDigest(): string {
 //                  directives into the markdown frontmatter is unsupported, so we
 //                  fail closed instead of silently emitting a no-op directive.
 
-/** Per-host frontmatter key for the reasoning-effort knob; null = unsupported. */
-function reviewerEffortFieldForPlatform(platform: InstallPlatform): string | null {
-  if (platform === 'claude-code') return 'effort';
-  if (platform === 'codex') return null;
-  return 'reasoningEffort'; // opencode (provider passthrough)
-}
-
-/** Whether reviewer `model:` frontmatter injection is supported for the host. */
-function reviewerModelSupportedForPlatform(platform: InstallPlatform): boolean {
-  return platform !== 'codex';
-}
-
-function readReviewerModelEnv(): string | null {
+function readReviewerModelEnv(platform: InstallPlatform): string | null {
   const raw = process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
   if (!raw) return null;
   const model = raw.trim();
@@ -138,11 +127,17 @@ function readReviewerModelEnv(): string | null {
         'rejected to prevent YAML injection.',
     );
   }
-  if (!VALID_MODEL_ID_PATTERN.test(model)) {
+  const valid =
+    platform === 'opencode'
+      ? /^[^/#\s]+\/[^#\s]+(?:#[^#\s]+)?$/.test(model)
+      : VALID_MODEL_ID_PATTERN.test(model);
+  if (!valid) {
     throw new InstallError(
       'REVIEWER_CONFIG_INVALID',
       `${FLOWGUARD_REVIEWER_MODEL_ENV} contains invalid characters: "${model}" — ` +
-        'only alphanumeric, dots, slashes, @, colons, and hyphens are allowed.',
+        (platform === 'opencode'
+          ? 'use the native provider/model#variant reference.'
+          : 'only alphanumeric, dots, slashes, @, colons, and hyphens are allowed.'),
     );
   }
   return model;
@@ -154,10 +149,9 @@ function readReviewerEffortEnv(platform: InstallPlatform): ReviewerEffort | null
   const effort = raw.trim();
   if (!effort) return null;
 
-  const supported: readonly ReviewerEffort[] =
-    platform === 'opencode'
-      ? REVIEWER_EFFORT_VALUES
-      : REVIEWER_EFFORT_VALUES.filter((value) => value !== 'none');
+  const supported: readonly ReviewerEffort[] = REVIEWER_EFFORT_VALUES.filter(
+    (value) => value !== 'none',
+  );
   if (!VALID_EFFORT_PATTERN.test(effort) || !supported.includes(effort as ReviewerEffort)) {
     throw new InstallError(
       'REVIEWER_CONFIG_INVALID',
@@ -176,9 +170,16 @@ function readReviewerEffortEnv(platform: InstallPlatform): ReviewerEffort | null
  * the limitation and point at the native mechanism.
  */
 function assertReviewerTuningSupported(platform: InstallPlatform): void {
-  if (reviewerModelSupportedForPlatform(platform) && reviewerEffortFieldForPlatform(platform)) {
+  if (platform === 'opencode') {
+    if (process.env[FLOWGUARD_REVIEWER_EFFORT_ENV]?.trim()) {
+      throw new InstallError(
+        'REVIEWER_TUNING_UNSUPPORTED',
+        `OpenCode V2 does not use ${FLOWGUARD_REVIEWER_EFFORT_ENV}. Select any native model variant with ${FLOWGUARD_REVIEWER_MODEL_ENV}=provider/model#variant, or leave model selection to the host.`,
+      );
+    }
     return;
   }
+  if (platform === 'claude-code') return;
   const requested: string[] = [];
   if (process.env[FLOWGUARD_REVIEWER_MODEL_ENV]?.trim())
     requested.push(FLOWGUARD_REVIEWER_MODEL_ENV);
@@ -205,22 +206,27 @@ function assertReviewerTuningSupported(platform: InstallPlatform): void {
 export function buildReviewerAgentContent(template: string, platform: InstallPlatform): string {
   const lines: string[] = [];
 
-  const model = readReviewerModelEnv();
-  if (model && reviewerModelSupportedForPlatform(platform)) {
-    lines.push(`model: ${model}`);
+  assertReviewerTuningSupported(platform);
+  const model = readReviewerModelEnv(platform);
+  if (model) {
+    lines.push(`model: ${platform === 'opencode' ? JSON.stringify(model) : model}`);
   }
 
   // Only explicit operator tuning is installed. Provider/host defaults remain authoritative.
-  const effort = readReviewerEffortEnv(platform);
-  const effortField = reviewerEffortFieldForPlatform(platform);
-  if (effort && effortField) {
-    lines.push(`${effortField}: ${effort}`);
+  const effort = platform === 'claude-code' ? readReviewerEffortEnv(platform) : null;
+  if (effort) {
+    lines.push(`effort: ${effort}`);
   }
 
   if (lines.length === 0) return template;
 
+  if (!template.startsWith('---\n') || template.indexOf('\n---', 4) < 0) {
+    throw new InstallError(
+      'REVIEWER_CONFIG_INVALID',
+      'Reviewer tuning requires a valid agent frontmatter template.',
+    );
+  }
   const firstNewline = template.indexOf('\n');
-  if (firstNewline < 0) return template;
 
   const injected = lines.map((line) => `${line}\n`).join('');
   return template.slice(0, firstNewline + 1) + injected + template.slice(firstNewline + 1);
@@ -239,18 +245,6 @@ export function resolveOpencodeConfigPath(
     if (existsSync(candidate)) return candidate;
   }
   return join(dir, 'opencode.json');
-}
-
-export function findParallelOpencodeConfig(preferredPath: string): string | null {
-  const dir = dirname(preferredPath);
-  const preferredName = basename(preferredPath);
-  for (const name of OPENCODE_CONFIG_FILENAMES) {
-    if (name !== preferredName) {
-      const candidate = join(dir, name);
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return null;
 }
 
 // ---- File Helpers ----
@@ -285,8 +279,7 @@ export async function writeIfAbsent(
 ): Promise<FileOp> {
   if (!force) {
     try {
-      const dir = dirname(filePath);
-      if (dir) await ensureDir(dir);
+      await ensureDir(dirname(filePath));
       await writeFile(filePath, content, { encoding: 'utf-8', flag: 'wx' });
       return { path: filePath, action: 'written' };
     } catch (err) {
@@ -298,8 +291,7 @@ export async function writeIfAbsent(
   }
 
   const tmpPath = `${filePath}.tmp.${process.pid}.${randomUUID()}`;
-  const dir = dirname(filePath);
-  if (dir) await ensureDir(dir);
+  await ensureDir(dirname(filePath));
   try {
     await writeFile(tmpPath, content, { encoding: 'utf-8', flag: 'wx' });
     await rename(tmpPath, filePath);
@@ -336,8 +328,7 @@ export function detectInstalledArtifacts(
 
   if (platform === 'opencode') {
     results.push(checkArtifactExistence(target, MANDATES_FILENAME));
-    results.push(checkArtifactExistence(target, 'tools/flowguard.ts'));
-    results.push(checkArtifactExistence(target, 'plugins/flowguard-audit.ts'));
+    results.push(checkArtifactExistence(target, PLUGIN_RELATIVE_PATH));
     results.push(checkArtifactExistence(target, 'flowguard.json'));
   } else if (platform === 'claude-code') {
     results.push(

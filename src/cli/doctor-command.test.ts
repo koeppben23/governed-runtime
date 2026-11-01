@@ -4,7 +4,7 @@
  *
  * Verifies that doctor() never throws, always returns DoctorCheck[],
  * and correctly classifies missing/error artifacts on empty or partial
- * installations. Full 47-check validation is exercised by smoke tests.
+ * installations. Installed-artifact validation is exercised by owning suites.
  *
  * @test-policy HAPPY, BAD, CORNER
  */
@@ -21,8 +21,6 @@ const VALID_STATUSES = [
   'modified',
   'unmanaged',
   'version_mismatch',
-  'instruction_missing',
-  'instruction_stale',
   'error',
   'warn',
   'info',

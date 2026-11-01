@@ -581,12 +581,12 @@ Repository config takes precedence over global config, as described in
 
 ## Environment Variables
 
-| Variable                    | Description                                                                                    | Default                              |
-| --------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode`                 |
-| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                                |
-| `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default)                 |
-| `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | `none` for OpenCode; unset otherwise |
+| Variable                    | Description                                                                     | Default              |
+| --------------------------- | ------------------------------------------------------------------------------- | -------------------- |
+| `OPENCODE_CONFIG_DIR`       | Config root                                                                     | `~/.config/opencode` |
+| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)        | unset                |
+| `FLOWGUARD_REVIEWER_MODEL`  | Reviewer model reference; OpenCode V2 preserves native `provider/model#variant` | unset (host default) |
+| `FLOWGUARD_REVIEWER_EFFORT` | Claude reviewer effort; explicitly rejected for OpenCode V2 and Codex           | unset                |
 
 Log level is sourced exclusively from `config.logging.level` (see the
 **logging** section above). There is no `FLOWGUARD_LOG_LEVEL` env override at
@@ -603,20 +603,24 @@ regardless of these values (governance stays model-invariant).
 
 Values are validated fail-closed at install time:
 
-- `FLOWGUARD_REVIEWER_MODEL` — alphanumerics, dots, slashes, `@`, colons, and
-  hyphens only; newlines rejected (YAML-injection guard).
-- `FLOWGUARD_REVIEWER_EFFORT` — one of `none`, `low`, `medium`, `high`,
-  `xhigh`, or `max` (OpenCode also accepts `none`). It is applied only when the
-  operator sets it explicitly; FlowGuard no longer injects a default reasoning
-  value. Any other value aborts the install.
+- OpenCode `FLOWGUARD_REVIEWER_MODEL` uses native `provider/model` with an
+  optional `#variant`. The exact reference is YAML-quoted; newlines, whitespace
+  within the reference and malformed separators are rejected. No model-family,
+  provider or variant allowlist is imposed, and omitted selection stays native.
+- OpenCode rejects any nonempty `FLOWGUARD_REVIEWER_EFFORT` rather than emitting
+  the removed V1 `reasoningEffort:` passthrough. Select the model's native
+  `#variant` using `FLOWGUARD_REVIEWER_MODEL`, or leave both unset. This configures
+  a preference; it does not prove actual reviewer execution/effort fidelity.
+- Claude model IDs retain the character validation; Claude effort accepts `low`,
+  `medium`, `high`, `xhigh` or `max`. Invalid values abort installation.
 
 Per-host support matrix (the injected frontmatter key differs by host):
 
-| Host          | `model:` injection | Effort frontmatter key | Notes                                                                             |
-| ------------- | ------------------ | ---------------------- | --------------------------------------------------------------------------------- |
-| `opencode`    | yes                | `reasoningEffort:`     | Applied only when explicitly set; host/provider defaults are preserved otherwise. |
-| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.                               |
-| `codex`       | no                 | unsupported            | See limitation below.                                                             |
+| Host          | `model:` injection | Effort frontmatter key | Notes                                                          |
+| ------------- | ------------------ | ---------------------- | -------------------------------------------------------------- |
+| `opencode`    | yes                | native `#variant`      | No effort translation; exact native reference or host default. |
+| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.            |
+| `codex`       | no                 | unsupported            | See limitation below.                                          |
 
 **Codex limitation:** FlowGuard ships the Codex reviewer as a markdown subagent,
 which does not honor `model`/`model_reasoning_effort` directives. Codex configures

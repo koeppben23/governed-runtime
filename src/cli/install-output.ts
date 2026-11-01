@@ -98,7 +98,6 @@ export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): stri
     modified: 'MODIFIED',
     unmanaged: 'UNMANAGED',
     version_mismatch: 'VERSION',
-    instruction_missing: 'INSTR_MISSING',
     error: 'ERROR',
     warn: 'WARN',
     info: 'NOTE',

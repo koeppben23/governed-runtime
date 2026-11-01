@@ -11,19 +11,17 @@ import {
   FlowGuardConfigSchema,
   REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT,
 } from '../config/flowguard-config.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { HostId } from '../shared/hosts.js';
 import {
   COMMANDS,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
   REVIEWER_AGENT_FILENAME,
-  TOOL_WRAPPER,
+  PLUGIN_RELATIVE_PATH,
   extractManagedBody,
   extractManagedDigest,
   extractManagedVersion,
   isManagedArtifact,
-  mandatesInstructionEntry,
 } from './templates.js';
 import {
   computeMandatesDigest,
@@ -33,13 +31,13 @@ import {
   sha256,
 } from './install-helpers.js';
 import {
-  hasNonFlowGuardInstructions,
   PACKAGE_VERSION,
   type CliArgs,
   type DoctorCheck,
   type InstallScope,
 } from './install-types.js';
-import { parseJsonc, vendorDependency } from './install-json.js';
+import { vendorDependency } from './install-json.js';
+import { assertNativeOpenCodeInstallTarget } from './install-ownership.js';
 import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { buildPlatformTrustReport } from './platform-trust-report.js';
@@ -47,12 +45,6 @@ import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
-import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
-import {
-  classifyOpenCodeHostContract,
-  classifyOpenCodeRuntime,
-} from './opencode-runtime-compat.js';
-import { defaultReasonRegistry } from '../config/reasons.js';
 
 async function checkedRead(filePath: string, checks: DoctorCheck[]): Promise<string | null> {
   try {
@@ -160,8 +152,7 @@ async function checkReviewerAgent(target: string, checks: DoctorCheck[]): Promis
 async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   await checkMandatesDigest(target, checks);
-  await checkWrapperFile(target, 'tools/flowguard.ts', TOOL_WRAPPER, checks);
-  await checkWrapperFile(target, 'plugins/flowguard-audit.ts', PLUGIN_WRAPPER, checks);
+  await checkWrapperFile(target, PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER, checks);
   await checkCommandFiles(target, checks);
   await checkReviewerAgent(target, checks);
   return checks;
@@ -207,148 +198,36 @@ async function checkDependencies(target: string): Promise<DoctorCheck[]> {
   return checks;
 }
 
-async function checkOpencodeInstructions(
-  target: string,
+async function checkNativeOpenCodeInstallation(
   scope: InstallScope,
+  target: string,
 ): Promise<DoctorCheck[]> {
-  const checks: DoctorCheck[] = [];
   const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
-  const opencodeContent = await checkedRead(opencodeJsonPath, checks);
-  if (!opencodeContent) return checks;
-
   try {
-    const parsed = parseJsonc(opencodeContent);
-    const instructions = Array.isArray(parsed['instructions'])
-      ? (parsed['instructions'] as string[])
-      : [];
-    const entry = mandatesInstructionEntry(scope);
-
-    if (!instructions.includes(entry)) {
-      checks.push({
-        file: opencodeJsonPath,
-        status: 'instruction_missing',
-        detail: `instructions array does not contain "${entry}"`,
-      });
-    }
-    if (instructions.includes('AGENTS.md')) {
-      checks.push({
-        file: opencodeJsonPath,
-        status: 'warn',
-        detail:
-          'AGENTS.md is configured alongside FlowGuard mandates. Ownership is ambiguous: verify that this additional instruction authority is intentional before reinstalling or upgrading.',
-      });
-    }
-    const hasIssue = checks.some(
-      (check) => check.file === opencodeJsonPath && check.status === 'instruction_missing',
-    );
-    if (!hasIssue) checks.push({ file: opencodeJsonPath, status: 'ok' });
-
-    checkDesktopTaskHardening(parsed, instructions, opencodeJsonPath, checks);
-  } catch {
-    checks.push({ file: opencodeJsonPath, status: 'error', detail: 'malformed JSON' });
-  }
-
-  return checks;
-}
-
-const ACTIVATION_CHECK = 'opencode-instruction-source-activation';
-
-async function checkOpencodeInstructionSourceActivation(
-  scope: InstallScope,
-  target: string,
-): Promise<DoctorCheck[]> {
-  const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
-  const evidence = await detectOpenCodeRuntimeEvidence({ scope, platform: 'opencode', target });
-  const classification = classifyOpenCodeRuntime(evidence);
-  const hostContract = classifyOpenCodeHostContract(evidence.version);
-
-  if (hostContract.status === 'known-incompatible') {
+    await assertNativeOpenCodeInstallTarget(target, [
+      target,
+      ...(scope === 'repo' ? [resolve('.')] : []),
+    ]);
+  } catch (error) {
     return [
       {
         file: opencodeJsonPath,
         status: 'error',
-        detail: `OpenCode host contract is known incompatible: ${hostContract.reason}`,
-        check: ACTIVATION_CHECK,
+        detail: error instanceof Error ? error.message : String(error),
+        check: 'opencode-native-v2-installation',
       },
     ];
   }
-
-  if (classification.status === 'known-unsupported') {
-    const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
-      runtimeLine: evidence.runtimeLine ?? 'unknown',
-      version: evidence.version ?? 'unknown',
-    });
-    return [
-      {
-        file: opencodeJsonPath,
-        status: 'error',
-        detail: `${formatted.reason} (${classification.matched?.reason ?? ''})`.trim(),
-        check: ACTIVATION_CHECK,
-      },
-    ];
-  }
-
-  const runtimeDesc = `${evidence.runtimeKind}${evidence.version ? ` v${evidence.version}` : ''}`;
   return [
     {
       file: opencodeJsonPath,
       status: 'warn',
       detail:
-        `runtime ${runtimeDesc}; host contract ${hostContract.status} ` +
-        `(tested ${hostContract.testedVersion}); instruction-source activation is NOT_VERIFIED. ` +
-        'FlowGuard cannot prove that OpenCode loaded the configured source. ' +
-        'See docs/platform-limitations.md.',
-      check: ACTIVATION_CHECK,
+        'Native V2 discovery is configured without global mandates or permission rewrites. ' +
+        'Runtime load, INACTIVE parity, operator UI provenance and reviewer assurance are NOT_VERIFIED; installation does not activate governance.',
+      check: 'opencode-native-v2-installation',
     },
   ];
-}
-
-function checkDesktopTaskHardening(
-  parsed: Record<string, unknown>,
-  instructions: string[],
-  path: string,
-  checks: DoctorCheck[],
-): void {
-  const taskPerms = resolveDesktopTaskPermissions(parsed);
-  if (!requiresDesktopTaskHardeningCheck(parsed, instructions, taskPerms)) return;
-
-  const detail = desktopTaskHardeningWarning(taskPerms);
-  if (detail) checks.push({ file: path, status: 'warn', detail });
-}
-
-function resolveDesktopTaskPermissions(
-  parsed: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  const agent = parsed['agent'] as Record<string, unknown> | undefined;
-  const buildPerms = (agent?.['build'] as Record<string, unknown> | undefined)?.['permission'] as
-    Record<string, unknown> | undefined;
-  return buildPerms?.['task'] as Record<string, unknown> | undefined;
-}
-
-function requiresDesktopTaskHardeningCheck(
-  parsed: Record<string, unknown>,
-  instructions: string[],
-  taskPerms: Record<string, unknown> | undefined,
-): boolean {
-  const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
-  const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
-  const hasTaskConfig = taskPerms !== undefined && Object.keys(taskPerms).length > 0;
-  return hasPluginField || hasDesktopInstructions || hasTaskConfig;
-}
-
-function desktopTaskHardeningWarning(
-  taskPerms: Record<string, unknown> | undefined,
-): string | null {
-  const hasTaskConfig = taskPerms !== undefined && Object.keys(taskPerms).length > 0;
-  if (hasTaskConfig && taskPerms[REVIEWER_SUBAGENT_TYPE] !== 'allow') {
-    return 'FlowGuard task hardening is incomplete: customer-owned OpenCode task permissions do not explicitly allow flowguard-reviewer; FlowGuard preserves customer permissions, so independent reviewer execution may be blocked';
-  }
-
-  const hasTaskHardening =
-    taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
-  return hasTaskHardening
-    ? null
-    : 'FlowGuard task hardening is not active for this customer-owned OpenCode config; installer intentionally preserves customer task permissions';
 }
 
 async function checkWorkspaceConfig(
@@ -492,8 +371,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   }
   checks.push(...(await checkDependencies(target)));
   if (installPlatform === 'opencode') {
-    checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
-    checks.push(...(await checkOpencodeInstructionSourceActivation(args.installScope, target)));
+    checks.push(...(await checkNativeOpenCodeInstallation(args.installScope, target)));
   }
   checks.push(...(await checkWorkspaceConfig(args.installScope, installPlatform, target)));
   if (installPlatform === 'opencode') {

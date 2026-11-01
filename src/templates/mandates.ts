@@ -519,47 +519,14 @@ export const FLOWGUARD_MANDATES_KERNEL = renderMandateDocument(
 );
 
 // ---------------------------------------------------------------------------
-// opencode.json skeleton
-// ---------------------------------------------------------------------------
-
-/**
- * Minimal OpenCode configuration template.
- *
- * Points OpenCode at the flowguard-mandates.md instruction file so FlowGuard
- * mandates are loaded automatically on every session.
- *
- * Includes agent configuration for the flowguard-reviewer subagent with
- * task permissions allowing the build agent to invoke it.
- *
- * @param instructionEntry - The instruction path (scope-dependent).
- */
-export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
-{
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": ["${instructionEntry}"],
-  "agent": {
-    "build": {
-      "permission": {
-        "task": {
-          "*": "deny",
-          "${REVIEWER_SUBAGENT_TYPE}": "allow"
-        }
-      }
-    }
-  }
-}
-`;
-
-// ---------------------------------------------------------------------------
 // package.json skeleton
 // ---------------------------------------------------------------------------
 
 /**
  * Returns a minimal `package.json` fragment declaring FlowGuard dependencies.
  *
- * Only zod and @flowguard/core are required. FlowGuard tools use plain
- * ToolDefinition objects that OpenCode discovers without a separate plugin SDK
- * dependency.
+ * The installed native plugin imports @flowguard/core; that package owns its
+ * pinned plugin/client API dependencies and all native tool registrations.
  *
  * @param version - The semver version of `@flowguard/core` to pin (e.g. `"1.2.3"`).
  * @returns A JSON string suitable for writing to `package.json`.

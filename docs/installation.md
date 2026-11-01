@@ -7,7 +7,7 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 - Node.js 20+
 - npm
-- OpenCode
+- OpenCode V2 (native API candidate: 2.2.4; complete product acceptance remains NO-GO)
 
 ## Installation Steps
 
@@ -46,18 +46,45 @@ operator has verified the artifact through another controlled channel.
 Before installing, choose the host platform. Enforcement and activation guarantees
 differ per host.
 
-| Host        | Enforcement   | Global Target                 | Repo Target            | Activation       | Key Limitation               |
-| ----------- | ------------- | ----------------------------- | ---------------------- | ---------------- | ---------------------------- |
-| OpenCode    | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Restart OpenCode | —                            |
-| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude   | Hook timeout = tool proceeds |
-| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex    | `NOT_VERIFIED_NATIVE_LOAD`   |
+| Host        | Enforcement   | Global Target                 | Repo Target            | Activation                               | Key Limitation                    |
+| ----------- | ------------- | ----------------------------- | ---------------------- | ---------------------------------------- | --------------------------------- |
+| OpenCode V2 | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Native reload; not governance activation | Installed acceptance NOT_VERIFIED |
+| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude                           | Hook timeout = tool proceeds      |
+| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex                            | `NOT_VERIFIED_NATIVE_LOAD`        |
 
 OpenCode provides the strongest enforcement path through its synchronous plugin.
 Claude Code and Codex are supported through MCP, hooks, and native packaging with
 hook-gated, platform-limited guarantees. See
 [Platform Limitations](./platform-limitations.md) for details.
 
-Claude Code and Codex are technical previews; OpenCode is the fully supported GA host.
+The native V2 installer is an implementation checkpoint, not a support
+certification. Installed INACTIVE parity, distinguishable operator-UI origin,
+reviewer assurance and recovery remain open; PR #1190 remains Draft.
+
+### Native V2 layout and fresh-install boundary
+
+The installer writes exactly one default-export plugin at
+`plugins/flowguard/index.ts` under the selected OpenCode directory. That plugin
+owns native tool registrations; no `tools/flowguard.ts` or V1 plugin wrapper is
+installed. Existing OpenCode JSON/JSONC, comments, instructions, model/variant
+selection and permissions are preserved byte-for-byte. An absent config remains
+absent. `flowguard-mandates.md` is a passive managed artifact, **not** registered
+in `instructions[]`; installing files does not activate a session.
+
+OpenCode watches configuration/plugin changes; use `/reload` to force a reload,
+not a service restart. Doctor distinguishes file/import checks from actual native
+load, lifecycle, INACTIVE parity, operator provenance and reviewer proof.
+
+Old FlowGuard wrappers, global mandate registrations, duplicate configured
+FlowGuard plugins and obsolete installer ownership manifests are rejected before
+artifact writes, including with `--force`. There is no format migration or V1
+fallback. Archive the old installation, configuration, state and evidence
+byte-for-byte; verify archive integrity; remove only confirmed obsolete FlowGuard
+registrations, preserving customer settings, then install fresh. Do not delete
+audit evidence or use the new uninstaller to migrate an obsolete manifest.
+Current ownership manifests use `schemaVersion: 2`; unsupported formats fail
+explicitly. `--force` only reinstalls the current format and does not prove
+ownership of a modified plugin file.
 
 ### 2. Initialize OpenCode Integration (Standard)
 
@@ -102,13 +129,12 @@ Expected output:
 
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
-  [ok] ~/.config/opencode/tools/flowguard.ts
-  [ok] ~/.config/opencode/plugins/flowguard-audit.ts
+  [ok] ~/.config/opencode/plugins/flowguard/index.ts
   [ok] ~/.config/opencode/commands/hydrate.md
   ... (installed command files)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
-  [ok] ~/.config/opencode/opencode.json (or opencode.jsonc when present)
+  [warn] OpenCode V2 runtime load, INACTIVE parity, operator UI and reviewer assurance NOT_VERIFIED
   [ok] flowguard.json — config valid (defaults only)
 
   N/N checks passed
@@ -156,7 +182,9 @@ npm run flowguard:doctor
 
 ## Malformed JSON Recovery
 
-When FlowGuard recovers from malformed JSON by rewriting an installer-managed config file, it first writes a timestamped `.flowguard-backup-*` file next to the original. If the backup cannot be written, install stops and does not overwrite the malformed file.
+Malformed OpenCode JSON/JSONC blocks installation without changing the file.
+For installer-managed `package.json` recovery, FlowGuard writes a timestamped
+`.flowguard-backup-*` before replacement; a failed backup blocks the write.
 
 Inspect the backup, repair the malformed JSON if needed, then rerun `flowguard install --force`.
 

@@ -176,6 +176,109 @@ contracts before installed-runtime verification. These checks do not close
 either installed acceptance failure or establish certification of a new
 published candidate.
 
+## Native installer/lifecycle checkpoint (subsequent working tree)
+
+The installer now writes one native default-export directory at
+`plugins/flowguard/index.ts`; `Plugin.define.setup` remains the only tool/hook
+registration owner. The V1 tool wrapper and installer config merge/removal paths
+are removed. Customer OpenCode JSON/JSONC remains byte-identical across install,
+current-format reinstall and uninstall. The managed mandate file is passive:
+installation registers no global instruction, build-agent permission rule or
+governance activation.
+
+Installer provenance now accepts only ownership manifest format 2. Obsolete
+FlowGuard discovery files, explicit global mandate registrations and duplicate
+configured plugins fail before writes, even with `--force`; archival/fresh-install
+recovery preserves historical evidence bytes. The installer rechecks this
+boundary immediately before artifact writes. This is installer provenance, not
+a new runtime activation/approval authority. Reviewer frontmatter uses V2 ordered
+permissions and native `provider/model#variant` selection without a variant
+allowlist. The removed OpenCode effort-env translation is explicitly rejected.
+
+An actual local macOS CLI **2.2.4** smoke installed a freshly packed artifact
+with checksum verification and real dependency installation, then observed
+exactly one active product plugin, reloaded it, resolved its reviewer definition,
+uninstalled via the installed CLI and reloaded to an absent plugin. There was no
+workspace-linked product, V1 factory or fabricated reviewer evidence. The first
+two harness runs failed because `plugin.list` observes only currently activated
+locations: native registry reads are required again after reload. The corrected
+test exercises that native lifecycle explicitly, including after uninstall;
+empty lazy catalogues are not accepted as proof of cleanup. Customer config
+remained byte-identical, and catalogue/setup activity created no FlowGuard
+workspace state in the isolated config root.
+
+This proves bounded installed CLI discovery/reload/uninstall, **not complete
+INACTIVE parity or lifecycle acceptance**. No native mutation/model workflow,
+Desktop, all in-flight cleanup/restart behavior or Java acceptance is certified.
+The canonical session authority still has no durable distinction between a
+never-activated session and missing formerly ACTIVE state. Adding an installer
+flag, treating `absent` as permission or creating a second activation registry
+would not repair that boundary. Operator-UI provenance and full reviewer
+assurance/recovery independently remain unverified; the Draft PR remains NO-GO.
+
+### Final local installer verification (2026-11-01)
+
+This checkpoint is local and uncommitted on the same integration branch, not
+certification of a published CI candidate or a current-`develop` merge result.
+Final review also tightened two failure paths: current provenance belonging to
+another host/scope blocks installation before artifact writes, and package
+write/unlink failures during uninstall are surfaced rather than misclassified as
+malformed JSON. Failed package I/O restoration retains the ownership manifest for
+recovery; uninstall is not claimed to be atomic.
+
+- `npm test`: 696 files passed, **12,513 tests passed**, two existing skips.
+  This non-instrumented run completed without concurrent mutation/coverage load;
+  no performance budget was relaxed.
+- `npm run test:coverage:ci`: 12,504 passed, 11 skipped, with the runner's existing
+  coverage-safe PERF policy. Statements **90.41%**, branches **83.43%**, functions
+  **95.29%**, lines **91.91%**; all unchanged 80% gates passed. These skips are
+  separate from the non-instrumented run, not new test exclusions.
+- `npm run mutation -- stryker.native-install.config.mjs --concurrency 4`:
+  **98.17%**, covering `install-helpers.ts` (97.69%) and `install-ownership.ts`
+  (99.00%). The final isolated run killed 268 mutants, left five survivors,
+  had no uncovered mutants or timeouts, and reported 152 compile errors.
+  Both report source snapshots match the final production files byte-for-byte.
+  The focused configuration inherits the repository's existing mutator exclusions
+  and unchanged 80% breaking threshold; it is not a full-repository mutation run.
+  The first scored run failed at 67.62%; file-error, provenance, tuning and
+  symlink negatives were strengthened and redundant branches removed, not gates
+  lowered. An initial broad run was cancelled after source edits; an unsupported
+  CLI config override also failed before the valid focused run.
+- The final rebuilt artifact passed
+  `OPENCODE_LIVE=1 npx vitest run --project smoke src/cli/opencode-native-install.smoke.test.ts`:
+  one real installed native CLI lifecycle test, using private host 2.2.4,
+  isolated config/data, packed dependencies and checksum verification. No shared
+  service restart or operator configuration change was used.
+- `npm run check`, `npm run lint:strict`, `npm run check:format`,
+  `npm run check:doc-drift` (including build), unused dependencies and unchanged
+  unused-export comparison passed. Architecture passed 538 tests and scripts
+  passed 307. The owning integration envelope suite's 29 tests passed; the
+  final full regression also covers config and integration obligations.
+- `npm run check:pr-documentation -- origin/develop HEAD` passed for the existing
+  committed PR head; the same canonical validator also passed against the local
+  working-tree changelog and that PR merge base. The commit-based check for a new
+  installer commit remains NOT_VERIFIED until explicitly authorized publication;
+  re-run it against the resulting head rather than treating the old-head result
+  as new-commit certification. Affected documentation was reviewed semantically.
+
+**Remaining acceptance:** complete installed INACTIVE mutation/model parity,
+Desktop, all in-flight/restart behavior and Java workflow are NOT_VERIFIED.
+Distinguishable operator-UI provenance remains BLOCKED. Reviewer
+release/child/request/terminal/model/effort/same-child uncontaminated capture and
+joint recovery quiescence remain NOT_VERIFIED; regular native edit-error history
+still cannot safely close mutation episodes. The mandatory live smoke and
+independent-review verifier retain unresolved V1 harness assumptions and required
+positive contracts; this bounded smoke does not replace them. Re-run
+`npm run test:smoke` and `npm run test:independent-review-e2e` only as their
+actual native acceptance infrastructure is completed, without removing those
+contracts. Historical host/docs baselines and dated probe bytes remain unchanged.
+The final local `npm run test:independent-review-e2e` rerun failed explicitly on
+the two missing/pending positive contracts, before installed-runtime validation:
+“leaves the review-required output pending and authorizes the native Task before
+release” and “records bound same-child evidence and fulfills the obligation”.
+PR #1190 remains Draft; no commit, push, merge or supported ACTIVE V2 release is
+claimed by this verification record.
+
 ## Baseline control flow and required simplification
 
 Paths in this section are relative to the repository root. The table describes

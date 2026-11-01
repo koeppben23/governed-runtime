@@ -4,6 +4,11 @@ Host-aware governance runtime for AI-assisted software delivery.
 
 > **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
+> **OpenCode V2 migration checkpoint:** native entrypoint and installation are
+> implemented; complete installed INACTIVE parity, operator-UI provenance and
+> reviewer assurance/recovery remain unverified. PR #1190 is Draft; this branch
+> is not a supported ACTIVE V2 release.
+
 FlowGuard provides deterministic workflow control, evidence gates, audit trails,
 and policy-bound decisions around supported AI-assisted engineering hosts. OpenCode
 currently provides the strongest enforcement path through its synchronous plugin;
@@ -18,7 +23,7 @@ FlowGuard is distributed as a pre-built proprietary release artifact via GitHub 
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
-3. Restart OpenCode (plugins are loaded once at startup)
+3. OpenCode V2 watches plugin/config changes; its native reload action forces rediscovery. Installation does not activate governance; installed V2 acceptance remains NOT_VERIFIED.
 4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
 
 If you installed with `--install-scope repo`, use the same flag for `doctor`.
@@ -35,13 +40,14 @@ the developer's global host configuration.
 In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
 
 > [!NOTE] > **Headless operation is separate from the interactive plugin:**
-> The interactive plugin (`flowguard_*` tools inside OpenCode) is stable.
+> The native interactive plugin (`flowguard_*` tools inside OpenCode) remains under V2 acceptance.
 > The standalone CLI wrappers (`flowguard run`, `flowguard serve`) are experimental.
 > For production headless workflows, use OpenCode directly (`opencode run`, `opencode serve`).
 
 ## In 30 Seconds
 
-This section applies to OpenCode, the fully supported GA host.
+This describes the intended governed OpenCode workflow, not completed V2
+activation/reviewer acceptance. Installation alone cannot enable it.
 
 Three governed flows are available after `/start` (or `/hydrate`):
 

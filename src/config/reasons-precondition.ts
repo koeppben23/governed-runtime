@@ -439,9 +439,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'FlowGuard plugin enforcement hooks are not active. Tools run but mandatory review orchestration is unavailable.',
     recoverySteps: [
-      'Verify ~/.config/opencode/plugins/flowguard-audit.ts exists',
+      'Verify ~/.config/opencode/plugins/flowguard/index.ts exists',
       'Run npm install in ~/.config/opencode',
-      'Restart OpenCode after installing FlowGuard',
+      'Use /reload in OpenCode V2 to reload installed plugins; installation does not activate governance',
       'Run flowguard doctor to verify plugin importability and handshake',
       'Check session state for pluginHandshakeAt timestamp',
     ],

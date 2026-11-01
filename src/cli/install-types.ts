@@ -5,7 +5,12 @@
  * @version v1
  */
 
-import { COMMANDS, MANDATES_FILENAME, REVIEWER_AGENT_FILENAME } from './templates.js';
+import {
+  COMMANDS,
+  MANDATES_FILENAME,
+  REVIEWER_AGENT_FILENAME,
+  PLUGIN_RELATIVE_PATH,
+} from './templates.js';
 
 export type { PolicyMode } from '../config/policy-types.js';
 import type { PolicyMode } from '../config/policy-types.js';
@@ -62,15 +67,7 @@ export interface ArtifactDetection {
 }
 
 export type DoctorStatus =
-  | 'ok'
-  | 'missing'
-  | 'modified'
-  | 'unmanaged'
-  | 'version_mismatch'
-  | 'instruction_missing'
-  | 'error'
-  | 'warn'
-  | 'info';
+  'ok' | 'missing' | 'modified' | 'unmanaged' | 'version_mismatch' | 'error' | 'warn' | 'info';
 
 export interface DoctorCheck {
   file: string;
@@ -84,8 +81,7 @@ export const BUILD_INFO_CHECK = 'build-info';
 
 export const FLOWGUARD_OWNED_FILES = [
   MANDATES_FILENAME,
-  'tools/flowguard.ts',
-  'plugins/flowguard-audit.ts',
+  PLUGIN_RELATIVE_PATH,
   `agents/${REVIEWER_AGENT_FILENAME}`,
   `subagents/${REVIEWER_AGENT_FILENAME}`,
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
@@ -125,7 +121,8 @@ export type InstallErrorCode =
   | 'ALREADY_INSTALLED'
   | 'MANAGED_ARTIFACT_CONFLICT'
   | 'PARTIAL_INSTALL_CONFLICT'
-  | 'LEGACY_INSTRUCTION_AMBIGUOUS'
+  | 'OPENCODE_FRESH_INSTALL_REQUIRED'
+  | 'OPENCODE_CONFIG_INVALID'
   | 'INSTALL_OWNERSHIP_UNAVAILABLE'
   | 'DEPENDENCY_INSTALL_FAILED'
   | 'INSTALL_LOCK_CONFLICT'

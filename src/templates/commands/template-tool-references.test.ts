@@ -28,7 +28,7 @@ import {
   TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
-import { TOOL_WRAPPER } from '../wrappers/index.js';
+import { FLOWGUARD_TOOL_NAMES } from '../../integration/tool-names.js';
 
 const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_STATUS,
@@ -74,18 +74,10 @@ describe('command templates: tool reference integrity', () => {
     expect(body).toContain('flowguard_continue');
   });
 
-  it('every command-referenced tool is exported by the installed OpenCode wrapper', () => {
-    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
-    expect(exportBlock).not.toBeNull();
-    const exports = new Set(
-      exportBlock![1]!
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    );
+  it('every command-referenced tool belongs to the native plugin registration authority', () => {
+    const exports: ReadonlySet<string> = new Set(FLOWGUARD_TOOL_NAMES);
     const missing = [...REGISTERED_TOOLS]
       .filter((tool) => Object.values(COMMANDS).some((body) => body.includes(tool)))
-      .map((tool) => tool.replace(/^flowguard_/, ''))
       .filter((name) => !exports.has(name));
     expect(missing).toEqual([]);
   });

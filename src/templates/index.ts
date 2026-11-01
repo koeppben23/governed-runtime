@@ -1,11 +1,10 @@
-export { TOOL_WRAPPER, PLUGIN_WRAPPER } from './wrappers/index.js';
+export { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './wrappers/index.js';
 export { COMMANDS } from './commands/index.js';
 export {
   MANDATES_FILENAME,
   mandatesInstructionEntry,
   FLOWGUARD_MANDATES_FULL_BODY,
   FLOWGUARD_MANDATES_KERNEL,
-  OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
   CLAUDE_REVIEWER_AGENT,
   CLAUDE_REVIEWER_AGENT_PATH,

@@ -236,7 +236,7 @@ describe('documentation/user-docs-drift', () => {
       expect(section).toContain('installer persists `--policy-mode`');
     });
 
-    it('host-selection matrix documents enforcement levels and restart activation', () => {
+    it('host-selection matrix documents enforcement levels and native reload without claiming activation', () => {
       const content = readDoc('docs/installation.md');
       expect(content).toContain('## Host Selection Matrix');
 
@@ -250,7 +250,8 @@ describe('documentation/user-docs-drift', () => {
       expect(content).toContain('`hook_gated`');
 
       // Each host requires restart for activation
-      expect(content).toMatch(/Restart OpenCode/);
+      expect(content).toMatch(/Native reload; not governance activation/);
+      expect(content).toContain('Installed INACTIVE parity');
       expect(content).toMatch(/Restart Claude/);
       expect(content).toMatch(/Restart Codex/);
 

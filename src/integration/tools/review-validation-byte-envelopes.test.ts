@@ -12,7 +12,10 @@
  * Amendment (Run-9 F3): `validation.unable-to-review` was re-captured after the
  * canonical fix — the reason now interpolates the real obligation id and the
  * reason template no longer embeds reviewer-supplied text. Every other entry
- * is still the base capture.
+ * is still the base capture except the two PLUGIN_ENFORCEMENT_UNAVAILABLE
+ * envelopes: the native V2 installer intentionally changes their recovery path
+ * and reload guidance. Their current bytes are pinned without changing rejection
+ * codes, precedence, or any historical runtime audit/probe evidence.
  */
 
 import { readFileSync } from 'node:fs';
