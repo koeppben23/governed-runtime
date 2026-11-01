@@ -171,12 +171,17 @@ export class OpenCodeGovernance {
     if (record.parentDispatch === null) return false;
     const dispatch = GovernanceDelegationDispatch.safeParse(
       await this.store.get(
-        governanceDelegationKey(record.parentDispatch.sessionId, record.parentDispatch.callId),
+        governanceDelegationKey(
+          record.parentDispatch.sessionId,
+          record.parentDispatch.messageId,
+          record.parentDispatch.callId,
+        ),
       ),
     );
     return (
       dispatch.success &&
       dispatch.data.sessionId === record.parentDispatch.sessionId &&
+      dispatch.data.messageId === record.parentDispatch.messageId &&
       dispatch.data.callId === record.parentDispatch.callId &&
       dispatch.data.rootSessionId === record.rootSessionId &&
       dispatch.data.agent === agent &&
@@ -203,7 +208,7 @@ export class OpenCodeGovernance {
         'A native subagent dispatch requires exact host call/message identity and a valid agent.',
       );
     const dispatch = parsed.data;
-    const key = governanceDelegationKey(dispatch.sessionId, dispatch.callId);
+    const key = governanceDelegationKey(dispatch.sessionId, dispatch.messageId, dispatch.callId);
     await this.withLock(scope.root.sessionId, async () => {
       const fresh = await this.resolve(dispatch.sessionId, new Set(), false);
       if (
@@ -236,11 +241,13 @@ export class OpenCodeGovernance {
   /** Called synchronously by the event-loop consumer before it awaits more I/O. */
   observeProgress(event: OpenCodeEvent): Promise<void> | undefined {
     if (event.type !== 'session.tool.progress') return undefined;
-    const dispatch = this.dispatches.get(
-      governanceDelegationKey(event.data.sessionID, event.data.id),
+    const dispatchKey = governanceDelegationKey(
+      event.data.sessionID,
+      event.data.assistantMessageID,
+      event.data.id,
     );
-    if (!dispatch || dispatch.messageId !== event.data.assistantMessageID) return undefined;
-    const dispatchKey = governanceDelegationKey(dispatch.sessionId, dispatch.callId);
+    const dispatch = this.dispatches.get(dispatchKey);
+    if (!dispatch) return undefined;
     if (this.settledDispatches.has(dispatchKey)) return undefined;
     const childId = event.data.metadata.sessionID;
     if (typeof childId !== 'string' || event.data.metadata.status !== 'running') return undefined;
@@ -323,7 +330,11 @@ export class OpenCodeGovernance {
         directory: child.directory,
         worktreeRoot: root.worktreeRoot,
         policyDigest: root.policyDigest,
-        parentDispatch: { sessionId: dispatch.sessionId, callId: dispatch.callId },
+        parentDispatch: {
+          sessionId: dispatch.sessionId,
+          messageId: dispatch.messageId,
+          callId: dispatch.callId,
+        },
       },
     );
     if (result.kind !== 'committed') throw this.error(result.reason);

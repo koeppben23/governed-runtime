@@ -243,7 +243,7 @@ describe('durable governance activation authority', () => {
         action: 'enroll',
         expectedRevision: 0,
         sessionId: 'child',
-        parentDispatch: { sessionId: 'first', callId: 'call' },
+        parentDispatch: { sessionId: 'first', messageId: 'message', callId: 'call' },
       },
     );
     fixture.values.set('governance/v1/invalid/head', { invalid: true });

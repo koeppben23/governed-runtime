@@ -158,7 +158,7 @@ describe('native governance delegation correlation', () => {
     async (field) => {
       await authorize();
       await governance.observeProgress(receipt());
-      const key = governanceDelegationKey('root', 'call');
+      const key = governanceDelegationKey('root', 'message', 'call');
       const replacement = {
         activationId: '00000000-0000-4000-8000-000000000002',
         generation: 2,
@@ -185,7 +185,7 @@ describe('native governance delegation correlation', () => {
     await governance.observeProgress(receipt());
     if ('generation' in patch) {
       rewriteScope('child', patch);
-      const key = governanceDelegationKey('root', 'call');
+      const key = governanceDelegationKey('root', 'message', 'call');
       host.activation.values.set(key, {
         ...(host.activation.values.get(key) as object),
         generation: 2,
@@ -219,7 +219,7 @@ describe('native governance delegation correlation', () => {
     await authorize();
     await governance.observeProgress(receipt());
     rewriteScope('child', { rootSessionId: 'foreign' });
-    const key = governanceDelegationKey('root', 'call');
+    const key = governanceDelegationKey('root', 'message', 'call');
     host.activation.values.set(key, {
       ...(host.activation.values.get(key) as object),
       rootSessionId: 'foreign',
@@ -333,7 +333,7 @@ describe('native governance delegation correlation', () => {
     { activationId: '00000000-0000-4000-8000-000000000002' },
     { rootSessionId: 'foreign' },
     { generation: 2 },
-    { parentDispatch: { sessionId: 'foreign', callId: 'call' } },
+    { parentDispatch: { sessionId: 'foreign', messageId: 'message', callId: 'call' } },
   ])(
     'does not reuse child enrollment replaced between authorization and receipt: %j',
     async (patch) => {
@@ -446,9 +446,9 @@ describe('native governance delegation correlation', () => {
     await expect(
       authorize(dispatch('second-continuation', { sessionID: 'child' })),
     ).rejects.toThrow('unsettled continuation');
-    expect(host.activation.values.has(governanceDelegationKey('root', 'second-continuation'))).toBe(
-      false,
-    );
+    expect(
+      host.activation.values.has(governanceDelegationKey('root', 'message', 'second-continuation')),
+    ).toBe(false);
   });
 
   it('rejects ambiguous child authority encountered during enrollment', async () => {
@@ -474,12 +474,12 @@ describe('native governance delegation correlation', () => {
       kind: 'inactive',
     });
   });
-  it.each(['sessionId', 'callId', 'rootSessionId'])(
+  it.each(['sessionId', 'messageId', 'callId', 'rootSessionId'])(
     'rejects an enrollment backed by a foreign dispatch %s',
     async (field) => {
       await authorize();
       await governance.observeProgress(receipt());
-      const key = governanceDelegationKey('root', 'call');
+      const key = governanceDelegationKey('root', 'message', 'call');
       host.activation.values.set(key, {
         ...(host.activation.values.get(key) as object),
         [field]: 'foreign',
@@ -502,7 +502,7 @@ describe('native governance delegation correlation', () => {
       kind: 'active',
       scope: {
         root: { sessionId: 'root' },
-        record: { parentDispatch: { sessionId: 'root', callId: 'call' } },
+        record: { parentDispatch: { sessionId: 'root', messageId: 'message', callId: 'call' } },
       },
     });
     const restored = new OpenCodeGovernance(
@@ -532,6 +532,27 @@ describe('native governance delegation correlation', () => {
     const bytes = structuredClone([...host.activation.values]);
     await expect(authorize()).rejects.toThrow('cannot be replayed');
     expect([...host.activation.values]).toEqual(bytes);
+  });
+
+  it('treats a provider-reused call ID in a new host assistant message as a distinct dispatch', async () => {
+    await authorize();
+    await governance.observeProgress(receipt());
+    const next = { ...dispatch(), messageID: 'next-message' } as ReturnType<typeof dispatch>;
+    await authorize(next);
+    expect(
+      host.activation.values.has(governanceDelegationKey('root', 'next-message', 'call')),
+    ).toBe(true);
+    // The original receipt cannot settle the new dispatch, and vice versa.
+    expect(governance.observeProgress(receipt('child-two'))).toBeUndefined();
+    await governance.observeProgress(receipt('child-two', { assistantMessageID: 'next-message' }));
+    expect(await governance.resolve('child-two')).toMatchObject({
+      kind: 'active',
+      scope: { record: { parentDispatch: { messageId: 'next-message', callId: 'call' } } },
+    });
+    expect(await governance.resolve('child')).toMatchObject({
+      kind: 'active',
+      scope: { record: { parentDispatch: { messageId: 'message', callId: 'call' } } },
+    });
   });
 
   it('does not enroll a different requested continuation or a second child for one dispatch', async () => {

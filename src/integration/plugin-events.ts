@@ -9,8 +9,9 @@
  *   canonical system work. `system_work` phases have no commands, so the
  *   runtime — not a later user command — owns the continuation.
  *
- * All handlers are fail-safe: errors are logged but never thrown.
- * This prevents event-hook failures from breaking the host runtime.
+ * Handler failure semantics: in-memory cleanup is non-blocking; authority-relevant
+ * audit, mutation and system-work failures propagate to the composition root,
+ * which fences the affected ACTIVE scope and continues serving unrelated work.
  *
  * @see https://opencode.ai/v2/docs/build/plugins/server
  * @version v2
@@ -44,14 +45,8 @@ export interface EventHandlerDeps {
    */
   cleanupSession(sessionId: string): void;
   /**
-   * Persist a session error to the audit trail.
-   *
-   * Called after logging. Fail-safe: errors from this callback are caught
-   * by the outer try/catch and logged via deps.log.warn — they never
-   * propagate to the host runtime.
-   *
-   * Implementations that cannot resolve a sessionDir (e.g., before session
-   * creation) should return silently.
+   * Persist a session error to the audit trail. Failures propagate: an
+   * unpersisted governed error must fence its scope.
    */
   emitSessionErrorAudit(
     sessionId: string,
@@ -61,8 +56,8 @@ export interface EventHandlerDeps {
   /**
    * Resume interrupted canonical system work for an idle/active session.
    * The runtime lifecycle owns this trigger; no user command is required.
-   * Fail-safe: the handler catches and logs; the implementation must never
-   * throw for an unavailable/resolved-elsewhere session.
+   * Blocked outcomes are reported by the implementation; thrown failures
+   * propagate to the scope fence.
    */
   resumePendingSystemWork(sessionId: string): Promise<void>;
   observeMutationEvent(event: PluginEvent): Promise<void>;
@@ -191,20 +186,36 @@ async function handleSessionIdle(deps: EventHandlerDeps, event: PluginEvent): Pr
 /**
  * Handle an OpenCode event.
  *
- * Fail-safe: never throws. All errors are caught and logged.
+ * Only in-memory cleanup for a deleted session is non-blocking. Audit,
+ * mutation-reconciliation and system-work failures are diagnosed and then
+ * propagated, so the composition root can fence the affected ACTIVE scope.
  */
 export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
   if (!event || !event.type) return;
   if (!HANDLED_EVENT_TYPES.has(event.type)) return;
+  if (event.type === 'session.deleted') {
+    try {
+      await handleSessionDelete(deps, event);
+    } catch (err) {
+      diagnose(deps, 'session cleanup failed (non-blocking)', event, err);
+    }
+    return;
+  }
   try {
     if (event.type === 'session.tool.failed') await deps.observeMutationEvent(event);
     else if (event.type === 'session.execution.failed') await handleSessionError(deps, event);
-    else if (event.type === 'session.deleted') await handleSessionDelete(deps, event);
-    else if (event.type === 'session.idle') await handleSessionIdle(deps, event);
+    else await handleSessionIdle(deps, event);
   } catch (err) {
-    deps.log.warn('event', 'event handler failed (non-blocking)', {
-      eventType: event.type,
-      error: serializeError(err),
-    });
+    diagnose(deps, 'governed event handler failed', event, err);
+    throw err;
+  }
+}
+
+/** Diagnostics never replace or suppress the original handler outcome. */
+function diagnose(deps: EventHandlerDeps, message: string, event: PluginEvent, err: unknown): void {
+  try {
+    deps.log.warn('event', message, { eventType: event.type, error: serializeError(err) });
+  } catch {
+    // The original failure (or its non-blocking classification) is retained.
   }
 }

@@ -1,6 +1,10 @@
 /** HAI and native OpenCode V2 client boundary; no live-host assurance is inferred. */
 import { describe, expect, it, vi } from 'vitest';
-import { OpenCodeHostAdapter, projectOpenCodeEvent } from '../integration/opencode-host-adapter.js';
+import {
+  OpenCodeHostAdapter,
+  nativeHostCallId,
+  projectOpenCodeEvent,
+} from '../integration/opencode-host-adapter.js';
 import { createV2Host } from '../integration/opencode-v2-test-helpers.js';
 import { REQUIRED_INDEPENDENT_REVIEW_TRANSPORT, reviewTransportSatisfies } from './host-adapter.js';
 import type { OpenCodeEvent } from '@opencode/client';
@@ -167,11 +171,46 @@ describe('native V2 host adapter', () => {
 });
 
 describe('native V2 notification projection', () => {
+  it('binds native call identity to session and host assistant message, not the provider ID alone', () => {
+    const base = nativeHostCallId('session', 'message', 'call_0');
+    expect(nativeHostCallId('session', 'message', 'call_0')).toBe(base);
+    expect(
+      new Set([
+        base,
+        nativeHostCallId('other-session', 'message', 'call_0'),
+        nativeHostCallId('session', 'other-message', 'call_0'),
+        nativeHostCallId('session', 'message', 'call_1'),
+        // Delimiter-shaped values cannot alias a different tuple.
+        nativeHostCallId('session","messageId":"x', 'message', 'call_0'),
+      ]).size,
+    ).toBe(5);
+  });
+
+  it.each([
+    ['', 'message', 'call'],
+    ['session', '', 'call'],
+    ['session', 'message', ''],
+  ])('refuses an incomplete native call identity (%j, %j, %j)', (session, message, call) => {
+    expect(() => nativeHostCallId(session, message, call)).toThrow(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    );
+  });
+
+  it('refuses a failed-tool notification without its host assistant-message identity', () => {
+    expect(() =>
+      projectOpenCodeEvent({
+        id: 'event',
+        type: 'session.tool.failed',
+        data: { sessionID: 'child', id: 'call' },
+      } as unknown as OpenCodeEvent),
+    ).toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
   it.each(['session.deleted', 'session.idle', 'session.execution.failed', 'session.tool.failed'])(
     'preserves %s identity and data without creating completion proof',
     (type) => {
       const data = {
         sessionID: 'child',
+        assistantMessageID: 'message',
         id: 'call',
         executed: false,
         error: { code: 'failed', message: 'error' },
@@ -183,7 +222,16 @@ describe('native V2 notification projection', () => {
       } as unknown as OpenCodeEvent);
       expect(projected).toEqual({
         sessionId: 'child',
-        event: { type, data: { ...data, hostEventId: 'event' } },
+        event: {
+          type,
+          data: {
+            ...data,
+            hostEventId: 'event',
+            ...(type === 'session.tool.failed'
+              ? { hostCallId: nativeHostCallId('child', 'message', 'call') }
+              : {}),
+          },
+        },
       });
       expect(projected?.event).not.toHaveProperty('properties');
     },

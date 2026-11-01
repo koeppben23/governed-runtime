@@ -20,6 +20,7 @@ export const GovernanceActivationRevision = z
     parentDispatch: z
       .object({
         sessionId: z.string().min(1),
+        messageId: z.string().min(1),
         callId: z.string().min(1),
       })
       .strict()

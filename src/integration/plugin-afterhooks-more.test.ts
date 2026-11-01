@@ -233,7 +233,7 @@ describe('toolAfter — audit block output mutation', () => {
 describe('handlePluginEvent', () => {
   it('ignores unknown event types', async () => {
     const runtime = makeRuntime();
-    await handlePluginEvent(runtime, { type: 'unrelated.event' });
+    await handlePluginEvent(runtime, { type: 'unrelated.event' }, SESSION_ID);
     expect(runtime.ws.invalidateChainState).not.toHaveBeenCalled();
   });
 
@@ -244,10 +244,11 @@ describe('handlePluginEvent', () => {
     runtime.toolTraceIds.set(`${SESSION_ID}:bash`, 'trace-1');
     runtime.toolTraceIds.set('other-session:bash', 'trace-2');
 
-    await handlePluginEvent(runtime, {
-      type: 'session.deleted',
-      data: { sessionID: SESSION_ID },
-    });
+    await handlePluginEvent(
+      runtime,
+      { type: 'session.deleted', data: { sessionID: SESSION_ID } },
+      SESSION_ID,
+    );
 
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith(SESSION_ID);
     expect(runtime.activeCommandScopes.has(SESSION_ID)).toBe(false);
@@ -270,10 +271,14 @@ describe('handlePluginEvent', () => {
       const runtime = makeRuntime({
         ws: { resolveSessionAuthority: vi.fn(() => authorityAt(sessDir)) },
       });
-      await handlePluginEvent(runtime, {
-        type: 'session.execution.failed',
-        data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
-      });
+      await handlePluginEvent(
+        runtime,
+        {
+          type: 'session.execution.failed',
+          data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
+        },
+        SESSION_ID,
+      );
       const entries = await fs.readdir(sessDir);
       expect(entries).toContain('audit.jsonl');
       const events = await readAuditTrail(sessDir);
@@ -286,13 +291,48 @@ describe('handlePluginEvent', () => {
     }
   });
 
-  it('skips the session error audit when no mapping exists', async () => {
+  it('surfaces an unpersistable governed session error instead of dropping its audit', async () => {
     const runtime = makeRuntime();
-    await handlePluginEvent(runtime, {
-      type: 'session.execution.failed',
-      data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
-    });
-    expect(runtime.log.warn).not.toHaveBeenCalled();
+    await expect(
+      handlePluginEvent(
+        runtime,
+        {
+          type: 'session.execution.failed',
+          data: { sessionID: SESSION_ID, error: { type: 'unknown', message: 'host stalled' } },
+        },
+        SESSION_ID,
+      ),
+    ).rejects.toThrow();
+    expect(runtime.log.warn).toHaveBeenCalledWith(
+      'event',
+      'governed event handler failed',
+      expect.objectContaining({ eventType: 'session.execution.failed' }),
+    );
+  });
+
+  it('persists a delegated-session error in the governed root trail with its native identity', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-child-error');
+      await fs.mkdir(sessDir, { recursive: true });
+      await writeState(sessDir, makeState('PLAN'));
+      const resolve = vi.fn(() => authorityAt(sessDir));
+      const runtime = makeRuntime({ ws: { resolveSessionAuthority: resolve } });
+      await handlePluginEvent(
+        runtime,
+        {
+          type: 'session.execution.failed',
+          data: { sessionID: 'child', error: { type: 'unknown', message: 'child stalled' } },
+        },
+        SESSION_ID,
+      );
+      expect(resolve).toHaveBeenCalledWith(SESSION_ID);
+      expect((await readAuditTrail(sessDir))[0]).toMatchObject({
+        detail: { code: 'SESSION_ERROR', nativeSessionId: 'child' },
+      });
+    } finally {
+      await ws.cleanup();
+    }
   });
 });
 

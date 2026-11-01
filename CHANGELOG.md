@@ -193,6 +193,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Governed event failures fence their ACTIVE scope (#1190).** The canonical
+  event handler no longer swallows session-error audit, failed-tool mutation
+  reconciliation or system-work resume failures; they propagate to the V2 scope
+  fence, so a failed audit append blocks further governed operations of that
+  root while unrelated INACTIVE sessions continue. Only in-memory cleanup of a
+  deleted session stays non-blocking. Delegated-session errors are audited in
+  the governed root trail with their native session ID.
+
+- **Native call identity includes session and assistant message (#1190).**
+  OpenCode passes provider tool-call IDs verbatim, unique only within one
+  assistant message. Mutation episodes, completion binding, failed-tool
+  reconciliation and delegation dispatch keys now use `{ sessionId, messageId,
+callId }`, so a provider-reused ID in a delegated child or a later message is
+  no longer rejected as `MUTATION_EPISODE_REPLAY_BLOCKED`; replay of the same
+  native call remains blocked. The unused `nativeCompletionText` export was removed.
+
 - **Preserve unproven dependency contents on uninstall (#1190).** Removing an
   installer-created `package.json` no longer authorizes recursive deletion of
   `node_modules`. Nonempty trees, symlinks and non-directory roots are preserved

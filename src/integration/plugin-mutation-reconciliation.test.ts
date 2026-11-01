@@ -109,10 +109,11 @@ async function completionInput() {
 describe('mutation completion authority and reconciliation', () => {
   it('ignores old event envelopes instead of translating them into native wakeups', async () => {
     const host = runtime();
-    await reconcileMutationEvent(host.value, {
-      type: 'message.part.updated',
-      properties: { part: hostHistory()[0]!.content[0] },
-    });
+    await reconcileMutationEvent(
+      host.value,
+      { type: 'message.part.updated', properties: { part: hostHistory()[0]!.content[0] } },
+      sessionId,
+    );
     expect(host.messages).not.toHaveBeenCalled();
     expect((await readState(sessDir))!.mutationEpisodes[0]!.status).toBe('dispatch_authorized');
   });
@@ -221,10 +222,11 @@ describe('mutation completion authority and reconciliation', () => {
       code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
     });
     await expect(
-      reconcileMutationEvent(host.value, {
-        type: 'session.tool.failed',
-        data: { sessionID: sessionId, id: 'unrelated-call' },
-      }),
+      reconcileMutationEvent(
+        host.value,
+        { type: 'session.tool.failed', data: { hostCallId: 'unrelated-call' } },
+        sessionId,
+      ),
     ).resolves.toBeUndefined();
   });
   it('times out a wedged host read and never writes on its later settlement', async () => {
@@ -317,10 +319,11 @@ describe('mutation completion authority and reconciliation', () => {
     );
     await Promise.all([
       reconcileHostMutationEpisodes(host.value, sessionId),
-      reconcileMutationEvent(host.value, {
-        type: 'session.tool.failed',
-        data: { sessionID: sessionId, id: 'edit-call' },
-      }),
+      reconcileMutationEvent(
+        host.value,
+        { type: 'session.tool.failed', data: { hostCallId: 'edit-call' } },
+        sessionId,
+      ),
     ]);
     const state = await readState(sessDir);
     expect(state!.mutationEpisodes[0]).toMatchObject({
@@ -361,10 +364,11 @@ describe('mutation completion authority and reconciliation', () => {
 
   it('ignores raw event claims and re-reads interrupted host evidence', async () => {
     const host = runtime(vi.fn(async () => hostHistory(true)));
-    await reconcileMutationEvent(host.value, {
-      type: 'session.tool.failed',
-      data: { sessionID: sessionId, id: 'edit-call' },
-    });
+    await reconcileMutationEvent(
+      host.value,
+      { type: 'session.tool.failed', data: { hostCallId: 'edit-call' } },
+      sessionId,
+    );
     await reconcileHostMutationEpisodes(host.value, sessionId);
     expect((await readState(sessDir))!.mutationEpisodes[0]!.status).toBe('dispatch_authorized');
     expect(host.value.log.info).toHaveBeenCalledWith(

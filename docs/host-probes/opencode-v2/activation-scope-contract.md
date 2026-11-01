@@ -35,6 +35,33 @@ ACTIVE callbacks also require the canonical workflow binding, enrolled worktree
 and frozen policy digest. Rejected runtime initialization is evicted, not cached
 as a permanent failed promise. Event-stream loss fences ACTIVE operations only;
 a handler failure fences its resolved root scope, not unrelated INACTIVE work.
+Session-error audit, failed-tool mutation reconciliation and system-work resume
+failures propagate from the canonical event handler to that fence; only
+in-memory cleanup of a deleted session remains non-blocking. Delegated-session
+errors are audited in the governed root trail with their native session ID, and
+a delegated child's idleness does not trigger root system work.
+
+## Native call identity
+
+OpenCode 2.2.4 passes the provider's tool-call ID verbatim as the native call ID
+(`packages/core/src/tool.ts`); it is unique only within one host-generated
+assistant message. Mutation episodes, completion binding, failed-tool
+reconciliation and delegation dispatch keys therefore use the canonical
+`{ sessionId, messageId, callId }` identity. A provider-reused ID in another
+session or message is a distinct call; replay of the same native call remains
+blocked. A host notification lacking any of the three values fails closed.
+
+Bounded mutation for this change (unchanged 80% gate; event handler, failed-tool
+reconciliation, projection/identity, controller and lifecycle machine): a first
+snapshot taken **before** the final three boundary tests scored 92.44% and is not
+evidence for those tests. The final code/test run scored **92.87%** (401 killed,
+29 timed out, 32 survived, 1 no coverage), with both new identity mutants
+(`messageId` comparison in the lifecycle and the stored-dispatch binding) killed.
+Remaining notable survivors: the generation clause in enrollment is shadowed by
+the preceding activation-ID check (a valid journal cannot change generation
+without a new activation ID), and `own.record !== null` for an ended session
+with a native parent is unreachable until a root End path exists (Finding 5).
+Waiter/linking bookkeeping and event-identity helpers account for the rest.
 
 Setup publishes canonical inert help. Existing active roots restore productive
 definitions, and prompt preflight prepares them before request snapshots. Context,

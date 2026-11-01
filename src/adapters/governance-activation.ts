@@ -110,8 +110,14 @@ async function resolveCatalogueHead(
   return resolveGovernanceActivation(store, head.data.sessionId);
 }
 
-export function governanceDelegationKey(sessionId: string, callId: string): string {
-  return `governance/delegations/v1/${hashText(sessionId)}/${hashText(callId)}`;
+/** Native call IDs are provider-supplied and unique only within one host-generated
+ * assistant message; the delegation identity therefore includes that message. */
+export function governanceDelegationKey(
+  sessionId: string,
+  messageId: string,
+  callId: string,
+): string {
+  return `governance/delegations/v1/${hashText(canonicalJsonStringify({ sessionId, messageId, callId }))}`;
 }
 
 function revisionKey(sessionId: string, revision: number): string {

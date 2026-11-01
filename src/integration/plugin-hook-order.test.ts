@@ -249,7 +249,11 @@ describe('single-owner native hook composition', () => {
   it.each(['session.idle', 'session.execution.failed', 'session.tool.failed'])(
     'delivers native %s as notification only, never capture settlement',
     async (type) => {
-      host.emit({ type, id: 'event', data: { sessionID: 'child', id: 'call' } });
+      host.emit({
+        type,
+        id: 'event',
+        data: { sessionID: 'child', assistantMessageID: 'message', id: 'call' },
+      });
       await vi.waitFor(() => expect(h.event).toHaveBeenCalledOnce());
       expect(h.order).toEqual(['event']);
       expect(h.capture.reconcileOnIdle).not.toHaveBeenCalled();

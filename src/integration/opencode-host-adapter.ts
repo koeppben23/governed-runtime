@@ -11,6 +11,7 @@ import type {
 import type { OrchestratorClient } from './review/types.js';
 import type { PluginEvent } from './plugin-events.js';
 import { buildEnforcementError } from './blocked-result.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 export class HostAdapterInitError extends Error {
   readonly code = 'HOST_ADAPTER_INIT_FAILED';
@@ -171,11 +172,27 @@ export function projectOpenCodeEvent(event: OpenCodeEvent): {
   readonly sessionId: string;
   readonly event: PluginEvent;
 } | null {
+  if (event.type === 'session.tool.failed') {
+    return {
+      sessionId: event.data.sessionID,
+      event: {
+        type: event.type,
+        data: {
+          ...event.data,
+          hostEventId: event.id,
+          hostCallId: nativeHostCallId(
+            event.data.sessionID,
+            event.data.assistantMessageID,
+            event.data.id,
+          ),
+        },
+      },
+    };
+  }
   if (
     event.type === 'session.deleted' ||
     event.type === 'session.idle' ||
-    event.type === 'session.execution.failed' ||
-    event.type === 'session.tool.failed'
+    event.type === 'session.execution.failed'
   ) {
     return {
       sessionId: event.data.sessionID,
@@ -183,4 +200,18 @@ export function projectOpenCodeEvent(event: OpenCodeEvent): {
     };
   }
   return null;
+}
+
+/**
+ * OpenCode 2.2.4 passes the provider's tool-call ID verbatim as the native call
+ * identity; it is unique only within one host-generated assistant message of one
+ * session. Governance call identities therefore bind all three host values.
+ */
+export function nativeHostCallId(sessionId: string, messageId: string, callId: string): string {
+  if (!sessionId || !messageId || !callId)
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'A native tool call requires host session, assistant-message and call identities.',
+    );
+  return canonicalJsonStringify({ callId, messageId, sessionId });
 }

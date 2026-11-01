@@ -43,7 +43,10 @@ function isDelegationContinuation(
     previous.sessionId === next.sessionId &&
     next.revision === previous.revision + 1 &&
     previous.parentDispatch.sessionId === next.parentDispatch.sessionId &&
-    previous.parentDispatch.callId !== next.parentDispatch.callId &&
+    // Native call IDs are provider-supplied and unique only within one
+    // host-generated assistant message.
+    (previous.parentDispatch.messageId !== next.parentDispatch.messageId ||
+      previous.parentDispatch.callId !== next.parentDispatch.callId) &&
     previous.decisionId === next.decisionId
   );
 }

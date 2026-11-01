@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as path from 'node:path';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
-import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
+import { OpenCodeHostAdapter, nativeHostCallId } from './opencode-host-adapter.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { FLOWGUARD_TOOL_NAMES } from './tool-names.js';
 import * as tools from './tools/index.js';
@@ -48,6 +48,7 @@ vi.mock('./plugin-workspace.js', () => ({
   }),
 }));
 
+const NATIVE_CALL = nativeHostCallId('session', 'message', 'call');
 let cleanup: (() => void | Promise<void>) | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -347,7 +348,7 @@ describe('native V2 entrypoint', () => {
     expect(h.resolve).toHaveBeenCalledWith({ root: process.cwd(), sessionId: 'session' });
     expect(h.before).toHaveBeenCalledWith(
       expect.anything(),
-      { tool: 'read', sessionID: 'session', callID: 'call' },
+      { tool: 'read', sessionID: 'session', callID: NATIVE_CALL },
       { args: event.input },
     );
     expect(h.createLogger).toHaveBeenCalledOnce();
@@ -365,7 +366,7 @@ describe('native V2 entrypoint', () => {
     expect(h.before.mock.calls[0]?.[1]).toEqual({
       tool: 'bash',
       sessionID: 'session',
-      callID: 'native-call',
+      callID: nativeHostCallId('session', 'message', 'native-call'),
     });
   });
 
@@ -491,7 +492,7 @@ describe('native V2 entrypoint', () => {
     expect(h.after.mock.calls[0]?.[1]).toEqual({
       tool: 'flowguard_status',
       sessionID: 'session',
-      callID: 'call',
+      callID: NATIVE_CALL,
       args: event.input,
     });
   });
@@ -562,7 +563,7 @@ describe('native V2 entrypoint', () => {
       result: { content: [attachment, { type: 'text', text: 'original' }], metadata: {} },
     };
     await host.after(event);
-    expect(h.after.mock.calls[0]?.[1]).toMatchObject({ tool: 'bash', callID: 'call' });
+    expect(h.after.mock.calls[0]?.[1]).toMatchObject({ tool: 'bash', callID: NATIVE_CALL });
     expect(event.result.content).toEqual([
       attachment,
       { type: 'text', text: '{"error":true,"code":"BLOCKED"}' },
@@ -652,7 +653,7 @@ describe('native V2 entrypoint', () => {
     expect(h.after.mock.calls[0]?.[1]).toEqual({
       tool: 'read',
       sessionID: 'session',
-      callID: 'call',
+      callID: NATIVE_CALL,
       args: event.input,
     });
     expect(h.after.mock.calls[0]?.[2]).toEqual({

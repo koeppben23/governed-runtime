@@ -71,7 +71,7 @@ describe('explicit governance activation lifecycle', () => {
     { worktreeRoot: '/other' },
     { policyDigest: 'b'.repeat(64) },
     { decisionId: 'replaced-decision' },
-    { parentDispatch: { sessionId: 'parent', callId: 'call' } },
+    { parentDispatch: { sessionId: 'parent', messageId: 'message', callId: 'call' } },
   ])('rejects active-transition scope/identity drift: %j', (patch) => {
     const previous = record();
     const next = record({
@@ -105,23 +105,30 @@ describe('explicit governance activation lifecycle', () => {
     const first = record({
       sessionId: 'child',
       status: 'active',
-      parentDispatch: { sessionId: 'root', callId: 'call' },
+      parentDispatch: { sessionId: 'root', messageId: 'message', callId: 'call' },
     });
     expect(isGovernanceActivationTransition(null, first)).toBe(true);
     expect(isGovernanceActivationTransition(null, { ...first, sessionId: 'root' })).toBe(false);
     expect(
       isGovernanceActivationTransition(null, {
         ...first,
-        parentDispatch: { sessionId: 'child', callId: 'call' },
+        parentDispatch: { sessionId: 'child', messageId: 'message', callId: 'call' },
       }),
     ).toBe(false);
     const continuation = {
       ...first,
       revision: 2,
       previousDigest: 'b'.repeat(64),
-      parentDispatch: { sessionId: 'root', callId: 'next' },
+      parentDispatch: { sessionId: 'root', messageId: 'message', callId: 'next' },
     };
     expect(isGovernanceActivationTransition(first, continuation)).toBe(true);
+    // A provider-reused call ID in a new host assistant message is a new dispatch.
+    expect(
+      isGovernanceActivationTransition(first, {
+        ...continuation,
+        parentDispatch: { ...first.parentDispatch!, messageId: 'next-message' },
+      }),
+    ).toBe(true);
     expect(isGovernanceActivationTransition(first, { ...continuation, generation: 2 })).toBe(false);
     expect(
       isGovernanceActivationTransition(first, {
@@ -149,7 +156,7 @@ describe('explicit governance activation lifecycle', () => {
     { sessionId: 'other' },
     { revision: 3 },
     { decisionId: 'new-decision' },
-    { parentDispatch: { sessionId: 'foreign', callId: 'next' } },
+    { parentDispatch: { sessionId: 'foreign', messageId: 'message', callId: 'next' } },
     { activationId: '00000000-0000-4000-8000-000000000002' },
     { rootSessionId: 'foreign' },
     { directory: '/foreign' },
@@ -159,13 +166,13 @@ describe('explicit governance activation lifecycle', () => {
     const first = record({
       sessionId: 'child',
       status: 'active',
-      parentDispatch: { sessionId: 'root', callId: 'call' },
+      parentDispatch: { sessionId: 'root', messageId: 'message', callId: 'call' },
     });
     const next = {
       ...first,
       revision: 2,
       previousDigest: 'b'.repeat(64),
-      parentDispatch: { sessionId: 'root', callId: 'next' },
+      parentDispatch: { sessionId: 'root', messageId: 'message', callId: 'next' },
       ...patch,
     };
     expect(isGovernanceActivationTransition(first, next)).toBe(false);

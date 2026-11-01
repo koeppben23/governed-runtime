@@ -7,21 +7,20 @@ import { IntegrationInvariantError } from './errors.js';
 
 const EventTrigger = z.object({
   type: z.literal('session.tool.failed'),
-  data: z.object({
-    sessionID: z.string().min(1),
-    id: z.string().min(1),
-  }),
+  data: z.object({ hostCallId: z.string().min(1) }),
 });
 
-/** Async events are wakeups, never a replacement for a fresh host history read. */
+/** Async events are wakeups, never a replacement for a fresh host history read.
+ * The governed session owns the episode store; the projected native host call
+ * identity selects the episode, including delegated-child calls. */
 export async function reconcileMutationEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
+  governedSessionId: string,
 ): Promise<void> {
   const trigger = EventTrigger.safeParse(event);
   if (!trigger.success) return;
-  const failed = trigger.data.data;
-  await reconcileHostMutationEpisodes(runtime, failed.sessionID, failed.id);
+  await reconcileHostMutationEpisodes(runtime, governedSessionId, trigger.data.data.hostCallId);
 }
 
 /** Synchronous barrier before /implement; host I/O is deliberately outside the state write lock. */

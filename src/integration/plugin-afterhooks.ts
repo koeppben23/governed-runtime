@@ -17,7 +17,7 @@
 
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
-import { parseToolResult, strictBlockedOutput } from './blocked-result.js';
+import { buildEnforcementError, parseToolResult, strictBlockedOutput } from './blocked-result.js';
 import { getToolOutput, getAutoAdvanceOverflow, getSessionLockSignal } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
@@ -389,28 +389,38 @@ async function resumeSystemWorkForSession(
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
+  governedSessionId: string,
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
-      resumePendingSystemWork: (sessionId: string) =>
-        resumeSystemWorkForSession(runtime, sessionId),
-      observeMutationEvent: (hostEvent) => reconcileMutationEvent(runtime, hostEvent),
+      // Delegated-session idleness is not a root lifecycle wakeup.
+      resumePendingSystemWork: async (sessionId: string) => {
+        if (sessionId === governedSessionId)
+          await resumeSystemWorkForSession(runtime, governedSessionId);
+      },
+      observeMutationEvent: (hostEvent) =>
+        reconcileMutationEvent(runtime, hostEvent, governedSessionId),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
-        const resolution = await runtime.ws.resolveSessionAuthority(sessionId);
-        // Without durable session identity there is no canonical audit event
-        // to append. The outer event handler remains fail-safe for the host.
-        if (resolution.status !== 'resolved') return;
+        const resolution = await runtime.ws.resolveSessionAuthority(governedSessionId);
+        // The event was admitted for a verified ACTIVE scope; losing its
+        // workflow authority now must reach the scope fence, not vanish.
+        if (resolution.status !== 'resolved')
+          throw buildEnforcementError(
+            resolution.status === 'unavailable' ? resolution.code : 'SESSION_DIR_NOT_FOUND',
+            'The ACTIVE session error cannot be persisted to its governed audit trail.',
+          );
         await appendReviewAuditEventForState(
           resolution.sessDir,
-          sessionId,
+          governedSessionId,
           resolution.state,
           'error:SESSION_ERROR',
           {
             code: 'SESSION_ERROR',
             message: errorMessage,
             ...detail,
+            ...(sessionId === governedSessionId ? {} : { nativeSessionId: sessionId }),
           },
         );
       },

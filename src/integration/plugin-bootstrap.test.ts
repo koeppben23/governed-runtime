@@ -597,12 +597,102 @@ describe('native activation isolation and delegation with real enforcement gates
     await expect(h.host.before(beforeEvent('ordinary'))).resolves.toBeUndefined();
   });
 
+  it('fences only the ACTIVE scope whose session-error audit append failed', async () => {
+    const h = await fixture('PLAN');
+    // Warm the runtime and confirm the unfenced baseline is the phase gate.
+    await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+    const audit = path.join(h.sessDir, 'audit.jsonl');
+    await fs.rm(audit, { force: true });
+    await fs.mkdir(audit); // The canonical audit append now fails with real I/O.
+    h.host.emit({
+      type: 'session.execution.failed',
+      id: 'failure-event',
+      data: { sessionID: h.sessionID, error: { type: 'provider', message: 'failed' } },
+    });
+    await vi.waitFor(async () =>
+      expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow(
+        'lost required event observation',
+      ),
+    );
+    // Restoring the file system does not silently unfence the scope.
+    await fs.rm(audit, { recursive: true });
+    await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    );
+    expect((await readState(h.sessDir))!.mutationEpisodes).toEqual([]);
+    await expect(h.host.before(beforeEvent('unrelated-inactive'))).resolves.toBeUndefined();
+  });
+
+  async function enrolledChild(h: Awaited<ReturnType<typeof fixture>>, agent = 'general') {
+    const childId = crypto.randomUUID();
+    h.host.sessionGet.mockImplementation(async ({ sessionID }) => ({
+      id: sessionID,
+      location: { directory: h.ws.tmpDir },
+      ...(sessionID === childId ? { parentID: h.sessionID, agent } : {}),
+    }));
+    const dispatch = beforeEvent(h.sessionID, 'subagent', { agent: 'general', prompt: 'inspect' });
+    await h.host.before(dispatch);
+    const pending = h.host.before(beforeEvent(childId, 'read', { filePath: 'README.md' }, 'r'));
+    h.host.emit({
+      type: 'session.tool.progress',
+      id: 'receipt',
+      data: {
+        sessionID: h.sessionID,
+        assistantMessageID: dispatch.messageID,
+        id: dispatch.id,
+        metadata: { sessionID: childId, status: 'running' },
+      },
+    });
+    return { childId, pending };
+  }
+
+  it('fences the verified root scope when a delegated child error cannot be audited', async () => {
+    const h = await fixture('PLAN');
+    const { childId, pending } = await enrolledChild(h);
+    await pending;
+    const audit = path.join(h.sessDir, 'audit.jsonl');
+    await fs.rm(audit, { force: true });
+    await fs.mkdir(audit);
+    h.host.emit({
+      type: 'session.execution.failed',
+      id: 'child-failure',
+      data: { sessionID: childId, error: { type: 'provider', message: 'child failed' } },
+    });
+    await vi.waitFor(async () =>
+      expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow(
+        'lost required event observation',
+      ),
+    );
+    await expect(h.host.before(beforeEvent(childId))).rejects.toThrow(
+      'lost required event observation',
+    );
+    await expect(h.host.before(beforeEvent('unrelated-inactive'))).resolves.toBeUndefined();
+  });
+
+  it('fences the parent root, not unrelated sessions, when native enrollment itself fails', async () => {
+    const h = await fixture('PLAN');
+    // The host child reports a different agent than the authorized dispatch.
+    const { childId, pending } = await enrolledChild(h, 'explore');
+    await expect(pending).rejects.toThrow('GOVERNANCE_AUTHORITY_BLOCKED');
+    expect(await resolveGovernanceActivation(h.host.activation.store, childId)).toMatchObject({
+      kind: 'inactive',
+    });
+    await vi.waitFor(async () =>
+      expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow(
+        'lost required event observation',
+      ),
+    );
+    await expect(h.host.before(beforeEvent('unrelated-inactive'))).resolves.toBeUndefined();
+  });
+
   it('admits an ordinary native subagent in PLAN without authorizing a host mutation or skipping the review boundary', async () => {
     const h = await fixture('PLAN');
     await h.host.before(
       beforeEvent(h.sessionID, 'subagent', { agent: 'general', prompt: 'inspect' }),
     );
-    expect(h.host.activation.values.has(governanceDelegationKey(h.sessionID, 'c1'))).toBe(true);
+    expect(
+      h.host.activation.values.has(governanceDelegationKey(h.sessionID, 'message', 'c1')),
+    ).toBe(true);
     expect((await readState(h.sessDir))!.mutationEpisodes).toEqual([]);
     await expect(
       h.host.before(
@@ -621,7 +711,9 @@ describe('native activation isolation and delegation with real enforcement gates
     await expect(
       h.host.before(beforeEvent(h.sessionID, 'subagent', { agent: 'general' })),
     ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
-    expect(h.host.activation.values.has(governanceDelegationKey(h.sessionID, 'c1'))).toBe(false);
+    expect(
+      h.host.activation.values.has(governanceDelegationKey(h.sessionID, 'message', 'c1')),
+    ).toBe(false);
   });
 
   it('enrolls only the exact native parent-call receipt and applies the root phase gate to child effects', async () => {

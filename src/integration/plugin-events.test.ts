@@ -146,8 +146,8 @@ describe('native V2 event dispatch', () => {
     expect(d.emitSessionErrorAudit).toHaveBeenCalledWith('frozen', 'failed', expect.anything());
   });
 
-  it.each(['cleanup', 'idle', 'mutation', 'audit-sync', 'audit-async', 'logging'])(
-    'surfaces %s callback failure diagnostically without crashing the host',
+  it.each(['logging', 'audit-sync', 'audit-async', 'mutation', 'idle'])(
+    'propagates authority-relevant %s failure after diagnosing it',
     async (kind) => {
       const d = deps();
       const error = new Error('callback failed');
@@ -155,10 +155,6 @@ describe('native V2 event dispatch', () => {
         throw error;
       };
       let event = failure();
-      if (kind === 'cleanup') {
-        d.cleanupSession = sync;
-        event = { type: 'session.deleted', data: { sessionID: 'session' } };
-      }
       if (kind === 'idle') {
         d.resumePendingSystemWork = vi.fn().mockRejectedValue(error);
         event = { type: 'session.idle', data: { sessionID: 'session' } };
@@ -170,13 +166,36 @@ describe('native V2 event dispatch', () => {
       if (kind === 'audit-sync') d.emitSessionErrorAudit = sync;
       if (kind === 'audit-async') d.emitSessionErrorAudit = vi.fn().mockRejectedValue(error);
       if (kind === 'logging') d.log.error = sync;
-      await expect(handleEvent(d, event)).resolves.toBeUndefined();
-      expect(d.log.warn).toHaveBeenCalledWith('event', 'event handler failed (non-blocking)', {
+      await expect(handleEvent(d, event)).rejects.toBe(error);
+      expect(d.log.warn).toHaveBeenCalledWith('event', 'governed event handler failed', {
         eventType: event.type,
         error: expect.objectContaining({ message: 'callback failed' }),
       });
     },
   );
+
+  it('keeps in-memory cleanup failure non-blocking', async () => {
+    const d = deps();
+    d.cleanupSession = () => {
+      throw new Error('cleanup failed');
+    };
+    const event = { type: 'session.deleted', data: { sessionID: 'session' } };
+    await expect(handleEvent(d, event)).resolves.toBeUndefined();
+    expect(d.log.warn).toHaveBeenCalledWith('event', 'session cleanup failed (non-blocking)', {
+      eventType: event.type,
+      error: expect.objectContaining({ message: 'cleanup failed' }),
+    });
+  });
+
+  it('retains the original failure even if its diagnostic logging also fails', async () => {
+    const d = deps();
+    const error = new Error('audit failed');
+    d.emitSessionErrorAudit = vi.fn().mockRejectedValue(error);
+    d.log.warn = () => {
+      throw new Error('log sink failed');
+    };
+    await expect(handleEvent(d, failure())).rejects.toBe(error);
+  });
 
   it('retains rapid-notification handling without throwing', async () => {
     const d = deps();

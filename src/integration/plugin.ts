@@ -18,6 +18,7 @@ import {
   OpenCodeHostAdapter,
   HostCapabilityMismatchError,
   projectOpenCodeEvent,
+  nativeHostCallId,
 } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { ReviewerCaptureController } from './reviewer-capture.js';
@@ -171,7 +172,7 @@ function createEventFence(governance: OpenCodeGovernance, adapter: OpenCodeHostA
   };
 }
 
-function createRuntimeActions(input: {
+type RuntimeActionInput = {
   governance: OpenCodeGovernance;
   adapter: OpenCodeHostAdapter;
   runtimes: Map<string, Promise<RuntimeEntry>>;
@@ -179,7 +180,9 @@ function createRuntimeActions(input: {
   operations: Set<Promise<unknown>>;
   assertLifecycle: () => void;
   assertAvailable: (scope: ActiveGovernanceScope) => void;
-}) {
+};
+
+function createRuntimeActions(input: RuntimeActionInput) {
   const {
     governance,
     adapter,
@@ -235,16 +238,39 @@ function createRuntimeActions(input: {
         return executeCanonicalNativeTool(name, definition, args, context, entry.runtime);
       })(),
     );
-  const observe = async (event: NativeToolCompletion) => {
+  return { invoke, execute, observe: createReadOnlyObserver(input) };
+}
+
+function createReadOnlyObserver(input: RuntimeActionInput) {
+  const { governance, runtimes, sessionRoots, operations, assertLifecycle, assertAvailable } =
+    input;
+  return async (event: NativeToolCompletion) => {
     assertLifecycle();
     const authority = await governance.resolve(event.sessionID);
     if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
     if (authority.kind === 'inactive') return;
-    await observeReadOnlyCompletion(event, runtimes, sessionRoots, operations, () =>
-      assertAvailable(authority.scope),
+    // Positive read-only vocabulary only. Cached runtime is diagnostic context,
+    // never state/approval authority; rich native content is never parsed.
+    const check = () => assertAvailable(authority.scope);
+    check();
+    const root = sessionRoots.get(event.sessionID);
+    const runtime = root === undefined ? undefined : runtimes.get(root);
+    if (event.status !== 'completed' || !runtime) return;
+    const callID = nativeHostCallId(event.sessionID, event.messageID, event.id);
+    const sessionID = authority.scope.root.sessionId;
+    await trackOperation(
+      operations,
+      runtime.then(async (entry) => {
+        check();
+        const output = { title: '', output: event.result.content, metadata: event.result.metadata };
+        await toolAfter(
+          entry.runtime,
+          { tool: event.tool, sessionID, callID, args: event.input },
+          output,
+        );
+      }),
     );
   };
-  return { invoke, execute, observe };
 }
 
 async function assertFreshScope(
@@ -274,34 +300,6 @@ async function trackOperation<T>(
   } finally {
     operations.delete(operation);
   }
-}
-
-/** Positive read-only tool vocabulary only. Cached scope is diagnostic context,
- * never state/approval authority; the before-hook still resolves fresh scope.
- * Keep rich native content intact: diagnostics for these tools never parse it. */
-async function observeReadOnlyCompletion(
-  event: NativeToolCompletion,
-  runtimes: ReadonlyMap<string, Promise<RuntimeEntry>>,
-  sessionRoots: ReadonlyMap<string, string>,
-  operations: Set<Promise<unknown>>,
-  assertAvailable: () => void,
-): Promise<void> {
-  assertAvailable();
-  if (event.status !== 'completed') return;
-  const root = sessionRoots.get(event.sessionID);
-  const runtime = root === undefined ? undefined : runtimes.get(root);
-  if (!runtime) return;
-  await trackOperation(
-    operations,
-    runtime.then(async (entry) => {
-      assertAvailable();
-      await toolAfter(
-        entry.runtime,
-        { tool: event.tool, sessionID: event.sessionID, callID: event.id, args: event.input },
-        { title: '', output: event.result.content, metadata: event.result.metadata },
-      );
-    }),
-  );
 }
 
 async function loadRuntime(
@@ -385,11 +383,13 @@ async function dispatchEvent(
     const root = sessionRoots.get(projected.sessionId);
     const entry = root === undefined ? undefined : runtimes.get(root);
     if (entry && authority.record.rootSessionId === projected.sessionId)
-      await handlePluginEvent((await entry).runtime, projected.event);
+      await handlePluginEvent((await entry).runtime, projected.event, projected.sessionId);
     sessionRoots.delete(projected.sessionId);
     return;
   }
-  await invoke(projected.sessionId, (entry) => handlePluginEvent(entry.runtime, projected.event));
+  await invoke(projected.sessionId, (entry) =>
+    handlePluginEvent(entry.runtime, projected.event, entry.scope.root.sessionId),
+  );
 }
 
 async function createSessionRuntime(
@@ -530,7 +530,7 @@ async function createFlowGuardPluginHooks(
             {
               tool: applicationTool(event.tool),
               sessionID: scope.root.sessionId,
-              callID: event.id,
+              callID: nativeHostCallId(event.sessionID, event.messageID, event.id),
             },
             output,
           );
