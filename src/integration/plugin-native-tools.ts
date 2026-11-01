@@ -177,7 +177,7 @@ export function applicationTool(tool: string): string {
   return tool === 'shell' ? 'bash' : tool;
 }
 /** A semantic text view, never concatenation or replacement of native evidence. */
-export function nativeCompletionText(content: Completion['result']['content']): string {
+function nativeCompletionText(content: Completion['result']['content']): string {
   if (content === undefined) return '';
   if (typeof content === 'string') return content;
   if (!Array.isArray(content))
