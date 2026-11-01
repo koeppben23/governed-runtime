@@ -168,6 +168,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Preserve unproven dependency contents on uninstall (#1190).** Removing an
+  installer-created `package.json` no longer authorizes recursive deletion of
+  `node_modules`. Nonempty trees, symlinks and non-directory roots are preserved
+  and reported; only an empty directory is removed atomically. Regression tests
+  protect later-added foreign bytes at the root and inside package directories,
+  including `@flowguard/core`, concurrent additions and unexpected I/O errors.
+  Ownership regressions also cover modified/pre-existing package shells and zod
+  declarations, unchanged customer bytes, modified native entrypoints and explicit
+  filesystem failures. The installer mutation selection additionally includes the
+  existing non-creating Codex uninstall contract; mutation thresholds and existing
+  exclusions are unchanged.
+
 - **Critical Windows scheduling (#1190).** The complete critical unit suite runs
   with one Vitest worker to avoid competition with the warm state-serialization
   benchmark. The existing test set, p99 budget and performance enforcement remain

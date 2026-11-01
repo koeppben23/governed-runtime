@@ -235,11 +235,25 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
     const reviewer = await client.agent.get({ location, agentID: 'flowguard-reviewer' });
     expect(reviewer.data.id).toBe('flowguard-reviewer');
     expect(existsSync(join(config, 'workspaces'))).toBe(false);
+    const foreignFiles = [
+      join(target, 'node_modules/customer-sentinel.bin'),
+      join(target, 'node_modules/@flowguard/core/customer-sentinel.bin'),
+      join(target, 'node_modules/customer-package/nested/sentinel.bin'),
+    ];
+    const foreignBytes = Buffer.from([0, 255, 128, 13, 10, 42]);
+    for (const file of foreignFiles) {
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, foreignBytes);
+    }
     const result = runInstaller(
       'uninstall',
       join(target, 'node_modules/@flowguard/core/dist/cli/install.js'),
     );
     expect(result).not.toContain('[error]');
+    expect(result).toContain('exclusive content ownership not proven; preserved');
+    for (const file of foreignFiles) expect(await readFile(file)).toEqual(foreignBytes);
+    expect(existsSync(join(target, PLUGIN_RELATIVE_PATH))).toBe(false);
+    expect(existsSync(join(target, 'package.json'))).toBe(false);
     await client.location.reload({ signal: AbortSignal.timeout(60_000) });
     await client.agent.list({ location }, { signal: AbortSignal.timeout(60_000) });
     const after = await client.plugin.list({ location });

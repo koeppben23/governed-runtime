@@ -366,6 +366,60 @@ the four actual reviewer/capture/recovery contracts and the two MUT4 regular-err
 recovery paths; they remain product acceptance blockers, not harness-version
 errors.
 
+## Uninstall data-preservation follow-up
+
+Finding 9 is reproduced with real filesystem install/uninstall fixtures: the
+old recursive cleanup removed later-added foreign binary sentinels. Package
+declaration provenance does not inventory mutable dependency contents. Cleanup
+now preserves nonempty `node_modules` trees (including `@flowguard/core` contents)
+and reports the unproven ownership; it only removes an empty directory with
+atomic `rmdir`. It neither follows root symlinks nor swallows unexpected I/O
+errors. There is no new inventory schema or ownership assumption. The packed
+native lifecycle test also checks later-added foreign bytes and plugin removal.
+This does not repair activation, operator/reviewer provenance or edit recovery.
+
+The first whole-`uninstall-command.ts` mutation run measured **66.09%** and failed
+the unchanged 80% breaking threshold. Its survivors prompted additional real
+filesystem ownership regressions for customer package shells, dependency
+declarations, native managed-file preservation and surfaced I/O errors; the
+existing non-creating Codex uninstall suite is additionally selected. No
+threshold is lowered and no additional exclusions or narrower production scope
+are used to obtain a pass.
+This bounded installer run is not a V2-governance mutation certificate.
+
+The repeated whole-file run passed at **86.52%** (199 killed, 27 surviving,
+4 uncovered, 103 compile-error and 138 inherited-ignored mutants). It used
+`npm run mutation -- stryker.native-install.config.mjs --mutate
+'src/cli/uninstall-command.ts' --concurrency 4` with the unchanged 80% break
+threshold. The remaining mutants are not claimed eliminated. Local verification
+also passed **784 CLI unit tests**, **538 architecture tests**, all **9 verifier
+regression tests**, typecheck, strict lint, format, unused dependencies and
+build/doc drift. The packed native lifecycle passes with binary sentinels at the
+dependency root, inside `@flowguard/core` and a nested foreign package; after
+uninstall/reload the product is absent and customer config is unchanged. Required
+acceptance test titles are unchanged. **NOT_VERIFIED:** full-repository mutation,
+renewed full coverage and hosted CI on the resulting commit; run the full
+`npm run mutation`, `npm run test:coverage:ci` and required CI jobs for those
+claims. The existing P0 integration and reviewer/recovery smoke failures are not
+repaired by this change.
+
+**Finding 8 remains open, not repaired by this installer change.** The current
+`task` exemption in `phase-tool-gate.ts` and native `subagent` dispatch in
+`plugin.ts` disagree. Simply replacing the exemption would also remove the
+call from `isMutatingHostTool`-driven integrity, reconciliation and dispatch
+checks in `plugin-beforehooks.ts`. The old `nativeReviewTaskBefore` transport is
+not connected there; verdict enforcement is not generic subagent enforcement.
+The native reviewer denial must remain, and ordinary native dispatch needs the
+same activation/enrollment owner as Findings 2–4, not an alias to V1 task shapes
+or an unexplained read-only exemption. The mocked forwarding test is not a
+positive phase-gate or installed-subagent acceptance result.
+
+Stand reconciliation: [CI run 41305885459](https://github.com/koeppben23/governed-runtime/actions/runs/41305885459)
+on `2a2abe170d24218a296ace7b8cc18103fc55eac7` completed with both
+`scripts-windows` and `critical-windows` successful. The shell-free verifier and
+unchanged Windows p99 gate are therefore positively verified on that head, not
+merely local assumptions. The overall run failed; PR #1190 remains Draft/NO-GO.
+
 ## Lead-architect findings against published `46671919`
 
 The review adds confirmed defects, not additional product requirements. These

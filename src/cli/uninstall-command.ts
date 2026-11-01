@@ -268,7 +268,7 @@ async function cleanupPackageJson(
   ];
 }
 
-async function cleanupOwnedDependencyTree(
+async function cleanupEmptyDependencyDirectory(
   target: string,
   packageOps: readonly FileOp[],
 ): Promise<FileOp[]> {
@@ -291,17 +291,33 @@ async function cleanupOwnedDependencyTree(
         },
       ];
     }
-    await rm(modulesPath, { recursive: true });
+    // Package-declaration provenance does not establish ownership of mutable
+    // dependency contents. rmdir atomically refuses any nonempty directory.
+    await rmdir(modulesPath);
     return [
       {
         path: modulesPath,
         action: 'removed',
-        reason: 'removed dependency tree owned by installer-created package shell',
+        reason: 'empty dependency directory after restoring installer-created package shell',
       },
     ];
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return [{ path: modulesPath, action: 'not_found' }];
+    }
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      (error.code === 'ENOTEMPTY' || error.code === 'EEXIST')
+    ) {
+      return [
+        {
+          path: modulesPath,
+          action: 'skipped',
+          reason:
+            'nonempty dependency directory; exclusive content ownership not proven; preserved',
+        },
+      ];
     }
     throw error;
   }
@@ -378,7 +394,7 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     await removeManagedFiles(target, installPlatform, ops, warnings);
     const packageOps = await cleanupPackageJson(target, ownership, warnings);
     ops.push(...packageOps);
-    ops.push(...(await cleanupOwnedDependencyTree(target, packageOps)));
+    ops.push(...(await cleanupEmptyDependencyDirectory(target, packageOps)));
     ops.push(...(await cleanupOpencodeConfig(args, target)));
 
     const cfgPath =

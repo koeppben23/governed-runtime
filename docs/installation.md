@@ -218,6 +218,15 @@ tool bindings.
 npx --package ./flowguard-core-{version}.tgz flowguard uninstall
 ```
 
+Uninstall removes the proven managed OpenCode entrypoint and restores recorded
+package-declaration changes. Removing an installer-created `package.json` does
+not prove ownership of the contents of `node_modules`: a nonempty dependency
+directory is preserved and reported, including any later-added files inside
+`@flowguard/core`. Symlinks and non-directory dependency roots are also preserved;
+only an empty directory is removed. Retained dependency bytes do not register the
+removed plugin. Inspect them before any manual cleanup; do not delete a shared
+dependency tree merely because FlowGuard was installed there.
+
 ## Local Development
 
 Use the [Development Guide](./development/index.md) for contributor setup,

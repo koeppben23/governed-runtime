@@ -19,6 +19,7 @@ export default defineConfig({
       'src/cli/install-transaction.test.ts',
       'src/cli/opencode-runtime-gate-install.test.ts',
       'src/cli/uninstall-ownership-failclosed.test.ts',
+      'src/cli/codex-uninstall-noncreating.test.ts',
     ],
     globals: false,
     testTimeout: 60_000,
