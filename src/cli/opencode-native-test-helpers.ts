@@ -28,6 +28,7 @@ export interface NativeHostProbe {
   requests: Array<{ body: Record<string, unknown>; sessionID: string }>;
   errors: string[];
   close(): Promise<void>;
+  restart(signal?: 'SIGTERM' | 'SIGKILL'): Promise<void>;
   output(): string;
   session(agent?: string): Promise<SessionInfo>;
   prompt(sessionID: string, text?: string): Promise<SessionInboxUser>;
@@ -109,7 +110,7 @@ export async function createNativeHostProbe(
       response.end();
     }
   });
-  const close = async () => {
+  const stopHost = async (signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM') => {
     if (processHandle && processHandle.exitCode === null && processHandle.signalCode === null) {
       const child = processHandle;
       await new Promise<void>((resolve) => {
@@ -118,9 +119,50 @@ export async function createNativeHostProbe(
           clearTimeout(timer);
           resolve();
         });
-        child.kill('SIGTERM');
+        child.kill(signal);
       });
     }
+  };
+  const startHost = async (): Promise<string> => {
+    processHandle = spawn(
+      host.command,
+      [...host.argsPrefix, 'serve', '--hostname=127.0.0.1', '--port=0'],
+      {
+        cwd: project,
+        env: { ...env, OPENCODE_PASSWORD: 'native-test' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const child = processHandle;
+    let startupOutput = '';
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Host startup timed out: ${output}`)),
+        60_000,
+      );
+      const receive = (chunk: Buffer) => {
+        output += chunk.toString();
+        startupOutput += chunk.toString();
+        const match = startupOutput.match(/listening on\s+(https?:\/\/\S+)/);
+        if (match) {
+          clearTimeout(timer);
+          resolve(match[1]!);
+        }
+      };
+      child.stdout?.on('data', receive);
+      child.stderr?.on('data', receive);
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`Host exited ${code}: ${output}`));
+      });
+    });
+  };
+  const close = async () => {
+    await stopHost();
     provider.closeAllConnections();
     await new Promise<void>((resolve) => provider.close(() => resolve()));
     await rm(root, { recursive: true, force: true });
@@ -188,41 +230,8 @@ export async function createNativeHostProbe(
     );
     await writeFile(join(project, 'observer.jsonl'), '');
     await options.prepare?.(project, env);
-    processHandle = spawn(
-      host.command,
-      [...host.argsPrefix, 'serve', '--hostname=127.0.0.1', '--port=0'],
-      {
-        cwd: project,
-        env: { ...env, OPENCODE_PASSWORD: 'native-test' },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-    const child = processHandle;
-    const baseUrl = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`Host startup timed out: ${output}`)),
-        60_000,
-      );
-      const receive = (chunk: Buffer) => {
-        output += chunk.toString();
-        const match = output.match(/listening on\s+(https?:\/\/\S+)/);
-        if (match) {
-          clearTimeout(timer);
-          resolve(match[1]!);
-        }
-      };
-      child.stdout?.on('data', receive);
-      child.stderr?.on('data', receive);
-      child.once('error', (error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      child.once('exit', (code) => {
-        clearTimeout(timer);
-        reject(new Error(`Host exited ${code}: ${output}`));
-      });
-    });
-    const client = OpenCode.make({
+    const baseUrl = await startHost();
+    let client = OpenCode.make({
       baseUrl,
       headers: { Authorization: `Basic ${Buffer.from('opencode:native-test').toString('base64')}` },
     });
@@ -245,11 +254,22 @@ export async function createNativeHostProbe(
       env,
       host,
       reportedVersion,
-      client,
+      get client() {
+        return client;
+      },
       location,
       requests,
       errors,
       close,
+      async restart(signal = 'SIGTERM') {
+        await stopHost(signal);
+        client = OpenCode.make({
+          baseUrl: await startHost(),
+          headers: {
+            Authorization: `Basic ${Buffer.from('opencode:native-test').toString('base64')}`,
+          },
+        });
+      },
       output: () => output,
       async session(agent = 'build') {
         return client.session.create({

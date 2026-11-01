@@ -196,6 +196,19 @@ fault at the component boundary and requires unrelated unstarted usage to stay
 native. These are required conformance assertions, not expected-failure tests:
 the current product violates them and their failures block acceptance.
 
+`src/cli/opencode-authority-primitives.smoke.test.ts` is a separate native
+mechanism probe, not installed-product acceptance. It checks private storage
+across reload and owned-server SIGTERM/SIGKILL restarts and shows that storage is
+shared across locations for one plugin ID. Its real TUI arm uses Python 3 and a
+POSIX PTY: actual terminal bytes, local programmatic command dispatch and SDK
+command/prompt attempts are compared without mocked UI callbacks. The pinned
+host synthesizes a `command` event on programmatic dispatch; event presence alone
+is not human-source proof. A synced-only session log with no retained payloads
+is not complete authority history. The fixtures create no activation or accepted
+operator decisions and replace none of the required failing product positives.
+The TUI mechanism has local macOS CLI evidence only, not Desktop, Windows or a
+verified UI-to-server authorization transaction.
+
 The technical sources are the workflow files: `.github/workflows/ci.yml` for the
 main PR-CI jobs, `.github/workflows/agent-instruction-evals-pr.yml` for deterministic
 PR evals, and `.github/workflows/mutation.yml` for mutation testing.

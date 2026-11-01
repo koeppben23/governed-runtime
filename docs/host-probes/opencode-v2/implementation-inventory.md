@@ -366,6 +366,88 @@ the four actual reviewer/capture/recovery contracts and the two MUT4 regular-err
 recovery paths; they remain product acceptance blockers, not harness-version
 errors.
 
+## Activation-boundary prerequisite observations (2026-11-01)
+
+Findings 2–4 and 8 remain one activation/scope implementation task. Before
+implementing a new trust boundary, the native fixture
+`src/cli/opencode-authority-primitives.smoke.test.ts` tests actual pinned 2.2.4
+mechanisms without loading FlowGuard or minting authority:
+
+- **Session log is not a complete-history authority by default.** A newly created
+  session returns only `log.synced` at sequence 0; two SDK metadata updates,
+  including deletion of a caller's marker, return only `log.synced` at sequence 2.
+  Reload preserves that result. Explicit `after: 0` also failed the exploratory
+  complete-history assertion. No returned payload proves what happened before
+  the watermark. The [pinned bus source](https://github.com/anomalyco/opencode/blob/v2.2.4/packages/core/src/bus.ts)
+  defaults `persist` to false, and its
+  [session-log tests](https://github.com/anomalyco/opencode/blob/v2.2.4/packages/core/test/session-log.test.ts)
+  explicitly enable persistence for replay tests. The failed initial mechanism
+  hypothesis is rejected, not normalized into verified nonactivation. This
+  optional mechanism test is not a replacement for an activation positive.
+- **Private plugin storage is durable but not implicitly scope-bound.** The same
+  committed JSON survives native location reload, owned-server graceful restart
+  and idle-server SIGKILL/restart. A second location using the same plugin ID reads the first
+  location's value. The
+  [plugin host](https://github.com/anomalyco/opencode/blob/v2.2.4/packages/core/src/plugin/host.ts)
+  namespaces storage by plugin ID, not by location; the
+  [KV implementation](https://github.com/anomalyco/opencode/blob/v2.2.4/packages/core/src/kv.ts)
+  uses the host database, returns undefined for absent keys and propagates read
+  failures. Individual writes are upserts; the API does not supply a compare-and-set
+  or multi-key transaction. These facts do not prove an enrollment/generation
+  transaction, safe initialization after lost authority, or safe concurrent
+  read/modify/write. No new activation schema assumes them.
+- **A concrete CLI keyboard-source distinction exists at the local TUI callback.**
+  The real pinned TUI is driven through a POSIX PTY, not a mocked `run()` callback.
+  Programmatic dispatch produces `{ name: 'command', ctrl: false, sequence: '' }`,
+  even when supplied control-G as its input string. Contrary to the declaration's
+  no-event wording, an event object is present. Actual control-G produces
+  `{ name: 'g', ctrl: true, sequence: '\u0007' }` and no caller input. An SDK
+  command using the UI slash name is rejected; SDK prompt text with an `origin`
+  claim/fake event does not invoke the UI callback. The
+  [pinned keymap source](https://github.com/anomalyco/opencode/blob/v2.2.4/packages/tui/src/context/keymap.tsx)
+  routes named command dispatch through the keymap. This is a bounded local
+  callback distinction, not person identity, remote API origin authentication or
+  an accepted FlowGuard decision. Transferring caller-supplied event properties
+  through ordinary RPC would not preserve this distinction.
+
+All three probes pass locally on macOS, Node 22.22.2 and native OpenCode 2.2.4.
+The fixture owns and closes its real UI/server processes and provider. Its
+restart helper reconnects to the new owned server address rather than reusing
+an old listener. These are source-mechanism observations, not packed-product,
+Desktop or Windows acceptance. Reproduce with `OPENCODE_LIVE=1 npx vitest run
+--project smoke src/cli/opencode-authority-primitives.smoke.test.ts` (Python 3
+and a POSIX PTY are needed for the real TUI arm).
+
+**Authority acceptance remains BLOCKED at the unresolved transitions.** The
+UI-callback-to-canonical-decision handoff, exact server/session/worktree binding,
+durable enrollment/generation commit, partial-write/restart/loss handling and
+explicit deactivation are not implemented/proven by these probes. Existing
+workflow state is still not activation proof; missing workflow state is still
+not verified INACTIVE. Native subagent authorization must consume that same
+authority before phase/reviewer enforcement. No production gate, tool catalogue,
+event-failure fence, decision producer or evidence generation changes here.
+
+The exact-head [CI run 41309804873](https://github.com/koeppben23/governed-runtime/actions/runs/41309804873)
+for `2ae371282463b8632db9e45f4555a62c6b688142` is now available: Windows verifier,
+critical Windows and all three host-OS install/install-verify jobs passed. Overall
+CI failed. Coverage reports 12,534 passed / 4 failed / 11 existing skips: the three
+known opt-in assertions plus a 15-second production-build-boundary test timeout.
+The timeout is not diagnosed as a PR-caused regression and its budget is not
+raised. Smoke/reviewer failures remain acceptance blockers. No installer work or
+general architecture replacement is introduced by the new mechanism probes.
+
+Local checks for this test-only follow-up pass: typecheck, strict lint, format,
+build/doc drift, unused dependencies, unchanged unused-export comparison and
+538 architecture assertions. Full coverage and repository mutation are not
+rerun for this test-only step (`npm run test:coverage:ci`, `npm run mutation`);
+they are not claimed green. Hosted CI for its eventual published head, the
+Desktop/Windows UI mechanism and actual accepted activation/decision transactions
+remain **NOT_VERIFIED**. Existing required product assertions remain in place.
+The full smoke suite with both host/ACP CI flags executes **106 passed / 11
+failed / no skips**. All three new primitive probes pass; the same five INACTIVE,
+four reviewer/capture and two edit-recovery assertions remain failing. No
+required acceptance title or product positive is replaced by these probes.
+
 ## Uninstall data-preservation follow-up
 
 Finding 9 is reproduced with real filesystem install/uninstall fixtures: the
