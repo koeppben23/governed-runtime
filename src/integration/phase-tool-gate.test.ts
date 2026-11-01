@@ -20,6 +20,8 @@ import {
   declaredTaskClassFor,
   MUTATING_HOST_TOOLS,
   HOST_MUTATION_PHASE,
+  hostMutationIntegrityGate,
+  requiresHostAuthority,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
 import {
@@ -32,6 +34,84 @@ import {
 } from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { hashText } from '../shared/hashing.js';
+
+describe('native delegation authority and state-write defense', () => {
+  const state = makeState('PLAN');
+  it.each([
+    ['subagent', true],
+    ['read', false],
+    ['flowguard_help', false],
+    ['bash', true],
+    ['edit', true],
+    ['unknown', true],
+  ] as const)('requires host authority for %s: %s', (tool, expected) => {
+    expect(requiresHostAuthority(tool)).toBe(expected);
+  });
+  it.each([
+    [
+      'bash',
+      'NODE -e write /ENROLLED-STATE',
+      '/enrolled-state',
+      'SESSION_STATE_DIRECT_WRITE_DENIED',
+    ],
+    [
+      'bash',
+      'tee /workspaces/a/sessions/b/state.json',
+      undefined,
+      'SESSION_STATE_DIRECT_WRITE_DENIED',
+    ],
+    ['bash', 'cat /workspaces/a/sessions/b/state.json', undefined, null],
+    ['bash', 'tee /workspaces/unrelated', undefined, null],
+    ['bash', 'tee /sessions/unrelated', undefined, null],
+    ['bash', 'echo ok > /unrelated', '/enrolled-state', null],
+    ['bash', 'cat /enrolled-state', '/enrolled-state', null],
+    ['subagent', 'tee /enrolled-state', '/enrolled-state', null],
+  ] as const)(
+    'classifies %s %s without conflating reads, effects and path scope',
+    (tool, command, directory, code) => {
+      const result = hostMutationIntegrityGate(tool, state, { command }, directory);
+      expect(result).toMatchObject(code ? { kind: 'blocked', code } : { kind: 'clear' });
+    },
+  );
+  it('preserves integrity denial for delegation but does not convert a read into a mutation', () => {
+    const incident = {
+      ...state,
+      reviewAssurance: {
+        obligations: [{ status: 'blocked', blockedCode: 'SUBAGENT_EVIDENCE_REUSED' }],
+      },
+    } as unknown as typeof state;
+    expect(hostMutationIntegrityGate('subagent', incident)).toMatchObject({
+      kind: 'blocked',
+      code: 'INTEGRITY_INCIDENT_MUTATION_DENIED',
+    });
+    expect(hostMutationIntegrityGate('read', incident)).toEqual({ kind: 'clear' });
+  });
+  it.each([
+    ['provisional', true, 'STANDARD'],
+    ['provisional', false, 'TRIVIAL'],
+    ['final', true, 'TRIVIAL'],
+    ['final', false, 'TRIVIAL'],
+  ] as const)(
+    'binds the scope floor and reported facts for %s/unknown=%s',
+    (mode, unknownScope, minimumTaskClass) => {
+      const result = isRiskClassificationAllowed({
+        state: makeState('IMPLEMENTATION', { claimedTaskClass: 'HIGH-RISK' }),
+        changedFiles: ['docs/z.md', 'docs/a.md', 'docs/z.md'],
+        now: '2026-11-01T00:00:00Z',
+        mode,
+        unknownScope,
+      });
+      expect(result).toMatchObject({
+        minimumTaskClass,
+        effectiveTaskClass: 'HIGH-RISK',
+        escalatedTaskClass: 'HIGH-RISK',
+        provisional: mode === 'provisional',
+        unknownScope,
+        changedFiles: ['docs/a.md', 'docs/z.md'],
+      });
+    },
+  );
+});
 
 function implementationAttempt(
   checkId: string,
@@ -114,8 +194,8 @@ describe('phase-tool-gate', () => {
     });
 
     describe('CORNER — non-host tools return false', () => {
-      it('T8: task → false (has its own enforcement)', () => {
-        expect(isMutatingHostTool('task')).toBe(false);
+      it('T8: subagent → false (has separate dispatch enforcement)', () => {
+        expect(isMutatingHostTool('subagent')).toBe(false);
       });
 
       it('T9: flowguard_plan → false (FlowGuard tools excluded)', () => {

@@ -43,8 +43,13 @@ let fingerprint: string;
 let host: ReturnType<typeof createV2Host>;
 const cleanups: Array<() => void | Promise<void>> = [];
 
-async function openHost(directory: string) {
+async function openHost(
+  directory: string,
+  activeSession = sessionId,
+  digest = POLICY_SNAPSHOT.hash,
+) {
   const native = createV2Host(directory);
+  await native.seedActive(activeSession, digest);
   const dispose = await FlowGuardAuditPlugin.setup(native.ctx);
   if (dispose) cleanups.push(dispose);
   return native;
@@ -325,7 +330,7 @@ describe('native V2 plugin audit integration', () => {
     });
 
     it('fails explicitly when the host session location cannot resolve a worktree', async () => {
-      const badHost = await openHost('/nonexistent/path');
+      const badHost = await openHost('/nonexistent/path', 'fake');
       await expect(
         badHost.after(completion('flowguard_status', '{}', 'fake')),
       ).rejects.toHaveProperty('code');
@@ -359,7 +364,11 @@ describe('native V2 plugin audit integration', () => {
           },
         }),
       );
-      const solo = await openHost(ws.tmpDir);
+      const solo = await openHost(
+        ws.tmpDir,
+        sessionId,
+        (await readState(sessDir))!.policySnapshot.hash,
+      );
       await solo.after(completion('flowguard_status', output()));
       await solo.after(completion('flowguard_ticket', output()));
       const events = await readAuditTrail(sessDir);
@@ -386,7 +395,11 @@ describe('native V2 plugin audit integration', () => {
         event: 'PLAN_READY',
         at: new Date().toISOString(),
       });
-      const custom = await openHost(ws.tmpDir);
+      const custom = await openHost(
+        ws.tmpDir,
+        sessionId,
+        (await readState(sessDir))!.policySnapshot.hash,
+      );
       await custom.after(completion('flowguard_plan', output({ phase: 'PLAN' })));
       const events = await readAuditTrail(sessDir);
       expect(events.filter((e) => eventKind(e) === 'tool_call')).toHaveLength(0);
@@ -418,7 +431,7 @@ describe('native V2 plugin audit integration', () => {
           policySnapshot: (await readState(sessDir))!.policySnapshot,
         }),
       );
-      const second = await openHost(ws.tmpDir);
+      const second = await openHost(ws.tmpDir, sid);
       await host.after(completion('flowguard_status', output()));
       await second.after(completion('flowguard_status', output(), sid));
       const firstTrail = await readAuditTrail(sessDir);

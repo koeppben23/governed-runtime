@@ -8,14 +8,20 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-10-31):
+(counts updated 2026-11-01):
 
-- `root-composition`: 28 files (plugin lifecycle entrypoints and barrels)
-- `root-host-runtime`: exactly 5 named files (`host-mutation-observation.ts`,
-  `installed-commands.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
+- `root-composition`: 29 files (plugin lifecycle entrypoints and barrels)
+- `root-host-runtime`: exactly 6 named files (`host-mutation-observation.ts`,
+  `installed-commands.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 48 root production files
+- total: 50 root production files
+
+The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
+catalogue/executor/completion composition and `opencode-governance.ts` for exact
+host session/delegation correlation. Durable activation schemas and lifecycle
+validation remain in `state/` and `machine/`; the journal is owned by `adapters/`.
+Neither new root file supplies a competing workflow or approval authority.
 
 ADR-009 added `plugin-reviewer-capture.ts` as hook composition and
 `reviewer-capture.ts` as the synchronous request-provenance/capture-fence authority.

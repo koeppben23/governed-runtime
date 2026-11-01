@@ -7,6 +7,8 @@ import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
   hostMutationIntegrityGate,
+  NATIVE_SUBAGENT_TOOL,
+  requiresHostAuthority,
 } from './phase-tool-gate.js';
 import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
@@ -136,7 +138,7 @@ export async function toolBefore(
     const sessionId = hookInput?.sessionID ?? 'unknown';
     const traceId = getToolTraceId(runtime, input, 'before');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
-      if (toolName.startsWith(FLOWGUARD_TOOL_PREFIX) || isMutatingHostTool(toolName)) {
+      if (toolName.startsWith(FLOWGUARD_TOOL_PREFIX) || requiresHostAuthority(toolName)) {
         await recoverRegulatedCompletion(runtime, sessionId);
       }
       const args = (output as ToolHookBeforeOutput)?.args ?? {};
@@ -217,7 +219,7 @@ async function enforceBeforeRules(
   const mutatingHost = isMutatingHostTool(toolName);
 
   let hostResolution: { sessDir: string; state: SessionState } | null = null;
-  if (mutatingHost) {
+  if (mutatingHost || toolName === NATIVE_SUBAGENT_TOOL) {
     hostResolution = await resolveHostToolStateOrThrow(runtime, toolName, sessionId);
     const integrity = hostMutationIntegrityGate(
       toolName,
@@ -235,7 +237,7 @@ async function enforceBeforeRules(
     return;
   }
 
-  if (isMutatingFlowGuardTool(toolName) || mutatingHost) {
+  if (isMutatingFlowGuardTool(toolName) || mutatingHost || toolName === NATIVE_SUBAGENT_TOOL) {
     await reconcileBeforeMutation(runtime, sessionId, toolName);
   }
 

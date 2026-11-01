@@ -235,6 +235,7 @@ async function decideWithReviewer(
 /** Run the real plugin after-hook for a decision tool output. */
 async function runDecisionAfterHook(output: Record<string, unknown>): Promise<void> {
   const host = createV2Host(ws.tmpDir);
+  await host.seedActive(ctx.sessionID, (await readState(await sessDir()))!.policySnapshot.hash);
   const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
   try {
     await host.after({

@@ -184,6 +184,7 @@ async function approvePlan(session: Session, covered: boolean) {
 
 async function hooksFor(session: Session) {
   const host = createV2Host(session.worktree);
+  await host.seedActive(session.context.sessionID, (await stateOf(session)).policySnapshot.hash);
   const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
   if (dispose) pluginDisposers.push(dispose);
   return host;

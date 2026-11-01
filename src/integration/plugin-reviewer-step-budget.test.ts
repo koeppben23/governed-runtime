@@ -220,6 +220,7 @@ describe('canonical reviewer completion and persisted capacity', () => {
     let dispose: (() => void | Promise<void>) | undefined;
     try {
       const native = createV2Host(run.ws.tmpDir);
+      await native.seedActive(run.sessionID, run.after.policySnapshot.hash);
       dispose = (await FlowGuardAuditPlugin.setup(native.ctx)) || undefined;
       for (const tool of [
         'flowguard_run_check',

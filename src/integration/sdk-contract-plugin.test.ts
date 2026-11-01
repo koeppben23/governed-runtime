@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import type { Plugin } from '@opencode/plugin';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
+import { makeState } from '../fixtures.js';
 import {
   PLATFORMS,
   normalize,
@@ -18,8 +19,9 @@ const disposers: Plugin.Cleanup[] = [];
 afterEach(async () => {
   for (const dispose of disposers.splice(0).reverse()) await dispose();
 });
-async function setup(directory: string) {
+async function setup(directory: string, active = false) {
   const host = createV2Host(directory);
+  if (active) await host.seedActive('session', makeState('TICKET').policySnapshot.hash);
   const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
   expect(typeof dispose).toBe('function');
   if (dispose) disposers.push(dispose);
@@ -32,7 +34,12 @@ describe('native V2 plugin definition resilience', () => {
     async (directory) => {
       const host = await setup(directory);
       expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
-      expect([...host.sessionHooks.keys()]).toEqual(['context', 'compaction']);
+      expect([...host.sessionHooks.keys()]).toEqual([
+        'prompt',
+        'context',
+        'compaction',
+        'generate',
+      ]);
       expect(host.sessionGet).not.toHaveBeenCalled();
       expect(host.context.command.transform).not.toHaveBeenCalled();
       await disposers.at(-1)!();
@@ -72,7 +79,7 @@ describe('native V2 plugin definition resilience', () => {
   it.each(['unknown_tool', ''])(
     'fails closed for %j before effect with no worktree authority',
     async (tool) => {
-      const host = await setup('/nonexistent/path');
+      const host = await setup('/nonexistent/path', true);
       await expect(host.before(v2ToolEvent({ tool, input: {} }))).rejects.toHaveProperty('code');
     },
   );
@@ -80,11 +87,11 @@ describe('native V2 plugin definition resilience', () => {
   it('does not create authority merely to observe an unmatched read-only completion', async () => {
     const host = await setup('/nonexistent/path');
     await host.after({ ...v2ToolEvent(), status: 'completed', result: { content: 'native' } });
-    expect(host.sessionGet).not.toHaveBeenCalled();
+    expect(host.sessionGet).toHaveBeenCalledOnce();
   });
 
   it('does not swallow authoritative after-hook location failures', async () => {
-    const host = await setup('/nonexistent/path');
+    const host = await setup('/nonexistent/path', true);
     await expect(
       host.after({
         ...v2ToolEvent({ tool: 'flowguard_status', input: {} }),

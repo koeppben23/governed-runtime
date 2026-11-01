@@ -226,10 +226,9 @@ export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) 
         if (existsSync(diagnostic)) console.error(await readFile(diagnostic, 'utf8'));
         throw error;
       });
-    expect(inventory.output).toEqual(
-      expect.arrayContaining(['flowguard_plan', 'flowguard_implement']),
-    );
-    expect(inventory.output.filter((name: string) => name === 'flowguard_plan')).toHaveLength(1);
+    expect(inventory.output.filter((name: string) => name.startsWith('flowguard_'))).toEqual([
+      'flowguard_help',
+    ]);
     await client.location.reload({ signal: AbortSignal.timeout(60_000) });
     await assertSingleLoadedPlugin();
     const reviewer = await client.agent.get({ location, agentID: 'flowguard-reviewer' });

@@ -2,6 +2,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { createNativeHostProbe } from './opencode-native-test-helpers.js';
+import {
+  COMPONENT_ACTIVATION_SETUP,
+  seedNativeActiveScope,
+} from './opencode-activation-test-helpers.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 let probe: Awaited<ReturnType<typeof createNativeHostProbe>> | undefined;
@@ -54,11 +58,13 @@ describe.skipIf(!LIVE)('OpenCode output-token cap reaches the provider request',
     async ({ output, config }) => {
       probe = await createNativeHostProbe({
         product: true,
+        productTestSetup: COMPONENT_ACTIVATION_SETUP,
         agent: REVIEWER_AGENT,
         modelOutput: output,
         flowguardConfig: config,
       });
       const session = await probe.session('flowguard-reviewer');
+      await seedNativeActiveScope(probe, session.id);
       await probe.prompt(session.id, 'FLOWGUARD_LARGE_CONTEXT_MARKER');
       expect(probe.requests).toEqual([]);
       const history = await probe.client.session.context({ sessionID: session.id });

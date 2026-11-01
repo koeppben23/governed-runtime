@@ -6,6 +6,7 @@ import { FlowGuardAuditPlugin } from './plugin.js';
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { makeState } from '../fixtures.js';
 
 const h = vi.hoisted(() => {
   const order: string[] = [];
@@ -87,12 +88,15 @@ const completion = (patch: Record<string, unknown> = {}) => ({
 beforeEach(async () => {
   vi.clearAllMocks();
   h.resolve.mockResolvedValue({
-    status: 'absent',
+    status: 'resolved',
     worktreeRoot: process.cwd(),
     fingerprint: 'fingerprint',
     sessDir: '/session',
+    state: makeState('TICKET'),
   });
   host = createV2Host(process.cwd());
+  for (const id of ['session', 'child', 'parent'])
+    await host.seedActive(id, makeState('TICKET').policySnapshot.hash);
   dispose = (await FlowGuardAuditPlugin.setup(host.ctx)) || undefined;
   h.order.length = 0;
 });
@@ -289,14 +293,17 @@ describe('single-owner native hook composition', () => {
     h.event.mockRejectedValueOnce(failure);
     host.emit({ type: 'session.idle', id: 'idle', data: { sessionID: 'child' } });
     await vi.waitFor(() => expect(log).toHaveBeenCalled());
-    await expect(host.before(v2ToolEvent())).rejects.toThrow('lost its event stream');
+    await expect(host.before(v2ToolEvent({ sessionID: 'child' }))).rejects.toThrow(
+      'lost required event observation',
+    );
+    await expect(host.before(v2ToolEvent())).resolves.toBeUndefined();
     expect(h.capture.reconcileOnIdle).not.toHaveBeenCalled();
   });
 
   it('registers only current native context/compaction and tool hooks, with no command-origin shim', async () => {
-    await host.compact({ sessionID: 'child', system: [] });
+    await host.compact({ sessionID: 'child', system: [], tools: {} });
     expect(h.order).toEqual(['compaction']);
-    expect([...host.sessionHooks.keys()]).toEqual(['context', 'compaction']);
+    expect([...host.sessionHooks.keys()]).toEqual(['prompt', 'context', 'compaction', 'generate']);
     expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
     expect(host.context.command.transform).not.toHaveBeenCalled();
   });

@@ -129,6 +129,7 @@ async function driveToClosure() {
   const authority = await runtime.ws.resolveSessionAuthority(ctx.sessionID);
   if (authority.status !== 'resolved') throw new Error('Expected bound test authority');
   const host = createV2Host(ws.tmpDir);
+  await host.seedActive(ctx.sessionID, authority.state.policySnapshot.hash);
   dispose = (await FlowGuardAuditPlugin.setup(host.ctx)) || undefined;
   return {
     host,

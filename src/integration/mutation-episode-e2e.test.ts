@@ -113,8 +113,11 @@ async function cleanupWorkspace(ws: TestWorkspace) {
   }
 }
 
-async function openHost(directory: string) {
+async function openActiveHost(directory: string, sessionID: string) {
   const host = createV2Host(directory);
+  const fingerprint = (await computeFingerprint(directory)).fingerprint;
+  const state = (await readState(resolveSessionDir(fingerprint, sessionID)))!;
+  await host.seedActive(sessionID, state.policySnapshot.hash);
   const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
   if (dispose) pluginDisposers.push(dispose);
   return host;
@@ -136,7 +139,7 @@ async function recordMutationOutcome(
       sessDir,
       await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
     );
-    const host = await openHost(ws.tmpDir);
+    const host = await openActiveHost(ws.tmpDir, sessionID);
     const callID = crypto.randomUUID();
     const event = v2ToolEvent({
       tool: tool === 'bash' ? 'shell' : tool,
@@ -193,7 +196,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
           },
           time: { created: Date.now(), completed: Date.now() },
         });
-        const host = await openHost(ws.tmpDir);
+        const host = await openActiveHost(ws.tmpDir, sessionID);
         host.sessionContext.mockResolvedValue([
           { id: 'message-edit', type: 'assistant', content: [part()] },
         ]);
@@ -248,7 +251,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const host = await openHost(ws.tmpDir);
+      const host = await openActiveHost(ws.tmpDir, sessionID);
 
       const callID = crypto.randomUUID();
       await expect(
@@ -320,7 +323,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const host = await openHost(ws.tmpDir);
+      const host = await openActiveHost(ws.tmpDir, sessionID);
       const callID = crypto.randomUUID();
 
       const event = v2ToolEvent({
@@ -428,7 +431,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const host = await openHost(ws.tmpDir);
+      const host = await openActiveHost(ws.tmpDir, sessionID);
       const callID = crypto.randomUUID();
 
       await host.before(
@@ -467,7 +470,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const host = await openHost(ws.tmpDir);
+      const host = await openActiveHost(ws.tmpDir, sessionID);
 
       // Non-Git worktree: the git prerequisite gate must fail closed BEFORE the
       // dispatch is authorized — no MutationEpisode, no repository mutation.
@@ -524,7 +527,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         },
       });
 
-      const host = await openHost(ws.tmpDir);
+      const host = await openActiveHost(ws.tmpDir, sessionID);
 
       // A governed host mutation runs against the git control plane itself —
       // invisible to `git status`, invisible to the reviewer subject.
@@ -583,7 +586,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         const implementationState = await boundProgressedState(ws, sessionID, 'IMPLEMENTATION');
         await writeStateWithArtifacts(sessDir, { ...implementationState, phase });
 
-        const host = await openHost(ws.tmpDir);
+        const host = await openActiveHost(ws.tmpDir, sessionID);
 
         await expect(
           host.before(
@@ -618,7 +621,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
         await boundProgressedState(ws, sessionID, 'IMPLEMENTATION'),
       );
 
-      const host = await openHost(ws.tmpDir);
+      const host = await openActiveHost(ws.tmpDir, sessionID);
 
       const crashedCallID = crypto.randomUUID();
       await host.before(
@@ -737,7 +740,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const reviewState = await boundProgressedState(ws, sessionID, 'IMPL_REVIEW');
       await writeStateWithArtifacts(sessDir, { ...reviewState, phase: 'IMPLEMENTATION' });
 
-      const host = await openHost(ws.tmpDir);
+      const host = await openActiveHost(ws.tmpDir, sessionID);
 
       const crashedCallID = crypto.randomUUID();
       await host.before(

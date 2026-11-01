@@ -36,6 +36,9 @@ describe('native V2 host adapter', () => {
     ['tool', 'transform'],
     ['session', 'hook'],
     ['event', 'subscribe'],
+    ['storage', 'get'],
+    ['storage', 'set'],
+    ['storage', 'scan'],
   ])('fails closed without native %s.%s', async (domain, method) => {
     const { host, adapter } = fixture();
     const ctx = host.ctx as unknown as Record<string, Record<string, unknown>>;
@@ -62,6 +65,11 @@ describe('native V2 host adapter', () => {
 
   it('uses exact native session lookup and actual per-session location', async () => {
     const { host, adapter, controller } = fixture();
+    host.sessionGet.mockResolvedValueOnce({
+      id: 'child',
+      parentID: 'parent',
+      location: { directory: '/worktree' },
+    });
     expect(await adapter.getSession('child')).toEqual({
       sessionId: 'child',
       parentSessionId: 'parent',

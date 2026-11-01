@@ -8,6 +8,16 @@ the production code below has already been simplified. It implements the
 pre-port review required by [ADR-010](../../decisions/010-host-neutral-opt-in-governance.md).
 The [gate matrix](./phase0-contract-gates.md) remains **NO-GO** for ACTIVE V2.
 
+**2026-11-01 implementation update:** the activation/scope implementation now
+precedes workflow authority and uses one canonical journal, enrollment markers
+and lifecycle guards. Native catalogue filtering, scoped event fences and exact
+ordinary-subagent receipt enrollment replace the reviewed defects in Findings
+2–4/8. The current contract and verification limits are in
+[Activation and scope](./activation-scope-contract.md). Older dated snapshots
+below describe their inspected commits, not the current implementation. Root
+operator decisions and complete reviewer/error provenance remain blocked;
+PR #1190 stays Draft and ACTIVE V2 remains NO-GO.
+
 ## Delivery boundary
 
 - One integration branch and PR; no partial merge to `develop`.
@@ -41,14 +51,14 @@ SDK dependencies are pinned to `@opencode/plugin@2.2.4` and
   Setup registers tool before/after, session context/compaction and one canonical
   tool transform, then subscribes to native events. There is no callable V1
   factory, returned V1 hook object, wrapper chain or command-origin approval hook.
-- Runtime lookup starts with exact native session metadata and its actual
-  directory, then delegates to `resolveSessionAuthority`; worktree runtimes are
-  lazy and owned by setup. A subsequent session move is re-resolved. Lifecycle
+- Runtime lookup first resolves activation, then exact native session metadata
+  and delegates ACTIVE workflow lookup to `resolveSessionAuthority`; worktree runtimes are
+  lazy and owned by setup. Moving an ACTIVE session outside its enrolled directory is blocked. Lifecycle
   availability is checked both before and after asynchronous scope resolution.
   Cleanup aborts the subscription, disposes registrations, drains owned hook and
   notification operations, then disposes runtime logging; failures are surfaced.
-- Read-only after-hook diagnostics use only an already scoped runtime, preserving
-  native rich content and avoiding repeated authority I/O. This cache grants no
+- Read-only after-hook diagnostics recheck activation, then use only an already
+  scoped runtime, preserving native rich content without loading workflow authority. This cache grants no
   before-hook, mutation, approval or completion authority: those paths retain
   fresh scope resolution. Unmatched reads neither create runtimes nor state.
 - `OpenCodeHostAdapter` owns native agent/session/context/interrupt mechanics.

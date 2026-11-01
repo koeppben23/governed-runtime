@@ -289,6 +289,47 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     expect(enforcementPayload(caught).code).toBe('INTEGRITY_INCIDENT_MUTATION_DENIED');
   });
 
+  it('checks persisted errors for native delegation before dispatch admission', async () => {
+    const state = makeState('PLAN', {
+      error: {
+        code: 'SESSION_ERROR',
+        message: 'persisted failure',
+        recoveryHint: 'recover',
+        occurredAt: '2026-11-01T00:00:00Z',
+      },
+    });
+    const runtime = makeRuntime({
+      ws: { resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state)) },
+    });
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'subagent', sessionID: SESSION_ID, callID: 'child' },
+        { args: { agent: 'general' } },
+      ),
+    ).rejects.toThrow('SESSION_ERROR');
+  });
+
+  it('does not let delegation evade an unresolved review integrity incident', async () => {
+    const state = {
+      ...makeState('PLAN'),
+      reviewAssurance: {
+        obligations: [{ status: 'blocked', blockedCode: 'SUBAGENT_EVIDENCE_REUSED' }],
+      },
+    } as unknown as SessionState;
+    const runtime = makeRuntime({
+      ws: { resolveSessionAuthority: vi.fn().mockResolvedValue(resolvedAuthority(state)) },
+    });
+    await expect(
+      toolBefore(
+        runtime,
+        { tool: 'subagent', sessionID: SESSION_ID, callID: 'child' },
+        { args: { agent: 'general' } },
+      ),
+    ).rejects.toThrow('INTEGRITY_INCIDENT_MUTATION_DENIED');
+    expect(runtime.toolLatencyStarts.size).toBe(0);
+  });
+
   it('blocks with SESSION_DIR_NOT_FOUND when the directory is missing', async () => {
     const ws = await createTestWorkspace();
     try {
@@ -479,11 +520,15 @@ describe('toolBefore — command scope', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('denies a generic task outside IMPL_REVIEW during /check', async () => {
+  it('denies a native subagent outside IMPL_REVIEW during /check', async () => {
     const runtime = makeRuntime();
     runtime.activeCommandScopes.set(SESSION_ID, 'check');
     await expect(
-      toolBefore(runtime, { tool: 'task', sessionID: SESSION_ID }, { args: { subagent_type: '' } }),
+      toolBefore(
+        runtime,
+        { tool: 'subagent', sessionID: SESSION_ID },
+        { args: { agent: 'general' } },
+      ),
     ).rejects.toThrow('COMMAND_SCOPE_DENIED');
   });
 

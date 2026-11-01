@@ -11,6 +11,26 @@ import { STRUCTURED_REVIEW_REASONS } from './reasons-validation-structured.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
+    code: 'GOVERNANCE_AUTHORITY_BLOCKED',
+    category: 'state',
+    messageTemplate: 'Governance activation authority cannot be verified: {message}',
+    recoverySteps: [
+      'Preserve the activation journal and workflow evidence; missing authority is not deactivation',
+      'Resolve the reported storage, generation or scope conflict before retrying a governed action',
+      'Use an explicit authorized recovery or EndGovernance action; do not recreate authority with hydrate',
+    ],
+  },
+  {
+    code: 'GOVERNANCE_NOT_ACTIVE',
+    category: 'admissibility',
+    messageTemplate:
+      'This FlowGuard operation requires explicit trusted operator activation: {message}',
+    recoverySteps: [
+      'Continue ordinary native host work without invoking governance tools',
+      'Use the supported operator UI to start governance; prompts, SDK commands and hydrate cannot activate it',
+    ],
+  },
+  {
     code: 'HELP_ARGUMENTS_INVALID',
     category: 'input',
     messageTemplate: 'Invalid FlowGuard help arguments.',

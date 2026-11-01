@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Explicit native governance scope (#1190).** A host-private, digest-bound
+  activation journal separates verified INACTIVE sessions from ACTIVE and blocked
+  authority before workflow, Git, logging or enforcement access. Enrollment
+  markers survive loss of a session journal; incomplete transitions, corrupt
+  history and stale generations fail closed. Setup exposes inert help only;
+  productive tools are prepared for active request snapshots and filtered from
+  inactive/delegated requests. Ordinary native `subagent` dispatches retain
+  state/error, integrity, command and audit gates; exact parent-call progress
+  receipts enroll children and continuations into the root generation without
+  granting parent decision authority or treating delegation as mutation success.
+  Settled receipt replays cannot rebind a child to an older call after continuation;
+  bounded-wait and independent scope/journal negatives exercise this boundary.
+  Root operator activation/deactivation, reviewer provenance and regular edit-error
+  completion remain separate blocked acceptance paths; this is not ACTIVE V2 support.
+
 - **Native authority-source mechanism probes (#1190).** Actual V2 host tests
   establish private plugin-storage persistence across reload, graceful restart
   and forced process termination, while exposing its host-wide plugin-ID scope.
@@ -23,8 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comparisons exercise shell/edit effects in Git and non-Git directories and
   compare the effective provider-wire tool catalogue before any FlowGuard start.
   A component fault-injection test checks that event-stream loss cannot veto an
-  unrelated unstarted session. These tests currently fail on confirmed product
-  violations; they do not invent activation authority or certify a packed install.
+  unrelated unstarted session. They exercise the inactive boundary without
+  inventing activation authority or certifying a packed install.
   Bootstrap tests now require fresh unstarted/Git-free calls to pass; missing-state
   safety tests instead exercise loss of previously observed workflow state.
 

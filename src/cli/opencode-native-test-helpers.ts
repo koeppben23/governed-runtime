@@ -38,6 +38,9 @@ export async function createNativeHostProbe(
   options: {
     agent?: string;
     product?: boolean;
+    /** Explicit component-only setup in the product's private test namespace.
+     * Never installed or reported as trusted operator acceptance. */
+    productTestSetup?: string;
     git?: boolean;
     plugin?: string;
     modelOutput?: number;
@@ -188,7 +191,18 @@ export async function createNativeHostProbe(
       await mkdir(dirname(plugin), { recursive: true });
       await writeFile(
         plugin,
-        `export { default } from ${JSON.stringify(new URL('../../dist/integration/plugin.js', import.meta.url).href)};\n`,
+        options.productTestSetup === undefined
+          ? `export { default } from ${JSON.stringify(new URL('../../dist/integration/plugin.js', import.meta.url).href)};\n`
+          : `import { Plugin } from '@opencode/plugin';
+import Product from ${JSON.stringify(new URL('../../dist/integration/plugin.js', import.meta.url).href)};
+export default Plugin.define({ id: Product.id, async setup(ctx) {
+  const diagnosticContext = { ...ctx, session: { ...ctx.session, hook: (name, callback) =>
+    ctx.session.hook(name, async (event) => { try { return await callback(event); }
+      catch (error) { console.error('[component-fixture hook]', name, error); throw error; } }) } };
+  const productCleanup = await Product.setup(diagnosticContext);
+  const fixtureCleanup = await (async () => { ${options.productTestSetup} })();
+  return async () => { await fixtureCleanup?.(); await productCleanup?.(); };
+} });\n`,
       );
     }
     if (options.plugin) {

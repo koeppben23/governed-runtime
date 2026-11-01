@@ -5,7 +5,7 @@
  * Host mutations are authorized exclusively during IMPLEMENTATION. Read-only
  * tools (read, glob, grep, webfetch, todowrite) are always allowed.
  *
- * FlowGuard's own tools (`flowguard_*`) and `task` subagent calls are
+ * FlowGuard's own tools (`flowguard_*`) and native `subagent` calls are
  * excluded — they have their own enforcement in review-enforcement.ts
  * and the plugin hook pipeline.
  *
@@ -53,7 +53,7 @@ export function hostMutationIntegrityGate(
 ):
   | { readonly kind: 'clear' }
   | { readonly kind: 'blocked'; readonly code: string; readonly reason: string } {
-  if (!isMutatingHostTool(tool)) return { kind: 'clear' };
+  if (!requiresHostAuthority(tool)) return { kind: 'clear' };
   let code: string | null = null;
   if (hasUnresolvedIntegrityIncident(state.reviewAssurance))
     code = 'INTEGRITY_INCIDENT_MUTATION_DENIED';
@@ -125,7 +125,7 @@ export {
  * Intentionally does NOT include:
  * - `read`, `glob`, `grep`: read-only investigation tools
  * - `webfetch`: read-only (fetches URL content), useful for ticket research
- * - `task`: governed separately by subagent enforcement (BUG-08)
+ * - `subagent`: separately authorized dispatch; child effects keep their own gates
  * - `flowguard_*`: governed by FlowGuard's own command admissibility
  */
 export const MUTATING_HOST_TOOLS: ReadonlySet<string> = new Set([
@@ -147,9 +147,16 @@ export const READ_ONLY_HOST_TOOLS: ReadonlySet<string> = new Set([
   'todowrite',
 ]);
 
+/** The sole current native delegation tool identity, not a mutation completion. */
+export const NATIVE_SUBAGENT_TOOL = 'subagent';
+
+export function requiresHostAuthority(tool: string): boolean {
+  return isMutatingHostTool(tool) || tool === NATIVE_SUBAGENT_TOOL;
+}
+
 function isGovernedOutsideHostPhaseGate(toolName: string): boolean {
   return (
-    toolName === 'task' ||
+    toolName === NATIVE_SUBAGENT_TOOL ||
     toolName.startsWith(FLOWGUARD_TOOL_PREFIX) ||
     toolName.startsWith(MCP_FLOWGUARD_TOOL_PREFIX)
   );

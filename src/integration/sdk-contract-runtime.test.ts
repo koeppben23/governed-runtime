@@ -19,6 +19,7 @@ async function fixture() {
   const binding = await canonicalBinding(ws.tmpDir, sessionID);
   await writeState(sessionDir(binding.fingerprint, sessionID), makeState('TICKET', { binding }));
   const host = createV2Host(ws.tmpDir);
+  await host.seedActive(sessionID, makeState('TICKET').policySnapshot.hash);
   const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
   if (dispose) disposers.push(dispose);
   return { host, sessionID };

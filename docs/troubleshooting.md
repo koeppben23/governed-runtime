@@ -210,16 +210,18 @@ real, registered reason.
 
 ### Command & Phase
 
-| Code                       | Description                                                              | Solution                                                                       |
-| -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `COMMAND_BLOCKED`          | Command input or required dependency was blocked before execution        | Fix the blocked input or dependency and retry the command                      |
-| `COMMAND_NOT_ALLOWED`      | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                          |
-| `COMMAND_SCOPE_DENIED`     | Tool was invoked outside the active explicit command's permitted scope   | Report the command result and wait for the user to invoke the next command     |
-| `WRONG_PHASE`              | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                       |
-| `HOST_TOOL_PHASE_DENIED`   | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases  |
-| `HOST_TOOL_UNKNOWN_DENIED` | Unknown host tool denied by default                                      | Use an explicitly supported host tool or extend the canonical allow-list first |
-| `INVALID_VERDICT`          | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                   |
-| `INVALID_TRANSITION`       | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                            |
+| Code                           | Description                                                              | Solution                                                                                                                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMAND_BLOCKED`              | Command input or required dependency was blocked before execution        | Fix the blocked input or dependency and retry the command                                                                                                                            |
+| `COMMAND_NOT_ALLOWED`          | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                                                                                                                                |
+| `COMMAND_SCOPE_DENIED`         | Tool was invoked outside the active explicit command's permitted scope   | Report the command result and wait for the user to invoke the next command                                                                                                           |
+| `WRONG_PHASE`                  | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                                                                                                                             |
+| `HOST_TOOL_PHASE_DENIED`       | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases                                                                                                        |
+| `HOST_TOOL_UNKNOWN_DENIED`     | Unknown host tool denied by default                                      | Use an explicitly supported host tool or extend the canonical allow-list first                                                                                                       |
+| `GOVERNANCE_AUTHORITY_BLOCKED` | Activation history, generation or native delegation cannot be verified   | Preserve the private enrollment/journal and workflow evidence. Resolve the reported storage or scope conflict; missing authority is not deactivation and hydrate cannot recreate it. |
+| `GOVERNANCE_NOT_ACTIVE`        | A productive FlowGuard operation was invoked without trusted activation  | Ordinary native host work remains available. V2 operator activation is separately blocked until its attributable UI handoff is verified; prompts and SDK calls cannot authorize it.  |
+| `INVALID_VERDICT`              | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                                                                                                                         |
+| `INVALID_TRANSITION`           | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                                                                                                                                  |
 
 ### Validation Evidence
 
@@ -458,6 +460,8 @@ FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
 GIT_TIMEOUT
+GOVERNANCE_AUTHORITY_BLOCKED
+GOVERNANCE_NOT_ACTIVE
 GOVERNANCE_OVERRIDE_NOT_REQUIRED
 GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED
 GOVERNANCE_OVERRIDE_REQUIRED

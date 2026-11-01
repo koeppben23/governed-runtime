@@ -66,6 +66,7 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
       hasMethods(ctx.session, ['get', 'context', 'interrupt', 'hook']),
       hasMethods(ctx.tool, ['hook', 'transform']),
       hasMethods(ctx.event, ['subscribe']),
+      hasMethods(ctx.storage, ['get', 'set', 'scan']),
     ];
     if (available.includes(false)) {
       throw new HostAdapterInitError('The native OpenCode V2 plugin context is incomplete.');
@@ -126,6 +127,7 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
       sessionId: session.id,
       directory: session.location.directory,
       ...(session.parentID === undefined ? {} : { parentSessionId: session.parentID }),
+      ...(session.agent === undefined ? {} : { agent: session.agent }),
     };
   }
 

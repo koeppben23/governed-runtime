@@ -3,6 +3,10 @@ import { vi, type Mock } from 'vitest';
 import type { Plugin } from '@opencode/plugin';
 import type { OpenCodeEvent } from '@opencode/client';
 import type { OrchestratorClient } from './review/types.js';
+import {
+  createActivationStoreFixture,
+  seedActiveGovernance,
+} from '../fixtures/governance-activation.js';
 
 /** Explicit semantic port mock; unspecified operations fail, never manufacture evidence. */
 export function createReviewClient(
@@ -27,6 +31,7 @@ type Callback = (event: unknown) => Promise<void> | void;
 type Item = { event: OpenCodeEvent } | { error: unknown } | { end: true };
 
 export function createV2Host(directory: string) {
+  const activation = createActivationStoreFixture();
   const toolHooks = new Map<string, Callback>();
   const sessionHooks = new Map<string, Callback>();
   const definitions = new Map<
@@ -81,11 +86,21 @@ export function createV2Host(directory: string) {
       }
     })();
   });
-  const sessionGet = vi.fn(async ({ sessionID }: { sessionID: string }) => ({
-    id: sessionID,
-    parentID: 'parent',
-    location: { directory },
-  }));
+  const sessionGet = vi.fn(
+    async ({
+      sessionID,
+    }: {
+      sessionID: string;
+    }): Promise<{
+      id: string;
+      location: { directory: string };
+      parentID?: string;
+      agent?: string;
+    }> => ({
+      id: sessionID,
+      location: { directory },
+    }),
+  );
   const sessionContext = vi.fn(async (_input: unknown) => [] as unknown[]);
   const interrupt = vi.fn(async (_input: unknown) => ({ interrupted: true }));
   const prompt = vi.fn(async (_input: unknown) => ({ id: 'inbox', type: 'user' }));
@@ -97,6 +112,7 @@ export function createV2Host(directory: string) {
     app: { name: 'opencode', version: '2.2.4', channel: 'stable' },
     location: { directory, project: { id: 'project', directory, canonical: directory } },
     options: {},
+    storage: activation.store,
     agent: { list: listAgents },
     session: {
       get: sessionGet,
@@ -142,6 +158,9 @@ export function createV2Host(directory: string) {
     prompt,
     listAgents,
     subscribe,
+    activation,
+    seedActive: async (sessionId: string, policyDigest: string, worktreeRoot = directory) =>
+      seedActiveGovernance(activation.store, { sessionId, directory, worktreeRoot, policyDigest }),
     failAt: (index: number) => {
       failRegistration = index;
     },

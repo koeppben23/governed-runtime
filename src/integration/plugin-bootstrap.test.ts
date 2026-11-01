@@ -17,6 +17,11 @@ import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
 import { computeFingerprint, ensureWorkspace, sessionDir } from '../adapters/workspace/index.js';
+import {
+  governanceActivationKeys,
+  governanceDelegationKey,
+  resolveGovernanceActivation,
+} from '../adapters/governance-activation.js';
 
 vi.mock('../adapters/git.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -49,8 +54,9 @@ afterEach(async () => {
   }
 });
 
-async function openHost(directory: string) {
+async function openHost(directory: string, active?: { sessionId: string; policyDigest: string }) {
   const host = createV2Host(directory);
+  if (active) await host.seedActive(active.sessionId, active.policyDigest);
   const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
   if (dispose) cleanup.push(dispose);
   return host;
@@ -75,7 +81,10 @@ async function fixture(
     await fs.mkdir(sessDir, { recursive: true });
     await writeState(sessDir, state);
   }
-  const host = await openHost(ws.tmpDir);
+  const host = await openHost(
+    ws.tmpDir,
+    phase ? { sessionId: sessionID, policyDigest: state.policySnapshot.hash } : undefined,
+  );
   return { ws, sessionID, sessDir, state, host };
 }
 
@@ -142,7 +151,7 @@ describe('native V2 lazy bootstrap', () => {
   });
 
   it('starts file logging lazily on an actual session operation in an initialized workspace', async () => {
-    const h = await fixture();
+    const h = await fixture('TICKET');
     const ensured = await ensureWorkspace(h.ws.tmpDir);
     await expect(fs.stat(path.join(ensured.workspaceDir, 'workspace.json'))).resolves.toBeTruthy();
     await h.host.before(beforeEvent(h.sessionID, 'read', { filePath: 'README.md' }));
@@ -314,7 +323,7 @@ describe('native V2 phase and integrity gates', () => {
   });
 
   it('fails explicitly on corrupt state, without normalizing it to absent authority', async () => {
-    const h = await fixture();
+    const h = await fixture('TICKET');
     await fs.mkdir(h.sessDir, { recursive: true });
     await fs.writeFile(path.join(h.sessDir, 'session-state.json'), '{ corrupt JSON');
     await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow('PARSE_FAILED');
@@ -351,7 +360,7 @@ describe('native V2 phase and integrity gates', () => {
   });
 
   it('blocks verdict tools at corrupt canonical authority before attempting any review enforcement', async () => {
-    const h = await fixture();
+    const h = await fixture('TICKET');
     await fs.mkdir(h.sessDir, { recursive: true });
     await fs.writeFile(path.join(h.sessDir, 'session-state.json'), '{ corrupt JSON');
     await expect(
@@ -498,5 +507,190 @@ describe('native V2 phase and integrity gates', () => {
         }),
       ),
     ).rejects.toThrow('TSA_TIMESTAMP_ASSURANCE_FAILED');
+  });
+});
+
+describe('native activation isolation and delegation with real enforcement gates', () => {
+  it('rejects a different valid policy snapshot before the phase gate, rather than rebinding activation', async () => {
+    const h = await fixture('PLAN');
+    const replacement = makeState('PLAN', {
+      binding: h.state.binding,
+      policySnapshot: {
+        ...h.state.policySnapshot,
+        audit: { ...h.state.policySnapshot.audit, emitToolCalls: false },
+      },
+    });
+    expect(replacement.policySnapshot.hash).not.toBe(h.state.policySnapshot.hash);
+    await writeState(h.sessDir, replacement);
+    await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow(
+      'GOVERNANCE_AUTHORITY_BLOCKED',
+    );
+    expect((await readState(h.sessDir))!.mutationEpisodes).toEqual([]);
+  });
+  it('does not infer activation from existing workflow bytes, even when those bytes are corrupt', async () => {
+    const h = await fixture();
+    await fs.mkdir(h.sessDir, { recursive: true });
+    await fs.writeFile(path.join(h.sessDir, 'session-state.json'), '{ not authority');
+    const event = beforeEvent(h.sessionID);
+    const original = structuredClone(event);
+    await h.host.before(event);
+    expect(event).toEqual(original);
+    expect(await fs.readFile(path.join(h.sessDir, 'session-state.json'), 'utf8')).toBe(
+      '{ not authority',
+    );
+  });
+
+  it('keeps INACTIVE hooks inert in a host that also has an ACTIVE root, including compaction and subagents', async () => {
+    const h = await fixture('PLAN');
+    const inactiveId = crypto.randomUUID();
+    for (const tool of ['shell', 'edit', 'subagent']) {
+      const event = beforeEvent(inactiveId, tool, { agent: 'general', command: 'ordinary' });
+      const original = structuredClone(event);
+      await h.host.before(event);
+      await h.host.after({ ...event, status: 'completed', result: { content: [] } });
+      expect(event).toEqual(original);
+    }
+    for (const hook of ['context', 'compaction', 'generate']) {
+      const view = {
+        sessionID: inactiveId,
+        agent: 'build',
+        system: [{ type: 'text', text: 'native' }],
+        messages: [],
+        tools: { shell: {}, flowguard_plan: {}, flowguard_help: {} },
+        model: { providerID: 'custom', id: 'custom', variant: 'native' },
+        options: { custom: true },
+      };
+      await h.host.sessionHooks.get(hook)!(view);
+      expect(view.tools).toEqual({ shell: {}, flowguard_help: {} });
+      expect(view.system).toEqual([{ type: 'text', text: 'native' }]);
+      expect(view.options).toEqual({ custom: true });
+      expect(view.model).toEqual({ providerID: 'custom', id: 'custom', variant: 'native' });
+    }
+    expect((await readState(h.sessDir))!.mutationEpisodes).toEqual([]);
+    await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+  });
+
+  it.each(['head', 'revision'])(
+    'blocks ACTIVE authority loss (%s) without poisoning unrelated INACTIVE sessions',
+    async (part) => {
+      const h = await fixture('PLAN');
+      const keys = governanceActivationKeys(h.sessionID);
+      const key =
+        part === 'head'
+          ? keys.head
+          : [...h.host.activation.values.keys()].find((key) => key.startsWith(keys.revisions))!;
+      h.host.activation.values.delete(key);
+      await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow(
+        'GOVERNANCE_AUTHORITY_BLOCKED',
+      );
+      await expect(h.host.before(beforeEvent('unrelated'))).resolves.toBeUndefined();
+    },
+  );
+
+  it('does not let a lost event stream disable ordinary INACTIVE work', async () => {
+    const h = await fixture('PLAN');
+    h.host.failEvents(new Error('stream failed'));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await expect(h.host.before(beforeEvent(h.sessionID))).rejects.toThrow(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    );
+    await expect(h.host.before(beforeEvent('ordinary'))).resolves.toBeUndefined();
+  });
+
+  it('admits an ordinary native subagent in PLAN without authorizing a host mutation or skipping the review boundary', async () => {
+    const h = await fixture('PLAN');
+    await h.host.before(
+      beforeEvent(h.sessionID, 'subagent', { agent: 'general', prompt: 'inspect' }),
+    );
+    expect(h.host.activation.values.has(governanceDelegationKey(h.sessionID, 'c1'))).toBe(true);
+    expect((await readState(h.sessDir))!.mutationEpisodes).toEqual([]);
+    await expect(
+      h.host.before(
+        beforeEvent(h.sessionID, 'subagent', { agent: 'flowguard-reviewer' }, 'review'),
+      ),
+    ).rejects.toThrow('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    expect(h.host.prompt).not.toHaveBeenCalled();
+    await expect(
+      h.host.before(beforeEvent(h.sessionID, 'task', { agent: 'general' }, 'obsolete')),
+    ).rejects.toThrow('HOST_TOOL_UNKNOWN_DENIED');
+  });
+
+  it('does not publish dispatch authorization when audit reconciliation blocks a subagent', async () => {
+    const h = await pendingTransition();
+    await fs.writeFile(path.join(h.sessDir, 'audit.jsonl'), '{ malformed json\n');
+    await expect(
+      h.host.before(beforeEvent(h.sessionID, 'subagent', { agent: 'general' })),
+    ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+    expect(h.host.activation.values.has(governanceDelegationKey(h.sessionID, 'c1'))).toBe(false);
+  });
+
+  it('enrolls only the exact native parent-call receipt and applies the root phase gate to child effects', async () => {
+    const h = await fixture('PLAN');
+    const childId = crypto.randomUUID();
+    h.host.sessionGet.mockImplementation(async ({ sessionID }) => ({
+      id: sessionID,
+      location: { directory: h.ws.tmpDir },
+      ...(sessionID === childId ? { parentID: h.sessionID, agent: 'general' } : {}),
+    }));
+    const dispatch = beforeEvent(h.sessionID, 'subagent', { agent: 'general', prompt: 'inspect' });
+    await h.host.before(dispatch);
+    const pending = h.host.before(
+      beforeEvent(childId, 'read', { filePath: 'README.md' }, 'child-read'),
+    );
+    h.host.emit({
+      type: 'session.tool.progress',
+      id: 'receipt',
+      data: {
+        sessionID: h.sessionID,
+        assistantMessageID: dispatch.messageID,
+        id: dispatch.id,
+        metadata: { sessionID: childId, status: 'running' },
+      },
+    });
+    await pending;
+    expect(await resolveGovernanceActivation(h.host.activation.store, childId)).toMatchObject({
+      kind: 'active',
+      record: { rootSessionId: h.sessionID },
+    });
+    await expect(
+      h.host.definitions.get('flowguard_help')!.execute(
+        { view: 'context' },
+        {
+          sessionID: childId,
+          messageID: 'child-help',
+          agent: 'general',
+          id: 'help',
+          signal: new AbortController().signal,
+        },
+      ),
+    ).resolves.toMatchObject({ content: expect.any(String), metadata: {} });
+    await expect(h.host.before(beforeEvent(childId))).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+    await expect(
+      h.host.before(beforeEvent(childId, 'flowguard_plan', { reviewVerdict: 'accept' })),
+    ).rejects.toThrow('GOVERNANCE_AUTHORITY_BLOCKED');
+    await expect(
+      h.host.definitions.get('flowguard_status')!.execute(
+        {},
+        {
+          sessionID: childId,
+          messageID: 'child-direct',
+          agent: 'general',
+          id: 'direct',
+          signal: new AbortController().signal,
+        },
+      ),
+    ).rejects.toThrow('Delegated host execution does not authorize parent workflow decisions');
+    for (const hook of ['context', 'compaction', 'generate']) {
+      const view = {
+        sessionID: childId,
+        agent: 'general',
+        tools: { flowguard_plan: {}, flowguard_help: {}, read: {} },
+        messages: [],
+        system: [],
+      };
+      await h.host.sessionHooks.get(hook)!(view);
+      expect(view.tools).toEqual({ flowguard_help: {}, read: {} });
+    }
+    expect((await readState(h.sessDir))!.mutationEpisodes).toEqual([]);
   });
 });

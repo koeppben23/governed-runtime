@@ -3,8 +3,6 @@ import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { Plugin } from '@opencode/plugin';
 import type { OpenCodeEvent } from '@opencode/client';
-import type { ToolContext as NativeToolContext } from '@opencode/plugin/promise/tool';
-import { z } from 'zod';
 import { HttpTimestampAuthorityProvider } from '../audit/rfc-3161-http-provider.js';
 import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
 import { repoConfigPath } from '../adapters/persistence.js';
@@ -26,15 +24,18 @@ import { ReviewerCaptureController } from './reviewer-capture.js';
 import { validateNativeReviewerOutputLimit } from './reviewer-output-cap.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import { reconcileHostMutationEpisodes } from './plugin-mutation-reconciliation.js';
-import { READ_ONLY_HOST_TOOLS } from './phase-tool-gate.js';
+import { READ_ONLY_HOST_TOOLS, NATIVE_SUBAGENT_TOOL } from './phase-tool-gate.js';
+import { FLOWGUARD_TOOL_NAMES, TOOL_FLOWGUARD_HELP } from './tool-names.js';
+import { help } from './tools/index.js';
 import {
-  FLOWGUARD_TOOL_NAMES,
-  FLOWGUARD_TOOL_PREFIX,
-  TOOL_FLOWGUARD_HYDRATE,
-} from './tool-names.js';
-import * as tools from './tools/index.js';
-import type { ToolDefinition } from './tools/helpers.js';
+  createNativeToolCatalogue,
+  executeCanonicalNativeTool,
+  handleNativeCompletion,
+  applicationTool,
+  type NativeCanonicalExecutor,
+} from './plugin-native-tools.js';
+import { OpenCodeGovernance, type ActiveGovernanceScope } from './opencode-governance.js';
+import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -62,6 +63,7 @@ type RuntimeEntry = {
   readonly reviewerOutputLimit: number | 'host';
   readonly configReadError?: unknown;
 };
+type ScopedRuntimeEntry = RuntimeEntry & { readonly scope: ActiveGovernanceScope };
 
 /** This is the only OpenCode entrypoint. There is deliberately no callable V1 factory. */
 export const FlowGuardAuditPlugin = Plugin.define({
@@ -69,36 +71,38 @@ export const FlowGuardAuditPlugin = Plugin.define({
   async setup(ctx) {
     const controller = new AbortController();
     const adapter = new OpenCodeHostAdapter(ctx, controller.signal);
+    const governance = new OpenCodeGovernance(ctx, adapter, controller.signal);
     const registrations: Registration[] = [];
     const runtimes = new Map<string, Promise<RuntimeEntry>>();
     const sessionRoots = new Map<string, string>();
+    const fence = createEventFence(governance, adapter);
     const operations = new Set<Promise<unknown>>();
     let ready = false;
     let closed = false;
-    let eventFailed = false;
     let eventLoop: Promise<void> | undefined;
     let cleanup: Promise<void> | undefined;
 
-    const assertAvailable = (): void => {
-      if (!ready || closed || eventFailed) {
+    const assertLifecycle = (): void => {
+      if (!ready || closed) {
         throw buildEnforcementError(
           'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-          'The V2 plugin is not ready, has stopped, or lost its event stream.',
+          'The V2 plugin is not ready or has stopped.',
         );
       }
     };
-
-    const invoke = async <T>(
-      sessionId: string,
-      action: (entry: RuntimeEntry) => Promise<T>,
-    ): Promise<T> => {
-      assertAvailable();
-      const operation = loadRuntime(adapter, runtimes, sessionRoots, sessionId).then((entry) => {
-        assertAvailable();
-        return action(entry);
-      });
-      return trackOperation(operations, operation);
+    const assertAvailable = (scope: ActiveGovernanceScope): void => {
+      assertLifecycle();
+      fence.assert(scope);
     };
+    const actions = createRuntimeActions({
+      governance,
+      adapter,
+      runtimes,
+      sessionRoots,
+      operations,
+      assertLifecycle,
+      assertAvailable,
+    });
 
     const dispose = (): Promise<void> => {
       cleanup ??= (async () => {
@@ -113,21 +117,14 @@ export const FlowGuardAuditPlugin = Plugin.define({
       await adapter.initialize();
       const capabilities = await adapter.validateCapabilities();
       if (!capabilities.valid) throw new HostCapabilityMismatchError(capabilities.mismatches);
-      await createFlowGuardPluginHooks(
-        ctx,
-        invoke,
-        (event) =>
-          observeReadOnlyCompletion(event, runtimes, sessionRoots, operations, assertAvailable),
-        registrations,
-      );
+      await createFlowGuardPluginHooks(ctx, { ...actions, governance }, registrations);
       eventLoop = consumeEvents(
         ctx,
         controller.signal,
-        (event) => dispatchEvent(event, runtimes, sessionRoots, invoke),
-        (error) => {
-          eventFailed = true;
-          adapter.log('error', 'V2 event stream unavailable', serializeError(error));
-        },
+        (event) =>
+          governance.observeProgress(event) ??
+          dispatchEvent(event, runtimes, sessionRoots, actions.invoke, governance),
+        fence.failed,
         operations,
       );
       ready = true;
@@ -147,6 +144,125 @@ export const FlowGuardAuditPlugin = Plugin.define({
 });
 
 export default FlowGuardAuditPlugin;
+
+function createEventFence(governance: OpenCodeGovernance, adapter: OpenCodeHostAdapter) {
+  const roots = new Map<string, string>();
+  const failed = new Set<string>();
+  let streamFailed = false;
+  return {
+    assert(scope: ActiveGovernanceScope) {
+      roots.set(scope.sessionId, scope.root.sessionId);
+      if (streamFailed || failed.has(scope.root.sessionId))
+        throw buildEnforcementError(
+          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          'The ACTIVE scope lost required event observation.',
+        );
+    },
+    failed(error: unknown, event?: OpenCodeEvent) {
+      const data: unknown = event?.data;
+      const sessionId =
+        record(data) && typeof data.sessionID === 'string' ? data.sessionID : undefined;
+      const root = sessionId === undefined ? undefined : (roots.get(sessionId) ?? sessionId);
+      if (root === undefined) streamFailed = true;
+      else failed.add(root);
+      governance.failPending('Native event observation failed.', root);
+      adapter.log('error', 'V2 event stream unavailable', serializeError(error));
+    },
+  };
+}
+
+function createRuntimeActions(input: {
+  governance: OpenCodeGovernance;
+  adapter: OpenCodeHostAdapter;
+  runtimes: Map<string, Promise<RuntimeEntry>>;
+  sessionRoots: Map<string, string>;
+  operations: Set<Promise<unknown>>;
+  assertLifecycle: () => void;
+  assertAvailable: (scope: ActiveGovernanceScope) => void;
+}) {
+  const {
+    governance,
+    adapter,
+    runtimes,
+    sessionRoots,
+    operations,
+    assertLifecycle,
+    assertAvailable,
+  } = input;
+  const resolveEntry = async (
+    sessionId: string,
+    required: boolean,
+  ): Promise<ScopedRuntimeEntry | null> => {
+    assertLifecycle();
+    const authority = await governance.resolve(sessionId);
+    if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
+    if (authority.kind === 'inactive') {
+      if (required)
+        throw buildEnforcementError(
+          'GOVERNANCE_NOT_ACTIVE',
+          'Native host operation is unchanged; this workflow tool cannot establish activation.',
+        );
+      return null;
+    }
+    const scope = authority.scope;
+    assertAvailable(scope);
+    const entry = await loadRuntime(runtimes, sessionRoots, adapter, scope);
+    await assertFreshScope(governance, sessionId, scope);
+    assertAvailable(scope);
+    return { ...entry, scope };
+  };
+  const invoke: Invoke = async (sessionId, action, required = false) =>
+    trackOperation(
+      operations,
+      (async () => {
+        const entry = await resolveEntry(sessionId, required);
+        return entry ? action(entry) : undefined;
+      })(),
+    );
+  const execute: NativeCanonicalExecutor = async (name, definition, args, context) =>
+    trackOperation(
+      operations,
+      (async () => {
+        const entry = await resolveEntry(context.sessionID, name !== TOOL_FLOWGUARD_HELP);
+        if (!entry) return { content: help.description, metadata: {} };
+        if (name === TOOL_FLOWGUARD_HELP && entry.scope.sessionId !== entry.scope.root.sessionId)
+          return { content: help.description, metadata: {} };
+        if (entry.scope.sessionId !== entry.scope.root.sessionId && name !== TOOL_FLOWGUARD_HELP)
+          throw buildEnforcementError(
+            'GOVERNANCE_AUTHORITY_BLOCKED',
+            'Delegated host execution does not authorize parent workflow decisions.',
+          );
+        return executeCanonicalNativeTool(name, definition, args, context, entry.runtime);
+      })(),
+    );
+  const observe = async (event: NativeToolCompletion) => {
+    assertLifecycle();
+    const authority = await governance.resolve(event.sessionID);
+    if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
+    if (authority.kind === 'inactive') return;
+    await observeReadOnlyCompletion(event, runtimes, sessionRoots, operations, () =>
+      assertAvailable(authority.scope),
+    );
+  };
+  return { invoke, execute, observe };
+}
+
+async function assertFreshScope(
+  governance: OpenCodeGovernance,
+  sessionId: string,
+  scope: ActiveGovernanceScope,
+): Promise<void> {
+  const fresh = await governance.resolve(sessionId);
+  if (
+    fresh.kind !== 'active' ||
+    fresh.scope.record.revision !== scope.record.revision ||
+    fresh.scope.root.revision !== scope.root.revision
+  )
+    throw buildEnforcementError(
+      'GOVERNANCE_AUTHORITY_BLOCKED',
+      'Activation changed while loading the governed runtime.',
+    );
+}
 
 async function trackOperation<T>(
   operations: Set<Promise<unknown>>,
@@ -189,21 +305,41 @@ async function observeReadOnlyCompletion(
 }
 
 async function loadRuntime(
-  adapter: OpenCodeHostAdapter,
   runtimes: Map<string, Promise<RuntimeEntry>>,
   sessionRoots: Map<string, string>,
-  sessionId: string,
+  adapter: OpenCodeHostAdapter,
+  scope: ActiveGovernanceScope,
 ): Promise<RuntimeEntry> {
-  const session = await adapter.getSession(sessionId);
-  const authority = await resolveSessionAuthority({ root: session.directory, sessionId });
+  const authority = await resolveSessionAuthority({
+    root: scope.root.directory,
+    sessionId: scope.root.sessionId,
+  });
   if (authority.status === 'unavailable')
     throw buildEnforcementError(authority.code, authority.reason);
   const root = authority.worktreeRoot;
-  sessionRoots.set(sessionId, root);
+  if (authority.status !== 'resolved')
+    throw buildEnforcementError(
+      'SESSION_DIR_NOT_FOUND',
+      'Cannot verify host tool phase gate because the ACTIVE workflow state is missing.',
+      { stateReadable: 'false' },
+    );
+  if (
+    root !== scope.root.worktreeRoot ||
+    authority.state.policySnapshot.hash !== scope.root.policyDigest
+  )
+    throw buildEnforcementError(
+      'GOVERNANCE_AUTHORITY_BLOCKED',
+      'The workflow no longer matches its activation worktree or frozen policy.',
+    );
+  sessionRoots.set(scope.sessionId, root);
   let entry = runtimes.get(root);
   if (!entry) {
     entry = createSessionRuntime(adapter, root);
     runtimes.set(root, entry);
+    const initializing = entry;
+    void initializing.catch(() => {
+      if (runtimes.get(root) === initializing) runtimes.delete(root);
+    });
   }
   return entry;
 }
@@ -215,11 +351,13 @@ async function disposeResources(
   eventLoop: Promise<void> | undefined,
   adapter: OpenCodeHostAdapter,
 ): Promise<void> {
+  if (eventLoop) await eventLoop;
+  await Promise.allSettled([...operations]);
+  // Prompt preflight can still own an in-flight catalogue publication. Drain
+  // it before taking the final registration snapshot, including late handles.
   const registrationsDisposed = await Promise.allSettled(
     registrations.map((registration) => registration.dispose()),
   );
-  if (eventLoop) await eventLoop;
-  await Promise.allSettled([...operations]);
   const runtimesDisposed = await Promise.allSettled([
     ...[...runtimes.values()].map(async (entry) => (await entry).dispose()),
     adapter.shutdown(),
@@ -236,13 +374,18 @@ async function dispatchEvent(
   runtimes: ReadonlyMap<string, Promise<RuntimeEntry>>,
   sessionRoots: Map<string, string>,
   invoke: Invoke,
+  governance: OpenCodeGovernance,
 ): Promise<void> {
   const projected = projectOpenCodeEvent(event);
   if (!projected) return;
   if (event.type === 'session.deleted') {
+    const authority = await resolveGovernanceActivation(governance.store, projected.sessionId);
+    if (authority.kind === 'blocked') throw buildEnforcementError(authority.code, authority.reason);
+    if (authority.kind !== 'active') return;
     const root = sessionRoots.get(projected.sessionId);
     const entry = root === undefined ? undefined : runtimes.get(root);
-    if (entry) await handlePluginEvent((await entry).runtime, projected.event);
+    if (entry && authority.record.rootSessionId === projected.sessionId)
+      await handlePluginEvent((await entry).runtime, projected.event);
     sessionRoots.delete(projected.sessionId);
     return;
   }
@@ -329,19 +472,18 @@ async function createSessionRuntime(
   }
 }
 
-type Invoke = <T>(sessionId: string, action: (entry: RuntimeEntry) => Promise<T>) => Promise<T>;
+type Invoke = <T>(
+  sessionId: string,
+  action: (entry: ScopedRuntimeEntry) => Promise<T>,
+  required?: boolean,
+) => Promise<T | undefined>;
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Native names are translated to the existing application tool vocabulary, not accepted as V1 API input. */
-function applicationTool(tool: string): string {
-  return tool === 'shell' ? 'bash' : tool;
-}
-
 function assertReviewerBoundary(tool: string, input: unknown): void {
-  if (tool === 'subagent' && record(input) && input.agent === REVIEWER_SUBAGENT_TYPE) {
+  if (tool === NATIVE_SUBAGENT_TOOL && record(input) && input.agent === REVIEWER_SUBAGENT_TYPE) {
     throw buildEnforcementError(
       'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
       'The V2 reviewer release/completion/capture chain is NOT_VERIFIED.',
@@ -352,47 +494,89 @@ function assertReviewerBoundary(tool: string, input: unknown): void {
 /** Register each native hook exactly once; there is no intermediate SDK hook object. */
 async function createFlowGuardPluginHooks(
   ctx: Plugin.Context,
-  invoke: Invoke,
-  observeCompletion: (event: NativeToolCompletion) => Promise<void>,
+  actions: {
+    readonly invoke: Invoke;
+    readonly execute: NativeCanonicalExecutor;
+    readonly governance: OpenCodeGovernance;
+    readonly observe: (event: NativeToolCompletion) => Promise<void>;
+  },
   registrations: Registration[],
 ): Promise<void> {
+  const { invoke, governance } = actions;
+  const catalogue = await createNativeToolCatalogue(ctx, registrations, actions.execute);
   registrations.push(
     await ctx.tool.hook('execute.before', (event) =>
-      invoke(event.sessionID, async ({ runtime }) => {
-        runtime.orchestratorDeps.reviewerCapture?.beforeTool({ sessionID: event.sessionID });
-        assertReviewerBoundary(event.tool, event.input);
-        if (!record(event.input))
-          throw buildEnforcementError(
-            'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-            'The governed tool input is not an object.',
-          );
-        if (event.tool === TOOL_FLOWGUARD_HYDRATE) {
-          const authority = await runtime.ws.resolveSessionAuthority(event.sessionID);
-          if (authority.status !== 'resolved')
+      invoke(
+        event.sessionID,
+        async ({ runtime, scope }) => {
+          runtime.orchestratorDeps.reviewerCapture?.beforeTool({ sessionID: event.sessionID });
+          assertReviewerBoundary(event.tool, event.input);
+          if (!record(event.input))
             throw buildEnforcementError(
               'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-              'Hydrate cannot create activation; distinguishable operator UI provenance is NOT_VERIFIED.',
+              'The governed tool input is not an object.',
             );
-        }
-        const output = { args: event.input };
-        await toolBefore(
-          runtime,
-          { tool: applicationTool(event.tool), sessionID: event.sessionID, callID: event.id },
-          output,
-        );
-        event.input = output.args;
-      }),
+          if (
+            scope.sessionId !== scope.root.sessionId &&
+            FLOWGUARD_TOOL_NAMES.some((name) => name === event.tool && name !== TOOL_FLOWGUARD_HELP)
+          )
+            throw buildEnforcementError(
+              'GOVERNANCE_AUTHORITY_BLOCKED',
+              'A native delegation cannot submit parent workflow decisions.',
+            );
+          const output = { args: event.input };
+          await toolBefore(
+            runtime,
+            {
+              tool: applicationTool(event.tool),
+              sessionID: scope.root.sessionId,
+              callID: event.id,
+            },
+            output,
+          );
+          event.input = output.args;
+          if (event.tool === NATIVE_SUBAGENT_TOOL) await governance.authorizeDispatch(scope, event);
+        },
+        FLOWGUARD_TOOL_NAMES.some((name) => name === event.tool && name !== TOOL_FLOWGUARD_HELP),
+      ),
     ),
   );
   registrations.push(
     await ctx.tool.hook('execute.after', (event) => {
-      if (READ_ONLY_HOST_TOOLS.has(event.tool)) return observeCompletion(event);
-      return invoke(event.sessionID, ({ runtime }) => handleNativeCompletion(runtime, event));
+      if (READ_ONLY_HOST_TOOLS.has(event.tool)) return actions.observe(event);
+      return invoke(event.sessionID, ({ runtime, scope }) => {
+        assertReviewerBoundary(event.tool, event.input);
+        return handleNativeCompletion(runtime, scope.root.sessionId, event);
+      });
     }),
+  );
+  await registerNativeSessionHooks(ctx, invoke, catalogue, registrations);
+}
+
+async function registerNativeSessionHooks(
+  ctx: Plugin.Context,
+  invoke: Invoke,
+  catalogue: Awaited<ReturnType<typeof createNativeToolCatalogue>>,
+  registrations: Registration[],
+): Promise<void> {
+  registrations.push(
+    await ctx.session.hook('prompt', (event) =>
+      invoke(event.sessionID, async () => {
+        await catalogue.ensurePublished();
+      }),
+    ),
   );
   registrations.push(
     await ctx.session.hook('context', (event) =>
       invoke(event.sessionID, async (entry) => {
+        if (entry.scope.sessionId !== entry.scope.root.sessionId) catalogue.hideProductive(event);
+        else if (!catalogue.published) {
+          await catalogue.ensurePublished();
+          throw buildEnforcementError(
+            'GOVERNANCE_AUTHORITY_BLOCKED',
+            'The ACTIVE catalogue was not present when this request snapshot was captured; retry the request.',
+          );
+        }
         if (event.agent === REVIEWER_SUBAGENT_TYPE) {
           validateNativeReviewerOutputLimit(entry.reviewerOutputLimit, entry.configReadError);
           throw buildEnforcementError(
@@ -400,170 +584,43 @@ async function createFlowGuardPluginHooks(
             'A V2 context callback alone cannot attest reviewer completion or capture.',
           );
         }
+        return true;
+      }).then((active) => {
+        if (active !== true) catalogue.hideProductive(event);
       }),
     ),
   );
   registrations.push(
     await ctx.session.hook('compaction', (event) =>
-      invoke(event.sessionID, async ({ runtime }) => {
+      invoke(event.sessionID, async ({ runtime, scope }) => {
         const output = { context: [] as string[] };
-        await handleCompaction(runtime, { sessionID: event.sessionID }, output);
+        await handleCompaction(runtime, { sessionID: scope.root.sessionId }, output);
         if (output.context.length > 0)
           event.system.push({ type: 'text', text: output.context.join('\n\n') });
+        if (scope.sessionId !== scope.root.sessionId) catalogue.hideProductive(event);
+        return true;
+      }).then((active) => {
+        if (active !== true) catalogue.hideProductive(event);
       }),
     ),
   );
-  await registerTools(ctx, invoke, registrations);
-}
-
-async function handleNativeCompletion(
-  runtime: FlowGuardPluginRuntime,
-  event: NativeToolCompletion,
-): Promise<void> {
-  assertReviewerBoundary(event.tool, event.input);
-  if (event.status === 'error') {
-    await reconcileHostMutationEpisodes(runtime, event.sessionID, event.id);
-    return;
-  }
-  if (!record(event.input))
-    throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'The governed tool completion input is not an object.',
-    );
-  const content = event.result.content;
-  const text = nativeCompletionText(content);
-  const output = { title: '', output: text, metadata: { ...event.result.metadata } };
-  await toolAfter(
-    runtime,
-    {
-      tool: applicationTool(event.tool),
-      sessionID: event.sessionID,
-      callID: event.id,
-      args: event.input,
-    },
-    output,
-  );
-  event.result = {
-    ...event.result,
-    content:
-      typeof content === 'object'
-        ? content.map((part) => (part.type === 'text' ? { ...part, text: output.output } : part))
-        : output.output,
-    metadata: output.metadata,
-  };
-}
-
-/** A semantic text view, never concatenation or replacement of native evidence. */
-function nativeCompletionText(
-  content: Extract<NativeToolCompletion, { status: 'completed' }>['result']['content'],
-): string {
-  if (content === undefined) return '';
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content))
-    throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Native tool completion content is neither text nor a content array.',
-    );
-  if (
-    content.some(
-      (part) =>
-        !record(part) ||
-        (part.type === 'text'
-          ? typeof part.text !== 'string'
-          : part.type !== 'file' || typeof part.uri !== 'string' || typeof part.mime !== 'string'),
-    )
-  )
-    throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Native tool completion contains a malformed content part.',
-    );
-  const textParts = content.filter((part) => part.type === 'text');
-  const text = textParts[0];
-  if (!text || textParts.length !== 1)
-    throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Rich tool completion requires exactly one unambiguous text part.',
-    );
-  return text.text;
-}
-
-async function registerTools(
-  ctx: Plugin.Context,
-  invoke: Invoke,
-  registrations: Registration[],
-): Promise<void> {
-  const definitions = FLOWGUARD_TOOL_NAMES.map((name) => {
-    const definition = tools[
-      name.slice(FLOWGUARD_TOOL_PREFIX.length) as keyof typeof tools
-    ] as ToolDefinition;
-    if (!definition || typeof definition.execute !== 'function' || !definition.args) {
-      throw buildEnforcementError(
-        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-        `No canonical implementation for ${name}.`,
-      );
-    }
-    const schema = z.object(definition.args);
-    return { name, definition, schema, input: z.toJSONSchema(schema, { io: 'input' }) };
-  });
   registrations.push(
-    await ctx.tool.transform((editor) => {
-      for (const { name, definition, schema, input } of definitions)
-        editor.add({
-          name,
-          description: definition.description,
-          input,
-          options: { codemode: false },
-          execute: (args, context) =>
-            invoke(context.sessionID, async ({ runtime }) =>
-              executeTool(name, definition, schema.parse(args), context, runtime),
-            ),
-        });
-    }),
+    await ctx.session.hook('generate', (event) =>
+      invoke(event.sessionID, async ({ scope }) => {
+        if (scope.sessionId !== scope.root.sessionId) catalogue.hideProductive(event);
+        return true;
+      }).then((active) => {
+        if (active !== true) catalogue.hideProductive(event);
+      }),
+    ),
   );
-}
-
-async function executeTool(
-  name: string,
-  definition: ToolDefinition,
-  args: unknown,
-  context: NativeToolContext,
-  runtime: FlowGuardPluginRuntime,
-) {
-  const authority = await runtime.ws.resolveSessionAuthority(context.sessionID);
-  if (authority.status === 'unavailable')
-    throw buildEnforcementError(authority.code, authority.reason);
-  if (name === TOOL_FLOWGUARD_HYDRATE && authority.status !== 'resolved') {
-    throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Hydrate cannot create activation without verified operator UI provenance.',
-    );
-  }
-  let metadata: Record<string, unknown> = {};
-  const result = await definition.execute(args, {
-    sessionID: context.sessionID,
-    messageID: context.messageID,
-    agent: context.agent,
-    directory: authority.worktreeRoot,
-    worktree: authority.worktreeRoot,
-    abort: context.signal,
-    metadata: (update) => {
-      metadata = {
-        ...metadata,
-        ...update.metadata,
-        ...(update.title === undefined ? {} : { title: update.title }),
-      };
-    },
-  });
-  return typeof result === 'string'
-    ? { content: result, metadata }
-    : { content: result.output, metadata: { ...metadata, ...result.metadata } };
 }
 
 async function consumeEvents(
   ctx: Plugin.Context,
   signal: AbortSignal,
   consume: (event: OpenCodeEvent) => Promise<void>,
-  failed: (error: unknown) => void,
+  failed: (error: unknown, event?: OpenCodeEvent) => void,
   operations: Set<Promise<unknown>>,
 ): Promise<void> {
   try {
@@ -573,7 +630,7 @@ async function consumeEvents(
       operations.add(operation);
       void operation
         .catch((error) => {
-          if (!signal.aborted) failed(error);
+          if (!signal.aborted) failed(error, event);
         })
         .finally(() => operations.delete(operation));
     }

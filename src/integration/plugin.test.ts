@@ -49,8 +49,9 @@ afterEach(async () => {
   }
 });
 
-async function openHost(directory = process.cwd()) {
+async function openHost(directory = process.cwd(), activeSession?: string) {
   const host = createV2Host(directory);
+  if (activeSession) await host.seedActive(activeSession, makeState('TICKET').policySnapshot.hash);
   const dispose = await FlowGuardAuditPlugin.setup(host.ctx);
   expect(typeof dispose).toBe('function');
   if (dispose) cleanups.push(dispose);
@@ -74,7 +75,7 @@ async function fixture(bound = true) {
     ...DEFAULT_CONFIG,
     logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
   });
-  return { ws, sessionID, sessDir, ...(await openHost(ws.tmpDir)) };
+  return { ws, sessionID, sessDir, ...(await openHost(ws.tmpDir, bound ? sessionID : undefined)) };
 }
 
 function completion(
@@ -101,11 +102,11 @@ describe('native V2 plugin definition and lifecycle', () => {
   it('registers each current hook once, without returning a V1 hook object', async () => {
     const { host } = await openHost();
     expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
-    expect([...host.sessionHooks.keys()]).toEqual(['context', 'compaction']);
+    expect([...host.sessionHooks.keys()]).toEqual(['prompt', 'context', 'compaction', 'generate']);
     expect(host.subscribe).toHaveBeenCalledOnce();
     expect(host.context.tool.transform).toHaveBeenCalledOnce();
     expect(host.context.tool.hook).toHaveBeenCalledTimes(2);
-    expect(host.context.session.hook).toHaveBeenCalledTimes(2);
+    expect(host.context.session.hook).toHaveBeenCalledTimes(4);
     expect(host.ctx).not.toHaveProperty('client');
     expect(host.ctx).not.toHaveProperty('worktree');
   });
@@ -334,6 +335,7 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
     async ({ args }) => {
       const h = await fixture(false);
       const { sessDir, obligationId } = await seedStrictPlanSession(h.ws.tmpDir, h.sessionID);
+      await h.host.seedActive(h.sessionID, (await readState(sessDir))!.policySnapshot.hash);
       const pending = completion(
         h.sessionID,
         'flowguard_plan',
@@ -429,7 +431,7 @@ describe('normal native tool contracts and type boundaries', () => {
   );
 
   it('reads and mutates native event.input, not a separate output.args envelope', async () => {
-    const h = await fixture(false);
+    const h = await fixture();
     const event = v2ToolEvent({
       sessionID: h.sessionID,
       tool: 'flowguard_status',
@@ -449,6 +451,7 @@ describe('normal native tool contracts and type boundaries', () => {
 
   it('fails closed for unknown tools with absent workflow authority', async () => {
     const h = await fixture(false);
+    await h.host.seedActive(h.sessionID, makeState('TICKET').policySnapshot.hash);
     await expect(
       h.host.before(v2ToolEvent({ sessionID: h.sessionID, tool: 'some_tool', input: {} })),
     ).rejects.toThrow('SESSION_DIR_NOT_FOUND');
@@ -464,7 +467,7 @@ describe('normal native tool contracts and type boundaries', () => {
   );
 
   it('ignores diagnostic-only extra native fields without changing tool input', async () => {
-    const h = await fixture(false);
+    const h = await fixture();
     const event = {
       ...v2ToolEvent({ sessionID: h.sessionID, tool: 'flowguard_status', input: {} }),
       futureField: true,

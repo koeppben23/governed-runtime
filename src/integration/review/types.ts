@@ -161,6 +161,7 @@ export interface OrchestratorClient {
     readonly sessionId: string;
     readonly parentSessionId?: string;
     readonly directory: string;
+    readonly agent?: string;
   }>;
   readHistory(sessionId: string): Promise<unknown>;
   interrupt(sessionId: string): Promise<boolean>;

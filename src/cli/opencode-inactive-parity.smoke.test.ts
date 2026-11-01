@@ -92,4 +92,90 @@ describe.skipIf(!LIVE)('native parity before trusted FlowGuard start', () => {
     }
     expect(catalogues[1]).toEqual(catalogues[0]);
   }, 180_000);
+
+  it('keeps ordinary native subagent execution and its child effects unchanged before start', async () => {
+    for (const product of [false, true]) {
+      let rootID = '';
+      let target = '';
+      const emitted = new Set<string>();
+      const probe = await createNativeHostProbe({
+        product,
+        async prepare(project) {
+          target = join(project, 'child-effect.txt');
+          await writeFile(target, 'original');
+        },
+        script(_body, sessionID) {
+          rootID ||= sessionID;
+          if (emitted.has(sessionID)) return { text: 'Done.' };
+          emitted.add(sessionID);
+          if (sessionID === rootID)
+            return {
+              tool: {
+                name: 'subagent',
+                arguments: {
+                  agent: 'general',
+                  description: 'Bounded native child effect',
+                  prompt: 'Perform the requested operation.',
+                },
+              },
+            };
+          return {
+            tool: {
+              name: 'shell',
+              arguments: {
+                command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(target)}, 'child-effect')`)}`,
+                description: 'Bounded native child side effect',
+              },
+            },
+          };
+        },
+      });
+      probes.push(probe);
+      const session = await probe.session();
+      await probe.prompt(session.id);
+      expect(await readFile(target, 'utf8'), probe.output()).toBe('child-effect');
+      const history = await probe.client.session.context({ sessionID: session.id });
+      const delegated = history
+        .flatMap((message) => (message.type === 'assistant' ? message.content : []))
+        .filter(
+          (part): part is SessionMessageAssistantTool =>
+            part.type === 'tool' && part.name === 'subagent',
+        );
+      expect(
+        delegated.map((part) => part.state.status),
+        JSON.stringify(history),
+      ).toEqual(['completed']);
+      const childRequests = probe.requests.filter((request) => request.sessionID !== session.id);
+      expect(childRequests.length).toBeGreaterThan(0);
+      for (const request of childRequests) {
+        const tools = request.body.tools as Array<{ function: { name: string } }>;
+        expect(
+          tools
+            .map((tool) => tool.function.name)
+            .filter((name) => name.startsWith('flowguard_') && name !== TOOL_FLOWGUARD_HELP),
+        ).toEqual([]);
+      }
+      expect(probe.errors).toEqual([]);
+    }
+  }, 180_000);
+
+  it('does not inject governance mandates into native INACTIVE compaction', async () => {
+    for (const product of [false, true]) {
+      const probe = await createNativeHostProbe({ product });
+      probes.push(probe);
+      const session = await probe.session();
+      await probe.prompt(session.id, 'Reply OK without tool calls.');
+      const count = probe.requests.length;
+      await probe.client.session.compact({ sessionID: session.id });
+      await probe.client.session.wait(
+        { sessionID: session.id },
+        { signal: AbortSignal.timeout(60_000) },
+      );
+      const compacted = probe.requests.slice(count);
+      expect(compacted.length, probe.output()).toBeGreaterThan(0);
+      for (const request of compacted)
+        expect(JSON.stringify(request.body)).not.toContain('FlowGuard Governance State');
+      expect(probe.errors).toEqual([]);
+    }
+  }, 180_000);
 });
