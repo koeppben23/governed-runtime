@@ -351,6 +351,21 @@ Local verification of this infrastructure follow-up (Node 22.22.2):
 - **NOT_VERIFIED:** these local results are not a green GitHub run for the new
   commit. Re-run CI on its published head before claiming hosted-runner repair.
 
+The exact CI smoke environment additionally enabled ACP and exposed an old
+process-test defect: ignored stdin caused EOF shutdown, and an assertion thrown
+inside a timer callback left the returned Promise unsettled. That diagnostic run
+was stopped, not counted as passed. ACP now uses the exact native pin and private
+global paths, holds input open, rejects premature exits and observes actual
+closure after termination. Its process-lifecycle tests do not claim ACP protocol
+or governance acceptance.
+
+The rerun with both CI flags (`FLOWGUARD_OPENCODE_HOST_E2E=1` and
+`RUN_OPENCODE_ACP_TESTS=1`) completed: **103 passed, 6 failed, no skips**. All
+three ACP tests and the packed native lifecycle test passed. The six failures are
+the four actual reviewer/capture/recovery contracts and the two MUT4 regular-error
+recovery paths; they remain product acceptance blockers, not harness-version
+errors.
+
 ## Baseline control flow and required simplification
 
 Paths in this section are relative to the repository root. The table describes

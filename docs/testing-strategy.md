@@ -142,6 +142,10 @@ different `opencode --version`. This is a test target, not V2/Desktop certificat
 the historical host/docs baselines remain historical. Explicit `OPENCODE_CLI`
 overrides must also match exactly. Hosts use private global directories and native
 global `update: "disable"` configuration, not V1 update environment flags.
+The ACP lifecycle probes also use the native pin and private global directories.
+They keep stdin open (EOF shuts down a stdio server), reject premature exits and
+await actual closure after termination. These are process-lifecycle checks, not
+an ACP conversation or governance proof; timeout and a PID alone never pass.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
 
 Coverage CI bounds competing instrumented Vitest workers to two. It still covers

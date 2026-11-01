@@ -159,6 +159,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Native ACP smoke lifecycle (#1190).** ACP probes keep stdio input open,
+  require the exact native CLI pin and isolate global paths. Premature exit and
+  startup errors reject awaited tests instead of escaping timer callbacks;
+  termination succeeds only after actual process closure, not a PID or kill
+  request. Cleanup targets owned process groups without changing smoke budgets.
+
 - **Native V2 CI infrastructure (#1169/#1190).** Smoke and independent-review
   jobs pin `@opencode/cli` separately from historical support evidence. Native
   fixtures load the actual product once and observe V2 hooks, inbox admission,
