@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { runProcess, snapshotWorkspace } from '../runners/process-runner.js';
 import type { RunnerConfig } from '../schema.js';
+import {
+  PLUGIN_RELATIVE_PATH,
+  PLUGIN_WRAPPER,
+  REVIEWER_AGENT,
+} from '../../../src/cli/templates.js';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 const FAKE_AGENT = join(FIXTURE, 'fake-agent.mjs');
@@ -119,7 +124,7 @@ describe('process-runner', () => {
     }
   });
 
-  it('materializes product mandates for OpenCode through the production merge path', async () => {
+  it('materializes the native OpenCode templates without global instructions or activation', async () => {
     const outcome = await runProcess(
       config(['pass']),
       FIXTURE,
@@ -137,9 +142,12 @@ describe('process-runner', () => {
       expect(outcome.afterContent.get('.opencode/flowguard-mandates.md')).toContain(
         '# FlowGuard Agent Rules',
       );
-      expect(outcome.afterContent.get('opencode.json')).toContain(
-        '.opencode/flowguard-mandates.md',
+      expect(outcome.afterContent.has('opencode.json')).toBe(false);
+      expect(outcome.afterContent.get(`.opencode/${PLUGIN_RELATIVE_PATH}`)).toBe(PLUGIN_WRAPPER);
+      expect(outcome.afterContent.get('.opencode/agents/flowguard-reviewer.md')).toBe(
+        REVIEWER_AGENT,
       );
+      expect(outcome.afterContent.has('.opencode/tools/flowguard.ts')).toBe(false);
     }
   });
 
@@ -226,7 +234,7 @@ describe('process-runner', () => {
     });
   });
 
-  it('merges product instructions into existing OpenCode config', async () => {
+  it('preserves existing OpenCode config byte-for-byte during product materialization', async () => {
     const fixtureDir = mkdtempSync(join(tmpdir(), 'eval-opencode-merge-'));
     writeFileSync(
       join(fixtureDir, 'opencode.json'),
@@ -256,10 +264,35 @@ describe('process-runner', () => {
       };
       expect(parsed.model).toBe('example/provider-model');
       expect(parsed.instructions).toContain('CUSTOM.md');
-      expect(parsed.instructions).toContain('.opencode/flowguard-mandates.md');
+      expect(parsed.instructions).toEqual(['CUSTOM.md']);
+      expect(outcome.afterContent.get('opencode.json')).toBe(
+        readFileSync(join(fixtureDir, 'opencode.json'), 'utf8'),
+      );
     }
 
     rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it('rejects obsolete OpenCode product registration without converting it into a native authority', async () => {
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'eval-opencode-obsolete-'));
+    const original = '{"instructions":[".opencode/flowguard-mandates.md"]}';
+    writeFileSync(join(fixtureDir, 'opencode.json'), original);
+    try {
+      const outcome = await runProcess(
+        config(['pass']),
+        fixtureDir,
+        'test',
+        true,
+        process.cwd(),
+        {},
+        'flowguard_product',
+        'opencode',
+      );
+      expect(outcome).toMatchObject({ status: 'runner_error' });
+      expect(readFileSync(join(fixtureDir, 'opencode.json'), 'utf8')).toBe(original);
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    }
   });
 
   it('does not modify original fixture after workspace-copy run', async () => {

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { OpenCode } from '@opencode/client';
 import { PLUGIN_RELATIVE_PATH, PLUGIN_WRAPPER } from './templates.js';
 import { hashBuffer } from '../shared/hashing.js';
+import { nativeOpenCodeCandidate } from './opencode-live-host-test-helpers.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
@@ -62,7 +63,7 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
     };
     expect(
       execFileSync(CLI, ['--version'], { env, encoding: 'utf8', timeout: 30_000 }).trim(),
-    ).toBe('opencode v2.2.4');
+    ).toBe(`opencode v${nativeOpenCodeCandidate.version}`);
     await writeFile(join(config, 'opencode.json'), '{"update":"disable"}\n');
     const customer =
       '{ // customer-native settings\n "permissions":[{"action":"edit","resource":"*","effect":"ask"}], "instructions":["CUSTOM.md"], }\n';
@@ -135,6 +136,26 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
     expect(existsSync(join(target, 'plugins/flowguard-audit.ts'))).toBe(false);
     expect(await readFile(join(project, 'opencode.jsonc'), 'utf8')).toBe(customer);
 
+    // Separate read-only diagnostic plugin. The installed product alone owns
+    // registration; this observer never wraps or adds FlowGuard tools.
+    const observer = join(target, 'plugins/00-native-inventory');
+    await mkdir(observer, { recursive: true });
+    await writeFile(
+      join(observer, 'index.ts'),
+      `
+import { Plugin } from '@opencode/plugin';
+import { Rpc } from '@opencode/plugin/rpc';
+import { writeFileSync } from 'node:fs';
+const Inventory = Rpc.define({ id: 'flowguard-test-inventory', methods: { tools: { input: { type: 'object', properties: {}, additionalProperties: false }, output: { type: 'array', items: { type: 'string' } }, errors: {} } }, events: {} });
+export default Plugin.define({ id: 'flowguard-test-inventory', async setup(ctx) {
+  const registration = await ctx.rpc.register(Inventory, { tools: async () => {
+    try { return (await ctx.tool.list()).map(tool => tool.name); }
+    catch (error) { writeFileSync(ctx.location.directory + '/inventory-error.txt', String(error.stack ?? error)); throw error; }
+  } });
+  return () => registration.dispose();
+} });\n`,
+    );
+
     let output = '';
     host = spawn(CLI, ['serve', '--hostname=127.0.0.1', '--port=0'], {
       cwd: project,
@@ -182,11 +203,33 @@ describe.skipIf(!LIVE)('packed native V2 installation and lifecycle', () => {
         { signal: AbortSignal.timeout(60_000) },
       );
       const flowguard = plugins.data.filter((plugin) => plugin.id === 'flowguard');
+      expect(
+        plugins.data.filter((plugin) => plugin.state.status !== 'active'),
+        `${JSON.stringify(plugins)}\n${output}`,
+      ).toEqual([]);
+      expect(
+        plugins.data.find((plugin) => plugin.id === 'flowguard-test-inventory')?.state,
+        JSON.stringify(plugins),
+      ).toEqual({ status: 'active' });
       expect(flowguard, `${JSON.stringify(plugins)}\n${output}`).toHaveLength(1);
       expect(flowguard[0]?.state).toEqual({ status: 'active' });
       expect(flowguard[0]?.features.server).toBe(true);
     };
     await assertSingleLoadedPlugin();
+    const commands = await client.command.list({ location });
+    for (const name of ['plan', 'implement', 'continue'])
+      expect(commands.data.some((command) => command.name === name)).toBe(true);
+    const inventory = await client.rpc
+      .call({ location, rpcID: 'flowguard-test-inventory', method: 'tools', input: {} })
+      .catch(async (error) => {
+        const diagnostic = join(project, 'inventory-error.txt');
+        if (existsSync(diagnostic)) console.error(await readFile(diagnostic, 'utf8'));
+        throw error;
+      });
+    expect(inventory.output).toEqual(
+      expect.arrayContaining(['flowguard_plan', 'flowguard_implement']),
+    );
+    expect(inventory.output.filter((name: string) => name === 'flowguard_plan')).toHaveLength(1);
     await client.location.reload({ signal: AbortSignal.timeout(60_000) });
     await assertSingleLoadedPlugin();
     const reviewer = await client.agent.get({ location, agentID: 'flowguard-reviewer' });

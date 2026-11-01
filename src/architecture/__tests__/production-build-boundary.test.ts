@@ -33,6 +33,8 @@ const SRC_ROOT = join(REPO_ROOT, 'src');
 const INTERNAL_TEST_SUPPORT = [
   'src/audit/__fixtures__/rfc3161.ts',
   'src/audit/audit-test-helpers.ts',
+  'src/cli/opencode-live-host-test-helpers.ts',
+  'src/cli/opencode-native-test-helpers.ts',
   'src/discovery/discovery-test-fixtures.ts',
   'src/discovery/verification-planner-test-helpers.ts',
   'src/fixtures.ts',
@@ -66,7 +68,7 @@ function isUnderSrc(fileName: string): boolean {
 
 describe('production/test distribution boundary', () => {
   it('every internal test-support file exists and is classified as test code', () => {
-    expect(INTERNAL_TEST_SUPPORT).toHaveLength(13);
+    expect(INTERNAL_TEST_SUPPORT).toHaveLength(15);
     for (const rel of INTERNAL_TEST_SUPPORT) {
       expect(existsSync(join(REPO_ROOT, rel)), rel).toBe(true);
       expect(isTestSourcePath(rel.slice('src/'.length)), rel).toBe(true);

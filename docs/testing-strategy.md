@@ -136,8 +136,26 @@ Each test and check job maps to its npm script(s) for clear diagnosis:
 | **mutation**             | `npm run mutation`                                                                    | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                                    | No             |
 | **actions-pinning**      | `npm run check:actions-pinned`                                                        | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                                | No             |
 
-The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
+The `smoke` and `independent-review-e2e` jobs install the exact native CLI candidate
+from `.sdk-baselines/opencode/cli-candidate.json` (`@opencode/cli`), and reject a
+different `opencode --version`. This is a test target, not V2/Desktop certification;
+the historical host/docs baselines remain historical. Explicit `OPENCODE_CLI`
+overrides must also match exactly. Hosts use private global directories and native
+global `update: "disable"` configuration, not V1 update environment flags.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
+
+Coverage CI bounds competing instrumented Vitest workers to two. It still covers
+the complete unit/integration projects with the same 80% gates and 15-second test
+budget, including the actual production TypeScript program-graph guard. Local
+coverage retains Vitest's default concurrency.
+
+The independent-review verifier retains both mandatory positive release/capture
+titles and runs them against the real native host and product, alongside the
+domain validation tests. Its packed installation test checks native command/tool
+inventories, reload and uninstall without rewriting customer config. An isolated,
+read-only observer inspects the actual tool registry; it never wraps the product
+or registers FlowGuard tools. Missing, skipped, duplicate or failing required
+results fail the verifier. Catalogue/lifecycle success alone is not review proof.
 
 The documentation gate rejects historical-only, deletion-only and formatting-only
 changelog changes; semantic accuracy still requires review. `scripts/ci-gate.test.ts`
@@ -145,11 +163,15 @@ executes the workflow's gate script and proves every dependency, including
 `doc-drift`, rejects failure, cancellation, skipped and missing results. A green
 documentation job alone does not certify host security or current runtime support.
 
-The reviewer-capability smoke uses the pinned OpenCode host with isolated global
-directories and the repository's installed, locked dependency graph. It checks
+The reviewer-capability smoke uses the native candidate host with isolated global
+directories and the canonical reviewer template. It checks
 real denials for direct and MCP-prefixed tools and actual execution of the allowed
-observation-tool fixture. Startup failures remain failures under the unchanged
-45-second per-command limit. Tarball-install failures retain the subprocess error,
+observation-tool fixture. The structured-wire probe distinguishes inbox admission
+from completion and never synthesizes a response `parentID`. Native budget tests
+capture explicit provider-body budgets and compare ordinary parent defaults with
+and without the real product; they do not certify a removed V1 65K rewrite or
+reviewer headroom. Startup failures remain failures under a bounded startup deadline.
+Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.
 
 The technical sources are the workflow files: `.github/workflows/ci.yml` for the

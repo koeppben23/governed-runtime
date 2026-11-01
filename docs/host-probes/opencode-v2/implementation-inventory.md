@@ -285,6 +285,72 @@ release” and “records bound same-child evidence and fulfills the obligation�
 PR #1190 remains Draft. The installer checkpoint was committed and pushed;
 no merge or supported ACTIVE V2 release is claimed.
 
+## Native CI harness follow-up (2026-11-01)
+
+This follow-up repairs test infrastructure, not the blocked ACTIVE governance
+contracts. The native CLI test candidate lives separately in
+`.sdk-baselines/opencode/cli-candidate.json`; historical `host-version.json`,
+`docs-hashes.json` and dated evidence bytes are unchanged. CI installs
+`@opencode/cli@2.2.4` and checks the exact `opencode v2.2.4` output. Explicit
+`OPENCODE_CLI` overrides cannot silently select another host.
+
+One test-only fixture starts a private native server and deterministic provider.
+The actual product default export loads once; separate observers use native
+registrations without wrapping the product or adding its tools a second time.
+The former production-class host resolver is now correctly named
+`src/cli/opencode-live-host-test-helpers.ts`, excluded from distribution by the
+existing test-support classification. The production-program guard explicitly
+checks both native helpers remain test-only. No coverage exclusion registry,
+timeout, threshold or required positive title is weakened.
+
+Evals now materialize canonical native templates and reject obsolete FlowGuard
+registration while preserving customer config bytes. Doctor smoke distinguishes
+obsolete-registration errors from native warning-only configuration. Native
+capability tests exercise actual executor denials and the allowed observation
+fixture. Wire tests distinguish inbox admission from completed history and never
+synthesize an assistant `parentID`. Budget tests observe explicit native provider
+body values and unchanged ordinary parent defaults, not the removed V1 65K cap.
+
+Coverage CI limits competing instrumented workers to two while retaining both
+complete projects, the 80% gates and the 15-second budget. The original compiler
+graph test took 884 ms in the isolated non-coverage reproduction; this scheduling
+mitigation is not a claim that the hosted runner's root cause is fully proven.
+
+The independent-review verifier still requires the two original positive titles.
+They now execute actual native product tests rather than disappearing from the
+root plugin suite. Packed installation, native command/tool inventory, reload
+and uninstall run through the existing installed lifecycle smoke. Synthetic
+reports test only the verifier's rejection of absent, skipped, duplicate or
+failing results; they are not product provenance. The serialization tool-denial
+and interrupted-capture recovery contracts also remain mandatory.
+
+Actual native host mutation mechanics distinguish a regular throwing edit from
+an interrupted execution and show that shell return does not imply descendant
+quiescence. They do not close a product mutation episode. The full native smoke
+run still exposes genuine failures at reviewer release/capture and regular-error
+recovery: the product advertises no review transport, rejects native reviewer
+release/context and keeps `observeEditFailure()` unobserved. These tests are not
+replaced by successful negative guards or skipped to obtain green CI.
+
+**BLOCKED:** exact authorized parent-call/child/request/model/terminal/capture
+provenance and safe error-history/restart settlement remain unestablished.
+Operator-UI attribution, complete INACTIVE parity, Desktop and end-to-end export
+acceptance are unchanged. PR #1190 remains Draft and ACTIVE V2 **NO-GO**.
+
+Local verification of this infrastructure follow-up (Node 22.22.2):
+
+- Full CI coverage command: **12,513 passed**, 11 existing coverage-mode skips;
+  **90.42% statements / 83.45% branches / 95.31% functions / 91.92% lines**.
+  The real production-program guard remained in scope and did not time out.
+- Evals: **104 passed**. Scripts: **318 passed**. Architecture: **538 passed**.
+- Typecheck, strict lint, full format check, build/doc drift, ESM imports,
+  unchanged unused-export baseline, unused dependencies and actionlint passed.
+- The packed native lifecycle test passed with actual command/tool inventories;
+  the full native smoke and mandatory independent-review verifier remain failing
+  at the product reviewer/capture and recovery contracts described above.
+- **NOT_VERIFIED:** these local results are not a green GitHub run for the new
+  commit. Re-run CI on its published head before claiming hosted-runner repair.
+
 ## Baseline control flow and required simplification
 
 Paths in this section are relative to the repository root. The table describes

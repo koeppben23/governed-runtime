@@ -1,10 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 
 const workspaceRoot = process.cwd();
+if (!existsSync(path.join(workspaceRoot, 'dist', 'cli', 'install.js'))) {
+  console.error('dist/cli/install.js missing. Run npm run build before independent-review e2e.');
+  process.exit(1);
+}
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'fg-independent-review-'));
 const outputFile = path.join(tmpDir, 'vitest-independent-review.json');
 
@@ -20,8 +23,12 @@ const testFiles = [
   'src/integration/tools-execute-abort-session.test.ts',
   'src/integration/tools-execute-archive.test.ts',
   'src/integration/tools/review-validation-findings.test.ts',
+  'src/cli/opencode-reviewer-capture-live.smoke.test.ts',
+  'src/cli/opencode-native-install.smoke.test.ts',
 ];
 
+// The two positive product contracts are unchanged. They now run against the
+// actual native host/product, never an SDK callback mock or a fail-closed negative.
 const mustPassTestTitles = [
   'leaves the review-required output pending and authorizes the native Task before release',
   'records bound same-child evidence and fulfills the obligation',
@@ -30,292 +37,70 @@ const mustPassTestTitles = [
   'blocks when strict obligation is blocked',
   'blocks when submitted findings session differs from invocation child session',
   'Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata',
+  // Packed native install, real command/tool inventory, reload and uninstall
+  // replace the removed V1 config/API catalogue verifier (not reviewer proof).
+  'loads exactly one installed definition, reloads it, and unloads after uninstall without rewriting customer config',
+  'rejects a tool call during actual same-child serialization before its output reaches the provider',
+  'keeps caller recovery claims from unlocking an unknown outcome and recovers only through a fresh native attempt',
 ];
-
 const testTitleFilter = mustPassTestTitles
   .map((title) => title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   .join('|');
 
-const run = spawnSync(
-  process.platform === 'win32' ? 'npx.cmd' : 'npx',
-  [
-    'vitest',
-    'run',
-    ...testFiles,
-    '--testNamePattern',
-    `(${testTitleFilter})`,
-    '--reporter=json',
-    `--outputFile=${outputFile}`,
-    '--passWithNoTests=false',
-  ],
-  {
-    cwd: workspaceRoot,
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      FORCE_COLOR: '0',
-      OPENCODE_CONFIG_DIR: path.join(tmpdir(), 'fg-independent-review-vitest-config'),
-      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
-    },
-  },
-);
-
-if (run.status !== 0) {
-  rmSync(tmpDir, { recursive: true, force: true });
-  process.exit(run.status ?? 1);
-}
-
-let report;
 try {
-  report = JSON.parse(readFileSync(outputFile, 'utf-8'));
-} catch (error) {
-  console.error('Failed to parse Vitest JSON report:', error);
-  rmSync(tmpDir, { recursive: true, force: true });
-  process.exit(1);
-}
-
-const assertionResults = [];
-for (const testResult of report.testResults ?? []) {
-  for (const assertion of testResult.assertionResults ?? []) {
-    assertionResults.push(assertion);
-  }
-}
-
-const failedRequired = mustPassTestTitles.filter((title) => {
-  const match = assertionResults.find((assertion) => assertion.title === title);
-  return !match || match.status !== 'passed';
-});
-
-if (failedRequired.length > 0) {
-  console.error('Independent-review strict verification failed. Required tests missing/pending:');
-  for (const title of failedRequired) {
-    console.error(` - ${title}`);
-  }
-  rmSync(tmpDir, { recursive: true, force: true });
-  process.exit(1);
-}
-
-function runRequired(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: workspaceRoot,
-    stdio: 'pipe',
-    encoding: 'utf-8',
-    env: { ...process.env, FORCE_COLOR: '0' },
-    ...options,
-  });
-  if (result.status !== 0) {
-    const rendered = [result.stdout, result.stderr].filter(Boolean).join('\n');
-    throw new Error(`Command failed: ${command} ${args.join(' ')}\n${rendered}`);
-  }
-  return result.stdout.trim();
-}
-
-function resolveOpenCodeCommand() {
-  const direct = spawnSync('opencode', ['--version'], { stdio: 'pipe', encoding: 'utf-8' });
-  if (direct.status === 0) return { command: 'opencode', argsPrefix: [] };
-  // Fallback stays on the exact validated host baseline instead of resolving
-  // an unvetted latest release.
-  const baseline = JSON.parse(
-    readFileSync(
-      path.join(workspaceRoot, '.sdk-baselines', 'opencode', 'host-version.json'),
-      'utf-8',
-    ),
-  );
-  const spec = `opencode-ai@${baseline.version}`;
-  const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  runRequired(npx, ['-y', spec, '--version']);
-  return { command: npx, argsPrefix: ['-y', spec] };
-}
-
-function waitForOpenCodeServer(proc, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    let output = '';
-    const timer = setTimeout(() => {
-      proc.kill('SIGTERM');
-      reject(new Error(`Timed out waiting for OpenCode server. Output:\n${output}`));
-    }, timeoutMs);
-
-    const onData = (chunk) => {
-      output += chunk.toString();
-      for (const line of output.split('\n')) {
-        if (line.startsWith('opencode server listening')) {
-          const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
-          if (!match) continue;
-          clearTimeout(timer);
-          resolve(match[1]);
-        }
-      }
-    };
-
-    proc.stdout?.on('data', onData);
-    proc.stderr?.on('data', onData);
-    proc.on('error', (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    proc.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`OpenCode server exited with code ${code}. Output:\n${output}`));
-    });
-  });
-}
-
-function stopOpenCodeServer(proc) {
-  if (!proc || proc.exitCode !== null) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      try {
-        if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, 'SIGKILL');
-        else proc.kill('SIGKILL');
-      } catch {
-        // Process already exited.
-      }
-      resolve();
-    }, 5000);
-    proc.once('close', () => {
-      clearTimeout(timer);
-      resolve();
-    });
-    try {
-      if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, 'SIGTERM');
-      else proc.kill('SIGTERM');
-    } catch {
-      clearTimeout(timer);
-      resolve();
-    }
-  });
-}
-
-function randomOpenCodePort() {
-  // Avoid the Fetch spec's blocked ports (for example 5060/5061), which cause
-  // undici to fail with "bad port" even when the server starts successfully.
-  return 18080 + Math.floor(Math.random() * 1000);
-}
-
-async function fetchJson(url, headers = {}) {
-  const response = await fetch(url, { headers });
-  if (!response.ok) {
-    throw new Error(`GET ${url} failed: ${response.status} ${await response.text()}`);
-  }
-  return response.json();
-}
-
-async function verifyOpenCodeRuntimeE2E() {
-  const distInstaller = path.join(workspaceRoot, 'dist', 'cli', 'install.js');
-  if (!existsSync(distInstaller)) {
-    throw new Error(
-      'dist/cli/install.js missing. Run npm run build before independent-review e2e.',
-    );
-  }
-
-  const runtimeDir = mkdtempSync(path.join(tmpdir(), 'fg-independent-review-runtime-'));
-  const projectDir = path.join(runtimeDir, 'project');
-  const packDir = path.join(runtimeDir, 'pack');
-  const opencodeConfigDir = path.join(runtimeDir, 'opencode-config');
-  mkdirSync(projectDir, { recursive: true });
-  mkdirSync(packDir, { recursive: true });
-  mkdirSync(opencodeConfigDir, { recursive: true });
-
-  let server;
-  try {
-    writeFileSync(
-      path.join(projectDir, 'package.json'),
-      JSON.stringify({ name: 'flowguard-independent-review-runtime-e2e', private: true }, null, 2),
-    );
-
-    const packOutput = runRequired('npm', ['pack', '--pack-destination', packDir, '--silent']);
-    const tarballName = packOutput
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .at(-1);
-    if (!tarballName) throw new Error(`npm pack did not return a tarball name: ${packOutput}`);
-    const tarballPath = path.join(packDir, tarballName);
-    const sha256 = createHash('sha256').update(readFileSync(tarballPath)).digest('hex');
-    writeFileSync(path.join(packDir, 'checksums.sha256'), `${sha256}  ${tarballName}\n`);
-
-    runRequired(
-      process.execPath,
-      [
-        distInstaller,
-        'install',
-        '--install-scope',
-        'repo',
-        '--policy-mode',
-        'team-ci',
-        '--core-tarball',
-        tarballPath,
-        '--force',
-      ],
-      {
-        cwd: projectDir,
-        env: {
-          ...process.env,
-          FORCE_COLOR: '0',
-          OPENCODE_CONFIG_DIR: opencodeConfigDir,
-          FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
-        },
-      },
-    );
-    runRequired('npm', ['install', '--ignore-scripts', '--silent'], { cwd: projectDir });
-
-    const opencodeJson = JSON.parse(readFileSync(path.join(projectDir, 'opencode.json'), 'utf-8'));
-    const taskPermission = opencodeJson.agent?.build?.permission?.task;
-    if (taskPermission?.['*'] !== 'deny' || taskPermission?.['flowguard-reviewer'] !== 'allow') {
-      throw new Error('opencode.json task permissions are not default-deny + reviewer-allow');
-    }
-
-    const reviewerAgent = readFileSync(
-      path.join(projectDir, '.opencode', 'agents', 'flowguard-reviewer.md'),
-      'utf-8',
-    );
-    if (!reviewerAgent.includes('mode: subagent') || !reviewerAgent.includes('hidden: true')) {
-      throw new Error('flowguard-reviewer agent is not installed as hidden subagent');
-    }
-
-    const { command, argsPrefix } = resolveOpenCodeCommand();
-    const port = randomOpenCodePort();
-    const serverPassword = 'flowguard-independent-review-e2e';
-    server = spawn(command, [...argsPrefix, 'serve', '--hostname=127.0.0.1', `--port=${port}`], {
-      cwd: projectDir,
+  const run = spawnSync(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    [
+      'vitest',
+      'run',
+      '--project',
+      'integration',
+      '--project',
+      'smoke',
+      ...testFiles,
+      '--testNamePattern',
+      `(${testTitleFilter})`,
+      '--reporter=json',
+      `--outputFile=${outputFile}`,
+      '--passWithNoTests=false',
+    ],
+    {
+      cwd: workspaceRoot,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
       env: {
         ...process.env,
         FORCE_COLOR: '0',
-        OPENCODE_SERVER_PASSWORD: serverPassword,
-        OPENCODE_CONFIG_DIR: opencodeConfigDir,
+        OPENCODE_CONFIG_DIR: path.join(tmpDir, 'config'),
         FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+        FLOWGUARD_OPENCODE_HOST_E2E: '1',
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32',
-    });
-    const baseUrl = await waitForOpenCodeServer(server, 30000);
-    const directory = encodeURIComponent(projectDir);
-    const authHeaders = {
-      Authorization: `Basic ${Buffer.from(`opencode:${serverPassword}`).toString('base64')}`,
-    };
-
-    const commands = await fetchJson(`${baseUrl}/command?directory=${directory}`, authHeaders);
-    const commandNames = new Set(commands.map((commandInfo) => commandInfo.name ?? commandInfo.id));
-    for (const expected of ['plan', 'implement', 'continue']) {
-      if (!commandNames.has(expected))
-        throw new Error(`OpenCode runtime did not expose /${expected}`);
-    }
-
-    const toolIds = await fetchJson(
-      `${baseUrl}/experimental/tool/ids?directory=${directory}`,
-      authHeaders,
-    );
-    const ids = Array.isArray(toolIds) ? toolIds : (toolIds.ids ?? []);
-    for (const expected of ['flowguard_plan', 'flowguard_implement']) {
-      if (!ids.includes(expected)) throw new Error(`OpenCode runtime did not expose ${expected}`);
-    }
-  } finally {
-    await stopOpenCodeServer(server);
-    rmSync(runtimeDir, { recursive: true, force: true });
+    },
+  );
+  if (run.status !== 0) {
+    console.error('Independent-review native verification failed.', run.error ?? '');
+    process.exitCode = run.status ?? 1;
   }
+  // A nonzero runner may still have a useful report. Surface the exact missing
+  // or failing contracts without replacing the runner's original failure code.
+  const report = JSON.parse(readFileSync(outputFile, 'utf8'));
+  const assertions = (report.testResults ?? []).flatMap((result) => result.assertionResults ?? []);
+  const failedRequired = mustPassTestTitles.filter((title) => {
+    const matches = assertions.filter((assertion) => assertion.title === title);
+    return matches.length !== 1 || matches[0].status !== 'passed';
+  });
+  if (failedRequired.length > 0) {
+    console.error(
+      'Independent-review strict verification failed. Required tests missing/pending/ambiguous:',
+    );
+    for (const title of failedRequired) console.error(` - ${title}`);
+    process.exitCode ??= 1;
+  } else if (run.status === 0) {
+    console.log('Independent-review e2e verification passed.');
+  }
+} catch (error) {
+  console.error('Independent-review verification could not establish a result:', error);
+  process.exitCode ??= 1;
+} finally {
+  rmSync(tmpDir, { recursive: true, force: true });
 }
-
-await verifyOpenCodeRuntimeE2E();
-
-console.log('Independent-review e2e verification passed.');
-rmSync(tmpDir, { recursive: true, force: true });

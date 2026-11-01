@@ -592,8 +592,8 @@ jobs:
 
       - name: Install OpenCode CLI
         run: |
-          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
-          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
           # npm may link global bins into a prefix that is not on PATH yet.
           GLOBAL_BIN="$(npm prefix -g)/bin"
           if [ -d "$GLOBAL_BIN" ]; then
@@ -606,17 +606,16 @@ jobs:
             echo "::error::opencode CLI not found on runner. Smoke tests require it."
             exit 1
           fi
-          opencode --version
-        env:
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          EXPECTED_VERSION=$(node -p "'opencode v' + require('./.sdk-baselines/opencode/cli-candidate.json').version")
+          ACTUAL_VERSION=$(opencode --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
 
       - name: Run smoke tests
         run: npm run test:smoke
         env:
           FORCE_COLOR: 0
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
-          # The pinned host is installed above; prove the frozen structured
-          # reviewer wire contract (child session + json_schema + info.structured).
+          # The native candidate host is installed above. Positive reviewer and
+          # recovery contracts remain mandatory; installing V2 does not prove them.
           FLOWGUARD_OPENCODE_HOST_E2E: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
 
@@ -661,8 +660,8 @@ jobs:
 
       - name: Install OpenCode CLI
         run: |
-          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
-          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          OPENCODE_SPEC=$(node -p "const c = require('./.sdk-baselines/opencode/cli-candidate.json'); c.package + '@' + c.version")
+          npm install -g --prefer-offline --no-audit --no-fund "$OPENCODE_SPEC"
           # npm may link global bins into a prefix that is not on PATH yet.
           GLOBAL_BIN="$(npm prefix -g)/bin"
           if [ -d "$GLOBAL_BIN" ]; then
@@ -675,15 +674,14 @@ jobs:
             echo "::error::opencode CLI not found on runner. Independent-review runtime e2e is mandatory."
             exit 1
           fi
-          opencode --version
-        env:
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          EXPECTED_VERSION=$(node -p "'opencode v' + require('./.sdk-baselines/opencode/cli-candidate.json').version")
+          ACTUAL_VERSION=$(opencode --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
 
       - name: Run independent-review e2e verifier
         run: npm run test:independent-review-e2e
         env:
           FORCE_COLOR: 0
-          OPENCODE_DISABLE_AUTOUPDATE: '1'
 
   actionlint:
     name: actionlint

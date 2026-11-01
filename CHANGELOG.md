@@ -159,6 +159,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Native V2 CI infrastructure (#1169/#1190).** Smoke and independent-review
+  jobs pin `@opencode/cli` separately from historical support evidence. Native
+  fixtures load the actual product once and observe V2 hooks, inbox admission,
+  tool records and provider requests without a V1 factory or duplicate product
+  registration. Evals materialize canonical native templates while preserving
+  customer config bytes; doctor distinguishes obsolete registration errors from
+  warning-only native configuration. Coverage CI limits competing workers rather
+  than increasing timeouts or reducing coverage scope. Mandatory reviewer positives
+  and regular-error recovery remain failing acceptance gates, not waived proofs;
+  PR #1190 remains Draft and ACTIVE V2 NO-GO.
+
 - **Migration baseline checks (#1169).** Condensed contributor instructions
   within existing loading budgets without removing requirements; removed stale
   changelog exemptions from governance templates and corrected duplicate

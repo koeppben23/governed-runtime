@@ -30,7 +30,7 @@ describe.skipIf(!LIVE)('OpenCode mutation lifecycle (real pinned host)', () => {
     expect(result.stdout.trim()).toBe(probe.host.version);
   });
 
-  it('a real throwing edit skips After and emits an exact regular error part', async () => {
+  it('a real throwing edit emits native error observations for the exact call', async () => {
     const file = join(probe.project, 'edit-target.txt');
     await writeFile(file, 'original\n');
     const session = await probe.session();
@@ -38,7 +38,7 @@ describe.skipIf(!LIVE)('OpenCode mutation lifecycle (real pinned host)', () => {
       {
         name: 'edit',
         args: {
-          filePath: file,
+          path: file,
           oldString: 'absent text',
           newString: 'replacement',
         },
@@ -46,26 +46,39 @@ describe.skipIf(!LIVE)('OpenCode mutation lifecycle (real pinned host)', () => {
     ]);
     const entries = (await probe.entries()).filter(
       (entry) =>
-        entry.input?.sessionID === session || entry.event?.properties.part?.sessionID === session,
+        entry.input?.sessionID === session ||
+        (entry.event && 'sessionID' in entry.event.data && entry.event.data.sessionID === session),
     );
-    const before = entries.find((entry) => entry.hook === 'before' && entry.input?.tool === 'edit');
+    const before = entries.find(
+      (entry) => entry.hook === 'execute.before' && entry.input?.tool === 'edit',
+    );
     expect(before).toBeDefined();
     expect(
-      entries.some(
-        (entry) => entry.hook === 'after' && entry.input?.callID === before?.input?.callID,
+      entries.find(
+        (entry) => entry.hook === 'execute.after' && entry.input?.id === before?.input?.id,
       ),
-    ).toBe(false);
-    const parts = entries.flatMap((entry) => entry.event?.properties.part ?? []);
-    const terminal = parts.find(
-      (part) => part.callID === before?.input?.callID && part.state.status === 'error',
-    );
-    expect(terminal).toMatchObject({ type: 'tool', tool: 'edit', sessionID: session });
-    expect(terminal!.state.metadata?.interrupted).not.toBe(true);
-    expect(terminal!.state.time?.end).toBeTypeOf('number');
+      JSON.stringify(entries),
+    ).toMatchObject({ input: { status: 'error' } });
+    await vi.waitFor(async () => {
+      expect(
+        (await probe.entries()).some(
+          (entry) =>
+            entry.event?.type === 'session.tool.failed' &&
+            entry.event.data.sessionID === session &&
+            entry.event.data.id === before?.input?.id,
+        ),
+      ).toBe(true);
+    });
+    const history = await probe.history(session);
+    const terminal = history
+      .flatMap((message) => (message.type === 'assistant' ? message.content : []))
+      .find((part) => part.type === 'tool' && part.id === before?.input?.id);
+    expect(terminal).toMatchObject({ type: 'tool', name: 'edit', state: { status: 'error' } });
+    expect(history.at(-1)).toMatchObject({ type: 'idle', outcome: 'succeeded' });
     expect(await readFile(file, 'utf8')).toBe('original\n');
   });
 
-  it('host cleanup marks an unfinished tool as interrupted even with an end date', async () => {
+  it('native interruption is distinct from successful execution with a regular tool error', async () => {
     const session = await probe.session();
     const prompt = probe.prompt(session, [{ name: 'probe_wait', args: {} }]);
     await vi.waitFor(
@@ -73,7 +86,7 @@ describe.skipIf(!LIVE)('OpenCode mutation lifecycle (real pinned host)', () => {
         expect(
           (await probe.entries()).some(
             (entry) =>
-              entry.hook === 'before' &&
+              entry.hook === 'execute.before' &&
               entry.input?.sessionID === session &&
               entry.input.tool === 'probe_wait',
           ),
@@ -81,23 +94,24 @@ describe.skipIf(!LIVE)('OpenCode mutation lifecycle (real pinned host)', () => {
       },
       { timeout: 30_000 },
     );
-    await probe.request(`/session/${session}/abort`, {});
+    expect(
+      await probe.client.session.interrupt({ sessionID: session, resume: false }),
+    ).toMatchObject({ interrupted: true });
     await prompt;
     await vi.waitFor(
       async () => {
-        const parts = (await probe.entries()).flatMap(
-          (entry) => entry.event?.properties.part ?? [],
-        );
-        expect(
-          parts.find(
-            (part) =>
-              part.sessionID === session &&
-              part.tool === 'probe_wait' &&
-              part.state.status === 'error',
-          ),
-        ).toMatchObject({
-          state: { metadata: { interrupted: true }, time: { end: expect.any(Number) } },
+        const history = await probe.history(session);
+        expect(history.at(-1), JSON.stringify(history)).toMatchObject({
+          type: 'idle',
+          outcome: 'interrupted',
         });
+        expect(
+          (await probe.entries()).some(
+            (entry) =>
+              entry.event?.type === 'session.execution.interrupted' &&
+              entry.event.data.sessionID === session,
+          ),
+        ).toBe(true);
       },
       { timeout: 30_000 },
     );
@@ -125,7 +139,7 @@ setTimeout(() => process.exit(2), 45000).unref();\n`,
       try {
         await probe.prompt(session, [
           {
-            name: 'bash',
+            name: 'shell',
             args: {
               command: `"${process.execPath}" "${writer}" </dev/null >/dev/null 2>&1 & while [ ! -f "${prefix}.pid" ]; do sleep 0.01; done; exit ${exit}`,
               description: 'Controlled descendant-quiescence probe',
@@ -137,9 +151,9 @@ setTimeout(() => process.exit(2), 45000).unref();\n`,
         expect(
           entries.some(
             (entry) =>
-              entry.hook === 'after' &&
+              entry.hook === 'execute.after' &&
               entry.input?.sessionID === session &&
-              entry.input.tool === 'bash',
+              entry.input.tool === 'shell',
           ),
         ).toBe(true);
         const pid = Number(await readFile(`${prefix}.pid`, 'utf8'));
@@ -175,13 +189,12 @@ describe.skipIf(!LIVE)('MUT4 real-host FlowGuard recovery', () => {
     await probe?.close();
   });
 
-  it.each(['event', 'synchronous barrier'])(
+  it.each(['event', 'synchronous barrier after plugin reload'])(
     'recovers an actual throwing edit via %s',
     async (channel) => {
       const session = await probe.session();
       const file = join(probe.project, 'edit-target.txt');
       await writeFile(file, `pending implementation ${channel}\n`);
-      if (channel === 'synchronous barrier') await writeFile(probe.dropEvents, 'drop');
       const previousConfig = process.env.OPENCODE_CONFIG_DIR;
       process.env.OPENCODE_CONFIG_DIR = probe.env.OPENCODE_CONFIG_DIR;
       let stateDir: string;
@@ -205,14 +218,14 @@ describe.skipIf(!LIVE)('MUT4 real-host FlowGuard recovery', () => {
           },
         });
         await probe.prompt(session, [
-          { name: 'edit', args: { filePath: file, oldString: 'absent', newString: 'new' } },
+          { name: 'edit', args: { path: file, oldString: 'absent', newString: 'new' } },
         ]);
         expect(
           (await readState(stateDir))?.mutationEpisodes.length,
           JSON.stringify({
             stateDir,
             location: await probe.entries(),
-            history: await probe.request(`/session/${session}/message`),
+            history: await probe.history(session),
           }),
         ).toBe(1);
         if (channel === 'event') {
@@ -226,17 +239,24 @@ describe.skipIf(!LIVE)('MUT4 real-host FlowGuard recovery', () => {
             { timeout: 30_000 },
           );
         } else {
+          await probe.client.location.reload({ signal: AbortSignal.timeout(60_000) });
+          await probe.client.agent.list({ location: probe.location });
           expect((await readState(stateDir))?.mutationEpisodes[0]?.status).toBe(
             'dispatch_authorized',
           );
           await probe.prompt(session, [{ name: 'flowguard_status', args: { whyBlocked: true } }]);
-          const history = (await probe.request(`/session/${session}/message`)) as Array<{
-            parts: Array<{ tool?: string; state: { output?: string } }>;
-          }>;
+          const history = await probe.history(session);
           const statusPart = history
-            .flatMap((message) => message.parts)
-            .find((part) => part.tool === 'flowguard_status');
-          const status = JSON.parse(statusPart?.state.output ?? '{}') as {
+            .flatMap((message) => (message.type === 'assistant' ? message.content : []))
+            .find((part) => part.type === 'tool' && part.name === 'flowguard_status');
+          const text =
+            statusPart?.type === 'tool' && statusPart.state.status === 'completed'
+              ? statusPart.state.content
+                  .filter((part) => part.type === 'text')
+                  .map((part) => part.text)
+                  .join('')
+              : '{}';
+          const status = JSON.parse(text) as {
             whyBlocked?: { blocked?: boolean; reasonCode?: string };
           };
           expect(status.whyBlocked).toMatchObject({
@@ -253,7 +273,7 @@ describe.skipIf(!LIVE)('MUT4 real-host FlowGuard recovery', () => {
         expect(after.mutationEpisodeResolutions).toEqual([]);
         expect(
           after.implementation?.changedFiles,
-          JSON.stringify(await probe.request(`/session/${session}/message`)),
+          JSON.stringify(await probe.history(session)),
         ).toContain('edit-target.txt');
       } finally {
         if (previousConfig === undefined) delete process.env.OPENCODE_CONFIG_DIR;
