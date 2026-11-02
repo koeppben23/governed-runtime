@@ -776,7 +776,8 @@ V2 production caller and are removed rather than kept as a dormant second path:
 - Reviewer configuration: `reviewer.outputTokenMax` with
   `integration/reviewer-output-cap.ts` and the V1 watchdog sub-budgets
   `toolTimeoutMs`, `reviewTimeoutMs`, `serializationTimeoutMs`. The
-  `reviewer` object is strict, so these keys fail validation. The former cap
+  former defaults written by earlier installers are dropped at read time; any
+  other value fails with a concrete `CONFIG_INVALID` reason. The former cap
   check was the only fail-closed consumer of an unreadable config; ACTIVE
   runtime creation now fails with `CONFIG_INVALID` instead.
 - V1 instruction-source diagnostics: `cli/opencode-runtime-detect.ts` and the

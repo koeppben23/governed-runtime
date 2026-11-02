@@ -143,8 +143,8 @@ criteria, evidence requirements, or validators:
 ### Reviewer output budget
 
 FlowGuard sets no reviewer output cap. The removed `reviewer.outputTokenMax` key
-is rejected by the strict `reviewer` config object (`CONFIG_INVALID`); native
-host/model budgeting and the selected reasoning variant stay unchanged. The V2
+is accepted only with its former default `"host"` (dropped at read time); a
+numeric value fails with `CONFIG_INVALID`. Native host/model budgeting and the selected reasoning variant stay unchanged. The V2
 entrypoint implements no `chat.params`/`maxOutputTokens` rewrite or host-wide
 fallback. An unreadable or invalid `flowguard.json` blocks every ACTIVE
 operation of the worktree. No parent/reviewer model or variant is substituted.

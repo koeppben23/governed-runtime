@@ -1083,15 +1083,39 @@ describe('FlowGuardConfigSchema boundaries', () => {
     expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowRawExport).toBe(false);
   });
 
+  it('accepts a config written by an earlier installer and drops the retired default keys', () => {
+    const result = parse({
+      schemaVersion: 'v1',
+      reviewer: {
+        outputTokenMax: 'host',
+        toolTimeoutMs: 30_000,
+        reviewTimeoutMs: 480_000,
+        serializationTimeoutMs: 60_000,
+        executionTimeoutMs: 120_000,
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data!.reviewer).toEqual({ executionTimeoutMs: 120_000 });
+  });
+
   it.each([
-    ['outputTokenMax', 'host'],
-    ['outputTokenMax', 65_536],
-    ['toolTimeoutMs', 30_000],
-    ['reviewTimeoutMs', 480_000],
-    ['serializationTimeoutMs', 60_000],
-  ])('rejects the removed reviewer key %s explicitly instead of ignoring it', (key, value) => {
-    const result = parse({ schemaVersion: 'v1', reviewer: { [key]: value } });
-    expect(result.success).toBe(false);
-    expect(JSON.stringify(result.error?.issues)).toContain(key);
+    ['outputTokenMax', 65_536, 'no reviewer output cap'],
+    ['outputTokenMax', 'host ', 'no reviewer output cap'],
+    ['toolTimeoutMs', 45_000, 'no tool/review/serialization watchdog'],
+    ['reviewTimeoutMs', 80_000, 'no tool/review/serialization watchdog'],
+    ['serializationTimeoutMs', '60000', 'no tool/review/serialization watchdog'],
+  ])(
+    'rejects a non-default retired reviewer key %s=%j with a concrete reason',
+    (key, value, reason) => {
+      const result = parse({ schemaVersion: 'v1', reviewer: { [key]: value } });
+      expect(result.success).toBe(false);
+      const issue = result.error!.issues.find((item) => item.path.join('.') === `reviewer.${key}`);
+      expect(issue?.message).toContain(reason);
+      expect(issue?.message).toContain('Remove the key');
+    },
+  );
+
+  it('still rejects unknown reviewer keys', () => {
+    expect(parse({ schemaVersion: 'v1', reviewer: { maxOutputTokens: 1 } }).success).toBe(false);
   });
 });

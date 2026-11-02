@@ -19,6 +19,15 @@ The former proposal for version registries, chained migrations, and
 version-aware historical audit readers is retained only in repository history.
 It is not a current implementation plan or product contract.
 
+Explicitly defined current product behavior (operator decision 2026-11-02, #1190):
+
+- **User configuration (`flowguard.json`).** Configuration is user-owned input,
+  not a FlowGuard evidence artifact. A retired key whose value equals the
+  default an earlier installer wrote has unchanged meaning and is dropped at
+  read time; any other value of a retired key fails with a concrete reason.
+  Owner: `src/config/flowguard-config.ts`. This does not apply to session
+  state, evidence or audit.
+
 Current authorities:
 
 - `src/state/schema.ts` for session state.

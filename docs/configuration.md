@@ -635,12 +635,17 @@ FlowGuard does not configure a reviewer output-token cap. The native host and
 the selected model/variant own the output budget, including for smaller or
 locally hosted models; no requested value is clamped and no model or variant is
 substituted. The former `reviewer.outputTokenMax` key and the V1
-`chat.params`/`maxOutputTokens` workaround are removed. The `reviewer`
-object is strict: an existing `flowguard.json` that still contains
-`outputTokenMax` (including the former default `"host"`) fails validation with
-`CONFIG_INVALID` until the key is deleted (or `flowguard.json` is removed and
-`flowguard install` writes the current shape again). The installer does not
-migrate or strip obsolete keys.
+`chat.params`/`maxOutputTokens` workaround are removed.
+
+**Existing configurations keep working.** Earlier installers wrote the retired
+reviewer keys with their defaults into every `flowguard.json`
+(`outputTokenMax: "host"`, `toolTimeoutMs: 30000`, `reviewTimeoutMs: 480000`,
+`serializationTimeoutMs: 60000`). A retired key whose value equals that former
+default has today's meaning and is dropped when the config is read;
+`flowguard install --force` rewrites the current shape. A retired key with any
+other value requested a function V2 no longer provides (a numeric reviewer cap
+or a watchdog sub-budget) and fails with `CONFIG_INVALID` and a reason naming
+the key. Unknown `reviewer` keys are rejected.
 
 ### Reviewer Execution Deadline (OpenCode)
 
@@ -658,8 +663,8 @@ elapsed when the same-child capture reaches the canonical evidence recorder, no
 evidence is bound and the review is blocked. The native V2 adapter has no
 watchdog that interrupts a running reviewer; safe unknown-outcome recovery is
 open Finding 6 work (**NOT_VERIFIED**). The former V1 watchdog sub-budgets
-`toolTimeoutMs`, `reviewTimeoutMs` and `serializationTimeoutMs` are removed
-and rejected like `outputTokenMax`.
+`toolTimeoutMs`, `reviewTimeoutMs` and `serializationTimeoutMs` are removed and
+follow the same compatibility rule as `outputTokenMax`.
 
 An unreadable or invalid `flowguard.json` blocks every ACTIVE FlowGuard
 operation of the worktree with `CONFIG_INVALID`; logging alone falls back to

@@ -45,13 +45,12 @@ describe.skipIf(!LIVE)('native output budgets reach the provider unchanged', () 
     {
       output: 131_072,
       config: '{"schemaVersion":"v1","reviewer":{"outputTokenMax":65536}}',
-      label: 'removed FlowGuard reviewer cap key',
+      label: 'non-default retired reviewer cap',
     },
     {
       output: 32_768,
-      config:
-        '{"schemaVersion":"v1","reviewer":{"executionTimeoutMs":600000,"outputTokenMax":"host"}}',
-      label: 'removed cap key with its former default value',
+      config: '{"schemaVersion":"v1","reviewer":{"toolTimeoutMs":45000}}',
+      label: 'non-default retired watchdog budget',
     },
     { output: 131_072, config: '{"schemaVersion":"invalid"}', label: 'malformed FlowGuard config' },
   ])(
@@ -75,13 +74,14 @@ describe.skipIf(!LIVE)('native output budgets reach the provider unchanged', () 
       expect(probe.requests).toEqual([]);
     },
   );
-  it('control: a valid config admits the same prompt and blocks only the unauthorized reviewer', async () => {
+  it('control: an earlier-installer config admits the same prompt and blocks only the unauthorized reviewer', async () => {
     probe = await createNativeHostProbe({
       product: true,
       productTestSetup: COMPONENT_ACTIVATION_SETUP,
       agent: REVIEWER_AGENT,
       modelOutput: 131_072,
-      flowguardConfig: '{"schemaVersion":"v1","reviewer":{"executionTimeoutMs":600000}}',
+      flowguardConfig:
+        '{"schemaVersion":"v1","reviewer":{"outputTokenMax":"host","toolTimeoutMs":30000,"reviewTimeoutMs":480000,"serializationTimeoutMs":60000,"executionTimeoutMs":600000}}',
     });
     const session = await probe.session('flowguard-reviewer');
     await seedNativeActiveScope(probe, session.id);

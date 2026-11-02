@@ -42,6 +42,25 @@ import {
 /** Absolute reviewer execution deadline from dispatch authorization. */
 const REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT = 600_000;
 
+/** Retired V1 reviewer keys and the defaults earlier installers wrote for them. */
+const RETIRED_REVIEWER_DEFAULTS = {
+  outputTokenMax: 'host',
+  toolTimeoutMs: 30_000,
+  reviewTimeoutMs: 480_000,
+  serializationTimeoutMs: 60_000,
+} as const;
+type RetiredReviewerKey = keyof typeof RETIRED_REVIEWER_DEFAULTS;
+const RETIRED_REVIEWER_KEYS = Object.keys(RETIRED_REVIEWER_DEFAULTS) as RetiredReviewerKey[];
+const WATCHDOG_RETIRED =
+  'is no longer supported: the native reviewer has no tool/review/serialization watchdog; only reviewer.executionTimeoutMs applies. Remove the key.';
+const RETIRED_REVIEWER_REASONS: Readonly<Record<RetiredReviewerKey, string>> = {
+  outputTokenMax:
+    'reviewer.outputTokenMax is no longer supported: FlowGuard applies no reviewer output cap and the host/model budget applies. Remove the key.',
+  toolTimeoutMs: `reviewer.toolTimeoutMs ${WATCHDOG_RETIRED}`,
+  reviewTimeoutMs: `reviewer.reviewTimeoutMs ${WATCHDOG_RETIRED}`,
+  serializationTimeoutMs: `reviewer.serializationTimeoutMs ${WATCHDOG_RETIRED}`,
+};
+
 export const FlowGuardConfigSchema = z.object({
   /** Schema version for forward compatibility. Always "v1". */
   schemaVersion: z.literal('v1'),
@@ -229,8 +248,15 @@ export const FlowGuardConfigSchema = z.object({
 
   /**
    * Independent-reviewer execution configuration. Model, variant and output
-   * budget stay host-native; FlowGuard sets no reviewer token cap. The object is
-   * strict so removed keys fail validation instead of being silently ignored.
+   * budget stay host-native; FlowGuard sets no reviewer token cap.
+   *
+   * Configuration compatibility (operator decision 2026-11-02, explicit
+   * exception to the no-legacy source rule for persisted user configuration):
+   * earlier installers wrote the retired V1 keys with their defaults into every
+   * flowguard.json. A retired key whose value equals that former default carries
+   * no semantics beyond today's behavior and is dropped at read time. Any other
+   * value requested a function V2 no longer provides and fails with a concrete
+   * message. Unknown keys are rejected.
    */
   reviewer: z
     .object({
@@ -241,8 +267,24 @@ export const FlowGuardConfigSchema = z.object({
         .min(1000)
         .max(1_800_000)
         .default(REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT),
+      outputTokenMax: z.unknown().optional(),
+      toolTimeoutMs: z.unknown().optional(),
+      reviewTimeoutMs: z.unknown().optional(),
+      serializationTimeoutMs: z.unknown().optional(),
     })
     .strict()
+    .superRefine((reviewer, ctx) => {
+      for (const key of RETIRED_REVIEWER_KEYS) {
+        const value = reviewer[key];
+        if (value === undefined || value === RETIRED_REVIEWER_DEFAULTS[key]) continue;
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: RETIRED_REVIEWER_REASONS[key],
+        });
+      }
+    })
+    .transform(({ executionTimeoutMs }) => ({ executionTimeoutMs }))
     .default({ executionTimeoutMs: REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT }),
   /** Archive configuration. */
   archive: z

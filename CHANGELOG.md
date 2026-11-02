@@ -1023,20 +1023,21 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
-- **Reviewer config is host-native and strict; unreadable config fails closed
-  (#1190, #1169 WS1).** `reviewer.outputTokenMax` and the V1 watchdog
-  sub-budgets (`toolTimeoutMs`, `reviewTimeoutMs`, `serializationTimeoutMs`) are
-  removed together with `reviewer-output-cap.ts`; FlowGuard sets no reviewer
-  output cap and never rewrites model options. The `reviewer` object is strict:
-  an existing `flowguard.json` that still contains one of these keys (including
-  `outputTokenMax: "host"`) fails with `CONFIG_INVALID` until the key is deleted;
-  the installer writes only `executionTimeoutMs` and does not migrate old keys.
-  An unreadable or invalid config previously blocked only the reviewer context
-  while other ACTIVE operations silently ran on default policy; it now blocks
-  every ACTIVE operation of the worktree (an ACTIVE prompt is refused at
-  admission), a readable config is re-read on the next call, and INACTIVE
-  sessions are unaffected. `doctor` no longer reports a
-  reviewer cap.
+- **Reviewer config is host-native; existing configs keep working; unreadable
+  config fails closed (#1190, #1169 WS1/WS2).** `reviewer.outputTokenMax` and the
+  V1 watchdog sub-budgets (`toolTimeoutMs`, `reviewTimeoutMs`,
+  `serializationTimeoutMs`) are removed together with `reviewer-output-cap.ts`;
+  FlowGuard sets no reviewer output cap and never rewrites model options. A
+  config written by an earlier installer stays valid: a retired key whose value
+  equals its former default is dropped at read time and `install --force`
+  rewrites the current shape. A retired key with any other value (a numeric
+  cap or a custom watchdog budget) fails with `CONFIG_INVALID` and a reason
+  naming the key; unknown `reviewer` keys are rejected. An unreadable or
+  invalid config previously blocked only the reviewer context while other
+  ACTIVE operations silently ran on default policy; it now blocks every ACTIVE
+  operation of the worktree (an ACTIVE prompt is refused at admission), a
+  readable config is re-read on the next call, and INACTIVE sessions are
+  unaffected. `doctor` no longer reports a reviewer cap.
 - **V2 parity and autonomous-activation contract (#1190).** ADR-010 now explicitly
   requires V1-equivalent capabilities/governance guarantees, including
   policy-permitted fully autonomous workflows. Interactive and authorized
