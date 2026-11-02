@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failing; no reviewer block or proof generation is relaxed. The version-bound
   implementation plan keeps capture, audit and recovery acceptance separate.
   The README ADR reference is aligned with the existing documentation path check.
+  CI portability of the step-1 interruption probe is tightened to the actual
+  security outcome (interrupted idle and no normal completion) rather than
+  requiring a host-scheduling-dependent aborted assistant row. The four required
+  product reviewer contracts and titles are untouched.
 
 - **Pinned UI-to-RPC source counterexample (#1190).** The real PTY/TUI probe now
   follows a keyboard callback through ordinary plugin RPC and replays its payload

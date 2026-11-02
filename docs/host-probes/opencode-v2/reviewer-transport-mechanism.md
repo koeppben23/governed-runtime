@@ -109,9 +109,11 @@ Five actual-host cases pass:
    the sentinel never appears in provider requests. A later JSON answer requires
    another step and does not erase that observed attempt.
 4. **Interrupted exact request.** Interrupting the held serialization, then
-   waiting on the host execution barrier, exposes its admitted request, aborted
-   assistant and interrupted idle, not a clean stop. No quarantine is released,
-   new attempt authorized or `quiescence: true` invented by this observation.
+   waiting on the host execution barrier, exposes its admitted request and
+   interrupted idle. The host may persist an explicit aborted assistant row or no
+   assistant row; either way no normal completed assistant exists. No quarantine
+   is released, new attempt authorized or `quiescence: true` invented by this
+   observation.
 5. **Compaction during capture.** A real queued manual compaction completes and
    is visible as a checkpoint and a `model.request` of kind `compaction`, not an
    uninterrupted one-step capture. The provider supplies the pinned host's summary
