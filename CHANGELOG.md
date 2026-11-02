@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   continuations fail closed before JSON capture. Receipts are not reconstructed
   after reload. The exclusive serialization lease and canonical evidence/audit
   recorder remain unchanged; unknown-outcome recovery and R2 reconciliation are
-  still separate step-4 blockers.
+  still separate step-4 blockers. The evidence report distinguishes receipt
+  identity/input/status validation from unproved tool-result-byte provenance
+  and records the bounded 82.57% aggregate mutation result without claiming
+  every file or survivor is covered.
 - **Native mutation runner configuration.** Stryker 10.1.1 now runs through
   its supported fork-pool option and upstream Vitest 5 test-name handling. The
   obsolete 10.0.0-only dependency patch is removed from local and CI commands,

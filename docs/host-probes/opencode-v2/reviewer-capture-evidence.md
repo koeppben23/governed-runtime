@@ -1,8 +1,8 @@
 # Finding 6 step 3: same-child capture and evidence binding
 
 2026-11-02, PR #1190. **Implementation checkpoint, not step-3 acceptance.**
-R1/R3 corrections are published for review; the new mutation gate is not yet
-established. R2 reconciliation and unknown-outcome recovery remain step-4 proof
+R1/R3 corrections are published for review; the bounded mutation gate passes,
+but this is not an independent assurance acceptance. R2 reconciliation and unknown-outcome recovery remain step-4 proof
 obligations. The three capture/evidence product contracts pass; the fourth
 recovery contract remains red. Finding 6 stays BLOCKED; Draft / ACTIVE V2 NO-GO
 is unchanged.
@@ -40,6 +40,18 @@ New native-host probes preserve a real multi-step/read positive and reject real
 synthetic input during the initial review without serialization/evidence. The
 four required product titles remain unchanged. This correction does not claim
 restart recovery, universal host-path coverage or a completed independent audit.
+
+**Tool-result provenance limit:** the live before/after receipts bind identity,
+input and terminal status, not a digest of returned result content. A component
+counterprobe supplied an original result in the after-boundary and different
+result text in the subsequent history; both the original and replaced content
+were accepted before that history became the next frozen prefix. Later prefix
+mutation is rejected, but that is a different guarantee. This establishes the
+controller's current validation limit, not a demonstrated reachable native-host
+injection path. Do not describe these tests as a proof of tool-result-byte
+attestation. Native lifecycle reachability and the appropriate final-result
+observation boundary remain **NOT_VERIFIED**; hashing a pre-normalization or
+pre-truncation tool result must not be assumed equivalent to the host history.
 
 ### R2 remains a step-4 proof obligation
 
@@ -124,11 +136,22 @@ rewriting the call ID. Historical bytes are not normalized.
 - The unchanged independent-review verifier fails only the recovery contract.
 - Typecheck, strict lint, format, architecture, build/doc drift, dependency/export
   usage, script tests and changed-workflow actionlint checks pass.
-- **NOT_VERIFIED:** the current bounded mutation gate and current CI coverage
-  are still running at publication. The mutation run keeps every previous
-  source target/test and adds the initial-review controller and regressions;
-  `break: 80` is unchanged. The runner uses native Stryker 10.1.1 rather than
-  the obsolete dependency patch. No new score or hosted-CI PASS is claimed.
+- CI coverage: **707 files / 12,988 passed / 11 skipped**, exit 0, unchanged
+  15-second boundary.
+- Bounded mutation: **82.57% total / 84.30% covered**, exit 0 at unchanged
+  `break: 80`; **725 killed / 135 survived / 18 no coverage / 0 timeout** and
+  501 compile-invalid mutants. The initial controller scores **88.52%**.
+  The run keeps every previous source target/test and adds the initial-review
+  controller and regressions. Its native Stryker 10.1.1 initial run executes
+  **721 tests**; all **28 frozen source/test/config hashes** match `b54d9caa`.
+  This is not an all-source or per-file mutation PASS: capture is **72.20%**,
+  capture-failure routing **25.00%**, and the host adapter **73.61%**. Surviving
+  and uncovered mutations remain visible; no threshold, test, target or mutator
+  was removed to obtain the aggregate result.
+- Mutation JSON SHA-256:
+  `c908f7ac09ef4c07503437e0ef8a2b0264888b9c97d69346e0617aa7d09ba04d`.
+- **NOT_VERIFIED:** hosted-CI acceptance and native tool-result-content
+  provenance beyond the receipt identity/input/status checks above.
 - **NOT_VERIFIED:** actual process-restart R2 continuation, unknown-outcome
   recovery and installed ACTIVE workflow acceptance remain open.
 
