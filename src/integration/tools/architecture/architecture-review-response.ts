@@ -279,7 +279,7 @@ async function attachReviewCard(input: {
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);
   const presentationMarkdown = buildArchitectureReviewCard(reviewCardInput, {
-    glyphProfile: (await readConfig(session.worktree)).presentation.opencode.glyphProfile,
+    glyphProfile: (await readConfig(session.worktree)).presentation.glyphProfile,
   });
   // The canonical reviewCard is always transmitted; the host-visible markdown
   // variant is only added when the configured glyph profile changes it.

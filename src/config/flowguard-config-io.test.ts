@@ -451,18 +451,18 @@ describe('readConfig — precedence', () => {
       worktree,
       JSON.stringify({
         schemaVersion: 'v1',
-        presentation: { opencode: { glyphProfile: 'ascii' } },
+        presentation: { glyphProfile: 'ascii' },
       }),
     );
     await writeGlobalConfig(
       JSON.stringify({
         schemaVersion: 'v1',
-        presentation: { opencode: { glyphProfile: 'unicode' } },
+        presentation: { glyphProfile: 'unicode' },
       }),
     );
 
     const config = await readConfig(worktree);
-    expect(config.presentation.opencode.glyphProfile).toBe('ascii');
+    expect(config.presentation.glyphProfile).toBe('ascii');
   });
 
   // ── EDGE ───────────────────────────────────────────────────

@@ -25,6 +25,9 @@ Explicitly defined current product behavior (operator decision 2026-11-02, #1190
   not a FlowGuard evidence artifact. A retired key whose value equals the
   default an earlier installer wrote has unchanged meaning and is dropped at
   read time; any other value of a retired key fails with a concrete reason.
+  The earlier `presentation.opencode.glyphProfile` key is still read with
+  unchanged meaning into the neutral `presentation.glyphProfile` shape;
+  conflicting values fail validation.
   Owner: `src/config/flowguard-config.ts`. This does not apply to session
   state, evidence or audit.
 

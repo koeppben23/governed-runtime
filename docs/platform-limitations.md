@@ -6,11 +6,12 @@ This document enumerates each gap with its impact assessment, mitigation strateg
 
 ## Glyph Display Fallback
 
-OpenCode terminals or fonts that cannot display FlowGuard's canonical Unicode
-status markers can set `presentation.opencode.glyphProfile` to `ascii` in
-`flowguard.json`. This affects only transient `presentation.markdown` markers;
+Terminals or fonts that cannot display FlowGuard's canonical Unicode status
+markers can set `presentation.glyphProfile` to `ascii` in `flowguard.json`. The
+earlier `presentation.opencode.glyphProfile` key keeps its meaning and remains
+readable. This affects only transient `presentation.markdown` markers;
 canonical Unicode `reviewCard` artifacts and arbitrary content are unchanged.
-See [Configuration](./configuration.md#presentationopencodeglyphprofile).
+See [Configuration](./configuration.md#presentationglyphprofile).
 
 ## Gap Summary
 

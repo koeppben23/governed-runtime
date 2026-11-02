@@ -119,30 +119,52 @@ describe('FlowGuardConfigSchema', () => {
     }
   });
 
-  describe('presentation.opencode.glyphProfile', () => {
+  describe('presentation.glyphProfile', () => {
     it('defaults to unicode', () => {
       const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' });
       expect(result.success).toBe(true);
-      expect(result.data?.presentation.opencode.glyphProfile).toBe('unicode');
+      expect(result.data?.presentation.glyphProfile).toBe('unicode');
     });
 
-    it('accepts unicode and ascii', () => {
+    it('accepts unicode and ascii under the neutral key', () => {
+      for (const glyphProfile of ['unicode', 'ascii'] as const) {
+        const result = FlowGuardConfigSchema.safeParse({
+          schemaVersion: 'v1',
+          presentation: { glyphProfile },
+        });
+        expect(result.success).toBe(true);
+        expect(result.data?.presentation.glyphProfile).toBe(glyphProfile);
+      }
+    });
+
+    it('reads the earlier installer key with unchanged meaning', () => {
       for (const glyphProfile of ['unicode', 'ascii'] as const) {
         const result = FlowGuardConfigSchema.safeParse({
           schemaVersion: 'v1',
           presentation: { opencode: { glyphProfile } },
         });
         expect(result.success).toBe(true);
-        expect(result.data?.presentation.opencode.glyphProfile).toBe(glyphProfile);
+        expect(result.data?.presentation.glyphProfile).toBe(glyphProfile);
+        expect(result.data?.presentation).not.toHaveProperty('opencode');
       }
     });
 
-    it('rejects an unsupported glyph profile', () => {
+    it('rejects conflicting neutral and earlier-installer values', () => {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
-        presentation: { opencode: { glyphProfile: 'emoji' } },
+        presentation: { glyphProfile: 'ascii', opencode: { glyphProfile: 'unicode' } },
       });
       expect(result.success).toBe(false);
+    });
+
+    it('rejects an unsupported glyph profile under either key', () => {
+      for (const presentation of [
+        { glyphProfile: 'emoji' },
+        { opencode: { glyphProfile: 'emoji' } },
+      ]) {
+        const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1', presentation });
+        expect(result.success).toBe(false);
+      }
     });
   });
 

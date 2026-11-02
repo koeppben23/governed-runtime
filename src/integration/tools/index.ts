@@ -176,7 +176,7 @@ function withGovernanceFooter(
         if (needsPresentationProfile(result)) {
           try {
             glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
-              .opencode.glyphProfile;
+              .glyphProfile;
           } catch {
             // Presentation must not replace canonical result when config loading fails.
           }

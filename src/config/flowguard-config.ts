@@ -42,6 +42,37 @@ import {
 /** Absolute reviewer execution deadline from dispatch authorization. */
 const REVIEWER_EXECUTION_TIMEOUT_MS_DEFAULT = 600_000;
 
+/**
+ * Host-neutral transient presentation preference. The former
+ * `presentation.opencode` key is user-owned configuration from earlier
+ * installers; it keeps its unchanged meaning and is read compatibly. Supplying
+ * both keys with different values is rejected instead of choosing silently.
+ */
+const PresentationConfig = z
+  .strictObject({
+    glyphProfile: z.enum(['unicode', 'ascii']).optional(),
+    opencode: z.strictObject({ glyphProfile: z.enum(['unicode', 'ascii']).optional() }).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.glyphProfile !== undefined &&
+      value.opencode?.glyphProfile !== undefined &&
+      value.glyphProfile !== value.opencode.glyphProfile
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['opencode', 'glyphProfile'],
+        message:
+          'presentation.opencode.glyphProfile conflicts with presentation.glyphProfile; keep only presentation.glyphProfile.',
+      });
+    }
+  })
+  .transform((value) => ({
+    glyphProfile: value.glyphProfile ?? value.opencode?.glyphProfile ?? 'unicode',
+  }))
+  .default({ glyphProfile: 'unicode' });
+
 /** Retired V1 reviewer keys and the defaults earlier installers wrote for them. */
 const RETIRED_REVIEWER_DEFAULTS = {
   outputTokenMax: 'host',
@@ -226,17 +257,7 @@ export const FlowGuardConfigSchema = z.object({
     .default({}),
 
   /** Transient presentation preferences; never workflow or audit authority. */
-  presentation: z
-    .object({
-      /** OpenCode-only transient Markdown preferences. */
-      opencode: z
-        .object({
-          /** Glyph vocabulary for host-visible Markdown responses. */
-          glyphProfile: z.enum(['unicode', 'ascii']).default('unicode'),
-        })
-        .default({ glyphProfile: 'unicode' }),
-    })
-    .default({ opencode: { glyphProfile: 'unicode' } }),
+  presentation: PresentationConfig,
 
   /** Host execution configuration. Does not affect governance authority. */
   host: z

@@ -529,7 +529,7 @@ describe('resume end-to-end via help.execute', () => {
     await writeRepoConfig(ws.tmpDir, {
       ...DEFAULT_CONFIG,
       schemaVersion: 'v1',
-      presentation: { opencode: { glyphProfile: 'ascii' } },
+      presentation: { glyphProfile: 'ascii' },
     });
     const fingerprint = await computeFingerprint(ws.tmpDir);
     await writeState(sessionDir(fingerprint.fingerprint, ctx.sessionID), {

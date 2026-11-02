@@ -281,6 +281,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review-transport capability table from the adapter contract. Doctor capability
   text remains a local diagnostic projection, never an assurance source; stale
   governance baseline schemas are removed.
+- **Host-neutral presentation configuration (#1190, WS2).** Transient glyph
+  selection now lives at `presentation.glyphProfile`. Earlier installer
+  configuration at `presentation.opencode.glyphProfile` is read with unchanged
+  meaning; differing duplicate values fail validation. The existing
+  `presentation.markdown` output contract is unchanged.
 
 ### Fixed
 

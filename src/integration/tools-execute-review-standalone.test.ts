@@ -1623,7 +1623,7 @@ describe('review (standalone flow)', () => {
           await fs.mkdir(`${ws.tmpDir}/.opencode`, { recursive: true });
           await fs.writeFile(
             `${ws.tmpDir}/.opencode/flowguard.json`,
-            JSON.stringify({ schemaVersion: 'v1', presentation: { opencode: { glyphProfile } } }),
+            JSON.stringify({ schemaVersion: 'v1', presentation: { glyphProfile } }),
           );
           const result = await submitContentReview({ prNumber: 49, inputOrigin: 'pr' }, 'accept', {
             unknowns: ['Check the deployment environment.'],
