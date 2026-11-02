@@ -1062,6 +1062,14 @@ stop`, reviewer child reported it could not complete the falsification).
   or the cross-host risk-path classifier. A new zero-tolerance rule rejects host
   selection from `FLOWGUARD_HOST_PLATFORM`/`FLOWGUARD_PLATFORM` inside the core;
   those variables remain entrypoint/host-runtime wiring.
+- **WS2 closure verification (#1190).** A test-only independent host adapter
+  consumes the neutral review-mode/instruction contract without OpenCode SDK,
+  adapter or plugin imports. A current-format archive fixture carrying V5 review
+  evidence verifies with an informational historical finding, rejects tampering,
+  and is never bindable. The remaining V1 reviewer mechanisms without V2 call
+  paths are mapped to concrete implementation and positive/negative product-test
+  obligations in the WS2 closure/parity report; they remain open parity work,
+  not WS2 host-neutralization.
 
 - **Reviewer config is host-native; existing configs keep working; unreadable
   config fails closed (#1190, #1169 WS1/WS2).** `reviewer.outputTokenMax` and the

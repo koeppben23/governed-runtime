@@ -276,6 +276,15 @@ is explicit generation 6 (`native_subagent_message_json`) with
 `nativeProvenance`; v5 is never reinterpreted as V2 proof and no response
 `parentID` or historical host DTO is manufactured.
 
+**Provenance limit:** the receipt binds the exact child, owning assistant, call,
+tool input and terminal status. It does not attest the final consumed tool-result
+representation after host normalization, truncation or transport mapping.
+Privileged host plugin hooks remain outside this assurance boundary; the
+unprivileged reachability of such a change is **NOT_VERIFIED**. No current
+receipt should be described as tool-result-byte attestation. See the
+[R4 result-boundary report](./host-probes/opencode-v2/reviewer-tool-result-evidence.md)
+and [WS2 closure/parity backlog](./host-probes/opencode-v2/ws2-closure.md).
+
 ### Evidence-Grounded Implementation Review
 
 The frozen implementation review material

@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { makeState } from '../fixtures.js';
+import { makeState, PLAN_REVIEW_ASSURANCE } from '../fixtures.js';
 import { writeState } from './persistence.js';
 import { resolveSessionAuthority } from './session-authority.js';
 import { computeFingerprint, ensureWorkspace, sessionDir } from './workspace/index.js';
@@ -86,6 +86,42 @@ describe('resolveSessionAuthority', () => {
       expect(result.fingerprint).toBe(await fingerprintOf());
       expect(result.state.binding.worktree).toBe(repo);
     }
+  });
+
+  it('rejects a non-terminal session carrying historical V5 review evidence', async () => {
+    const canonicalFingerprint = await fingerprintOf();
+    const invocation = PLAN_REVIEW_ASSURANCE.invocations[0]!;
+    const { nativeProvenance: _nativeProvenance, ...withoutProvenance } = invocation;
+    const dir = sessionDir(canonicalFingerprint, SESSION_ID);
+    await writeState(
+      dir,
+      makeState('PLAN', {
+        id: SESSION_ID,
+        binding: {
+          hostSessionId: SESSION_ID,
+          worktree: repo,
+          fingerprint: canonicalFingerprint,
+          resolvedAt: RESOLVED_AT,
+        },
+        reviewAssurance: {
+          ...PLAN_REVIEW_ASSURANCE,
+          invocations: [
+            {
+              ...withoutProvenance,
+              invocationMode: 'native_task_message_json',
+              transportVersion: 5,
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(
+      resolveSessionAuthority({ root: repo, sessionId: SESSION_ID }),
+    ).resolves.toMatchObject({
+      status: 'unavailable',
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
   });
 
   it('bootstraps one workspace fingerprint from the root and from a subdirectory', async () => {

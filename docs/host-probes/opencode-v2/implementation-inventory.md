@@ -807,7 +807,9 @@ retry diagnostics (`capture-retry.ts`), the durable re-arm transition
 (`durable-dispatch.ts` `abandonAndRearmByHostCall`) and the incoherent-verdict,
 pre-bind and expired-dispatch closures in `native-review-execution.ts`, and the
 reviewer observation replay (`review/observations/observation-replay*.ts`), which
-V1 ran after the Task to persist `flowguard_observe_repository` observations;
+V1 ran after the Task to persist `flowguard_observe_repository` observations.
+The concrete V2 call-site and test obligations are tracked in
+[WS2 closure and V2 reviewer-parity backlog](./ws2-closure.md);
 each keeps its owner tests but has no V2 production caller. The V2 reviewer
 currently cannot call `flowguard_observe_repository` at all. The V1 glue that only connected them to the Task
 after-hook (`capture-failure-routing.ts`, binding-failure routing and the
