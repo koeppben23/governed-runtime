@@ -11,10 +11,6 @@ import { createSessionState } from './review/enforcement/enforcement.js';
 
 const h = vi.hoisted(() => {
   const order: string[] = [];
-  const call = (name: string) =>
-    vi.fn((..._args: unknown[]) => {
-      order.push(name);
-    });
   const asyncCall = (name: string) =>
     vi.fn(async (..._args: unknown[]) => {
       order.push(name);
@@ -25,7 +21,6 @@ const h = vi.hoisted(() => {
     after: asyncCall('after'),
     event: asyncCall('event'),
     compaction: asyncCall('compaction'),
-    cap: call('cap'),
     dispose: asyncCall('dispose'),
     resolve: vi.fn(),
   };
@@ -56,7 +51,6 @@ vi.mock('./plugin-afterhooks.js', () => ({
   handlePluginEvent: h.event,
   handleCompaction: h.compaction,
 }));
-vi.mock('./reviewer-output-cap.js', () => ({ validateNativeReviewerOutputLimit: h.cap }));
 
 let host: ReturnType<typeof createV2Host>;
 let dispose: (() => void | Promise<void>) | undefined;
@@ -127,14 +121,22 @@ describe('single-owner native hook composition', () => {
       expect(host.prompt).not.toHaveBeenCalled();
     },
   );
-  it('validates reviewer budgeting before refusing unproved context/capture', async () => {
-    await expect(
-      host.request({ sessionID: 'child', agent: REVIEWER_SUBAGENT_TYPE }),
-    ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-    expect(h.order).toEqual(['cap']);
+  it('refuses unproved reviewer context without rewriting the native request', async () => {
+    const event = {
+      sessionID: 'child',
+      agent: REVIEWER_SUBAGENT_TYPE,
+      options: { reasoningEffort: 'max' },
+    };
+    const original = structuredClone(event);
+    await expect(host.request(event)).rejects.toHaveProperty(
+      'code',
+      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    );
+    expect(event).toEqual(original);
+    expect(h.order).toEqual([]);
   });
 
-  it('leaves other agents outside reviewer budgeting and capture hooks', async () => {
+  it('leaves other agents outside reviewer capture hooks and native options untouched', async () => {
     const event = {
       sessionID: 'parent',
       agent: 'build',
@@ -145,18 +147,6 @@ describe('single-owner native hook composition', () => {
     expect(event).toEqual(original);
     expect(h.order).toEqual([]);
   });
-
-  it('budget denial cannot reach reviewer context observation', async () => {
-    h.cap.mockImplementationOnce(() => {
-      h.order.push('cap');
-      throw failure;
-    });
-    await expect(host.request({ sessionID: 'child', agent: REVIEWER_SUBAGENT_TYPE })).rejects.toBe(
-      failure,
-    );
-    expect(h.order).toEqual(['cap']);
-  });
-
   it('processes ordinary successful completion exactly once and propagates after-hook errors', async () => {
     await host.after(completion());
     expect(h.order).toEqual(['after']);

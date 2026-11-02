@@ -13,7 +13,7 @@ afterEach(async () => {
   await probe?.close();
   probe = undefined;
 });
-describe.skipIf(!LIVE)('OpenCode output-token cap reaches the provider request', () => {
+describe.skipIf(!LIVE)('native output budgets reach the provider unchanged', () => {
   it.each([65_536, 32_000])(
     'preserves an explicit native provider-body budget of %i on the final wire',
     async (cap) => {
@@ -45,16 +45,17 @@ describe.skipIf(!LIVE)('OpenCode output-token cap reaches the provider request',
     {
       output: 131_072,
       config: '{"schemaVersion":"v1","reviewer":{"outputTokenMax":65536}}',
-      label: 'explicit FlowGuard numeric override',
+      label: 'removed FlowGuard reviewer cap key',
     },
     {
       output: 32_768,
-      config: '{"schemaVersion":"v1","reviewer":{"outputTokenMax":65536}}',
-      label: 'override above the native model limit',
+      config:
+        '{"schemaVersion":"v1","reviewer":{"executionTimeoutMs":600000,"outputTokenMax":"host"}}',
+      label: 'removed cap key with its former default value',
     },
     { output: 131_072, config: '{"schemaVersion":"invalid"}', label: 'malformed FlowGuard config' },
   ])(
-    'blocks $label before any reviewer request reaches the provider',
+    'blocks a $label before any reviewer request reaches the provider',
     async ({ output, config }) => {
       probe = await createNativeHostProbe({
         product: true,
@@ -72,10 +73,9 @@ describe.skipIf(!LIVE)('OpenCode output-token cap reaches the provider request',
         (message) => message.type === 'idle' && message.outcome === 'failed',
       );
       expect(terminal, JSON.stringify(history)).toBeDefined();
+      expect(JSON.stringify(terminal)).toContain('CONFIG_INVALID');
       expect(JSON.stringify(terminal)).toContain(
-        config.includes('invalid')
-          ? 'FlowGuard configuration is unreadable'
-          : 'explicit reviewer output override',
+        'FlowGuard configuration is unreadable or invalid',
       );
     },
   );

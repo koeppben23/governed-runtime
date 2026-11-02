@@ -430,12 +430,13 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
     },
   );
 
-  it('does not silently apply an explicit numeric reviewer cap or re-arm execution', async () => {
+  it('rejects an obsolete reviewer cap key and never rewrites native model options', async () => {
     const h = await fixture();
-    await writeRepoConfig(h.ws.tmpDir, {
-      ...DEFAULT_CONFIG,
-      reviewer: { ...DEFAULT_CONFIG.reviewer, outputTokenMax: 65_536 },
-    });
+    await fs.writeFile(
+      path.join(h.ws.tmpDir, '.opencode', 'flowguard.json'),
+      `${JSON.stringify({ ...DEFAULT_CONFIG, reviewer: { executionTimeoutMs: 600_000, outputTokenMax: 65_536 } })}\n`,
+      'utf8',
+    );
     const event = {
       sessionID: h.sessionID,
       agent: 'flowguard-reviewer',
@@ -443,10 +444,7 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
       model: { id: 'any-native-model' },
     };
     const unchanged = structuredClone(event);
-    await expect(h.host.request(event)).rejects.toHaveProperty(
-      'code',
-      'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN',
-    );
+    await expect(h.host.request(event)).rejects.toHaveProperty('code', 'CONFIG_INVALID');
     expect(event).toEqual(unchanged);
     expect(h.host.prompt).not.toHaveBeenCalled();
   });

@@ -216,7 +216,7 @@ export async function createPluginLogger(
 ): Promise<{
   log: ReturnType<typeof createLogger>;
   config: FlowGuardConfig;
-  /** Original config-read failure; logging falls back, the reviewer cap does not. */
+  /** Original config-read failure; logging falls back, governed runtime creation does not. */
   configReadError?: unknown;
   disposeLogging?: () => Promise<void>;
 }> {

@@ -7,10 +7,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { globalConfigPath, PersistenceError } from '../adapters/persistence.js';
 import { readConfig } from '../adapters/persistence-config.js';
-import {
-  FlowGuardConfigSchema,
-  REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT,
-} from '../config/flowguard-config.js';
+import { DEFAULT_CONFIG, FlowGuardConfigSchema } from '../config/flowguard-config.js';
 import type { HostId } from '../shared/hosts.js';
 import {
   COMMANDS,
@@ -259,7 +256,7 @@ async function checkWorkspaceConfig(
         checks.push({
           file: cfgPath,
           status: 'ok',
-          detail: `${hasCustom ? 'config valid (customized)' : 'config valid (defaults only)'}; reviewer output cap ${config.reviewer.outputTokenMax}`,
+          detail: hasCustom ? 'config valid (customized)' : 'config valid (defaults only)',
         });
       } catch (err) {
         pushConfigError(checks, cfgPath, err);
@@ -281,7 +278,7 @@ async function checkWorkspaceConfig(
         checks.push({
           file: cfgPath,
           status: 'ok',
-          detail: `${hasCustom ? 'config valid (customized)' : 'config valid (defaults only)'}; reviewer output cap ${config.reviewer.outputTokenMax}`,
+          detail: hasCustom ? 'config valid (customized)' : 'config valid (defaults only)',
         });
       } catch (err) {
         pushConfigError(checks, cfgPath, err);
@@ -331,14 +328,14 @@ function detectCustomConfig(config: {
   logging: { level: string };
   policy: Record<string, unknown>;
   profile: Record<string, unknown>;
-  reviewer: { outputTokenMax: number | 'host' };
+  reviewer: { executionTimeoutMs: number };
 }): boolean {
   return (
     config.logging.level !== 'info' ||
     config.policy.reviewBudget !== undefined ||
     config.profile.defaultId !== undefined ||
     config.profile.activeChecks !== undefined ||
-    config.reviewer.outputTokenMax !== REVIEWER_OUTPUT_TOKEN_MAX_DEFAULT
+    config.reviewer.executionTimeoutMs !== DEFAULT_CONFIG.reviewer.executionTimeoutMs
   );
 }
 

@@ -377,7 +377,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-native-events.ts', owner: 'root-composition' },
   { file: 'integration/plugin-native-review.ts', owner: 'root-composition' },
   { file: 'integration/plugin.ts', owner: 'root-composition' },
-  { file: 'integration/reviewer-output-cap.ts', owner: 'root-composition' },
   { file: 'integration/proofgraph/approval-projection.ts', owner: 'proofgraph' },
   { file: 'integration/proofgraph/claim-contract-rules.ts', owner: 'proofgraph' },
   { file: 'integration/proofgraph/claim-contract.ts', owner: 'proofgraph' },

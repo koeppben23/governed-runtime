@@ -1023,6 +1023,19 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **Reviewer config is host-native and strict; unreadable config fails closed
+  (#1190, #1169 WS1).** `reviewer.outputTokenMax` and the V1 watchdog
+  sub-budgets (`toolTimeoutMs`, `reviewTimeoutMs`, `serializationTimeoutMs`) are
+  removed together with `reviewer-output-cap.ts`; FlowGuard sets no reviewer
+  output cap and never rewrites model options. The `reviewer` object is strict:
+  an existing `flowguard.json` that still contains one of these keys (including
+  `outputTokenMax: "host"`) fails with `CONFIG_INVALID` until the key is deleted;
+  the installer writes only `executionTimeoutMs` and does not migrate old keys.
+  An unreadable or invalid config previously blocked only the reviewer context
+  while other ACTIVE operations silently ran on default policy; it now blocks
+  every ACTIVE operation of the worktree, a readable config is re-read on the
+  next call, and INACTIVE sessions are unaffected. `doctor` no longer reports a
+  reviewer cap.
 - **V2 parity and autonomous-activation contract (#1190).** ADR-010 now explicitly
   requires V1-equivalent capabilities/governance guarantees, including
   policy-permitted fully autonomous workflows. Interactive and authorized

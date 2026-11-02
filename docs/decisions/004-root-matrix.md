@@ -10,12 +10,12 @@ The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 (counts updated 2026-11-02):
 
-- `root-composition`: 28 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 27 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 6 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 14 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 48 root production files
+- total: 47 root production files
 
 The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
 catalogue/executor/completion composition and `opencode-governance.ts` for exact
@@ -44,8 +44,10 @@ caller. The current same-child capture fence is
 `review/dispatch/native-review-capture.ts`. No replacement root module or new
 authority was added.
 
-`integration/reviewer-output-cap.ts` validates native budgeting without
-rewriting model options. It remains host integration, not a review authority.
+`integration/reviewer-output-cap.ts` and the `reviewer.outputTokenMax` key were
+removed (2026-11-02): FlowGuard applies no reviewer output cap, model options stay
+host-native, and an unreadable or invalid `flowguard.json` now blocks ACTIVE
+runtime creation in `plugin.ts` instead of only the reviewer context.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement

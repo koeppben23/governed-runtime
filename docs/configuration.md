@@ -629,78 +629,41 @@ dropping operator intent, setting either env var while installing for Codex
 **fails closed** with an explicit error. Unset the variables for the Codex
 install, or configure the Codex custom agent directly.
 
-### Reviewer Output Token Cap (OpenCode)
+### Reviewer Output Budget (OpenCode)
 
-The independent reviewer's output ceiling is configured in `flowguard.json`:
+FlowGuard does not configure a reviewer output-token cap. The native host and
+the selected model/variant own the output budget, including for smaller or
+locally hosted models; no requested value is clamped and no model or variant is
+substituted. The former `reviewer.outputTokenMax` key and the V1
+`chat.params`/`maxOutputTokens` workaround are removed. The `reviewer`
+object is strict: an existing `flowguard.json` that still contains
+`outputTokenMax` (including the former default `"host"`) fails validation with
+`CONFIG_INVALID` until the key is deleted (or `flowguard.json` is removed and
+`flowguard install` writes the current shape again). The installer does not
+migrate or strip obsolete keys.
 
-```json
+### Reviewer Execution Deadline (OpenCode)
+
+`json
 {
   "reviewer": {
-    "outputTokenMax": "host"
-  }
-}
-```
-
-`"host"` is the model-neutral default: the native output budget is left unchanged,
-including for smaller or locally hosted models. Numeric values remain valid
-configuration inputs, but **the V2 adapter does not apply them**. They fail with
-`REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN` until native budgeting/headroom and
-final provider-wire proof exist. An unreadable configuration fails explicitly;
-no requested value is silently clamped and no model/variant is substituted.
-
-The V1 `chat.params`/`maxOutputTokens` workaround has been removed from the native
-entrypoint. No host-wide environment fallback is implemented by FlowGuard's V2
-adapter. Selecting `"host"` avoids an unsupported numeric override; it does not
-enable reviewer execution or establish completion/capture assurance. The V2
-reviewer remains blocked and the entrypoint/client cutover is still WIP; see the
-[implementation inventory](./host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
-
-### Reviewer Execution Budgets (OpenCode)
-
-**V2 status:** the following describes the canonical execution-budget contract.
-The current native adapter does not yet provide a verified reviewer transport or
-joint recovery-quiescence proof. These settings do not bypass that block.
-
-The reviewer execution path has independent upper bounds and one absolute deadline:
-
-```json
-{
-  "reviewer": {
-    "toolTimeoutMs": 30000,
-    "reviewTimeoutMs": 480000,
-    "serializationTimeoutMs": 60000,
     "executionTimeoutMs": 600000
   }
 }
-```
+`
 
-These are the productive safety defaults, not the performance target. The
-80-second review / 120-second total profile is an opt-in lifecycle-validation
-profile; it must not be treated as the final product default until measured
-against real reviews. `toolTimeoutMs` is nested inside `reviewTimeoutMs`; it is
-not additive. The absolute deadline starts at reviewer dispatch authorization
-and covers child discovery, review, same-child serialization, validation, and
-binding. The remaining budget is headroom for orchestration and binding, not a
-sleep.
+`executionTimeoutMs` (1,000-1,800,000 ms, default 600,000) is the absolute deadline
+from reviewer dispatch authorization through evidence binding. If it has
+elapsed when the same-child capture reaches the canonical evidence recorder, no
+evidence is bound and the review is blocked. The native V2 adapter has no
+watchdog that interrupts a running reviewer; safe unknown-outcome recovery is
+open Finding 6 work (**NOT_VERIFIED**). The former V1 watchdog sub-budgets
+`toolTimeoutMs`, `reviewTimeoutMs` and `serializationTimeoutMs` are removed
+and rejected like `outputTokenMax`.
 
-When a deadline expires, FlowGuard requests termination of the exact reviewer
-child and polls host state. A blocked attempt is persisted with
-`REVIEWER_EXECUTION_TIMEOUT` only after termination is confirmed. If host
-quiescence cannot be established, the attempt is persisted as
-`REVIEWER_EXECUTION_OUTCOME_UNKNOWN` and no new review may start in the same
-turn. A client timeout or an abort acknowledgement alone is not termination
-proof.
-
-SDK/transport exceptions during same-child serialization use the same durable
-execution closure. Host abort and status confirmation have a bounded 1-second
-reconciliation window; a nonresponding host is recorded as `OUTCOME_UNKNOWN`.
-A synchronous execution fence prevents binding while that reconciliation is
-pending. Failed persistence keeps the fence and retries closure; it is never
-reported as confirmed durable termination. Cleanup requires the exact recorded
-call/child lineage and a persisted terminal result. A parent's sole remaining
-Task is not sufficient identity evidence. Already-bound invocations are
-immutable, including when their dispatch was rebound from Task call ID to child
-session ID.
+An unreadable or invalid `flowguard.json` blocks every ACTIVE FlowGuard
+operation of the worktree with `CONFIG_INVALID`; logging alone falls back to
+defaults so the failure can be reported. INACTIVE sessions are not affected.
 
 The productive OpenCode reviewer may use `read` and
 `flowguard_observe_repository`; `glob` and `grep` are denied. The prepared

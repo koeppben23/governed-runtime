@@ -101,8 +101,8 @@ SDK dependencies are pinned to `@opencode/plugin@2.2.4` and
   are wakeups for fresh history reads, not terminal evidence themselves.
 - V1 `app.log` envelopes and the `maxOutputTokens` rewrite are removed from
   production. UI logging is an explicit optional sink; the unavailable V2 sink
-  is reported. Native host budgeting is untouched; explicit numeric reviewer
-  overrides fail until native headroom and final-wire proof exist.
+  is reported. Native host budgeting is untouched; the former
+  `reviewer.outputTokenMax` key is removed and rejected (2026-11-02).
 
 **Unsupported authority/evidence paths remain blocked.** Hydrate cannot create
 activation through either a tool hook or its registered executor; caller
@@ -773,6 +773,12 @@ V2 production caller and are removed rather than kept as a dormant second path:
   `listAgents`. The review host port is now only `readHistory`. Adapter
   initialization checks the session methods FlowGuard actually calls
   (`get`, `context`, `prompt`, `wait`, `hook`).
+- Reviewer configuration: `reviewer.outputTokenMax` with
+  `integration/reviewer-output-cap.ts` and the V1 watchdog sub-budgets
+  `toolTimeoutMs`, `reviewTimeoutMs`, `serializationTimeoutMs`. The
+  `reviewer` object is strict, so these keys fail validation. The former cap
+  check was the only fail-closed consumer of an unreadable config; ACTIVE
+  runtime creation now fails with `CONFIG_INVALID` instead.
 - Reason codes without a remaining emitter:
   `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`,
   `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`,

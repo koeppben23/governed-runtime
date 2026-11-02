@@ -21,7 +21,6 @@ import {
   nativeHostCallId,
 } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
-import { validateNativeReviewerOutputLimit } from './reviewer-output-cap.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { READ_ONLY_HOST_TOOLS, NATIVE_SUBAGENT_TOOL } from './phase-tool-gate.js';
@@ -62,8 +61,6 @@ type NativeToolCompletion = Extract<
 type RuntimeEntry = {
   readonly runtime: FlowGuardPluginRuntime;
   readonly dispose: () => Promise<void>;
-  readonly reviewerOutputLimit: number | 'host';
-  readonly configReadError?: unknown;
 };
 type ScopedRuntimeEntry = RuntimeEntry & { readonly scope: ActiveGovernanceScope };
 
@@ -392,6 +389,14 @@ async function createSessionRuntime(
     repoConfigPath(root),
   );
   try {
+    // Logging may fall back to defaults; governed execution may not. An
+    // unreadable or invalid flowguard.json blocks every ACTIVE operation of this
+    // worktree instead of silently running with default policy or reviewer budgets.
+    if (configReadError !== undefined)
+      throw buildEnforcementError(
+        'CONFIG_INVALID',
+        `FlowGuard configuration is unreadable or invalid: ${configReadError instanceof Error ? configReadError.message : String(configReadError)}`,
+      );
     const resolvePolicy: FlowGuardPluginRuntime['auditDeps']['resolveSessionPolicy'] = (sessDir) =>
       resolvePluginSessionPolicy({ sessDir, configDefaultMode: config.policy.defaultMode, log });
     const logError = (message: string, error: unknown) =>
@@ -440,8 +445,6 @@ async function createSessionRuntime(
       dispose: async () => {
         await disposeLogging?.();
       },
-      reviewerOutputLimit: config.reviewer.outputTokenMax,
-      ...(configReadError === undefined ? {} : { configReadError }),
     };
   } catch (error) {
     await disposeLogging?.();
@@ -582,10 +585,7 @@ async function registerNativeSessionHooks(
             'The ACTIVE catalogue was not present when this request snapshot was captured; retry the request.',
           );
         }
-        if (event.agent === REVIEWER_SUBAGENT_TYPE) {
-          validateNativeReviewerOutputLimit(entry.reviewerOutputLimit, entry.configReadError);
-          await reviewer.context(entry.scope, event);
-        }
+        if (event.agent === REVIEWER_SUBAGENT_TYPE) await reviewer.context(entry.scope, event);
         return true;
       }).then((active) => {
         if (active !== true) catalogue.hideProductive(event);

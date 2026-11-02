@@ -140,14 +140,14 @@ criteria, evidence requirements, or validators:
   evidence always reopens a conclusion, and required falsification checks are
   never shortened.
 
-### Reviewer output cap
+### Reviewer output budget
 
-`reviewer.outputTokenMax` defaults to `"host"`, leaving native budgeting unchanged.
-The V2 entrypoint no longer implements the V1 `chat.params`/`maxOutputTokens`
-rewrite or a host-wide fallback. Explicit numeric overrides are blocked with
-`REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN` pending native headroom/final-wire proof;
-unreadable configuration also fails explicitly. No cap is silently clamped and
-no parent/reviewer model or reasoning variant is substituted.
+FlowGuard sets no reviewer output cap. The removed `reviewer.outputTokenMax` key
+is rejected by the strict `reviewer` config object (`CONFIG_INVALID`); native
+host/model budgeting and the selected reasoning variant stay unchanged. The V2
+entrypoint implements no `chat.params`/`maxOutputTokens` rewrite or host-wide
+fallback. An unreadable or invalid `flowguard.json` blocks every ACTIVE
+operation of the worktree. No parent/reviewer model or variant is substituted.
 
 The native V2 completion/capture chain now requires the bounded same-child
 terminal window and evidence generation 6. Safe unknown-outcome recovery remains

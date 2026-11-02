@@ -836,32 +836,19 @@ describe('FlowGuardConfigSchema', () => {
     }
   });
 
-  it('defaults reviewer execution budgets and rejects inverted nesting', () => {
+  it('defaults the reviewer execution deadline and bounds it', () => {
     const reviewer = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' }).data!.reviewer;
-    expect(reviewer).toMatchObject({
-      toolTimeoutMs: 30_000,
-      reviewTimeoutMs: 480_000,
-      serializationTimeoutMs: 60_000,
-      executionTimeoutMs: 600_000,
-    });
-    expect(
-      FlowGuardConfigSchema.safeParse({
-        schemaVersion: 'v1',
-        reviewer: { toolTimeoutMs: 490_000, reviewTimeoutMs: 480_000 },
-      }).success,
-    ).toBe(false);
-    expect(
-      FlowGuardConfigSchema.safeParse({
-        schemaVersion: 'v1',
-        reviewer: { reviewTimeoutMs: 610_000, executionTimeoutMs: 600_000 },
-      }).success,
-    ).toBe(false);
-    expect(
-      FlowGuardConfigSchema.safeParse({
-        schemaVersion: 'v1',
-        reviewer: { serializationTimeoutMs: 610_000, executionTimeoutMs: 600_000 },
-      }).success,
-    ).toBe(false);
+    expect(reviewer).toEqual({ executionTimeoutMs: 600_000 });
+    for (const executionTimeoutMs of [1000, 1_800_000])
+      expect(
+        FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1', reviewer: { executionTimeoutMs } })
+          .success,
+      ).toBe(true);
+    for (const executionTimeoutMs of [999, 1_800_001, 1.5, '600000'])
+      expect(
+        FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1', reviewer: { executionTimeoutMs } })
+          .success,
+      ).toBe(false);
   });
 });
 
@@ -1096,25 +1083,15 @@ describe('FlowGuardConfigSchema boundaries', () => {
     expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowRawExport).toBe(false);
   });
 
-  it('defaults and bounds the reviewer output-token cap', () => {
-    expect(parse({ schemaVersion: 'v1' }).data!.reviewer.outputTokenMax).toBe('host');
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 'host' } }).success).toBe(true);
-    expect(
-      parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 32_000 } }).data!.reviewer
-        .outputTokenMax,
-    ).toBe(32_000);
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1 } }).success).toBe(true);
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1_000_000 } }).success).toBe(
-      true,
-    );
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 0 } }).success).toBe(false);
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: -1 } }).success).toBe(false);
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1.5 } }).success).toBe(false);
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: 1_000_001 } }).success).toBe(
-      false,
-    );
-    expect(parse({ schemaVersion: 'v1', reviewer: { outputTokenMax: '65536' } }).success).toBe(
-      false,
-    );
+  it.each([
+    ['outputTokenMax', 'host'],
+    ['outputTokenMax', 65_536],
+    ['toolTimeoutMs', 30_000],
+    ['reviewTimeoutMs', 480_000],
+    ['serializationTimeoutMs', 60_000],
+  ])('rejects the removed reviewer key %s explicitly instead of ignoring it', (key, value) => {
+    const result = parse({ schemaVersion: 'v1', reviewer: { [key]: value } });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain(key);
   });
 });

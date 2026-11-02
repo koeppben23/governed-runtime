@@ -326,7 +326,7 @@ describe('native V2 entrypoint', () => {
     });
   });
 
-  it('passes actual config-read failure to reviewer cap validation without a silent default', async () => {
+  it('fails every ACTIVE operation closed on an unreadable config instead of running on defaults', async () => {
     const host = await setup();
     h.createLogger.mockResolvedValueOnce({
       log: h.log,
@@ -334,9 +334,12 @@ describe('native V2 entrypoint', () => {
       configReadError: new Error('unreadable config'),
       disposeLogging: h.dispose,
     });
-    await expect(
-      host.request({ sessionID: 'session', agent: 'flowguard-reviewer' }),
-    ).rejects.toHaveProperty('code', 'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE');
+    await expect(host.before(v2ToolEvent())).rejects.toHaveProperty('code', 'CONFIG_INVALID');
+    expect(h.before).not.toHaveBeenCalled();
+    expect(h.dispose).toHaveBeenCalledOnce();
+    // The failed runtime is not cached: a readable config is re-read, never defaulted.
+    await host.before(v2ToolEvent());
+    expect(h.before).toHaveBeenCalledOnce();
     expect(host.prompt).not.toHaveBeenCalled();
   });
 
