@@ -14,11 +14,7 @@ import { toolAfter, handlePluginEvent, handleCompaction } from './plugin-afterho
 import { createPluginLogger } from './plugin-logging.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
-import {
-  OpenCodeHostAdapter,
-  HostCapabilityMismatchError,
-  projectOpenCodeEvent,
-} from './opencode-host-adapter.js';
+import { OpenCodeHostAdapter, projectOpenCodeEvent } from './opencode-host-adapter.js';
 import { encodeHostCallId } from '../state/host-identity.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { buildEnforcementError } from './blocked-result.js';
@@ -120,8 +116,6 @@ export const FlowGuardAuditPlugin = Plugin.define({
 
     try {
       await adapter.initialize();
-      const capabilities = await adapter.validateCapabilities();
-      if (!capabilities.valid) throw new HostCapabilityMismatchError(capabilities.mismatches);
       await createFlowGuardPluginHooks(ctx, { ...actions, governance, reviewer }, registrations);
       eventLoop = consumeEvents(
         ctx,

@@ -1,29 +1,13 @@
 /** OpenCode V2 mechanics. No SDK request/response envelope enters governance. */
 import type { Plugin } from '@opencode/plugin';
 import type { OpenCodeEvent } from '@opencode/client';
-import type {
-  HostAdapter,
-  HostCapabilities,
-  HostToolEvent,
-  BlockDecision,
-  CapabilityValidationResult,
-} from '../adapters/host-adapter.js';
+import type { HostAdapter, HostSession } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
 import type { PluginEvent } from './plugin-events.js';
-import { buildEnforcementError } from './blocked-result.js';
 import { encodeHostCallId } from '../state/host-identity.js';
 
 class HostAdapterInitError extends Error {
   readonly code = 'HOST_ADAPTER_INIT_FAILED';
-}
-
-export class HostCapabilityMismatchError extends Error {
-  readonly code = 'HOST_CAPABILITY_MISMATCH';
-  constructor(mismatches: ReadonlyArray<{ readonly capability: string }>) {
-    super(
-      `OpenCode host capability mismatch: ${mismatches.map((item) => item.capability).join(', ')}`,
-    );
-  }
 }
 
 function hasMethods(domain: unknown, methods: readonly string[]): boolean {
@@ -32,40 +16,10 @@ function hasMethods(domain: unknown, methods: readonly string[]): boolean {
 }
 
 export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
-  readonly platform = 'opencode' as const;
-  readonly enforcementLevel = 'synchronous' as const;
-  readonly capabilities: HostCapabilities = {
-    preToolBlock: true,
-    argMutation: true,
-    outputReplacement: true,
-    contextInjection: true,
-    compactionInjection: true,
-    // One concrete native subagent transport with a proven terminal capture
-    // window. Historical Task evidence keeps its own generation.
-    reviewTransports: [
-      {
-        kind: 'native_subagent_message_json',
-        validatedResult: true,
-        parentVisible: true,
-        transcriptNavigable: true,
-        isolatedAgentIdentity: true,
-        permissionIsolation: true,
-        assurance: 'host_message_validated',
-      },
-    ],
-  };
-
   constructor(
     readonly context: Plugin.Context,
     private readonly signal: AbortSignal,
   ) {}
-
-  getWorkingDirectory(): string {
-    return this.context.location.directory;
-  }
-  getWorktree(): string {
-    return this.context.location.directory;
-  }
 
   async initialize(): Promise<void> {
     const ctx = this.context;
@@ -80,43 +34,15 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
     }
   }
 
-  async validateCapabilities(): Promise<CapabilityValidationResult> {
-    return {
-      valid: true,
-      mismatches: [],
-      runtimeVerified: [],
-      contractAttested: [
-        'preToolBlock',
-        'argMutation',
-        'outputReplacement',
-        'contextInjection',
-        'compactionInjection',
-      ],
-    };
-  }
-
   async shutdown(): Promise<void> {
     /* Registrations are owned by plugin setup/cleanup. */
-  }
-
-  deliverBlockDecision(_event: HostToolEvent, decision: BlockDecision): never {
-    throw buildEnforcementError(decision.code, decision.reason);
-  }
-
-  isReviewerSupported(): boolean {
-    return true;
   }
 
   log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): void {
     console[level](`[FlowGuard] ${message}`, ...(data === undefined ? [] : [data]));
   }
 
-  async getSession(sessionId: string): Promise<{
-    readonly sessionId: string;
-    readonly parentSessionId?: string;
-    readonly directory: string;
-    readonly agent?: string;
-  }> {
+  async getSession(sessionId: string): Promise<HostSession> {
     const session = await this.context.session.get(
       { sessionID: sessionId },
       { signal: this.signal },

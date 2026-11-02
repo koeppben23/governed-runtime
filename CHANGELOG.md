@@ -274,6 +274,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   IDs and message validation keeps the recorded format. The HAI no longer needs
   an OpenCode host-name copy for these identities, and the architecture ratchet
   drops the former naming exceptions.
+- **Minimal HAI (#1190, WS2).** `HostAdapter` now declares only the ports the
+  product invokes: lifecycle, exact session lookup, native history reading and
+  logging. Removed the static platform/capability/enforcement projection,
+  reviewer-support boolean, unused synchronous block-delivery method and the
+  review-transport capability table from the adapter contract. Doctor capability
+  text remains a local diagnostic projection, never an assurance source; stale
+  governance baseline schemas are removed.
 
 ### Fixed
 

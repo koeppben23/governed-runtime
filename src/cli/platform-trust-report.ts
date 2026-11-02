@@ -5,14 +5,23 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EnforcementLevel, HostCapabilities } from '../adapters/host-adapter.js';
 import type { HostId } from '../shared/hosts.js';
 import type { DoctorCheck, InstallScope } from './install-types.js';
 import { codexInstallStatus, resolveCodexMarketplacePath } from './codex-plugin-install.js';
 
+/** Diagnostic-only projection; never an adapter capability or assurance authority. */
+interface HostTrustCapabilities {
+  readonly preToolBlock: boolean;
+  readonly argMutation: boolean;
+  readonly outputReplacement: boolean;
+  readonly contextInjection: boolean;
+  readonly compactionInjection: boolean;
+  readonly reviewTransports: readonly Readonly<Record<string, unknown>>[];
+}
+
 interface HostTrustProjection {
-  enforcementLevel: EnforcementLevel;
-  capabilities: HostCapabilities;
+  enforcementLevel: 'synchronous' | 'hook_gated' | 'advisory';
+  capabilities: HostTrustCapabilities;
   runtimeVerification: string;
   activation: string;
   hookSemantics: string;

@@ -2,60 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "governance/host-adapter-interface",
   "title": "HostAdapter Interface Contract",
-  "description": "Pinned shape of the HostAdapter interface (HAI). Review capabilities are transport-bound and must not be composed across different transports.",
+  "description": "Pinned minimal HAI. Contains only ports the product actually invokes; no static capability table, platform enum or reviewer-spawn claim.",
   "type": "object",
-  "required": [
-    "platform",
-    "capabilities",
-    "enforcementLevel",
-    "getWorkingDirectory",
-    "getWorktree",
-    "initialize",
-    "validateCapabilities",
-    "shutdown",
-    "deliverBlockDecision",
-    "isReviewerSupported",
-    "log"
-  ],
+  "required": ["initialize", "shutdown", "getSession", "readHistory", "log"],
   "properties": {
-    "platform": {
-      "type": "string",
-      "enum": ["opencode", "claude-code", "codex"]
-    },
-    "capabilities": {
-      "$ref": "#/$defs/HostCapabilities"
-    },
-    "enforcementLevel": {
-      "type": "string",
-      "enum": ["synchronous", "hook_gated", "advisory"]
-    },
-    "getWorkingDirectory": {
-      "type": "string",
-      "const": "() => string"
-    },
-    "getWorktree": {
-      "type": "string",
-      "const": "() => string"
-    },
     "initialize": {
       "type": "string",
       "const": "() => Promise<void>"
-    },
-    "validateCapabilities": {
-      "type": "string",
-      "const": "() => Promise<CapabilityValidationResult>"
     },
     "shutdown": {
       "type": "string",
       "const": "() => Promise<void>"
     },
-    "deliverBlockDecision": {
+    "getSession": {
       "type": "string",
-      "const": "(event, decision) => void"
+      "const": "(sessionId) => Promise<HostSession>"
     },
-    "isReviewerSupported": {
+    "readHistory": {
       "type": "string",
-      "const": "() => boolean"
+      "const": "(sessionId) => Promise<unknown>"
     },
     "log": {
       "type": "string",
@@ -63,81 +28,14 @@
     }
   },
   "$defs": {
-    "HostCapabilities": {
+    "HostSession": {
       "type": "object",
-      "required": [
-        "preToolBlock",
-        "argMutation",
-        "outputReplacement",
-        "contextInjection",
-        "reviewTransports",
-        "compactionInjection"
-      ],
+      "required": ["sessionId", "directory"],
       "properties": {
-        "preToolBlock": {
-          "type": "boolean"
-        },
-        "argMutation": {
-          "type": "boolean"
-        },
-        "outputReplacement": {
-          "type": "boolean"
-        },
-        "contextInjection": {
-          "type": "boolean"
-        },
-        "reviewTransports": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/HostReviewTransportCapability"
-          }
-        },
-        "compactionInjection": {
-          "type": "boolean"
-        }
-      },
-      "additionalProperties": false
-    },
-    "HostReviewTransportCapability": {
-      "type": "object",
-      "required": [
-        "kind",
-        "validatedResult",
-        "parentVisible",
-        "transcriptNavigable",
-        "isolatedAgentIdentity",
-        "permissionIsolation",
-        "assurance"
-      ],
-      "properties": {
-        "kind": {
-          "type": "string",
-          "enum": ["native_task_message_json", "native_subagent_message_json"]
-        },
-        "validatedResult": {
-          "type": "boolean",
-          "const": true
-        },
-        "parentVisible": {
-          "type": "boolean",
-          "const": true
-        },
-        "transcriptNavigable": {
-          "type": "boolean",
-          "const": true
-        },
-        "isolatedAgentIdentity": {
-          "type": "boolean",
-          "const": true
-        },
-        "permissionIsolation": {
-          "type": "boolean",
-          "const": true
-        },
-        "assurance": {
-          "type": "string",
-          "const": "host_message_validated"
-        }
+        "sessionId": { "type": "string" },
+        "parentSessionId": { "type": "string" },
+        "directory": { "type": "string" },
+        "agent": { "type": "string" }
       },
       "additionalProperties": false
     }

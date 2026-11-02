@@ -199,21 +199,6 @@ describe('native V2 entrypoint', () => {
     await expect(dispose()).resolves.toBeUndefined();
   });
 
-  it('rejects a host capability mismatch before publishing registrations', async () => {
-    const host = createV2Host(process.cwd());
-    vi.spyOn(OpenCodeHostAdapter.prototype, 'validateCapabilities').mockResolvedValueOnce({
-      valid: false,
-      mismatches: [{ capability: 'preToolBlock', expected: true, actual: false }],
-      contractAttested: [],
-      runtimeVerified: [],
-    });
-    await expect(FlowGuardAuditPlugin.setup(host.ctx)).rejects.toHaveProperty(
-      'code',
-      'HOST_CAPABILITY_MISMATCH',
-    );
-    expect(host.registrations).toHaveLength(0);
-  });
-
   it('surfaces both setup failure and cleanup failure instead of losing either cause', async () => {
     const host = createV2Host(process.cwd());
     host.failAt(3);

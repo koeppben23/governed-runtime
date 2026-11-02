@@ -7,7 +7,6 @@ import {
   readHostCallIdentity,
 } from '../state/host-identity.js';
 import { createV2Host } from '../integration/opencode-v2-test-helpers.js';
-import { REQUIRED_INDEPENDENT_REVIEW_TRANSPORT, reviewTransportSatisfies } from './host-adapter.js';
 import type { OpenCodeEvent } from '@opencode/client';
 
 function fixture() {
@@ -17,21 +16,20 @@ function fixture() {
 }
 
 describe('native V2 host adapter', () => {
-  it('accepts the V2 context and advertises interception, not reviewer proof', async () => {
+  it('accepts the V2 context and exposes only invoked ports', async () => {
     const { adapter } = fixture();
     await adapter.initialize();
-    expect(adapter.platform).toBe('opencode');
-    expect(adapter.enforcementLevel).toBe('synchronous');
-    expect(adapter.getWorkingDirectory()).toBe('/worktree');
-    expect(adapter.getWorktree()).toBe('/worktree');
-    expect(adapter.isReviewerSupported()).toBe(true);
-    expect(adapter.capabilities.reviewTransports).toEqual([
-      expect.objectContaining({ kind: 'native_subagent_message_json' }),
-    ]);
-    expect(await adapter.validateCapabilities()).toMatchObject({
-      valid: true,
-      runtimeVerified: [],
-    });
+    for (const removed of [
+      'platform',
+      'capabilities',
+      'enforcementLevel',
+      'getWorkingDirectory',
+      'getWorktree',
+      'validateCapabilities',
+      'deliverBlockDecision',
+      'isReviewerSupported',
+    ])
+      expect(adapter).not.toHaveProperty(removed);
   });
 
   it.each([
@@ -112,20 +110,6 @@ describe('native V2 host adapter', () => {
     ])
       expect(adapter).not.toHaveProperty(removed);
   });
-  it('delivers synchronous block decisions with the canonical enforcement code', () => {
-    const { adapter } = fixture();
-    expect(() =>
-      adapter.deliverBlockDecision(
-        { tool: 'shell', sessionID: 'session', callID: 'call', args: {} },
-        {
-          blocked: true,
-          code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-          reason: 'unavailable',
-        },
-      ),
-    ).toThrow(/PLUGIN_ENFORCEMENT_UNAVAILABLE/);
-  });
-
   it('shutdown is idempotent and performs no authority or lease recovery', async () => {
     const { host, adapter } = fixture();
     await adapter.shutdown();
@@ -235,19 +219,5 @@ describe('native V2 notification projection', () => {
         data: { sessionID: 'child' },
       } as unknown as OpenCodeEvent),
     ).toBeNull();
-  });
-
-  it('retains transport-bound capability checks rather than joining incomplete transports', () => {
-    expect(
-      reviewTransportSatisfies(
-        {
-          ...REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
-          kind: 'native_task_message_json',
-          assurance: 'unstructured',
-          validatedResult: false,
-        },
-        REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
-      ),
-    ).toBe(false);
   });
 });

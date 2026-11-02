@@ -91,7 +91,10 @@ SDK dependencies are pinned to `@opencode/plugin@2.2.4` and
   fresh scope resolution. Unmatched reads neither create runtimes nor state.
 - `OpenCodeHostAdapter` owns native agent/session/context/interrupt mechanics.
   `OrchestratorClient` now names semantic operations rather than V1 SDK request
-  and response envelopes. Agent resolution is per session/location with no
+  and response envelopes. The HAI itself is reduced to the invoked ports
+  (`initialize`, `shutdown`, `getSession`, `readHistory`, `log`); static platform,
+  capability, enforcement-level, reviewer-support and transport tables are not
+  adapter authority. Agent resolution is per session/location with no
   process-global capability cache. Recovery removes session-list fallback and
   part-id/call-id interchangeability. Native history is passed through, never
   rewritten to synthesize assistant `parentID` or completion provenance.

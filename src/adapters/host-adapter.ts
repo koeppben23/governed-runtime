@@ -1,164 +1,35 @@
 /**
  * @module adapters/host-adapter
- * @description Host-Agnostic Adapter Interface (HAI) — the single contract between
- * FlowGuard's governance engine and any host AI coding platform.
+ * @description Minimal Host-Agnostic Adapter Interface (HAI) between the
+ * host-neutral governance engine and a concrete host integration.
  *
- * This interface abstracts the platform-specific mechanism (how) while FlowGuard
- * core retains domain authority (what). Future adapters (Claude Code, Codex) implement
- * this same interface with their own platform mechanisms.
+ * The HAI contains only ports the product actually invokes. Host SDK mechanics,
+ * native-tool names, provider wiring and transport provenance stay in the host
+ * adapter and the review evidence authorities. Static capability tables are not
+ * an assurance source.
  *
  * Layer: adapters (may be imported by integration, not the reverse)
  *
- * Design decisions:
- * - Self-contained types: no imports from integration/ or other outer layers
- * - Structural typing: result interfaces are structurally compatible with
- *   existing internal types without circular dependencies
- * - Fail-closed: adapter failures must propagate as explicit errors, never silent fallback
- * - Review capabilities are transport-bound. Capabilities from different transports
- *   must never be composed into a synthetic capability that no single transport owns.
- *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v4
+ * @version v5
  */
 
-export type EnforcementLevel = 'synchronous' | 'hook_gated' | 'advisory';
-
-// ─── Host Capabilities ───────────────────────────────────────────────────────
-
-/** Canonical host transport used to execute an independent reviewer. */
-export type HostReviewTransportKind = 'native_task_message_json' | 'native_subagent_message_json';
-
-/** Assurance produced by one concrete review transport. */
-export type HostReviewTransportAssurance = 'host_message_validated' | 'unstructured';
-
-/**
- * Capabilities of ONE concrete review transport.
- *
- * `native_task_message_json` is one concrete transport even though it has two
- * host operations: both operate on the SAME Task child session and only their
- * composition can mint review evidence. No capability from an unrelated SDK
- * child is combined with the native Task.
- */
-export interface HostReviewTransportCapability {
-  readonly kind: HostReviewTransportKind;
-  readonly validatedResult: boolean;
-  readonly parentVisible: boolean;
-  readonly transcriptNavigable: boolean;
-  readonly isolatedAgentIdentity: boolean;
-  readonly permissionIsolation: boolean;
-  readonly assurance: HostReviewTransportAssurance;
-}
-
-export interface ReviewTransportRequirements {
-  readonly validatedResult: boolean;
-  readonly parentVisible: boolean;
-  readonly transcriptNavigable: boolean;
-  readonly isolatedAgentIdentity: boolean;
-  readonly permissionIsolation: boolean;
-}
-
-/**
- * Product-level independent-review contract.
- *
- * A reviewer is only authoritative when the SAME transport is structured,
- * parent-visible, transcript-navigable, identity-isolated, and permission-
- * isolated. This is the hard product contract, not an advisory preference.
- */
-export const REQUIRED_INDEPENDENT_REVIEW_TRANSPORT: ReviewTransportRequirements = {
-  validatedResult: true,
-  parentVisible: true,
-  transcriptNavigable: true,
-  isolatedAgentIdentity: true,
-  permissionIsolation: true,
-};
-
-export interface HostCapabilities {
-  readonly preToolBlock: boolean;
-  readonly argMutation: boolean;
-  readonly outputReplacement: boolean;
-  readonly contextInjection: boolean;
-  readonly reviewTransports: readonly HostReviewTransportCapability[];
-  readonly compactionInjection: boolean;
-}
-
-export function reviewTransportSatisfies(
-  capability: HostReviewTransportCapability,
-  requirements: ReviewTransportRequirements,
-): boolean {
-  return (
-    (!requirements.validatedResult || capability.validatedResult) &&
-    (!requirements.parentVisible || capability.parentVisible) &&
-    (!requirements.transcriptNavigable || capability.transcriptNavigable) &&
-    (!requirements.isolatedAgentIdentity || capability.isolatedAgentIdentity) &&
-    (!requirements.permissionIsolation || capability.permissionIsolation)
-  );
-}
-
-// ─── Host Tool Event ─────────────────────────────────────────────────────────
-
-export interface HostToolEvent {
-  readonly tool: string;
-  readonly sessionID: string;
-  readonly callID: string;
-  readonly args: Record<string, unknown>;
-}
-
-// ─── Enforcement Decisions ───────────────────────────────────────────────────
-
-export interface BlockDecision {
-  readonly blocked: true;
-  readonly reason: string;
-  readonly code: string;
-}
-
-export interface AllowDecision {
-  readonly blocked: false;
-  readonly modifiedArgs?: Record<string, unknown>;
-}
-
-export type EnforcementDecision = BlockDecision | AllowDecision;
-
-// ─── Governance State Projection ──────────────────────────────────────────────
-
-export interface GovernanceStateProjection {
+export interface HostSession {
   readonly sessionId: string;
-  readonly phase: string;
-  readonly haltReason: string | null;
-  readonly enforcementActive: boolean;
-  readonly resumable: boolean;
-  readonly riskGate: { readonly status: 'clear' | 'blocked'; readonly code?: string } | null;
+  readonly parentSessionId?: string;
+  readonly directory: string;
+  readonly agent?: string;
 }
-
-// ─── Capability Validation ───────────────────────────────────────────────────
-
-export interface CapabilityValidationResult {
-  readonly valid: boolean;
-  readonly mismatches: ReadonlyArray<{
-    readonly capability: string;
-    readonly expected: boolean;
-    readonly actual: boolean;
-  }>;
-  readonly runtimeVerified: ReadonlyArray<string>;
-  readonly contractAttested: ReadonlyArray<string>;
-}
-
-// ─── Host Adapter Interface ──────────────────────────────────────────────────
 
 export interface HostAdapter {
-  readonly platform: 'opencode' | 'claude-code' | 'codex';
-  readonly capabilities: HostCapabilities;
-  readonly enforcementLevel: EnforcementLevel;
-
-  getWorkingDirectory(): string;
-  getWorktree(): string;
-
   initialize(): Promise<void>;
-  validateCapabilities(): Promise<CapabilityValidationResult>;
   shutdown(): Promise<void>;
 
-  deliverBlockDecision(event: HostToolEvent, decision: BlockDecision): void;
+  /** Exact host session metadata; implementations reject a different session ID. */
+  getSession(sessionId: string): Promise<HostSession>;
 
-  isReviewerSupported(): boolean;
+  /** Native session history bytes. Callers validate every identity they use. */
+  readHistory(sessionId: string): Promise<unknown>;
 
   log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): void;
 }
