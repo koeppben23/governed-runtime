@@ -65,7 +65,6 @@ function makeRuntime(
     },
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(),
-    toolTraceIds: new Map<string, string>(),
     toolLatencyStarts: new Map<string, number>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
@@ -241,8 +240,6 @@ describe('handlePluginEvent', () => {
     const runtime = makeRuntime();
     runtime.activeCommandScopes.set(SESSION_ID, 'check');
     runtime.checkReworkContinuations.add(SESSION_ID);
-    runtime.toolTraceIds.set(`${SESSION_ID}:bash`, 'trace-1');
-    runtime.toolTraceIds.set('other-session:bash', 'trace-2');
 
     await handlePluginEvent(
       runtime,
@@ -253,8 +250,6 @@ describe('handlePluginEvent', () => {
     expect(runtime.ws.invalidateChainState).toHaveBeenCalledWith(SESSION_ID);
     expect(runtime.activeCommandScopes.has(SESSION_ID)).toBe(false);
     expect(runtime.checkReworkContinuations.has(SESSION_ID)).toBe(false);
-    expect(runtime.toolTraceIds.has(`${SESSION_ID}:bash`)).toBe(false);
-    expect(runtime.toolTraceIds.get('other-session:bash')).toBe('trace-2');
   });
 
   it('emits a session error audit when the session mapping exists', async () => {

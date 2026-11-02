@@ -60,23 +60,30 @@ describe('structured review authority hard cut', () => {
   });
 
   it('persists the durable dispatch before host release on the native path', () => {
-    const native = readFileSync(
-      join(SRC, 'integration/review/dispatch/native-task-review.ts'),
+    const dispatch = readFileSync(
+      join(SRC, 'integration/review/dispatch/native-review-dispatch.ts'),
       'utf8',
     );
-    const persistIndex = native.indexOf('persistAuthorizedReviewDispatch(');
-    const releaseIndex = native.indexOf('mutateNativeTask(hookOutput');
+    const authorize = dispatch.slice(
+      dispatch.indexOf('export async function authorizeNativeReviewDispatch'),
+    );
+    const persistIndex = authorize.indexOf('await persistAuthorizedReviewDispatch(');
+    const promptIndex = authorize.indexOf('return prompt;');
     expect(persistIndex, 'the dispatch must be persisted').toBeGreaterThan(-1);
-    expect(releaseIndex, 'the Task args must be overwritten before release').toBeGreaterThan(-1);
-    expect(persistIndex, 'no host release without a durable dispatch').toBeLessThan(releaseIndex);
-    const routing = readFileSync(
-      join(SRC, 'integration/review/dispatch/capture-failure-routing.ts'),
-      'utf8',
+    expect(promptIndex, 'the frozen prompt is returned after persistence').toBeGreaterThan(
+      persistIndex,
     );
-    // The terminal closure authority moved with the extracted routing unit; the
-    // native path must delegate every capture failure to it.
-    expect(routing).toContain('abandonReviewDispatchByHostCall');
-    expect(native).toContain('abandonOrRetryCaptureFailure');
+    const composition = readFileSync(join(SRC, 'integration/plugin-native-review.ts'), 'utf8');
+    const authorizeIndex = composition.indexOf('await authorizeNativeReviewDispatch(');
+    const releaseIndex = composition.indexOf('args.prompt = prompt;');
+    expect(authorizeIndex, 'the release must be durably authorized').toBeGreaterThan(-1);
+    expect(releaseIndex, 'the subagent args must be overwritten before release').toBeGreaterThan(
+      authorizeIndex,
+    );
+    // No retired V1 Task transport may remain as an alternative release path.
+    expect(existsSync(join(SRC, 'integration/review/dispatch/native-task-review.ts'))).toBe(false);
+    expect(existsSync(join(SRC, 'integration/review/dispatch/structured-followup.ts'))).toBe(false);
+    expect(existsSync(join(SRC, 'integration/reviewer-capture.ts'))).toBe(false);
   });
 
   it('never autospawns an invisible SDK reviewer and exposes no spawn capability', () => {

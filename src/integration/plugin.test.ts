@@ -139,13 +139,12 @@ describe('native V2 plugin definition and lifecycle', () => {
   it('keeps runtime creation lazy and does not query reviewer capabilities at setup', async () => {
     const { host } = await openHost('/not-a-worktree');
     expect(host.sessionGet).not.toHaveBeenCalled();
-    expect(host.listAgents).not.toHaveBeenCalled();
     expect(logging.createPluginLogger).not.toHaveBeenCalled();
   });
 
   it('rejects an incomplete native context before registering callbacks', async () => {
     const host = createV2Host(process.cwd());
-    Reflect.deleteProperty(host.context.agent, 'list');
+    Reflect.deleteProperty(host.context.session, 'wait');
     await expect(FlowGuardAuditPlugin.setup(host.ctx)).rejects.toMatchObject({
       code: 'HOST_ADAPTER_INIT_FAILED',
     });
@@ -409,7 +408,6 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
       expect(state.reviewAssurance?.dispatches).toEqual([]);
       expect(state.reviewAssurance?.invocations).toEqual([]);
       expect(h.host.prompt).not.toHaveBeenCalled();
-      expect(h.host.listAgents).not.toHaveBeenCalled();
     },
   );
 

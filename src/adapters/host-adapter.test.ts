@@ -35,10 +35,10 @@ describe('native V2 host adapter', () => {
   });
 
   it.each([
-    ['agent', 'list'],
     ['session', 'get'],
     ['session', 'context'],
-    ['session', 'interrupt'],
+    ['session', 'prompt'],
+    ['session', 'wait'],
     ['tool', 'hook'],
     ['tool', 'transform'],
     ['session', 'hook'],
@@ -57,17 +57,6 @@ describe('native V2 host adapter', () => {
     const { adapter } = fixture();
     for (const field of ['deliverArgMutation', 'mutateToolResult', 'injectCompactionContext'])
       expect(adapter).not.toHaveProperty(field);
-  });
-
-  it('reads the native agent registry without a name alias or process-global cache', async () => {
-    const { host, adapter, controller } = fixture();
-    expect(await adapter.listAgents('child')).toEqual([{ id: 'flowguard-reviewer' }]);
-    expect(host.listAgents).toHaveBeenCalledWith(
-      { location: { directory: '/worktree' } },
-      { signal: controller.signal },
-    );
-    await adapter.listAgents('child');
-    expect(host.listAgents).toHaveBeenCalledTimes(2);
   });
 
   it('uses exact native session lookup and actual per-session location', async () => {
@@ -104,52 +93,25 @@ describe('native V2 host adapter', () => {
     expect(history[0]).not.toHaveProperty('parentID');
   });
 
-  it('requests interruption of only the exact child with resume disabled', async () => {
-    const { host, adapter, controller } = fixture();
-    expect(await adapter.interrupt('child')).toBe(true);
-    expect(host.interrupt).toHaveBeenCalledWith(
-      { sessionID: 'child', resume: false },
-      { signal: controller.signal },
-    );
-    host.interrupt.mockResolvedValueOnce({ interrupted: false });
-    expect(await adapter.interrupt('child')).toBe(false);
-  });
-
-  it.each(['listAgents', 'getSession', 'readHistory', 'interrupt'] as const)(
-    'propagates %s host failures',
-    async (method) => {
-      const { host, adapter } = fixture();
-      const error = new Error('native failure');
-      const spies = {
-        listAgents: host.listAgents,
-        getSession: host.sessionGet,
-        readHistory: host.sessionContext,
-        interrupt: host.interrupt,
-      };
-      spies[method].mockRejectedValueOnce(error);
-      const operation = adapter[method]('child');
-      await expect(operation).rejects.toBe(error);
-    },
-  );
-
-  it('does not equate admission, wait or idle with reviewer provenance or quiescence', async () => {
+  it.each(['getSession', 'readHistory'] as const)('propagates %s host failures', async (method) => {
     const { host, adapter } = fixture();
-    expect(await adapter.quiescence('child')).toBe('unknown');
-    await expect(adapter.reviewerCall('parent', 'child')).rejects.toMatchObject({
-      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-    });
-    await expect(
-      adapter.executeReviewerPrompt({
-        sessionId: 'child',
-        requestId: 'request',
-        agent: 'flowguard-reviewer',
-        model: { providerID: 'provider', modelID: 'model', variant: null },
-        text: '{}',
-      }),
-    ).rejects.toMatchObject({ code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN' });
-    expect(host.prompt).not.toHaveBeenCalled();
+    const error = new Error('native failure');
+    const spies = { getSession: host.sessionGet, readHistory: host.sessionContext };
+    spies[method].mockRejectedValueOnce(error);
+    await expect(adapter[method]('child')).rejects.toBe(error);
   });
 
+  it('exposes no V1 reviewer prompt, call-lookup, interrupt or quiescence operation', () => {
+    const { adapter } = fixture();
+    for (const removed of [
+      'listAgents',
+      'interrupt',
+      'quiescence',
+      'reviewerCall',
+      'executeReviewerPrompt',
+    ])
+      expect(adapter).not.toHaveProperty(removed);
+  });
   it('delivers synchronous block decisions with the canonical enforcement code', () => {
     const { adapter } = fixture();
     expect(() =>
@@ -168,7 +130,7 @@ describe('native V2 host adapter', () => {
     const { host, adapter } = fixture();
     await adapter.shutdown();
     await adapter.shutdown();
-    expect(host.interrupt).not.toHaveBeenCalled();
+    expect(host.wait).not.toHaveBeenCalled();
     expect(host.prompt).not.toHaveBeenCalled();
   });
 });

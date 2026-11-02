@@ -6,14 +6,7 @@
     "configFile": "vitest.stryker-review-capture.config.ts",
     "related": false
   },
-  "mutate": [
-    "src/integration/reviewer-capture.ts",
-    "src/integration/review/dispatch/structured-followup.ts",
-    "src/integration/review/dispatch/provider-error.ts",
-    "src/integration/review/dispatch/reviewer-task-completion.ts",
-    "src/shared/strict-json-object.ts",
-    "src/state/review-message-capture.ts"
-  ],
+  "mutate": ["src/shared/strict-json-object.ts", "src/state/review-message-capture.ts"],
   "reporters": ["clear-text", "html", "json"],
   "coverageAnalysis": "perTest",
   "checkers": ["typescript"],

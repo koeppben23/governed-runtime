@@ -18,14 +18,11 @@ import type { RiskEnforcementDeps } from './plugin-risk.js';
 import type { DiscoveryHealthEnforcementDeps } from './plugin-discovery-health.js';
 import type { OrchestratorDeps } from './plugin-orchestrator.js';
 import type { AuditDeps } from './plugin-audit.js';
-import type { ToolHookBeforeInput, ToolHookAfterInput } from './types.js';
-import type { ReviewerOutputCapFailure } from './reviewer-output-cap.js';
-import type { ReviewerExecutionFailure } from './review/types.js';
+import type { ToolHookBeforeInput } from './types.js';
 
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
 
-const TRACE_REGISTRY_LIMIT = 1000;
 /** Upper bound for in-flight latency starts; the oldest start is evicted first. */
 const LATENCY_REGISTRY_LIMIT = 1000;
 /** Separator that cannot occur in a host session id or call id. */
@@ -50,7 +47,6 @@ export interface FlowGuardPluginRuntime {
   readonly discoveryHealthDeps: DiscoveryHealthEnforcementDeps;
   readonly orchestratorDeps: OrchestratorDeps;
   readonly auditDeps: AuditDeps;
-  readonly toolTraceIds: Map<string, string>;
   /**
    * Diagnostic-only tool latency starts keyed by session and call id (see
    * {@link recordToolLatencyStart}). Never consulted by enforcement.
@@ -58,14 +54,6 @@ export interface FlowGuardPluginRuntime {
   readonly toolLatencyStarts: Map<string, number>;
   readonly activeCommandScopes: Map<string, ActiveCommandScope>;
   readonly checkReworkContinuations: Set<string>;
-  /**
-   * Reviewer output-cap failures keyed by the reviewer child session. The
-   * chat.params hook writes before it aborts the model request; the native Task
-   * after-hook consumes the entry and blocks terminally instead of re-arming.
-   */
-  readonly reviewerOutputCapFailures: Map<string, ReviewerOutputCapFailure>;
-  /** Terminal execution-watchdog failures awaiting the native after-hook fallback. */
-  readonly reviewerExecutionFailures: Map<string, ReviewerExecutionFailure>;
   readonly reviewerExecutionTimeoutMs: number;
   readonly logError: (message: string, err: unknown) => void;
 }
@@ -75,17 +63,12 @@ export interface FlowGuardPluginRuntime {
  *
  * Single cleanup authority for host session termination: persists nothing,
  * drops enforcement/chain state plus the in-memory maps held by the plugin
- * runtime (command scopes, rework continuations, tool trace correlation,
- * tool latency starts).
+ * runtime (command scopes, rework continuations, tool latency starts).
  */
 export function cleanupSessionRuntime(runtime: FlowGuardPluginRuntime, sessionId: string): void {
   runtime.ws.invalidateChainState(sessionId);
   runtime.activeCommandScopes.delete(sessionId);
   runtime.checkReworkContinuations.delete(sessionId);
-  const traceKeyPrefix = `${sessionId}:`;
-  for (const key of runtime.toolTraceIds.keys()) {
-    if (key.startsWith(traceKeyPrefix)) runtime.toolTraceIds.delete(key);
-  }
   const latencyKeyPrefix = `${sessionId}${LATENCY_KEY_SEPARATOR}`;
   for (const key of runtime.toolLatencyStarts.keys()) {
     if (key.startsWith(latencyKeyPrefix)) runtime.toolLatencyStarts.delete(key);
@@ -96,38 +79,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function fallbackToolTraceKey(
-  input: Partial<ToolHookBeforeInput & ToolHookAfterInput>,
-): string | null {
-  if (typeof input.sessionID !== 'string' || typeof input.tool !== 'string') return null;
-  return `${input.sessionID}:${input.tool}`;
-}
-
-export function getToolTraceId(
-  runtime: FlowGuardPluginRuntime,
-  input: unknown,
-  phase: 'before' | 'after',
-): string {
-  const hookInput = isRecord(input)
-    ? (input as Partial<ToolHookBeforeInput & ToolHookAfterInput>)
-    : {};
-  if (typeof hookInput.callID === 'string' && hookInput.callID.length > 0) {
-    return hookInput.callID;
-  }
-
-  const key = fallbackToolTraceKey(hookInput);
-  if (!key) return randomUUID();
-
-  if (phase === 'after') {
-    const existing = runtime.toolTraceIds.get(key);
-    if (existing) runtime.toolTraceIds.delete(key);
-    return existing ?? randomUUID();
-  }
-
-  const traceId = randomUUID();
-  if (runtime.toolTraceIds.size >= TRACE_REGISTRY_LIMIT) runtime.toolTraceIds.clear();
-  runtime.toolTraceIds.set(key, traceId);
-  return traceId;
+/**
+ * Diagnostic log-correlation id of one tool call. Every native hook supplies the
+ * exact host call identity; an input without one receives an uncorrelated id and
+ * is never attributed to another call.
+ */
+export function getToolTraceId(input: unknown): string {
+  const callID = isRecord(input) ? input.callID : undefined;
+  return typeof callID === 'string' && callID.length > 0 ? callID : randomUUID();
 }
 
 // ─── Diagnostic tool latency (never enforcement) ─────────────────────────────

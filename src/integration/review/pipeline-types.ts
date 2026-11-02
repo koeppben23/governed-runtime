@@ -12,7 +12,6 @@ import type { SessionAuthorityResolution } from '../../adapters/session-authorit
 import type { OrchestratorClient, SessionEnforcementState } from './types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
-import type { ReviewerCaptureController } from '../reviewer-capture.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -32,8 +31,6 @@ export interface ReviewSessionContext {
  * Dependency interface for closure-captured values in plugin.ts.
  */
 export interface OrchestratorDeps {
-  /** Installed synchronous host fence; absence blocks capture, never downgrades it. */
-  readonly reviewerCapture?: ReviewerCaptureController;
   resolveSessionAuthority(sessionId: string): Promise<SessionAuthorityResolution>;
   updateReviewAssurance(
     sessDir: string,

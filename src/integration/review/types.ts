@@ -2,11 +2,11 @@
  * @module integration/review/types
  * @description Shared type definitions for the review bounded context.
  *
- * This leaf module owns the host client surface and the reviewer result DTO
- * used by the visible native Task transport and the evidence recorder. It has
- * no runtime SDK dependency and no SDK child-session creation capability.
+ * This leaf module owns the host history-read port and the reviewer result DTO
+ * used by the native same-child reviewer capture and the evidence recorder. It
+ * has no runtime SDK dependency and no SDK child-session creation capability.
  *
- * @version v2 — removed the SDK child-session creation/cancellation surface
+ * @version v3 — reduced the host port to the history read used by V2 owners
  */
 
 import type {
@@ -39,7 +39,6 @@ const REVIEWER_COMPLETION_FAILURE_CODES = [
   'REVIEWER_OUTPUT_TRUNCATED',
   'REVIEWER_STEP_BUDGET_EXHAUSTED',
   'REVIEWER_TASK_INCOMPLETE',
-  'REVIEWER_HOST_MESSAGE_ENCODING_FAILED',
 ] as const;
 
 export type ReviewerCompletionFailureCode = (typeof REVIEWER_COMPLETION_FAILURE_CODES)[number];
@@ -48,39 +47,6 @@ export function isReviewerCompletionFailureCode(
   code: string,
 ): code is ReviewerCompletionFailureCode {
   return (REVIEWER_COMPLETION_FAILURE_CODES as readonly string[]).includes(code);
-}
-
-/** Reviewer output-cap configuration failure categories. */
-export type ReviewerOutputCapErrorCode =
-  | 'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE'
-  | 'REVIEWER_OUTPUT_CAP_CONFIG_INVALID'
-  | 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN'
-  | 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_TOO_SMALL';
-
-/** Reviewer output-cap failure retained for the native Task after-hook. */
-export interface ReviewerOutputCapFailure {
-  readonly code: ReviewerOutputCapErrorCode;
-  readonly reason: string;
-  readonly model: string;
-  readonly modelLimit: number | null;
-  readonly configured: number | 'host';
-}
-
-/** Terminal failure raised by the bounded reviewer execution watchdog. */
-export type ReviewerExecutionFailureCode =
-  'REVIEWER_EXECUTION_TIMEOUT' | 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
-
-export interface ReviewerExecutionIdentity {
-  readonly parentSessionId: string;
-  readonly callId: string;
-  readonly childSessionId?: string;
-}
-
-export interface ReviewerExecutionFailure {
-  readonly code: ReviewerExecutionFailureCode;
-  readonly reason: string;
-  readonly phase: 'review' | 'tool' | 'serialization' | 'total';
-  readonly abortConfirmed: boolean;
 }
 
 /**
@@ -156,25 +122,8 @@ export interface ReviewVerificationEvidenceItem {
 
 /** Semantic host operations, not an SDK client or a wire-response adapter. */
 export interface OrchestratorClient {
-  listAgents(sessionId: string): Promise<readonly { readonly id: string }[]>;
-  getSession(sessionId: string): Promise<{
-    readonly sessionId: string;
-    readonly parentSessionId?: string;
-    readonly directory: string;
-    readonly agent?: string;
-  }>;
+  /** Native session history bytes; callers validate every identity they use. */
   readHistory(sessionId: string): Promise<unknown>;
-  interrupt(sessionId: string): Promise<boolean>;
-  quiescence(sessionId: string): Promise<'idle' | 'busy' | 'unknown'>;
-  reviewerCall(parentSessionId: string, childSessionId: string): Promise<string | null>;
-  /** An admitted prompt is not a completed/correlated serialization reply. */
-  executeReviewerPrompt(input: {
-    readonly sessionId: string;
-    readonly requestId: string;
-    readonly agent: string;
-    readonly model: import('../../state/review-message-capture.js').ReviewerModelSelection;
-    readonly text: string;
-  }): Promise<unknown>;
 }
 
 /**

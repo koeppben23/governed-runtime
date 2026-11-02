@@ -2,16 +2,6 @@ import type { BlockedReason } from './reasons-types.js';
 
 export const REVIEW_EXECUTION_REASONS = [
   {
-    code: 'REVIEWER_EXECUTION_TIMEOUT',
-    category: 'state',
-    messageTemplate:
-      'The reviewer exceeded its bounded execution deadline; the host confirmed termination and the review is blocked.',
-    recoverySteps: [
-      'The review obligation is closed with this code. Do not invoke the reviewer Task again or start another review in this turn.',
-      'Report the blocker and stop. A new review requires a new explicit review command from the user.',
-    ],
-  },
-  {
     code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
     category: 'state',
     messageTemplate:

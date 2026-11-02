@@ -29,7 +29,7 @@ import {
   nativeReviewAuditIntents,
   validateCapturedFindings,
   obligationCaptureContract,
-} from './native-task-review-bindings.js';
+} from './native-review-findings.js';
 import { serializationPromptFor } from './serialization-prompt.js';
 import type { NativeReviewInitialController } from './native-review-initial.js';
 
@@ -534,7 +534,6 @@ async function bindNativeSubagentFindings(
       promptHash: dispatch.canonicalPromptDigest,
       findingsHash,
       phase: input.state.phase,
-      invocationMode: 'native_subagent_message_json',
     }),
   });
   if (result !== 'fulfilled')

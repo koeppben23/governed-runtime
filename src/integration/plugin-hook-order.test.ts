@@ -1,6 +1,6 @@
 /** Single-owner native composition and ordering, not installed-host proof.
- * Canonical watchdog/capture settlement is tested at its owners; the V2 root
- * must not simulate those observations by wiring obsolete SDK callbacks. */
+ * Reviewer capture settlement is tested at its owners; the V2 root must not
+ * simulate those observations by wiring obsolete SDK callbacks. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
@@ -21,14 +21,6 @@ const h = vi.hoisted(() => {
     });
   return {
     order,
-    capture: {
-      beforeTool: call('fence'),
-      onMessage: call('message'),
-      onMessages: call('messages'),
-      onParams: call('params'),
-      reconcileOnIdle: asyncCall('reconcile-idle'),
-      reconcileOnTerminalMessage: asyncCall('reconcile-terminal'),
-    },
     before: asyncCall('before'),
     after: asyncCall('after'),
     event: asyncCall('event'),
@@ -36,7 +28,6 @@ const h = vi.hoisted(() => {
     cap: call('cap'),
     dispose: asyncCall('dispose'),
     resolve: vi.fn(),
-    watchdog: vi.fn(),
   };
 });
 vi.mock('../adapters/session-authority.js', () => ({ resolveSessionAuthority: h.resolve }));
@@ -65,17 +56,7 @@ vi.mock('./plugin-afterhooks.js', () => ({
   handlePluginEvent: h.event,
   handleCompaction: h.compaction,
 }));
-vi.mock('./reviewer-capture.js', () => ({
-  ReviewerCaptureController: class {
-    constructor() {
-      return h.capture;
-    }
-  },
-}));
 vi.mock('./reviewer-output-cap.js', () => ({ validateNativeReviewerOutputLimit: h.cap }));
-vi.mock('./reviewer-execution-watchdog.js', () => ({
-  ReviewerExecutionWatchdog: h.watchdog,
-}));
 
 let host: ReturnType<typeof createV2Host>;
 let dispose: (() => void | Promise<void>) | undefined;
@@ -109,40 +90,29 @@ afterEach(async () => {
 });
 
 describe('single-owner native hook composition', () => {
-  it('runs the capture fence before generic governance', async () => {
-    await host.before(v2ToolEvent());
-    expect(h.order).toEqual(['fence', 'before']);
-    expect(h.capture.beforeTool).toHaveBeenCalledExactlyOnceWith({ sessionID: 'session' });
-    expect(h.watchdog).not.toHaveBeenCalled();
-  });
-
-  it('fence denial reaches neither governance nor dispatch authorization', async () => {
-    h.capture.beforeTool.mockImplementationOnce(() => {
-      h.order.push('fence');
-      throw failure;
-    });
-    await expect(host.before(v2ToolEvent())).rejects.toBe(failure);
-    expect(h.order).toEqual(['fence']);
+  it('runs the reviewer tool guard before generic governance', async () => {
+    await expect(
+      host.before(v2ToolEvent({ tool: 'edit', agent: REVIEWER_SUBAGENT_TYPE })),
+    ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    expect(h.order).toEqual([]);
     expect(h.before).not.toHaveBeenCalled();
   });
 
-  it('generic denial still observes the capture fence and preserves the original exception', async () => {
+  it('generic denial preserves the original exception', async () => {
     h.before.mockImplementationOnce(async () => {
       h.order.push('before');
       throw failure;
     });
     await expect(host.before(v2ToolEvent())).rejects.toBe(failure);
-    expect(h.order).toEqual(['fence', 'before']);
-    expect(h.watchdog).not.toHaveBeenCalled();
+    expect(h.order).toEqual(['before']);
   });
 
-  it('blocks an unauthorized reviewer after the fence and generic gates, before native release or serialization', async () => {
+  it('blocks an unauthorized reviewer after the generic gates, before native release or serialization', async () => {
     await expect(
       host.before(v2ToolEvent({ tool: 'subagent', input: { agent: REVIEWER_SUBAGENT_TYPE } })),
     ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-    expect(h.order).toEqual(['fence', 'before']);
+    expect(h.order).toEqual(['before']);
     expect(host.prompt).not.toHaveBeenCalled();
-    expect(h.watchdog).not.toHaveBeenCalled();
   });
 
   it.each(['', undefined])(
@@ -153,18 +123,15 @@ describe('single-owner native hook composition', () => {
           v2ToolEvent({ id, tool: 'subagent', input: { agent: REVIEWER_SUBAGENT_TYPE } }),
         ),
       ).rejects.toHaveProperty('code', 'PLUGIN_ENFORCEMENT_UNAVAILABLE');
-      expect(h.order).toEqual(['fence']);
+      expect(h.order).toEqual([]);
       expect(host.prompt).not.toHaveBeenCalled();
     },
   );
-
   it('validates reviewer budgeting before refusing unproved context/capture', async () => {
     await expect(
       host.request({ sessionID: 'child', agent: REVIEWER_SUBAGENT_TYPE }),
     ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
     expect(h.order).toEqual(['cap']);
-    for (const observe of [h.capture.onMessage, h.capture.onMessages, h.capture.onParams])
-      expect(observe).not.toHaveBeenCalled();
   });
 
   it('leaves other agents outside reviewer budgeting and capture hooks', async () => {
@@ -179,7 +146,7 @@ describe('single-owner native hook composition', () => {
     expect(h.order).toEqual([]);
   });
 
-  it('budget denial cannot reach monitoring or successful capture observation', async () => {
+  it('budget denial cannot reach reviewer context observation', async () => {
     h.cap.mockImplementationOnce(() => {
       h.order.push('cap');
       throw failure;
@@ -188,8 +155,6 @@ describe('single-owner native hook composition', () => {
       failure,
     );
     expect(h.order).toEqual(['cap']);
-    expect(h.watchdog).not.toHaveBeenCalled();
-    expect(h.capture.onParams).not.toHaveBeenCalled();
   });
 
   it('processes ordinary successful completion exactly once and propagates after-hook errors', async () => {
@@ -258,8 +223,6 @@ describe('single-owner native hook composition', () => {
       });
       await vi.waitFor(() => expect(h.event).toHaveBeenCalledOnce());
       expect(h.order).toEqual(['event']);
-      expect(h.capture.reconcileOnIdle).not.toHaveBeenCalled();
-      expect(h.capture.reconcileOnTerminalMessage).not.toHaveBeenCalled();
     },
   );
 
@@ -272,8 +235,6 @@ describe('single-owner native hook composition', () => {
     host.emit({ type, id: 'event', data: { sessionID: 'child' } });
     await dispose!();
     expect(h.event).not.toHaveBeenCalled();
-    expect(h.capture.reconcileOnIdle).not.toHaveBeenCalled();
-    expect(h.capture.reconcileOnTerminalMessage).not.toHaveBeenCalled();
   });
 
   it('keeps the subscription alive while a notification handler is in flight and drains it during cleanup', async () => {
@@ -303,7 +264,6 @@ describe('single-owner native hook composition', () => {
       'lost required event observation',
     );
     await expect(host.before(v2ToolEvent())).resolves.toBeUndefined();
-    expect(h.capture.reconcileOnIdle).not.toHaveBeenCalled();
   });
 
   it('registers only current native context/compaction and tool hooks, with no command-origin shim', async () => {

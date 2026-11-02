@@ -44,7 +44,7 @@ import {
   buildReviewerProofContext,
   type ReviewerProofGraphAuthorities,
 } from '../context/proof-context.js';
-import type { PersistedState } from './native-task-review-types.js';
+import type { PersistedState } from './native-review-types.js';
 
 function resolutionTargetIdsOf(
   contract: ReviewerChallengePromptContract | undefined,

@@ -105,7 +105,6 @@
     "src/integration/proofgraph/claim-contract-rules.ts",
     "src/integration/proofgraph/claim-contract.ts",
     "src/integration/proofgraph/materialize-contract.ts",
-    "src/integration/review/dispatch/agent-resolution.ts",
     "src/integration/review/enforcement/dispatch-signal.ts",
     "src/integration/review/enforcement/challenge-binding.ts",
     "src/integration/review/enforcement/challenge-consistency.ts",
@@ -145,11 +144,9 @@
     "src/integration/review/evidence/reviewer-evidence-recorder.ts",
     "src/integration/review/obligations/assurance.ts",
     "src/integration/tools/implementation-review-activation.ts",
-    "src/integration/review/dispatch/native-task-review-bindings.ts",
-    "src/integration/review/dispatch/structured-followup.ts",
+    "src/integration/review/dispatch/native-review-findings.ts",
     "src/integration/blocked-result.ts",
-    "src/integration/status/status.ts",
-    "src/integration/review/dispatch/native-task-review.ts"
+    "src/integration/status/status.ts"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral", "ArrayDeclaration", "Regex"]

@@ -13,10 +13,8 @@
 import type { ChallengeConsistencyCode } from '../enforcement/challenge-consistency.js';
 import type { ReviewFindingsScopeFailureCode } from '../enforcement/findings-consistency.js';
 import type { EvidenceLocationFailure } from '../observations/observation-binding.js';
-import type { ReviewObligationType } from '../../../state/evidence.js';
 import { REASON_MANDATE_MISSING, REASON_MANDATE_MISMATCH } from '../shared-helpers.js';
 import type { PendingReviewRetryDiagnostic, ReviewerCompletionFailureCode } from '../types.js';
-import type { StructuredFollowupFailureCode } from './native-task-review-types.js';
 
 /**
  * Codes emitted by the reviewers' binding boundary. The union is DERIVED from
@@ -28,6 +26,11 @@ type AttestationFailureCode = typeof REASON_MANDATE_MISSING | typeof REASON_MAND
 /** Codes emitted by the recorder-result mapping in the after-hook. */
 type RecorderFailureCode =
   'SUBAGENT_EVIDENCE_REUSED' | 'REVIEW_ATTEMPT_UNAVAILABLE' | 'REVIEW_MATERIAL_INTEGRITY_FAILED';
+/** Codes emitted by the same-child structured serialization capture. */
+type StructuredCaptureFailureCode =
+  | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
+  | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'
+  | 'REVIEWER_CAPTURE_PROVENANCE_INVALID';
 /** Codes emitted directly by the structured-capture/fulfillment pipeline. */
 type PipelineFailureCode =
   | 'REVIEW_ASSURANCE_STATE_UNAVAILABLE'
@@ -38,7 +41,7 @@ type PipelineFailureCode =
 /** Every reviewer capture/binding failure code the after-hook can receive. */
 export type ReviewerCaptureFailureCode =
   | ChallengeConsistencyCode
-  | StructuredFollowupFailureCode
+  | StructuredCaptureFailureCode
   | ReviewerCompletionFailureCode
   | ReviewFindingsScopeFailureCode
   | AttestationFailureCode
@@ -73,10 +76,7 @@ const CLASSIFICATION = {
   // Terminal: capability, mandate, integrity, provenance, reuse, exhaustion.
   REVIEWER_STEP_BUDGET_EXHAUSTED: 'terminal',
   REVIEWER_OUTPUT_TRUNCATED: 'terminal',
-  STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE: 'terminal',
-  STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE: 'terminal',
   REVIEWER_CAPTURE_PROVENANCE_INVALID: 'terminal',
-  REVIEWER_HOST_MESSAGE_ENCODING_FAILED: 'terminal',
   SUBAGENT_MANDATE_MISSING: 'terminal',
   SUBAGENT_MANDATE_MISMATCH: 'terminal',
   SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED: 'terminal',
@@ -128,24 +128,6 @@ export type CapacityReviewerCaptureCode = (typeof CAPACITY_REVIEWER_CAPTURE_CODE
 
 export function isCapacityReviewerCaptureCode(code: string): code is CapacityReviewerCaptureCode {
   return (CAPACITY_REVIEWER_CAPTURE_CODES as readonly string[]).includes(code);
-}
-
-/**
- * Phase-legal recovery for a spent/interrupted reviewer release. Every
- * obligation family has a typed or command-native recovery that re-arms the
- * same frozen obligation with a fresh attempt.
- */
-export function transportRecoveryInstruction(obligationType: ReviewObligationType): string {
-  switch (obligationType) {
-    case 'implement':
-      return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
-    case 'plan':
-      return 'Call flowguard_plan({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
-    case 'architecture':
-      return 'Call flowguard_architecture({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
-    case 'review':
-      return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
-  }
 }
 
 const MAX_BLOCK_REASON_CHARS = 240;

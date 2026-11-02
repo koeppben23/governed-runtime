@@ -68,7 +68,6 @@ function makeRuntime(
     discoveryHealthDeps: { resolveSessionAuthority: vi.fn(), getWorkspaceDir: vi.fn() },
     orchestratorDeps: {} as FlowGuardPluginRuntime['orchestratorDeps'],
     auditDeps: makeAuditDeps(null, null),
-    toolTraceIds: new Map<string, string>(),
     toolLatencyStarts: new Map<string, number>(),
     activeCommandScopes: new Map<string, 'check'>(),
     checkReworkContinuations: new Set<string>(),
@@ -241,12 +240,6 @@ describe('toolBefore — host tool fail-closed resolution', () => {
       ),
     ).rejects.toThrow();
     expect(runtime.toolLatencyStarts.size).toBe(0);
-  });
-
-  it('handles a missing callID via the trace fallback registry', async () => {
-    const runtime = makeRuntime();
-    await toolBefore(runtime, { tool: 'read', sessionID: SESSION_ID }, { args: {} });
-    expect(runtime.toolTraceIds.has(`${SESSION_ID}:read`)).toBe(true);
   });
 
   it('blocks a mutating host tool with the typed authority code when the session mapping is unavailable', async () => {
@@ -1325,20 +1318,12 @@ describe('toolBefore — review implementation tool', () => {
   });
 });
 
-describe('toolBefore — trace registry', () => {
-  it('stores a trace id per before-call', async () => {
-    const runtime = makeRuntime();
-    const input = { tool: 'read', sessionID: SESSION_ID };
-    await toolBefore(runtime, input, { args: {} });
-    expect(runtime.toolTraceIds.has(`${SESSION_ID}:read`)).toBe(true);
-  });
-
+describe('toolBefore — trace ids', () => {
   it('a host retry with the same callID is processed deterministically', async () => {
     const runtime = makeRuntime();
     const input = { tool: 'read', sessionID: SESSION_ID, callID: 'retry-1' };
-    await toolBefore(runtime, input, { args: {} });
-    await toolBefore(runtime, input, { args: {} });
-    expect(runtime.toolTraceIds.size).toBe(0);
+    await expect(toolBefore(runtime, input, { args: {} })).resolves.toBeUndefined();
+    await expect(toolBefore(runtime, input, { args: {} })).resolves.toBeUndefined();
   });
 });
 

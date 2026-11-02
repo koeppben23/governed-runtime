@@ -79,7 +79,7 @@ The task prompt supplies the current obligation, frozen subject, review criteria
  * The reviewer agent's host-enforced step budget. Exported so the native
  * transport can verify a host stop at exactly this limit instead of guessing.
  */
-export const REVIEWER_STEP_LIMIT = 10;
+const REVIEWER_STEP_LIMIT = 10;
 
 export function renderReviewerPrompt(_reviewType: ReviewerPromptType = 'all'): string {
   return `\

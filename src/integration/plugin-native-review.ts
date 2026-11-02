@@ -11,7 +11,7 @@ import { buildEnforcementError } from './blocked-result.js';
 import { READ_ONLY_HOST_TOOLS } from './phase-tool-gate.js';
 import { nativeHostCallId } from './opencode-host-adapter.js';
 import { abandonAndBlockByHostCall } from './review/dispatch/durable-dispatch.js';
-import { projectFulfilledReview } from './review/dispatch/native-task-review-execution.js';
+import { projectFulfilledReview } from './review/dispatch/native-review-execution.js';
 import {
   NativeReviewCaptureFence,
   executeNativeReviewCapture,
@@ -59,12 +59,7 @@ type RuntimeFor = (
 ) => Promise<
   Pick<
     FlowGuardPluginRuntime,
-    | 'ws'
-    | 'orchestratorDeps'
-    | 'log'
-    | 'logError'
-    | 'reviewerExecutionTimeoutMs'
-    | 'reviewerOutputCapFailures'
+    'ws' | 'orchestratorDeps' | 'log' | 'logError' | 'reviewerExecutionTimeoutMs'
   >
 >;
 

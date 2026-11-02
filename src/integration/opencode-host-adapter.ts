@@ -14,7 +14,7 @@ import { buildEnforcementError } from './blocked-result.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { z } from 'zod';
 
-export class HostAdapterInitError extends Error {
+class HostAdapterInitError extends Error {
   readonly code = 'HOST_ADAPTER_INIT_FAILED';
 }
 
@@ -25,10 +25,6 @@ export class HostCapabilityMismatchError extends Error {
       `OpenCode host capability mismatch: ${mismatches.map((item) => item.capability).join(', ')}`,
     );
   }
-}
-
-class HostReviewProofUnavailableError extends Error {
-  readonly code = 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN';
 }
 
 function hasMethods(domain: unknown, methods: readonly string[]): boolean {
@@ -75,8 +71,7 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
   async initialize(): Promise<void> {
     const ctx = this.context;
     const available = [
-      hasMethods(ctx.agent, ['list']),
-      hasMethods(ctx.session, ['get', 'context', 'interrupt', 'hook']),
+      hasMethods(ctx.session, ['get', 'context', 'prompt', 'wait', 'hook']),
       hasMethods(ctx.tool, ['hook', 'transform']),
       hasMethods(ctx.event, ['subscribe']),
       hasMethods(ctx.storage, ['get', 'set', 'scan']),
@@ -117,16 +112,12 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
     console[level](`[FlowGuard] ${message}`, ...(data === undefined ? [] : [data]));
   }
 
-  async listAgents(sessionId: string): Promise<readonly { readonly id: string }[]> {
-    const session = await this.getSession(sessionId);
-    const agents = await this.context.agent.list(
-      { location: { directory: session.directory } },
-      { signal: this.signal },
-    );
-    return agents.data.map((agent) => ({ id: agent.id }));
-  }
-
-  async getSession(sessionId: string): ReturnType<OrchestratorClient['getSession']> {
+  async getSession(sessionId: string): Promise<{
+    readonly sessionId: string;
+    readonly parentSessionId?: string;
+    readonly directory: string;
+    readonly agent?: string;
+  }> {
     const session = await this.context.session.get(
       { sessionID: sessionId },
       { signal: this.signal },
@@ -148,34 +139,6 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
     // Preserve native bytes/identities. In particular, never synthesize a V1
     // assistant parentID from an inbox admission or the latest response.
     return this.context.session.context({ sessionID: sessionId }, { signal: this.signal });
-  }
-
-  async interrupt(sessionId: string): Promise<boolean> {
-    const result = await this.context.session.interrupt(
-      { sessionID: sessionId, resume: false },
-      { signal: this.signal },
-    );
-    return result.interrupted === true;
-  }
-
-  async quiescence(_sessionId: string): Promise<'unknown'> {
-    // wait(), idle notifications and session outcome alone are not a proven
-    // joint quiescence/terminal-history observation for reviewer recovery.
-    return 'unknown';
-  }
-
-  async reviewerCall(_parentSessionId: string, _childSessionId: string): Promise<never> {
-    throw new HostReviewProofUnavailableError(
-      'The pinned V2 reviewer release-to-child proof is NOT_VERIFIED.',
-    );
-  }
-
-  async executeReviewerPrompt(
-    _input: Parameters<OrchestratorClient['executeReviewerPrompt']>[0],
-  ): Promise<never> {
-    throw new HostReviewProofUnavailableError(
-      'V2 inbox admission is not serialization completion. Same-child request/terminal/capture proof is NOT_VERIFIED.',
-    );
   }
 }
 

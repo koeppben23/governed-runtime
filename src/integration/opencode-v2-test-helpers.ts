@@ -16,13 +16,7 @@ export function createReviewClient(
     throw new Error('Unconfigured review host operation');
   };
   return {
-    listAgents: vi.fn(unavailable),
-    getSession: vi.fn(unavailable),
     readHistory: vi.fn(unavailable),
-    interrupt: vi.fn(unavailable),
-    quiescence: vi.fn(unavailable),
-    reviewerCall: vi.fn(unavailable),
-    executeReviewerPrompt: vi.fn(unavailable),
     ...overrides,
   };
 }
@@ -102,23 +96,18 @@ export function createV2Host(directory: string) {
     }),
   );
   const sessionContext = vi.fn(async (_input: unknown) => [] as unknown[]);
-  const interrupt = vi.fn(async (_input: unknown) => ({ interrupted: true }));
   const prompt = vi.fn(async (_input: unknown) => ({ id: 'inbox', type: 'user' }));
-  const listAgents = vi.fn(async () => ({
-    location: { directory },
-    data: [{ id: 'flowguard-reviewer' }],
-  }));
+  const wait = vi.fn(async (_input: unknown) => {});
   const context = {
     app: { name: 'opencode', version: '2.2.4', channel: 'stable' },
     location: { directory, project: { id: 'project', directory, canonical: directory } },
     options: {},
     storage: activation.store,
-    agent: { list: listAgents },
     session: {
       get: sessionGet,
       context: sessionContext,
-      interrupt,
       prompt,
+      wait,
       hook: vi.fn(async (name: string, callback: Callback) => {
         const registration = register();
         sessionHooks.set(name, callback);
@@ -154,9 +143,8 @@ export function createV2Host(directory: string) {
     definitions,
     sessionGet,
     sessionContext,
-    interrupt,
     prompt,
-    listAgents,
+    wait,
     subscribe,
     activation,
     seedActive: async (sessionId: string, policyDigest: string, worktreeRoot = directory) =>

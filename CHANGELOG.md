@@ -1321,6 +1321,35 @@ stop`, reviewer child reported it could not complete the falsification).
   override is unchanged. Full base-profile mutation admission for
   `src/adapters/session-authority.ts`: 100 % (20 killed, 0 survived).
 
+### Removed
+
+- **V1 reviewer Task transport (#1190, #1169 WS1).** The V2 entrypoint never
+  registered it and the V2 host adapter threw for every V1 reviewer call, so it
+  is removed instead of kept as a dormant second path: the native Task hooks,
+  the V1 same-child follow-up and message-shape completion classifier, provider
+  error and agent resolution, the V1 capture fence, the execution watchdog and
+  its failure persisters, the output-cap failure persister, the runtime failure
+  maps, the trace-id fallback registry and the always-throwing adapter members
+  (`executeReviewerPrompt`, `reviewerCall`, `quiescence`, `interrupt`,
+  `listAgents`). The review host port is reduced to `readHistory`; adapter
+  initialization now requires the session methods actually called (`prompt`,
+  `wait`) instead of unused ones. Reason codes without an emitter are removed
+  (`STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`,
+  `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`,
+  `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`, `REVIEWER_EXECUTION_TIMEOUT`,
+  `REVIEWER_OUTPUT_CAP_INVALID`). Live residues move to single V2 owners
+  (`native-review-findings.ts`, `native-review-execution.ts`,
+  `native-review-types.ts`). The V1 glue that only connected retry and closure
+  policy to the Task after-hook (`capture-failure-routing.ts`, binding-failure
+  routing, the unable-to-review output projection) is removed; the canonical
+  retry classification, durable re-arm transition and closure owners stay with
+  their tests but are still not wired into the V2 capture. The implementation
+  inventory lists the V1 behaviors that must be re-proven natively (Finding 6
+  remains BLOCKED). The base mutation scope drops the three removed targets (138
+  to 135 files); the `review-capture` profile keeps only the strict-JSON and
+  message-capture primitives, and the V2 capture owners are not yet in a
+  committed profile. Seven stale unused-export baseline entries are dropped.
+
 ## [2.0.0-tp.2] - 2026-10-04
 
 ### Added

@@ -266,7 +266,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 138 security-critical
+The `mutation` job runs StrykerJS mutation testing against 135 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -275,7 +275,7 @@ config (policy snapshot/resolver/central + reasons + profile), hooks (HTTP hook 
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
 plugin-audit, services/decision-audit-intent, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
-dispatch signal, and agent resolution), logging (error-serialize),
+dispatch signal), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON and hashing, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
 rails (architecture, hydrate, review, URL review transport, review-decision, review-decision-gates, review-evidence-resolution,
@@ -453,32 +453,32 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-138 files are mutated in the base profile, covering the fail-closed governance
+135 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
-| Area                                                                                                                                                                                              | Files   | Representative score            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------- |
-| Adapters (`binding`, `persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry)         | 10      | see `reports/mutation/`         |
-| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain, artifact-binding, audit-chain, checksum, integrity and helper verification)                             | 12      | see `reports/mutation/`         |
-| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                                               | 9       | see `reports/mutation/`         |
-| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                                         | 8       | see `reports/mutation/`         |
-| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                                         | 3       | see `reports/mutation/`         |
-| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                                             | 5       | see `reports/mutation/`         |
-| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                                           | 4       | see `reports/mutation/`         |
-| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`, `shared/session-resolver`)                                                               | 6       | see `reports/mutation/`         |
-| Identity (`token-verifier`, `key-resolver`)                                                                                                                                                       | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`, integration tools, discovery risk paths, decision-audit intent)                       | 25      | see `reports/mutation/`         |
-| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, review validation x2, findings hash, reviewed digest) | 10      | see `reports/mutation/`         |
-| State (`evidence-mutation-episode`)                                                                                                                                                               | 1       | see `reports/mutation/`         |
-| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                                              | 2       | see `reports/mutation/`         |
-| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                                  | 2       | see `reports/mutation/`         |
-| Shared (`canonical-json`, `hashing`)                                                                                                                                                              | 2       | see `reports/mutation/`         |
-| Logging (`error-serialize`)                                                                                                                                                                       | 1       | see `reports/mutation/`         |
-| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                               | 6       | see `reports/mutation/`         |
-| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
-| v11 admission candidates (approval, claims, policy, paths, report isolation)                                                                                                                      | 12      | full-profile admission pending  |
-| **Total**                                                                                                                                                                                         | **138** | uploaded as `reports/mutation/` |
+| Area                                                                                                                                                                                      | Files   | Representative score            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------- |
+| Adapters (`binding`, `persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry) | 10      | see `reports/mutation/`         |
+| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain, artifact-binding, audit-chain, checksum, integrity and helper verification)                     | 12      | see `reports/mutation/`         |
+| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                                       | 9       | see `reports/mutation/`         |
+| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                                 | 8       | see `reports/mutation/`         |
+| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                                 | 3       | see `reports/mutation/`         |
+| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                                     | 5       | see `reports/mutation/`         |
+| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                                   | 4       | see `reports/mutation/`         |
+| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`, `shared/session-resolver`)                                                       | 6       | see `reports/mutation/`         |
+| Identity (`token-verifier`, `key-resolver`)                                                                                                                                               | 2       | see `reports/mutation/`         |
+| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`, integration tools, discovery risk paths, decision-audit intent)               | 25      | see `reports/mutation/`         |
+| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, dispatch signal, review validation x2, findings hash, reviewed digest)           | 9       | see `reports/mutation/`         |
+| State (`evidence-mutation-episode`)                                                                                                                                                       | 1       | see `reports/mutation/`         |
+| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                                      | 2       | see `reports/mutation/`         |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                          | 2       | see `reports/mutation/`         |
+| Shared (`canonical-json`, `hashing`)                                                                                                                                                      | 2       | see `reports/mutation/`         |
+| Logging (`error-serialize`)                                                                                                                                                               | 1       | see `reports/mutation/`         |
+| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                       | 6       | see `reports/mutation/`         |
+| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                 | 9       | see `reports/mutation/`         |
+| v11 admission candidates (approval, claims, policy, paths, report isolation)                                                                                                              | 12      | full-profile admission pending  |
+| **Total**                                                                                                                                                                                 | **135** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -679,17 +679,13 @@ evidence settlement), `src/integration/review/obligations/assurance.ts`
 (blocked-with-invocation settlement),
 `src/integration/tools/implementation-review-activation.ts` (post-validation
 contract materialization entry),
-`src/integration/review/dispatch/native-task-review-bindings.ts` (native
-capture/binding and settlement audit intents),
+`src/integration/review/dispatch/native-review-findings.ts` (native findings
+contract, capture-gate validation and settlement audit intents),
 `src/integration/blocked-result.ts` (bounded unable-review diagnostics) and
 `src/integration/status/status.ts` (blocked-obligation recovery projection).
-The 2026-10-10 Run-10 diagnostics work additionally stages
-`src/integration/review/dispatch/native-task-review.ts` (native reviewer Task
-transport and capture-failure block composition).
-The 2026-10-17 F2 step-budget fix additionally stages
-`src/integration/review/dispatch/structured-followup.ts` (host-evidenced
-reviewer task completion from recorded session messages and same-child findings
-serialization).
+The V1 Task transport candidates staged by Run-10 and the F2 step-budget fix
+(`native-task-review.ts`, `structured-followup.ts`) were removed with the V1
+reviewer transport on 2026-11-02; no V2 replacement is admitted by that removal.
 They carry no provenance until a freeze-commit full run meets the per-target
 threshold; a targeted diagnostic run is not admission evidence.
 
@@ -706,28 +702,23 @@ for a future full base-profile run: `src/audit/proofgraph/evidence-approval-admi
 `src/state/risk-path-classifier.ts` and `src/shared/repo-path.ts`. The
 canonical admission remains the profile full run on the freeze commit.
 
-The 2026-10-30 model-neutral review transport stages six candidates in the
-dedicated `review-capture` profile for a future commit-bound profile full run:
-`src/integration/reviewer-capture.ts` (request correlation, tool fence and
-identity-bound quarantine completion),
-`src/integration/review/dispatch/structured-followup.ts` (serialization, repair
-and unknown SDK outcomes), `src/integration/review/dispatch/provider-error.ts`
-(trusted error classification),
-`src/integration/review/dispatch/reviewer-task-completion.ts` (host completion
-and child-model proof), `src/shared/strict-json-object.ts` (strict,
-resource-bounded JSON decoding) and `src/state/review-message-capture.ts`
-(payload, lineage and semantic evidence binding).
+The 2026-10-30 model-neutral review transport staged six candidates in the
+dedicated `review-capture` profile. The four V1 Task capture candidates
+(`reviewer-capture.ts`, `structured-followup.ts`, `provider-error.ts`,
+`reviewer-task-completion.ts`) were removed with the V1 reviewer transport on
+2026-11-02. `src/shared/strict-json-object.ts` (strict, resource-bounded JSON
+decoding) and `src/state/review-message-capture.ts` (payload, lineage and
+semantic evidence binding) remain. The V2 same-child capture owners
+(`review/dispatch/native-review-{capture,initial,dispatch}.ts`) are **not yet in
+any committed mutation profile**; adding them with per-file thresholds is open
+Finding 6 work and is **NOT_VERIFIED**.
 
 ### Reviewer Capture Security Profile
 
 The registered `review-capture` profile (`stryker.review-capture.conf.json`) measures
-the model-neutral capture boundary independently with the standard 80% break
+the model-neutral capture primitives independently with the standard 80% break
 threshold. Its candidate authorities are:
 
-- `src/integration/reviewer-capture.ts` — request correlation, tool fence and identity-bound quarantine completion.
-- `src/integration/review/dispatch/structured-followup.ts` — serialization, repair and unknown SDK outcomes.
-- `src/integration/review/dispatch/provider-error.ts` — trusted error classification.
-- `src/integration/review/dispatch/reviewer-task-completion.ts` — host completion and child-model proof.
 - `src/shared/strict-json-object.ts` — strict, resource-bounded JSON decoding.
 - `src/state/review-message-capture.ts` — payload, lineage and semantic evidence binding.
 

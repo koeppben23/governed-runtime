@@ -753,6 +753,61 @@ checkpoint. It did not establish V2 hook registration, new reviewer proof or
 lifecycle-disposal acceptance. The subsequent native-entrypoint working tree is
 described above; installer and installed-host cutover remain open.
 
+### V1 reviewer transport removal (2026-11-02, #1169 WS1)
+
+The V2 entrypoint never registered the V1 reviewer Task path, and the V2 host
+adapter threw for every V1 reviewer call. The following V1 mechanisms had no
+V2 production caller and are removed rather than kept as a dormant second path:
+
+- Native Task transport: `review/dispatch/native-task-review.ts`; the V1
+  same-child follow-up `structured-followup.ts`; the V1 message-shape completion
+  classifier `reviewer-task-completion.ts`; `provider-error.ts`;
+  `agent-resolution.ts`; the V1 capture fence `integration/reviewer-capture.ts`.
+- Execution watchdog and persisters: `reviewer-execution-watchdog.ts`,
+  `reviewer-execution-failure.ts`, `reviewer-output-cap-failure.ts`, plus the
+  runtime maps `reviewerOutputCapFailures`/`reviewerExecutionFailures` and the
+  `fallbackToolTraceKey`/`toolTraceIds` correlation fallback (every native hook
+  supplies an exact call identity).
+- Host-adapter members that always threw or had no V2 caller:
+  `executeReviewerPrompt`, `reviewerCall`, `quiescence`, `interrupt`,
+  `listAgents`. The review host port is now only `readHistory`. Adapter
+  initialization checks the session methods FlowGuard actually calls
+  (`get`, `context`, `prompt`, `wait`, `hook`).
+- Reason codes without a remaining emitter:
+  `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`,
+  `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`,
+  `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`, `REVIEWER_EXECUTION_TIMEOUT`,
+  `REVIEWER_OUTPUT_CAP_INVALID`.
+
+Live V2 residues have single owners: `native-review-findings.ts` (findings
+contract, capture-gate validation, settlement audit intents),
+`native-review-execution.ts` (fulfilled-review projection) and
+`native-review-types.ts`. The Task-worded `transportRecoveryInstruction`,
+`reviewableToolForObligationType` and the orphaned implementation-session test
+seed lost their only callers and are removed.
+
+**Retained host-neutral review policy, not yet wired into the V2 capture
+(parity work, NOT_VERIFIED):** the retry/terminal classification and bounded
+retry diagnostics (`capture-retry.ts`), the durable re-arm transition
+(`durable-dispatch.ts` `abandonAndRearmByHostCall`) and the incoherent-verdict,
+pre-bind and expired-dispatch closures in `native-review-execution.ts`; each
+keeps its owner tests. The V1 glue that only connected them to the Task
+after-hook (`capture-failure-routing.ts`, binding-failure routing and the
+unable-to-review output projection) is removed because the unused-export gate
+admits no unwired production code; V2 must route through these owners anew. The
+V2 capture currently closes every non-provenance capture failure terminally. The
+deleted V1 plugin-level tests documented these V1 behaviors and must be
+re-proven on the V2 path, not restored:
+
+| Removed V1 test                               | V1 behavior to re-prove on V2                                                                      |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `plugin-native-challenge-retry.test.ts`       | Retryable challenge-evidence failure re-arms a fresh attempt; the corrected retry binds            |
+| `plugin-reviewer-bound-schema.test.ts`        | Obligation-bound schema is sent; a schema-const violation is rejected, never normalized            |
+| `plugin-reviewer-budget-recovery.test.ts`     | Terminal closure grants no further budget; durable closure intent is chained through status        |
+| `plugin-reviewer-step-budget.test.ts`         | Step-budget stop, truncation and abort are terminal capacity closures and are never serialized     |
+| `plugin-reviewer-execution-lifecycle.test.ts` | Unknown execution outcomes persist before monitoring stops and retain quarantine and capacity lock |
+| `native-task-review-bindings.test.ts` (parts) | Reviewer step-budget/truncation transcripts are never serialized for any obligation type           |
+
 ## Phase-01 impact matrix
 
 | Changed contract                           | Owner / implementation                                                                | Verification and documentation                                                                                                                                                                 |

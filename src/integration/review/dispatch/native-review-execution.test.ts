@@ -17,10 +17,9 @@ import {
   blockIncoherentCompletedCapture,
   closeExecutionFailure,
   guardPreBindReview,
-  handleReviewerExecutionFailure,
   reconcileExpiredAuthorizedDispatchesOrThrow,
-} from './native-task-review-execution.js';
-import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
+} from './native-review-execution.js';
+import type { NativeReviewTransportRuntime } from './native-review-types.js';
 
 function runtime() {
   const blockReviewOutcome = vi.fn(
@@ -90,12 +89,12 @@ describe('terminal incoherent review capture', () => {
   it('blocks a late bind after the terminal execution lock is persisted', async () => {
     readState.mockResolvedValue({
       reviewAssurance: {
-        capacityLock: { code: 'REVIEWER_EXECUTION_TIMEOUT', obligationId: 'obl-1' },
+        capacityLock: { code: 'REVIEWER_STEP_BUDGET_EXHAUSTED', obligationId: 'obl-1' },
         obligations: [
           {
             obligationId: 'obl-1',
             status: 'blocked',
-            blockedCode: 'REVIEWER_EXECUTION_TIMEOUT',
+            blockedCode: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
           },
         ],
       },
@@ -109,7 +108,7 @@ describe('terminal incoherent review capture', () => {
         output,
       }),
     ).resolves.toBe(true);
-    expect(output.output).toContain('REVIEWER_EXECUTION_TIMEOUT');
+    expect(output.output).toContain('REVIEWER_STEP_BUDGET_EXHAUSTED');
   });
 
   it('reconciles an expired authorized dispatch after restart before a new review', async () => {
@@ -139,54 +138,6 @@ describe('terminal incoherent review capture', () => {
       'call-1',
       'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
     );
-  });
-
-  it('closes an unpersisted watchdog failure through the durable closure', async () => {
-    abandonAndBlockByHostCall.mockClear();
-    abandonAndBlockByHostCall.mockResolvedValue({
-      kind: 'blocked',
-      obligationId: 'obl-1',
-      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-    });
-    const failures = new Map([
-      [
-        'child',
-        {
-          code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-          phase: 'total',
-          abortConfirmed: false,
-          reason: 'host outcome unknown',
-        },
-      ],
-    ]);
-    const runtime = {
-      reviewerExecutionFailures: failures,
-      orchestratorDeps: {},
-    } as unknown as NativeReviewTransportRuntime;
-    const output = { output: '', title: '', metadata: {} };
-
-    await expect(
-      handleReviewerExecutionFailure({
-        runtime,
-        sessDir: '/tmp',
-        callId: 'call-1',
-        childSessionId: 'child',
-        hookOutput: output,
-        obligationId: 'obl-1',
-        sessionId: 'parent',
-        phase: 'PLAN',
-      }),
-    ).resolves.toBe(true);
-
-    expect(abandonAndBlockByHostCall).toHaveBeenCalledWith(
-      runtime.orchestratorDeps,
-      '/tmp',
-      'call-1',
-      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      { childSessionId: 'child', obligationId: 'obl-1' },
-    );
-    expect(failures.has('child')).toBe(false);
-    expect(output.output).toContain('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
   });
 
   it('accepts the atomic authority proof of an already-blocked execution', async () => {

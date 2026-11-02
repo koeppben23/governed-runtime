@@ -90,8 +90,8 @@ export const GOVERNANCE_FEEDBACK_CODES = new Set([
 ]);
 
 /**
- * Stable first line of FlowGuard's structured follow-up prompt
- * (`src/integration/review/dispatch/structured-followup.ts`). Used only to split
+ * Stable first line of FlowGuard's same-child serialization prompt
+ * (`src/integration/review/dispatch/serialization-prompt.ts`). Used only to split
  * a reviewer child into Task and follow-up segments; never emitted.
  */
 export const FOLLOWUP_PROMPT_SENTINEL =

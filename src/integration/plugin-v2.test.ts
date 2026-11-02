@@ -837,7 +837,7 @@ describe('native V2 entrypoint', () => {
       expect(registration.dispose).toHaveBeenCalledOnce();
     expect(h.dispose).toHaveBeenCalledOnce();
     await expect(host.before(v2ToolEvent())).rejects.toThrow(/not ready/);
-    expect(host.interrupt).not.toHaveBeenCalled();
+    expect(host.wait).not.toHaveBeenCalled();
   });
 
   it('cleanup attempts remaining resources even when one registration fails', async () => {

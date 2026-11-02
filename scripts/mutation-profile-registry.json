@@ -61,7 +61,6 @@
         "src/integration/proofgraph/claim-contract-rules.ts",
         "src/integration/proofgraph/claim-contract.ts",
         "src/integration/proofgraph/materialize-contract.ts",
-        "src/integration/review/dispatch/agent-resolution.ts",
         "src/integration/review/enforcement/challenge-consistency.ts",
         "src/integration/review/enforcement/dispatch-signal.ts",
         "src/integration/review/evidence/reviewed-digest.ts",

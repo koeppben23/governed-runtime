@@ -136,7 +136,7 @@ export async function toolBefore(
     const hookInput = input as ToolHookBeforeInput;
     const toolName = hookInput?.tool ?? '';
     const sessionId = hookInput?.sessionID ?? 'unknown';
-    const traceId = getToolTraceId(runtime, input, 'before');
+    const traceId = getToolTraceId(input);
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       if (toolName.startsWith(FLOWGUARD_TOOL_PREFIX) || requiresHostAuthority(toolName)) {
         await recoverRegulatedCompletion(runtime, sessionId);

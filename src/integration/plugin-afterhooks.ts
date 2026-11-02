@@ -70,7 +70,7 @@ export async function toolAfter(
     const sessionId = hookInput?.sessionID ?? 'unknown';
     // Measured at after-hook entry, before any further after-hook processing.
     const latencyFields = toolLatencyLogFields(runtime, toolName, input, hookOutput);
-    const traceId = getToolTraceId(runtime, input, 'after');
+    const traceId = getToolTraceId(input);
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
       const now = new Date().toISOString();
       // Stryker disable next-line ObjectLiteral

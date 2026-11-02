@@ -1,58 +1,31 @@
 /**
- * @module integration/review/native-task-review-execution
- * @description Native reviewer Task fallback for watchdog failures that could
- * not be persisted before the after-hook.
+ * @module integration/review/native-review-execution
+ * @description Host-neutral reviewer execution closure and output projection.
+ *
+ * Every function binds or closes only through the canonical durable dispatch
+ * and evidence owners. The fulfilled projection is wired into the V2 capture;
+ * the incoherent-verdict, pre-bind and expired-dispatch closures are retained
+ * review policy whose V2 wiring is tracked in the implementation inventory
+ * (parity work), not a second transport.
  */
 
 import type { ToolHookAfterOutput } from '../../types.js';
-import type { ReviewFindings } from '../../../state/evidence.js';
-import { strictBlockedOutput, unableReviewDiagnostics } from '../../blocked-result.js';
+import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 import { projectReviewExecution } from './review-execution-projection.js';
-import type { NativeReviewTransportRuntime } from './native-task-review-types.js';
-import {
-  abandonOrRetryCaptureFailure,
-  clearPendingReviewForObligation,
-  type CaptureFailureContext,
-} from './capture-failure-routing.js';
-import { buildCapturedFindingsDiagnostics, captureFailureBlockDetail } from './capture-retry.js';
-import type { bindNativeReviewEvidence } from './native-task-review-bindings.js';
+import type { NativeReviewTransportRuntime, PersistedState } from './native-review-types.js';
+import type { SessionEnforcementState } from '../types.js';
 import { abandonAndBlockByHostCall } from './durable-dispatch.js';
-import { buildEnforcementError } from '../../blocked-result.js';
 import { readState } from '../../../adapters/persistence.js';
-import type { PersistedState } from './native-task-review-types.js';
 
-export async function handleReviewerExecutionFailure(input: {
-  readonly runtime: NativeReviewTransportRuntime;
-  readonly sessDir: string;
-  readonly callId: string;
-  readonly childSessionId: string;
-  readonly hookOutput: ToolHookAfterOutput;
-  readonly obligationId: string;
-  readonly sessionId: string;
-  readonly phase: string;
-}): Promise<boolean> {
-  const { runtime, sessDir, callId, childSessionId, hookOutput, obligationId, sessionId, phase } =
-    input;
-  const failures = runtime.reviewerExecutionFailures;
-  const failure = failures?.get(childSessionId) ?? failures?.get(`task:${callId}`);
-  if (!failure) return false;
-  await closeExecutionFailure({
-    runtime,
-    sessDir,
-    callId,
-    childSessionId,
-    code: failure.code,
-    reason: failure.reason,
-    obligationId,
-    sessionId,
-    phase,
-    output: hookOutput,
-  });
-  failures?.delete(childSessionId);
-  failures?.delete(`task:${callId}`);
-  return true;
+/** Remove the transient pending-review entry for a blocked obligation. */
+function clearPendingReviewForObligation(
+  state: SessionEnforcementState,
+  obligationId: string,
+): void {
+  for (const [tool, pending] of state.pendingReviews) {
+    if (pending.obligationId === obligationId) state.pendingReviews.delete(tool);
+  }
 }
-
 /** Canonical terminal closure for an already-detected reviewer execution failure. */
 export async function closeExecutionFailure(input: {
   readonly runtime: NativeReviewTransportRuntime;
@@ -114,23 +87,6 @@ export async function blockIncoherentCompletedCapture(input: {
     input.obligationId,
   );
   return true;
-}
-
-export function taskChildSessionId(output: ToolHookAfterOutput): string | null {
-  return typeof output.metadata?.sessionId === 'string' && output.metadata.sessionId.length > 0
-    ? output.metadata.sessionId
-    : null;
-}
-
-export function projectUnableToReview(
-  output: ToolHookAfterOutput,
-  obligationId: string,
-  findings: Pick<ReviewFindings, 'missingVerification' | 'unknowns'>,
-): void {
-  output.output = strictBlockedOutput('SUBAGENT_UNABLE_TO_REVIEW', {
-    obligationId,
-    ...unableReviewDiagnostics(findings),
-  });
 }
 
 /** Persistently close authorized dispatches whose absolute deadline elapsed
@@ -236,47 +192,4 @@ export async function projectFulfilledReview(input: {
     attemptId: input.attemptId,
     verdict: input.verdict,
   });
-}
-
-export async function writeBindingFailure(
-  input: CaptureFailureContext,
-  result: Exclude<Awaited<ReturnType<typeof bindNativeReviewEvidence>>, 'fulfilled'>,
-  childSessionId: string,
-): Promise<void> {
-  if (typeof result === 'object') {
-    await abandonOrRetryCaptureFailure({
-      ...input,
-      childSessionId,
-      code: result.code,
-      reason: JSON.stringify(result.details),
-      diagnostics: buildCapturedFindingsDiagnostics(result),
-    });
-    return;
-  }
-  if (result === 'execution_expired') {
-    await closeExecutionFailure({
-      runtime: input.runtime,
-      sessDir: input.sessDir,
-      callId: input.callId,
-      childSessionId,
-      sessionId: input.sessionId,
-      phase: input.phase,
-      code: 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      reason: 'The absolute reviewer deadline elapsed before the evidence mutation could bind.',
-      obligationId: input.obligationId,
-      output: input.output,
-    });
-    return;
-  }
-  input.output.output = strictBlockedOutput(
-    result === 'reused'
-      ? 'SUBAGENT_EVIDENCE_REUSED'
-      : result === 'lineage_unavailable'
-        ? 'REVIEW_ATTEMPT_UNAVAILABLE'
-        : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-    captureFailureBlockDetail({
-      obligationId: input.obligationId,
-      reason: `Native reviewer evidence binding returned ${result}.`,
-    }),
-  );
 }

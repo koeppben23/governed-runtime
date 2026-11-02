@@ -355,15 +355,12 @@ and binds `reviewOutputMode: "validated_json"` with
 `reviewAssuranceLevel: "host_message_validated"`. There is no text-extraction
 or StructuredOutput fallback. Failures block explicitly:
 
-| Condition                                                           | BLOCKED Code                                    |
-| ------------------------------------------------------------------- | ----------------------------------------------- |
-| Reviewer agent or a required agent capability is unavailable        | `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`      |
-| Host/provider rejects the selected execution options                | `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` |
-| Correlated response is not one complete strict JSON object          | `HOST_STRUCTURED_OUTPUT_REQUIRED`               |
-| JSON violates the reviewer findings contract                        | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`     |
-| Request/response, model, tool-free execution or completion unproven | `REVIEWER_CAPTURE_PROVENANCE_INVALID`           |
-| Host cannot encode a required formatted history message             | `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`         |
-| Child session output cannot bind to host-owned execution provenance | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`  |
+| Condition                                                           | BLOCKED Code                                   |
+| ------------------------------------------------------------------- | ---------------------------------------------- |
+| Correlated response is not one complete strict JSON object          | `HOST_STRUCTURED_OUTPUT_REQUIRED`              |
+| JSON violates the reviewer findings contract                        | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`    |
+| Request/response, model, tool-free execution or completion unproven | `REVIEWER_CAPTURE_PROVENANCE_INVALID`          |
+| Child session output cannot bind to host-owned execution provenance | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` |
 
 Recovery is to correct an explicitly invalid OpenCode model configuration or
 produce a strict JSON serialization; do not force a reasoning mode or switch
@@ -404,7 +401,7 @@ The reviewer subagent returns one of three `overallVerdict` values:
 `unable_to_review` is enforced fail-closed at every layer:
 
 - **Tool layer (`src/integration/review/validation/review-validation.ts`):** rejects `findings.overallVerdict='unable_to_review'` regardless of the submitted reviewer verdict.
-- **Native Task transport (`src/integration/review/dispatch/native-task-review.ts`):** when the host-captured reviewer findings declare `unable_to_review`, it routes BLOCKED (code `SUBAGENT_UNABLE_TO_REVIEW`) instead of completing the review.
+- **Evidence recorder (`src/integration/review/evidence/reviewer-evidence-recorder.ts`):** binds host-captured `unable_to_review` findings only as an unreviewable settlement (blocked plan/architecture obligation, consumed peer-review obligation, implementation review consumed by the tool layer); it never completes an approving review. The V2 parent-output projection of `SUBAGENT_UNABLE_TO_REVIEW` after native capture is open parity work (**NOT_VERIFIED**).
 - **Convergence guard (`isConverged`):** returns `false` for `unable_to_review`, preventing any loop convergence path.
 - **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
 
@@ -660,9 +657,8 @@ second ingestion path.
 | L4/Tool | Reviewability       | Submitted `overallVerdict='unable_to_review'` (reviewer declared the artifact unreviewable) | `SUBAGENT_UNABLE_TO_REVIEW`          | tool layer + orchestrator |
 
 L3 (Task-prompt integrity) was removed with reviewer Task interception; reviewer
-dispatch contract failures surface as `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`,
-`STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`,
-`HOST_STRUCTURED_OUTPUT_REQUIRED`, `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, or
+dispatch contract failures surface as `HOST_STRUCTURED_OUTPUT_REQUIRED`,
+`HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, `REVIEWER_CAPTURE_PROVENANCE_INVALID` or
 `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
 
 Enforcement logic is implemented in `src/integration/review/enforcement/enforcement.ts` (with supporting modules under `src/integration/review/enforcement/`) and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.

@@ -295,12 +295,9 @@ real, registered reason.
 | `REVIEW_EVIDENCE_NOT_OBSERVED` | evidenceLocations have no matching authoritative repository observation for this reviewer attempt | Cite only locations obtained via flowguard_observe_repository during the attempt; start a fresh review otherwise |
 | `REVIEWER_CONTEXT_UNAVAILABLE` | Canonical reviewer context could not be materialized; no review attempt was created | Restore the persisted Discovery basis or workspace fingerprint, then re-run the review |
 | `INVALID_REVIEW_TOOL_SEQUENCE` | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn) | Follow invocation sequence; do not submit reviewerUnavailable when a host-observed reviewer invocation exists |
-| `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE` | The isolated reviewer agent or a required agent capability is unavailable | Inspect the actual SDK/provider error; no host StructuredOutput capability is required |
-| `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` | The host/provider rejected the selected execution options | Correct explicit OpenCode model options; do not restart the reviewer automatically or force `none` |
 | `HOST_STRUCTURED_OUTPUT_REQUIRED` | The correlated assistant response is not one complete strict JSON object | Inspect the contract diagnostic; do not extract JSON from prose or submit copied findings |
 | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | The correlated JSON violates ReviewerFindingsInput | Follow bounded capture recovery; never repair reviewer semantics outside the capture transaction |
 | `REVIEWER_CAPTURE_PROVENANCE_INVALID` | Request/response identity, model selection, tool-free execution or successful completion cannot be proved | Resolve the exact execution outcome; do not accept stale or concurrent messages or bypass the capture fence |
-| `REVIEWER_HOST_MESSAGE_ENCODING_FAILED` | OpenCode cannot encode a historical formatted message needed for reviewer provenance | Preserve session history and track upstream issues #40169/#26929; use an official corrected host, never a FlowGuard persistence workaround |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Re-hydrate; if persistent, restore from archive |
 | `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE` | Invocation does not establish coherent persisted attempt lineage | Re-invoke the reviewer; the stale invocation is retained for audit |
 | `REVIEW_ATTEMPT_NOT_FOUND` | Attempt referenced by invocation was not found in assurance state | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt |
@@ -308,8 +305,6 @@ real, registered reason.
 | `REVIEW_ATTEMPT_UNAVAILABLE` | No attempt can currently bind reviewer evidence; the frozen material is intact | Re-run the originating command for the same frozen subject; an obligation with no bindable attempt is closed deterministically so the next submission mints a fresh obligation |
 | `REVIEW_CAPACITY_REQUIRES_NEW_USER_COMMAND` | A previous reviewer exhausted its execution capacity; no new review may start in the same user turn | Report the blocked review and stop. A new review requires a new explicit review command from the user; do not retry the same transport or switch review tools |
 | `REVIEWER_STEP_BUDGET_EXHAUSTED` | The reviewer child reached its configured host step budget before structured findings could be captured; a plausible final text at the limit is not accepted | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer Task again, resubmit the artifact, or start another review in this turn. A new review requires a new explicit review command from the user (for a plan review: `/plan` again) |
-| `REVIEWER_OUTPUT_CAP_INVALID` | Reviewer budgeting cannot be applied or configuration is unreadable/invalid | The V2 adapter leaves `reviewer.outputTokenMax: "host"` untouched but blocks numeric overrides pending native headroom/final-wire proof. Do not substitute models or retry the same unsupported override. Correcting budgeting does not enable the still-blocked V2 reviewer transport. |
-| `REVIEWER_EXECUTION_TIMEOUT` | The reviewer exceeded a bounded execution deadline and the host confirmed termination | Report the blocked review and stop. A new review requires a new explicit review command after the host is quiescent; do not raise the timeout to bypass the block |
 | `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` | The reviewer exceeded a bounded deadline but host termination or quiescence could not be confirmed | Do not start another reviewer Task. Inspect the exact child session and confirm host quiescence before any further review |
 | `REVIEWER_OUTPUT_TRUNCATED` | The reviewer child stopped at the host output limit (`finish: "length"` / `MessageOutputLengthError`) before a final answer; the truncated review is never serialized | Terminal capacity closure: the exact dispatch is `outcome_unknown`, the attempt is `stale`, and the obligation is blocked with this code. Do not invoke the reviewer Task again, resubmit the artifact, or start another review in this turn. A new review requires a new explicit review command from the user (for a plan review: `/plan` again) |
 | `REVIEWER_TASK_INCOMPLETE` | The reviewer child finished (`stop`) without a non-blank final answer | While the attempt budget allows, FlowGuard re-arms a fresh attempt on the same frozen obligation and answers with a `reviewRetry` envelope (invoke the reviewer Task again). The blocked code itself means no fresh attempt was authorized: do not invoke the Task again; stop and re-run the originating command (for `/plan`: submit the current plan again), which re-arms a still-pending obligation or mints a fresh one when the exhausted budget closed it |
@@ -586,10 +581,7 @@ REVIEWER_CAPTURE_PROVENANCE_INVALID
 REVIEWER_COMPLETION_UNVERIFIABLE
 REVIEWER_CONTEXT_UNAVAILABLE
 REVIEWER_INVOCATION_EXHAUSTED
-REVIEWER_OUTPUT_CAP_INVALID
 REVIEWER_EXECUTION_OUTCOME_UNKNOWN
-REVIEWER_EXECUTION_TIMEOUT
-REVIEWER_HOST_MESSAGE_ENCODING_FAILED
 REVIEWER_OUTPUT_TRUNCATED
 REVIEWER_STEP_BUDGET_EXHAUSTED
 REVIEWER_TASK_ABORTED
@@ -668,8 +660,6 @@ STATE_MISSING
 STATE_MISSING_WITH_AUDIT
 STATE_UNREADABLE
 STRICT_REVIEW_ORCHESTRATION_FAILED
-STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE
-STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE
 SUBAGENT_CHALLENGE_CONTRADICTED
 SUBAGENT_CHALLENGE_COUNT_INCOHERENT
 SUBAGENT_CHALLENGE_EVIDENCE_MISSING

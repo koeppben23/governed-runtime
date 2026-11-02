@@ -23,7 +23,7 @@ import {
   type DispatchLedgerWriteDeps,
 } from './durable-dispatch.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
-import { nativeReviewAuditIntents } from './native-task-review-bindings.js';
+import { nativeReviewAuditIntents } from './native-review-findings.js';
 import { createSessionState } from '../enforcement/enforcement.js';
 import { handleReviewTransportRecovery } from '../../tools/review-transport-recovery.js';
 import {

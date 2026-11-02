@@ -936,15 +936,6 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     },
   ),
   required(
-    'src/integration/review/dispatch/agent-resolution.ts',
-    'Reviewer agent resolution',
-    ['src/integration/review/dispatch/agent-resolution.test.ts'],
-    {
-      critical: true,
-      admission: admissionRecord('src/integration/review/dispatch/agent-resolution.ts'),
-    },
-  ),
-  required(
     'src/shared/canonical-json.ts',
     'Canonical JSON serialization authority',
     ['src/shared/canonical-json.test.ts'],
@@ -1912,30 +1903,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.integration], critical: true },
   ),
   candidate(
-    'src/integration/review/dispatch/native-task-review.ts',
-    'Native reviewer Task transport and capture-failure block composition',
-    'base',
-    ['src/integration/plugin.test.ts'],
-    'Run-10 diagnostics: the capture-failure block interpolates the real obligation id and bounds the raw reason and location failures. New transport authority; admission requires a profile full run meeting the per-target threshold.',
-    { source: [SOURCE.integration], critical: true },
-  ),
-  candidate(
-    'src/integration/review/dispatch/native-task-review-bindings.ts',
-    'Native reviewer capture, validation, binding, and settlement audit intents',
-    'base',
-    ['src/integration/plugin.test.ts'],
-    'Run-9 F2/F3: audit intents reflect the actual settlement outcome and unable-review diagnostics are bounded to validated findings. New binding authority; admission requires a profile full run meeting the per-target threshold.',
-    { source: [SOURCE.integration], critical: true },
-  ),
-  candidate(
-    'src/integration/review/dispatch/structured-followup.ts',
-    'Host-evidenced reviewer task completion and same-child structured reviewer findings serialization',
+    'src/integration/review/dispatch/native-review-findings.ts',
+    'Native reviewer findings contract, capture-gate validation, and settlement audit intents',
     'base',
     [
-      'src/integration/review/dispatch/reviewer-task-completion.test.ts',
-      'src/integration/plugin.test.ts',
+      'src/integration/review/dispatch/native-review-findings.test.ts',
+      'src/integration/review/dispatch/obligation-findings-schema.test.ts',
     ],
-    'F2 live: the host step-budget proof must keep the SDK session receiver and fail closed when required host evidence is unavailable. New detection authority; admission requires a profile full run meeting the per-target threshold.',
+    'Run-9 F2/F3: audit intents reflect the actual settlement outcome and unable-review diagnostics are bounded to validated findings. New binding authority; admission requires a profile full run meeting the per-target threshold.',
     { source: [SOURCE.integration], critical: true },
   ),
   candidate(

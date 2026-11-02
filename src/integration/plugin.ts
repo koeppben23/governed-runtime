@@ -21,7 +21,6 @@ import {
   nativeHostCallId,
 } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
-import { ReviewerCaptureController } from './reviewer-capture.js';
 import { validateNativeReviewerOutputLimit } from './reviewer-output-cap.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
@@ -410,7 +409,6 @@ async function createSessionRuntime(
         getWorkspaceDir: () => ws.cachedWsDir,
       },
       orchestratorDeps: {
-        reviewerCapture: new ReviewerCaptureController(),
         resolveSessionAuthority: (sid) => ws.resolveSessionAuthority(sid),
         updateReviewAssurance: ws.updateReviewAssurance,
         blockReviewOutcome: ws.blockReviewOutcome,
@@ -431,12 +429,9 @@ async function createSessionRuntime(
         tsaProvider: new HttpTimestampAuthorityProvider(),
         timestampVerifier: new PkijsTimestampVerifier(),
       },
-      toolTraceIds: new Map(),
       toolLatencyStarts: new Map(),
       activeCommandScopes: new Map(),
       checkReworkContinuations: new Set(),
-      reviewerOutputCapFailures: new Map(),
-      reviewerExecutionFailures: new Map(),
       reviewerExecutionTimeoutMs: config.reviewer.executionTimeoutMs,
       logError,
     };
@@ -494,7 +489,6 @@ async function createFlowGuardPluginHooks(
       invoke(
         event.sessionID,
         async ({ runtime, scope }) => {
-          runtime.orchestratorDeps.reviewerCapture?.beforeTool({ sessionID: event.sessionID });
           await actions.reviewer.beforeTool(scope, event);
           if (!record(event.input))
             throw buildEnforcementError(

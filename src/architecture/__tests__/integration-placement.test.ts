@@ -151,10 +151,10 @@ describe('integration placement authority', () => {
     const countByOwner = (owner: string) =>
       rootFiles.filter((entry) => entry.owner === owner).length;
 
-    expect(countByOwner('root-composition')).toBe(31);
+    expect(countByOwner('root-composition')).toBe(28);
     expect(countByOwner('root-host-runtime')).toBe(6);
-    expect(countByOwner('root-authority')).toBe(15);
-    expect(rootFiles.length).toBe(52);
+    expect(countByOwner('root-authority')).toBe(14);
+    expect(rootFiles.length).toBe(48);
   });
 
   it('freezes the host/runtime boundary set exactly', () => {
@@ -177,7 +177,7 @@ describe('integration placement authority', () => {
   it('exposes positive placement helpers for the context boundaries', () => {
     expect(placementOwnerOf('integration/plugin.ts')).toBe('root-composition');
     expect(placementOwnerOf('integration/plugin-helpers.ts')).toBe('root-composition');
-    expect(placementOwnerOf('integration/review/dispatch/native-task-review.ts')).toBe(
+    expect(placementOwnerOf('integration/review/dispatch/native-review-capture.ts')).toBe(
       'review-dispatch',
     );
     expect(placementOwnerOf('integration/rogue.ts')).toBeNull();

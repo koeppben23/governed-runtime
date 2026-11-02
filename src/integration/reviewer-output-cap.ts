@@ -1,6 +1,8 @@
 /** Native V2 budgeting: do not carry the V1 maxOutputTokens workaround forward. */
-import type { ReviewerOutputCapErrorCode, ReviewerOutputCapFailure } from './review/types.js';
-export type { ReviewerOutputCapErrorCode, ReviewerOutputCapFailure };
+type ReviewerOutputCapErrorCode =
+  | 'REVIEWER_OUTPUT_CAP_CONFIG_UNREADABLE'
+  | 'REVIEWER_OUTPUT_CAP_CONFIG_INVALID'
+  | 'REVIEWER_OUTPUT_CAP_MODEL_LIMIT_UNKNOWN';
 
 export class ReviewerOutputCapError extends Error {
   constructor(

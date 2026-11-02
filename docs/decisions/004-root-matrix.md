@@ -10,12 +10,12 @@ The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 (counts updated 2026-11-02):
 
-- `root-composition`: 31 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 28 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 6 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
-- `root-authority`: 15 files (cross-context authorities such as
+- `root-authority`: 14 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 52 root production files
+- total: 48 root production files
 
 The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
 catalogue/executor/completion composition and `opencode-governance.ts` for exact
@@ -35,19 +35,17 @@ growth target and all file-size limits remain unchanged.
 ADR-009 added `plugin-reviewer-capture.ts` as hook composition and
 `reviewer-capture.ts` as the synchronous request-provenance/capture-fence authority.
 The #1169 lifecycle simplification removes the hook-wrapper module: `plugin.ts`
-owns single native V2 registrations. Unsupported reviewer execution is blocked
-instead of registering a V1 capture/watchdog hook chain. Review modules still
-consume the unchanged capture authority; they do not
-import plugin composition. No replacement module or new authority was added.
+owns single native V2 registrations. The V1 Task capture fence
+(`reviewer-capture.ts`), its execution watchdog and failure persister
+(`reviewer-execution-watchdog.ts`, `reviewer-execution-failure.ts`) and the
+`chat.params` output-cap persister (`reviewer-output-cap-failure.ts`) were
+removed with the V1 reviewer transport (2026-11-02); they had no V2 production
+caller. The current same-child capture fence is
+`review/dispatch/native-review-capture.ts`. No replacement root module or new
+authority was added.
 
-`integration/reviewer-output-cap.ts` now validates native budgeting without
-rewriting model options. The V1 `chat.params` hook is removed; the existing
-`integration/reviewer-output-cap-failure.ts` terminal-persistence consumer uses
-semantic session lookup, not SDK envelopes. These remain host integration,
-not a new review authority. The bounded
-execution watchdog and its terminal-persistence adapter live in
-`integration/reviewer-execution-watchdog.ts` and
-`integration/reviewer-execution-failure.ts`.
+`integration/reviewer-output-cap.ts` validates native budgeting without
+rewriting model options. It remains host integration, not a review authority.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement
