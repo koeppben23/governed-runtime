@@ -1,88 +1,17 @@
 /**
  * @module cli/opencode-runtime-compat
- * @description Canonical authority for OpenCode instruction-source classification.
+ * @description Canonical exact-host-version pin and deny-list classifier.
  *
- * Read-only instruction-source diagnostics. The native V2 installer no longer
- * registers global mandate instructions; these classifications do not activate
- * governance or certify the native plugin. Historical documentation references
- * below describe the retained diagnostic evidence vocabulary, not V2 support:
- *   - https://opencode.ai/docs/config#instructions  (retrieved 2026-07)
- *   - https://opencode.ai/docs/rules                 (retrieved 2026-07)
+ * The pin is read by the demo/live harnesses and the SDK update tests. It is a
+ * retained old-generation baseline, not a V2 support certification; replacing
+ * it with the installed V2 host baseline is installed-host acceptance work.
+ * The former V1 instruction-source (`instructions[]`) classification and its
+ * runtime detection were removed with the global mandate instruction.
  *
- * Honesty model (deliberate, reviewed decision):
- *   - A present `instructions[]` entry means the instruction source is
- *     structurally present in the config. It does NOT prove the runtime actually
- *     loaded the file into the model context. FlowGuard has no reliable surface to verify
- *     activation (the Desktop app exposes no `--version` executable and no documented
- *     resolved-instruction API), so this module never claims "supported",
- *     "active", or "compatible".
- *   - `not-classified` is therefore the neutral, honest classification: the entry
- *     is in place; activation is simply not asserted here.
- *   - `known-unsupported` is asserted ONLY when a runtime positively matches an
- *     entry in {@link KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES}. This is a deny-list,
- *     not an allow-list. It is seeded empty: no OpenCode runtime is currently
- *     known — with evidence — to accept the `instructions[]` array entry while
- *     failing to resolve it as an instruction source. Entries may only be added
- *     with a positive, cited evidence source in `verifiedBy`.
+ * This is a pure module: no I/O, no side effects.
  *
- * An unknown runtime is NEVER treated as compatible/supported — it is simply
- * `not-classified` (present but unverified). Blocking is reserved for positively
- * known-incompatible runtimes.
- *
- * This is a pure module: no I/O, no side effects. Detection lives in
- * opencode-runtime-detect.ts; this module only classifies evidence.
- *
- * @version v3
+ * @version v4
  */
-
-/** Runtime "kind" derived from config-ownership heuristics (never from a version). */
-export type OpenCodeRuntimeKind = 'cli' | 'desktop-owned' | 'unknown';
-
-export interface OpenCodeRuntimeEvidence {
-  readonly runtimeKind: OpenCodeRuntimeKind;
-  readonly version: string | null;
-  readonly runtimeLine: string | null;
-}
-
-export interface OpenCodeRuntimeDenyEntry {
-  readonly runtimeLine: string;
-  readonly versionRange?: string;
-  readonly reason: string;
-  readonly verifiedBy: string;
-}
-
-export const KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES: readonly OpenCodeRuntimeDenyEntry[] = [];
-
-export type OpenCodeRuntimeStatus = 'not-classified' | 'known-unsupported';
-
-export interface OpenCodeRuntimeClassification {
-  readonly status: OpenCodeRuntimeStatus;
-  readonly matched?: OpenCodeRuntimeDenyEntry;
-}
-
-function versionInRange(version: string | null, range: string | undefined): boolean {
-  if (range === undefined) return true;
-  if (version === null) return false;
-  if (version === range) return true;
-  const prefix = range.endsWith('.x') ? range.slice(0, -1) : range.endsWith('.') ? range : null;
-  if (prefix !== null) return version.startsWith(prefix);
-  return false;
-}
-
-export function classifyOpenCodeRuntime(
-  evidence: OpenCodeRuntimeEvidence,
-  denyList: readonly OpenCodeRuntimeDenyEntry[] = KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES,
-): OpenCodeRuntimeClassification {
-  if (evidence.runtimeLine === null) return { status: 'not-classified' };
-  const matched = denyList.find(
-    (entry) =>
-      entry.runtimeLine === evidence.runtimeLine &&
-      versionInRange(evidence.version, entry.versionRange),
-  );
-  return matched ? { status: 'known-unsupported', matched } : { status: 'not-classified' };
-}
-
-// ─── Host contract compatibility ─────────────────────────────────────────────
 
 /** Exact OpenCode host version exercised by CI and represented by the baseline. */
 export const TESTED_OPENCODE_HOST_VERSION = '1.19.5';

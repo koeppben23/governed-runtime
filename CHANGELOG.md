@@ -1362,6 +1362,12 @@ stop`, reviewer child reported it could not complete the falsification).
   to 135 files); the `review-capture` profile keeps only the strict-JSON and
   message-capture primitives, and the V2 capture owners are not yet in a
   committed profile. Seven stale unused-export baseline entries are dropped.
+- **V1 OpenCode instruction-source diagnostics (#1190, #1169 WS1).**
+  `cli/opencode-runtime-detect.ts`, the `instructions[]` runtime classifier and
+  the never-emitted `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason are removed;
+  they had no production importer after the global mandate instruction was
+  dropped. `opencode-runtime-compat.ts` keeps only the retained old-generation
+  exact host pin used by demo/live harnesses and SDK update tests.
 
 ## [2.0.0-tp.2] - 2026-10-04
 

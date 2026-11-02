@@ -779,11 +779,16 @@ V2 production caller and are removed rather than kept as a dormant second path:
   `reviewer` object is strict, so these keys fail validation. The former cap
   check was the only fail-closed consumer of an unreadable config; ACTIVE
   runtime creation now fails with `CONFIG_INVALID` instead.
+- V1 instruction-source diagnostics: `cli/opencode-runtime-detect.ts` and the
+  `instructions[]` classifier in `cli/opencode-runtime-compat.ts` (no
+  production importer since the global mandate instruction was removed). The
+  module keeps only the old-generation exact host pin read by demos and SDK
+  update tests; replacing that pin is installed-host acceptance work.
 - Reason codes without a remaining emitter:
   `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`,
   `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`,
   `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`, `REVIEWER_EXECUTION_TIMEOUT`,
-  `REVIEWER_OUTPUT_CAP_INVALID`.
+  `REVIEWER_OUTPUT_CAP_INVALID`, `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED`.
 
 Live V2 residues have single owners: `native-review-findings.ts` (findings
 contract, capture-gate validation, settlement audit intents),
