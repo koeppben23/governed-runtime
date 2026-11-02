@@ -1356,7 +1356,8 @@ stop`, reviewer child reported it could not complete the falsification).
   policy to the Task after-hook (`capture-failure-routing.ts`, binding-failure
   routing, the unable-to-review output projection) is removed; the canonical
   retry classification, durable re-arm transition and closure owners stay with
-  their tests but are still not wired into the V2 capture. The implementation
+  their tests but are still not wired into the V2 capture; the reviewer
+  observation replay likewise has no V2 production caller. The implementation
   inventory lists the V1 behaviors that must be re-proven natively (Finding 6
   remains BLOCKED). The base mutation scope drops the three removed targets (138
   to 135 files); the `review-capture` profile keeps only the strict-JSON and

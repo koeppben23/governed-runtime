@@ -801,8 +801,11 @@ seed lost their only callers and are removed.
 (parity work, NOT_VERIFIED):** the retry/terminal classification and bounded
 retry diagnostics (`capture-retry.ts`), the durable re-arm transition
 (`durable-dispatch.ts` `abandonAndRearmByHostCall`) and the incoherent-verdict,
-pre-bind and expired-dispatch closures in `native-review-execution.ts`; each
-keeps its owner tests. The V1 glue that only connected them to the Task
+pre-bind and expired-dispatch closures in `native-review-execution.ts`, and the
+reviewer observation replay (`review/observations/observation-replay*.ts`), which
+V1 ran after the Task to persist `flowguard_observe_repository` observations;
+each keeps its owner tests but has no V2 production caller. The V2 reviewer
+currently cannot call `flowguard_observe_repository` at all. The V1 glue that only connected them to the Task
 after-hook (`capture-failure-routing.ts`, binding-failure routing and the
 unable-to-review output projection) is removed because the unused-export gate
 admits no unwired production code; V2 must route through these owners anew. The
