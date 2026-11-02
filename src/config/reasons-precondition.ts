@@ -439,9 +439,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'FlowGuard plugin enforcement hooks are not active. Tools run but mandatory review orchestration is unavailable.',
     recoverySteps: [
-      'Verify ~/.config/opencode/plugins/flowguard/index.ts exists',
-      'Run npm install in ~/.config/opencode',
-      'Use /reload in OpenCode V2 to reload installed plugins; installation does not activate governance',
+      'Verify the FlowGuard plugin is installed in the host plugin directory',
+      'Install the plugin with the host-documented FlowGuard installation flow',
+      'Reload the installed plugins; installation does not activate governance',
       'Run flowguard doctor to verify plugin importability and handshake',
       'Check session state for pluginHandshakeAt timestamp',
     ],
@@ -454,7 +454,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Re-run the command to create a fresh review obligation and retry orchestration',
       'If repeated failures: run flowguard doctor to verify plugin installation',
-      'Check network connectivity to the OpenCode SDK (session.create/prompt)',
+      'Check network connectivity to the host model transport',
       'Ensure the FlowGuard tool output format matches the expected contract',
     ],
   },
@@ -466,7 +466,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Review orchestration failed on {attempts} consecutive attempts. Manual intervention required.',
     recoverySteps: [
       'Run flowguard doctor to verify plugin installation and reviewer agent availability',
-      'Check network connectivity and OpenCode SDK health',
+      'Check network connectivity and host model transport health',
       'Use /abort to terminate this session and start fresh if infrastructure cannot be repaired',
     ],
   },
@@ -489,7 +489,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Run /hydrate to recreate or bind a valid FlowGuard session.',
       'Verify the workspace/session directory still exists and is writable.',
-      'Restart OpenCode if the sidecar session points to stale workspace state.',
+      'Restart the host runtime if the session points to stale workspace state.',
     ],
   },
 

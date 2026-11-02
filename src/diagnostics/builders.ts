@@ -108,7 +108,7 @@ function sessionDirMissing(detail: DiagnosticDetail): RuntimeDiagnostics {
     safeNextActions: [
       'Run /hydrate to recreate or bind a valid FlowGuard session.',
       'Verify the workspace/session directory exists and is writable.',
-      'Restart OpenCode if the sidecar session points to stale workspace state.',
+      'Restart the host runtime if the session points to stale workspace state.',
     ],
   };
 }

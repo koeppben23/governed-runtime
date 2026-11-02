@@ -232,9 +232,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'MISSING_SESSION_ID',
     category: 'input',
-    messageTemplate: 'sessionId is required (from OpenCode context.sessionID)',
+    messageTemplate: 'sessionId is required from the host tool context',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid sessionID',
+      'Ensure the host provides a valid sessionID',
       'This is usually an integration error — check tool context',
     ],
   },
@@ -242,9 +242,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'MISSING_WORKTREE',
     category: 'input',
-    messageTemplate: 'worktree is required (from OpenCode context.worktree)',
+    messageTemplate: 'worktree is required from the host tool context',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid worktree path',
+      'Ensure the host provides a valid worktree path',
       'This is usually an integration error — check tool context',
     ],
   },
@@ -254,7 +254,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: 'fingerprint is missing or malformed (expected 24 hex chars)',
     recoverySteps: [
-      'Ensure OpenCode context provides a valid worktree and fingerprint',
+      'Ensure the host provides a valid worktree and fingerprint',
       'Fingerprint must be a 24-character lowercase hex string',
     ],
   },

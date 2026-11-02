@@ -7,7 +7,7 @@ export const REVIEW_EXECUTION_REASONS = [
     messageTemplate:
       'The reviewer exceeded its bounded execution deadline, but host termination or quiescence could not be confirmed.',
     recoverySteps: [
-      'Do not start another reviewer Task. The exact child may still be active or the host outcome is unknown.',
+      'Do not start another reviewer subagent. The exact child may still be active or the host outcome is unknown.',
       'Inspect the host session and confirm quiescence before any further review is authorized.',
       'Report the blocker; a new review requires a new explicit review command after the host state is reconciled.',
     ],

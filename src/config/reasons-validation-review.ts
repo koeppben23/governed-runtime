@@ -110,7 +110,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child reached its configured host step budget before structured findings could be captured.',
     recoverySteps: [
-      'The review obligation is closed with this code. Do not invoke the reviewer Task again, resubmit the same artifact, or start another review in this turn.',
+      'The review obligation is closed with this code. Do not invoke the reviewer subagent again, resubmit the same artifact, or start another review in this turn.',
       'Report the blocker and stop. A new review requires a new explicit review command from the user (for a plan review: /plan again).',
     ],
   },
@@ -121,7 +121,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child stopped at the host output limit before a final review answer; the truncated review is never serialized or accepted: {reason}',
     recoverySteps: [
-      'The review obligation is closed with this code. Do not invoke the reviewer Task again, resubmit the same artifact, or start another review in this turn.',
+      'The review obligation is closed with this code. Do not invoke the reviewer subagent again, resubmit the same artifact, or start another review in this turn.',
       'Report the blocker and stop. A new review requires a new explicit review command from the user (for a plan review: /plan again).',
     ],
   },
@@ -132,7 +132,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'A previous reviewer exhausted its execution capacity and its review obligation is blocked. No new review may start in the same user turn.',
     recoverySteps: [
-      'Do not invoke the reviewer Task, resubmit the artifact, or start another review in this turn.',
+      'Do not invoke the reviewer subagent, resubmit the artifact, or start another review in this turn.',
       'Report the blocked review and stop. A new review requires a new explicit review command from the user.',
       'Do not bypass the lock by switching review tools or retrying the same transport.',
     ],
@@ -144,7 +144,7 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'The reviewer child finished without a final review answer; an unanswered review is never serialized or accepted: {reason}',
     recoverySteps: [
-      'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer Task again for it, and never submit or copy reviewer findings.',
+      'No fresh reviewer attempt was authorized for this obligation: do not invoke the reviewer subagent again for it, and never submit or copy reviewer findings.',
       'Report this blocker and stop. Recovery is the next run of the originating FlowGuard command (for /plan: submit the current plan again): it re-arms a still-pending obligation within its attempt budget, or mints a fresh review obligation when the exhausted budget closed this one.',
     ],
   },

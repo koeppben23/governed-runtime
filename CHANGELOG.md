@@ -286,6 +286,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration at `presentation.opencode.glyphProfile` is read with unchanged
   meaning; differing duplicate values fail validation. The existing
   `presentation.markdown` output contract is unchanged.
+- **Host-neutral recovery vocabulary (#1190, WS2).** Reason and recovery copy no
+  longer names the OpenCode SDK or its installation paths. Plugin, session,
+  worktree, model-transport and reviewer guidance now addresses the active host;
+  reviewer recovery says reviewer subagent rather than the retired V1 Task.
+  Rejection codes, precedence and canonical byte-envelope structure are unchanged.
 
 ### Fixed
 
