@@ -14,7 +14,8 @@ import { seedStrictPlanSession } from './plugin-host-task-diagnostics-test-helpe
 import { registerPendingReviewForAttempt } from './review/enforcement/enforcement.js';
 import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { OpenCodeGovernance, type NativeBefore } from './opencode-governance.js';
-import { OpenCodeHostAdapter, nativeHostCallId } from './opencode-host-adapter.js';
+import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { hashText } from '../shared/hashing.js';
 import { createEventFence } from './plugin-native-events.js';
@@ -137,7 +138,7 @@ describe('canonical V2 reviewer dispatch admission', () => {
         const state = (await readState(seeded.sessDir))!;
         expect(state.reviewAssurance!.dispatches).toMatchObject([
           {
-            hostCallId: nativeHostCallId('root', 'message', 'call'),
+            hostCallId: encodeHostCallId('root', 'message', 'call'),
             obligationId: seeded.obligationId,
             attemptId: state.reviewAssurance!.attempts[0]!.attemptId,
             dispatchStatus: 'authorized',
@@ -541,7 +542,7 @@ describe('canonical V2 reviewer dispatch admission', () => {
       state,
       authority,
       enforcement,
-      hostCallId: nativeHostCallId('root', 'message', 'call'),
+      hostCallId: encodeHostCallId('root', 'message', 'call'),
       proof: { evaluateProofGraphGate, renderPlanClaimDeclarations },
       deps: {
         updateReviewAssurance: async (

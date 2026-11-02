@@ -2,7 +2,7 @@
  * general process/descendant-quiescence assertion. */
 import { z } from 'zod';
 import type { MutationEpisode } from '../state/evidence-mutation-episode.js';
-import { readNativeHostCallIdentity } from './opencode-host-adapter.js';
+import { readHostCallIdentity } from '../state/host-identity.js';
 
 export type MutationObservation =
   | { readonly kind: 'observed'; readonly completedAt: string }
@@ -35,7 +35,7 @@ export function observeEditFailure(
   if (!sessionId || episode.toolName !== 'edit' || episode.status !== 'dispatch_authorized')
     return unobserved('No unresolved edit dispatch.');
   if (!Array.isArray(history)) return unobserved('Native history is unavailable.');
-  const identity = readNativeHostCallIdentity(episode.hostCallId);
+  const identity = readHostCallIdentity(episode.hostCallId);
   if (identity === null || identity.sessionId !== sessionId)
     return unobserved('No exact current native call identity.');
   const parsed = FailedLocalEdit.safeParse(

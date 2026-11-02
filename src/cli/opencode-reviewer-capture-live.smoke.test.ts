@@ -7,7 +7,7 @@ import { readState } from '../adapters/persistence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { writeStateWithArtifacts } from '../integration/tools/helpers.js';
 import { nativeOpenCodeCandidate } from './opencode-live-host-test-helpers.js';
-import { nativeHostCallId } from '../integration/opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 
 const ENABLED =
   process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
@@ -103,7 +103,7 @@ describe.skipIf(!ENABLED)('actual FlowGuard native reviewer capture on pinned Op
     const state = await readState(seeded.sessDir);
     expect(
       state?.reviewAssurance?.dispatches.some(
-        (dispatch) => dispatch.hostCallId === nativeHostCallId(sessionID, taskMessage.id, task.id),
+        (dispatch) => dispatch.hostCallId === encodeHostCallId(sessionID, taskMessage.id, task.id),
       ),
     ).toBe(true);
     const entries = await probe.entries();

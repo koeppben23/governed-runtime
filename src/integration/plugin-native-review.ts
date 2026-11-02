@@ -9,7 +9,7 @@ import type { GovernanceDelegationDispatch } from '../state/governance-activatio
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { READ_ONLY_HOST_TOOLS } from './phase-tool-gate.js';
-import { nativeHostCallId } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 import { abandonAndBlockByHostCall } from './review/dispatch/durable-dispatch.js';
 import { projectFulfilledReview } from './review/dispatch/native-review-execution.js';
 import {
@@ -84,7 +84,7 @@ async function childLineage(runtimeFor: RuntimeFor, scope: ActiveGovernanceScope
   const lineage = nativeReviewDispatchLineage(
     resolved.state,
     resolved.authority,
-    nativeHostCallId(dispatch.sessionId, dispatch.messageId, dispatch.callId),
+    encodeHostCallId(dispatch.sessionId, dispatch.messageId, dispatch.callId),
     scope.sessionId,
   );
   return { ...resolved, ...lineage };
@@ -115,7 +115,7 @@ async function resolveNativeCaptureTarget(
 ) {
   let nativeCallId: string;
   try {
-    nativeCallId = nativeHostCallId(event.sessionID, event.messageID, event.id);
+    nativeCallId = encodeHostCallId(event.sessionID, event.messageID, event.id);
   } catch {
     throw buildEnforcementError(
       'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
@@ -342,7 +342,7 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
         state: resolved.state,
         authority: resolved.authority,
         enforcement: resolved.runtime.ws.getEnforcementState(scope.root.sessionId),
-        hostCallId: nativeHostCallId(event.sessionID, event.messageID, event.id),
+        hostCallId: encodeHostCallId(event.sessionID, event.messageID, event.id),
         proof: { evaluateProofGraphGate, renderPlanClaimDeclarations },
       });
       args.prompt = prompt;
@@ -361,7 +361,7 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
         deps: resolved.runtime.ws,
         sessDir: resolved.sessDir,
         authority: resolved.authority,
-        hostCallId: nativeHostCallId(dispatch.sessionId, dispatch.messageId, dispatch.callId),
+        hostCallId: encodeHostCallId(dispatch.sessionId, dispatch.messageId, dispatch.callId),
         childSessionId,
       });
     },

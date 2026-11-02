@@ -18,8 +18,8 @@ import {
   OpenCodeHostAdapter,
   HostCapabilityMismatchError,
   projectOpenCodeEvent,
-  nativeHostCallId,
 } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { buildEnforcementError } from './blocked-result.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
@@ -234,7 +234,7 @@ function createReadOnlyObserver(input: RuntimeActionInput) {
     const root = sessionRoots.get(event.sessionID);
     const runtime = root === undefined ? undefined : runtimes.get(root);
     if (event.status !== 'completed' || !runtime) return;
-    const callID = nativeHostCallId(event.sessionID, event.messageID, event.id);
+    const callID = encodeHostCallId(event.sessionID, event.messageID, event.id);
     const sessionID = authority.scope.root.sessionId;
     await trackOperation(
       operations,
@@ -512,7 +512,7 @@ async function createFlowGuardPluginHooks(
             {
               tool: applicationTool(event.tool),
               sessionID: scope.root.sessionId,
-              callID: nativeHostCallId(event.sessionID, event.messageID, event.id),
+              callID: encodeHostCallId(event.sessionID, event.messageID, event.id),
             },
             output,
           );

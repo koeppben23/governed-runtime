@@ -10,7 +10,7 @@ import * as tools from './tools/index.js';
 import type { ToolDefinition } from './tools/helpers.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
-import { nativeHostCallId } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 import { toolAfter } from './plugin-afterhooks.js';
 import { reconcileHostMutationEpisodes } from './plugin-mutation-reconciliation.js';
 
@@ -138,7 +138,7 @@ export async function handleNativeCompletion(
   sessionId: string,
   event: NativeCompletion,
 ): Promise<void> {
-  const hostCallId = nativeHostCallId(event.sessionID, event.messageID, event.id);
+  const hostCallId = encodeHostCallId(event.sessionID, event.messageID, event.id);
   if (event.status === 'error') {
     await reconcileHostMutationEpisodes(runtime, sessionId, hostCallId);
     return;

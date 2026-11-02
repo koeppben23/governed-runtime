@@ -1,18 +1,18 @@
 /**
  * @module evidence-binding
- * @description Workspace binding schema — links an OpenCode session to a git worktree.
+ * @description Workspace binding schema — links a host session to a git worktree.
  *
  * @version v1
  */
 
 import { z } from 'zod';
 import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
-import { OpenCodeSessionId } from './evidence-assurance-internal.js';
+import { HostSessionId } from './host-identity.js';
 
 /**
  * Workspace binding resolved during init().
- * Links an OpenCode session to a git worktree and workspace registry.
- * Populated by context.sessionID and context.worktree from the Custom Tool API.
+ * Links a host session to a git worktree and workspace registry.
+ * Populated from the canonical host session and worktree context.
  *
  * fingerprint: 24-hex repository fingerprint derived from the canonical remote
  * URL (or local path fallback). Used as the workspace directory name under
@@ -21,7 +21,7 @@ import { OpenCodeSessionId } from './evidence-assurance-internal.js';
  */
 export const BindingInfo = z
   .object({
-    hostSessionId: OpenCodeSessionId,
+    hostSessionId: HostSessionId,
     worktree: z.string().min(1),
     fingerprint: z.string().regex(FINGERPRINT_PATTERN),
     resolvedAt: z.string().datetime(),

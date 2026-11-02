@@ -265,6 +265,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only. Exits 1 when the workspace is not upgrade-ready; `--json` emits the
   structured report.
 
+### Changed
+
+- **Host-neutral state identities (#1190, WS2).** State-owned host session and
+  assistant-message identifiers, plus the exact `{sessionId, messageId, callId}`
+  call tuple, now use neutral `Host*` schemas owned by
+  `src/state/host-identity.ts`. Encoding remains byte-identical for persisted call
+  IDs and message validation keeps the recorded format. The HAI no longer needs
+  an OpenCode host-name copy for these identities, and the architecture ratchet
+  drops the former naming exceptions.
+
 ### Fixed
 
 - **Native regular edit-error recovery (#1190).** Exact current native

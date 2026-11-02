@@ -4,7 +4,7 @@
  * Proves that evidence.ts (the facade) exports exactly the original public API
  * and does NOT leak internal/private implementation details.
  *
- * OpenCodeSessionId and coerceAssurance were private helpers in the original
+ * HostSessionId and coerceAssurance were private helpers in the original
  * evidence.ts (no `export` keyword) and MUST NOT appear in the facade
  * re-exports. The actor-assurance schema lives in its own shared authority
  * (`shared/actor-assurance.ts`) and is likewise not part of this facade.
@@ -49,11 +49,11 @@ import type {
   AuditEvent,
 } from './evidence.js';
 // @ts-expect-error Internal helper must not be importable through the facade.
-import type { OpenCodeSessionId } from './evidence.js';
+import type { HostSessionId } from './evidence.js';
 // @ts-expect-error Internal helper must not be importable through the facade.
 import type { coerceAssurance } from './evidence.js';
 
-const INTERNAL_HELPERS = ['OpenCodeSessionId', 'coerceAssurance'] as const;
+const INTERNAL_HELPERS = ['HostSessionId', 'coerceAssurance'] as const;
 
 const PUBLIC_VALUE_EXPORTS = [
   'CheckId',
@@ -150,9 +150,9 @@ describe('evidence.ts facade export-set regression', () => {
   });
 
   describe('BAD — no public API expansion', () => {
-    it('facade does NOT export OpenCodeSessionId', async () => {
+    it('facade does NOT export HostSessionId', async () => {
       const mod = await import('./evidence.js');
-      expect('OpenCodeSessionId' in mod).toBe(false);
+      expect('HostSessionId' in mod).toBe(false);
     });
 
     it('facade does NOT export coerceAssurance', async () => {
@@ -163,12 +163,12 @@ describe('evidence.ts facade export-set regression', () => {
 
   describe('CORNER — compile-time internal module isolation', () => {
     it('rejects type imports of private helpers through the facade', () => {
-      expectTypeOf<OpenCodeSessionId>().toBeAny();
+      expectTypeOf<HostSessionId>().toBeAny();
       expectTypeOf<typeof coerceAssurance>().toBeAny();
     });
   });
 
-  describe('EDGE — evidence-assurance-internal not re-exported by facade', () => {
+  describe('EDGE — host-identity not re-exported by facade', () => {
     it('internal module name does not appear in facade module keys', async () => {
       const mod = await import('./evidence.js');
       for (const name of INTERNAL_HELPERS) {

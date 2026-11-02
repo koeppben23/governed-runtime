@@ -1,11 +1,11 @@
 /** HAI and native OpenCode V2 client boundary; no live-host assurance is inferred. */
 import { describe, expect, it, vi } from 'vitest';
+import { OpenCodeHostAdapter, projectOpenCodeEvent } from '../integration/opencode-host-adapter.js';
 import {
-  OpenCodeHostAdapter,
-  nativeHostCallId,
-  readNativeHostCallIdentity,
-  projectOpenCodeEvent,
-} from '../integration/opencode-host-adapter.js';
+  encodeHostCallId,
+  HostIdentityError,
+  readHostCallIdentity,
+} from '../state/host-identity.js';
 import { createV2Host } from '../integration/opencode-v2-test-helpers.js';
 import { REQUIRED_INDEPENDENT_REVIEW_TRANSPORT, reviewTransportSatisfies } from './host-adapter.js';
 import type { OpenCodeEvent } from '@opencode/client';
@@ -137,8 +137,8 @@ describe('native V2 host adapter', () => {
 
 describe('native V2 notification projection', () => {
   it('reads only the exact canonical native tuple, without normalizing stored IDs', () => {
-    const id = nativeHostCallId('session', 'message', 'call');
-    expect(readNativeHostCallIdentity(id)).toEqual({
+    const id = encodeHostCallId('session', 'message', 'call');
+    expect(readHostCallIdentity(id)).toEqual({
       sessionId: 'session',
       messageId: 'message',
       callId: 'call',
@@ -155,20 +155,20 @@ describe('native V2 notification projection', () => {
       JSON.stringify({ callId: '', messageId: 'message', sessionId: 'session' }),
       JSON.stringify({ callId: 'call', messageId: 'message', sessionId: 'session', origin: 'ui' }),
     ])
-      expect(readNativeHostCallIdentity(unsupported)).toBeNull();
+      expect(readHostCallIdentity(unsupported)).toBeNull();
   });
 
   it('binds native call identity to session and host assistant message, not the provider ID alone', () => {
-    const base = nativeHostCallId('session', 'message', 'call_0');
-    expect(nativeHostCallId('session', 'message', 'call_0')).toBe(base);
+    const base = encodeHostCallId('session', 'message', 'call_0');
+    expect(encodeHostCallId('session', 'message', 'call_0')).toBe(base);
     expect(
       new Set([
         base,
-        nativeHostCallId('other-session', 'message', 'call_0'),
-        nativeHostCallId('session', 'other-message', 'call_0'),
-        nativeHostCallId('session', 'message', 'call_1'),
+        encodeHostCallId('other-session', 'message', 'call_0'),
+        encodeHostCallId('session', 'other-message', 'call_0'),
+        encodeHostCallId('session', 'message', 'call_1'),
         // Delimiter-shaped values cannot alias a different tuple.
-        nativeHostCallId('session","messageId":"x', 'message', 'call_0'),
+        encodeHostCallId('session","messageId":"x', 'message', 'call_0'),
       ]).size,
     ).toBe(5);
   });
@@ -178,9 +178,7 @@ describe('native V2 notification projection', () => {
     ['session', '', 'call'],
     ['session', 'message', ''],
   ])('refuses an incomplete native call identity (%j, %j, %j)', (session, message, call) => {
-    expect(() => nativeHostCallId(session, message, call)).toThrow(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-    );
+    expect(() => encodeHostCallId(session, message, call)).toThrow(HostIdentityError);
   });
 
   it('refuses a failed-tool notification without its host assistant-message identity', () => {
@@ -190,7 +188,7 @@ describe('native V2 notification projection', () => {
         type: 'session.tool.failed',
         data: { sessionID: 'child', id: 'call' },
       } as unknown as OpenCodeEvent),
-    ).toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    ).toThrow(HostIdentityError);
   });
   it.each(['session.deleted', 'session.idle', 'session.execution.failed', 'session.tool.failed'])(
     'preserves %s identity and data without creating completion proof',
@@ -215,7 +213,7 @@ describe('native V2 notification projection', () => {
             ...data,
             hostEventId: 'event',
             ...(type === 'session.tool.failed'
-              ? { hostCallId: nativeHostCallId('child', 'message', 'call') }
+              ? { hostCallId: encodeHostCallId('child', 'message', 'call') }
               : {}),
           },
         },

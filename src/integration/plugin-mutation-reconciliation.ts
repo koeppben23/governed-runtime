@@ -4,7 +4,7 @@ import { unresolvedMutationEpisodes } from '../state/evidence-mutation-episode.j
 import { observeEditFailure } from './host-mutation-observation.js';
 import { commitMutationCompletion } from './plugin-mutation-episodes.js';
 import { IntegrationInvariantError } from './errors.js';
-import { readNativeHostCallIdentity } from './opencode-host-adapter.js';
+import { readHostCallIdentity } from '../state/host-identity.js';
 
 const EventTrigger = z.object({
   type: z.literal('session.tool.failed'),
@@ -43,7 +43,7 @@ export async function reconcileHostMutationEpisodes(
   const client = runtime.orchestratorDeps.client;
   const histories = new Map<string, unknown>();
   for (const episode of episodes) {
-    const identity = readNativeHostCallIdentity(episode.hostCallId);
+    const identity = readHostCallIdentity(episode.hostCallId);
     if (identity === null) continue; // Historical/invalid IDs stay unresolved, never migrated.
     if (!histories.has(identity.sessionId)) {
       let history: unknown;

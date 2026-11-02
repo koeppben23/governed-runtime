@@ -17,7 +17,7 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import * as outbox from './audit-outbox.js';
 import { acquireSessionWriteLock } from '../adapters/persistence-lock.js';
 import { createReviewClient } from './opencode-v2-test-helpers.js';
-import { nativeHostCallId } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 
 let workspace: Awaited<ReturnType<typeof createTestWorkspace>>;
 let sessDir: string;
@@ -29,7 +29,7 @@ const completedAt = '2026-10-01T00:00:01.000Z';
 beforeEach(async () => {
   workspace = await createTestWorkspace();
   sessionId = randomUUID();
-  hostCallId = nativeHostCallId(sessionId, 'message', 'edit-call');
+  hostCallId = encodeHostCallId(sessionId, 'message', 'edit-call');
   const binding = await canonicalBinding(workspace.tmpDir, sessionId);
   sessDir = sessionDir(binding.fingerprint, sessionId);
   const authorized = authorizeMutationEpisode([], {
@@ -159,7 +159,7 @@ describe('mutation completion authority and reconciliation', () => {
 
   it('reads the persisted native child identity, not the governed root history', async () => {
     const input = await completionInput();
-    const childCall = nativeHostCallId('child', 'message', 'edit-call');
+    const childCall = encodeHostCallId('child', 'message', 'edit-call');
     await writeState(sessDir, {
       ...input.resolution.state,
       mutationEpisodes: [{ ...input.expected, hostCallId: childCall }],
@@ -196,7 +196,7 @@ describe('mutation completion authority and reconciliation', () => {
     const second = {
       ...input.expected,
       episodeId: randomUUID(),
-      hostCallId: nativeHostCallId(sessionId, 'second-message', 'edit-call'),
+      hostCallId: encodeHostCallId(sessionId, 'second-message', 'edit-call'),
     };
     await writeState(sessDir, {
       ...input.resolution.state,

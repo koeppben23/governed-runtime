@@ -131,15 +131,7 @@ const HOST_SPECIFIC_ALLOWLIST: readonly Allowance[] = [
   { file: 'integration/tools/simple/help-tool.ts', count: 1, reason: GLYPH_READ },
   { file: 'integration/tools/status/status-tool.ts', count: 1, reason: GLYPH_READ },
   { file: 'logging/file-sink.ts', count: 2, reason: PERSISTED_LOCATION },
-  {
-    file: 'state/evidence-assurance-internal.ts',
-    count: 1,
-    reason: 'OpenCodeSessionId type name (WS2-D: neutral name, same format)',
-  },
-  { file: 'state/evidence-audit.ts', count: 2, reason: 'uses OpenCodeSessionId (WS2-D)' },
-  { file: 'state/evidence-binding.ts', count: 2, reason: 'uses OpenCodeSessionId (WS2-D)' },
-  { file: 'state/evidence-review-invocation.ts', count: 1, reason: PERSISTED_MESSAGE_ID },
-  { file: 'state/review-message-capture.ts', count: 1, reason: PERSISTED_MESSAGE_ID },
+  { file: 'state/host-identity.ts', count: 1, reason: PERSISTED_MESSAGE_ID },
   {
     file: 'state/risk-path-classifier.ts',
     count: 5,

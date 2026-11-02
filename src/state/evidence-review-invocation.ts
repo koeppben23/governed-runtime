@@ -18,9 +18,9 @@ import { z } from 'zod';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { ReviewObligationType } from './evidence-primitives.js';
 import { ReviewerModelSelection, ReviewMessageCapture } from './review-message-capture.js';
+import { HostMessageId } from './host-identity.js';
 
 const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);
-const MessageId = z.string().regex(/^msg/);
 
 /**
  * Host-observed capture facts unique to the native V2 transport. The
@@ -33,12 +33,12 @@ export const NativeSubagentCaptureProvenance = z
     schemaVersion: z.literal(1),
     /** Canonical native call identity under which the dispatch was authorized. */
     nativeCallId: z.string().min(1),
-    requestMessageId: MessageId,
-    responseMessageId: MessageId,
+    requestMessageId: HostMessageId,
+    responseMessageId: HostMessageId,
     requestDigest: Sha256Digest,
     payloadDigest: Sha256Digest,
     model: ReviewerModelSelection,
-    assistantMessageIds: z.tuple([MessageId]).readonly(),
+    assistantMessageIds: z.tuple([HostMessageId]).readonly(),
     terminal: z
       .object({
         outcome: z.literal('succeeded'),

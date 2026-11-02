@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as path from 'node:path';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
-import { OpenCodeHostAdapter, nativeHostCallId } from './opencode-host-adapter.js';
+import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { FLOWGUARD_TOOL_NAMES } from './tool-names.js';
 import * as tools from './tools/index.js';
@@ -50,7 +51,7 @@ vi.mock('./plugin-workspace.js', () => ({
   }),
 }));
 
-const NATIVE_CALL = nativeHostCallId('session', 'message', 'call');
+const NATIVE_CALL = encodeHostCallId('session', 'message', 'call');
 let cleanup: (() => void | Promise<void>) | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -377,7 +378,7 @@ describe('native V2 entrypoint', () => {
     expect(h.before.mock.calls[0]?.[1]).toEqual({
       tool: 'bash',
       sessionID: 'session',
-      callID: nativeHostCallId('session', 'message', 'native-call'),
+      callID: encodeHostCallId('session', 'message', 'native-call'),
     });
   });
 

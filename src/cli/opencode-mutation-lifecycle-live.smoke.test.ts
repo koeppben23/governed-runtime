@@ -8,7 +8,7 @@ import { computeFingerprint, sessionDir } from '../adapters/workspace/index.js';
 import { writeStateWithArtifacts } from '../integration/tools/helpers.js';
 import { readState } from '../adapters/persistence.js';
 import { computeGitControlPlaneMarker } from '../integration/git-control-plane.js';
-import { nativeHostCallId } from '../integration/opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 
@@ -274,7 +274,7 @@ describe.skipIf(!LIVE)('MUT4 real-host FlowGuard recovery', () => {
       await vi.waitFor(async () => {
         expect((await readState(stateDir))!.mutationEpisodes).toEqual([
           expect.objectContaining({
-            hostCallId: nativeHostCallId(childID, message.id, part.id),
+            hostCallId: encodeHostCallId(childID, message.id, part.id),
             status: 'completed',
             outcome: 'failure',
           }),

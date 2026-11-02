@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionMessageAssistantTool } from '@opencode/client';
 import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
 import { observeEditFailure } from './host-mutation-observation.js';
-import { nativeHostCallId } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 
 const result = authorizeMutationEpisode([], {
   episodeId: '11111111-1111-4111-8111-111111111111',
@@ -93,7 +93,7 @@ describe('native V2 edit-error observation boundary', () => {
 
 const currentEpisode = {
   ...episode,
-  hostCallId: nativeHostCallId('session-1', 'message-1', 'call-1'),
+  hostCallId: encodeHostCallId('session-1', 'message-1', 'call-1'),
 };
 const regular = {
   ...native,
@@ -157,8 +157,8 @@ describe('pinned local edit typed-failure contract', () => {
     { ...currentEpisode, toolName: 'write' },
     { ...currentEpisode, status: 'completed' as const },
     { ...currentEpisode, hostCallId: 'call-1' },
-    { ...currentEpisode, hostCallId: nativeHostCallId('session-1', 'other-message', 'call-1') },
-    { ...currentEpisode, hostCallId: nativeHostCallId('other-session', 'message-1', 'call-1') },
+    { ...currentEpisode, hostCallId: encodeHostCallId('session-1', 'other-message', 'call-1') },
+    { ...currentEpisode, hostCallId: encodeHostCallId('other-session', 'message-1', 'call-1') },
     { ...currentEpisode, authorizedAt: 'invalid' },
     { ...currentEpisode, authorizedAt: new Date(regular.time.completed + 1).toISOString() },
   ])('rejects an inadmissible or stale episode: %j', (candidate) => {

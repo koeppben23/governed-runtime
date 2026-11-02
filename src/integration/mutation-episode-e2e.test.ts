@@ -34,7 +34,7 @@ import {
   type TestWorkspace,
 } from './test-helpers.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
-import { nativeHostCallId } from './opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -275,10 +275,10 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const authorized = await readState(sessDir);
       expect(
         authorized!.mutationEpisodes.find(
-          (episode) => episode.hostCallId === nativeHostCallId(sessionID, 'message', callID),
+          (episode) => episode.hostCallId === encodeHostCallId(sessionID, 'message', callID),
         ),
       ).toMatchObject({
-        hostCallId: nativeHostCallId(sessionID, 'message', callID),
+        hostCallId: encodeHostCallId(sessionID, 'message', callID),
         toolName: 'bash',
         status: 'dispatch_authorized',
         evidenceStatus: 'ineligible',
@@ -310,7 +310,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       const completed = await readState(sessDir);
       expect(
         completed!.mutationEpisodes.find(
-          (episode) => episode.hostCallId === nativeHostCallId(sessionID, 'message', callID),
+          (episode) => episode.hostCallId === encodeHostCallId(sessionID, 'message', callID),
         ),
       ).toMatchObject({
         status: 'completed',
@@ -430,7 +430,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       expect(
         (await readState(sessDir))!.mutationEpisodes.find(
-          (episode) => episode.hostCallId === nativeHostCallId(sessionID, 'message', callID),
+          (episode) => episode.hostCallId === encodeHostCallId(sessionID, 'message', callID),
         ),
       ).toMatchObject({ status: 'completed', outcome: 'success' });
     } finally {
@@ -536,7 +536,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
 
       expect(
         (await readState(sessDir))!.mutationEpisodes.find(
-          (episode) => episode.hostCallId === nativeHostCallId(sessionID, 'message', callID),
+          (episode) => episode.hostCallId === encodeHostCallId(sessionID, 'message', callID),
         ),
       ).toMatchObject({ status: 'dispatch_authorized', outcome: null });
     } finally {
@@ -647,7 +647,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // The episode stays unbound: it can never pass the final evidence gate.
       const persisted = await readState(sessDir);
       const episode = persisted!.mutationEpisodes.find(
-        (e) => e.hostCallId === nativeHostCallId(sessionID, 'message', callID),
+        (e) => e.hostCallId === encodeHostCallId(sessionID, 'message', callID),
       )!;
       expect(episode.implementationDigest).toBeNull();
       expect(episode.evidenceStatus).toBe('ineligible');
@@ -727,7 +727,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // not provably over.
       const sameEpochResolution = parseToolResult<{ code?: string }>(
         await reconcile_mutation_episode.execute(
-          { hostCallId: nativeHostCallId(sessionID, 'message', crashedCallID) },
+          { hostCallId: encodeHostCallId(sessionID, 'message', crashedCallID) },
           ctx,
         ),
       );
@@ -740,7 +740,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       resetRuntimeInstanceIdForTest();
       const concurrentInstance = parseToolResult<{ code?: string; message?: string }>(
         await reconcile_mutation_episode.execute(
-          { hostCallId: nativeHostCallId(sessionID, 'message', crashedCallID) },
+          { hostCallId: encodeHostCallId(sessionID, 'message', crashedCallID) },
           ctx,
         ),
       );
@@ -755,7 +755,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       await killLeaseHolder(sessDir);
       const resolvedResult = parseToolResult<{ code?: string; error?: boolean }>(
         await reconcile_mutation_episode.execute(
-          { hostCallId: nativeHostCallId(sessionID, 'message', crashedCallID) },
+          { hostCallId: encodeHostCallId(sessionID, 'message', crashedCallID) },
           ctx,
         ),
       );
@@ -768,12 +768,12 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // runtime instance and a LATER lease generation than the authorizing one.
       const resolution = resolved!.mutationEpisodeResolutions[0]!;
       expect(resolution).toMatchObject({
-        hostCallId: nativeHostCallId(sessionID, 'message', crashedCallID),
+        hostCallId: encodeHostCallId(sessionID, 'message', crashedCallID),
         status: 'reconciled_after_unknown_outcome',
         basis: 'worktree_recapture',
       });
       const resolvedEpisode = resolved!.mutationEpisodes.find(
-        (episode) => episode.hostCallId === nativeHostCallId(sessionID, 'message', crashedCallID),
+        (episode) => episode.hostCallId === encodeHostCallId(sessionID, 'message', crashedCallID),
       )!;
       expect(resolution.resolvingRuntimeInstanceId).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
@@ -783,7 +783,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // resolution makes it non-blocking.
       expect(
         resolved!.mutationEpisodes.find(
-          (episode) => episode.hostCallId === nativeHostCallId(sessionID, 'message', crashedCallID),
+          (episode) => episode.hostCallId === encodeHostCallId(sessionID, 'message', crashedCallID),
         )?.status,
       ).toBe('dispatch_authorized');
 
@@ -801,7 +801,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       });
       expect(
         (await readState(sessDir))!.mutationEpisodes.find(
-          (episode) => episode.hostCallId === nativeHostCallId(sessionID, 'message', crashedCallID),
+          (episode) => episode.hostCallId === encodeHostCallId(sessionID, 'message', crashedCallID),
         )?.status,
       ).toBe('dispatch_authorized');
       expect(
@@ -818,7 +818,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // A double resolution is a no-op, never a rewrite (append-only).
       const doubleResult = parseToolResult<{ code?: string }>(
         await reconcile_mutation_episode.execute(
-          { hostCallId: nativeHostCallId(sessionID, 'message', crashedCallID) },
+          { hostCallId: encodeHostCallId(sessionID, 'message', crashedCallID) },
           ctx,
         ),
       );
@@ -929,7 +929,7 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       await killLeaseHolder(sessDir);
       resetRuntimeInstanceIdForTest();
       await reconcile_mutation_episode.execute(
-        { hostCallId: nativeHostCallId(sessionID, 'message', crashedCallID) },
+        { hostCallId: encodeHostCallId(sessionID, 'message', crashedCallID) },
         ctx,
       );
 

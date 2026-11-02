@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { SessionMessageInfo } from '@opencode/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createReviewerTransportProbe } from './opencode-reviewer-transport-test-helpers.js';
-import { nativeHostCallId } from '../integration/opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
 let probe: Awaited<ReturnType<typeof createReviewerTransportProbe>> | undefined;
@@ -73,14 +73,14 @@ async function nativeReview(mode: 'positive' | 'tool' = 'positive') {
     expect(review).toHaveLength(1);
     expect(review[0]).toMatchObject({ finish: 'stop', time: { completed: expect.any(Number) } });
     expect(review[0]).not.toHaveProperty('parentID');
-    const identity = nativeHostCallId(parent.id, task.message.id, task.part.id);
+    const identity = encodeHostCallId(parent.id, task.message.id, task.part.id);
     await vi.waitFor(async () => {
       expect(
         (await host.observations()).some((entry) => {
           const event = entry.event;
           return (
             event?.type === 'session.tool.progress' &&
-            nativeHostCallId(event.data.sessionID, event.data.assistantMessageID, event.data.id) ===
+            encodeHostCallId(event.data.sessionID, event.data.assistantMessageID, event.data.id) ===
               identity &&
             event.data.metadata.sessionID === childID
           );

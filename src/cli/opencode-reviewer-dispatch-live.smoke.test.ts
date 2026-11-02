@@ -5,7 +5,7 @@ import { seedStrictPlanSession } from '../integration/plugin-host-task-diagnosti
 import { readState } from '../adapters/persistence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { writeStateWithArtifacts } from '../integration/tools/helpers.js';
-import { nativeHostCallId } from '../integration/opencode-host-adapter.js';
+import { encodeHostCallId } from '../state/host-identity.js';
 import { hashText } from '../shared/hashing.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
@@ -64,7 +64,7 @@ describe.skipIf(!LIVE)('actual product native reviewer dispatch authority', () =
         expect(part.state.status).toBe('running');
         expect(state.reviewAssurance!.dispatches).toMatchObject([
           {
-            hostCallId: nativeHostCallId(parent, message.id, part.id),
+            hostCallId: encodeHostCallId(parent, message.id, part.id),
             dispatchStatus: 'authorized',
             obligationId: seeded.obligationId,
             attemptId: state.reviewAssurance!.attempts[0]!.attemptId,
