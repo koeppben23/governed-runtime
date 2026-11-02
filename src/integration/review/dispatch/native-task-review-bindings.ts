@@ -68,7 +68,9 @@ export function nativeReviewAuditIntents(input: {
   promptHash: string;
   findingsHash: string;
   phase: SessionState['phase'];
+  invocationMode?: 'native_task_message_json' | 'native_subagent_message_json';
 }) {
+  const invocationMode = input.invocationMode ?? 'native_task_message_json';
   return (_result: 'fulfilled' | 'reused', state: SessionState, occurredAt: string) => {
     const settled = state.reviewAssurance?.obligations.find(
       (item) => item.obligationId === input.obligation.obligationId,
@@ -87,7 +89,7 @@ export function nativeReviewAuditIntents(input: {
           attemptId: input.attemptId,
           promptHash: input.promptHash,
           findingsHash: input.findingsHash,
-          invocationMode: 'native_task_message_json',
+          invocationMode,
           hostVisible: true,
           transcriptNavigable: true,
           validationAuthority: 'flowguard',

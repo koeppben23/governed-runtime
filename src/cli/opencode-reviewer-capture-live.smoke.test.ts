@@ -71,13 +71,14 @@ describe.skipIf(!ENABLED)('actual FlowGuard native reviewer capture on pinned Op
     ).toMatchObject({ state: { status: 'completed' } });
     if (plan?.state.status !== 'completed')
       throw new Error('Actual product did not release a pending plan output');
-    const output = plan.state.content
+    const planOutput = plan.state.content
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
       .join('');
-    expect(output).toContain('reviewExecution');
-    expect(output).toContain('flowguard-reviewer');
-    expect(output).not.toContain('"reviewResult"');
+    expect(planOutput).toContain('reviewInvocation');
+    expect(planOutput).toContain('"reviewDispatch":{"required":true}');
+    expect(planOutput).not.toContain('"completed":true');
+    expect(planOutput).not.toContain('"reviewResult"');
     const taskMessage = history.find(
       (message) =>
         message.type === 'assistant' &&
@@ -90,6 +91,15 @@ describe.skipIf(!ENABLED)('actual FlowGuard native reviewer capture on pinned Op
     expect(task, JSON.stringify(tools)).toMatchObject({ state: { status: 'completed' } });
     if (taskMessage?.type !== 'assistant' || task?.type !== 'tool')
       throw new Error('Missing actual native reviewer task/message');
+    if (task.state.status !== 'completed')
+      throw new Error('Actual native reviewer task did not complete');
+    const reviewerOutput = task.state.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('');
+    expect(reviewerOutput).toContain('reviewExecution');
+    expect(reviewerOutput).toContain('flowguard-reviewer');
+    expect(reviewerOutput).not.toContain('"reviewResult"');
     const state = await readState(seeded.sessDir);
     expect(
       state?.reviewAssurance?.dispatches.some(

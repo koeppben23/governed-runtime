@@ -323,7 +323,10 @@ function dispatchLinksInvocation(
   return (
     dispatch.attemptId === invocation.attemptId &&
     dispatch.obligationId === invocation.obligationId &&
-    dispatch.hostCallId === invocation.childSessionId &&
+    dispatch.hostCallId ===
+      (invocation.transportVersion === 6
+        ? invocation.nativeProvenance?.nativeCallId
+        : invocation.childSessionId) &&
     dispatch.canonicalPromptDigest === invocation.promptHash
   );
 }

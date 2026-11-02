@@ -28,6 +28,7 @@ import {
 import { deriveRepositoryRevisionProvenance } from '../../../state/evidence.js';
 import { indexMarkdownSections } from '../../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { isAcceptedReviewTransport } from '../../../state/evidence-review-invocation.js';
 import {
   DEFAULT_MAX_REVIEWER_ATTEMPTS,
   CHALLENGE_POLICY_V1,
@@ -398,7 +399,7 @@ export function findAcceptedInvocationForFindings(
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'native_task_message_json' &&
+        isAcceptedReviewTransport(invocation) &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         invocation.consumedByObligationId === null,
@@ -464,61 +465,7 @@ export function appendObligationWithAttempt(
   };
 }
 
-/** Build canonical invocation evidence for the one sanctioned review transport. */
-export function buildInvocationEvidence(input: {
-  obligationId: string;
-  obligationType: ReviewObligationType;
-  mandateDigest: string;
-  criteriaVersion: string;
-  parentSessionId: string;
-  childSessionId: string;
-  promptHash: string;
-  canonicalPromptDigest?: string;
-  modelPromptDigest?: string | null;
-  findingsHash: string;
-  invokedAt: string;
-  fulfilledAt?: string;
-  capturedRawFindings: Record<string, unknown>;
-  capture: ReviewInvocationEvidence['capture'];
-  resolvedBranchSha?: string | null;
-  resolvedBaseSha?: string | null;
-  reviewedContentDigest?: string | null;
-  attemptId: string;
-}): ReviewInvocationEvidence {
-  const capturedVerdict = input.capturedRawFindings.overallVerdict;
-  return {
-    invocationId: randomUUID(),
-    obligationId: input.obligationId,
-    obligationType: input.obligationType,
-    parentSessionId: input.parentSessionId,
-    childSessionId: input.childSessionId,
-    agentType: REVIEWER_SUBAGENT_TYPE,
-    // One native child; exact message provenance and FlowGuard-validated JSON.
-    invocationMode: 'native_task_message_json',
-    transportVersion: 5,
-    capture: input.capture,
-    hostVisible: true,
-    transcriptNavigable: true,
-    promptHash: input.promptHash,
-    canonicalPromptDigest: input.canonicalPromptDigest,
-    modelPromptDigest: input.modelPromptDigest,
-    mandateDigest: input.mandateDigest,
-    criteriaVersion: input.criteriaVersion,
-    findingsHash: input.findingsHash,
-    invokedAt: input.invokedAt,
-    fulfilledAt: input.fulfilledAt ?? null,
-    consumedByObligationId: null,
-    capturedRawFindings: input.capturedRawFindings,
-    ...(typeof capturedVerdict === 'string' ? { capturedVerdict } : {}),
-    source: 'host-orchestrated',
-    reviewOutputMode: 'validated_json',
-    reviewAssuranceLevel: 'host_message_validated',
-    resolvedBranchSha: input.resolvedBranchSha ?? null,
-    resolvedBaseSha: input.resolvedBaseSha ?? null,
-    reviewedContentDigest: input.reviewedContentDigest ?? null,
-    attemptId: input.attemptId,
-  };
-}
+export { buildInvocationEvidence } from './invocation-evidence.js';
 
 export function hasEvidenceReuse(
   invocations: ReviewInvocationEvidence[],

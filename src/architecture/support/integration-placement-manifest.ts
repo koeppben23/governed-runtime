@@ -91,6 +91,21 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     targetProductionFiles: 13,
     budgetExceptions: [
       {
+        file: 'integration/review/dispatch/native-review-capture-failure.ts',
+        reason:
+          'Terminal capture closure stays separate from the successful proof path so tool-contaminated captures cannot emit invocation evidence.',
+      },
+      {
+        file: 'integration/review/dispatch/native-review-capture.ts',
+        reason:
+          'Current V2 same-child terminal-capture proof and exclusive lease; consumes canonical findings validation and evidence/audit writers without a second review authority.',
+      },
+      {
+        file: 'integration/review/dispatch/serialization-prompt.ts',
+        reason:
+          'Shared serialization prompt keeps the historical and current native transports byte-identical without duplicating instructions.',
+      },
+      {
         file: 'integration/review/dispatch/native-review-dispatch.ts',
         reason:
           'Native V2 pre-release and observed-child adapter consumes the existing dispatch ledger and frozen prompt authorities without invoking V1 transport DTOs or enabling capture/recovery.',
@@ -122,6 +137,13 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     dir: 'integration/review/obligations',
     description: 'Review obligations, attempts, and challenge lifecycle',
     targetProductionFiles: 12,
+    budgetExceptions: [
+      {
+        file: 'integration/review/obligations/invocation-evidence.ts',
+        reason:
+          'Extracted canonical invocation-evidence constructor keeps the transport generation explicit and assurance.ts inside the unchanged production file-size budget.',
+      },
+    ],
   },
   {
     id: 'review/context',
@@ -400,6 +422,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/dispatch/agent-resolution.ts', owner: 'review-dispatch' },
   { file: 'integration/review/evidence/anchor-contract-lines.ts', owner: 'review-evidence' },
   { file: 'integration/review/obligations/assurance.ts', owner: 'review-obligations' },
+  { file: 'integration/review/obligations/invocation-evidence.ts', owner: 'review-obligations' },
   { file: 'integration/review/obligations/attempt-lifecycle.ts', owner: 'review-obligations' },
   { file: 'integration/review/evidence/audit-events.ts', owner: 'review-evidence' },
   { file: 'integration/review/obligations/challenge-contract.ts', owner: 'review-obligations' },
@@ -436,6 +459,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-prompt.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-review-dispatch.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/native-review-capture.ts', owner: 'review-dispatch' },
+  {
+    file: 'integration/review/dispatch/native-review-capture-failure.ts',
+    owner: 'review-dispatch',
+  },
+  { file: 'integration/review/dispatch/serialization-prompt.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-types.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review.ts', owner: 'review-dispatch' },
   { file: 'integration/review/obligations/obligation-settlement.ts', owner: 'review-obligations' },

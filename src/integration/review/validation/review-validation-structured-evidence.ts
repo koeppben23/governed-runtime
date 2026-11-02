@@ -23,6 +23,7 @@ import {
   hasValidStructuredInvocationContract,
   type ReviewFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
+import { isAcceptedReviewTransport } from '../../../state/evidence-review-invocation.js';
 import {
   validateChallengeConsistency,
   type ChallengeConsistencyCode,
@@ -196,7 +197,7 @@ export function resolveStructuredFindings(
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
-      inv.invocationMode === 'native_task_message_json' &&
+      isAcceptedReviewTransport(inv) &&
       inv.capturedRawFindings != null,
   );
   return resolveFromStructuredInvocations(context, matchingInvocations);

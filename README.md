@@ -6,8 +6,9 @@ Host-aware governance runtime for AI-assisted software delivery.
 
 > **OpenCode V2 migration checkpoint:** native entrypoint and installation are
 > implemented; complete installed INACTIVE parity, interactive/autonomous activation,
-> policy-required human provenance and reviewer assurance/recovery remain unverified.
-> PR #1190 is Draft; this branch
+> policy-required human provenance and reviewer recovery remain unverified.
+> Reviewer dispatch and same-child evidence generation are connected; safe
+> unknown-outcome recovery remains unverified. PR #1190 is Draft; this branch
 > is not a supported ACTIVE V2 release.
 
 V2 must preserve V1 capabilities and governance guarantees, including

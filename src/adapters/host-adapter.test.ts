@@ -24,8 +24,10 @@ describe('native V2 host adapter', () => {
     expect(adapter.enforcementLevel).toBe('synchronous');
     expect(adapter.getWorkingDirectory()).toBe('/worktree');
     expect(adapter.getWorktree()).toBe('/worktree');
-    expect(adapter.isReviewerSupported()).toBe(false);
-    expect(adapter.capabilities.reviewTransports).toEqual([]);
+    expect(adapter.isReviewerSupported()).toBe(true);
+    expect(adapter.capabilities.reviewTransports).toEqual([
+      expect.objectContaining({ kind: 'native_subagent_message_json' }),
+    ]);
     expect(await adapter.validateCapabilities()).toMatchObject({
       valid: true,
       runtimeVerified: [],

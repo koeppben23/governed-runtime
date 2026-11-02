@@ -13,6 +13,7 @@ import {
   captureMatchesFindings,
   hasCaptureLineage,
 } from '../../../state/review-message-capture.js';
+import { isAcceptedReviewTransport } from '../../../state/evidence-review-invocation.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 
@@ -72,8 +73,7 @@ export function getReviewFindingsAcceptanceRejection(input: {
 /** Canonical provenance contract for captured host-observed reviewer evidence. */
 function currentTransport(invocation: ReviewInvocationEvidence): boolean {
   return (
-    invocation.invocationMode === 'native_task_message_json' &&
-    invocation.transportVersion === 5 &&
+    isAcceptedReviewTransport(invocation) &&
     invocation.hostVisible === true &&
     invocation.transcriptNavigable === true &&
     invocation.reviewOutputMode === 'validated_json' &&

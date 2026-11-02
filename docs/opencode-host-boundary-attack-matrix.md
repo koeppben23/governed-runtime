@@ -20,7 +20,8 @@ checks regenerate explicit candidate declarations rather than bypass comparisons
 They do not update installed-host support provenance.
 
 Root tests now require canonical durable review authority before native release
-and actual Child enrollment; capture/evidence/recovery remain blocked. See the
+and actual Child enrollment; evidence generation 6 is connected, while safe recovery
+remains blocked. See the
 [dispatch-only checkpoint](./host-probes/opencode-v2/reviewer-dispatch-authority.md). Positive
 binding, retry, closure and quarantine checks run at canonical owners through
 semantic fixtures. Read-only rich results remain intact with diagnostic-only

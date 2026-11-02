@@ -115,10 +115,13 @@ describe('structured review authority hard cut', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('admits exactly the native visible structured invocation generation', () => {
+  it('admits exactly the native visible structured invocation generations', () => {
     const schema = readFileSync(join(SRC, 'state/evidence-review-invocation.ts'), 'utf8');
-    expect(schema).toContain("invocationMode: z.literal('native_task_message_json')");
-    expect(schema).toContain('transportVersion: z.literal(5)');
+    expect(schema).toContain(
+      "invocationMode: z.enum(['native_task_message_json', 'native_subagent_message_json'])",
+    );
+    expect(schema).toContain('transportVersion: z.union([z.literal(5), z.literal(6)])');
+    expect(schema).toContain('nativeProvenance: NativeSubagentCaptureProvenance.optional()');
     expect(schema).toContain('capture: ReviewMessageCapture');
     expect(schema).toContain('hostVisible: z.literal(true)');
     expect(schema).toContain('transcriptNavigable: z.literal(true)');
@@ -127,6 +130,5 @@ describe('structured review authority hard cut', () => {
     expect(schema).not.toContain('structuredOutputUsed');
     expect(schema).toContain("reviewAssuranceLevel: z.literal('host_message_validated')");
     expect(schema).toContain('capturedRawFindings: z.record');
-    expect(schema).not.toContain('z.enum');
   });
 });

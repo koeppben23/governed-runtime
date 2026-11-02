@@ -116,7 +116,8 @@ same-agent continuation; replay cannot move enrollment back to an older call.
 Reviewer enrollment additionally requires the
 [canonical independent-review dispatch authority](./reviewer-dispatch-authority.md),
 durable before native release and bound to the actual progress-receipt child.
-Completion/capture/evidence/recovery remain blocked. None of these
+The [step-3 capture port](./reviewer-capture-evidence.md) connects evidence
+generation 6 and terminal same-child binding. Safe recovery remains blocked. None of these
 ordinary-delegation receipts mint reviewer evidence,
 operator decisions or regular edit-error terminality. Transport-v5 and
 `review-assurance.v7` remain unchanged.

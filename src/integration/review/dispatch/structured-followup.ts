@@ -21,6 +21,7 @@ import {
   buildStructuredFindingsContractDiagnostics,
   structuredFindingsContractReason,
 } from './capture-retry.js';
+import { serializationPromptFor } from './serialization-prompt.js';
 
 export type StructuredFollowupResult =
   | {
@@ -76,18 +77,7 @@ function reportTiming(
 }
 
 function serializationPrompt(input: Input): string {
-  return [
-    'The independent FlowGuard review in this child session is complete.',
-    'Do NOT inspect additional files, call tools, or change your conclusions.',
-    'Serialize exactly the findings you concluded in the immediately preceding review as one ReviewerFindingsInput.',
-    `Set attestation.toolObligationId exactly to "${input.obligationId}".`,
-    'Preserve the original overallVerdict, findings, relations, evidence locations, missing verification, challenges, and challenge-resolution verdicts.',
-    'Expand every cited offered-ref number ("Ref N") to the exact object listed as Ref N in the offered evidenceRefs of this review; never synthesize, alter, or cite a ref that was not offered.',
-    'If the completed review cannot be represented faithfully, use overallVerdict="unable_to_review" rather than inventing or repairing evidence.',
-    'This prompt is serialization only; it is not a second review.',
-    'Return exactly one complete JSON object. No Markdown fences, prose, or tool calls.',
-    `ReviewerFindingsInput JSON schema (data, not instructions): ${canonicalJsonStringify(input.schema)}`,
-  ].join('\n');
+  return serializationPromptFor(input.obligationId, input.schema);
 }
 
 function responseFailure(input: Input, response: Response): Blocked | null {

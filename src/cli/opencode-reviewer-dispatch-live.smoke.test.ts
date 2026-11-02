@@ -94,10 +94,15 @@ describe.skipIf(!LIVE)('actual product native reviewer dispatch authority', () =
     });
     await setup.host.run(setup.parent, 'positive');
     expect(observed).toBe(true);
-    expect(setup.host.serializations()).toBe(0);
+    expect(setup.host.serializations()).toBe(1);
     const state = (await readState(setup.seeded.sessDir))!;
-    expect(state.reviewAssurance!.obligations[0]!.status).toBe('pending');
-    expect(state.reviewAssurance!.invocations).toEqual([]);
+    expect(state.reviewAssurance!.obligations[0]!.status).toBe('fulfilled');
+    expect(state.reviewAssurance!.attempts[0]!.status).toBe('bound');
+    expect(state.reviewAssurance!.dispatches[0]!.dispatchStatus).toBe('completed');
+    expect(state.reviewAssurance!.invocations[0]).toMatchObject({
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+    });
     expect(setup.host.providerErrors).toEqual([]);
   }, 120_000);
 

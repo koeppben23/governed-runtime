@@ -129,7 +129,10 @@ describe('SDK Contract: HAI governance surface', () => {
         'assurance',
       ]);
       const props = transport.properties as Record<string, Record<string, unknown>>;
-      expect(props.kind!.enum).toEqual(['native_task_message_json']);
+      expect(props.kind!.enum).toEqual([
+        'native_task_message_json',
+        'native_subagent_message_json',
+      ]);
       expect(props.validatedResult!.const).toBe(true);
       expect(props.parentVisible!.const).toBe(true);
       expect(props.transcriptNavigable!.const).toBe(true);

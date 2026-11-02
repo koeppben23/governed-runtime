@@ -464,13 +464,18 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function assertReviewerBoundary(tool: string, input: unknown): void {
-  if (tool === NATIVE_SUBAGENT_TOOL && record(input) && input.agent === REVIEWER_SUBAGENT_TYPE) {
+async function enforceReviewerScope(
+  reviewer: ReturnType<typeof createNativeReviewerAuthority>,
+  scope: ActiveGovernanceScope,
+  event: { readonly tool: string; readonly agent: string },
+): Promise<void> {
+  if (event.agent !== REVIEWER_SUBAGENT_TYPE) return;
+  await reviewer.beforeTool(scope);
+  if (!READ_ONLY_HOST_TOOLS.has(event.tool))
     throw buildEnforcementError(
-      'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-      'The V2 reviewer release/completion/capture chain is NOT_VERIFIED.',
+      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      'Reviewer dispatch does not authorize mutations, child delegation or workflow decisions.',
     );
-  }
 }
 
 /** Register each native hook exactly once; there is no intermediate SDK hook object. */
@@ -493,14 +498,7 @@ async function createFlowGuardPluginHooks(
         event.sessionID,
         async ({ runtime, scope }) => {
           runtime.orchestratorDeps.reviewerCapture?.beforeTool({ sessionID: event.sessionID });
-          if (event.agent === REVIEWER_SUBAGENT_TYPE) {
-            await actions.reviewer.context(scope);
-            if (!READ_ONLY_HOST_TOOLS.has(event.tool))
-              throw buildEnforcementError(
-                'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-                'Reviewer dispatch does not authorize mutations, child delegation or workflow decisions.',
-              );
-          }
+          await enforceReviewerScope(actions.reviewer, scope, event);
           if (!record(event.input))
             throw buildEnforcementError(
               'PLUGIN_ENFORCEMENT_UNAVAILABLE',
@@ -538,12 +536,18 @@ async function createFlowGuardPluginHooks(
         event.tool === NATIVE_SUBAGENT_TOOL &&
         record(event.input) &&
         event.input.agent === REVIEWER_SUBAGENT_TYPE
-      )
-        governance.quarantineReviewerDispatch(event);
-      return invoke(event.sessionID, ({ runtime, scope }) => {
-        assertReviewerBoundary(event.tool, event.input);
-        return handleNativeCompletion(runtime, scope.root.sessionId, event);
-      });
+      ) {
+        return invoke(event.sessionID, async ({ scope }) => {
+          try {
+            await actions.reviewer.capture(scope, event);
+          } finally {
+            governance.quarantineReviewerDispatch(event);
+          }
+        });
+      }
+      return invoke(event.sessionID, ({ runtime, scope }) =>
+        handleNativeCompletion(runtime, scope.root.sessionId, event),
+      );
     }),
   );
   await registerNativeSessionHooks(ctx, invoke, catalogue, registrations, actions.reviewer);
@@ -588,7 +592,7 @@ async function registerNativeSessionHooks(
         }
         if (event.agent === REVIEWER_SUBAGENT_TYPE) {
           validateNativeReviewerOutputLimit(entry.reviewerOutputLimit, entry.configReadError);
-          await reviewer.context(entry.scope);
+          await reviewer.context(entry.scope, event);
         }
         return true;
       }).then((active) => {

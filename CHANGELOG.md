@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native V2 same-child capture and evidence generation 6 (#1190, Finding 6
+  step 3).** The authorized native subagent child now runs one exclusive,
+  request-correlated serialization window. Terminal history, exact request,
+  effective model/variant, primary model request, tool absence and strict JSON
+  are verified; findings go through the canonical validators and the durable
+  attempt/invocation/dispatch/obligation/audit mutation. `transportVersion: 6`
+  (`native_subagent_message_json`) is explicit; historical v5 evidence remains
+  unchanged. Tool contamination rejects without evidence; interrupted/unknown
+  terminals remain blocked pending step-4 recovery. Three of the four required
+  product capture contracts pass; the recovery contract remains red.
 - **Native reviewer dispatch authority (#1190, Finding 6 step 2).** The existing
   review ledger now authorizes a fresh foreground V2 `subagent` before native
   release and durably binds its actual progress-receipt child to the exact parent

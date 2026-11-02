@@ -22,22 +22,45 @@
       "type": "string",
       "enum": ["opencode", "claude-code", "codex"]
     },
-    "capabilities": { "$ref": "#/$defs/HostCapabilities" },
+    "capabilities": {
+      "$ref": "#/$defs/HostCapabilities"
+    },
     "enforcementLevel": {
       "type": "string",
       "enum": ["synchronous", "hook_gated", "advisory"]
     },
-    "getWorkingDirectory": { "type": "string", "const": "() => string" },
-    "getWorktree": { "type": "string", "const": "() => string" },
-    "initialize": { "type": "string", "const": "() => Promise<void>" },
+    "getWorkingDirectory": {
+      "type": "string",
+      "const": "() => string"
+    },
+    "getWorktree": {
+      "type": "string",
+      "const": "() => string"
+    },
+    "initialize": {
+      "type": "string",
+      "const": "() => Promise<void>"
+    },
     "validateCapabilities": {
       "type": "string",
       "const": "() => Promise<CapabilityValidationResult>"
     },
-    "shutdown": { "type": "string", "const": "() => Promise<void>" },
-    "deliverBlockDecision": { "type": "string", "const": "(event, decision) => void" },
-    "isReviewerSupported": { "type": "string", "const": "() => boolean" },
-    "log": { "type": "string", "const": "(level, message, data?) => void" }
+    "shutdown": {
+      "type": "string",
+      "const": "() => Promise<void>"
+    },
+    "deliverBlockDecision": {
+      "type": "string",
+      "const": "(event, decision) => void"
+    },
+    "isReviewerSupported": {
+      "type": "string",
+      "const": "() => boolean"
+    },
+    "log": {
+      "type": "string",
+      "const": "(level, message, data?) => void"
+    }
   },
   "$defs": {
     "HostCapabilities": {
@@ -51,15 +74,27 @@
         "compactionInjection"
       ],
       "properties": {
-        "preToolBlock": { "type": "boolean" },
-        "argMutation": { "type": "boolean" },
-        "outputReplacement": { "type": "boolean" },
-        "contextInjection": { "type": "boolean" },
+        "preToolBlock": {
+          "type": "boolean"
+        },
+        "argMutation": {
+          "type": "boolean"
+        },
+        "outputReplacement": {
+          "type": "boolean"
+        },
+        "contextInjection": {
+          "type": "boolean"
+        },
         "reviewTransports": {
           "type": "array",
-          "items": { "$ref": "#/$defs/HostReviewTransportCapability" }
+          "items": {
+            "$ref": "#/$defs/HostReviewTransportCapability"
+          }
         },
-        "compactionInjection": { "type": "boolean" }
+        "compactionInjection": {
+          "type": "boolean"
+        }
       },
       "additionalProperties": false
     },
@@ -77,13 +112,28 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["native_task_message_json"]
+          "enum": ["native_task_message_json", "native_subagent_message_json"]
         },
-        "validatedResult": { "type": "boolean", "const": true },
-        "parentVisible": { "type": "boolean", "const": true },
-        "transcriptNavigable": { "type": "boolean", "const": true },
-        "isolatedAgentIdentity": { "type": "boolean", "const": true },
-        "permissionIsolation": { "type": "boolean", "const": true },
+        "validatedResult": {
+          "type": "boolean",
+          "const": true
+        },
+        "parentVisible": {
+          "type": "boolean",
+          "const": true
+        },
+        "transcriptNavigable": {
+          "type": "boolean",
+          "const": true
+        },
+        "isolatedAgentIdentity": {
+          "type": "boolean",
+          "const": true
+        },
+        "permissionIsolation": {
+          "type": "boolean",
+          "const": true
+        },
         "assurance": {
           "type": "string",
           "const": "host_message_validated"

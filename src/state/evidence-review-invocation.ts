@@ -3,21 +3,66 @@
  * @description Independent-review invocation-evidence schema.
  *
  * `ReviewInvocationEvidence` captures host-observed reviewer execution and the
- * structured findings bound to it. The only sanctioned OpenCode transport keeps
- * one native, host-visible Task child across review execution and the
- * schema-constrained serialization follow-up.
+ * structured findings bound to it. The historical OpenCode transport keeps one
+ * native Task child across review execution and JSON serialization
+ * (`transportVersion: 5`). The current OpenCode V2 transport keeps one native
+ * subagent child and additionally proves the terminal capture window
+ * (`transportVersion: 6`). The two generations stay explicit and are never
+ * normalized into each other.
  *
- * @version v5
+ * @version v6
  */
 
 import { z } from 'zod';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { ReviewObligationType } from './evidence-primitives.js';
-import { ReviewMessageCapture } from './review-message-capture.js';
+import { ReviewerModelSelection, ReviewMessageCapture } from './review-message-capture.js';
 
 const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);
+const MessageId = z.string().regex(/^msg/);
 
-export const ReviewInvocationEvidence = z
+/**
+ * Host-observed capture facts unique to the native V2 transport. The
+ * `capture` record already carries the exact request/response IDs, payload and
+ * model; this record proves the terminal window and primary model request that
+ * produced it. It is attestation, not a second findings authority.
+ */
+export const NativeSubagentCaptureProvenance = z
+  .object({
+    schemaVersion: z.literal(1),
+    /** Canonical native call identity under which the dispatch was authorized. */
+    nativeCallId: z.string().min(1),
+    requestMessageId: MessageId,
+    responseMessageId: MessageId,
+    requestDigest: Sha256Digest,
+    payloadDigest: Sha256Digest,
+    model: ReviewerModelSelection,
+    assistantMessageIds: z.tuple([MessageId]).readonly(),
+    terminal: z
+      .object({
+        outcome: z.literal('succeeded'),
+        finish: z.literal('stop'),
+        completedAt: z.string().datetime(),
+      })
+      .strict()
+      .readonly(),
+    /** Exactly one primary model request with the same effective selection. */
+    modelRequest: z
+      .object({
+        kind: z.literal('primary'),
+        model: ReviewerModelSelection,
+      })
+      .strict()
+      .readonly(),
+    historyDigest: Sha256Digest,
+    userMessageCount: z.literal(1),
+    toolAttemptCount: z.literal(0),
+  })
+  .strict()
+  .readonly();
+export type NativeSubagentCaptureProvenance = z.infer<typeof NativeSubagentCaptureProvenance>;
+
+const ReviewInvocationEvidenceShape = z
   .object({
     invocationId: z.string().uuid(),
     obligationId: z.string().uuid(),
@@ -28,16 +73,18 @@ export const ReviewInvocationEvidence = z
     /** Persisted host-authoritative attempt identity. */
     attemptId: z.string().uuid(),
     /**
-     * The reviewer executes as a native OpenCode Task child and emits its
-     * authoritative structured findings through a schema-constrained follow-up
-     * in that same child session.
+     * `native_task_message_json` is the historical Task transport;
+     * `native_subagent_message_json` is the current V2 native subagent
+     * transport. Mode and transport version must agree.
      */
-    invocationMode: z.literal('native_task_message_json'),
-    transportVersion: z.literal(5),
+    invocationMode: z.enum(['native_task_message_json', 'native_subagent_message_json']),
+    transportVersion: z.union([z.literal(5), z.literal(6)]),
     capture: ReviewMessageCapture,
-    /** Native Task execution must be visible from the parent host session. */
+    /** REQUIRED for v6, forbidden for v5. */
+    nativeProvenance: NativeSubagentCaptureProvenance.optional(),
+    /** Native reviewer execution must be visible from the parent host session. */
     hostVisible: z.literal(true),
-    /** Native Task metadata must provide a navigable child transcript. */
+    /** Native execution metadata must provide a navigable child transcript. */
     transcriptNavigable: z.literal(true),
     promptHash: z.string().min(1),
     canonicalPromptDigest: Sha256Digest.optional(),
@@ -77,6 +124,83 @@ export const ReviewInvocationEvidence = z
       .nullable()
       .optional(),
   })
-  .strict()
-  .readonly();
+  .strict();
+
+export const ReviewInvocationEvidence =
+  ReviewInvocationEvidenceShape.superRefine(refineInvocationTransport).readonly();
+
+function provenanceMatchesCapture(
+  provenance: NativeSubagentCaptureProvenance,
+  capture: ReviewMessageCapture,
+): boolean {
+  return (
+    provenance.requestMessageId === capture.requestMessageId &&
+    provenance.responseMessageId === capture.responseMessageId &&
+    provenance.requestDigest === capture.requestDigest &&
+    provenance.payloadDigest === capture.payloadDigest &&
+    provenance.assistantMessageIds[0] === capture.assistantMessageIds[0] &&
+    provenance.model.providerID === capture.model.providerID &&
+    provenance.model.modelID === capture.model.modelID &&
+    provenance.model.variant === capture.model.variant &&
+    provenance.modelRequest.model.providerID === capture.model.providerID &&
+    provenance.modelRequest.model.modelID === capture.model.modelID &&
+    provenance.modelRequest.model.variant === capture.model.variant
+  );
+}
+
+function transportGenerationIssue(value: {
+  readonly transportVersion: 5 | 6;
+  readonly invocationMode: string;
+  readonly nativeProvenance?: NativeSubagentCaptureProvenance | undefined;
+}): string | null {
+  if (value.transportVersion === 5)
+    return value.invocationMode === 'native_task_message_json' &&
+      value.nativeProvenance === undefined
+      ? null
+      : 'transportVersion 5 requires native_task_message_json without V2 provenance.';
+  return value.invocationMode === 'native_subagent_message_json' &&
+    value.nativeProvenance !== undefined
+    ? null
+    : 'transportVersion 6 requires native_subagent_message_json with V2 provenance.';
+}
+
+function refineInvocationTransport(
+  value: z.infer<typeof ReviewInvocationEvidenceShape>,
+  ctx: z.RefinementCtx,
+): void {
+  const issue = transportGenerationIssue(value);
+  if (issue !== null) {
+    ctx.addIssue({ code: 'custom', message: issue });
+    return;
+  }
+  if (
+    value.nativeProvenance !== undefined &&
+    !provenanceMatchesCapture(value.nativeProvenance, value.capture)
+  )
+    ctx.addIssue({
+      code: 'custom',
+      message: 'V2 capture provenance does not match the captured request/response/model.',
+    });
+}
+
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
+
+/**
+ * Canonical transport acceptance predicate for persisted invocation evidence.
+ * Both generations remain explicitly validated; a v6 record without its V2
+ * provenance is never accepted, and a v5 record can never claim V2 provenance.
+ */
+export function isAcceptedReviewTransport(invocation: {
+  readonly invocationMode?: string | undefined;
+  readonly transportVersion?: number | undefined;
+  readonly nativeProvenance?: unknown;
+}): boolean {
+  return (
+    (invocation.transportVersion === 5 &&
+      invocation.invocationMode === 'native_task_message_json' &&
+      invocation.nativeProvenance === undefined) ||
+    (invocation.transportVersion === 6 &&
+      invocation.invocationMode === 'native_subagent_message_json' &&
+      invocation.nativeProvenance !== undefined)
+  );
+}

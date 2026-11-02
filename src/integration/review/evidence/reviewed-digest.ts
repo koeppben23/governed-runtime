@@ -35,6 +35,7 @@ import type {
   ReviewObligationType,
 } from '../../../state/evidence.js';
 import { hashFindings } from '../findings-hash.js';
+import { isAcceptedReviewTransport } from '../../../state/evidence-review-invocation.js';
 
 /** Full review identity of the findings displayed at a review gate. */
 export interface ReviewedArtifactIdentity {
@@ -78,7 +79,7 @@ function findInvocationForFindingsProvenance(
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'native_task_message_json' &&
+        isAcceptedReviewTransport(invocation) &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         consumable(invocation),

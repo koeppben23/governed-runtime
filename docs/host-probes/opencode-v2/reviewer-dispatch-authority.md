@@ -3,7 +3,9 @@
 This is the dispatch-only port following the accepted
 [`f0de6a41` mechanism checkpoint](./reviewer-transport-mechanism.md).
 **Finding 6 remains BLOCKED; Draft / ACTIVE V2 NO-GO is unchanged.**
-Native dispatch does not authorize capture, evidence, audit binding or recovery.
+The later [step-3 capture port](./reviewer-capture-evidence.md) connects native
+same-child capture and evidence generation 6. This document remains the dispatch
+authority description; capture/audit/recovery acceptance is recorded separately.
 The four required native reviewer-product contracts retain their original titles
 and positive security outcomes; these dispatch tests do not replace them.
 
@@ -132,11 +134,12 @@ introduced by this port. Policy-dependent autonomy/approval rules are unchanged.
   restrictions and reload/return quarantine.
 - Full ordinary suite: **702 files / 12,842 passed / 2 existing skips**.
 - Full pinned native smoke (`OPENCODE_LIVE=1 RUN_OPENCODE_ACP_TESTS=1`):
-  **125 passed / 4 failed / 0 skipped**. All four failures are exactly the
-  unchanged required reviewer capture/evidence/recovery contracts; none is a
-  dispatch failure. The step-2 native dispatch smoke passes all three cases.
-- The unchanged independent-review verifier fails on exactly those four required
-  titles. The dispatch additions do not replace them.
+  **125 passed / 4 failed / 0 skipped** at the step-2 checkpoint. All four
+  failures were exactly the required native reviewer capture/evidence/recovery
+  contracts; the step-3 capture port now makes three pass and leaves recovery red.
+- The unchanged independent-review verifier failed on exactly those four required
+  titles at the step-2 checkpoint. The step-3 capture port now leaves only the
+  recovery title red; the dispatch additions still do not replace them.
 - Bounded mutation on the frozen source/test snapshot: **89.00% total / 90.00%
   covered**, **558 killed / 62 survived / 7 no coverage / 0 timeout**, plus 296
   compile-invalid mutants rejected by the TypeScript checker. The unchanged

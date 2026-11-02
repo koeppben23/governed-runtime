@@ -57,7 +57,7 @@ beforeEach(async () => {
     },
     new Date().toISOString(),
   );
-  reviewer = createNativeReviewerAuthority(host.ctx, async () => ({ ws: workspace }));
+  reviewer = createNativeReviewerAuthority(host.ctx, async () => ({ ws: workspace }) as never);
   controller = new AbortController();
   governance = new OpenCodeGovernance(
     host.ctx,
@@ -318,10 +318,12 @@ describe('canonical V2 reviewer dispatch admission', () => {
     host.sessionContext.mockResolvedValue([
       { type: 'user', id: 'actual-request', text, files: [] },
     ]);
-    await expect(reviewer.context(child)).resolves.toBeUndefined();
+    await expect(reviewer.context(child, { tools: {} })).resolves.toBeUndefined();
     for (const type of ['idle', 'compaction', 'synthetic']) {
       host.sessionContext.mockResolvedValue([{ type: 'user', text, files: [] }, { type }]);
-      await expect(reviewer.context(child)).rejects.toThrow('continuation/capture remains blocked');
+      await expect(reviewer.context(child, { tools: {} })).rejects.toThrow(
+        'continuation/capture remains blocked',
+      );
     }
     host.sessionContext.mockResolvedValue([
       {
@@ -330,9 +332,11 @@ describe('canonical V2 reviewer dispatch admission', () => {
         files: [],
       },
     ]);
-    await expect(reviewer.context(child)).rejects.toThrow('exact host-prefixed');
+    await expect(reviewer.context(child, { tools: {} })).rejects.toThrow('exact host-prefixed');
     host.sessionContext.mockResolvedValue([{ type: 'user', text, files: ['foreign'] }]);
-    await expect(reviewer.context(child)).rejects.toThrow('continuation/capture remains blocked');
+    await expect(reviewer.context(child, { tools: {} })).rejects.toThrow(
+      'continuation/capture remains blocked',
+    );
     host.sessionContext.mockResolvedValue([
       { type: 'user', id: 'actual-request', text, files: [] },
     ]);
@@ -353,7 +357,9 @@ describe('canonical V2 reviewer dispatch admission', () => {
       { type: 'user', text, files: [] },
       { type: 'user', text: 'foreign', files: [] },
     ]);
-    await expect(reviewer.context(child)).rejects.toThrow('continuation/capture remains blocked');
+    await expect(reviewer.context(child, { tools: {} })).rejects.toThrow(
+      'continuation/capture remains blocked',
+    );
   });
 
   it('rejects each independently corrupted lineage field at the native ledger reader, not only at the outer journal', async () => {

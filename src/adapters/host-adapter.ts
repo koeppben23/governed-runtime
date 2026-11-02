@@ -26,7 +26,7 @@ export type EnforcementLevel = 'synchronous' | 'hook_gated' | 'advisory';
 // ─── Host Capabilities ───────────────────────────────────────────────────────
 
 /** Canonical host transport used to execute an independent reviewer. */
-export type HostReviewTransportKind = 'native_task_message_json';
+export type HostReviewTransportKind = 'native_task_message_json' | 'native_subagent_message_json';
 
 /** Assurance produced by one concrete review transport. */
 export type HostReviewTransportAssurance = 'host_message_validated' | 'unstructured';

@@ -32,9 +32,10 @@ of the unobserved error stub and failed MUT4 runs below remain historical result
 five real-host mechanism positives and corrects component activation/native call
 identity in the four required product fixtures. Those four contracts still fail.
 The subsequent [step-2 dispatch port](./reviewer-dispatch-authority.md) connects
-the canonical ledger to native release and observed Child binding, with replay,
-partial-write and reload fences; capture/evidence/recovery remain blocked.
-Controlled foreground/same-child
+the canonical ledger to native release and observed Child binding, and the
+[step-3 capture port](./reviewer-capture-evidence.md) adds the V6 same-child
+terminal/evidence generation. Three of the four required product contracts pass;
+recovery remains blocked. Controlled foreground/same-child
 execution is not evidence binding or safe unknown-outcome recovery. No historical
 test result, policy exception or proof generation is reclassified.
 
@@ -197,11 +198,13 @@ test titles:
   mechanics for its installed-runtime stage. Renaming the required tests to
   domain-fixture positives or fail-closed negatives would conceal missing proof.
 - Native reviewer dispatch now requires the canonical ledger and observed Child;
-  the native after-hook still blocks completion/capture, the adapter advertises
-  unknown quiescence, and native regular edit-error observations remain
-  unobserved. Positive installed reviewer evidence/audit/recovery therefore remain
-  **BLOCKED** until their actual provenance contracts are established.
-  Distinguishable operator-UI attribution independently remains **NOT_VERIFIED**.
+  the [step-3 capture port](./reviewer-capture-evidence.md) adds the V6
+  terminal/evidence generation and three passing product contracts. The native
+  after-hook still treats unknown/interrupted outcomes as blocked, the adapter
+  advertises no unknown quiescence, and native regular edit-error observations
+  remain unobserved. Safe recovery therefore remains **BLOCKED** until its actual
+  provenance contract is established. Distinguishable operator-UI attribution
+  independently remains **NOT_VERIFIED**.
 
 Local follow-up regression passed 12,466 tests with the same two existing skips;
 the CI coverage command passed at 90.24% statements, 83.27% branches, 95.15%
@@ -364,9 +367,9 @@ and interrupted-capture recovery contracts also remain mandatory.
 Actual native host mutation mechanics distinguish a regular throwing edit from
 an interrupted execution and show that shell return does not imply descendant
 quiescence. They do not close a product mutation episode. The full native smoke
-run still exposes genuine failures at reviewer completion/capture and regular-error
-recovery: dispatch authority is connected, but native capture/evidence/recovery
-remain rejected and `observeEditFailure()` remains unobserved. These tests are not
+run still exposes genuine failures at reviewer recovery and regular-error
+recovery: capture/evidence generation 6 is connected and three required contracts
+pass, but unknown-outcome recovery and `observeEditFailure()` remain unobserved. These tests are not
 replaced by successful negative guards or skipped to obtain green CI.
 
 **BLOCKED:** exact authorized parent-call/child/request/model/terminal/capture

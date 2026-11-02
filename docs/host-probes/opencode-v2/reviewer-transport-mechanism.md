@@ -7,9 +7,11 @@ and its four required native reviewer contracts still failed. Draft /
 ADR-010's V1-parity/autonomous-operation amendment is not weakened.
 
 The subsequent [step-2 dispatch port](./reviewer-dispatch-authority.md) connects
-canonical authorization and actual Child binding. The release blocks described
-below are the historical step-1 state; capture/evidence/recovery remain blocked
-in the subsequent port too. Neither checkpoint closes Finding 6.
+canonical authorization and actual Child binding, and the
+[step-3 capture port](./reviewer-capture-evidence.md) adds the current
+same-child terminal/evidence generation. The release blocks described below are
+the historical step-1 state; recovery remains blocked in the subsequent ports.
+Neither checkpoint closes Finding 6.
 
 ## Authorities and exact inspected versions
 

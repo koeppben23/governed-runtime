@@ -200,9 +200,11 @@ ledger/journal to native reviewer execution. Before its first provider response,
 the exact parent native call, obligation/attempt and observed child must already
 be durably bound. Foreign continuation, background dispatch and caller model
 overrides are denied without accepting evidence. Component dispatch tests cover
-write-order/failure, replay/concurrency and reload quarantine. This is step 2,
-not a substitute for any of the four required product capture/evidence/recovery
-positives or installed activation acceptance.
+write-order/failure, replay/concurrency and reload quarantine. The capture owner
+uses one exclusive, request-correlated terminal window; component proof covers
+baseline/request/model/tool contamination and V5/V6 schema separation. Three of
+the four required product capture contracts pass; safe recovery remains step 4.
+This is not installed activation acceptance.
 
 Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.

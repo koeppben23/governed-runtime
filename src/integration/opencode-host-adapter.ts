@@ -45,8 +45,19 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
     outputReplacement: true,
     contextInjection: true,
     compactionInjection: true,
-    // A native subagent capability is not a validated review transport.
-    reviewTransports: [],
+    // One concrete native subagent transport with a proven terminal capture
+    // window. Historical Task evidence keeps its own generation.
+    reviewTransports: [
+      {
+        kind: 'native_subagent_message_json',
+        validatedResult: true,
+        parentVisible: true,
+        transcriptNavigable: true,
+        isolatedAgentIdentity: true,
+        permissionIsolation: true,
+        assurance: 'host_message_validated',
+      },
+    ],
   };
 
   constructor(
@@ -99,7 +110,7 @@ export class OpenCodeHostAdapter implements HostAdapter, OrchestratorClient {
   }
 
   isReviewerSupported(): boolean {
-    return false;
+    return true;
   }
 
   log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): void {
