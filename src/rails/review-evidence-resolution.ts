@@ -23,6 +23,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ArchitectureReviewCompletion } from '../state/evidence-primitives.js';
 import type { ReviewObligation } from '../state/evidence-review.js';
+import { isBindableReviewTransport } from '../state/evidence-review-invocation.js';
 import type { ReviewBinding } from '../state/proofgraph-approval.js';
 
 /**
@@ -71,6 +72,7 @@ export function resolveEvidenceForObligation(
       i.invocationId === obligation.invocationId &&
       i.obligationId === obligation.obligationId &&
       i.obligationType === obligation.obligationType &&
+      isBindableReviewTransport(i) &&
       i.findingsHash.length > 0,
   );
   if (!invocation) return null;

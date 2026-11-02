@@ -107,6 +107,9 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  *   recorded status was downgraded (AC2)
  * - tsa_token_required_by_policy: tsa_critical policy requires an external TSA
  *   token for a critical event; internal-imprint evidence does not satisfy it
+ * - review_evidence_historical_transport: (info) the archived session holds
+ *   generation-5 review evidence (V1 native Task). It is verified with its original
+ *   semantics and is historical: never bindable and never reinterpreted as current
  */
 export const ArchiveFindingCodeSchema = z.enum([
   'missing_manifest',
@@ -140,6 +143,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'regulated_terminal_decision_invalid',
   'regulated_completion_lifecycle_invalid',
   'regulated_completion_order_invalid',
+  'review_evidence_historical_transport',
 ]);
 export type ArchiveFindingCode = z.infer<typeof ArchiveFindingCodeSchema>;
 

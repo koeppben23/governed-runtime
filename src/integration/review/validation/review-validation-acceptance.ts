@@ -13,7 +13,7 @@ import {
   captureMatchesFindings,
   hasCaptureLineage,
 } from '../../../state/review-message-capture.js';
-import { isAcceptedReviewTransport } from '../../../state/evidence-review-invocation.js';
+import { isBindableReviewTransport } from '../../../state/evidence-review-invocation.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ export function getReviewFindingsAcceptanceRejection(input: {
 /** Canonical provenance contract for captured host-observed reviewer evidence. */
 function currentTransport(invocation: ReviewInvocationEvidence): boolean {
   return (
-    isAcceptedReviewTransport(invocation) &&
+    isBindableReviewTransport(invocation) &&
     invocation.hostVisible === true &&
     invocation.transcriptNavigable === true &&
     invocation.reviewOutputMode === 'validated_json' &&

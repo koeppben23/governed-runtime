@@ -1,4 +1,7 @@
-import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../review-invocation-test-helpers.js';
 
 /**
  * @module integration/review-modeb-contract.test
@@ -94,6 +97,12 @@ function buildAssuranceForObligation(
 ) {
   const attemptId = randomUUID();
   const now = NOW();
+  const capture = messageCaptureFixture({
+    childSessionId: 'ses_reviewer',
+    obligationId: obligation.obligationId,
+    attemptId,
+    findings: rawFindings,
+  });
   const invocation = {
     invocationId,
     obligationId: obligation.obligationId,
@@ -101,14 +110,11 @@ function buildAssuranceForObligation(
     parentSessionId,
     childSessionId: 'ses_reviewer',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'native_task_message_json' as const,
-    transportVersion: 5 as const,
-    capture: messageCaptureFixture({
-      childSessionId: 'ses_reviewer',
-      obligationId: obligation.obligationId,
-      attemptId,
-      findings: rawFindings,
-    }),
+    invocationMode: 'native_subagent_message_json' as const,
+    transportVersion: 6 as const,
+    capture,
+    // completedDispatchForInvocation uses the child session id as hostCallId.
+    nativeProvenance: nativeProvenanceFixture(capture, 'ses_reviewer'),
     hostVisible: true as const,
     transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,

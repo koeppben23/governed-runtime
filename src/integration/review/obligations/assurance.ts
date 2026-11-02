@@ -28,7 +28,7 @@ import {
 import { deriveRepositoryRevisionProvenance } from '../../../state/evidence.js';
 import { indexMarkdownSections } from '../../../shared/markdown-sections.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import { isAcceptedReviewTransport } from '../../../state/evidence-review-invocation.js';
+import { isBindableReviewTransport } from '../../../state/evidence-review-invocation.js';
 import {
   DEFAULT_MAX_REVIEWER_ATTEMPTS,
   CHALLENGE_POLICY_V1,
@@ -389,6 +389,7 @@ export function findAcceptedInvocationForFindings(
         (invocation) =>
           invocation.invocationId === obligation.invocationId &&
           invocation.obligationId === obligation.obligationId &&
+          isBindableReviewTransport(invocation) &&
           invocation.childSessionId === findings.reviewedBy.sessionId &&
           invocation.findingsHash === findingsHash &&
           invocation.consumedByObligationId === null,
@@ -399,7 +400,7 @@ export function findAcceptedInvocationForFindings(
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        isAcceptedReviewTransport(invocation) &&
+        isBindableReviewTransport(invocation) &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         invocation.consumedByObligationId === null,

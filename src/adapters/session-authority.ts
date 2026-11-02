@@ -25,6 +25,8 @@
  */
 
 import type { SessionState } from '../state/schema.js';
+import { isHistoricalReviewTransport } from '../state/evidence-review-invocation.js';
+import { isTerminalPhase } from '../machine/topology.js';
 import {
   BindingError,
   validateBinding,
@@ -191,6 +193,21 @@ export async function resolveSessionAuthority(
     validateFingerprintBinding(state, fingerprint);
   } catch (err) {
     return unavailable(err, 'Persisted session binding does not match the canonical workspace');
+  }
+
+  // Historical generation-5 review evidence stays verifiable in archives but
+  // cannot carry an active workflow forward: no migration to the current
+  // generation exists, so a non-terminal session holding it fails closed.
+  if (
+    !isTerminalPhase(state.phase) &&
+    (state.reviewAssurance?.invocations ?? []).some(isHistoricalReviewTransport)
+  ) {
+    return {
+      status: 'unavailable',
+      code: 'SESSION_STATE_INCOMPATIBLE',
+      reason:
+        'The active session holds historical review evidence (transport generation 5, V1 native Task). It remains verifiable after archiving but cannot be continued or bound; no migration to the current generation exists. Start a new session.',
+    };
   }
 
   return { status: 'resolved', sessDir, worktreeRoot, fingerprint, state };

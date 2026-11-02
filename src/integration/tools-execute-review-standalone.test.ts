@@ -34,6 +34,7 @@ import {
 import {
   buildInvocationFixture as buildInvocationEvidence,
   messageCaptureFixture,
+  nativeProvenanceFixture,
 } from '../review-invocation-test-helpers.js';
 import { ReviewMessageCapture } from '../state/review-message-capture.js';
 import { ensureReviewAssurance } from '../state/review-dispatch.js';
@@ -358,16 +359,20 @@ describe('review (standalone flow)', () => {
     });
     // A semantically invalid capture cannot carry a matching capture proof.
     // Tests that deliberately persist such evidence need a valid proof whose
-    // mismatch is then rejected by the resolution contract.
+    // mismatch is then rejected by the resolution contract; the generation-6
+    // provenance must describe exactly that substituted capture.
+    const fallbackCapture = messageCaptureFixture({
+      childSessionId,
+      obligationId,
+      attemptId: boundAttempt.attemptId,
+    });
     const invocation = ReviewMessageCapture.safeParse(draft.capture).success
       ? draft
       : {
           ...draft,
-          capture: messageCaptureFixture({
-            childSessionId,
-            obligationId,
-            attemptId: boundAttempt.attemptId,
-          }),
+          capture: fallbackCapture,
+          // completedDispatchForInvocation uses the child session id as hostCallId.
+          nativeProvenance: nativeProvenanceFixture(fallbackCapture, childSessionId),
         };
     const assuranceWithEvidence = appendInvocationEvidence(
       {
@@ -566,7 +571,8 @@ describe('review (standalone flow)', () => {
       // Host-observed structured capture is the only accepted provenance.
       expect(invocation?.source).toBe('host-orchestrated');
       expect(invocation?.reviewOutputMode).toBe('validated_json');
-      expect(invocation?.transportVersion).toBe(5);
+      expect(invocation?.transportVersion).toBe(6);
+      expect(invocation?.invocationMode).toBe('native_subagent_message_json');
       expect(invocation?.reviewAssuranceLevel).toBe('host_message_validated');
       // ... and the referenced attempt is bound atomically.
       const boundAttempt = afterSubmit.reviewAssurance!.attempts.find(

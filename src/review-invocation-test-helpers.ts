@@ -1,6 +1,7 @@
 /** Current-generation evidence fixtures, never a production provenance source. */
 import { buildInvocationEvidence } from './integration/review/obligations/assurance.js';
 import type { ReviewMessageCapture } from './state/review-message-capture.js';
+import type { NativeSubagentCaptureProvenance } from './state/evidence-review-invocation.js';
 import { ReviewerFindingsInput } from './state/evidence-review-input.js';
 import { hashText } from './shared/hashing.js';
 
@@ -50,14 +51,46 @@ export function messageCaptureFixture(input: {
   };
 }
 
+/**
+ * Generation-6 terminal-capture provenance derived from a capture fixture. The
+ * native call identity defaults to the child session, which is also the
+ * dispatch host-call identity used by the shared ledger fixtures.
+ */
+export function nativeProvenanceFixture(
+  capture: ReviewMessageCapture,
+  nativeCallId: string = capture.childSessionId,
+): NativeSubagentCaptureProvenance {
+  return {
+    schemaVersion: 1,
+    nativeCallId,
+    requestMessageId: capture.requestMessageId,
+    responseMessageId: capture.responseMessageId,
+    requestDigest: capture.requestDigest,
+    payloadDigest: capture.payloadDigest,
+    model: capture.model,
+    assistantMessageIds: [capture.responseMessageId],
+    terminal: { outcome: 'succeeded', finish: 'stop', completedAt: '2026-11-02T00:00:01.000Z' },
+    modelRequest: { kind: 'primary', model: capture.model },
+    historyDigest: hashText(`history:${capture.attemptId}`),
+    userMessageCount: 1,
+    toolAttemptCount: 0,
+  };
+}
+
+/** Current-generation (6) invocation evidence; capture and provenance are derived when omitted. */
 export function buildInvocationFixture(
-  input: Omit<Parameters<typeof buildInvocationEvidence>[0], 'capture'> & {
+  input: Omit<Parameters<typeof buildInvocationEvidence>[0], 'capture' | 'nativeProvenance'> & {
     readonly capture?: ReviewMessageCapture;
+    readonly nativeProvenance?: NativeSubagentCaptureProvenance;
+    readonly nativeCallId?: string;
   },
 ) {
-  const { capture, ...rest } = input;
+  const { capture, nativeProvenance, nativeCallId, ...rest } = input;
+  const resolved =
+    capture ?? messageCaptureFixture({ ...rest, findings: rest.capturedRawFindings });
   return buildInvocationEvidence({
     ...rest,
-    capture: capture ?? messageCaptureFixture({ ...rest, findings: rest.capturedRawFindings }),
+    capture: resolved,
+    nativeProvenance: nativeProvenance ?? nativeProvenanceFixture(resolved, nativeCallId),
   });
 }

@@ -8,7 +8,8 @@
  * (`transportVersion: 5`). The current OpenCode V2 transport keeps one native
  * subagent child and additionally proves the terminal capture window
  * (`transportVersion: 6`). The two generations stay explicit and are never
- * normalized into each other.
+ * normalized into each other. Only generation 6 is bindable; generation 5 is
+ * historical evidence kept verifiable for archives.
  *
  * @version v6
  */
@@ -186,21 +187,45 @@ function refineInvocationTransport(
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
 
 /**
- * Canonical transport acceptance predicate for persisted invocation evidence.
- * Both generations remain explicitly validated; a v6 record without its V2
- * provenance is never accepted, and a v5 record can never claim V2 provenance.
+ * Historical generation-5 transport (V1 native Task + same-child JSON). It stays
+ * schema-valid so archived evidence remains verifiable with its original
+ * semantics, but it is never bindable, never created and never reinterpreted
+ * as generation 6 (operator decision 2026-11-02, #1190).
  */
-export function isAcceptedReviewTransport(invocation: {
+export function isHistoricalReviewTransport(invocation: {
   readonly invocationMode?: string | undefined;
   readonly transportVersion?: number | undefined;
   readonly nativeProvenance?: unknown;
 }): boolean {
   return (
-    (invocation.transportVersion === 5 &&
-      invocation.invocationMode === 'native_task_message_json' &&
-      invocation.nativeProvenance === undefined) ||
-    (invocation.transportVersion === 6 &&
-      invocation.invocationMode === 'native_subagent_message_json' &&
-      invocation.nativeProvenance !== undefined)
+    invocation.transportVersion === 5 &&
+    invocation.invocationMode === 'native_task_message_json' &&
+    invocation.nativeProvenance === undefined
   );
+}
+
+/**
+ * Canonical binding predicate: only the current generation-6 native subagent
+ * transport with its terminal-capture provenance may fulfil, consume, approve
+ * or re-arm review authority.
+ */
+export function isBindableReviewTransport(invocation: {
+  readonly invocationMode?: string | undefined;
+  readonly transportVersion?: number | undefined;
+  readonly nativeProvenance?: unknown;
+}): boolean {
+  return (
+    invocation.transportVersion === 6 &&
+    invocation.invocationMode === 'native_subagent_message_json' &&
+    invocation.nativeProvenance !== undefined
+  );
+}
+
+/** Schema-shape predicate: a canonical generation, historical or current. */
+export function isRecognizedReviewTransport(invocation: {
+  readonly invocationMode?: string | undefined;
+  readonly transportVersion?: number | undefined;
+  readonly nativeProvenance?: unknown;
+}): boolean {
+  return isHistoricalReviewTransport(invocation) || isBindableReviewTransport(invocation);
 }

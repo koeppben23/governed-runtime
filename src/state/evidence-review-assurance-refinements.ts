@@ -17,7 +17,7 @@
 import { z } from 'zod';
 import type { ObligationRefinementShape } from './evidence-review-refinements.js';
 import { hasCaptureLineage, type ReviewMessageCapture } from './review-message-capture.js';
-import { isAcceptedReviewTransport } from './evidence-review-invocation.js';
+import { isRecognizedReviewTransport } from './evidence-review-invocation.js';
 import {
   deriveRepositoryRevisionProvenance,
   hasFrozenRepositoryAuthority,
@@ -139,7 +139,7 @@ function hasCanonicalInvocationShape(
 ): boolean {
   for (const invocation of assurance.invocations) {
     if (
-      !isAcceptedReviewTransport(invocation) ||
+      !isRecognizedReviewTransport(invocation) ||
       invocation.reviewOutputMode !== 'validated_json' ||
       invocation.reviewAssuranceLevel !== 'host_message_validated' ||
       !hasCaptureLineage(invocation) ||

@@ -12,7 +12,10 @@ import { resolveStructuredFindings } from '../review/validation/review-validatio
 
 const testLogger = { warn: () => {} };
 
-import { messageCaptureFixture } from '../../review-invocation-test-helpers.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../../review-invocation-test-helpers.js';
 
 /**
  * Adapter-boundary characterization: the domain validation returns a failure
@@ -108,6 +111,12 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
 function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): NonNullable<ReviewFindingsValidationContext['assurance']> {
+  const capture = messageCaptureFixture({
+    childSessionId: 'ses_child',
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    attemptId: '55555555-5555-4555-8555-555555555555',
+    findings,
+  });
   return {
     assuranceSchemaVersion: 'review-assurance.v7' as const,
     attempts: [
@@ -168,14 +177,11 @@ function strictAssuranceFixture(
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
         attemptId: '55555555-5555-4555-8555-555555555555',
-        invocationMode: 'native_task_message_json' as const,
-        transportVersion: 5 as const,
-        capture: messageCaptureFixture({
-          childSessionId: 'ses_child',
-          obligationId: '11111111-1111-4111-8111-111111111111',
-          attemptId: '55555555-5555-4555-8555-555555555555',
-          findings,
-        }),
+        invocationMode: 'native_subagent_message_json' as const,
+        transportVersion: 6 as const,
+        capture,
+        // No dispatch record in this fixture; the native call is the child session.
+        nativeProvenance: nativeProvenanceFixture(capture, 'ses_child'),
         reviewOutputMode: 'validated_json' as const,
         reviewAssuranceLevel: 'host_message_validated' as const,
         hostVisible: true,
@@ -1307,6 +1313,12 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
   function assuranceFor(
     captured: ReviewFindings,
   ): NonNullable<ReviewFindingsValidationContext['assurance']> {
+    const capture = messageCaptureFixture({
+      childSessionId: 'ses_child',
+      obligationId: OBLIGATION_ID,
+      attemptId: ATTEMPT_ID,
+      findings: captured,
+    });
     return {
       assuranceSchemaVersion: 'review-assurance.v7' as const,
       attempts: [
@@ -1368,14 +1380,11 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
           childSessionId: 'ses_child',
           agentType: 'flowguard-reviewer' as const,
           attemptId: ATTEMPT_ID,
-          invocationMode: 'native_task_message_json' as const,
-          transportVersion: 5 as const,
-          capture: messageCaptureFixture({
-            childSessionId: 'ses_child',
-            obligationId: OBLIGATION_ID,
-            attemptId: ATTEMPT_ID,
-            findings: captured,
-          }),
+          invocationMode: 'native_subagent_message_json' as const,
+          transportVersion: 6 as const,
+          capture,
+          // No dispatch record in this fixture; the native call is the child session.
+          nativeProvenance: nativeProvenanceFixture(capture, 'ses_child'),
           reviewOutputMode: 'validated_json' as const,
           reviewAssuranceLevel: 'host_message_validated' as const,
           hostVisible: true,
@@ -1526,22 +1535,31 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
     expect(resolution.kind).toBe('attempt_lineage_unavailable');
   });
 
-  it('keeps the unparseable warning when a later capture resolves', () => {
-    const captured = findings();
-    const first = assuranceFor(captured).invocations[0]!;
+  /** Unusable sibling capture of `first`; its provenance tracks the replaced capture. */
+  function unusableInvocationFrom(
+    first: ReturnType<typeof assuranceFor>['invocations'][number],
+  ): ReturnType<typeof assuranceFor>['invocations'][number] {
     const unusableRaw = capturedInputOnly();
-    const unusable = {
+    const capture = messageCaptureFixture({
+      childSessionId: 'ses_child',
+      obligationId: OBLIGATION_ID,
+      attemptId: first.attemptId,
+      findings: unusableRaw,
+    });
+    return {
       ...first,
       invocationId: '44444444-4444-4444-8444-444444444444',
-      capture: messageCaptureFixture({
-        childSessionId: 'ses_child',
-        obligationId: OBLIGATION_ID,
-        attemptId: first.attemptId,
-        findings: unusableRaw,
-      }),
+      capture,
+      nativeProvenance: nativeProvenanceFixture(capture, 'ses_child'),
       capturedRawFindings: unusableRaw,
       findingsHash: 'unusable-capture',
     };
+  }
+
+  it('keeps the unparseable warning when a later capture resolves', () => {
+    const captured = findings();
+    const first = assuranceFor(captured).invocations[0]!;
+    const unusable = unusableInvocationFrom(first);
     const { resolution, diagnostics } = resolveWith(captured, (assurance) => {
       assurance.invocations.unshift(unusable);
     });
@@ -1555,19 +1573,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
   it('keeps the unparseable warning when a later capture terminates invalid', () => {
     const captured = findings();
     const first = assuranceFor(captured).invocations[0]!;
-    const unusableRaw = capturedInputOnly();
-    const unusable = {
-      ...first,
-      invocationId: '44444444-4444-4444-8444-444444444444',
-      capture: messageCaptureFixture({
-        childSessionId: 'ses_child',
-        obligationId: OBLIGATION_ID,
-        attemptId: first.attemptId,
-        findings: unusableRaw,
-      }),
-      capturedRawFindings: unusableRaw,
-      findingsHash: 'unusable-capture',
-    };
+    const unusable = unusableInvocationFrom(first);
     const conflicting = {
       ...captured,
       reviewedBy: { sessionId: 'ses_other_reviewer' },

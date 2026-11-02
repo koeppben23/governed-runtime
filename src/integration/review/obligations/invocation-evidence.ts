@@ -1,10 +1,14 @@
-/** Canonical invocation-evidence constructor; transport generation stays explicit. */
+/**
+ * Canonical invocation-evidence constructor. It writes only the current native
+ * generation (6, `native_subagent_message_json`, with mandatory terminal-capture
+ * provenance). Historical generation-5 evidence remains readable for archive
+ * verification but can never be created again.
+ */
 import { randomUUID } from 'node:crypto';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
 import type { ReviewObligationType } from '../../../state/evidence.js';
 
-/** Build canonical invocation evidence for the current review transport generation. */
 export function buildInvocationEvidence(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
@@ -20,14 +24,13 @@ export function buildInvocationEvidence(input: {
   fulfilledAt?: string;
   capturedRawFindings: Record<string, unknown>;
   capture: ReviewInvocationEvidence['capture'];
-  nativeProvenance?: ReviewInvocationEvidence['nativeProvenance'];
+  nativeProvenance: NonNullable<ReviewInvocationEvidence['nativeProvenance']>;
   resolvedBranchSha?: string | null;
   resolvedBaseSha?: string | null;
   reviewedContentDigest?: string | null;
   attemptId: string;
 }): ReviewInvocationEvidence {
   const capturedVerdict = input.capturedRawFindings.overallVerdict;
-  const native = input.nativeProvenance !== undefined;
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -35,11 +38,10 @@ export function buildInvocationEvidence(input: {
     parentSessionId: input.parentSessionId,
     childSessionId: input.childSessionId,
     agentType: REVIEWER_SUBAGENT_TYPE,
-    // One native child; the transport generation names how its JSON was proven.
-    invocationMode: native ? 'native_subagent_message_json' : 'native_task_message_json',
-    transportVersion: native ? 6 : 5,
+    invocationMode: 'native_subagent_message_json',
+    transportVersion: 6,
     capture: input.capture,
-    ...(input.nativeProvenance !== undefined ? { nativeProvenance: input.nativeProvenance } : {}),
+    nativeProvenance: input.nativeProvenance,
     hostVisible: true,
     transcriptNavigable: true,
     promptHash: input.promptHash,

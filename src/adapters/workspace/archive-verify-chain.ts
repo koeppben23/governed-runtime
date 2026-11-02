@@ -28,6 +28,7 @@ import { readArchiveSidecarDigest } from './archive-verify-checksum.js';
 import { verifyArchiveIntegrity } from './archive-verify-integrity.js';
 import { hashFile } from '../../shared/hashing.js';
 import type { SessionState } from '../../state/schema.js';
+import { isHistoricalReviewTransport } from '../../state/evidence-review-invocation.js';
 import type { AuditEvent } from '../../state/evidence.js';
 
 // Timestamp token verification is lazy-imported to avoid requiring optional
@@ -236,6 +237,26 @@ async function loadArchiveState(
   }
 }
 
+/**
+ * Generation-5 review evidence is verified by the unchanged schema with its
+ * original semantics. Report it as historical (info, never a failure): it can
+ * not be bound or continued, and verification never rewrites it.
+ */
+function reportHistoricalReviewEvidence(
+  state: SessionState | null,
+  findings: ArchiveFinding[],
+): void {
+  const historical = (state?.reviewAssurance?.invocations ?? []).filter(
+    isHistoricalReviewTransport,
+  );
+  if (historical.length === 0) return;
+  findings.push({
+    code: 'review_evidence_historical_transport',
+    severity: 'info',
+    message: ` review invocation(s) use historical transport generation 5 (V1 native Task); verified with their original semantics, not bindable.`,
+    file: 'state/session-state.json',
+  });
+}
 async function checkDiscoverySnapshots(
   sessDir: string,
   manifest: ArchiveManifest,
@@ -374,6 +395,7 @@ async function runArchiveVerification(
     }
 
     const state = await loadArchiveState(sessDir, findings);
+    reportHistoricalReviewEvidence(state, findings);
     await checkDiscoverySnapshots(sessDir, manifest, findings);
     await verifyManifestFiles(sessDir, manifest, findings);
     await checkUnexpectedFiles(sessDir, manifest, findings);

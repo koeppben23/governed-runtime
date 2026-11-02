@@ -18,11 +18,7 @@ import {
   blockObligationWithInvocation,
   hasEvidenceReuse,
 } from '../obligations/assurance.js';
-import {
-  completeReviewDispatch,
-  ensureReviewAssurance,
-  rebindReviewDispatchHostCall,
-} from '../../../state/review-dispatch.js';
+import { completeReviewDispatch, ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import { hasAuthorizedDispatch } from '../../../state/review-dispatch.js';
 import { updateObligation } from '../obligations/obligation-state.js';
@@ -46,14 +42,8 @@ type SdkEvidenceParams = {
   obligationType: ReviewObligationType;
   sessionId: string;
   childSessionId: string;
-  /** Bound host call identity (child session) whose dispatch this evidence closes. */
+  /** Native host call identity of the authorized dispatch this evidence closes. */
   hostCallId: string;
-  /**
-   * Pre-release host call identity the dispatch was authorized under when it
-   * differs from the final child session identity (native Task call ID). The
-   * binding mutation rebinds the authorized dispatch to `hostCallId`.
-   */
-  authorizedHostCallId?: string;
   attemptId: string;
   promptHash: string;
   findingsHash: string;
@@ -70,8 +60,8 @@ type SdkEvidenceParams = {
     >,
     'findings'
   > & { findings: Record<string, unknown> };
-  /** Current V2 terminal-capture proof; absent for historical v5 evidence. */
-  nativeProvenance?: ReviewInvocationEvidence['nativeProvenance'];
+  /** Current terminal-capture proof; every new invocation is generation 6. */
+  nativeProvenance: NonNullable<ReviewInvocationEvidence['nativeProvenance']>;
   semanticIntents?: (
     result: AuditableEvidenceRecordResult,
     state: SessionState,
@@ -108,7 +98,7 @@ function buildReviewInvocation(
     attemptId: params.attemptId,
     capturedRawFindings: params.reviewerResult.findings,
     capture: params.reviewerResult.capture,
-    ...(params.nativeProvenance !== undefined ? { nativeProvenance: params.nativeProvenance } : {}),
+    nativeProvenance: params.nativeProvenance,
   });
 }
 
@@ -123,18 +113,14 @@ function resolveEvidenceLineage(
   params: SdkEvidenceParams,
 ): { attemptId: string } | null {
   const attempt = assurance.attempts.find((item) => item.attemptId === params.attemptId);
-  const v2BoundChild = params.nativeProvenance !== undefined;
   const lineageMatches =
     attempt?.obligationId === obligation.obligationId &&
     attempt.obligationType === obligation.obligationType &&
     attempt.subjectDigest === obligation.subjectDigest &&
     attempt.status === 'created' &&
-    (v2BoundChild
-      ? attempt.childSessionId === params.childSessionId
-      : attempt.childSessionId === undefined);
+    attempt.childSessionId === params.childSessionId;
   if (!lineageMatches || !attempt) return null;
-  const authorizedHostCallId = params.authorizedHostCallId ?? params.hostCallId;
-  if (!hasAuthorizedDispatch(assurance, authorizedHostCallId, attempt.attemptId)) {
+  if (!hasAuthorizedDispatch(assurance, params.hostCallId, attempt.attemptId)) {
     return null;
   }
   return { attemptId: attempt.attemptId };
@@ -183,7 +169,7 @@ function settleBoundEvidence(
 }
 
 function provenanceMatchesCapture(
-  provenance: NonNullable<SdkEvidenceParams['nativeProvenance']>,
+  provenance: SdkEvidenceParams['nativeProvenance'],
   capture: SdkEvidenceParams['reviewerResult']['capture'],
 ): boolean {
   return (
@@ -202,11 +188,9 @@ function validCapture(params: SdkEvidenceParams, flags: MutationFlags): boolean 
   const valid =
     hasCaptureLineage({ ...params, capture: params.reviewerResult.capture }) &&
     captureMatchesFindings(params.reviewerResult.capture, params.reviewerResult.findings) &&
-    (params.nativeProvenance === undefined ||
-      (NativeSubagentCaptureProvenance.safeParse(params.nativeProvenance).success &&
-        provenanceMatchesCapture(params.nativeProvenance, params.reviewerResult.capture) &&
-        params.nativeProvenance.nativeCallId ===
-          (params.authorizedHostCallId ?? params.hostCallId)));
+    NativeSubagentCaptureProvenance.safeParse(params.nativeProvenance).success &&
+    provenanceMatchesCapture(params.nativeProvenance, params.reviewerResult.capture) &&
+    params.nativeProvenance.nativeCallId === params.hostCallId;
   if (!valid) flags.lineageUnavailable = true;
   return valid;
 }
@@ -224,16 +208,6 @@ function reuseBlocked(state: SessionState, params: SdkEvidenceParams): SessionSt
     status: 'blocked',
     blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
   }));
-}
-
-function dispatchForEvidence(
-  boundAssurance: ReturnType<typeof ensureReviewAssurance>,
-  params: SdkEvidenceParams,
-): ReturnType<typeof ensureReviewAssurance> {
-  if (params.nativeProvenance !== undefined) return boundAssurance;
-  return params.authorizedHostCallId
-    ? rebindReviewDispatchHostCall(boundAssurance, params.authorizedHostCallId, params.hostCallId)
-    : boundAssurance;
 }
 
 function applyEvidenceMutation(
@@ -290,11 +264,10 @@ function applyEvidenceMutation(
   );
   // Attempt binding, invocation evidence, and dispatch completion are ONE
   // mutation: the ledger can never diverge from evidence.
-  const withBoundDispatch = dispatchForEvidence(boundAssurance, params);
   const withInvocation = {
     ...state,
     reviewAssurance: completeReviewDispatch(
-      appendInvocationEvidence(withBoundDispatch, invocation),
+      appendInvocationEvidence(boundAssurance, invocation),
       params.hostCallId,
       params.fulfilledAt,
     ),

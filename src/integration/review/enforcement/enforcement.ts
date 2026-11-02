@@ -39,7 +39,7 @@ import {
   hasCaptureLineage,
   captureMatchesFindings,
 } from '../../../state/review-message-capture.js';
-import { isAcceptedReviewTransport } from '../../../state/evidence-review-invocation.js';
+import { isBindableReviewTransport } from '../../../state/evidence-review-invocation.js';
 import type { EnforcementResult } from './types.js';
 import type {
   PendingReviewRetryDiagnostic,
@@ -278,7 +278,7 @@ export function enforceBeforeVerdict(
   }
   const bound = sessionState?.reviewAssurance?.invocations.some(
     (invocation) =>
-      isAcceptedReviewTransport(invocation) &&
+      isBindableReviewTransport(invocation) &&
       hasCaptureLineage(invocation) &&
       captureMatchesFindings(invocation.capture, invocation.capturedRawFindings) &&
       invocation.hostVisible === true &&

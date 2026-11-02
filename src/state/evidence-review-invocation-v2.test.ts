@@ -4,7 +4,9 @@ import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
 import { buildInvocationEvidence } from '../integration/review/obligations/invocation-evidence.js';
 import {
   ReviewInvocationEvidence,
-  isAcceptedReviewTransport,
+  isBindableReviewTransport,
+  isHistoricalReviewTransport,
+  isRecognizedReviewTransport,
   type NativeSubagentCaptureProvenance,
 } from './evidence-review-invocation.js';
 
@@ -71,7 +73,8 @@ describe('V2 invocation evidence trust boundary', () => {
       reviewedContentDigest: null,
     });
     expect(ReviewInvocationEvidence.parse(value)).toEqual(value);
-    expect(isAcceptedReviewTransport(value)).toBe(true);
+    expect(isBindableReviewTransport(value)).toBe(true);
+    expect(isHistoricalReviewTransport(value)).toBe(false);
     const explicit = buildInvocationEvidence({
       ...input,
       canonicalPromptDigest: 'd'.repeat(64),
@@ -160,6 +163,18 @@ describe('V2 invocation evidence trust boundary', () => {
     },
     { invocationMode: 'manual_attested', transportVersion: 6, nativeProvenance: provenance },
   ])('never accepts a mismatched transport predicate %j', (value) => {
-    expect(isAcceptedReviewTransport(value)).toBe(false);
+    expect(isRecognizedReviewTransport(value)).toBe(false);
+    expect(isBindableReviewTransport(value)).toBe(false);
+  });
+
+  it('recognizes historical generation 5 but never binds it or reads it as generation 6', () => {
+    const historical = { invocationMode: 'native_task_message_json', transportVersion: 5 };
+    expect(isHistoricalReviewTransport(historical)).toBe(true);
+    expect(isRecognizedReviewTransport(historical)).toBe(true);
+    expect(isBindableReviewTransport(historical)).toBe(false);
+    expect(isBindableReviewTransport({ ...historical, nativeProvenance: provenance })).toBe(false);
+    expect(isHistoricalReviewTransport({ ...historical, nativeProvenance: provenance })).toBe(
+      false,
+    );
   });
 });

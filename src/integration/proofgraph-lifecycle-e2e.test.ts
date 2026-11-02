@@ -39,6 +39,7 @@ import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligat
 import {
   buildInvocationFixture as buildInvocationEvidence,
   messageCaptureFixture,
+  nativeProvenanceFixture,
 } from '../review-invocation-test-helpers.js';
 import { hashFindings } from './review/findings-hash.js';
 import type { ReviewFindings } from '../state/evidence.js';
@@ -1544,6 +1545,11 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     const findingsHash = 'a'.repeat(64);
     const obligationId = '33333333-1111-4111-8111-111111111111';
     const invocationId = '44444444-2222-4222-8222-222222222222';
+    const capture = messageCaptureFixture({
+      childSessionId: 'ses_child',
+      obligationId,
+      attemptId: '55555555-3333-4333-8333-333333333333',
+    });
     const state = makeState('PLAN_REVIEW', {
       ticket: TICKET,
       activeChecks: ACTIVE_CHECKS,
@@ -1596,13 +1602,11 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             parentSessionId: 'ses_parent',
             childSessionId: 'ses_child',
             agentType: 'flowguard-reviewer' as const,
-            invocationMode: 'native_task_message_json' as const,
-            transportVersion: 5 as const,
-            capture: messageCaptureFixture({
-              childSessionId: 'ses_child',
-              obligationId,
-              attemptId: '55555555-3333-4333-8333-333333333333',
-            }),
+            invocationMode: 'native_subagent_message_json' as const,
+            transportVersion: 6 as const,
+            capture,
+            // Dispatch hostCallId below is 'ses_child'.
+            nativeProvenance: nativeProvenanceFixture(capture, 'ses_child'),
             hostVisible: true,
             transcriptNavigable: true,
             source: 'host-orchestrated' as const,

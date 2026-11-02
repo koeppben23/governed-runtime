@@ -35,6 +35,7 @@ import type {
   ReviewObligation,
 } from '../../../state/evidence.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { isBindableReviewTransport } from '../../../state/evidence-review-invocation.js';
 import { countReviewAttempts } from '../../../state/review-continuation.js';
 import { createAttemptForExistingObligation, updateAttemptStatus } from './attempt-lifecycle.js';
 
@@ -100,7 +101,8 @@ function resolveRearmTarget(input: IncoherentCaptureRearmInput): RearmTargetReso
     return blocked('incoherent_rearm_proof_mismatch');
   }
   const invocation = base.invocations.find((item) => item.invocationId === obligation.invocationId);
-  if (!invocation) return blocked('incoherent_rearm_invocation_missing');
+  if (!invocation || !isBindableReviewTransport(invocation))
+    return blocked('incoherent_rearm_invocation_missing');
   if (invocation.attemptId !== input.incoherentAttemptId) {
     return blocked('incoherent_rearm_proof_mismatch');
   }

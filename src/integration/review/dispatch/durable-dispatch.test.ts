@@ -1,4 +1,7 @@
-import { messageCaptureFixture } from '../../../review-invocation-test-helpers.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../../../review-invocation-test-helpers.js';
 
 /**
  * @module integration/review/durable-dispatch.test
@@ -33,6 +36,7 @@ import {
   freezeReviewMaterial,
 } from '../obligations/assurance.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import { hashFindings } from '../findings-hash.js';
 import {
   hashCanonicalContentSubject,
@@ -1015,11 +1019,34 @@ describe('transient retry hint durability', () => {
 });
 
 describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
+  /**
+   * Mirrors `bindNativeReviewChild`: after dispatch authorization the native
+   * child is durably correlated with the still-`created` attempt, which is the
+   * precondition for recording generation-6 evidence.
+   */
+  function bindAttemptToChild(
+    stateRef: { current: SessionState },
+    attemptId: string,
+    childSessionId: string = CHILD,
+  ): void {
+    stateRef.current = {
+      ...stateRef.current,
+      reviewAssurance: updateAttemptStatus(
+        ensureReviewAssurance(stateRef.current.reviewAssurance),
+        attemptId,
+        'created',
+        NOW,
+        { childSessionId },
+      ),
+    };
+  }
+
   function recordingParams(
     attemptId: string,
     obligationId: string,
     obligationType: 'plan' | 'review' = 'plan',
     overallVerdict: 'accept' | 'unable_to_review' = 'accept',
+    hostCallId: string = CHILD,
   ) {
     const findings = {
       iteration: 0,
@@ -1036,12 +1063,18 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       reviewedAt: NOW,
       attestation: { toolObligationId: obligationId },
     };
+    const capture = messageCaptureFixture({
+      childSessionId: CHILD,
+      obligationId,
+      attemptId,
+      findings,
+    });
     return {
       obligationId,
       obligationType,
       sessionId: PARENT,
       childSessionId: CHILD,
-      hostCallId: CHILD,
+      hostCallId,
       attemptId,
       promptHash: PROMPT_DIGEST,
       findingsHash: hashFindings(findings),
@@ -1052,14 +1085,10 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
         rawResponse: JSON.stringify(findings),
         findings,
         reviewOutputMode: 'validated_json' as const,
-        capture: messageCaptureFixture({
-          childSessionId: CHILD,
-          obligationId,
-          attemptId,
-          findings,
-        }),
+        capture,
         reviewAssuranceLevel: 'host_message_validated' as const,
       } satisfies ReviewerSuccessResult,
+      nativeProvenance: nativeProvenanceFixture(capture, hostCallId),
     };
   }
 
@@ -1067,6 +1096,8 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
     const deps = writeDeps(stateRef);
+    // Child correlation alone (no dispatch release) must not authorize evidence.
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -1092,6 +1123,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -1106,7 +1138,9 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.invocations[0]).toMatchObject({
       childSessionId: CHILD,
       attemptId: attempt.attemptId,
-      invocationMode: 'native_task_message_json',
+      invocationMode: 'native_subagent_message_json',
+      transportVersion: 6,
+      nativeProvenance: { nativeCallId: CHILD },
     });
     expect(after.obligations[0]).toMatchObject({
       status: 'fulfilled',
@@ -1132,6 +1166,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -1165,6 +1200,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -1190,6 +1226,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(
       deps as never,
@@ -1230,6 +1267,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
     await recordEvidenceOrBlockReuse(
       deps as never,
       SESS_DIR,
@@ -1295,6 +1333,8 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       attemptId: attempt.attemptId,
       findings,
     });
+    params.nativeProvenance = nativeProvenanceFixture(params.reviewerResult.capture, CHILD);
+    bindAttemptToChild(stateRef, attempt.attemptId);
     const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, params);
 
     expect(result).toMatchObject({
@@ -1308,7 +1348,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.dispatches[0]).toMatchObject({ dispatchStatus: 'authorized' });
   });
 
-  it('never rewrites a completed invocation after its dispatch is rebound to the child', async () => {
+  it('never rewrites a completed invocation when its native call is abandoned after completion', async () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
     const audit: SemanticAuditIntent[] = [];
@@ -1321,13 +1361,27 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     await persistAuthorizedReviewDispatch(deps, SESS_DIR, {
       attemptId: attempt.attemptId,
       obligationId: obligation.obligationId,
-      hostCallId: 'original-task-call',
+      hostCallId: 'native-call',
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
-    await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
-      ...recordingParams(attempt.attemptId, obligation.obligationId),
-      authorizedHostCallId: 'original-task-call',
+    bindAttemptToChild(stateRef, attempt.attemptId);
+    expect(
+      await recordEvidenceOrBlockReuse(
+        deps as never,
+        SESS_DIR,
+        recordingParams(
+          attempt.attemptId,
+          obligation.obligationId,
+          'plan',
+          'accept',
+          'native-call',
+        ),
+      ),
+    ).toBe('fulfilled');
+    expect(stateRef.current.reviewAssurance!.dispatches[0]).toMatchObject({
+      hostCallId: 'native-call',
+      dispatchStatus: 'completed',
     });
     const before = structuredClone(stateRef.current);
     for (let index = 0; index < 2; index += 1) {
@@ -1335,7 +1389,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
         await abandonAndBlockByHostCall(
           deps,
           SESS_DIR,
-          'original-task-call',
+          'native-call',
           'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
           { childSessionId: CHILD, obligationId: obligation.obligationId },
         ),
@@ -1357,6 +1411,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
     const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
       ...recordingParams(attempt.attemptId, obligation.obligationId),
       executionFailed: () => true,
@@ -1381,6 +1436,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
+    bindAttemptToChild(stateRef, attempt.attemptId);
 
     const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, {
       ...recordingParams(attempt.attemptId, obligation.obligationId),

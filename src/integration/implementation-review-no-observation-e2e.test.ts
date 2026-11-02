@@ -1,4 +1,7 @@
-import { messageCaptureFixture } from '../review-invocation-test-helpers.js';
+import {
+  messageCaptureFixture,
+  nativeProvenanceFixture,
+} from '../review-invocation-test-helpers.js';
 
 /**
  * @module integration/implementation-review-no-observation-e2e.test
@@ -304,6 +307,12 @@ async function inject(
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: FIXED_TIME,
   };
+  const capture = messageCaptureFixture({
+    childSessionId,
+    obligationId: obl.obligationId,
+    attemptId: boundAttempt.attemptId,
+    findings: ff,
+  });
   const inv = {
     invocationId,
     obligationId: obl.obligationId,
@@ -311,14 +320,11 @@ async function inject(
     parentSessionId: se.sId,
     childSessionId,
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'native_task_message_json' as const,
-    transportVersion: 5 as const,
-    capture: messageCaptureFixture({
-      childSessionId,
-      obligationId: obl.obligationId,
-      attemptId: boundAttempt.attemptId,
-      findings: ff,
-    }),
+    invocationMode: 'native_subagent_message_json' as const,
+    transportVersion: 6 as const,
+    capture,
+    // completedDispatchForInvocation uses the child session id as hostCallId.
+    nativeProvenance: nativeProvenanceFixture(capture, childSessionId),
     hostVisible: true as const,
     transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
