@@ -453,7 +453,7 @@ follow-up) carries `obligationId`, `childSessionId`, and either
 `followupPromptMsUnavailable: not_invoked` when no host prompt was sent. It
 times only the host prompt, not agent resolution, validation, or binding.
 
-Limits: the native reviewer Task bypasses the generic tool hooks, so its
+Limits: the native reviewer subagent bypasses the generic tool hooks, so its
 execution is not covered by `beforeToAfterMs`; use the host session export
 for Task and model timings. These lines are absent while the file sink is not
 yet active, when the configured level is above `info`, or when an enabled rate
@@ -531,7 +531,7 @@ plugin lifecycle
 command.execute.before
 tool.execute.before
 tool.execute.after
-native Task/reviewer orchestration
+native reviewer subagent/reviewer orchestration
 host events
 session compaction
 host process behavior

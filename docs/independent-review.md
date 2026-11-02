@@ -169,7 +169,7 @@ original code, and records one semantic `review:obligation_blocked` event in the
 same durable mutation. It also sets a persisted capacity lock for that session.
 
 The canonical lock prevents the same parent user turn from minting another review
-obligation or starting another reviewer Task. V2 requires verified explicit
+obligation or starting another reviewer subagent. V2 requires verified explicit
 recovery authority under the session lock; that acceptance is not implemented.
 The native V2
 entrypoint registers no command-origin approval/recovery hook. Authorized
@@ -232,15 +232,15 @@ re-arm rather than being counted as reviewed.
 
 FlowGuard projects one of three reviewer transport modes in tool output:
 
-| Mode                           | Meaning                                                                                                             |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `host_structured`              | OpenCode high-assurance path: parent-dispatched native Task reviewer child session with required structured output. |
-| `external_instruction_pending` | Claude/Codex instruction transport. The runtime remains pending until ReviewFindings validate and bind.             |
-| `unsupported_blocked`          | No safe reviewer transport is available; the session fails closed instead of accepting unverifiable evidence.       |
+| Mode                           | Meaning                                                                                                                          |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `host_structured`              | OpenCode high-assurance path: parent-dispatched native reviewer subagent reviewer child session with required structured output. |
+| `external_instruction_pending` | Claude/Codex instruction transport. The runtime remains pending until ReviewFindings validate and bind.                          |
+| `unsupported_blocked`          | No safe reviewer transport is available; the session fails closed instead of accepting unverifiable evidence.                    |
 
 External transport files under `.flowguard/sessions/<session-id>/review-evidence/*.json` are not approval evidence by existence. `flowguard_continue` reads them only as transport, then parses, schema-validates, binds to the active obligation/attestation, records invocation evidence, and leaves review completion to the existing verdict submission path. Invalid or mismatched files remain pending/blocked.
 
-The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standalone `/review` — share the same ReviewFindings schema and fail-closed attestation model. `/plan`, `/architecture`, and `/implement` share the plugin-orchestration pipeline; standalone `/review` is fulfilled through the same host-visible native reviewer Task on OpenCode. All paths are validated through the same `validateStrictAttestation` gate.
+The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standalone `/review` — share the same ReviewFindings schema and fail-closed attestation model. `/plan`, `/architecture`, and `/implement` share the plugin-orchestration pipeline; standalone `/review` is fulfilled through the same host-visible native reviewer subagent on OpenCode. All paths are validated through the same `validateStrictAttestation` gate.
 
 ---
 
@@ -639,7 +639,7 @@ assurance state by `resolveStructuredFindings`
 (`src/integration/review/validation/review-validation-structured-evidence.ts`,
 which applies `validateChallengeConsistency`); the `/plan`, `/architecture`, and
 `/implement` tool adapters reach it through `resolveStructuredEffectiveFindings`
-(`review-validation.ts`). The native Task evidence path
+(`review-validation.ts`). The native reviewer subagent evidence path
 (`recordEvidenceOrBlockReuse` → `validatePreBindFindings`) independently
 pre-binds captured findings to the frozen review-subject scope and repository
 evidence before the invocation is recorded. `validateReviewFindings` remains an
@@ -656,7 +656,7 @@ second ingestion path.
 | L4      | Issues integrity    | Submitted `blockingIssues` count differs from the host-captured reviewer count              | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before verdict tool       |
 | L4/Tool | Reviewability       | Submitted `overallVerdict='unable_to_review'` (reviewer declared the artifact unreviewable) | `SUBAGENT_UNABLE_TO_REVIEW`          | tool layer + orchestrator |
 
-L3 (Task-prompt integrity) was removed with reviewer Task interception; reviewer
+L3 (Task-prompt integrity) was removed with reviewer subagent interception; reviewer
 dispatch contract failures surface as `HOST_STRUCTURED_OUTPUT_REQUIRED`,
 `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, `REVIEWER_CAPTURE_PROVENANCE_INVALID` or
 `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
@@ -697,7 +697,7 @@ Both sources are validated through the same `validateStrictAttestation` gate. At
 
 Standalone PR/content `/review` evaluates external diffs against the **current repository**, so it requires compact Discovery context as review evidence:
 
-- The host reviewer Task prompt renders the attempt-bound repository Discovery snapshot for repository-scoped reviews (`resolveReviewerDiscoverySection` in `src/integration/review/prompting/prompt-sections.ts`); the content/PR pipeline enables a **bounded drift check** so reviewers see whether local Discovery is drifted relative to the reviewed branch/diff. Drift checking fails closed: a timeout or error produces an explicit drift failure status (`timeout` / `discovery_drift_timeout`, or `unavailable` / `discovery_drift_unavailable`) rendered as `NOT_VERIFIED`.
+- The host reviewer subagent prompt renders the attempt-bound repository Discovery snapshot for repository-scoped reviews (`resolveReviewerDiscoverySection` in `src/integration/review/prompting/prompt-sections.ts`); the content/PR pipeline enables a **bounded drift check** so reviewers see whether local Discovery is drifted relative to the reviewed branch/diff. Drift checking fails closed: a timeout or error produces an explicit drift failure status (`timeout` / `discovery_drift_timeout`, or `unavailable` / `discovery_drift_unavailable`) rendered as `NOT_VERIFIED`.
 - Reviewers MUST check Discovery **health and drift before** any repo-dependent quality claim, flag generic verification suggestions when repo-native `verificationCandidates` exist, and mark Discovery-dependent claims `NOT_VERIFIED` when the content cannot be correlated to local Discovery (diff references files absent from the Discovery snapshot, or local Discovery is drifted).
 - Discovery context is advisory falsification **evidence**, not review verdict authority: ReviewFindings, obligation binding, mandate digest, and attestation remain the review authority. The same shared Discovery review-context builder is reused — there is no separate PR-only Discovery authority. <!-- NOT_VERIFIED: drift-check latency/behavior under live repositories is bounded by the status drift timeout but not measured here. -->
 
