@@ -16,37 +16,28 @@ See [ADR-010's parity amendment](./decisions/010-host-neutral-opt-in-governance.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                 OpenCode Primary Agent                  │
-│                                                         │
-│  1. Draft plan / ADR / implement code                   │
-│  2. Submit to FlowGuard                                 │
-│     (flowguard_plan / flowguard_architecture /          │
-│      flowguard_implement)                               │
-│  3. Read tool response:                                 │
-│     → reviewDispatch.completed: host-observed           │
-│       structured findings bound, verdict in             │
-│       reviewDispatch.verdict (submit verdict only)      │
-│     → reviewDispatch.required: host reviewer            │
-│       dispatch incomplete — follow recovery steps       │
-│     → BLOCKED (strict mode orchestration/evidence fail) │
-│  4. Submit verdict via flowguard_review_implementation  │
-└────────────────────┬────────────────────────────────────┘
-                     │
-          ┌──────────▼──────────┐
-          │   FlowGuard Tool    │     ┌───────────────────────┐
-          │  (plan / arch /     │     │    FlowGuard Plugin   │
-          │   implement)        │     │  (tool.execute.after) │
-          │                     │     │                       │
-          │  • Validate         │────►│  Detects review       │
-          │  • Persist          │     │  dispatch required    │
-          │  • Respond with     │     │  → session.create()   │
-          │    required signal  │     │  → session.prompt()   │
-          │                     │     │  → Mutates output to  │
-          └─────────────────────┘     │    completed signal   │
-                                      │  → Updates enforcement│
-                                      └───────────────────────┘
+```text
+Primary Agent (OpenCode V2)
+  1. Draft plan / ADR / implementation
+  2. Call flowguard_plan / flowguard_architecture / flowguard_implement
+  3. Follow the returned reviewInvocation:
+       action: call_subagent, transport: native_subagent
+     and invoke the visible flowguard-reviewer child with the native
+     `subagent` tool (no caller model override).
+  4. Submit only the verdict through the review tool after the host reports
+     completed evidence.
+
+FlowGuard Plugin before-hook
+  • validate the exact pending obligation/attempt
+  • persist the authorized native dispatch before host release
+  • bind the actual child session and inject the frozen canonical prompt
+  • reject caller prompt bytes, foreign children and duplicate releases
+
+FlowGuard Plugin after-hook
+  • verify the live same-child prompt/context/model/tool boundary
+  • open one exclusive tool-free JSON serialization window
+  • capture the terminal assistant/model step and validate strict findings
+  • bind invocation + obligation + dispatch + audit atomically (generation 6)
 
 Separation of concerns:
   Author artifacts:   plan.history, architecture.adrText, implementation
@@ -54,6 +45,13 @@ Separation of concerns:
                       architecture.reviewFindings,
                       implReviewFindings
 ```
+
+The parent never creates or prompts a hidden SDK child directly. Native
+`subagent` release is authorized by the plugin before the host executes it;
+the parent's model arguments are replaced with the canonical frozen prompt at
+the before-hook. This diagram describes the current V2 path; the previous
+`session.create()`/`session.prompt()` sequence is historical V1 behavior and is
+not a supported runtime path.
 
 **Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. On OpenCode, the reviewer runs in a host-created child session that the plugin prompts with the canonical review prompt and, after normal completion, a same-child JSON serialization prompt. Model and variant are preserved, no `format` or forced tool is requested, and only the request-correlated, FlowGuard-validated JSON result can bind to a review obligation. Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
 

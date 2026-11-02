@@ -24,8 +24,7 @@ import { materializeEvidenceArtifacts } from './evidence-artifacts.js';
 import { initWorkspace, workspacesHome } from './init.js';
 import { hashFile, hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import { isBindableReviewTransport } from '../../state/evidence-review-invocation.js';
-import { BINDING, makeProgressedState, PLAN_REVIEW_ASSURANCE } from '../../fixtures.js';
+import { BINDING, makeProgressedState } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
 import { withTestEnv } from '../../integration/test-helpers.js';
 import { createTempWorktree, runCleanups } from '../workspace-test-helpers.js';
@@ -47,31 +46,14 @@ async function isolateConfigDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'iso-read-verified-cfg-'));
 }
 
-function historicalV5Assurance(): NonNullable<SessionState['reviewAssurance']> {
-  const invocation = PLAN_REVIEW_ASSURANCE.invocations[0]!;
-  const { nativeProvenance: _nativeProvenance, ...withoutProvenance } = invocation;
-  return {
-    ...PLAN_REVIEW_ASSURANCE,
-    invocations: [
-      {
-        ...withoutProvenance,
-        invocationMode: 'native_task_message_json',
-        transportVersion: 5,
-      },
-    ],
-  };
-}
-
 function boundState(input: {
   readonly sessionId: string;
   readonly fingerprint: string;
   readonly phase?: SessionState['phase'];
-  readonly reviewAssurance?: SessionState['reviewAssurance'];
 }): SessionState {
   const base = makeProgressedState(input.phase ?? 'COMPLETE');
   return {
     ...base,
-    ...(input.reviewAssurance === undefined ? {} : { reviewAssurance: input.reviewAssurance }),
     binding: {
       ...BINDING,
       hostSessionId: input.sessionId,
@@ -85,13 +67,8 @@ async function persistBoundSession(input: {
   readonly sessionDir: string;
   readonly sessionId: string;
   readonly fingerprint: string;
-  readonly reviewAssurance?: SessionState['reviewAssurance'];
 }): Promise<SessionState> {
-  const state = boundState({
-    sessionId: input.sessionId,
-    fingerprint: input.fingerprint,
-    ...(input.reviewAssurance === undefined ? {} : { reviewAssurance: input.reviewAssurance }),
-  });
+  const state = boundState({ sessionId: input.sessionId, fingerprint: input.fingerprint });
   await writeState(input.sessionDir, state);
   await materializeEvidenceArtifacts(
     input.sessionDir,
@@ -101,9 +78,7 @@ async function persistBoundSession(input: {
   return state;
 }
 
-async function createExportFixture(
-  options: { readonly appendDecision?: boolean; readonly historicalReview?: boolean } = {},
-) {
+async function createExportFixture(options: { readonly appendDecision?: boolean } = {}) {
   const configDir = await isolateConfigDir();
   const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
   cleanups.push(async () => {
@@ -111,15 +86,12 @@ async function createExportFixture(
     await fs.rm(configDir, { recursive: true, force: true });
   });
 
-  const sessionId = options.historicalReview
-    ? '550e8400-e29b-41d4-a716-4466554400af'
-    : '550e8400-e29b-41d4-a716-4466554400ab';
+  const sessionId = '550e8400-e29b-41d4-a716-4466554400ab';
   const initialized = await initWorkspace(WORKTREE, sessionId);
   const state = await persistBoundSession({
     sessionDir: initialized.sessionDir,
     sessionId,
     fingerprint: initialized.fingerprint,
-    ...(options.historicalReview ? { reviewAssurance: historicalV5Assurance() } : {}),
   });
 
   await appendAuditEvent(initialized.sessionDir, {
@@ -191,30 +163,6 @@ describe('adapters/workspace/archive-read-verified', () => {
       );
       expect(read.packageSha256).toBe(read.sidecarSha256);
       expect(read.packageSha256).toBe(await hashFile(fixture.exportPath));
-    });
-
-    it('verifies an unchanged V5 archive with an informational historical finding', async () => {
-      const fixture = await createExportFixture({ historicalReview: true });
-      const verification = await verifyCompletionExport(fixture.fingerprint, fixture.sessionId);
-      expect(verification.passed).toBe(true);
-      expect(verification.findings).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'review_evidence_historical_transport',
-            severity: 'info',
-          }),
-        ]),
-      );
-      expect(fixture.state.reviewAssurance?.invocations[0]?.transportVersion).toBe(5);
-      expect(isBindableReviewTransport(fixture.state.reviewAssurance!.invocations[0]!)).toBe(false);
-    });
-
-    it('rejects a tampered historical V5 archive', async () => {
-      const fixture = await createExportFixture({ historicalReview: true });
-      const original = await fs.readFile(fixture.exportPath);
-      await fs.writeFile(fixture.exportPath, Buffer.concat([original, Buffer.from('tamper')]));
-      const verification = await verifyCompletionExport(fixture.fingerprint, fixture.sessionId);
-      expect(verification.passed).toBe(false);
     });
 
     it('is read-only: the package and the live state are unchanged', async () => {

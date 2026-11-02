@@ -25,24 +25,26 @@ consumes the same mode projection and reviewer instruction contract. This proves
 the current semantic contract is consumable outside OpenCode; it does not claim
 a supported second host or full cross-host conformance.
 
-`src/adapters/workspace/archive-read-verified.test.ts` verifies an unchanged
-current-format archive carrying V5 review evidence:
+`src/adapters/workspace/historical-v5-archive.test.ts` verifies fixed archive
+bytes generated once by the V5-capable commit `33efb381`, together with the
+matching external audit/state fixture:
 
 - verification passes and reports `review_evidence_historical_transport` as
   informational, not as a rewrite or binding;
-- archive tampering still fails verification;
+- archive tampering fails even when the checksum sidecar is recomputed;
 - `isBindableReviewTransport` accepts only V6 with native provenance.
 
-The V5 fixture is a canonical current archive fixture, not a preserved
-historical binary from an older release. A real previously published V1 archive
-remains a separate installed-data acceptance item.
+The fixture is genuine output of historical source, not a V6 archive transformed
+during the test. It is a deterministic repository fixture, not a customer artifact
+from a published release; acceptance against a real customer V1 archive remains
+an installed-data item.
 
 Focused reproduction:
 
 ```sh
 npx vitest run --project integration \
   src/integration/review/dispatch/host-neutral-contract.test.ts
-npx vitest run --project unit src/adapters/workspace/archive-read-verified.test.ts
+npx vitest run --project unit src/adapters/workspace/historical-v5-archive.test.ts
 npx vitest run --project unit src/adapters/session-authority.test.ts
 ```
 

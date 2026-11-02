@@ -142,4 +142,33 @@ describe('host-neutral review orchestration contract', () => {
     expect(dispatch.built).not.toHaveProperty('transport');
     expect(dispatch.built.mode).toBe('external_instruction_pending');
   });
+
+  it('preserves identical governance authority across contrasting host capabilities', () => {
+    const reviewAuthority = authority();
+    const structured = buildChildSessionReviewInstruction({
+      mode: resolveReviewOrchestrationMode({ nativeStructuredReview: true }),
+      authority: reviewAuthority,
+      iteration: 0,
+      planVersion: 1,
+    });
+    const external = buildChildSessionReviewInstruction({
+      mode: resolveReviewOrchestrationMode({
+        nativeStructuredReview: false,
+        externalInstructionTransport: true,
+      }),
+      authority: reviewAuthority,
+      iteration: 0,
+      planVersion: 1,
+    });
+    const governance = (instruction: typeof structured) => ({
+      obligationId: instruction.obligationId,
+      reviewAttemptId: instruction.reviewAttemptId,
+      authority: instruction.authority,
+      requiredReviewAttestation: instruction.requiredReviewAttestation,
+      reviewDispatch: instruction.reviewDispatch,
+    });
+    expect(governance(structured)).toEqual(governance(external));
+    expect(structured.transport).toBe('native_subagent');
+    expect(external).not.toHaveProperty('transport');
+  });
 });
