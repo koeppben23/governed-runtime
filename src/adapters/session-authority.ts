@@ -89,6 +89,133 @@ export interface SessionAuthorityInput {
   readonly deadlineMs?: number | undefined;
 }
 
+type UnavailableResolution = Extract<SessionAuthorityResolution, { status: 'unavailable' }>;
+type ProbeResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly unavailable: UnavailableResolution };
+
+interface SessionProbeDeadline {
+  nextProbeTimeout(): number | undefined;
+  assertWithinDeadline(probe: string): void;
+}
+
+function createSessionProbeDeadline(deadlineMs: number | undefined): SessionProbeDeadline {
+  const deadlineAt = deadlineMs === undefined ? null : performance.now() + deadlineMs;
+  return {
+    nextProbeTimeout() {
+      if (deadlineAt === null) return undefined;
+      const remaining = deadlineAt - performance.now();
+      if (remaining <= 0) {
+        throw new GitError(
+          'GIT_TIMEOUT',
+          'Session authority deadline exceeded before the next git probe',
+        );
+      }
+      return Math.max(1, Math.min(GIT_COMMAND_TIMEOUT_MS, Math.floor(remaining)));
+    },
+    assertWithinDeadline(probe: string) {
+      if (deadlineAt !== null && performance.now() >= deadlineAt) {
+        throw new GitError(
+          'GIT_TIMEOUT',
+          `Session authority deadline exceeded after the ${probe} git probe`,
+        );
+      }
+    },
+  };
+}
+
+async function probeWorktreeRoot(
+  input: SessionAuthorityInput,
+  deadline: SessionProbeDeadline,
+): Promise<ProbeResult<string>> {
+  try {
+    const value = await resolveRoot(input.root, deadline.nextProbeTimeout());
+    deadline.assertWithinDeadline('worktree root');
+    return { ok: true, value };
+  } catch (err) {
+    return {
+      ok: false,
+      unavailable: unavailable(err, `Cannot resolve the git worktree root from "${input.root}"`),
+    };
+  }
+}
+
+async function probeFingerprint(
+  worktreeRoot: string,
+  deadline: SessionProbeDeadline,
+): Promise<ProbeResult<string>> {
+  try {
+    const value = (await computeFingerprint(worktreeRoot, deadline.nextProbeTimeout())).fingerprint;
+    deadline.assertWithinDeadline('remote-origin fingerprint');
+    return { ok: true, value };
+  } catch (err) {
+    return {
+      ok: false,
+      unavailable: unavailable(
+        err,
+        `Cannot compute the workspace fingerprint for "${worktreeRoot}"`,
+      ),
+    };
+  }
+}
+
+async function loadSessionState(sessDir: string): Promise<ProbeResult<SessionState | null>> {
+  try {
+    return { ok: true, value: await readState(sessDir) };
+  } catch (err) {
+    return {
+      ok: false,
+      unavailable: unavailable(err, `Cannot read session state at "${sessDir}"`),
+    };
+  }
+}
+
+function claimedFingerprintMismatch(
+  input: SessionAuthorityInput,
+  fingerprint: string,
+  worktreeRoot: string,
+): UnavailableResolution | null {
+  if (input.claimedFingerprint === undefined || input.claimedFingerprint === fingerprint) {
+    return null;
+  }
+  return {
+    status: 'unavailable',
+    code: 'SESSION_BINDING_MISMATCH',
+    reason:
+      `Claimed workspace fingerprint "${input.claimedFingerprint}" does not match ` +
+      `the canonical fingerprint "${fingerprint}" of "${worktreeRoot}".`,
+  };
+}
+
+function resolveSessionDirectory(fingerprint: string, sessionId: string): ProbeResult<string> {
+  try {
+    return { ok: true, value: sessionDir(fingerprint, sessionId) };
+  } catch (err) {
+    return {
+      ok: false,
+      unavailable: unavailable(
+        err,
+        `Cannot derive the session directory for session "${sessionId}"`,
+      ),
+    };
+  }
+}
+
+function historicalEvidenceUnavailable(state: SessionState): UnavailableResolution | null {
+  if (
+    isTerminalPhase(state.phase) ||
+    !(state.reviewAssurance?.invocations ?? []).some(isHistoricalReviewTransport)
+  ) {
+    return null;
+  }
+  return {
+    status: 'unavailable',
+    code: 'SESSION_STATE_INCOMPATIBLE',
+    reason:
+      'The active session holds historical review evidence (transport generation 5, V1 native Task). It remains verifiable after archiving but cannot be continued or bound; no migration to the current generation exists. Start a new session.',
+  };
+}
+
 /**
  * Resolve the canonical session authority.
  *
@@ -109,84 +236,26 @@ export async function resolveSessionAuthority(
 
   // One monotone deadline for the whole probe sequence. `performance.now()` is
   // monotone, so wall-clock adjustments cannot extend the budget.
-  const deadlineAt = input.deadlineMs === undefined ? null : performance.now() + input.deadlineMs;
+  const deadline = createSessionProbeDeadline(input.deadlineMs);
+  const worktree = await probeWorktreeRoot(input, deadline);
+  if (!worktree.ok) return worktree.unavailable;
+  const worktreeRoot = worktree.value;
 
-  /**
-   * Remaining per-probe timeout, or undefined without a budget. Never returns
-   * 0: `execFile` treats `timeout: 0` as "no timeout", so an exhausted budget
-   * must fail closed before the probe instead.
-   */
-  const nextProbeTimeout = (): number | undefined => {
-    if (deadlineAt === null) return undefined;
-    const remaining = deadlineAt - performance.now();
-    if (remaining <= 0) {
-      throw new GitError(
-        'GIT_TIMEOUT',
-        'Session authority deadline exceeded before the next git probe',
-      );
-    }
-    return Math.max(1, Math.min(GIT_COMMAND_TIMEOUT_MS, Math.floor(remaining)));
-  };
+  const fingerprintResult = await probeFingerprint(worktreeRoot, deadline);
+  if (!fingerprintResult.ok) return fingerprintResult.unavailable;
+  const fingerprint = fingerprintResult.value;
 
-  /**
-   * Post-probe deadline postcondition: a probe that settles successfully after
-   * the deadline (late promise settlement or subprocess timeout overshoot) must
-   * not have its result accepted — the per-probe `execFile` timeout reduces but
-   * does not replace this check.
-   */
-  const assertWithinDeadline = (probe: string): void => {
-    if (deadlineAt === null) return;
-    if (performance.now() >= deadlineAt) {
-      throw new GitError(
-        'GIT_TIMEOUT',
-        `Session authority deadline exceeded after the ${probe} git probe`,
-      );
-    }
-  };
+  const mismatch = claimedFingerprintMismatch(input, fingerprint, worktreeRoot);
+  if (mismatch) return mismatch;
 
-  let worktreeRoot: string;
-  try {
-    worktreeRoot = await resolveRoot(input.root, nextProbeTimeout());
-    assertWithinDeadline('worktree root');
-  } catch (err) {
-    return unavailable(err, `Cannot resolve the git worktree root from "${input.root}"`);
-  }
+  const sessionDirResult = resolveSessionDirectory(fingerprint, input.sessionId);
+  if (!sessionDirResult.ok) return sessionDirResult.unavailable;
+  const sessDir = sessionDirResult.value;
 
-  let fingerprint: string;
-  try {
-    fingerprint = (await computeFingerprint(worktreeRoot, nextProbeTimeout())).fingerprint;
-    assertWithinDeadline('remote-origin fingerprint');
-  } catch (err) {
-    return unavailable(err, `Cannot compute the workspace fingerprint for "${worktreeRoot}"`);
-  }
-
-  if (input.claimedFingerprint !== undefined && input.claimedFingerprint !== fingerprint) {
-    return {
-      status: 'unavailable',
-      code: 'SESSION_BINDING_MISMATCH',
-      reason:
-        `Claimed workspace fingerprint "${input.claimedFingerprint}" does not match ` +
-        `the canonical fingerprint "${fingerprint}" of "${worktreeRoot}".`,
-    };
-  }
-
-  let sessDir: string;
-  try {
-    sessDir = sessionDir(fingerprint, input.sessionId);
-  } catch (err) {
-    return unavailable(err, `Cannot derive the session directory for session "${input.sessionId}"`);
-  }
-
-  let state: SessionState | null;
-  try {
-    state = await readState(sessDir);
-  } catch (err) {
-    return unavailable(err, `Cannot read session state at "${sessDir}"`);
-  }
-
-  if (state === null) {
-    return { status: 'absent', sessDir, worktreeRoot, fingerprint };
-  }
+  const stateResult = await loadSessionState(sessDir);
+  if (!stateResult.ok) return stateResult.unavailable;
+  const state = stateResult.value;
+  if (state === null) return { status: 'absent', sessDir, worktreeRoot, fingerprint };
 
   try {
     validateBinding(state, { worktreeRoot, sessionId: input.sessionId });
@@ -195,20 +264,8 @@ export async function resolveSessionAuthority(
     return unavailable(err, 'Persisted session binding does not match the canonical workspace');
   }
 
-  // Historical generation-5 review evidence stays verifiable in archives but
-  // cannot carry an active workflow forward: no migration to the current
-  // generation exists, so a non-terminal session holding it fails closed.
-  if (
-    !isTerminalPhase(state.phase) &&
-    (state.reviewAssurance?.invocations ?? []).some(isHistoricalReviewTransport)
-  ) {
-    return {
-      status: 'unavailable',
-      code: 'SESSION_STATE_INCOMPATIBLE',
-      reason:
-        'The active session holds historical review evidence (transport generation 5, V1 native Task). It remains verifiable after archiving but cannot be continued or bound; no migration to the current generation exists. Start a new session.',
-    };
-  }
+  const historical = historicalEvidenceUnavailable(state);
+  if (historical) return historical;
 
   return { status: 'resolved', sessDir, worktreeRoot, fingerprint, state };
 }

@@ -335,6 +335,31 @@ async function captureVerifiedContents(input: {
   };
 }
 
+async function unavailableVerification(
+  archiveSnapshotPath: string,
+  extractionRoot: string,
+  findings: ArchiveFinding[],
+  capture: boolean,
+): Promise<CapturedArchiveVerification> {
+  // Capture the snapshot digest BEFORE the extraction root is discarded, so a
+  // blocked package is still identifiable as an unverifiable package rather
+  // than reported as missing on platforms where tar inspection rejects
+  // tampered bytes before extraction.
+  let packageSha256: string | null = null;
+  if (capture) {
+    try {
+      packageSha256 = await hashFile(archiveSnapshotPath);
+    } catch {
+      packageSha256 = null;
+    }
+  }
+  await fs.rm(extractionRoot, { recursive: true, force: true });
+  return {
+    verification: buildVerificationResult(findings, null),
+    capture: capture ? emptyCapture(packageSha256) : emptyCapture(),
+  };
+}
+
 async function runArchiveVerification(
   fingerprint: string,
   sessionId: string,
@@ -360,23 +385,7 @@ async function runArchiveVerification(
     findings,
   );
   if (!prepared) {
-    // Capture the snapshot digest BEFORE the extraction root is discarded, so
-    // a blocked package is still identifiable as an unverifiable package
-    // rather than reported as missing on platforms where tar inspection
-    // rejects tampered bytes before extraction.
-    let packageSha256: string | null = null;
-    if (capture) {
-      try {
-        packageSha256 = await hashFile(archiveSnapshotPath);
-      } catch {
-        packageSha256 = null;
-      }
-    }
-    await fs.rm(extractionRoot, { recursive: true, force: true });
-    return {
-      verification: buildVerificationResult(findings, null),
-      capture: capture ? emptyCapture(packageSha256) : emptyCapture(),
-    };
+    return unavailableVerification(archiveSnapshotPath, extractionRoot, findings, capture);
   }
 
   try {
