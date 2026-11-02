@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Host-neutral core guard (#1190, ADR-010 D1, #1169 WS2).**
+  `src/architecture/__tests__/host-neutral-core.test.ts` enforces that the core
+  (all governed modules except host adapters, plus every `integration` file that
+  is not OpenCode plugin composition or host runtime) imports no
+  `@opencode/*`/`@opencode-ai/*` package, and freezes every remaining line that
+  names OpenCode or its message-ID format in an exact, reasoned per-file budget.
+  New occurrences fail; removed occurrences must lower the budget. The initial
+  baseline is 62 lines in 30 files, including persisted locations and the
+  persisted message-ID check that stay by design.
 - **Native tool-result boundary probes (#1190, R4).** Four pinned-host
   diagnostics correlate a real read's After result, normalized/truncated success
   event, stored history, outgoing Context and provider-received request. Later
