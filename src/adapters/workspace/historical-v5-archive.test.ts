@@ -80,11 +80,16 @@ describe('historical V5 completion export', () => {
     await installFixture();
     const verification = await verifyCompletionExport(FINGERPRINT, SESSION_ID);
     expect(verification.passed).toBe(true);
-    expect(
-      isBindableReviewTransport({
-        invocationMode: 'native_task_message_json',
-        transportVersion: 5,
-      }),
-    ).toBe(false);
+    const state = JSON.parse(
+      await fs.readFile(path.join(SESSION_FIXTURE, 'session-state.json'), 'utf8'),
+    ) as {
+      reviewAssurance?: { invocations?: Array<Record<string, unknown>> };
+    };
+    const invocation = state.reviewAssurance?.invocations?.[0];
+    expect(invocation).toMatchObject({
+      invocationMode: 'native_task_message_json',
+      transportVersion: 5,
+    });
+    expect(isBindableReviewTransport(invocation ?? {})).toBe(false);
   });
 });
