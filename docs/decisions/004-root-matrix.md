@@ -8,20 +8,29 @@
 
 The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
-(counts updated 2026-11-01):
+(counts updated 2026-11-02):
 
-- `root-composition`: 29 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 31 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 6 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
 - `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 50 root production files
+- total: 52 root production files
 
 The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
 catalogue/executor/completion composition and `opencode-governance.ts` for exact
 host session/delegation correlation. Durable activation schemas and lifecycle
 validation remain in `state/` and `machine/`; the journal is owned by `adapters/`.
 Neither new root file supplies a competing workflow or approval authority.
+
+Finding 6 step 2 adds `plugin-native-review.ts` to connect native hooks to the
+existing dispatch ledger and frozen prompt owners. `plugin-native-events.ts`
+holds the extracted event consumer/fence so `plugin.ts` retains single hook
+registration ownership within its unchanged 650-LOC budget. These composition
+files add no evidence, approval, capture or recovery authority. The named
+`review/dispatch/native-review-dispatch.ts` growth exception isolates native V2
+pre-release/current-child checks without invoking obsolete host DTOs; the zone's
+growth target and all file-size limits remain unchanged.
 
 ADR-009 added `plugin-reviewer-capture.ts` as hook composition and
 `reviewer-capture.ts` as the synchronous request-provenance/capture-fence authority.

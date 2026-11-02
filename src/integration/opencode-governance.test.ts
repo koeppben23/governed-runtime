@@ -320,13 +320,15 @@ describe('native governance delegation correlation', () => {
   });
 
   it('does not admit a reviewer dispatch even if both host and dispatch select reviewer', async () => {
-    await authorize(dispatch('call', { agent: 'flowguard-reviewer' }));
+    await expect(authorize(dispatch('call', { agent: 'flowguard-reviewer' }))).rejects.toThrow(
+      'independent-review',
+    );
     host.sessionGet.mockImplementation(async ({ sessionID }) => ({
       id: sessionID,
       location: { directory: ws.tmpDir },
       ...(sessionID === 'child' ? { parentID: 'root', agent: 'flowguard-reviewer' } : {}),
     }));
-    await expect(governance.observeProgress(receipt())).rejects.toThrow('independent-review');
+    expect(governance.observeProgress(receipt())).toBeUndefined();
   });
 
   it.each([

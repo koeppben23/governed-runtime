@@ -800,7 +800,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.reviewAttemptId).toEqual(expect.any(String));
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewInvocation).toBeDefined();
-    expect(parsed.reviewInvocation.reviewerSubagentType).toBe('flowguard-reviewer');
+    expect(parsed.reviewInvocation.reviewerAgent).toBe('flowguard-reviewer');
     expect(parsed.reviewInvocation.authority).toBe('review_obligation_evidence_binding');
     expect(parsed.reviewInvocation.requiredReviewAttestation.toolObligationId).toBeDefined();
   });

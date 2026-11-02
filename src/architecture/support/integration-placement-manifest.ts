@@ -91,6 +91,11 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     targetProductionFiles: 13,
     budgetExceptions: [
       {
+        file: 'integration/review/dispatch/native-review-dispatch.ts',
+        reason:
+          'Native V2 pre-release and observed-child adapter consumes the existing dispatch ledger and frozen prompt authorities without invoking V1 transport DTOs or enabling capture/recovery.',
+      },
+      {
         file: 'integration/review/dispatch/capture-failure-routing.ts',
         reason:
           'Extracted routing unit: it keeps native-task-review.ts inside the 650-LOC production budget while owning retry-vs-terminal capture routing and stale-child persistence.',
@@ -370,6 +375,8 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/plugin-shared.ts', owner: 'root-composition' },
   { file: 'integration/plugin-workspace.ts', owner: 'root-composition' },
   { file: 'integration/plugin-native-tools.ts', owner: 'root-composition' },
+  { file: 'integration/plugin-native-events.ts', owner: 'root-composition' },
+  { file: 'integration/plugin-native-review.ts', owner: 'root-composition' },
   { file: 'integration/plugin.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-execution-failure.ts', owner: 'root-composition' },
   { file: 'integration/reviewer-execution-watchdog.ts', owner: 'root-composition' },
@@ -428,6 +435,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/dispatch/native-task-review-execution.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-prompt.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/native-review-dispatch.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-types.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review.ts', owner: 'review-dispatch' },
   { file: 'integration/review/obligations/obligation-settlement.ts', owner: 'review-obligations' },

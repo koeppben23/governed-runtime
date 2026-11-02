@@ -154,9 +154,11 @@ describe('check command: implementation review orchestration', () => {
     if (!body) throw new TypeError('missing check command template');
 
     expect(body).toContain('If its phase is `IMPL_REVIEW`');
-    expect(body).toContain('FlowGuard binds the independent review');
+    expect(body).toContain('FlowGuard alone binds the independent review');
     expect(body).toContain('Do not author reviewer context or submit');
-    expect(body).toContain('invoke the host-native `task` tool exactly as that contract instructs');
+    expect(body).toContain(
+      'invoke the host-native `subagent` tool exactly as that contract instructs',
+    );
     expect(body).toContain('`flowguard_review_implementation({ reviewVerdict })`');
     expect(body).toContain('Never make the subsequent human approval decision.');
   });

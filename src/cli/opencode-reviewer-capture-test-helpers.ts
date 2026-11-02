@@ -36,7 +36,12 @@ interface ReviewerHostProbe extends Omit<NativeHostProbe, 'session' | 'entries'>
   ): ReturnType<NativeHostProbe['prompt']>;
   serializations(): number;
 }
-export async function createReviewerCaptureHostProbe(): Promise<ReviewerHostProbe> {
+export async function createReviewerCaptureHostProbe(
+  options: {
+    readonly reviewArguments?: Record<string, unknown>;
+    readonly onReview?: (childSessionID: string) => Promise<void>;
+  } = {},
+): Promise<ReviewerHostProbe> {
   let scenario: 'positive' | 'tool' | 'interrupted' = 'positive';
   let parentStage = 0;
   let parentSessionId = '';
@@ -58,7 +63,7 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
   record({ hook: 'plugin-loaded' });
   return async () => { for (const registration of registrations) await registration.dispose(); };
 } });`,
-    script(body, sessionID) {
+    async script(body, sessionID) {
       const nativeReview = sessionID !== parentSessionId;
       const serialization =
         nativeReview &&
@@ -69,6 +74,7 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
         phase: serialization ? 'serialization' : nativeReview ? 'review' : 'parent',
         body,
       });
+      if (nativeReview && !serialization) await options.onReview?.(sessionID);
       if (serialization) {
         serializationCalls++;
         if (scenario === 'interrupted') return { hold: true };
@@ -88,6 +94,7 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
               agent: 'flowguard-reviewer',
               description: 'Independent review',
               prompt: 'Review the pending plan.',
+              ...options.reviewArguments,
             },
           },
         };

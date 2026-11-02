@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native reviewer dispatch authority (#1190, Finding 6 step 2).** The existing
+  review ledger now authorizes a fresh foreground V2 `subagent` before native
+  release and durably binds its actual progress-receipt child to the exact parent
+  call, obligation and attempt. Replay, foreign/stale authority, competing releases,
+  caller model overrides, partial persistence and reloads fail closed. Pending
+  invocation instructions/commands use native V2 arguments, not V1 Task aliases.
+  Missing review state is an explicit write failure. Initial reviewer execution
+  remains separate from capture/evidence/audit binding and recovery, which stay
+  blocked; no approval or autonomous-start authority is added.
+
 - **Native reviewer transport prerequisite probes (#1190).** A real pinned-host
   Foreground→same-child→terminal test and foreign-input, denied-read, interruption
   and compaction controls expose the V2 request window without creating FlowGuard

@@ -39,6 +39,7 @@ describe('native V2 plugin definition resilience', () => {
         'context',
         'compaction',
         'generate',
+        'model.request',
       ]);
       expect(host.sessionGet).not.toHaveBeenCalled();
       expect(host.context.command.transform).not.toHaveBeenCalled();

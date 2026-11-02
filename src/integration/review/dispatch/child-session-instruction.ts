@@ -15,25 +15,26 @@ export interface ChildSessionReviewInstructionInput {
 
 /**
  * Machine-actionable metadata for a host-created reviewer child session; never
- * a reviewer prompt. On OpenCode the parent calls native Task with only the
+ * a reviewer prompt. On OpenCode the parent calls native subagent with only the
  * reviewer identity/description. The plugin injects the canonical frozen prompt
- * at the Task before-hook, so model-authored prompt bytes never become review
+ * at the native before-hook, so model-authored prompt bytes never become review
  * authority.
  */
 export function buildChildSessionReviewInstruction(input: ChildSessionReviewInstructionInput) {
   const obligation = input.authority.obligation;
   const status = input.mode === 'unsupported_blocked' ? 'unsupported_blocked' : 'pending_review';
-  const nativeTask =
+  const nativeSubagent =
     input.mode === 'host_structured' && input.platform === 'opencode'
       ? {
-          transport: 'native_task_message_json' as const,
-          action: 'call_task' as const,
-          task: {
-            tool: 'task' as const,
-            subagentType: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
+          transport: 'native_subagent' as const,
+          action: 'call_subagent' as const,
+          subagent: {
+            tool: 'subagent' as const,
+            agent: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
+            background: false,
             description: 'FlowGuard independent review' as const,
             promptAuthority: 'host_injected_frozen_review_material' as const,
-            findingsAuthority: 'same_child_correlated_message_json' as const,
+            findingsAuthority: 'blocked_pending_native_capture' as const,
           },
         }
       : {};
@@ -41,9 +42,9 @@ export function buildChildSessionReviewInstruction(input: ChildSessionReviewInst
     mode: input.mode,
     platform: input.platform,
     status,
-    reviewerSubagentType: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
+    reviewerAgent: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
     authority: 'review_obligation_evidence_binding' as const,
-    ...nativeTask,
+    ...nativeSubagent,
     obligationId: obligation.obligationId,
     reviewAttemptId: input.authority.attempt.attemptId,
     requiredReviewAttestation: {

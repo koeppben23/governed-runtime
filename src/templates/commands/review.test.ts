@@ -24,9 +24,11 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toContain('repo-dependent quality claim');
     });
 
-    it('requires the native Task transport and keeps findings bound by FlowGuard', () => {
-      expect(REVIEW_COMMAND).toContain('reviewInvocation.action === "call_task"');
-      expect(REVIEW_COMMAND).toContain('subagent_type: "flowguard-reviewer"');
+    it('requires the native subagent transport and keeps findings bound by FlowGuard', () => {
+      expect(REVIEW_COMMAND).toContain('reviewInvocation.action === "call_subagent"');
+      expect(REVIEW_COMMAND).toContain('agent: "flowguard-reviewer"');
+      expect(REVIEW_COMMAND).toContain('background: false');
+      expect(REVIEW_COMMAND).not.toContain('subagent_type');
       expect(REVIEW_COMMAND).toContain('Do not submit, copy, or alter `reviewFindings`');
     });
   });

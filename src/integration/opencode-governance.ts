@@ -38,9 +38,20 @@ type EnrollmentWaiter = {
   readonly resolve: () => void;
   readonly reject: (error: unknown) => void;
 };
-type NativeBefore = Parameters<Parameters<Plugin.Context['tool']['hook']>[1]>[0] & {
+export type NativeBefore = Parameters<Parameters<Plugin.Context['tool']['hook']>[1]>[0] & {
   readonly input: unknown;
 };
+
+/** Consumes the canonical independent-review ledger; delegation alone is never review authority. */
+export interface NativeReviewerAuthority {
+  authorize(scope: ActiveGovernanceScope, event: NativeBefore): Promise<void>;
+  bind(
+    scope: ActiveGovernanceScope,
+    dispatch: GovernanceDelegationDispatch,
+    childId: string,
+  ): Promise<void>;
+  validate(scope: ActiveGovernanceScope): Promise<void>;
+}
 
 export class OpenCodeGovernance {
   readonly store: GovernanceActivationStore;
@@ -57,6 +68,7 @@ export class OpenCodeGovernance {
     context: Plugin.Context,
     private readonly host: OpenCodeHostAdapter,
     private readonly signal: AbortSignal,
+    private readonly reviewer?: NativeReviewerAuthority,
   ) {
     this.store = context.storage;
     signal.addEventListener('abort', () => this.failPending('The governance adapter stopped.'), {
@@ -158,10 +170,22 @@ export class OpenCodeGovernance {
       return this.block(
         'The child enrollment belongs to a stale or foreign activation generation.',
       );
+    const scope = { sessionId: session.sessionId, record, root: root.scope.root };
+    await this.validateReviewer(scope, session.agent);
     return {
       kind: 'active',
-      scope: { sessionId: session.sessionId, record, root: root.scope.root },
+      scope,
     };
+  }
+
+  private async validateReviewer(
+    scope: ActiveGovernanceScope,
+    agent: string | undefined,
+  ): Promise<void> {
+    if (agent !== REVIEWER_SUBAGENT_TYPE) return;
+    if (!this.reviewer)
+      throw this.error('Reviewer enrollment requires its independent-review dispatch authority.');
+    await this.reviewer.validate(scope);
   }
 
   private async isChildDispatchBound(
@@ -178,6 +202,18 @@ export class OpenCodeGovernance {
         ),
       ),
     );
+    if (
+      dispatch.success &&
+      dispatch.data.agent === REVIEWER_SUBAGENT_TYPE &&
+      !this.dispatches.has(
+        governanceDelegationKey(
+          record.parentDispatch.sessionId,
+          record.parentDispatch.messageId,
+          record.parentDispatch.callId,
+        ),
+      )
+    )
+      return false; // Reload cannot reconstruct authority to resume an unknown reviewer execution.
     return (
       dispatch.success &&
       dispatch.data.sessionId === record.parentDispatch.sessionId &&
@@ -225,6 +261,13 @@ export class OpenCodeGovernance {
       )
         throw this.error('The child already has an unsettled continuation dispatch.');
       await this.validateRequestedChild(dispatch);
+      if (dispatch.agent === REVIEWER_SUBAGENT_TYPE) {
+        if (!this.reviewer)
+          throw this.error(
+            'Reviewer enrollment requires its independent-review dispatch authority.',
+          );
+        await this.reviewer.authorize(fresh.scope, event);
+      }
       await this.store.set(key, dispatch);
       this.dispatches.set(key, dispatch);
     });
@@ -236,6 +279,27 @@ export class OpenCodeGovernance {
     if (child.kind !== 'active')
       throw this.error('The requested child is not verifiably enrolled.');
     this.validateContinuation(dispatch, child.scope.record);
+    const previous = child.scope.record.parentDispatch;
+    if (previous !== null) {
+      const original = GovernanceDelegationDispatch.safeParse(
+        await this.store.get(
+          governanceDelegationKey(previous.sessionId, previous.messageId, previous.callId),
+        ),
+      );
+      if (!original.success || original.data.agent === REVIEWER_SUBAGENT_TYPE)
+        throw this.error(
+          'A reviewer child cannot be continued or reassigned through ordinary delegation.',
+        );
+    }
+  }
+
+  /** Revoke admission, not execution/quiescence certification. The durable
+   * release stays unresolved; neither completion text nor an error re-arms it. */
+  quarantineReviewerDispatch(event: Pick<NativeBefore, 'sessionID' | 'messageID' | 'id'>): void {
+    const key = governanceDelegationKey(event.sessionID, event.messageID, event.id);
+    if (this.dispatches.get(key)?.agent !== REVIEWER_SUBAGENT_TYPE) return;
+    this.dispatches.delete(key);
+    this.settledDispatches.add(key);
   }
 
   /** Called synchronously by the event-loop consumer before it awaits more I/O. */
@@ -286,7 +350,7 @@ export class OpenCodeGovernance {
     )
       throw this.error('Native progress belongs to an inactive or stale parent generation.');
     const child = await this.host.getSession(childId);
-    this.validateChild(dispatch, parent.scope, child);
+    await this.validateChild(dispatch, parent.scope, child);
     const existing = await resolveGovernanceActivation(this.store, childId);
     const revision = this.enrollmentRevision(dispatch, existing);
     await this.commitEnrollment(dispatch, child, parent.scope.root, revision);
@@ -340,17 +404,20 @@ export class OpenCodeGovernance {
     if (result.kind !== 'committed') throw this.error(result.reason);
   }
 
-  private validateChild(
+  private async validateChild(
     dispatch: GovernanceDelegationDispatch,
     parent: ActiveGovernanceScope,
     child: Awaited<ReturnType<OpenCodeHostAdapter['getSession']>>,
-  ): void {
+  ): Promise<void> {
     if (child.parentSessionId !== dispatch.sessionId || child.directory !== parent.record.directory)
       throw this.error('Native progress did not establish the exact enrolled child scope.');
-    if (dispatch.agent === REVIEWER_SUBAGENT_TYPE || child.agent === REVIEWER_SUBAGENT_TYPE)
-      throw this.error('Reviewer enrollment requires its independent-review dispatch authority.');
     if (child.agent !== dispatch.agent)
       throw this.error('Native child agent differs from the authorized dispatch.');
+    if (dispatch.agent === REVIEWER_SUBAGENT_TYPE) {
+      if (!this.reviewer)
+        throw this.error('Reviewer enrollment requires its independent-review dispatch authority.');
+      await this.reviewer.bind(parent, dispatch, child.sessionId);
+    }
   }
 
   private validateContinuation(

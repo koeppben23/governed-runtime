@@ -11,6 +11,7 @@ import { makeState } from '../fixtures.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { createSessionState } from './review/enforcement/enforcement.js';
 
 const h = vi.hoisted(() => ({
   before: vi.fn(async (..._args: unknown[]) => {}),
@@ -45,6 +46,7 @@ vi.mock('./plugin-workspace.js', () => ({
     cachedWsDir: null,
     cachedFingerprint: 'fingerprint',
     resolveSessionAuthority: (sessionId: string) => h.resolve({ root: process.cwd(), sessionId }),
+    getEnforcementState: () => createSessionState(),
   }),
 }));
 
@@ -90,9 +92,15 @@ describe('native V2 entrypoint', () => {
   it('registers native hooks once and initially publishes only canonical inert help', async () => {
     const host = await setup([]);
     expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
-    expect([...host.sessionHooks.keys()]).toEqual(['prompt', 'context', 'compaction', 'generate']);
+    expect([...host.sessionHooks.keys()]).toEqual([
+      'prompt',
+      'context',
+      'compaction',
+      'generate',
+      'model.request',
+    ]);
     expect(host.context.tool.hook).toHaveBeenCalledTimes(2);
-    expect(host.context.session.hook).toHaveBeenCalledTimes(4);
+    expect(host.context.session.hook).toHaveBeenCalledTimes(5);
     expect(host.context.tool.transform).toHaveBeenCalledOnce();
     expect([...host.definitions.keys()]).toEqual(['flowguard_help']);
     expect(host.subscribe).toHaveBeenCalledOnce();
@@ -433,14 +441,14 @@ describe('native V2 entrypoint', () => {
     expect(h.before).not.toHaveBeenCalled();
   });
 
-  it('blocks unverified native reviewer release before generic governance or provider execution', async () => {
+  it('blocks reviewer release without matching state authority after generic gates and before provider execution', async () => {
     const host = await setup();
     await expect(
       host.before(
         v2ToolEvent({ tool: 'subagent', input: { agent: 'flowguard-reviewer', prompt: 'review' } }),
       ),
-    ).rejects.toThrow(/NOT_VERIFIED/);
-    expect(h.before).not.toHaveBeenCalled();
+    ).rejects.toThrow(/exact ACTIVE parent/);
+    expect(h.before).toHaveBeenCalledOnce();
     expect(host.prompt).not.toHaveBeenCalled();
   });
 
@@ -456,7 +464,7 @@ describe('native V2 entrypoint', () => {
         tools: {},
         options: {},
       }),
-    ).rejects.toThrow(/cannot attest/);
+    ).rejects.toThrow(/direct child/);
     expect(host.prompt).not.toHaveBeenCalled();
   });
 

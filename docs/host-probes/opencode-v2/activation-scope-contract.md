@@ -113,8 +113,11 @@ it never waits for a progress receipt whose enrollment needs the same lock.
 An already settled dispatch receipt is ignored, including after a newer
 same-agent continuation; replay cannot move enrollment back to an older call.
 
-Reviewer dispatch remains separately blocked pending its real release/completion/
-capture proof. None of these ordinary-delegation receipts mint reviewer evidence,
+Reviewer enrollment additionally requires the
+[canonical independent-review dispatch authority](./reviewer-dispatch-authority.md),
+durable before native release and bound to the actual progress-receipt child.
+Completion/capture/evidence/recovery remain blocked. None of these
+ordinary-delegation receipts mint reviewer evidence,
 operator decisions or regular edit-error terminality. Transport-v5 and
 `review-assurance.v7` remain unchanged.
 The [Finding 6 native mechanism probe](./reviewer-transport-mechanism.md) is a

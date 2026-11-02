@@ -7,6 +7,7 @@ import { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { createV2Host, v2ToolEvent } from './opencode-v2-test-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { makeState } from '../fixtures.js';
+import { createSessionState } from './review/enforcement/enforcement.js';
 
 const h = vi.hoisted(() => {
   const order: string[] = [];
@@ -45,6 +46,7 @@ vi.mock('./plugin-workspace.js', () => ({
     cachedWsDir: null,
     cachedFingerprint: 'fingerprint',
     resolveSessionAuthority: h.resolve,
+    getEnforcementState: () => createSessionState(),
   }),
 }));
 vi.mock('./plugin-logging.js', async () => {
@@ -134,11 +136,11 @@ describe('single-owner native hook composition', () => {
     expect(h.watchdog).not.toHaveBeenCalled();
   });
 
-  it('blocks reviewer release after the fence, before any generic or serialization effect', async () => {
+  it('blocks an unauthorized reviewer after the fence and generic gates, before native release or serialization', async () => {
     await expect(
       host.before(v2ToolEvent({ tool: 'subagent', input: { agent: REVIEWER_SUBAGENT_TYPE } })),
-    ).rejects.toHaveProperty('code', 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
-    expect(h.order).toEqual(['fence']);
+    ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    expect(h.order).toEqual(['fence', 'before']);
     expect(host.prompt).not.toHaveBeenCalled();
     expect(h.watchdog).not.toHaveBeenCalled();
   });
@@ -150,7 +152,7 @@ describe('single-owner native hook composition', () => {
         host.before(
           v2ToolEvent({ id, tool: 'subagent', input: { agent: REVIEWER_SUBAGENT_TYPE } }),
         ),
-      ).rejects.toHaveProperty('code', 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+      ).rejects.toHaveProperty('code', 'PLUGIN_ENFORCEMENT_UNAVAILABLE');
       expect(h.order).toEqual(['fence']);
       expect(host.prompt).not.toHaveBeenCalled();
     },
@@ -159,7 +161,7 @@ describe('single-owner native hook composition', () => {
   it('validates reviewer budgeting before refusing unproved context/capture', async () => {
     await expect(
       host.request({ sessionID: 'child', agent: REVIEWER_SUBAGENT_TYPE }),
-    ).rejects.toHaveProperty('code', 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
     expect(h.order).toEqual(['cap']);
     for (const observe of [h.capture.onMessage, h.capture.onMessages, h.capture.onParams])
       expect(observe).not.toHaveBeenCalled();
@@ -307,7 +309,13 @@ describe('single-owner native hook composition', () => {
   it('registers only current native context/compaction and tool hooks, with no command-origin shim', async () => {
     await host.compact({ sessionID: 'child', system: [], tools: {} });
     expect(h.order).toEqual(['compaction']);
-    expect([...host.sessionHooks.keys()]).toEqual(['prompt', 'context', 'compaction', 'generate']);
+    expect([...host.sessionHooks.keys()]).toEqual([
+      'prompt',
+      'context',
+      'compaction',
+      'generate',
+      'model.request',
+    ]);
     expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
     expect(host.context.command.transform).not.toHaveBeenCalled();
   });

@@ -1,9 +1,15 @@
 # Finding 6: native reviewer transport prerequisite
 
-2026-11-02, PR #1190. **Bounded mechanism positives, not reviewer acceptance.**
-The product's release/capture blocks remain in place and its four required native
-reviewer contracts still fail. Draft / **ACTIVE V2 NO-GO** remains unchanged.
+2026-11-02, PR #1190, historical `f0de6a41` step-1 checkpoint. **Bounded mechanism positives, not reviewer acceptance.**
+At this historical checkpoint the product's release/capture blocks were in place
+and its four required native reviewer contracts still failed. Draft /
+**ACTIVE V2 NO-GO** remains unchanged.
 ADR-010's V1-parity/autonomous-operation amendment is not weakened.
+
+The subsequent [step-2 dispatch port](./reviewer-dispatch-authority.md) connects
+canonical authorization and actual Child binding. The release blocks described
+below are the historical step-1 state; capture/evidence/recovery remain blocked
+in the subsequent port too. Neither checkpoint closes Finding 6.
 
 ## Authorities and exact inspected versions
 

@@ -37,6 +37,8 @@ import {
 } from './plugin-native-tools.js';
 import { OpenCodeGovernance, type ActiveGovernanceScope } from './opencode-governance.js';
 import { resolveGovernanceActivation } from '../adapters/governance-activation.js';
+import { createNativeReviewerAuthority } from './plugin-native-review.js';
+import { createEventFence, consumeEvents } from './plugin-native-events.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -72,10 +74,16 @@ export const FlowGuardAuditPlugin = Plugin.define({
   async setup(ctx) {
     const controller = new AbortController();
     const adapter = new OpenCodeHostAdapter(ctx, controller.signal);
-    const governance = new OpenCodeGovernance(ctx, adapter, controller.signal);
     const registrations: Registration[] = [];
     const runtimes = new Map<string, Promise<RuntimeEntry>>();
     const sessionRoots = new Map<string, string>();
+    const reviewer = createNativeReviewerAuthority(ctx, async (scope) => {
+      assertAvailable(scope);
+      const entry = await loadRuntime(runtimes, sessionRoots, adapter, scope);
+      assertAvailable(scope);
+      return entry.runtime;
+    });
+    const governance = new OpenCodeGovernance(ctx, adapter, controller.signal, reviewer);
     const fence = createEventFence(governance, adapter);
     const operations = new Set<Promise<unknown>>();
     let ready = false;
@@ -118,7 +126,7 @@ export const FlowGuardAuditPlugin = Plugin.define({
       await adapter.initialize();
       const capabilities = await adapter.validateCapabilities();
       if (!capabilities.valid) throw new HostCapabilityMismatchError(capabilities.mismatches);
-      await createFlowGuardPluginHooks(ctx, { ...actions, governance }, registrations);
+      await createFlowGuardPluginHooks(ctx, { ...actions, governance, reviewer }, registrations);
       eventLoop = consumeEvents(
         ctx,
         controller.signal,
@@ -145,32 +153,6 @@ export const FlowGuardAuditPlugin = Plugin.define({
 });
 
 export default FlowGuardAuditPlugin;
-
-function createEventFence(governance: OpenCodeGovernance, adapter: OpenCodeHostAdapter) {
-  const roots = new Map<string, string>();
-  const failed = new Set<string>();
-  let streamFailed = false;
-  return {
-    assert(scope: ActiveGovernanceScope) {
-      roots.set(scope.sessionId, scope.root.sessionId);
-      if (streamFailed || failed.has(scope.root.sessionId))
-        throw buildEnforcementError(
-          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-          'The ACTIVE scope lost required event observation.',
-        );
-    },
-    failed(error: unknown, event?: OpenCodeEvent) {
-      const data: unknown = event?.data;
-      const sessionId =
-        record(data) && typeof data.sessionID === 'string' ? data.sessionID : undefined;
-      const root = sessionId === undefined ? undefined : (roots.get(sessionId) ?? sessionId);
-      if (root === undefined) streamFailed = true;
-      else failed.add(root);
-      governance.failPending('Native event observation failed.', root);
-      adapter.log('error', 'V2 event stream unavailable', serializeError(error));
-    },
-  };
-}
 
 type RuntimeActionInput = {
   governance: OpenCodeGovernance;
@@ -498,6 +480,7 @@ async function createFlowGuardPluginHooks(
     readonly invoke: Invoke;
     readonly execute: NativeCanonicalExecutor;
     readonly governance: OpenCodeGovernance;
+    readonly reviewer: ReturnType<typeof createNativeReviewerAuthority>;
     readonly observe: (event: NativeToolCompletion) => Promise<void>;
   },
   registrations: Registration[],
@@ -510,7 +493,14 @@ async function createFlowGuardPluginHooks(
         event.sessionID,
         async ({ runtime, scope }) => {
           runtime.orchestratorDeps.reviewerCapture?.beforeTool({ sessionID: event.sessionID });
-          assertReviewerBoundary(event.tool, event.input);
+          if (event.agent === REVIEWER_SUBAGENT_TYPE) {
+            await actions.reviewer.context(scope);
+            if (!READ_ONLY_HOST_TOOLS.has(event.tool))
+              throw buildEnforcementError(
+                'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+                'Reviewer dispatch does not authorize mutations, child delegation or workflow decisions.',
+              );
+          }
           if (!record(event.input))
             throw buildEnforcementError(
               'PLUGIN_ENFORCEMENT_UNAVAILABLE',
@@ -544,13 +534,24 @@ async function createFlowGuardPluginHooks(
   registrations.push(
     await ctx.tool.hook('execute.after', (event) => {
       if (READ_ONLY_HOST_TOOLS.has(event.tool)) return actions.observe(event);
+      if (
+        event.tool === NATIVE_SUBAGENT_TOOL &&
+        record(event.input) &&
+        event.input.agent === REVIEWER_SUBAGENT_TYPE
+      )
+        governance.quarantineReviewerDispatch(event);
       return invoke(event.sessionID, ({ runtime, scope }) => {
         assertReviewerBoundary(event.tool, event.input);
         return handleNativeCompletion(runtime, scope.root.sessionId, event);
       });
     }),
   );
-  await registerNativeSessionHooks(ctx, invoke, catalogue, registrations);
+  await registerNativeSessionHooks(ctx, invoke, catalogue, registrations, actions.reviewer);
+  registrations.push(
+    await ctx.session.hook('model.request', (event) =>
+      invoke(event.sessionID, ({ scope }) => actions.reviewer.request(scope, event)),
+    ),
+  );
 }
 
 async function registerNativeSessionHooks(
@@ -558,10 +559,18 @@ async function registerNativeSessionHooks(
   invoke: Invoke,
   catalogue: Awaited<ReturnType<typeof createNativeToolCatalogue>>,
   registrations: Registration[],
+  reviewer: ReturnType<typeof createNativeReviewerAuthority>,
 ): Promise<void> {
   registrations.push(
     await ctx.session.hook('prompt', (event) =>
-      invoke(event.sessionID, async () => {
+      invoke(event.sessionID, async ({ scope }) => {
+        // Admission is not execution authority. Direct reviewer roots retain
+        // budget-first context denial; only enrolled reviewer children may execute.
+        if (
+          scope.sessionId !== scope.root.sessionId &&
+          (await ctx.session.get({ sessionID: event.sessionID })).agent === REVIEWER_SUBAGENT_TYPE
+        )
+          await reviewer.prompt(scope, event);
         await catalogue.ensurePublished();
       }),
     ),
@@ -579,10 +588,7 @@ async function registerNativeSessionHooks(
         }
         if (event.agent === REVIEWER_SUBAGENT_TYPE) {
           validateNativeReviewerOutputLimit(entry.reviewerOutputLimit, entry.configReadError);
-          throw buildEnforcementError(
-            'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
-            'A V2 context callback alone cannot attest reviewer completion or capture.',
-          );
+          await reviewer.context(entry.scope);
         }
         return true;
       }).then((active) => {
@@ -593,6 +599,13 @@ async function registerNativeSessionHooks(
   registrations.push(
     await ctx.session.hook('compaction', (event) =>
       invoke(event.sessionID, async ({ runtime, scope }) => {
+        if (
+          (await ctx.session.get({ sessionID: event.sessionID })).agent === REVIEWER_SUBAGENT_TYPE
+        )
+          throw buildEnforcementError(
+            'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+            'Reviewer compaction is not authorized by dispatch.',
+          );
         const output = { context: [] as string[] };
         await handleCompaction(runtime, { sessionID: scope.root.sessionId }, output);
         if (output.context.length > 0)
@@ -607,6 +620,13 @@ async function registerNativeSessionHooks(
   registrations.push(
     await ctx.session.hook('generate', (event) =>
       invoke(event.sessionID, async ({ scope }) => {
+        if (
+          (await ctx.session.get({ sessionID: event.sessionID })).agent === REVIEWER_SUBAGENT_TYPE
+        )
+          throw buildEnforcementError(
+            'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
+            'Transient reviewer generation is not authorized by dispatch.',
+          );
         if (scope.sessionId !== scope.root.sessionId) catalogue.hideProductive(event);
         return true;
       }).then((active) => {
@@ -614,34 +634,4 @@ async function registerNativeSessionHooks(
       }),
     ),
   );
-}
-
-async function consumeEvents(
-  ctx: Plugin.Context,
-  signal: AbortSignal,
-  consume: (event: OpenCodeEvent) => Promise<void>,
-  failed: (error: unknown, event?: OpenCodeEvent) => void,
-  operations: Set<Promise<unknown>>,
-): Promise<void> {
-  try {
-    for await (const event of ctx.event.subscribe({ signal })) {
-      // Never make the source await a handler whose host I/O can publish events.
-      const operation = consume(event);
-      operations.add(operation);
-      void operation
-        .catch((error) => {
-          if (!signal.aborted) failed(error, event);
-        })
-        .finally(() => operations.delete(operation));
-    }
-    if (!signal.aborted)
-      failed(
-        buildEnforcementError(
-          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-          'The V2 event stream ended unexpectedly.',
-        ),
-      );
-  } catch (error) {
-    if (!signal.aborted) failed(error);
-  }
 }

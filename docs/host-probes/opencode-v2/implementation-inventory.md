@@ -30,8 +30,11 @@ of the unobserved error stub and failed MUT4 runs below remain historical result
 **Finding 6 mechanism checkpoint (2026-11-02):** the
 [native reviewer transport prerequisite](./reviewer-transport-mechanism.md) records
 five real-host mechanism positives and corrects component activation/native call
-identity in the four required product fixtures. Those four contracts still fail;
-the product release/capture blocks remain. Controlled foreground/same-child
+identity in the four required product fixtures. Those four contracts still fail.
+The subsequent [step-2 dispatch port](./reviewer-dispatch-authority.md) connects
+the canonical ledger to native release and observed Child binding, with replay,
+partial-write and reload fences; capture/evidence/recovery remain blocked.
+Controlled foreground/same-child
 execution is not evidence binding or safe unknown-outcome recovery. No historical
 test result, policy exception or proof generation is reclassified.
 
@@ -161,7 +164,7 @@ Historical probe files and retained host/docs provenance are unchanged.
 
 These local checks complete the API/test/tooling step, not CI certification of a
 new commit or the current-`develop` merge candidate. Operator UI attribution,
-reviewer release/capture and quiescence, regular native edit-error observation,
+reviewer completion/capture and quiescence, regular native edit-error observation,
 installer/lifecycle and installed Desktop/CLI INACTIVE parity remain unverified.
 
 ### CI follow-up to the published API step
@@ -193,12 +196,12 @@ test titles:
   which the native root cannot currently satisfy. It also uses V1 config/API
   mechanics for its installed-runtime stage. Renaming the required tests to
   domain-fixture positives or fail-closed negatives would conceal missing proof.
-- Native reviewer release/context callbacks deliberately block, the adapter
-  advertises no review transport and unknown quiescence, and native regular
-  edit-error observations remain unobserved. Positive installed reviewer capture
-  and regular-error recovery therefore remain **BLOCKED** until their actual
-  provenance contracts are established. Distinguishable operator-UI attribution
-  independently remains **NOT_VERIFIED**.
+- Native reviewer dispatch now requires the canonical ledger and observed Child;
+  the native after-hook still blocks completion/capture, the adapter advertises
+  unknown quiescence, and native regular edit-error observations remain
+  unobserved. Positive installed reviewer evidence/audit/recovery therefore remain
+  **BLOCKED** until their actual provenance contracts are established.
+  Distinguishable operator-UI attribution independently remains **NOT_VERIFIED**.
 
 Local follow-up regression passed 12,466 tests with the same two existing skips;
 the CI coverage command passed at 90.24% statements, 83.27% branches, 95.15%
@@ -361,9 +364,9 @@ and interrupted-capture recovery contracts also remain mandatory.
 Actual native host mutation mechanics distinguish a regular throwing edit from
 an interrupted execution and show that shell return does not imply descendant
 quiescence. They do not close a product mutation episode. The full native smoke
-run still exposes genuine failures at reviewer release/capture and regular-error
-recovery: the product advertises no review transport, rejects native reviewer
-release/context and keeps `observeEditFailure()` unobserved. These tests are not
+run still exposes genuine failures at reviewer completion/capture and regular-error
+recovery: dispatch authority is connected, but native capture/evidence/recovery
+remain rejected and `observeEditFailure()` remains unobserved. These tests are not
 replaced by successful negative guards or skipped to obtain green CI.
 
 **BLOCKED:** exact authorized parent-call/child/request/model/terminal/capture

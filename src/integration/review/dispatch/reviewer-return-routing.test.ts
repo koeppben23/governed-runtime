@@ -1,4 +1,4 @@
-/** Reviewer Task results must be routed before completion-only fields are read. */
+/** Native reviewer returns must be routed before completion-only fields are read. */
 import { describe, expect, it } from 'vitest';
 import { PLAN_COMMAND } from '../../../templates/commands/plan.js';
 import { IMPLEMENT_COMMAND } from '../../../templates/commands/implement.js';
@@ -11,7 +11,7 @@ import {
 
 const commands = [PLAN_COMMAND, IMPLEMENT_COMMAND, ARCHITECTURE_COMMAND, REVIEW_COMMAND];
 
-describe('reviewer Task return contract', () => {
+describe('reviewer subagent return contract', () => {
   it('routes a real incomplete retry without requiring dispatch or completion evidence', () => {
     const retry = JSON.parse(
       buildReviewerCaptureRetryOutput({
@@ -30,7 +30,7 @@ describe('reviewer Task return contract', () => {
       expect(completion).toBeGreaterThan(command.indexOf('reviewRetry'));
       expect(command.slice(0, completion)).not.toContain('reviewExecution.visible');
       expect(command.slice(completion)).toContain('reviewExecution.visible === true');
-      expect(command).toContain('After EVERY Task return, restart response routing');
+      expect(command).toContain('After EVERY subagent return, restart response routing');
     }
   });
 

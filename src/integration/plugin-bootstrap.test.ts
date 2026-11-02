@@ -698,7 +698,7 @@ describe('native activation isolation and delegation with real enforcement gates
       h.host.before(
         beforeEvent(h.sessionID, 'subagent', { agent: 'flowguard-reviewer' }, 'review'),
       ),
-    ).rejects.toThrow('REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
     expect(h.host.prompt).not.toHaveBeenCalled();
     await expect(
       h.host.before(beforeEvent(h.sessionID, 'task', { agent: 'general' }, 'obsolete')),

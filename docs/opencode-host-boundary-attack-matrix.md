@@ -19,7 +19,9 @@ the old Event/ToolPart baselines and SDK dependency are removed. Candidate API
 checks regenerate explicit candidate declarations rather than bypass comparisons.
 They do not update installed-host support provenance.
 
-Root tests refuse reviewer release/capture without complete V2 proof; positive
+Root tests now require canonical durable review authority before native release
+and actual Child enrollment; capture/evidence/recovery remain blocked. See the
+[dispatch-only checkpoint](./host-probes/opencode-v2/reviewer-dispatch-authority.md). Positive
 binding, retry, closure and quarantine checks run at canonical owners through
 semantic fixtures. Read-only rich results remain intact with diagnostic-only
 cached scope; authoritative completions and before-hooks retain fresh lookup.

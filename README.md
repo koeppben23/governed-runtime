@@ -82,9 +82,11 @@ Three governed flows are available after `/start` (or `/hydrate`):
 2. `/review` — plain peer review report (no external content)
    OR `/review prNumber=42` / `branch=feature` / `url=https://...` /
    `text="diff"` → blocked with `requiredReviewAttestation` (obligation UUID)
-3. When plugin orchestration is active, FlowGuard may invoke the reviewer
-   subagent and inject `pluginReviewFindings`; otherwise the blocked response
-   instructs manual subagent invocation.
+3. When plugin orchestration is active on a host with a verified native review
+   transport, FlowGuard authorizes the reviewer subagent and binds structured
+   findings to the obligation. OpenCode V2 currently connects dispatch and
+   independent-Child authority only; native completion/capture/evidence remains
+   blocked, so free-form reviewer text is never accepted as a verdict.
 4. `/review prNumber=42 reviewFindings=<complete object>` →
    PEER_REVIEW_COMPLETE, receives structured `reviewCard`
 

@@ -193,7 +193,7 @@ describe('canonical reviewer closure and unverified V2 recovery boundary', () =>
           input: { agent: 'flowguard-reviewer', prompt: 'retry' },
         }),
       ),
-    ).rejects.toHaveProperty('code', 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+    ).rejects.toHaveProperty('code', 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
   });
 
   it('preserves the durable closure intent, then chains it through status without unlocking or granting approval', async () => {

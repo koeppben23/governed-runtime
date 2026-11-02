@@ -102,11 +102,17 @@ describe('native V2 plugin definition and lifecycle', () => {
   it('registers each current hook once, without returning a V1 hook object', async () => {
     const { host } = await openHost();
     expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
-    expect([...host.sessionHooks.keys()]).toEqual(['prompt', 'context', 'compaction', 'generate']);
+    expect([...host.sessionHooks.keys()]).toEqual([
+      'prompt',
+      'context',
+      'compaction',
+      'generate',
+      'model.request',
+    ]);
     expect(host.subscribe).toHaveBeenCalledOnce();
     expect(host.context.tool.transform).toHaveBeenCalledOnce();
     expect(host.context.tool.hook).toHaveBeenCalledTimes(2);
-    expect(host.context.session.hook).toHaveBeenCalledTimes(4);
+    expect(host.context.session.hook).toHaveBeenCalledTimes(5);
     expect(host.ctx).not.toHaveProperty('client');
     expect(host.ctx).not.toHaveProperty('worktree');
   });
@@ -311,6 +317,7 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
   const attemptId = '11111111-2222-4111-8111-111111111111';
   const scenarios = [
     { label: 'plain release', args: {} },
+    { label: 'obsolete host argument', args: { subagent_type: 'flowguard-reviewer' } },
     { label: 'child reuse', args: { sessionID: 'old-child' } },
     { label: 'caller model override', args: { model: 'provider/model#custom' } },
     { label: 'background release', args: { background: true } },
@@ -331,8 +338,8 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
   ];
 
   it.each(scenarios)(
-    'blocks $label before release and leaves the frozen obligation/attempt intact',
-    async ({ args }) => {
+    'enforces exact dispatch authority for $label without manufacturing evidence',
+    async ({ args, label }) => {
       const h = await fixture(false);
       const { sessDir, obligationId } = await seedStrictPlanSession(h.ws.tmpDir, h.sessionID);
       await h.host.seedActive(h.sessionID, (await readState(sessDir))!.policySnapshot.hash);
@@ -359,6 +366,29 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
       );
       await h.host.after(pending);
       const before = (await readState(sessDir))!;
+      if (label === 'plain release') {
+        await expect(
+          h.host.before(
+            v2ToolEvent({
+              tool: 'subagent',
+              sessionID: h.sessionID,
+              input: { agent: 'flowguard-reviewer', prompt: 'review' },
+            }),
+          ),
+        ).resolves.toBeUndefined();
+        const released = (await readState(sessDir))!;
+        expect(released.reviewAssurance!.dispatches).toHaveLength(1);
+        expect(released.reviewAssurance!.dispatches[0]).toMatchObject({
+          attemptId,
+          obligationId,
+          dispatchStatus: 'authorized',
+        });
+        expect(released.reviewAssurance!.obligations).toEqual(before.reviewAssurance!.obligations);
+        expect(released.reviewAssurance!.attempts).toEqual(before.reviewAssurance!.attempts);
+        expect(released.reviewAssurance!.invocations).toEqual([]);
+        expect(h.host.prompt).not.toHaveBeenCalled();
+        return;
+      }
       await expect(
         h.host.before(
           v2ToolEvent({
@@ -367,7 +397,12 @@ describe('native reviewer boundary: no manufactured V2 proof', () => {
             input: { agent: 'flowguard-reviewer', prompt: 'review', ...args },
           }),
         ),
-      ).rejects.toHaveProperty('code', 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
+      ).rejects.toHaveProperty(
+        'code',
+        ['child reuse', 'parent as child'].includes(label)
+          ? 'GOVERNANCE_AUTHORITY_BLOCKED'
+          : 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      );
       const state = (await readState(sessDir))!;
       expect(state.reviewAssurance).toEqual(before.reviewAssurance);
       expect(state.reviewAssurance?.obligations[0]?.status).toBe('pending');

@@ -1,12 +1,14 @@
 # Independent Review Architecture
 
-FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. On OpenCode, the FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. On Claude Code and Codex, native reviewer agents/subagents are transport and isolation artifacts only. Review completion requires validated, obligation-bound `ReviewFindings` through FlowGuard's existing `ReviewObligation` and `ReviewInvocationEvidence` pipeline; missing or mismatched evidence fails closed.
+FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. On OpenCode V2, the parent invokes the native `subagent` tool and FlowGuard authorizes its exact pending operation before release; native capture/evidence/recovery are not yet accepted. On Claude Code and Codex, native reviewer agents/subagents are transport and isolation artifacts only. Review completion requires validated, obligation-bound `ReviewFindings` through FlowGuard's existing `ReviewObligation` and `ReviewInvocationEvidence` pipeline; missing or mismatched evidence fails closed.
 
 **V2 parity requirement:** preserve V1's independent AI review and its identity,
 evidence, full-completion and deterministic-release guarantees. It can run fully
 automatically without a human reviewer. Existing policy exceptions remain, but
 no new exception, optional-review mode or human substitution may bypass Finding 6. Human approval is a separate policy-dependent gate. The current native V2
-release/capture implementation remains blocked, not an accepted reduced feature.
+capture/evidence/recovery implementation remains blocked, not an accepted reduced feature.
+The [dispatch-only port](./host-probes/opencode-v2/reviewer-dispatch-authority.md)
+connects durable authorization and actual Child binding, not completed review.
 See [ADR-010's parity amendment](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
 
 ---
@@ -146,8 +148,9 @@ rewrite or a host-wide fallback. Explicit numeric overrides are blocked with
 unreadable configuration also fails explicitly. No cap is silently clamped and
 no parent/reviewer model or reasoning variant is substituted.
 
-The native V2 reviewer release/completion/capture chain remains unverified and
-blocked, regardless of budgeting configuration. These are implementation limits,
+The complete native V2 reviewer completion/capture chain remains unverified and
+blocked, regardless of budgeting configuration. Dispatch-only execution requires
+the existing durable ledger and exact observed Child enrollment. These are implementation limits,
 not installed support; see the [V2 inventory](./host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
 The [native transport prerequisite](./host-probes/opencode-v2/reviewer-transport-mechanism.md)
 observes controlled foreground/same-child completion plus adversarial windows
@@ -249,20 +252,26 @@ When the primary agent submits a plan or implementation to FlowGuard, the tool r
 - **Host dispatch pending path:** `reviewDispatch.required` is `true` (and `completed` is not `true`); the host has not yet recorded a completed structured reviewer child session. Follow the `reviewInvocation` instructions and the recovery steps in the tool response (typically re-run the originating FlowGuard command). Do not submit a verdict, and do not reconstruct or submit reviewer findings.
 - **Blocked path:** strict orchestration or evidence failures return BLOCKED. The agent must stop and report the recovery action.
 
-### Deterministic Invocation (Primary Path)
+### Native V2 Dispatch (Current Incomplete Port)
 
-The reviewer is a host-visible native Task child, never a hidden SDK session:
+The reviewer is a host-visible native `subagent` child, never a second reviewer runtime:
 
-1. The parent agent calls the host `task` tool with `subagent_type: "flowguard-reviewer"`, following the `reviewDispatch` / `reviewInvocation` instruction (`action: "call_task"`) in the FlowGuard tool response.
-2. The plugin `tool.execute.before` hook authorizes the exact current pending obligation/attempt, persists a durable dispatch under the host `callID`, and overwrites the Task arguments with the canonical frozen reviewer prompt (the parent-supplied prompt is transport filler only).
-3. The host runs the visible, navigable `flowguard-reviewer` child Task session.
-4. The plugin `tool.execute.after` hook resolves the durable dispatch lineage by `callID`, requires the authoritative child session ID from Task metadata, replays the reviewer observations, proves from the host-recorded messages that the reviewer finished its task normally (a truncated, aborted, step-limited or unprovable task is never serialized), and sends a normal serialization prompt to that SAME child session. The prompt carries the obligation-bound ReviewerFindingsInput schema as data, the exact model/variant from the completed child call, and an explicit request `messageID`; it sets no `format` and forces no tool. Synchronous host hooks prove request/response identity, one tool-free model step, successful completion, and absence of concurrent/unknown work. Any attempted tool action permanently invalidates the capture. The complete assistant text must be one strict JSON object; there is no prose extraction or Markdown repair.
-5. The payload is validated against `ReviewerFindingsInput`, host provenance and attestation are stamped, and the canonical `ReviewFindings` is bound to the obligation. Capture proof and canonical findings are compared semantically, with separate payload/findings digests.
-6. Only after a successful binding does the hook replace the Task output with the completed dispatch signal (`reviewDispatch.completed: true` and the bound verdict).
+1. The parent follows `reviewInvocation.action: "call_subagent"` and `transport: "native_subagent"`, calling `subagent` with `agent: "flowguard-reviewer"` and `background: false`. Caller model overrides and existing-child continuation are refused.
+2. Before native release, the exact pending obligation/attempt and canonical frozen prompt are validated against fresh persisted state. `persistAuthorizedReviewDispatch()` writes the original canonical `{ sessionId, messageId, callId }` identity before the activation delegation projection is published. The caller prompt is transport filler, not authority.
+3. Exact native progress identifies the actual independent Child. Its parent, directory, agent and activation generation must agree; the canonical attempt is durably bound before activation enrollment or model execution. Initial prompt/context/model hooks require the exact authorized bytes and current lineage.
+4. The after-hook still returns a capture/completion blocker. There is no accepted serialization, evidence/audit binding or recovery in this dispatch-only port. Foreign continuation and unproved auxiliary execution remain denied. Reloads and unresolved earlier releases stay quarantined.
 
-The LLM then sees the completed `reviewDispatch` response and submits the verdict.
+The four required native product contracts must still prove the complete chain
+before Finding 6 can close. No verdict may be submitted from free-form Child text.
 
-**Contract:** the completed dispatch signal (`reviewDispatch.completed`) is only signaled when the correlated reviewer JSON validates and binds against the durable dispatch and invocation evidence. Evidence generation 5 records `native_task_message_json`, host message identities, model/variant, payload and findings digests, and `host_message_validated` assurance. The Task's free-form prose is never findings authority; the only accepted text is the exact correlated assistant payload that decodes as one strict JSON object. Unparseable, extracted, tool-contaminated, or contract-violating responses never produce a completed dispatch and block explicitly.
+**Retained completion contract:** `reviewDispatch.completed` may be signaled only
+after exact same-child, one-step tool-free request/terminal/model provenance,
+strict JSON/findings validation and canonical evidence/audit binding succeed.
+The successful historical V1 transport is documented in ADR-009: generation 5
+records `native_task_message_json` and host-message assurance. It is not silently
+reinterpreted as V2 proof; no response `parentID` or historical host DTO is
+manufactured. A future V2 evidence generation must be explicitly validated at
+the canonical owners. Dispatch alone does not change any evidence generation.
 
 ### Evidence-Grounded Implementation Review
 
@@ -430,13 +439,20 @@ FlowGuard enforces the subagent requirement at three layers:
 - Self-review findings are rejected → BLOCKED
 - Plan-version binding, iteration binding, and mandatory-findings checks
 
-**Layer 2 — Native Task transport (`src/integration/review/dispatch/native-task-review.ts` via `src/integration/plugin.ts`):**
+**Layer 2 — Native V2 dispatch (`src/integration/review/dispatch/native-review-dispatch.ts` via `src/integration/plugin.ts`):**
 
-The plugin programmatically invokes the reviewer subagent via the OpenCode SDK client when it detects the review-dispatch-required signal in a tool response. This ensures invocation happens by code, not by LLM decision.
+The parent requests the native `subagent`; code, not model-authored claims,
+authorizes its current pending obligation/attempt, freezes the prompt and persists
+the exact release before native execution. Actual progress binds the independent
+Child before model admission. Capture/evidence/recovery are not enabled by this
+dispatch-only port, and no hidden SDK auto-spawn exists.
 
 **Layer 3 — Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts` via `src/integration/plugin.ts`):**
 
-The structural validation layer cannot detect whether a host-observed reviewer child session actually produced the submitted findings — it only validates their shape. The plugin-level enforcement closes that gap with OpenCode's `tool.execute.before/after` hooks, binding every verdict to the host-dispatched structured child session:
+Structural validation alone cannot prove that a child produced submitted
+findings. The following retained completion requirements must be ported and
+proved against native V2 execution; until then the after-hook blocks rather than
+manufacturing findings or invocation evidence:
 
 **Level 1 — Invocation Gate** (`tool.execute.before` for flowguard tools):
 A host-observed structured reviewer invocation MUST be recorded before any verdict submission. Blocks with `SUBAGENT_REVIEW_NOT_INVOKED`.
@@ -451,11 +467,17 @@ The submitted `reviewFindings` are compared against the host-captured structured
 - `blockingIssues` count must match exactly (blocks `SUBAGENT_FINDINGS_ISSUES_MISMATCH`)
 - `accept` with blocking issues is rejected (blocks `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`)
 
-The former Level 3 (Task-prompt integrity) was removed with reviewer Task interception. Reviewer dispatch failures now surface as `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`, `HOST_STRUCTURED_OUTPUT_REQUIRED`, `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, `REVIEWER_CAPTURE_PROVENANCE_INVALID`, `REVIEWER_HOST_MESSAGE_ENCODING_FAILED`, or `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
+Dispatch prompt integrity is enforced before initial V2 execution: the
+FlowGuard-owned frozen prompt digest and exact native prefix must agree with the
+enrolled Child's original request. This is not serialization provenance.
+Dispatch authority failures use `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`;
+the unported completion/capture boundary uses `REVIEWER_EXECUTION_OUTCOME_UNKNOWN`.
+
+Required complete review sequence (not current V2 capture acceptance):
 
 ```
 flowguard_plan (initial)    →  tool emits reviewDispatch.required
-    ↓                          parent invokes the native reviewer Task child
+    ↓                          parent invokes the native reviewer subagent child
     ↓                          plugin requests a correlated normal JSON serialization
     ↓                          plugin validates response-correlated strict JSON
     ↓                          plugin mutates reviewDispatch to completed
@@ -712,7 +734,8 @@ The `flowguard install` command deploys:
 
 The native installer does not rewrite build-agent permissions. Reviewer-local
 permissions use V2 ordered rules; they do not establish reviewer execution or
-capture provenance. Native reviewer release remains blocked until its complete
+capture provenance. Native reviewer dispatch requires canonical ledger/Child
+authority; capture/evidence/recovery remain blocked until their complete
 assurance chain is verified. Installed files and canonical-domain fixtures are
 not installed-host acceptance.
 
@@ -738,10 +761,12 @@ For strict Independent Review enforcement in CI, the following checks must be **
 
 ## Current Status
 
-**Strict code hardening implemented.** The independent review system provides strict, fail-closed assurance with three enforcement layers:
+**Native V2 remains incomplete / ACTIVE NO-GO.** Canonical validation remains
+fail-closed; dispatch is connected, while the complete native evidence/audit and
+recovery chain remains unaccepted. The retained architecture requires:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
-2. **Deterministic invocation** — The parent agent dispatches the visible native `task` reviewer; the plugin before/after hooks bind the exact child session and capture schema-constrained findings in that same child. There is no hidden SDK auto-spawn and no text fallback.
+2. **Deterministic dispatch authority** — The parent invokes native `subagent`; the plugin durably authorizes its exact operation and binds the actual Child. Native capture/evidence/recovery remain blocked. There is no second runtime or text fallback.
 3. **Plugin-level enforcement** — Host-observed child-session enforcement via OpenCode `tool.execute.before/after` hooks:
    - L1: Invocation gate — a host-observed structured reviewer invocation must be recorded before any verdict
    - L2: Child session match — submitted session ID must match the host-observed reviewer child session

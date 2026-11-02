@@ -195,6 +195,15 @@ Those product fixtures explicitly enroll their strict component-only scope and
 derive call identity from the owning native assistant/tool transcript, not a raw
 provider ID or implicit activation from workflow files.
 
+`src/cli/opencode-reviewer-dispatch-live.smoke.test.ts` connects the actual product
+ledger/journal to native reviewer execution. Before its first provider response,
+the exact parent native call, obligation/attempt and observed child must already
+be durably bound. Foreign continuation, background dispatch and caller model
+overrides are denied without accepting evidence. Component dispatch tests cover
+write-order/failure, replay/concurrency and reload quarantine. This is step 2,
+not a substitute for any of the four required product capture/evidence/recovery
+positives or installed activation acceptance.
+
 Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.
 
