@@ -8,9 +8,7 @@
  */
 
 export type ReviewOrchestrationMode =
-  | 'host_structured'
-  | 'external_instruction_pending'
-  | 'unsupported_blocked';
+  'host_structured' | 'external_instruction_pending' | 'unsupported_blocked';
 
 export interface ReviewOrchestrationModeInput {
   readonly nativeStructuredReview: boolean;

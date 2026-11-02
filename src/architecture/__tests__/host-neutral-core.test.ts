@@ -12,6 +12,8 @@
  *      (`/^msg` or `msg_`). Each remaining file has an exact budget and a reason.
  *      A new occurrence fails; a removed occurrence also fails until the budget
  *      is lowered, so the baseline can only shrink deliberately.
+ *   R3 (zero tolerance): the core does not select a host from an environment
+ *      variable. Host selection belongs to the CLI/entrypoint or host runtime.
  *
  * `shared/hosts.ts` is the host-identity authority and is exempt.
  */
@@ -61,75 +63,15 @@ const PERSISTED_LOCATION =
   'persisted install/runtime location (~/.config/opencode, OPENCODE_CONFIG_DIR, .opencode/); moving it would be a user-data migration';
 const PERSISTED_MESSAGE_ID =
   'persisted-evidence validation of the recorded host message-ID format; changing it would change which stored evidence is accepted';
-const GLYPH_READ = 'reads presentation.opencode.glyphProfile directly (WS2-F: one owner)';
-const HOST_TEXT = 'OpenCode-specific recovery/diagnostic text (WS2-G: neutral wording)';
-const REVIEW_HOST_BRANCH = 'review dispatch decides from the host name (WS2-E: injected mode)';
+const PERSISTED_PRESENTATION =
+  'persisted user-config key presentation.opencode is accepted with unchanged meaning into the neutral presentation.glyphProfile shape';
 
 /** Exact remaining host-specific lines in core. Lower a count when it shrinks. */
 const HOST_SPECIFIC_ALLOWLIST: readonly Allowance[] = [
-  {
-    file: 'adapters/binding.ts',
-    count: 5,
-    reason: 'dead OpenCode context mapping (WS2-D: remove)',
-  },
-  {
-    file: 'adapters/host-adapter.ts',
-    count: 1,
-    reason: 'HAI copy of the host list (WS2-E: HostId)',
-  },
   { file: 'adapters/persistence-config.ts', count: 1, reason: PERSISTED_LOCATION },
   { file: 'adapters/persistence.ts', count: 2, reason: PERSISTED_LOCATION },
   { file: 'adapters/workspace/init.ts', count: 7, reason: PERSISTED_LOCATION },
-  {
-    file: 'config/flowguard-config.ts',
-    count: 2,
-    reason: 'persisted user-config key presentation.opencode (WS2-F: neutral key, compatible read)',
-  },
-  { file: 'config/reasons-infra.ts', count: 1, reason: HOST_TEXT },
-  { file: 'config/reasons-precondition.ts', count: 6, reason: HOST_TEXT },
-  { file: 'config/reasons-validation.ts', count: 5, reason: HOST_TEXT },
-  { file: 'diagnostics/builders.ts', count: 1, reason: HOST_TEXT },
-  {
-    file: 'integration/review/dispatch/child-session-instruction.ts',
-    count: 1,
-    reason: REVIEW_HOST_BRANCH,
-  },
-  {
-    file: 'integration/review/dispatch/native-review-capture.ts',
-    count: 1,
-    reason: 'mints OpenCode msg_ request IDs in core (WS2-E: capture host port)',
-  },
-  {
-    file: 'integration/review/dispatch/orchestration-mode.ts',
-    count: 4,
-    reason: REVIEW_HOST_BRANCH,
-  },
-  {
-    file: 'integration/review/dispatch/review-execution-projection.ts',
-    count: 2,
-    reason: 'hard-coded host name in tool output (WS2-E: remove)',
-  },
-  {
-    file: 'integration/tools/architecture/architecture-review-response.ts',
-    count: 1,
-    reason: GLYPH_READ,
-  },
-  {
-    file: 'integration/tools/implementation/implement-record.ts',
-    count: 1,
-    reason: 'local .opencode/ exclusion instead of the risk-path authority (WS2-E)',
-  },
-  { file: 'integration/tools/implementation/implement-review.ts', count: 1, reason: GLYPH_READ },
-  { file: 'integration/tools/index.ts', count: 1, reason: GLYPH_READ },
-  { file: 'integration/tools/plan/plan-response.ts', count: 1, reason: GLYPH_READ },
-  { file: 'integration/tools/review-tool/completion.ts', count: 1, reason: GLYPH_READ },
-  {
-    file: 'integration/tools/review-tool/obligation-format.ts',
-    count: 1,
-    reason: REVIEW_HOST_BRANCH,
-  },
-  { file: 'integration/tools/simple/help-tool.ts', count: 1, reason: GLYPH_READ },
-  { file: 'integration/tools/status/status-tool.ts', count: 1, reason: GLYPH_READ },
+  { file: 'config/flowguard-config.ts', count: 6, reason: PERSISTED_PRESENTATION },
   { file: 'logging/file-sink.ts', count: 2, reason: PERSISTED_LOCATION },
   { file: 'state/host-identity.ts', count: 1, reason: PERSISTED_MESSAGE_ID },
   {
@@ -159,12 +101,22 @@ function isCommentLine(text: string): boolean {
 
 const HOST_SDK_IMPORT = /^@opencode(-ai)?\//;
 const HOST_SPECIFIC_LINE = /opencode|\/\^msg|\bmsg_/i;
+const HOST_SELECTION = /FLOWGUARD_HOST_PLATFORM|FLOWGUARD_PLATFORM/;
 
 function sdkImportViolations(files: readonly SourceFile[]): string[] {
   return files.flatMap((file) =>
     collectImportSpecifiers(file.content)
       .filter((specifier) => HOST_SDK_IMPORT.test(specifier.module))
       .map((specifier) => `${file.rel}: ${specifier.module}`),
+  );
+}
+
+function hostSelectionViolations(files: readonly SourceFile[]): string[] {
+  return files.flatMap((file) =>
+    file.content
+      .split('\n')
+      .filter((line) => !isCommentLine(line) && HOST_SELECTION.test(line))
+      .map((line) => `${file.rel}: ${line.trim()}`),
   );
 }
 
@@ -210,6 +162,10 @@ describe('host-neutral core (ADR-010 D1)', () => {
     expect(budgetViolations(hostSpecificCounts(core), HOST_SPECIFIC_ALLOWLIST)).toEqual([]);
   });
 
+  it('R3: core does not select a host from an environment variable', () => {
+    expect(hostSelectionViolations(core)).toEqual([]);
+  });
+
   it('every allowlist entry is a core file with a reason', () => {
     for (const entry of HOST_SPECIFIC_ALLOWLIST) {
       expect(isCoreFile(entry.file), entry.file).toBe(true);
@@ -238,6 +194,19 @@ describe('host-neutral core (ADR-010 D1)', () => {
       expect(
         budgetViolations(new Map(), [{ file: 'state/x.ts', count: 1, reason: PERSISTED_LOCATION }]),
       ).toEqual(['state/x.ts: budget 1 but no occurrence']);
+    });
+
+    it('R3 flags host selection from the environment and ignores comments', () => {
+      const fixture = [
+        {
+          rel: 'rails/rogue.ts',
+          content:
+            '// FLOWGUARD_HOST_PLATFORM is host wiring\nconst host = process.env.FLOWGUARD_HOST_PLATFORM;',
+        },
+      ];
+      expect(hostSelectionViolations(fixture)).toEqual([
+        'rails/rogue.ts: const host = process.env.FLOWGUARD_HOST_PLATFORM;',
+      ]);
     });
   });
 });

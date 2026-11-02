@@ -116,7 +116,7 @@ describe('single-owner native hook composition', () => {
         host.before(
           v2ToolEvent({ id, tool: 'subagent', input: { agent: REVIEWER_SUBAGENT_TYPE } }),
         ),
-      ).rejects.toHaveProperty('code', 'PLUGIN_ENFORCEMENT_UNAVAILABLE');
+      ).rejects.toHaveProperty('code', 'HOST_CALL_IDENTITY_INVALID');
       expect(h.order).toEqual([]);
       expect(host.prompt).not.toHaveBeenCalled();
     },

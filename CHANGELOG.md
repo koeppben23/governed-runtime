@@ -265,33 +265,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only. Exits 1 when the workspace is not upgrade-ready; `--json` emits the
   structured report.
 
-### Changed
-
-- **Host-neutral state identities (#1190, WS2).** State-owned host session and
-  assistant-message identifiers, plus the exact `{sessionId, messageId, callId}`
-  call tuple, now use neutral `Host*` schemas owned by
-  `src/state/host-identity.ts`. Encoding remains byte-identical for persisted call
-  IDs and message validation keeps the recorded format. The HAI no longer needs
-  an OpenCode host-name copy for these identities, and the architecture ratchet
-  drops the former naming exceptions.
-- **Minimal HAI (#1190, WS2).** `HostAdapter` now declares only the ports the
-  product invokes: lifecycle, exact session lookup, native history reading and
-  logging. Removed the static platform/capability/enforcement projection,
-  reviewer-support boolean, unused synchronous block-delivery method and the
-  review-transport capability table from the adapter contract. Doctor capability
-  text remains a local diagnostic projection, never an assurance source; stale
-  governance baseline schemas are removed.
-- **Host-neutral presentation configuration (#1190, WS2).** Transient glyph
-  selection now lives at `presentation.glyphProfile`. Earlier installer
-  configuration at `presentation.opencode.glyphProfile` is read with unchanged
-  meaning; differing duplicate values fail validation. The existing
-  `presentation.markdown` output contract is unchanged.
-- **Host-neutral recovery vocabulary (#1190, WS2).** Reason and recovery copy no
-  longer names the OpenCode SDK or its installation paths. Plugin, session,
-  worktree, model-transport and reviewer guidance now addresses the active host;
-  reviewer recovery says reviewer subagent rather than the retired V1 Task.
-  Rejection codes, precedence and canonical byte-envelope structure are unchanged.
-
 ### Fixed
 
 - **Native regular edit-error recovery (#1190).** Exact current native
@@ -1058,6 +1031,37 @@ stop`, reviewer child reported it could not complete the falsification).
   the derived outcome (`applied`, `skipped`, or `failed`).
 
 ### Changed
+
+- **Host-neutral state identities (#1190, WS2).** State-owned host session and
+  assistant-message identifiers, plus the exact `{sessionId, messageId, callId}`
+  call tuple, now use neutral `Host*` schemas owned by
+  `src/state/host-identity.ts`. Encoding remains byte-identical for persisted call
+  IDs and message validation keeps the recorded format. The HAI no longer needs
+  an OpenCode host-name copy for these identities, and the architecture ratchet
+  drops the former naming exceptions.
+- **Minimal HAI (#1190, WS2).** `HostAdapter` now declares only the ports the
+  product invokes: lifecycle, exact session lookup, native history reading and
+  logging. Removed the static platform/capability/enforcement projection,
+  reviewer-support boolean, unused synchronous block-delivery method and the
+  review-transport capability table from the adapter contract. Doctor capability
+  text remains a local diagnostic projection, never an assurance source; stale
+  governance baseline schemas are removed.
+- **Host-neutral presentation configuration (#1190, WS2).** Transient glyph
+  selection now lives at `presentation.glyphProfile`. Earlier installer
+  configuration at `presentation.opencode.glyphProfile` is read with unchanged
+  meaning; differing duplicate values fail validation. The existing
+  `presentation.markdown` output contract is unchanged.
+- **Host-neutral recovery vocabulary (#1190, WS2).** Reason and recovery copy no
+  longer names the OpenCode SDK or its installation paths. Plugin, session,
+  worktree, model-transport and reviewer guidance now addresses the active host;
+  reviewer recovery says reviewer subagent rather than the retired V1 Task.
+  Rejection codes, precedence and canonical byte-envelope structure are unchanged.
+- **Host-neutral core guard closure (#1190, WS2).** The exact ratchet drops from
+  62 host-specific lines in 30 files to 24 lines in 7 files, all documented as
+  persisted install/runtime locations, persisted evidence/config compatibility,
+  or the cross-host risk-path classifier. A new zero-tolerance rule rejects host
+  selection from `FLOWGUARD_HOST_PLATFORM`/`FLOWGUARD_PLATFORM` inside the core;
+  those variables remain entrypoint/host-runtime wiring.
 
 - **Reviewer config is host-native; existing configs keep working; unreadable
   config fails closed (#1190, #1169 WS1/WS2).** `reviewer.outputTokenMax` and the

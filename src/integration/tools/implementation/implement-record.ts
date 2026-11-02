@@ -373,7 +373,9 @@ export async function handleImplRecord(
   }
   const { files, baselineScoping } = scoped.subject;
 
-  const domainFiles = files.filter((file) => !isNonDomainConfigPath(file));
+  const domainFiles = files.filter(
+    (file) => !file.includes('node_modules/') && !isNonDomainConfigPath(file),
+  );
   const digest = await computeImplementationDigest({
     worktree: input.worktree,
     files,

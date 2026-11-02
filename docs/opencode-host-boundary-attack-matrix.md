@@ -199,7 +199,7 @@ claimed without an admitted target report.
 | PL-03 | Advertised capabilities versus what is actually probed.                   | Only verified capabilities may be claimed; the rest are marked unverified.  | All six reported `contractAttested` with `runtimeVerified: []`: `src/adapters/host-adapter.test.ts`, `src/integration/plugin.test.ts`.                                  | Covered | F-04    |
 | PL-04 | Dispose must shut down the adapter and logging.                           | Composed shutdown; no leaked resources.                                     | Composed dispose (`adapter.shutdown()` + logging): `src/integration/plugin.ts`; dispose test: `src/integration/plugin.test.ts`.                                       | Covered | F-01    |
 | PL-05 | Plugin reload or repeated init.                                           | No leaked listeners, duplicate state, or stale caches.                      | `src/integration/plugin.test.ts` (native lifecycle and repeated setup/cleanup). | Partial | —       |
-| PL-06 | Hook output mutation (`output.args`, `output.output`, `output.context`).  | Single host-adapter authority for host mutation semantics.                  | No-op adapter methods: `src/integration/opencode-host-adapter.ts:159`; hook code mutates references directly.                                                         | Gap     | F-04    |
+| PL-06 | Hook output mutation (`output.args`, `output.output`, `output.context`).  | Single host-adapter authority for host mutation semantics.                  | The HAI exposes only invoked ports (`src/adapters/host-adapter.ts:1`); hook code mutates references directly.                                                          | Gap     | F-04    |
 
 ---
 
