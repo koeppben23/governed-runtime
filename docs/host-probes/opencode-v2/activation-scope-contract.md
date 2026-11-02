@@ -11,6 +11,16 @@ that the local keyboard distinction is lost through ordinary plugin RPC:
 SDK payload replays have the same handler-visible context. It does not authorize
 root decisions or replace the outstanding product positives.
 
+The [2026-11-02 parity amendment](../../decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02)
+requires both interactive and authorized autonomous activation, preserving
+policy-permitted V1 automation. The UI counterexample applies to claims of human
+origin, not a blanket prohibition on autonomous starts. Neither root activation
+path is accepted yet. Autonomous source/authorization must be proved and recorded
+honestly; it cannot stand in for a policy-required human decision or grant
+implicit approval/recovery/end authority. Journal, lifecycle, scope, actor/policy,
+audit and replay/concurrent-use invariants are unchanged by that specification
+correction. No new reviewer exception is allowed to hide Finding 6.
+
 ## Canonical ownership
 
 - `src/state/governance-activation.ts`: strict revision, enrollment, head and

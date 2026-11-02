@@ -6,16 +6,25 @@ This replaces the earlier **uncommitted** decision-report draft that made
 independent operator/local/remote containment boundaries prerequisites for all
 security-critical porting. That proposal was not architecture-approved.
 
+**Current amendment (2026-11-02):** [ADR-010's parity decision](../../decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02)
+supersedes this report's former blanket UI-only activation prerequisite. Preserve
+V1 functional/governance parity and policy-permitted fully autonomous workflows:
+both interactive and explicitly authorized autonomous starts are required. Actual
+human approvals remain policy-dependent and cannot be fabricated from SDK calls.
+Neither activation path is implemented/accepted by this documentation update.
+Finding 6 remains a mandatory independent-AI-review parity blocker; no new policy
+exception, optional-review workaround or human reviewer substitution is allowed.
+
 **Architecture correction accepted by the operator.** Documentation publication,
 V2 adapter/installation/lifecycle porting and V1 simplification are GO. Acceptance
-of operator decisions without the selected source proof and reviewer evidence
+of decisions without the applicable source/authorization proof and reviewer evidence
 without complete assurance remains BLOCKED at those boundaries.
 
 **Decision:** return to the V2 adapter port and actual simplification under the
 revised governance contract. No second runtime, OS sandbox, external identity
 service or universal security framework is required. This does not certify V2
-support: the product is not ported/installed-tested, the selected distinguishable
-host-UI source mechanism and complete reviewer assurance are NOT_VERIFIED.
+support: product acceptance of both activation paths, policy-required human source
+and complete reviewer assurance remains NOT_VERIFIED.
 **PR #1190 remains Draft; release and merge remain NO-GO.**
 
 ## What changed, explicitly
@@ -92,7 +101,8 @@ capacity unlock. No external signer, approval service or hardware touch is
 mandatory. An SDK command callback remains NOT_SUPPORTED as independent proof of
 a human; the original counterexample remains valid.
 
-**Explicit operator decision (2026-10-31): distinguishable host UI.** Activation,
+**Historical source decision (2026-10-31), blanket activation rule superseded on
+2026-11-02:** Activation,
 approval, override, capacity recovery and end require an attributable host-UI
 interaction distinguishable from agent/SDK invocation. Source-attributed SDK/CLI/
 API commands alone are not admissible, even if explicit and audited. Model text,
@@ -101,16 +111,22 @@ independent identity service or OS boundary is required by this source choice.
 OpenCode/OS are trusted here; the source distinction does not require proving
 that a compromised OS could never synthesize a UI interaction.
 
-**Mechanism NOT_VERIFIED:** prove how the actual pinned V2 UI supplies that
+**Current human-source mechanism NOT_VERIFIED:** prove how the actual pinned V2 UI supplies that
 distinction to the adapter. A dialog's existence, a main-process bundle credential
 or an ordinary command callback is not that proof. Do not invent a source field
 or treat application-supplied metadata as authoritative UI origin. This blocks
-authority acceptance, not all adapter work.
+the affected human-decision path, not authorized autonomous activation as a
+product requirement. The autonomous path separately needs demonstrated actor/
+policy authorization and atomic scope/audit consumption; ordinary RPC or an
+`origin` claim does not supply permission by itself.
 
-Demonstrate actual explicit UI action and scope/audit binding plus agent/SDK/CLI,
-model-text/direct-hydrate, replay, wrong-session/worktree and concurrent-use
-negatives. Claims about human origin must match what the selected host surface
-actually provides. A successful callback test alone cannot change that assurance.
+Demonstrate both explicit UI activation and explicitly authorized autonomous
+activation with scope/audit binding. Reject unauthorized agent/SDK/CLI requests,
+model-text/direct-hydrate self-activation, replay, wrong-session/worktree and
+concurrent use. Reject attempts to use autonomous authority at a policy-required
+human gate. Claims about human origin must match the actual host surface;
+autonomous requests are recorded as nonhuman. A callback test alone cannot
+establish either authorization or human provenance.
 Actual atomic state/audit consumption is a G-04 product test, not a P0 promise.
 
 ## Revised capability decisions
@@ -130,6 +146,11 @@ Actual atomic state/audit consumption is a G-04 product test, not a P0 promise.
 | Plugin loss, unknown outcomes, shared writers                 | No valid approval/export through unknown/stale authority; retain locks/quarantine and freshness checks. No plugin-less interception claim |
 
 ## Reviewer assurance is not relaxed
+
+V1-equivalent independent AI review remains a mandatory, fully automatable core
+capability wherever existing policy requires it. Preserve existing exceptions
+only; adding new exceptions or human intervention to avoid the V2 implementation
+gap is not an acceptable port. Finding 6 remains a release blocker.
 
 Before binding, prove one coherent chain from frozen subject/revision and
 obligation/attempt/dispatch through authorized visible child, exact host-owned
@@ -162,8 +183,9 @@ composition.
    behavior does not depend on unresolved operator/reviewer assumptions. Preserve
    [the removal inventory](./implementation-inventory.md); implement actual
    simplification, not another layer around V1.
-3. Prove the selected distinguishable host-UI source before authority acceptance, and exact host
-   provenance/capture gaps before evidence acceptance. Use narrow mechanism and
+3. Prove interactive and autonomous activation authorization separately, actual
+   human source at policy-required human gates, and exact host
+   provenance/capture before reviewer evidence acceptance. Use narrow mechanism and
    product tests; no broad OS/remote containment campaign or new security system.
 4. G-04 proves actual activation/state/audit/recovery transactions; G-05 proves
    built/installed Desktop and CLI product behavior, controlled-path denials,
@@ -175,7 +197,11 @@ composition.
    **governance/evidence correctness** cannot be met simply, not merely because
    FlowGuard cannot prevent every host or remote side effect.
 
-## Published explicit Issue #1169 amendment
+## Historical published Issue #1169 amendment (2026-10-31)
+
+The publication record below retains the earlier selected source contract; its
+blanket UI-only activation prerequisite is explicitly superseded by the current
+2026-11-02 ADR amendment, not asserted as a current release requirement.
 
 The current [issue body](https://github.com/koeppben23/governed-runtime/issues/1169)
 was replaced with the corrected contract and directly reconciled implementation/

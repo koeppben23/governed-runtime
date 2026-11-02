@@ -157,18 +157,23 @@ freshness and quarantine checks remain required; their absence/error cannot
 become successful authority. No OS sandbox, second runtime or external identity
 service is mandatory or authorized as a compensating implementation.
 
-Explicit decisions still require actual source/action/scope/policy/generation
-binding, actor/policy validation, replay protection and durable audit. The selected
-source for activation/approve/recover/end is an attributable host-UI interaction
-distinguishable from agent/SDK invocation; SDK/CLI/API callbacks alone are
-inadmissible. The actual V2 mechanism remains **NOT_VERIFIED**; block the affected
-acceptance path until demonstrated, and do not infer a human from a callback.
-This is not a blanket block on adapter/API
-porting and simplification independent of that choice.
+The [2026-11-02 parity amendment](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02)
+replaces the blanket UI-only activation requirement. Preserve policy-permitted
+fully autonomous workflows and provide both interactive and explicitly authorized
+autonomous activation. Both require actual source/action/scope/policy/generation
+binding, actor/policy validation, replay/concurrent-use protection and durable
+audit. A caller assertion or SDK callback alone proves neither authorization nor
+a human; autonomous actions must be recorded as autonomous, not human consent.
+Where policy requires an actual human decision, distinguishable host-UI origin
+remains required. Both activation implementations remain **NOT_VERIFIED**; the
+UI-source limitation blocks only its affected human path. Start confers no
+implicit approval, override, capacity recovery or End authority.
 
 Required independent-review provenance, frozen subject, full completion,
 uncontaminated same-child capture and canonical atomic evidence binding are not
-relaxed. An unobserved external action is not evidence of execution or prevention;
+relaxed. V1-equivalent independent AI review remains mandatory where required by
+existing policy and must remain fully automatable; no new exception or human
+substitution may hide Finding 6. An unobserved external action is not evidence of execution or prevention;
 an observed capture tool attempt invalidates capture even if denied. Document
 all coverage gaps and reject stale/incomplete/unknown evidence. The
 [revised report](./host-probes/opencode-v2/p0-feasibility-decision.md) and

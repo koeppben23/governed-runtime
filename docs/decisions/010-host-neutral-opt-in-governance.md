@@ -2,7 +2,7 @@
 
 - **Status:** Accepted as architecture; runtime conformance **NOT_VERIFIED**
 - **Date:** 2026-10-31
-- **Scope revision:** 2026-10-31, explicit operator correction from host containment to governed-decision integrity; see the amendment below.
+- **Scope revision:** 2026-11-02, explicit operator correction preserving V1 functional parity and authorized autonomous activation; see both amendments below.
 - **Deciders:** FlowGuard operator
 - **Scope:** FlowGuard product semantics and future adapters; OpenCode V2 implementation tracked by [#1169](https://github.com/koeppben23/governed-runtime/issues/1169)
 - **Related:** [ADR-008](./008-reviewer-authority-boundaries.md), [ADR-009](./009-model-neutral-review-transport.md), [Phase-0 gates](../host-probes/opencode-v2/phase0-contract-gates.md)
@@ -43,6 +43,42 @@ for changed requirements, retained blockers and the selected operator-source con
 2. **Best-effort advisory review with valid-looking approvals.** Rejected: creates unsupported security assertions.
 3. **Explicit opt-in, host-neutral STRICT governance with capability-scoped prevention and independent evidence assurance.** **Chosen.** Its limitations must be reported precisely, not disguised as successful full isolation.
 
+## Explicit parity and autonomous-activation amendment (2026-11-02)
+
+This operator decision replaces the **blanket host-UI source requirement for
+activation** selected on 2026-10-31 in D2/D3 and the corresponding release gates.
+It also replaces any interpretation that equates every policy-authorized automatic
+workflow action with a human approval. It does not retrospectively change probe
+results or claim that a new activation path has been implemented.
+
+**V1 functional parity is mandatory:** preserve existing product capabilities and
+governance guarantees, including policy-permitted fully autonomous workflows.
+Explicit activation and stronger human-source checks are new V2 architecture
+requirements, not evidence that V1 required them. New V2 mechanisms may improve
+safety but MUST NOT eliminate existing capabilities. This is behavioral parity,
+not authorization to retain V1 source, SDK shims or obsolete evidence formats.
+
+Activation MUST support both explicit interactive use and explicitly authorized
+autonomous use. Human UI evidence is not a prerequisite for every autonomous
+start. An autonomous request is not self-authorizing: canonical actor/policy
+validation, scoped durable authority, audit and replay/concurrent-use protection
+still apply. Record its actual nonhuman source; do not manufacture human consent.
+The concrete autonomous authorization/adapter mechanism remains **NOT_VERIFIED**.
+
+Human gates remain policy-dependent. Where an actual human decision is required,
+the distinguishable host-UI source requirement remains; an SDK callback alone
+cannot satisfy it. Authorized activation grants no implicit approval, override,
+capacity recovery or End authority. Each operation retains its own canonical
+actor/policy, evidence and safe-recovery prerequisites; no automatic capacity
+unlock or newly invented policy exception follows from this amendment.
+
+The independent AI reviewer remains an automatable V1 core capability with the
+same mandatory identity/evidence/completion/release guarantees. Existing V1
+policy exceptions remain, but MUST NOT be expanded or invented to bypass Finding 6. A human is not required to execute an independent AI review. Finding 5 now
+requires separate interactive and autonomous activation implementations; Finding
+6 remains an unfinished parity port, not an optional feature. Release stays NO-GO
+until the applicable product and installed-host positives actually pass.
+
 ## Decision
 
 ### D1. One canonical product core, many host adapters
@@ -54,14 +90,14 @@ The existing [HAI](../../src/adapters/host-adapter.ts) is a starting point, **no
 ### D2. Activation is explicitly opt-in and scope-bound
 
 - **No FlowGuard installed:** host works natively.
-- **Installed but no trusted operator activation (`INACTIVE`):** host works natively. No global mandates, provider/model restrictions, permission changes, shell/tool vetoes, automatic hydration or FlowGuard workflow enforcement. Registering an inert start/help affordance is allowed.
-- **`ACTIVATING`:** validate operator origin, host trust contract, exact workspace/worktree + root session/authorized descendants, policy snapshot and activation generation; commit authority atomically before governed actions.
+- **Installed but no authorized activation (`INACTIVE`):** host works natively. No global mandates, provider/model restrictions, permission changes, shell/tool vetoes, automatic hydration or FlowGuard workflow enforcement. Registering an inert start/help affordance is allowed.
+- **`ACTIVATING`:** validate the actual interactive or autonomous source and its authorization, host trust contract, exact workspace/worktree + root session/authorized descendants, policy snapshot and activation generation; commit authority atomically before governed actions. Autonomous activation does not require human UI evidence.
 - **`ACTIVE`:** enforce the verified host-execution capability contract and FlowGuard's governance decisions inside that exact scope.
 - **`BLOCKED`:** active/formerly-active authority has become corrupt, ambiguous or unavailable. No governed release, evidence or approval; never silently reinterpret this as INACTIVE.
 
-A **verified absence** of an activation record differs from a storage/read error. Activation authority survives host restart and is not inherited by arbitrary sessions in the same repository. `/finish` and `/abort` terminate their workflow, not the activation implicitly. An explicitly authorized `EndGovernance` closes activation only after safe resolution of open obligations; interrupted/ambiguous transitions remain BLOCKED. Model prompts, SDK-generated `/start` text, direct `/hydrate` and plugin installation do not activate governance.
+A **verified absence** of an activation record differs from a storage/read error. Activation authority survives host restart and is not inherited by arbitrary sessions in the same repository. `/finish` and `/abort` terminate their workflow, not the activation implicitly. An explicitly authorized `EndGovernance` closes activation only after safe resolution of open obligations; interrupted/ambiguous transitions remain BLOCKED. Model prompts, SDK-generated `/start` text alone, direct `/hydrate` and plugin installation do not activate governance. A dedicated autonomous activation request may do so only after canonical authorization and durable commit.
 
-### D3. Explicit, attributable operator decisions within trusted infrastructure
+### D3. Explicit, attributable decisions and policy-dependent human gates
 
 The host-neutral operations are `StartGovernance`, `Approve`, `OverrideApprove`,
 `RecoverCapacity` and `EndGovernance`; `/start` is the OpenCode activation action.
@@ -75,23 +111,27 @@ product prerequisite.
 
 Trusting the host/OS to execute correctly does **not** authenticate a human behind
 every API request. An SDK command callback proves command execution, not human
-origin. Record that distinction; never relabel an agent-accessible host API as
-human proof. **Operator-source decision (2026-10-31):** activation, approvals,
-overrides, capacity recovery and deactivation require an explicit, attributable
-**host-UI interaction distinguishable from agent/SDK invocation**. SDK/CLI/API
-callbacks alone are not admissible operator decisions, even when explicit and
-audited. This is a host-interface source requirement, not a demand for an
-independent authentication service or hardware/OS isolation.
+origin or authorization by itself. **Current source decision (2026-11-02):**
+separate explicit interactive activation, explicitly authorized autonomous
+activation and actual human approvals. SDK/CLI/API requests are admissible
+transport candidates for autonomous activation, subject to demonstrated canonical
+authorization; they MUST NOT be relabelled as human proof. Where policy requires
+a human decision, require an attributable **host-UI interaction distinguishable
+from agent/SDK invocation**. Where existing policy permits automatic progression,
+do not add a human gate merely because the V2 port lacks reviewer or activation
+implementation. This is not an independent authentication-service requirement.
 
 The source distinction is evaluated with OpenCode and the OS trusted. It does
 not require preventing a compromised OS from synthesizing UI input; do not grow
 this adapter requirement into a universal anti-spoofing platform.
 
-The concrete V2 UI-to-adapter source distinction remains **NOT_VERIFIED**; no
-undocumented source flag or ordinary callback may be invented as its substitute.
-Authority-bearing acceptance is BLOCKED until that mechanism is demonstrated.
-Only the affected decision path is blocked; this does not stop adapter
-simplification/porting work independent of that proof.
+Both concrete V2 activation implementations remain **NOT_VERIFIED**. The
+UI-to-adapter source gap blocks the affected interactive/human-decision path,
+not autonomous activation as an architecture choice. The autonomous path requires
+its own demonstrated authorization; a caller's `origin`, command text or ordinary
+callback cannot supply it. No undocumented source flag or open high-risk
+assumption may enter either path. Continue independent porting work without
+claiming that either implementation is already accepted.
 
 ### D4. One STRICT governance profile; two separate assurances
 
@@ -137,6 +177,12 @@ A static `preToolBlock: true` and a documented hook do not by themselves prove p
 
 ### D7. Reviewer assurance, not a universal native transport
 
+A required independent AI review MUST remain fully automatable with V1-equivalent
+governance guarantees. Preserve only existing policy exceptions; do not make
+review optional or add human intervention to compensate for the V2 migration.
+Finding 6 remains a release-blocking missing implementation until the required
+actual reviewer positives pass.
+
 A valid independent review needs frozen subject, isolated identity/permissions, navigable child or equivalently inspectable independent execution, exact request/response lineage, effective model/effort provenance, full normal terminal completion and coherent tool-free structured findings capture. The deterministic gate binds only complete validated evidence; ProofGraph never treats raw host text as attestation.
 
 For OpenCode, [ADR-009](./009-model-neutral-review-transport.md) established native Task + same-child JSON under V1. This is an **adapter-specific baseline**, not a cross-host recipe. OpenCode V2 must prove its **own** equivalent lineage and use a new evidence generation when V1 `response.parentID` cannot be attested. Future hosts may use other **single coherent** transports if they prove the same assurance. Never combine unrelated weak transports.
@@ -171,7 +217,7 @@ These references describe official **interfaces**, not FlowGuard-certified behav
   regression failures and native-content/lifecycle limits are tracked in the
   [implementation inventory](../host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
 - OpenCode V1 is not retained as a product path after the V2 breaking replacement; other host integrations retain their currently **verified** support rather than inferred parity.
-- Porting/simplification may proceed against the revised contract without a sandbox, second runtime or universal provider-prevention proof. Actual authority acceptance still requires proof of the selected D3 distinguishable host-UI source; reviewer binding requires exact provenance and completion proof. No unresolved high-risk assumption may enter implementation.
+- Porting/simplification may proceed against the revised contract without a sandbox, second runtime or universal provider-prevention proof. Actual authority acceptance requires the appropriate demonstrated D3 path: interactive/human source or explicitly authorized autonomous activation, never a fabricated equivalence. Reviewer binding requires exact provenance and completion proof. No unresolved high-risk assumption may enter implementation.
 - Release still requires installed INACTIVE noninterference, explicit scope-bound activation/decisions, deterministic gates, controlled-path negative tests, reviewer/evidence/audit integrity, native model/effort fidelity, durable recovery, conformance, simplification and full installed Desktop/CLI acceptance. These remain NOT_VERIFIED, so supported ACTIVE V2 governance and merge remain NO-GO. Missing out-of-scope containment alone is no longer a release blocker.
 - [Phase-0 test plan](../host-probes/opencode-v2/phase0-contract-gates.md) is the executable gate; it does not assert that any unrun test passed.
 - Scope, historical proof artifacts, evidence generations and migration decisions must be truthful. Existing ADRs/probe reports remain historical records, not silently rewritten claims.

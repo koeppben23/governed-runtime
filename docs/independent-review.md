@@ -2,6 +2,13 @@
 
 FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. On OpenCode, the FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. On Claude Code and Codex, native reviewer agents/subagents are transport and isolation artifacts only. Review completion requires validated, obligation-bound `ReviewFindings` through FlowGuard's existing `ReviewObligation` and `ReviewInvocationEvidence` pipeline; missing or mismatched evidence fails closed.
 
+**V2 parity requirement:** preserve V1's independent AI review and its identity,
+evidence, full-completion and deterministic-release guarantees. It can run fully
+automatically without a human reviewer. Existing policy exceptions remain, but
+no new exception, optional-review mode or human substitution may bypass Finding 6. Human approval is a separate policy-dependent gate. The current native V2
+release/capture implementation remains blocked, not an accepted reduced feature.
+See [ADR-010's parity amendment](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
+
 ---
 
 ## Architecture
@@ -155,9 +162,11 @@ The canonical lock prevents the same parent user turn from minting another revie
 obligation or starting another reviewer Task. V2 requires verified explicit
 recovery authority under the session lock; that acceptance is not implemented.
 The native V2
-entrypoint registers no command-origin approval/recovery hook: an SDK/API/CLI
-command callback cannot substitute for distinguishable host-UI origin. The old
-V1 command-hook release path is not a V2 operator-provenance mechanism. No idle
+entrypoint registers no command-origin approval/recovery hook. Authorized
+autonomous activation does not itself authorize capacity recovery; an SDK/API/CLI
+callback proves neither that permission nor human consent. Actual human decisions
+still need the selected UI-source proof when policy requires them. The old
+V1 command-hook release path is not a V2 human-provenance mechanism. No idle
 event, timeout or owner cleanup releases an unknown-outcome fence.
 
 ### Reviewer authority boundaries and reference suite

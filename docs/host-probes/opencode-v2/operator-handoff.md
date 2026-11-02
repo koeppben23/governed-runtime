@@ -1,9 +1,18 @@
 # Operator handoff: pinned 2.2.4 RPC counterexample
 
 Finding 5, PR #1190, 2026-11-01. **BLOCKED**, not an operator-decision
-acceptance. ADR-010 D3 remains unchanged. This report bounds the ordinary
+acceptance under the then-current source contract. This report bounds the ordinary
 TUI-to-server RPC mechanism; it does not prove that every possible host integration
 is impossible. Draft / **ACTIVE V2 NO-GO** remains in force.
+
+**2026-11-02 specification amendment:** [ADR-010](../../decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02)
+now requires both interactive and authorized autonomous activation. The observed
+RPC source loss remains a valid counterexample for **human provenance**, not a
+reason to prohibit autonomous activation or require UI evidence for every start.
+An autonomous RPC/SDK transport may be admissible after separate canonical
+authorization is demonstrated; that implementation remains NOT_VERIFIED. It must
+not label an autonomous request as human consent or bypass a policy-required
+human gate. The source inspection and executed observations below are unchanged.
 
 ## Version-bound source inspection
 
@@ -69,7 +78,7 @@ created, verifier weakened or required product positive replaced.
 | RecoverCapacity    | `integration/plugin-beforehooks.ts` contains command-derived capacity release; that callback is not registered as a native UI recovery path. It must not be wired to ordinary SDK command execution. The capacity lock and reviewer recovery checks remain authoritative.                                                                                          |
 | End                | The activation writer/machine support ending/inactive journal transitions, but no native UI producer validates safe closure of workflow/reviewer/mutation obligations and submits an authorized root End. `/finish` and `/abort` are not EndGovernance.                                                                                                            |
 
-The missing capability is a demonstrated handoff of an actual attributable UI
+For actual human decisions, the missing capability is a demonstrated handoff of an actual attributable UI
 decision to these canonical owners, distinguishable there from an SDK invocation.
 Ordinary plugin RPC alone is **NOT_SUPPORTED** for that source distinction.
 An SDK-accessible registration token, echoed nonce, command string or copied key
@@ -83,3 +92,10 @@ with real UI positives plus SDK/replay/scope/concurrent-use negatives, then wiri
 and testing atomic actor/policy/state/audit consumption. Until then only the
 affected operator-decision path stays blocked; independent adapter/recovery work
 may continue. Findings 2–4/8, 9–11 and the accepted call-ID contract are unchanged.
+
+Separately, Finding 5 now requires a real autonomous activation positive with
+actor/policy authorization, exact scope/generation, durable audit and replay/
+concurrent-use negatives. It is not satisfied by the observation-only RPC above
+or component admission fixtures. Autonomous activation grants no implicit
+approval, override, capacity-recovery or End permission. No new authorization
+schema, policy exception or product endpoint is specified or implemented here.

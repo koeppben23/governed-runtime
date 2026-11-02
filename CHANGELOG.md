@@ -965,6 +965,16 @@ stop`, reviewer child reported it could not complete the falsification).
 
 ### Changed
 
+- **V2 parity and autonomous-activation contract (#1190).** ADR-010 now explicitly
+  requires V1-equivalent capabilities/governance guarantees, including
+  policy-permitted fully autonomous workflows. Interactive and authorized
+  autonomous starts are separate required paths; human UI provenance is not a
+  universal start prerequisite and autonomous requests cannot impersonate human
+  approvals. Required independent AI review remains fully automatable with no new
+  policy exceptions or weaker evidence/release gates. Gates, trust/support/recovery
+  documentation and the source-probe interpretation are synchronized; this changes
+  the specification, not runtime authorization or release acceptance.
+
 - **Published V2 installer provenance (#1169).** Corrected the stale pre-push
   description of checkpoint `1750b6b1` and linked its exact source tree, CI merge,
   failing checks and CI artifact digest. The installed lifecycle smoke can now

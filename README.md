@@ -5,9 +5,16 @@ Host-aware governance runtime for AI-assisted software delivery.
 > **Version:** 2.0.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
 > **OpenCode V2 migration checkpoint:** native entrypoint and installation are
-> implemented; complete installed INACTIVE parity, operator-UI provenance and
-> reviewer assurance/recovery remain unverified. PR #1190 is Draft; this branch
+> implemented; complete installed INACTIVE parity, interactive/autonomous activation,
+> policy-required human provenance and reviewer assurance/recovery remain unverified.
+> PR #1190 is Draft; this branch
 > is not a supported ACTIVE V2 release.
+
+V2 must preserve V1 capabilities and governance guarantees, including
+policy-permitted autonomous workflows and fully automatic independent AI review.
+Explicit interactive and authorized autonomous activation are separate required
+paths; human approvals remain policy-dependent. See
+[ADR-010](docs/decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
 
 FlowGuard provides deterministic workflow control, evidence gates, audit trails,
 and policy-bound decisions around supported AI-assisted engineering hosts. OpenCode

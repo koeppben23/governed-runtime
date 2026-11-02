@@ -58,8 +58,11 @@ hook-gated, platform-limited guarantees. See
 [Platform Limitations](./platform-limitations.md) for details.
 
 The native V2 installer is an implementation checkpoint, not a support
-certification. Installed INACTIVE parity, distinguishable operator-UI origin,
-reviewer assurance and recovery remain open; PR #1190 remains Draft.
+certification. Installed INACTIVE parity, interactive and authorized autonomous
+activation, policy-required human origin, reviewer assurance and recovery remain
+open; PR #1190 remains Draft. Installation does not authorize either start path.
+V1 capabilities/governance guarantees and policy-permitted fully automatic
+operation must be preserved; see [ADR-010](./decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
 
 ### Native V2 layout and fresh-install boundary
 
