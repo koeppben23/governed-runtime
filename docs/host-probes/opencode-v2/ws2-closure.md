@@ -37,6 +37,15 @@ The V5 fixture is a canonical current archive fixture, not a preserved
 historical binary from an older release. A real previously published V1 archive
 remains a separate installed-data acceptance item.
 
+Focused reproduction:
+
+```sh
+npx vitest run --project integration \
+  src/integration/review/dispatch/host-neutral-contract.test.ts
+npx vitest run --project unit src/adapters/workspace/archive-read-verified.test.ts
+npx vitest run --project unit src/adapters/session-authority.test.ts
+```
+
 ## Assurance scope for reviewer result bytes
 
 The current receipt binds the reviewer child, owning assistant, call identity,
