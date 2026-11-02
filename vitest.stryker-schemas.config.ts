@@ -10,7 +10,7 @@ import { defineConfig } from 'vitest/config';
  * every mutant instead of attributing per test.
  *
  * Run locally with:
- *   node scripts/stryker-patch.js && npx stryker run stryker.schemas.conf.json
+ *   npx stryker run stryker.schemas.conf.json
  *   node scripts/verify-mutation-admission.mjs --profile schemas
  */
 export default defineConfig({

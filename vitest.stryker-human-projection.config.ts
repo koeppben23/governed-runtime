@@ -6,7 +6,7 @@ import { defineConfig } from 'vitest/config';
  * human-projection, markdown renderer) plus the surfaces that consume it.
  *
  * This is a reusable targeted mutation profile. Run it locally with
- * `node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json`
+ * `npx stryker run stryker.human-projection.conf.json`
  * followed by `node scripts/verify-mutation-admission.mjs --profile human-projection`.
  * It has no dedicated CI workflow yet; `.github/workflows/mutation.yml` covers
  * the base profile only. Adding a PR workflow requires a full-profile run that

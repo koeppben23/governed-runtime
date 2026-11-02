@@ -1,7 +1,11 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "vitest",
-  "vitest": { "configFile": "vitest.stryker-review-capture.config.ts", "related": false },
+  "vitest": {
+    "pool": "forks",
+    "configFile": "vitest.stryker-review-capture.config.ts",
+    "related": false
+  },
   "mutate": [
     "src/integration/reviewer-capture.ts",
     "src/integration/review/dispatch/structured-followup.ts",

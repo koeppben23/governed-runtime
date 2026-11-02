@@ -14,7 +14,7 @@ import { defineConfig } from 'vitest/config';
  * suites assert the exact table semantics.
  *
  * Run locally with:
- *   node scripts/stryker-patch.js && npx stryker run stryker.topology.conf.json
+ *   npx stryker run stryker.topology.conf.json
  *   node scripts/verify-mutation-admission.mjs --profile topology
  */
 export default defineConfig({

@@ -206,6 +206,14 @@ baseline/request/model/tool contamination and V5/V6 schema separation. Three of
 the four required product capture contracts pass; safe recovery remains step 4.
 This is not installed activation acceptance.
 
+R1/R3 adds `opencode-reviewer-initial-live.smoke.test.ts`: a real permitted-read
+multi-step review must still bind evidence, while synthetic input during the
+initial execution must not reach serialization or evidence binding. Component
+sequence tests independently corrupt request snapshots, assistant steps and
+local tool before/after receipts. The R2 component regression injects a
+post-commit projection failure; actual restart/continuation remains step 4 and
+must not be inferred from the component result.
+
 Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.
 
@@ -740,7 +748,7 @@ native Task binding and a prohibited serialization tool call on the pinned host.
 ### Running Locally
 
 ```bash
-npm run mutation    # Runs scripts/stryker-patch.js pre-flight + base profile
+npm run mutation    # Native Stryker runner + base profile
 node scripts/verify-mutation-admission.mjs --profile base \
   --write-manifest reports/mutation/admission-manifest-base.json
 
@@ -749,19 +757,17 @@ node scripts/verify-mutation-admission.mjs --profile base \
   --manifest reports/mutation/admission-manifest-base.json
 ```
 
-The pre-flight script applies version-guarded workarounds for
-`@stryker-mutator/vitest-runner@10.0.0`: `pool=forks` for `process.chdir()`
-compatibility and Vitest 5's `" > "` nested-test separator so Stryker's per-test
-filter selects the intended tests. This is scoped exclusively to mutation testing.
-It fails if the installed runner, Vitest major, or runner artifact shape is not
-recognized; remove the workaround when upgrading to a Stryker release with the
-upstream Vitest 5 fix.
+`@stryker-mutator/vitest-runner` 10.1.1 handles Vitest 5's `" > "` nested-test
+separator natively. Every profile sets `vitest.pool: "forks"` through the runner's
+supported option for `process.chdir()` tests. No installed package is patched.
+The previous 10.0.0-only preflight has been removed; mutation thresholds, source
+selectors and test selection are unchanged by this tooling correction.
 
 The remote-JWKS profile runs on pull requests that change its source, tests, or
 configuration:
 
 ```bash
-node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
+npx stryker run stryker.identity-jwks.conf.json
 node scripts/verify-mutation-admission.mjs --profile identity-jwks \
   --write-manifest reports/mutation/identity-jwks/admission-manifest.json
 ```
@@ -769,7 +775,7 @@ node scripts/verify-mutation-admission.mjs --profile identity-jwks \
 The mandates profile runs on pull requests that change mandate surfaces:
 
 ```bash
-node scripts/stryker-patch.js && npx stryker run stryker.mandates.conf.json
+npx stryker run stryker.mandates.conf.json
 node scripts/verify-mutation-admission.mjs --profile mandates \
   --write-manifest reports/mutation/mandates/admission-manifest.json
 ```
@@ -781,7 +787,7 @@ selector without an admission record and stays a diagnostic note until it is
 admitted:
 
 ```bash
-node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json
+npx stryker run stryker.human-projection.conf.json
 node scripts/verify-mutation-admission.mjs --profile human-projection \
   --write-manifest reports/mutation/human-projection/admission-manifest.json
 ```
