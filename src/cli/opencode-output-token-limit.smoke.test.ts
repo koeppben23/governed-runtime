@@ -66,17 +66,32 @@ describe.skipIf(!LIVE)('native output budgets reach the provider unchanged', () 
       });
       const session = await probe.session('flowguard-reviewer');
       await seedNativeActiveScope(probe, session.id);
-      await probe.prompt(session.id, 'FLOWGUARD_LARGE_CONTEXT_MARKER');
+      // ACTIVE runtime creation fails closed with CONFIG_INVALID in the first
+      // governed hook (prompt admission), so the host refuses the prompt itself.
+      await expect(
+        probe.prompt(session.id, 'FLOWGUARD_LARGE_CONTEXT_MARKER'),
+        probe.output(),
+      ).rejects.toThrow();
       expect(probe.requests).toEqual([]);
-      const history = await probe.client.session.context({ sessionID: session.id });
-      const terminal = history.find(
-        (message) => message.type === 'idle' && message.outcome === 'failed',
-      );
-      expect(terminal, JSON.stringify(history)).toBeDefined();
-      expect(JSON.stringify(terminal)).toContain('CONFIG_INVALID');
-      expect(JSON.stringify(terminal)).toContain(
-        'FlowGuard configuration is unreadable or invalid',
-      );
     },
   );
+  it('control: a valid config admits the same prompt and blocks only the unauthorized reviewer', async () => {
+    probe = await createNativeHostProbe({
+      product: true,
+      productTestSetup: COMPONENT_ACTIVATION_SETUP,
+      agent: REVIEWER_AGENT,
+      modelOutput: 131_072,
+      flowguardConfig: '{"schemaVersion":"v1","reviewer":{"executionTimeoutMs":600000}}',
+    });
+    const session = await probe.session('flowguard-reviewer');
+    await seedNativeActiveScope(probe, session.id);
+    await probe.prompt(session.id, 'FLOWGUARD_LARGE_CONTEXT_MARKER');
+    expect(probe.requests).toEqual([]);
+    const history = await probe.client.session.context({ sessionID: session.id });
+    const terminal = history.find(
+      (message) => message.type === 'idle' && message.outcome === 'failed',
+    );
+    expect(terminal, JSON.stringify(history)).toBeDefined();
+    expect(JSON.stringify(terminal)).not.toContain('CONFIG_INVALID');
+  });
 });

@@ -1033,8 +1033,9 @@ stop`, reviewer child reported it could not complete the falsification).
   the installer writes only `executionTimeoutMs` and does not migrate old keys.
   An unreadable or invalid config previously blocked only the reviewer context
   while other ACTIVE operations silently ran on default policy; it now blocks
-  every ACTIVE operation of the worktree, a readable config is re-read on the
-  next call, and INACTIVE sessions are unaffected. `doctor` no longer reports a
+  every ACTIVE operation of the worktree (an ACTIVE prompt is refused at
+  admission), a readable config is re-read on the next call, and INACTIVE
+  sessions are unaffected. `doctor` no longer reports a
   reviewer cap.
 - **V2 parity and autonomous-activation contract (#1190).** ADR-010 now explicitly
   requires V1-equivalent capabilities/governance guarantees, including
