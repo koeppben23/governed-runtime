@@ -6,8 +6,8 @@ import {
   NativeReviewCaptureError,
   NativeReviewCaptureFence,
   NativeReviewCaptureOutcomeUnknownError,
-  verifyInitialReviewerExecution,
 } from './native-review-capture.js';
+import { NativeReviewInitialController } from './native-review-initial.js';
 
 const OBLIGATION = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT = '11111111-2222-4111-8111-111111111111';
@@ -47,6 +47,14 @@ function idle(outcome = 'succeeded') {
   return { type: 'idle', outcome };
 }
 
+function verifyInitialReviewerExecution(history: readonly unknown[], digest: string) {
+  const initial = new NativeReviewInitialController();
+  initial.admit('child', 'msg_user', user().text);
+  initial.context('child', [user()]);
+  initial.request('child', [user()], assistant().model);
+  return initial.complete('child', history, digest);
+}
+
 function captured() {
   const fence = new NativeReviewCaptureFence();
   const lease = fence.begin({
@@ -83,16 +91,16 @@ describe('V2 native capture proof', () => {
     });
     expect(() =>
       verifyInitialReviewerExecution([user(`${PREFIX}foreign`), assistant(), idle()], digest),
-    ).toThrow('authorized frozen prompt');
+    ).toThrow('history changed');
     expect(() =>
       verifyInitialReviewerExecution(
         [user(), assistant(), { type: 'compaction', status: 'completed' }, idle()],
         digest,
       ),
-    ).toThrow('compacted');
+    ).toThrow('unexplained extra entries');
     expect(() =>
       verifyInitialReviewerExecution([user(), assistant(), idle('interrupted')], digest),
-    ).toThrow('finish its initial review');
+    ).toThrow('successful terminal boundary');
   });
 
   it('builds one exact V6 capture/provenance window and removes all tools', () => {

@@ -464,18 +464,15 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function enforceReviewerScope(
-  reviewer: ReturnType<typeof createNativeReviewerAuthority>,
-  scope: ActiveGovernanceScope,
-  event: { readonly tool: string; readonly agent: string },
-): Promise<void> {
-  if (event.agent !== REVIEWER_SUBAGENT_TYPE) return;
-  await reviewer.beforeTool(scope);
-  if (!READ_ONLY_HOST_TOOLS.has(event.tool))
-    throw buildEnforcementError(
-      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-      'Reviewer dispatch does not authorize mutations, child delegation or workflow decisions.',
-    );
+function observeReviewerRead(
+  actions: {
+    readonly reviewer: ReturnType<typeof createNativeReviewerAuthority>;
+    readonly observe: (event: NativeToolCompletion) => Promise<void>;
+  },
+  event: NativeToolCompletion,
+) {
+  if (event.agent === REVIEWER_SUBAGENT_TYPE) actions.reviewer.afterTool(event);
+  return actions.observe(event);
 }
 
 /** Register each native hook exactly once; there is no intermediate SDK hook object. */
@@ -498,7 +495,7 @@ async function createFlowGuardPluginHooks(
         event.sessionID,
         async ({ runtime, scope }) => {
           runtime.orchestratorDeps.reviewerCapture?.beforeTool({ sessionID: event.sessionID });
-          await enforceReviewerScope(actions.reviewer, scope, event);
+          await actions.reviewer.beforeTool(scope, event);
           if (!record(event.input))
             throw buildEnforcementError(
               'PLUGIN_ENFORCEMENT_UNAVAILABLE',
@@ -523,6 +520,7 @@ async function createFlowGuardPluginHooks(
             output,
           );
           event.input = output.args;
+          if (event.agent === REVIEWER_SUBAGENT_TYPE) actions.reviewer.authorizeTool(event);
           if (event.tool === NATIVE_SUBAGENT_TOOL) await governance.authorizeDispatch(scope, event);
         },
         FLOWGUARD_TOOL_NAMES.some((name) => name === event.tool && name !== TOOL_FLOWGUARD_HELP),
@@ -531,7 +529,7 @@ async function createFlowGuardPluginHooks(
   );
   registrations.push(
     await ctx.tool.hook('execute.after', (event) => {
-      if (READ_ONLY_HOST_TOOLS.has(event.tool)) return actions.observe(event);
+      if (READ_ONLY_HOST_TOOLS.has(event.tool)) return observeReviewerRead(actions, event);
       if (
         event.tool === NATIVE_SUBAGENT_TOOL &&
         record(event.input) &&

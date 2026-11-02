@@ -91,6 +91,11 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     targetProductionFiles: 13,
     budgetExceptions: [
       {
+        file: 'integration/review/dispatch/native-review-initial.ts',
+        reason:
+          'Initial review sequence verification consumes live prompt/model/tool boundaries before sealing the capture baseline; history cannot mint missing execution receipts.',
+      },
+      {
         file: 'integration/review/dispatch/native-review-capture-failure.ts',
         reason:
           'Terminal capture closure stays separate from the successful proof path so tool-contaminated captures cannot emit invocation evidence.',
@@ -460,6 +465,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/dispatch/native-task-review-prompt.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-review-dispatch.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-review-capture.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/native-review-initial.ts', owner: 'review-dispatch' },
   {
     file: 'integration/review/dispatch/native-review-capture-failure.ts',
     owner: 'review-dispatch',

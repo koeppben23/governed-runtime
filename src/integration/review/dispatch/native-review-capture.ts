@@ -21,7 +21,6 @@ import { NativeSubagentCaptureProvenance } from '../../../state/evidence-review-
 import type { SessionState } from '../../../state/schema.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 import type { SessionAuthorityResolution } from '../../../adapters/session-authority.js';
-import { buildEnforcementError } from '../../blocked-result.js';
 import { buildObligationFindingsJsonSchema } from '../evidence/findings-schema.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
@@ -32,8 +31,8 @@ import {
   obligationCaptureContract,
 } from './native-task-review-bindings.js';
 import { serializationPromptFor } from './serialization-prompt.js';
+import type { NativeReviewInitialController } from './native-review-initial.js';
 
-const HOST_PREFIX = 'You are a subagent spawned by another session.\n';
 const MAX_MESSAGES = 10_000;
 
 type RecordValue = Record<string, unknown>;
@@ -352,68 +351,8 @@ function buildProvenance(
   });
 }
 
-function initialUser(history: readonly unknown[], digest: string): RecordValue | null {
-  const users = history.filter((entry) => record(entry).type === 'user');
-  if (users.length !== 1) return null;
-  const user = record(users[0]);
-  return typeof user.text === 'string' &&
-    user.text.startsWith(HOST_PREFIX) &&
-    hashText(user.text.slice(HOST_PREFIX.length)) === digest
-    ? user
-    : null;
-}
-
-function initialAssistant(history: readonly unknown[]): RecordValue | null {
-  const assistantIndex = history.reduce<number>(
-    (found, entry, index) => (record(entry).type === 'assistant' ? index : found),
-    -1,
-  );
-  if (assistantIndex < 0) return null;
-  const last = record(history.at(-1));
-  const assistant = record(history[assistantIndex]);
-  return last.type === 'idle' &&
-    last.outcome === 'succeeded' &&
-    assistant.finish === 'stop' &&
-    assistant.error === undefined &&
-    Number.isFinite(record(assistant.time).completed) &&
-    responseText(assistant.content) !== null
-    ? assistant
-    : null;
-}
-
-function selectedModel(assistant: RecordValue): ReviewerModelSelection | null {
-  const selected = record(assistant.model);
-  const model = ReviewerModelSelection.safeParse({
-    providerID: selected.providerID,
-    modelID: selected.id,
-    variant: selected.variant ?? null,
-  });
-  return model.success ? model.data : null;
-}
-
-export function verifyInitialReviewerExecution(
-  history: readonly unknown[],
-  expectedPromptDigest: string,
-): { readonly baseline: readonly unknown[]; readonly model: ReviewerModelSelection } {
-  const blocked = (reason: string): never => {
-    throw buildEnforcementError('REVIEWER_COMPLETION_UNVERIFIABLE', reason);
-  };
-  if (!Array.isArray(history) || history.length === 0 || history.length > MAX_MESSAGES)
-    return blocked('Reviewer child history is missing or unbounded.');
-  if (history.some((entry) => record(entry).type === 'compaction'))
-    return blocked('Reviewer child compacted before capture; the initial review is not provable.');
-  if (initialUser(history, expectedPromptDigest) === null)
-    return blocked('Reviewer child request is not the exact authorized frozen prompt.');
-  const assistant = initialAssistant(history);
-  if (assistant === null)
-    return blocked('Reviewer child did not finish its initial review normally.');
-  const model = selectedModel(assistant);
-  if (model === null)
-    return blocked('Reviewer child model/variant identity is missing or invalid.');
-  return { baseline: history, model };
-}
-
 export interface NativeCaptureInput {
+  readonly initial: NativeReviewInitialController;
   readonly host: NativeCaptureHost;
   readonly fence: NativeReviewCaptureFence;
   readonly runtime: NativeCaptureRuntime;
@@ -495,7 +434,7 @@ export async function executeNativeReviewCapture(
 }
 
 async function startSerialization(input: NativeCaptureInput): Promise<{
-  readonly reviewed: ReturnType<typeof verifyInitialReviewerExecution>;
+  readonly reviewed: ReturnType<NativeReviewInitialController['complete']>;
   readonly lease: ReturnType<NativeReviewCaptureFence['begin']>;
   readonly promptText: string;
 }> {
@@ -503,7 +442,11 @@ async function startSerialization(input: NativeCaptureInput): Promise<{
   const dispatch = input.state.reviewAssurance?.dispatches.find(
     (item) => item.hostCallId === input.nativeCallId,
   );
-  const reviewed = verifyInitialReviewerExecution(initial, dispatch?.canonicalPromptDigest ?? '');
+  const reviewed = input.initial.complete(
+    input.childSessionId,
+    initial,
+    dispatch?.canonicalPromptDigest ?? '',
+  );
   const contract = obligationCaptureContract(input.state, input.obligation);
   const promptText = serializationPromptFor(
     input.obligation.obligationId,

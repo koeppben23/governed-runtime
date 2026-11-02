@@ -283,7 +283,7 @@ describe('canonical V2 reviewer dispatch admission', () => {
     const text = `You are a subagent spawned by another session.\n${(call.input as Record<string, unknown>).prompt}`;
     const prompt = {
       sessionID: 'child',
-      messageID: 'actual-request',
+      messageID: 'msg_actual_request',
       prompt: { text },
       delivery: 'steer',
     } as SessionPrompt;
@@ -316,34 +316,14 @@ describe('canonical V2 reviewer dispatch admission', () => {
       reviewer.prompt(child, { ...prompt, prompt: { text: 'Serialize as JSON' } }),
     ).rejects.toThrow('Capture remains blocked');
     host.sessionContext.mockResolvedValue([
-      { type: 'user', id: 'actual-request', text, files: [] },
+      { type: 'user', id: 'msg_actual_request', text, files: [] },
     ]);
     await expect(reviewer.context(child, { tools: {} })).resolves.toBeUndefined();
-    for (const type of ['idle', 'compaction', 'synthetic']) {
-      host.sessionContext.mockResolvedValue([{ type: 'user', text, files: [] }, { type }]);
-      await expect(reviewer.context(child, { tools: {} })).rejects.toThrow(
-        'continuation/capture remains blocked',
-      );
-    }
-    host.sessionContext.mockResolvedValue([
-      {
-        type: 'user',
-        text: `You are a subagent spawned by another session.\nFOREIGN ${frozen}`,
-        files: [],
-      },
-    ]);
-    await expect(reviewer.context(child, { tools: {} })).rejects.toThrow('exact host-prefixed');
-    host.sessionContext.mockResolvedValue([{ type: 'user', text, files: ['foreign'] }]);
-    await expect(reviewer.context(child, { tools: {} })).rejects.toThrow(
-      'continuation/capture remains blocked',
-    );
-    host.sessionContext.mockResolvedValue([
-      { type: 'user', id: 'actual-request', text, files: [] },
-    ]);
     const request = {
       sessionID: 'child',
       agent: 'flowguard-reviewer',
       kind: 'primary',
+      model: { providerID: 'provider', id: 'model', variant: 'selected' },
     } as SessionModelRequest;
     await expect(reviewer.request(child, request)).resolves.toBeUndefined();
     await expect(
@@ -353,14 +333,28 @@ describe('canonical V2 reviewer dispatch admission', () => {
       reviewer.request(child, { ...request, agent: 'general' as SessionModelRequest['agent'] }),
     ).rejects.toHaveProperty('code', 'REVIEWER_EXECUTION_OUTCOME_UNKNOWN');
     await expect(reviewer.prompt(child, prompt)).rejects.toThrow('replayed');
-    host.sessionContext.mockResolvedValue([
-      { type: 'user', text, files: [] },
-      { type: 'user', text: 'foreign', files: [] },
-    ]);
-    await expect(reviewer.context(child, { tools: {} })).rejects.toThrow(
-      'continuation/capture remains blocked',
-    );
   });
+
+  it.each(['idle', 'compaction', 'synthetic', 'assistant', 'user'])(
+    'rejects unexplained initial history %s before a model request',
+    async (type) => {
+      const { call, child } = await authorizedChild();
+      const text = `You are a subagent spawned by another session.\n${(call.input as Record<string, unknown>).prompt}`;
+      await reviewer.prompt(child, {
+        sessionID: 'child',
+        messageID: 'msg_initial',
+        prompt: { text },
+      } as SessionPrompt);
+      host.sessionContext.mockResolvedValue([
+        { type: 'user', id: 'msg_initial', text, files: [] },
+        { type },
+      ]);
+      await expect(reviewer.context(child, { tools: {} })).rejects.toHaveProperty(
+        'code',
+        'REVIEWER_COMPLETION_UNVERIFIABLE',
+      );
+    },
+  );
 
   it('rejects each independently corrupted lineage field at the native ledger reader, not only at the outer journal', async () => {
     await authorizedChild();

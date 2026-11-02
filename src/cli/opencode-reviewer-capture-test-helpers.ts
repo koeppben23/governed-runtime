@@ -40,6 +40,7 @@ export async function createReviewerCaptureHostProbe(
   options: {
     readonly reviewArguments?: Record<string, unknown>;
     readonly onReview?: (childSessionID: string) => Promise<void>;
+    readonly initialRead?: boolean;
   } = {},
 ): Promise<ReviewerHostProbe> {
   let scenario: 'positive' | 'tool' | 'interrupted' = 'positive';
@@ -48,6 +49,7 @@ export async function createReviewerCaptureHostProbe(
   let serializationCalls = 0;
   let project = '';
   const calls: ReviewerProbeCall[] = [];
+  let initialReads = 0;
   const sentinel = 'READ_MUST_NOT_REACH_THE_PROVIDER_4782';
   const probe = await createNativeHostProbe({
     product: true,
@@ -75,6 +77,10 @@ export default Plugin.define({ id: 'reviewer-observer', async setup(ctx) {
         body,
       });
       if (nativeReview && !serialization) await options.onReview?.(sessionID);
+      if (nativeReview && !serialization && options.initialRead && initialReads++ === 0)
+        return {
+          tool: { name: 'read', arguments: { path: join(project, 'capture-sentinel.txt') } },
+        };
       if (serialization) {
         serializationCalls++;
         if (scenario === 'interrupted') return { hold: true };

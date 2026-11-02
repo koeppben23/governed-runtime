@@ -123,7 +123,148 @@ async function fixture() {
   };
 }
 
+async function record(h: Awaited<ReturnType<typeof fixture>>, patch: Record<string, unknown> = {}) {
+  const captured = proof();
+  const findings = JSON.parse(PAYLOAD);
+  return recordEvidenceOrBlockReuse(h.deps as never, h.seeded.sessDir, {
+    obligationId: captured.capture.obligationId,
+    obligationType: 'plan',
+    sessionId: 'parent',
+    childSessionId: 'child',
+    hostCallId: 'native-call',
+    attemptId: captured.capture.attemptId,
+    promptHash: 'a'.repeat(64),
+    findingsHash: hashFindings(findings),
+    invokedAt: h.now,
+    fulfilledAt: h.now,
+    reviewerResult: {
+      sessionId: 'child',
+      findings,
+      reviewOutputMode: 'validated_json',
+      reviewAssuranceLevel: 'host_message_validated',
+      capture: captured.capture,
+    },
+    nativeProvenance: captured.provenance,
+    ...patch,
+  });
+}
+
 describe('V6 evidence binding', () => {
+  it.each([
+    ['foreign child', { childSessionId: 'foreign' }, 'lineage_unavailable'],
+    [
+      'foreign attempt',
+      { attemptId: '22222222-2222-4222-8222-222222222222' },
+      'lineage_unavailable',
+    ],
+    [
+      'missing obligation',
+      { obligationId: '22222222-2222-4222-8222-222222222222' },
+      'lineage_unavailable',
+    ],
+    ['foreign call', { hostCallId: 'foreign' }, 'lineage_unavailable'],
+    ['expired deadline', { deadlineAt: '2000-01-01T00:00:00.000Z' }, 'execution_expired'],
+  ] as const)('refuses %s without completing state', async (_label, patch, result) => {
+    const h = await fixture();
+    try {
+      const before = h.stateRef.current;
+      expect(await record(h, patch)).toBe(result);
+      expect(h.stateRef.current).toEqual(before);
+      expect(h.lastIntents()).toEqual([]);
+    } finally {
+      await h.ws.cleanup();
+    }
+  });
+
+  it.each(['obligationId', 'obligationType', 'subjectDigest', 'status', 'childSessionId'] as const)(
+    'rejects independently corrupted attempt %s',
+    async (field) => {
+      const h = await fixture();
+      try {
+        const state = h.stateRef.current;
+        const assurance = state.reviewAssurance!;
+        h.stateRef.current = {
+          ...state,
+          reviewAssurance: {
+            ...assurance,
+            attempts: assurance.attempts.map((attempt) => ({ ...attempt, [field]: 'foreign' })),
+          },
+        };
+        expect(await record(h)).toBe('lineage_unavailable');
+        expect(h.stateRef.current.reviewAssurance!.invocations).toEqual([]);
+      } finally {
+        await h.ws.cleanup();
+      }
+    },
+  );
+
+  it.each([
+    'requestMessageId',
+    'responseMessageId',
+    'requestDigest',
+    'payloadDigest',
+    'assistantMessageIds',
+    'model',
+  ] as const)('rejects independently mismatched native provenance %s', async (field) => {
+    const h = await fixture();
+    try {
+      const captured = proof();
+      const value = field.endsWith('Digest')
+        ? 'f'.repeat(64)
+        : field === 'assistantMessageIds'
+          ? ['msg_foreign']
+          : field === 'model'
+            ? { ...captured.provenance.model, modelID: 'other' }
+            : 'msg_foreign';
+      expect(
+        await record(h, { nativeProvenance: { ...captured.provenance, [field]: value } }),
+      ).toBe('lineage_unavailable');
+      expect(h.stateRef.current.reviewAssurance!.invocations).toEqual([]);
+    } finally {
+      await h.ws.cleanup();
+    }
+  });
+
+  it('checks exact deadline equality, preserves a live release, and rejects evidence reuse', async () => {
+    const h = await fixture();
+    try {
+      expect(await record(h, { deadlineAt: h.now })).toBe('execution_expired');
+      expect(
+        await record(h, { deadlineAt: '2099-01-01T00:00:00.000Z', executionFailed: () => false }),
+      ).toBe('fulfilled');
+      const assurance = h.stateRef.current.reviewAssurance!;
+      expect(assurance.invocations[0]).toMatchObject({
+        parentSessionId: 'parent',
+        childSessionId: 'child',
+        promptHash: 'a'.repeat(64),
+        findingsHash: hashFindings(JSON.parse(PAYLOAD)),
+        invokedAt: h.now,
+        fulfilledAt: h.now,
+        capturedVerdict: 'accept',
+        capturedRawFindings: JSON.parse(PAYLOAD),
+      });
+      expect(await record(h)).toBe('reused');
+      expect(h.stateRef.current.reviewAssurance!.invocations).toHaveLength(1);
+      expect(h.stateRef.current.reviewAssurance!.obligations[0]!.blockedCode).toBe(
+        'SUBAGENT_EVIDENCE_REUSED',
+      );
+    } finally {
+      await h.ws.cleanup();
+    }
+  });
+
+  it('does not report fulfillment when its persistence port rejects', async () => {
+    const h = await fixture();
+    try {
+      h.deps.updateReviewAssurance = async () => {
+        throw new Error('injected persistence failure');
+      };
+      await expect(record(h)).rejects.toThrow('injected persistence failure');
+      expect(h.stateRef.current.reviewAssurance!.invocations).toEqual([]);
+    } finally {
+      await h.ws.cleanup();
+    }
+  });
   it('binds child, attempt, invocation, dispatch and obligation atomically', async () => {
     const h = await fixture();
     const captured = proof();

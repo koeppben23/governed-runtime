@@ -1,4 +1,4 @@
-/** V2 hook composition for canonical reviewer dispatch. No capture/evidence/recovery writer. */
+/** V2 hook composition consumes canonical dispatch, initial-run and capture owners. */
 import type { Plugin } from '@opencode/plugin';
 import type { SessionPrompt, SessionModelRequest } from '@opencode/plugin/promise/session';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
@@ -8,6 +8,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { GovernanceDelegationDispatch } from '../state/governance-activation.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { buildEnforcementError } from './blocked-result.js';
+import { READ_ONLY_HOST_TOOLS } from './phase-tool-gate.js';
 import { nativeHostCallId } from './opencode-host-adapter.js';
 import { abandonAndBlockByHostCall } from './review/dispatch/durable-dispatch.js';
 import { projectFulfilledReview } from './review/dispatch/native-task-review-execution.js';
@@ -20,6 +21,10 @@ import {
   blockedCaptureOutput,
   rejectNativeReviewCapture,
 } from './review/dispatch/native-review-capture-failure.js';
+import {
+  NativeReviewInitialController,
+  type InitialToolBoundary,
+} from './review/dispatch/native-review-initial.js';
 import type { ActiveGovernanceScope, NativeBefore } from './opencode-governance.js';
 import {
   authorizeNativeReviewDispatch,
@@ -101,21 +106,11 @@ async function contextFor(
   ctx: Plugin.Context,
   runtimeFor: RuntimeFor,
   scope: ActiveGovernanceScope,
+  initial: NativeReviewInitialController,
 ): Promise<void> {
-  const { dispatch } = await childLineage(runtimeFor, scope);
+  await childLineage(runtimeFor, scope);
   const history = await ctx.session.context({ sessionID: scope.sessionId });
-  const users = history.filter((message) => message.type === 'user');
-  const user = users[0];
-  if (
-    users.length !== 1 ||
-    !user ||
-    history.some((message) => message.type !== 'user' && message.type !== 'assistant') ||
-    user.files?.length
-  )
-    return deny(
-      'Only the original un-compacted reviewer request is authorized; continuation/capture remains blocked.',
-    );
-  checkPrompt(user.text, dispatch.canonicalPromptDigest);
+  initial.context(scope.sessionId, history);
 }
 
 async function resolveNativeCaptureTarget(
@@ -163,6 +158,7 @@ async function runNativeReviewerCapture(input: {
   readonly ctx: Plugin.Context;
   readonly runtimeFor: RuntimeFor;
   readonly fence: NativeReviewCaptureFence;
+  readonly initial: NativeReviewInitialController;
   readonly scope: ActiveGovernanceScope;
   readonly event: NativeReviewCompletion;
 }): Promise<void> {
@@ -177,6 +173,7 @@ async function runNativeReviewerCapture(input: {
     };
   };
   const outcome = await executeNativeReviewCapture({
+    initial: input.initial,
     host: {
       context: (sessionID) => ctx.session.context({ sessionID }),
       prompt: (prompt) => ctx.session.prompt(prompt),
@@ -258,6 +255,7 @@ function createReviewerObservationHooks(
   ctx: Plugin.Context,
   runtimeFor: RuntimeFor,
   captureFence: NativeReviewCaptureFence,
+  initial: NativeReviewInitialController,
 ) {
   return {
     async prompt(scope: ActiveGovernanceScope, event: SessionPrompt) {
@@ -274,6 +272,7 @@ function createReviewerObservationHooks(
       checkPrompt(event.prompt.text, dispatch.canonicalPromptDigest);
       if ((await ctx.session.context({ sessionID: scope.sessionId })).length !== 0)
         return deny('The original reviewer prompt cannot be replayed or continued.');
+      initial.admit(scope.sessionId, event.messageID, event.prompt.text);
     },
     async context(
       scope: ActiveGovernanceScope,
@@ -284,7 +283,7 @@ function createReviewerObservationHooks(
         captureFence.observeContext(scope.sessionId, lease, event.tools);
         return;
       }
-      await contextFor(ctx, runtimeFor, scope);
+      await contextFor(ctx, runtimeFor, scope, initial);
     },
     async request(scope: ActiveGovernanceScope, event: SessionModelRequest) {
       const lease = captureFence.activeLease(scope.sessionId);
@@ -299,13 +298,33 @@ function createReviewerObservationHooks(
           'REVIEWER_EXECUTION_OUTCOME_UNKNOWN',
           'Auxiliary reviewer requests are not authorized by dispatch.',
         );
-      await contextFor(ctx, runtimeFor, scope);
+      await childLineage(runtimeFor, scope);
+      initial.request(
+        scope.sessionId,
+        await ctx.session.context({ sessionID: scope.sessionId }),
+        event.model,
+      );
     },
   };
 }
 
+function guardReviewerTool(
+  fence: NativeReviewCaptureFence,
+  scope: ActiveGovernanceScope,
+  event: { readonly agent: string; readonly tool: string },
+): void {
+  if (event.agent !== REVIEWER_SUBAGENT_TYPE) return;
+  fence.beforeTool(scope.sessionId);
+  if (!READ_ONLY_HOST_TOOLS.has(event.tool))
+    throw buildEnforcementError(
+      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      'Reviewer dispatch does not authorize mutations, child delegation or workflow decisions.',
+    );
+}
+
 export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: RuntimeFor) {
   const captureFence = new NativeReviewCaptureFence();
+  const initial = new NativeReviewInitialController();
   const authority = {
     async authorize(scope: ActiveGovernanceScope, event: NativeBefore) {
       if (scope.sessionId !== scope.root.sessionId || event.sessionID !== scope.root.sessionId)
@@ -355,14 +374,30 @@ export function createNativeReviewerAuthority(ctx: Plugin.Context, runtimeFor: R
       await childLineage(runtimeFor, scope);
     },
     async capture(scope: ActiveGovernanceScope, event: NativeReviewCompletion) {
-      await runNativeReviewerCapture({ ctx, runtimeFor, fence: captureFence, scope, event });
+      await runNativeReviewerCapture({
+        ctx,
+        runtimeFor,
+        fence: captureFence,
+        initial,
+        scope,
+        event,
+      });
     },
-    async beforeTool(scope: ActiveGovernanceScope) {
-      captureFence.beforeTool(scope.sessionId);
+    async beforeTool(
+      scope: ActiveGovernanceScope,
+      event: { readonly agent: string; readonly tool: string },
+    ) {
+      guardReviewerTool(captureFence, scope, event);
+    },
+    authorizeTool(event: InitialToolBoundary) {
+      initial.beforeTool(event);
+    },
+    afterTool(event: InitialToolBoundary & { readonly status: 'completed' | 'error' }) {
+      initial.afterTool(event);
     },
   };
   return {
     ...authority,
-    ...createReviewerObservationHooks(ctx, runtimeFor, captureFence),
+    ...createReviewerObservationHooks(ctx, runtimeFor, captureFence, initial),
   };
 }
