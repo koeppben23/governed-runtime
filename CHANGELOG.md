@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native reviewer transport prerequisite probes (#1190).** A real pinned-host
+  Foreground→same-child→terminal test and foreign-input, denied-read, interruption
+  and compaction controls expose the V2 request window without creating FlowGuard
+  review evidence. The existing four product fixtures now explicitly enroll their
+  strict component scope and compare dispatches with the owning native
+  session/message/call tuple. Their required titles/outcomes remain unchanged and
+  failing; no reviewer block or proof generation is relaxed. The version-bound
+  implementation plan keeps capture, audit and recovery acceptance separate.
+  The README ADR reference is aligned with the existing documentation path check.
+
 - **Pinned UI-to-RPC source counterexample (#1190).** The real PTY/TUI probe now
   follows a keyboard callback through ordinary plugin RPC and replays its payload
   through the SDK without another UI interaction. Both reach the same

@@ -14,7 +14,7 @@ V2 must preserve V1 capabilities and governance guarantees, including
 policy-permitted autonomous workflows and fully automatic independent AI review.
 Explicit interactive and authorized autonomous activation are separate required
 paths; human approvals remain policy-dependent. See
-[ADR-010](docs/decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02).
+[ADR-010](./docs/decisions/010-host-neutral-opt-in-governance.md), amendment of 2026-11-02.
 
 FlowGuard provides deterministic workflow control, evidence gates, audit trails,
 and policy-bound decisions around supported AI-assisted engineering hosts. OpenCode

@@ -149,6 +149,11 @@ no parent/reviewer model or reasoning variant is substituted.
 The native V2 reviewer release/completion/capture chain remains unverified and
 blocked, regardless of budgeting configuration. These are implementation limits,
 not installed support; see the [V2 inventory](./host-probes/opencode-v2/implementation-inventory.md#native-entrypointclient-implementation-in-progress).
+The [native transport prerequisite](./host-probes/opencode-v2/reviewer-transport-mechanism.md)
+observes controlled foreground/same-child completion plus adversarial windows
+without loading the product or writing evidence. The four required product
+reviewer contracts remain red; no optional-review workaround or proof-generation
+reinterpretation is authorized by those mechanism positives.
 
 ### Terminal reviewer capacity failures
 

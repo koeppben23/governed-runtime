@@ -183,6 +183,18 @@ from completion and never synthesizes a response `parentID`. Native budget tests
 capture explicit provider-body budgets and compare ordinary parent defaults with
 and without the real product; they do not certify a removed V1 65K rewrite or
 reviewer headroom. Startup failures remain failures under a bounded startup deadline.
+
+`src/cli/opencode-reviewer-transport.smoke.test.ts` separately exercises a real
+foreground native reviewer, same-child explicit prompt and terminal history window,
+with foreign-input, unoffered-read, interruption and manual-compaction controls.
+Its provider uses explicit response gates rather than sleep-based completion
+inference. It loads observation/fencing instrumentation, not FlowGuard product
+authority, and writes no review evidence. It must never replace the four required
+`opencode-reviewer-capture-live.smoke.test.ts` product positives or their verifier.
+Those product fixtures explicitly enroll their strict component-only scope and
+derive call identity from the owning native assistant/tool transcript, not a raw
+provider ID or implicit activation from workflow files.
+
 Tarball-install failures retain the subprocess error,
 signal and killed status so an install timeout is distinguishable from npm rejection.
 

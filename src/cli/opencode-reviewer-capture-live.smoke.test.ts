@@ -1,4 +1,5 @@
-/** Positive acceptance contracts stay red until the actual native product proves them. */
+/** Actual product hooks with explicit component-only activation, not a product
+ * StartGovernance positive. Required reviewer contracts stay red until proved. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createReviewerCaptureHostProbe } from './opencode-reviewer-capture-test-helpers.js';
 import { seedStrictPlanSession } from '../integration/plugin-host-task-diagnostics-test-helpers.js';
@@ -6,6 +7,7 @@ import { readState } from '../adapters/persistence.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { writeStateWithArtifacts } from '../integration/tools/helpers.js';
 import { nativeOpenCodeCandidate } from './opencode-live-host-test-helpers.js';
+import { nativeHostCallId } from '../integration/opencode-host-adapter.js';
 
 const ENABLED =
   process.env.OPENCODE_LIVE === '1' || process.env.FLOWGUARD_OPENCODE_HOST_E2E === '1';
@@ -26,7 +28,18 @@ async function openReview() {
   restore = withTestEnv({ OPENCODE_CONFIG_DIR: probe.env.OPENCODE_CONFIG_DIR! });
   const sessionID = await probe.session();
   const seeded = await seedStrictPlanSession(probe.project, sessionID);
-  await writeStateWithArtifacts(seeded.sessDir, (await readState(seeded.sessDir))!);
+  const state = (await readState(seeded.sessDir))!;
+  await writeStateWithArtifacts(seeded.sessDir, state);
+  await probe.client.rpc.call({
+    location: probe.location,
+    rpcID: 'flowguard-component-activation',
+    method: 'seed',
+    input: {
+      sessionID,
+      policyDigest: state.policySnapshot.hash,
+      worktreeRoot: state.binding.worktree,
+    },
+  });
   expect(probe.host.version).toBe(`opencode v${nativeOpenCodeCandidate.version}`);
   expect(probe.reportedVersion).toBe(probe.host.version);
   expect(probe.providerErrors).toEqual([]);
@@ -42,12 +55,12 @@ async function runReview(mode: 'positive' | 'tool') {
   const tools = history.flatMap((message) =>
     message.type === 'assistant' ? message.content.filter((part) => part.type === 'tool') : [],
   );
-  return { probe, sessionID, seeded, tools };
+  return { probe, sessionID, seeded, tools, history };
 }
 
 describe.skipIf(!ENABLED)('actual FlowGuard native reviewer capture on pinned OpenCode', () => {
   it('leaves the review-required output pending and authorizes the native Task before release', async () => {
-    const { probe, sessionID, seeded, tools } = await runReview('positive');
+    const { probe, sessionID, seeded, tools, history } = await runReview('positive');
     const plan = tools.find((part) => part.name === 'flowguard_plan');
     expect(
       plan,
@@ -65,11 +78,23 @@ describe.skipIf(!ENABLED)('actual FlowGuard native reviewer capture on pinned Op
     expect(output).toContain('reviewExecution');
     expect(output).toContain('flowguard-reviewer');
     expect(output).not.toContain('"reviewResult"');
-    const task = tools.find((part) => part.name === 'subagent');
+    const taskMessage = history.find(
+      (message) =>
+        message.type === 'assistant' &&
+        message.content.some((part) => part.type === 'tool' && part.name === 'subagent'),
+    );
+    const task =
+      taskMessage?.type === 'assistant'
+        ? taskMessage.content.find((part) => part.type === 'tool' && part.name === 'subagent')
+        : undefined;
     expect(task, JSON.stringify(tools)).toMatchObject({ state: { status: 'completed' } });
+    if (taskMessage?.type !== 'assistant' || task?.type !== 'tool')
+      throw new Error('Missing actual native reviewer task/message');
     const state = await readState(seeded.sessDir);
     expect(
-      state?.reviewAssurance?.dispatches.some((dispatch) => dispatch.hostCallId === task?.id),
+      state?.reviewAssurance?.dispatches.some(
+        (dispatch) => dispatch.hostCallId === nativeHostCallId(sessionID, taskMessage.id, task.id),
+      ),
     ).toBe(true);
     const entries = await probe.entries();
     const released = entries.findIndex(

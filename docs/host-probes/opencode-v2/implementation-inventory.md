@@ -27,6 +27,14 @@ of the unobserved error stub and failed MUT4 runs below remain historical result
 
 ## Delivery boundary
 
+**Finding 6 mechanism checkpoint (2026-11-02):** the
+[native reviewer transport prerequisite](./reviewer-transport-mechanism.md) records
+five real-host mechanism positives and corrects component activation/native call
+identity in the four required product fixtures. Those four contracts still fail;
+the product release/capture blocks remain. Controlled foreground/same-child
+execution is not evidence binding or safe unknown-outcome recovery. No historical
+test result, policy exception or proof generation is reclassified.
+
 - **2026-11-02 parity correction:** [ADR-010](../../decisions/010-host-neutral-opt-in-governance.md#explicit-parity-and-autonomous-activation-amendment-2026-11-02)
   requires interactive and explicitly authorized autonomous activation, preserving
   V1 capabilities and governance guarantees. Human approvals remain policy-dependent;

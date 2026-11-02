@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { createNativeHostProbe, type NativeHostProbe } from './opencode-native-test-helpers.js';
+import { COMPONENT_ACTIVATION_SETUP } from './opencode-activation-test-helpers.js';
 
 export interface ReviewerHostEntry {
   readonly hook: string;
@@ -45,6 +46,7 @@ export async function createReviewerCaptureHostProbe(): Promise<ReviewerHostProb
   const sentinel = 'READ_MUST_NOT_REACH_THE_PROVIDER_4782';
   const probe = await createNativeHostProbe({
     product: true,
+    productTestSetup: COMPONENT_ACTIVATION_SETUP,
     agent: REVIEWER_AGENT,
     plugin: `
 import { appendFileSync } from 'node:fs';

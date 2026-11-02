@@ -47,7 +47,11 @@ export async function createNativeHostProbe(
     body?: Record<string, unknown>;
     flowguardConfig?: string;
     prepare?: (project: string, env: NodeJS.ProcessEnv) => Promise<void>;
-    script?: (body: Record<string, unknown>, sessionID: string, index: number) => NativeProbeReply;
+    script?: (
+      body: Record<string, unknown>,
+      sessionID: string,
+      index: number,
+    ) => NativeProbeReply | Promise<NativeProbeReply>;
   } = {},
 ): Promise<NativeHostProbe> {
   const host = resolvePinnedOpenCodeHost();
@@ -66,14 +70,15 @@ export async function createNativeHostProbe(
       const sessionID = request.headers['x-opencode-session-id'];
       if (typeof sessionID !== 'string') throw new Error('Missing native session header');
       requests.push({ body, sessionID });
-      const reply = options.script?.(body, sessionID, requests.length) ?? { text: 'OK' };
+      const requestIndex = requests.length;
+      const reply = await (options.script?.(body, sessionID, requestIndex) ?? { text: 'OK' });
       if (reply.hold) return;
       const delta = reply.tool
         ? {
             tool_calls: [
               {
                 index: 0,
-                id: `call_${requests.length}`,
+                id: `call_${requestIndex}`,
                 type: 'function',
                 function: {
                   name: reply.tool.name,
@@ -85,7 +90,7 @@ export async function createNativeHostProbe(
         : { content: reply.text ?? 'OK' };
       response.writeHead(200, { 'content-type': 'text/event-stream' });
       const base = {
-        id: `chatcmpl-${requests.length}`,
+        id: `chatcmpl-${requestIndex}`,
         object: 'chat.completion.chunk',
         created: 1,
         model: 'probe',

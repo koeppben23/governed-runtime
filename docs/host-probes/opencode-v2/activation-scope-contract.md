@@ -117,6 +117,11 @@ Reviewer dispatch remains separately blocked pending its real release/completion
 capture proof. None of these ordinary-delegation receipts mint reviewer evidence,
 operator decisions or regular edit-error terminality. Transport-v5 and
 `review-assurance.v7` remain unchanged.
+The [Finding 6 native mechanism probe](./reviewer-transport-mechanism.md) is a
+separate prerequisite: its observation fixture creates no product review authority.
+The four actual reviewer contracts retain their required positive outcomes;
+their setup now explicitly enrolls the strict component scope and uses the
+accepted native call tuple, not workflow-state existence or a raw provider ID.
 
 ## Verification boundaries
 
