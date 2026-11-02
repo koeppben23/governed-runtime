@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  resolveReviewOrchestrationMode,
-  normalizeReviewHostPlatform,
-} from './orchestration-mode.js';
+import { resolveReviewOrchestrationMode } from './orchestration-mode.js';
 import { buildChildSessionReviewInstruction } from './child-session-instruction.js';
 import {
   artifactReviewSubjectScope,
@@ -11,49 +8,36 @@ import {
 import type { ReviewDispatchAuthority } from './dispatch-authority.js';
 
 describe('review orchestration mode projection', () => {
-  it('keeps OpenCode on host_structured', () => {
-    expect(resolveReviewOrchestrationMode({ platform: 'opencode' })).toBe('host_structured');
+  it('selects host_structured when native structured review is available', () => {
+    expect(resolveReviewOrchestrationMode({ nativeStructuredReview: true })).toBe(
+      'host_structured',
+    );
   });
 
-  it('treats Claude and Codex as external instruction transport when native review is available', () => {
+  it('selects external instructions only when that transport is actually available', () => {
     expect(
       resolveReviewOrchestrationMode({
-        platform: 'claude-code',
+        nativeStructuredReview: false,
+        externalInstructionTransport: true,
       }),
     ).toBe('external_instruction_pending');
-    expect(
-      resolveReviewOrchestrationMode({
-        platform: 'codex',
-      }),
-    ).toBe('external_instruction_pending');
   });
 
-  it('blocks Claude and Codex when native review is unavailable', () => {
+  it('fails closed without a structured or external transport', () => {
+    expect(resolveReviewOrchestrationMode({ nativeStructuredReview: false })).toBe(
+      'unsupported_blocked',
+    );
     expect(
       resolveReviewOrchestrationMode({
-        platform: 'claude-code',
-        nativeReviewerAvailable: false,
+        nativeStructuredReview: false,
+        externalInstructionTransport: false,
       }),
     ).toBe('unsupported_blocked');
-    expect(
-      resolveReviewOrchestrationMode({
-        platform: 'codex',
-        nativeReviewerAvailable: false,
-      }),
-    ).toBe('unsupported_blocked');
-  });
-
-  it('fails closed for unknown platform', () => {
-    expect(resolveReviewOrchestrationMode({ platform: 'unknown' })).toBe('unsupported_blocked');
-  });
-
-  it('normalizes unsupported platform labels to unknown', () => {
-    expect(normalizeReviewHostPlatform('windsurf')).toBe('unknown');
   });
 });
 
 describe('child-session review instruction metadata', () => {
-  it('includes the binding envelope without projecting a reviewer prompt', () => {
+  it('projects a native subagent only for host_structured review', () => {
     const minted = createObligationAndAttempt(
       undefined,
       {
@@ -84,19 +68,30 @@ describe('child-session review instruction metadata', () => {
       obligation: minted.obligation,
       attempt: minted.attempt,
     };
-    const instruction = buildChildSessionReviewInstruction({
-      mode: 'external_instruction_pending',
-      platform: 'claude-code',
+    const structured = buildChildSessionReviewInstruction({
+      mode: 'host_structured',
       authority,
       iteration: 0,
       planVersion: 1,
     });
+    expect(structured).toMatchObject({
+      mode: 'host_structured',
+      transport: 'native_subagent',
+    });
+    expect(structured).not.toHaveProperty('platform');
 
-    expect(instruction.mode).toBe('external_instruction_pending');
-    expect(instruction.authority).toBe('review_obligation_evidence_binding');
-    expect(instruction.requiredReviewAttestation?.toolObligationId).toBe(
+    const external = buildChildSessionReviewInstruction({
+      mode: 'external_instruction_pending',
+      authority,
+      iteration: 0,
+      planVersion: 1,
+    });
+    expect(external.mode).toBe('external_instruction_pending');
+    expect(external).not.toHaveProperty('transport');
+    expect(external.authority).toBe('review_obligation_evidence_binding');
+    expect(external.requiredReviewAttestation?.toolObligationId).toBe(
       minted.obligation.obligationId,
     );
-    expect(instruction).not.toHaveProperty('reviewerTaskPrompt');
+    expect(external).not.toHaveProperty('reviewerTaskPrompt');
   });
 });

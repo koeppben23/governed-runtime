@@ -62,7 +62,7 @@ function implReviewContinueStatus(state: SessionState): string {
       );
     case 'interrupted_dispatch':
       return (
-        'The authorized reviewer Task release was interrupted. Call ' +
+        'The authorized reviewer subagent release was interrupted. Call ' +
         'flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the ' +
         'same review obligation with a fresh attempt.'
       );

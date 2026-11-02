@@ -1,18 +1,13 @@
 /**
  * @module adapters-binding.test
- * @description Tests for validateBinding, validateCwdAgainstBinding, and fromOpenCodeContext.
+ * @description Tests for validateBinding and validateCwdAgainstBinding.
  */
 import { afterAll, describe, it, expect, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import {
-  validateBinding,
-  validateCwdAgainstBinding,
-  fromOpenCodeContext,
-  BindingError,
-} from './binding.js';
+import { validateBinding, validateCwdAgainstBinding, BindingError } from './binding.js';
 import { makeState, FIXED_TIME } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
@@ -36,14 +31,6 @@ describe('binding', () => {
       });
       const binding = { worktreeRoot: state.binding.worktree, sessionId: 'new-session' };
       expect(validateBinding(state, binding)).toBe(true);
-    });
-
-    it('fromOpenCodeContext maps field names correctly', () => {
-      const raw = { sessionID: 'sess-123', worktree: '/tmp/repo', directory: '/tmp/repo/src' };
-      const ctx = fromOpenCodeContext(raw);
-      expect(ctx.sessionId).toBe('sess-123');
-      expect(ctx.worktree).toBe('/tmp/repo');
-      expect(ctx.directory).toBe('/tmp/repo/src');
     });
 
     it('validateBinding allows different session IDs (continuation)', () => {
@@ -105,16 +92,6 @@ describe('binding', () => {
       expect(err.name).toBe('BindingError');
       expect(err.code).toBe('MISSING_SESSION_ID');
       expect(err instanceof Error).toBe(true);
-    });
-  });
-
-  // ─── EDGE ───────────────────────────────────────────────────
-  describe('EDGE', () => {
-    it('fromOpenCodeContext preserves whitespace in values', () => {
-      const raw = { sessionID: ' sess ', worktree: ' /tmp/repo ', directory: ' /tmp/repo/src ' };
-      const ctx = fromOpenCodeContext(raw);
-      expect(ctx.sessionId).toBe(' sess ');
-      expect(ctx.worktree).toBe(' /tmp/repo ');
     });
   });
 

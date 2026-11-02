@@ -53,7 +53,7 @@ export interface CaptureClosureAuditInput {
   readonly code: string;
   readonly diagnostics: readonly PendingReviewRetryDiagnostic[];
   /**
-   * Child session that produced the failed capture, when the native Task
+   * Child session that produced the failed capture, when the native reviewer subagent
    * release already bound it. It is written to the staled attempt in the SAME
    * mutation that abandons the dispatch, so the discarded reviewer transcript
    * stays attributable. It never authorizes evidence on its own.

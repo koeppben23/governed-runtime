@@ -8,7 +8,7 @@
  *
  * Review verdict enforcement applies four integrity checks:
  * - L1 (Binary Gate): a verdict submission is blocked until a host-observed
- *   visible native Task reviewer invocation with structured same-child findings
+ *   visible native reviewer subagent invocation with structured same-child findings
  *   was recorded for the pending review. This module owns the transient signal
  *   tracking and the L1 gate.
  * - L2 (Session Identity): the evidence participant identity must match the
@@ -27,7 +27,7 @@
  * - review-enforcement-pending-review.ts — Pending-review construction
  *
  * Architecture:
- * - Pure logic module — no OpenCode/plugin dependencies, fully unit-testable.
+ * - Pure logic module — no host/plugin dependencies, fully unit-testable.
  * - Plugin integration happens in plugin.ts (delegates to this module).
  * - Session-scoped state tracked per session ID.
  *
@@ -266,7 +266,7 @@ export function enforceBeforeVerdict(
   if (!pending) return { allowed: true };
 
   // L1 binds to the SPECIFIC pending review, not to the mere existence of any
-  // invocation: the recorded invocation must be the visible native Task
+  // invocation: the recorded invocation must be the visible native reviewer subagent
   // transport, belong to the exact pending obligation/attempt, and expose a
   // navigable host transcript.
   if (pending.obligationId === null) {

@@ -19,10 +19,7 @@ import type { LoopVerdict } from '../../../state/evidence.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { classifyToolCallMode } from '../review-validation-mode.js';
-import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../../review/dispatch/orchestration-mode.js';
+import { resolveReviewOrchestrationMode } from '../../review/dispatch/orchestration-mode.js';
 import { buildChildSessionReviewInstruction } from '../../review/dispatch/child-session-instruction.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
@@ -155,14 +152,9 @@ export function buildArchitectureReviewInstruction(input: {
   /** State whose declarations/graph the reviewer prompt must reflect (#762). */
   state: SessionState;
 }) {
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    nativeReviewerAvailable: platform === 'unknown' ? false : true,
-  });
+  const mode = resolveReviewOrchestrationMode({ nativeStructuredReview: true });
   return buildChildSessionReviewInstruction({
     mode,
-    platform,
     authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,

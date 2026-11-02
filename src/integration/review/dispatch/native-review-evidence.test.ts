@@ -34,6 +34,7 @@ function proof() {
     obligationId: '11111111-1111-4111-8111-111111111111',
     attemptId: '11111111-2222-4111-8111-111111111111',
     model,
+    requestMessageId: 'msg_capture',
     requestText: CAPTURE_PROMPT,
   });
   fence.observePrompt('child', lease.leaseId, lease.requestMessageId, CAPTURE_PROMPT);

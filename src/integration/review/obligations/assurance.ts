@@ -111,7 +111,7 @@ import {
 } from './attempt-lifecycle.js';
 
 /**
- * Resolve the opaque observation capability of the attempt a reviewer Task
+ * Resolve the opaque observation capability of the attempt a reviewer subagent
  * will bind to: the highest-ordinal attempt of the obligation. Returns null
  * when no attempt exists or the obligation backs no frozen repository
  * revision — repository evidence is then unavailable for the attempt.

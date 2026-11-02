@@ -1,6 +1,6 @@
 /**
  * @module integration/review/native-task-review-prompt
- * @description Canonical reviewer Task prompt construction for the native
+ * @description Canonical reviewer subagent prompt construction for the native
  *              reviewer transport.
  *
  * The prompt is host-owned: it renders the frozen material, the reviewer

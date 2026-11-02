@@ -88,7 +88,7 @@ function blocked(reason: string): ReviewDispatchAuthorityResult {
  *
  * Requires the full authority; there is deliberately no obligation-only or
  * attempt-id-only variant, because exactly that separation produced dispatch
- * responses the native Task could never bind to.
+ * responses the native reviewer subagent could never bind to.
  */
 export function reviewObligationResponseFields(
   authority: ReviewDispatchAuthority,

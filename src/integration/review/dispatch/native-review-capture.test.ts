@@ -63,6 +63,7 @@ function captured() {
     obligationId: OBLIGATION,
     attemptId: ATTEMPT,
     model: MODEL,
+    requestMessageId: 'msg_serialize',
     requestText: 'serialize',
   });
   fence.observePrompt('child', lease.leaseId, lease.requestMessageId, 'serialize');
@@ -266,6 +267,7 @@ describe('V2 native capture proof', () => {
       obligationId: OBLIGATION,
       attemptId: ATTEMPT,
       model: MODEL,
+      requestMessageId: 'msg_serialize',
       requestText: 'serialize',
     });
     expect(() =>
@@ -275,6 +277,7 @@ describe('V2 native capture proof', () => {
         obligationId: OBLIGATION,
         attemptId: ATTEMPT,
         model: MODEL,
+        requestMessageId: 'msg_other',
         requestText: 'serialize',
       }),
     ).toThrow('already owns');
@@ -338,6 +341,7 @@ describe('V2 native capture proof', () => {
       obligationId: OBLIGATION,
       attemptId: ATTEMPT,
       model: MODEL,
+      requestMessageId: 'msg_serialize',
       requestText: 'serialize',
     });
     expect(() => act(fence, lease)).toThrow();

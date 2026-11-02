@@ -59,7 +59,7 @@ export interface AdvisoryChallengeResolution {
   readonly resolvedAt: string;
 }
 
-/** Inputs for the canonical, copy-ready reviewer Task prompt. */
+/** Inputs for the canonical, copy-ready reviewer subagent prompt. */
 export interface ReviewerTaskPromptInput {
   readonly iteration: number;
   readonly planVersion?: number | null;

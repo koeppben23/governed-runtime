@@ -11,7 +11,7 @@
  * When a rejected attempt removes the last legal continuation, the obligation
  * is deterministically blocked instead of staying `pending`. A `pending`
  * obligation with no continuation is an illegal persisted state: it wedges the
- * workflow (no reviewer Task can be dispatched, no reissue exists, no verdict
+ * workflow (no reviewer subagent can be dispatched, no reissue exists, no verdict
  * can be submitted). There is deliberately no repairable model-output
  * rejection: a rejected attempt never authorizes a fresh attempt on the same
  * obligation.
@@ -49,7 +49,7 @@ export function settleReviewObligationAfterAttempt(
   const obligation = assurance.obligations.find((o) => o.obligationId === obligationId);
   if (!obligation || obligation.status !== 'pending') return state;
 
-  // A bindable attempt keeps the obligation pending: the reviewer Task can
+  // A bindable attempt keeps the obligation pending: the reviewer subagent can
   // still be dispatched against it.
   if (findBindableAttempt(assurance, obligationId)) return state;
 

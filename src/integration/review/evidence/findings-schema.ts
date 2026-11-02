@@ -2,7 +2,7 @@
  * @module integration/review-findings-schema
  * @description JSON Schema definition for the ReviewFindings structured output.
  *
- * This schema is passed to the OpenCode SDK `session.prompt()` format field
+ * This schema is passed to the host session prompt format field
  * to enforce structured JSON output from the reviewer subagent.
  *
  * Enum values and discriminator variants are rendered from reviewer-contract.ts,
@@ -455,7 +455,7 @@ function requiredChallengeItems(
  *
  * It narrows ONLY fields whose admissible values the capture gate already fixes
  * by exact equality, so the model is told the exact admissible values. The
- * pinned OpenCode host forwards the schema as the StructuredOutput tool
+ * pinned host forwards the schema as the StructuredOutput tool
  * parameters but does NOT validate the answer against it (AI SDK `jsonSchema()`
  * without a validator); the capture gate stays the only enforcement:
  * - `iteration`, `planVersion`, `attestation.toolObligationId` (attestation

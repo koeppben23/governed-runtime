@@ -90,7 +90,7 @@ export async function blockIncoherentCompletedCapture(input: {
 }
 
 /** Persistently close authorized dispatches whose absolute deadline elapsed
- * before a new reviewer Task may be authorized. */
+ * before a new reviewer subagent may be authorized. */
 async function reconcileExpiredAuthorizedDispatches(input: {
   readonly runtime: NativeReviewTransportRuntime;
   readonly sessDir: string;
@@ -185,7 +185,7 @@ export async function projectFulfilledReview(input: {
   });
   if (invocation)
     input.output.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
-  input.runtime.log.info('orchestrator', 'native reviewer Task fulfilled review obligation', {
+  input.runtime.log.info('orchestrator', 'native reviewer subagent fulfilled review obligation', {
     sessionId: input.sessionId,
     childSessionId: input.childSessionId,
     obligationId: input.obligationId,

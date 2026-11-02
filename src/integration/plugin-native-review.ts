@@ -1,4 +1,5 @@
 /** V2 hook composition consumes canonical dispatch, initial-run and capture owners. */
+import { randomUUID } from 'node:crypto';
 import type { Plugin } from '@opencode/plugin';
 import type { SessionPrompt, SessionModelRequest } from '@opencode/plugin/promise/session';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
@@ -171,6 +172,7 @@ async function runNativeReviewerCapture(input: {
     initial: input.initial,
     host: {
       context: (sessionID) => ctx.session.context({ sessionID }),
+      mintRequestMessageId: () => `msg_${randomUUID().replaceAll('-', '')}`,
       prompt: (prompt) => ctx.session.prompt(prompt),
       wait: (sessionID) => ctx.session.wait({ sessionID }),
     },

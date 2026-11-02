@@ -4,16 +4,16 @@
  *
  * Host-Observed Independent Review for /implement
  *
- * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
- * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. The HOST captures the reviewer's structured findings into
+ * Architecture: FlowGuard does NOT call subagents. The host primary agent
+ * orchestrates independent review by calling the native flowguard-reviewer
+ * subagent. The HOST captures the reviewer's structured findings into
  * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
- * 4. Primary agent calls flowguard-reviewer subagent via Task tool
+ * 4. Primary agent calls the native flowguard-reviewer subagent
  * 5. Host captures the reviewer's structured findings into invocation evidence
  * 6. Primary agent submits the review verdict ONLY (flowguard_review_implementation)
  * 7. FlowGuard resolves the host-captured findings, validates, and persists them
@@ -31,13 +31,13 @@
  *
  * Multi-call pattern driven by the LLM:
  *
- * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
+ * Step 1: LLM makes code changes using host built-in tools (read, write, shell)
  * Step 2: LLM calls flowguard_implement({})
  *   -> Tool auto-detects changed files via git, records ImplEvidence
  *   -> Auto-advances to IMPL_REVIEW
  *   -> Returns "review needed" with policy-conditional next-action
  *
- * Step 3: LLM calls flowguard-reviewer subagent via Task tool
+ * Step 3: LLM calls flowguard-reviewer subagent via reviewer subagent
  * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
  *   -> Tool resolves the host-captured findings, records the review iteration,
  *      and checks convergence
@@ -373,9 +373,7 @@ export async function handleImplRecord(
   }
   const { files, baselineScoping } = scoped.subject;
 
-  const domainFiles = files.filter(
-    (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
-  );
+  const domainFiles = files.filter((file) => !isNonDomainConfigPath(file));
   const digest = await computeImplementationDigest({
     worktree: input.worktree,
     files,

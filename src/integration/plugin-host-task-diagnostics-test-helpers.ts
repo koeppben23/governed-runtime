@@ -227,7 +227,7 @@ export function setupFullCycle(
 
 /**
  * Seed a strict PLAN-phase session with one pending plan review obligation and
- * its first attempt, plus frozen review material for the native reviewer Task.
+ * its first attempt, plus frozen review material for the native reviewer subagent.
  * Shared by the plugin native-review transport suites.
  */
 export async function seedStrictPlanSession(worktree: string, sessionID: string) {

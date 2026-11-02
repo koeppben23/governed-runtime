@@ -30,7 +30,7 @@ import { IntegrationInvariantError } from '../../errors.js';
  * the caller-provided host session id.
  *
  * @param sessDir - Session directory path
- * @param hostSessionId - Host (OpenCode) session identifier
+ * @param hostSessionId - Host session identifier
  * @param phase - Current workflow phase
  * @param event - Audit event name (e.g. 'review:obligation_created')
  * @param detail - Event detail payload

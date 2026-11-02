@@ -94,7 +94,7 @@ export function buildRequiredReviewAttestationPayload(obligationId: string): {
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     recovery: [
       'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
-      `Invoke the visible native Task for ${REVIEWER_SUBAGENT_TYPE}.`,
+      `Invoke the visible native reviewer subagent for ${REVIEWER_SUBAGENT_TYPE}.`,
       'Bind the requiredReviewAttestation values to the same-child structured reviewer invocation.',
       'Wait for FlowGuard to capture a complete structured ReviewFindings object and re-run flowguard_review with reviewObligationId.',
     ],
@@ -115,7 +115,6 @@ export function formatMissingContentAnalysis(authority: ReviewDispatchAuthority)
   const obligationId = authority.obligation.obligationId;
   const instruction = buildChildSessionReviewInstruction({
     mode: 'host_structured',
-    platform: 'opencode',
     authority,
     iteration: authority.obligation.iteration,
     planVersion: authority.obligation.planVersion,
@@ -124,8 +123,8 @@ export function formatMissingContentAnalysis(authority: ReviewDispatchAuthority)
     status: 'pending_review',
     code: 'CONTENT_ANALYSIS_REQUIRED',
     message:
-      `Content-aware /review requires a visible native Task review by ${REVIEWER_SUBAGENT_TYPE}. ` +
-      'Invoke the reviewer Task, wait for FlowGuard to capture its same-child structured findings, then re-run flowguard_review with reviewObligationId.',
+      `Content-aware /review requires a visible native reviewer subagent review by ${REVIEWER_SUBAGENT_TYPE}. ` +
+      'Invoke the reviewer subagent, wait for FlowGuard to capture its same-child structured findings, then re-run flowguard_review with reviewObligationId.',
     reviewObligationId: obligationId,
     ...reviewObligationResponseFields(authority),
     reviewDispatch: instruction.reviewDispatch,

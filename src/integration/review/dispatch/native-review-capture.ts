@@ -1,6 +1,6 @@
 /**
  * @module integration/review/native-review-capture
- * @description OpenCode V2 same-child terminal capture. The after-hook verifies
+ * @description Native same-child terminal capture. The after-hook verifies
  * a pre-bound dispatch/attempt/child; it never derives review authority from the
  * returned model text. Findings validation and the evidence/audit writer remain
  * canonical owners.
@@ -52,6 +52,8 @@ export class NativeReviewCaptureOutcomeUnknownError extends Error {
 
 export interface NativeCaptureHost {
   context(sessionID: string): Promise<readonly unknown[]>;
+  /** Mint one host-valid request message identity for the serialization prompt. */
+  mintRequestMessageId(): string;
   prompt(input: {
     readonly sessionID: string;
     readonly id: string;
@@ -104,12 +106,13 @@ export class NativeReviewCaptureFence {
     readonly obligationId: string;
     readonly attemptId: string;
     readonly model: ReviewerModelSelection;
+    readonly requestMessageId: string;
     readonly requestText: string;
   }): { readonly leaseId: string; readonly requestMessageId: string } {
     if (this.active.has(input.childSessionId))
       throw new NativeReviewCaptureError('Reviewer capture already owns this child.');
     const leaseId = randomUUID();
-    const requestMessageId = `msg_${randomUUID().replaceAll('-', '')}`;
+    const requestMessageId = input.requestMessageId;
     this.active.set(input.childSessionId, {
       leaseId,
       ...input,
@@ -458,6 +461,7 @@ async function startSerialization(input: NativeCaptureInput): Promise<{
     obligationId: input.obligation.obligationId,
     attemptId: input.attempt.attemptId,
     model: reviewed.model,
+    requestMessageId: input.host.mintRequestMessageId(),
     requestText: promptText,
   });
   return { reviewed, lease, promptText };

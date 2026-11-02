@@ -64,7 +64,7 @@ export interface ReviewFindingsValidationContext {
   readonly assurance?: ReviewAssuranceState;
   /** Obligation type for strict checks. */
   readonly obligationType?: ReviewObligationType;
-  /** Parent OpenCode session expected in invocation evidence. */
+  /** Parent host session expected in invocation evidence. */
   readonly reviewParentSessionId?: string;
   /** Author-proposed implementation resolutions requiring independent verdicts. */
   readonly unresolvedImplementationChallengeIds?: readonly string[];

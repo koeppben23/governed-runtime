@@ -1,11 +1,10 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
+import type { ReviewOrchestrationMode } from './orchestration-mode.js';
 import { reviewDispatchRequired } from '../enforcement/dispatch-signal.js';
 import type { ReviewDispatchAuthority } from './dispatch-authority.js';
 
 export interface ChildSessionReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
-  readonly platform: ReviewHostPlatform;
   /** Exact current obligation/attempt authority; a dispatch cannot exist without it. */
   readonly authority: ReviewDispatchAuthority;
   readonly iteration: number;
@@ -15,16 +14,16 @@ export interface ChildSessionReviewInstructionInput {
 
 /**
  * Machine-actionable metadata for a host-created reviewer child session; never
- * a reviewer prompt. On OpenCode the parent calls native subagent with only the
- * reviewer identity/description. The plugin injects the canonical frozen prompt
- * at the native before-hook, so model-authored prompt bytes never become review
- * authority.
+ * a reviewer prompt. For host_structured review the parent calls its native
+ * subagent with only the reviewer identity/description. The host adapter injects
+ * the canonical frozen prompt at the native before-hook, so model-authored
+ * prompt bytes never become review authority.
  */
 export function buildChildSessionReviewInstruction(input: ChildSessionReviewInstructionInput) {
   const obligation = input.authority.obligation;
   const status = input.mode === 'unsupported_blocked' ? 'unsupported_blocked' : 'pending_review';
   const nativeSubagent =
-    input.mode === 'host_structured' && input.platform === 'opencode'
+    input.mode === 'host_structured'
       ? {
           transport: 'native_subagent' as const,
           action: 'call_subagent' as const,
@@ -40,7 +39,6 @@ export function buildChildSessionReviewInstruction(input: ChildSessionReviewInst
       : {};
   const metadata = {
     mode: input.mode,
-    platform: input.platform,
     status,
     reviewerAgent: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
     authority: 'review_obligation_evidence_binding' as const,

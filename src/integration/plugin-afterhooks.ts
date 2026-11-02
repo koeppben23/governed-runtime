@@ -9,7 +9,7 @@
  *
  * Independent review is intentionally NOT auto-spawned here. A review-required
  * FlowGuard response remains pending so the parent agent invokes OpenCode's
- * native Task surface; that host-visible Task is the single productive review
+ * native reviewer subagent surface; that host-visible Task is the single productive review
  * transport and owns the child-session lifecycle.
  *
  * @version v2
