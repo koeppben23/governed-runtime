@@ -24,6 +24,7 @@ import { materializeEvidenceArtifacts } from './evidence-artifacts.js';
 import { initWorkspace, workspacesHome } from './init.js';
 import { hashFile, hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { isBindableReviewTransport } from '../../state/evidence-review-invocation.js';
 import { BINDING, makeProgressedState, PLAN_REVIEW_ASSURANCE } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
 import { withTestEnv } from '../../integration/test-helpers.js';
@@ -205,6 +206,7 @@ describe('adapters/workspace/archive-read-verified', () => {
         ]),
       );
       expect(fixture.state.reviewAssurance?.invocations[0]?.transportVersion).toBe(5);
+      expect(isBindableReviewTransport(fixture.state.reviewAssurance!.invocations[0]!)).toBe(false);
     });
 
     it('rejects a tampered historical V5 archive', async () => {
