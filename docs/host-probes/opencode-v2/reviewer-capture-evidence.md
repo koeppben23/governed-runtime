@@ -49,9 +49,13 @@ were accepted before that history became the next frozen prefix. Later prefix
 mutation is rejected, but that is a different guarantee. This establishes the
 controller's current validation limit, not a demonstrated reachable native-host
 injection path. Do not describe these tests as a proof of tool-result-byte
-attestation. Native lifecycle reachability and the appropriate final-result
-observation boundary remain **NOT_VERIFIED**; hashing a pre-normalization or
-pre-truncation tool result must not be assumed equivalent to the host history.
+attestation. The [R4 native result-boundary investigation](reviewer-tool-result-evidence.md)
+now reproduces later privileged After/Context replacements and actual post-hook
+normalization/truncation. It does not prove unprivileged reachability or establish
+a provider-neutral immutable final-consumption boundary. Hashing a
+pre-normalization or pre-truncation tool result must not be assumed equivalent
+to the host history or outgoing request. R4 remains open; no production receipt
+or evidence-recorder change is made by that research checkpoint.
 
 ### R2 remains a step-4 proof obligation
 

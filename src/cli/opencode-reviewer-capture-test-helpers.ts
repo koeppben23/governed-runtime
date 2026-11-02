@@ -41,6 +41,9 @@ export async function createReviewerCaptureHostProbe(
     readonly reviewArguments?: Record<string, unknown>;
     readonly onReview?: (childSessionID: string) => Promise<void>;
     readonly initialRead?: boolean;
+    /** Adversarial/observational fixture hooks registered AFTER Product.setup.
+     * Never installed authority and never a replacement product implementation. */
+    readonly postProductSetup?: string;
   } = {},
 ): Promise<ReviewerHostProbe> {
   let scenario: 'positive' | 'tool' | 'interrupted' = 'positive';
@@ -53,7 +56,12 @@ export async function createReviewerCaptureHostProbe(
   const sentinel = 'READ_MUST_NOT_REACH_THE_PROVIDER_4782';
   const probe = await createNativeHostProbe({
     product: true,
-    productTestSetup: COMPONENT_ACTIVATION_SETUP,
+    productTestSetup:
+      options.postProductSetup === undefined
+        ? COMPONENT_ACTIVATION_SETUP
+        : `const activationCleanup = await (async () => { ${COMPONENT_ACTIVATION_SETUP} })();
+         const probeCleanup = await (async () => { ${options.postProductSetup} })();
+         return async () => { await probeCleanup?.(); await activationCleanup?.(); };`,
     agent: REVIEWER_AGENT,
     plugin: `
 import { appendFileSync } from 'node:fs';

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native tool-result boundary probes (#1190, R4).** Four pinned-host
+  diagnostics correlate a real read's After result, normalized/truncated success
+  event, stored history, outgoing Context and provider-received request. Later
+  privileged test hooks can replace After or Context content without preventing
+  review fulfillment. These are native counterexamples, not unprivileged exploit
+  or assurance-positive tests; no production attestation is added. The evidence
+  report records why an early result digest or History reread cannot prove the
+  final consumed representation. R4 and Finding 6 remain blocked.
 - **Initial native reviewer provenance (#1190, R1/R3).** Every initial
   assistant step now requires a live context/primary-request boundary. Multi-step
   reviews retain permitted local tools with exact native before/after receipts;
