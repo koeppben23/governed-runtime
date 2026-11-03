@@ -337,8 +337,84 @@ describe('native capture composition with durable evidence', () => {
         },
       });
       expect(h.host.prompt).toHaveBeenCalledTimes(1);
+      await expect(h.reviewer.capture(h.root, h.event)).rejects.toThrow(
+        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      );
+      const late = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+      expect(late.attempts).toHaveLength(2);
+      expect(late.invocations).toEqual([]);
     },
   );
+
+  it('closes the obligation without a new child when the frozen attempt budget is exhausted', async () => {
+    const h = await fixture(true);
+    const before = (await readState(h.seeded.sessDir))!;
+    await writeStateWithArtifacts(h.seeded.sessDir, {
+      ...before,
+      reviewAssurance: {
+        ...before.reviewAssurance!,
+        obligations: before.reviewAssurance!.obligations.map((obligation) => ({
+          ...obligation,
+          maxReviewerAttempts: 0,
+        })),
+        attempts: before.reviewAssurance!.attempts.map((attempt) => ({ ...attempt, ordinal: 1 })),
+      },
+    });
+    h.controls.payload = JSON.stringify({
+      ...JSON.parse(h.controls.payload),
+      majorRisks: [
+        {
+          severity: 'minor',
+          category: 'quality',
+          message: 'Frozen context supports this plan section.',
+          relation: {
+            subjectAnchors: [
+              {
+                kind: 'artifact_section',
+                artifactKind: 'plan',
+                artifactDigest: 'test-subject-digest',
+                sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+              },
+            ],
+            evidenceLocations: [{ path: 'context.txt', revision: 'head', line: 1 }],
+          },
+        },
+      ],
+    });
+    vi.spyOn(observationReplay, 'replayObservationCaptures').mockRejectedValueOnce(
+      new PersistenceError('READ_FAILED', 'injected observation failure'),
+    );
+    await h.reviewer.capture(h.root, h.event);
+    const state = (await readState(h.seeded.sessDir))!;
+    const assurance = state.reviewAssurance!;
+    expect(assurance.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+    });
+    expect(assurance.attempts).toHaveLength(1);
+    expect(assurance.attempts[0]!.status).toBe('stale');
+    expect(assurance.invocations).toEqual([]);
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+    expect(h.event.result.content).toContain('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+    const closureAudits = state.pendingAuditOperations.filter(
+      (operation) =>
+        operation.kind === 'semantic' && operation.semantic.event === 'review:obligation_blocked',
+    );
+    expect(closureAudits).toHaveLength(1);
+  });
+
+  it('serializes concurrent capture completions exactly once', async () => {
+    const h = await fixture();
+    const results = await Promise.allSettled([
+      h.reviewer.capture(h.root, h.event),
+      h.reviewer.capture(h.root, h.event),
+    ]);
+    expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
+    const state = (await readState(h.seeded.sessDir))!.reviewAssurance!;
+    expect(state.invocations).toHaveLength(1);
+    expect(state.attempts).toHaveLength(1);
+    expect(h.host.prompt).toHaveBeenCalledTimes(1);
+  });
 
   it('uses the canonical pre-bind closure for an already blocked obligation', async () => {
     const h = await fixture();

@@ -191,8 +191,8 @@ attempt. Terminal, provenance, mandate and integrity codes still close
 fail-closed, and a second re-arm beyond the frozen budget closes the obligation.
 The canonical pre-bind, incoherent-verdict and expired-dispatch closures are also
 wired into native authorization/capture; they leave no invocation and a late
-child answer cannot bind. Native exhaustion and concurrent/late-completion
-coverage remain open reviewer parity work.
+child answer cannot bind. Product-composition coverage now includes exhaustion, concurrent capture and
+late old-child rejection; pinned-host/installed acceptance remains open.
 
 ### Terminal reviewer capacity failures
 

@@ -42,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical bounded `reviewRetry` envelope. The canonical pre-bind,
   incoherent-verdict and expired-dispatch closures are wired into native
   authorization/capture. Terminal/provenance/mandate failures remain
-  fail-closed; native exhaustion, concurrent/late completion and R4 remain open.
+  fail-closed. Product-composition tests cover exhaustion, concurrent capture and
+  late old-child rejection; pinned-host/installed acceptance and R4 remain open.
 
 - Document the distinction between autonomous-activation RPC access and the
   server-resolved actor identity, including shared-instance access-control and
