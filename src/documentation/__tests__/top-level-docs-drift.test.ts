@@ -85,13 +85,19 @@ function isProductAlias(definition: InstalledCommandDefinition): boolean {
 
 const productAliasDefinitions = INSTALLED_COMMANDS.filter(isProductAlias);
 const productAliasTemplates = new Set<string>(
-  productAliasDefinitions.map((definition) => definition.templateFile),
+  productAliasDefinitions.flatMap((definition) =>
+    definition.templateFile === null ? [] : [definition.templateFile],
+  ),
 );
 
 describe('documentation/top-level-docs-drift', () => {
-  const installedCommands = INSTALLED_TEMPLATE_FILES.map((templateFile) =>
-    slash(templateFile.replace(/\.md$/, '')),
-  ).sort();
+  // Installed templates plus native plugin commands (registered, never installed).
+  const installedCommands = [
+    ...INSTALLED_TEMPLATE_FILES.map((templateFile) => slash(templateFile.replace(/\.md$/, ''))),
+    ...INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null).map(
+      (definition) => definition.invocation,
+    ),
+  ].sort();
 
   const productAliasCommands = productAliasDefinitions
     .map((definition) => definition.invocation)

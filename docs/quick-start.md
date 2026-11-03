@@ -21,6 +21,11 @@ Open OpenCode and start a governed session:
 /start
 ```
 
+`/start` is a native plugin command. Run it in the root session (not in a delegated
+subagent session); it prepares the workflow and activates governance for that
+session only. Until then OpenCode behaves natively. An optional single argument
+selects a policy mode, for example `/start team`.
+
 After starting, FlowGuard enters the **READY** phase. Choose one of three flows.
 
 ## Ticket Flow (Full Development Lifecycle)
@@ -122,7 +127,12 @@ Create an Architecture Decision Record. The flow is symmetric to `/plan`: ADR
 authoring runs through the same independent-subagent review loop (F13 parity).
 
 ```
-/architecture title="Use PostgreSQL for primary storage" adrText="## Context\n…\n## Decision\n…\n## Consequences\n…"
+/architecture title="Use PostgreSQL for primary storage" adrText="## Context
+…
+## Decision
+…
+## Consequences
+…"
 ```
 
 The ADR must include `## Context`, `## Decision`, and `## Consequences` sections

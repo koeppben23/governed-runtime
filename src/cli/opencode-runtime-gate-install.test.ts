@@ -210,4 +210,30 @@ describe('native installation boundary', () => {
       expect(await readFile(old, 'utf8')).toBe('obsolete bytes');
     },
   );
+  it.each([false, true])(
+    'refuses an installed commands/start.md that collides with native /start, force=%s',
+    async (force) => {
+      const commands = join(tmpDir, '.opencode', 'commands');
+      await mkdir(commands, { recursive: true });
+      const shadow = join(commands, 'start.md');
+      await writeFile(shadow, 'any owner bytes');
+      const result = await install(repoArgs({ coreTarball: await createMockTarball(), force }));
+      expect(result.ops).toEqual([]);
+      expect(result.errorDetails).toContainEqual(
+        expect.objectContaining({ code: 'MANAGED_ARTIFACT_CONFLICT' }),
+      );
+      expect(await readFile(shadow, 'utf8')).toBe('any owner bytes');
+      expect(existsSync(join(tmpDir, '.opencode', PLUGIN_RELATIVE_PATH))).toBe(false);
+      const removal = await uninstall(repoArgs({ action: 'uninstall' }));
+      expect(removal.errorDetails ?? []).not.toContainEqual(
+        expect.objectContaining({ code: 'MANAGED_ARTIFACT_CONFLICT' }),
+      );
+      expect(await readFile(shadow, 'utf8')).toBe('any owner bytes');
+    },
+  );
+  it('never installs a start command template next to the native /start command', async () => {
+    const result = await install(repoArgs({ coreTarball: await createMockTarball() }));
+    expect(result.errors).toEqual([]);
+    expect(existsSync(join(tmpDir, '.opencode', 'commands', 'start.md'))).toBe(false);
+  });
 });

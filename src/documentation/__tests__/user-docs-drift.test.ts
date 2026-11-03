@@ -49,7 +49,9 @@ function isProductAlias(definition: InstalledCommandDefinition): boolean {
 
 const productAliasDefinitions = INSTALLED_COMMANDS.filter(isProductAlias);
 const productAliasTemplates = new Set<string>(
-  productAliasDefinitions.map((definition) => definition.templateFile),
+  productAliasDefinitions.flatMap((definition) =>
+    definition.templateFile === null ? [] : [definition.templateFile],
+  ),
 );
 
 function canonicalTargetFor(definition: InstalledCommandDefinition): string {

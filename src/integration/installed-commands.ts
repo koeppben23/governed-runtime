@@ -82,8 +82,11 @@ type ToolName =
 
 export interface InstalledCommandDefinition {
   readonly id: InstalledCommandId;
-  /** Template body file to install. Multiple definitions may share a file. */
-  readonly templateFile: `${string}.md`;
+  /**
+   * Template body file to install; multiple definitions may share a file. `null`
+   * marks a native plugin command that is registered at runtime, never installed.
+   */
+  readonly templateFile: `${string}.md` | null;
   readonly invocation: `/${string}`;
   readonly kind: 'workflow' | 'operational' | 'preferred_name' | 'action_variant' | 'convenience';
   readonly target: Readonly<{
@@ -243,7 +246,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   },
   {
     id: 'alias.start',
-    templateFile: 'start.md',
+    templateFile: null,
     invocation: '/start',
     kind: 'preferred_name',
     target: { toolName: TOOL_FLOWGUARD_HYDRATE, workflowCommand: Command.HYDRATE },
@@ -410,7 +413,11 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
 
 /** Unique template files across all installed interface identities. */
 export const INSTALLED_TEMPLATE_FILES: readonly string[] = [
-  ...new Set(INSTALLED_COMMANDS.map((definition) => definition.templateFile)),
+  ...new Set(
+    INSTALLED_COMMANDS.flatMap((definition) =>
+      definition.templateFile === null ? [] : [definition.templateFile],
+    ),
+  ),
 ];
 
 export function getInstalledCommand(invocation: string): InstalledCommandDefinition | undefined {

@@ -57,11 +57,11 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 This describes the intended governed OpenCode workflow, not completed V2
 activation/reviewer acceptance. Installation alone cannot enable it.
 
-Three governed flows are available after `/start` (or `/hydrate`):
+Three governed flows are available after `/start`:
 
 **Ticket flow** — full development lifecycle:
 
-1. `/start` — bootstrap the session
+1. `/start` — start governance and bootstrap the session
 2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan (subagent-reviewed iteratively)
 4. `/approve` — approve the plan (or `/request-changes` to revise)

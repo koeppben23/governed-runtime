@@ -41,7 +41,8 @@ export interface RegistrationConsistencyReport {
 /** Minimal view of an installed command required for the checks. */
 export interface InstalledCommandView {
   readonly invocation: string;
-  readonly templateFile: string;
+  /** `null` for a native plugin command, which has no installed body by design. */
+  readonly templateFile: string | null;
   readonly target: { readonly toolName: string; readonly workflowCommand?: string | undefined };
 }
 
@@ -65,7 +66,7 @@ export function evaluateRegistrationConsistency(
 ): RegistrationConsistencyReport {
   const findings: RegistrationConsistencyFinding[] = [];
   for (const cmd of inputs.installedCommands) {
-    if (!inputs.templateFiles.has(cmd.templateFile)) {
+    if (cmd.templateFile !== null && !inputs.templateFiles.has(cmd.templateFile)) {
       findings.push({
         rule: 'template_body_present',
         invocation: cmd.invocation,

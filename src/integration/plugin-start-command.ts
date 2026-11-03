@@ -14,6 +14,7 @@ import type { Plugin } from '@opencode/plugin';
 import { resolveActorForPolicy } from '../adapters/actor-context.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
+import { NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
 import type { ActorInfo } from '../state/evidence-identity.js';
 import type { GovernanceDecisionActor } from '../state/governance-activation.js';
 import { POLICY_MODES, PolicyModeSchema, type PolicyMode } from '../state/policy-mode.js';
@@ -21,8 +22,6 @@ import type { SessionState } from '../state/schema.js';
 import { buildEnforcementError } from './blocked-result.js';
 import type { OpenCodeGovernance } from './opencode-governance.js';
 import { hydrate } from './tools/index.js';
-
-const START_COMMAND_NAME = 'start';
 
 type Registration = { dispose(): Promise<void> };
 type CommandInvocation = {
@@ -45,7 +44,7 @@ export function registerStartCommand(
 ): Promise<Registration> {
   return ctx.command.transform((editor) =>
     editor.add({
-      name: START_COMMAND_NAME,
+      name: NATIVE_START_COMMAND,
       description: `FlowGuard — start governance for this session (optional policy mode: ${POLICY_MODES.join(', ')}).`,
       execute: (input) => deps.guard(() => runStart(ctx, deps, input)),
     }),

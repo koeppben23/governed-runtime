@@ -143,6 +143,12 @@ Expected output:
   N/N checks passed
 ```
 
+`/start` is registered natively by the FlowGuard plugin and is never installed as
+a command file. Install and `doctor` refuse a target that contains
+`commands/start.md`, whoever owns it, with `MANAGED_ARTIFACT_CONFLICT`: such a
+file would collide with the native command. Move or rename it, then retry;
+`--force` does not remove it.
+
 ## Install from Local Source Checkout
 
 Dogfood installation from a source checkout is owned by the

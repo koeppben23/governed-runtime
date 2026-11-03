@@ -14,6 +14,13 @@
 export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
 
 /**
+ * Native host command registered by the FlowGuard plugin to start governance.
+ * It is never installed as a command template; an installed template of the same
+ * name would collide with it.
+ */
+export const NATIVE_START_COMMAND = 'start';
+
+/**
  * Block code when the session write lock could not be acquired before timeout
  * because a concurrent operation held it (#429). Hydrate maps a
  * PersistenceError(LOCK_TIMEOUT) to this registered reason so contention fails

@@ -26,7 +26,6 @@ import { REVIEW_COMMAND } from './review.js';
 import { ARCHITECTURE_COMMAND } from './architecture.js';
 import { ABORT_COMMAND } from './abort.js';
 import { ARCHIVE_COMMAND } from './archive.js';
-import { START_COMMAND } from './start.js';
 import { TASK_COMMAND } from './task.js';
 import { APPROVE_COMMAND } from './approve.js';
 import { OVERRIDE_APPROVE_COMMAND } from './override-approve.js';
@@ -54,7 +53,6 @@ const COMMAND_BODIES: Record<string, string> = {
   'architecture.md': ARCHITECTURE_COMMAND,
   'abort.md': ABORT_COMMAND,
   'archive.md': ARCHIVE_COMMAND,
-  'start.md': START_COMMAND,
   'task.md': TASK_COMMAND,
   'approve.md': APPROVE_COMMAND,
   'override-approve.md': OVERRIDE_APPROVE_COMMAND,

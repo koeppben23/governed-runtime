@@ -192,6 +192,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code `START_ARGUMENTS_INVALID`; the `GOVERNANCE_NOT_ACTIVE` recovery now names
   `/start`. ADR-004 records the new composition file.
 
+- **`/start` is no longer an installed command template (#1190).** The
+  `start.md` template is removed; the command catalogue marks `/start` as a
+  native plugin command without a template file, and the canonical command name
+  is owned by `shared/flowguard-identifiers.ts`. OpenCode install and `doctor`
+  refuse a target containing `commands/start.md`, whoever owns it, with
+  `MANAGED_ARTIFACT_CONFLICT` and preserve its bytes; `--force` does not remove
+  it, and uninstall is unaffected. The installed template set and its golden hash
+  shrink accordingly.
+
 - **Native authority-source mechanism probes (#1190).** Actual V2 host tests
   establish private plugin-storage persistence across reload, graceful restart
   and forced process termination, while exposing its host-wide plugin-ID scope.
