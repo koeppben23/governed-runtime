@@ -194,6 +194,23 @@ The command channel still proves neither an individual RPC caller's identity nor
 verified human origin. The receipt records the actual channel and server actor,
 not invented UI provenance. The prior session-only TTL permission cache is gone.
 
+Verified ACTIVE non-reviewer model requests receive the canonical phase-aware
+mandates through the native context hook; INACTIVE/absent authority and frozen
+reviewer contexts receive none. The injected system part is host-neutral text,
+not a new policy authority. Native `/check` establishes the explicit check scope
+for its synthetic turn and clears it at idle; the compatibility `/validate`
+surface remains available.
+
+`/recover-capacity` and `/end-governance` are native command operations with
+separate safe-closure preconditions. Capacity recovery releases only an exact
+terminal step-budget/output-limit lineage and never an unknown reviewer outcome.
+EndGovernance requires a terminal workflow, no live reviewer/mutation execution,
+no active capacity lock and reconciled audit operations, then commits the
+canonical ENDING→INACTIVE journal decision and a separate `governance:ended`
+audit. An interrupted End or failed End audit is retried idempotently; the
+channel remains `host_command`, never verified-human provenance. `/finish` and
+`/abort` do not end governance implicitly.
+
 Required independent-review provenance, frozen subject, full completion,
 uncontaminated same-child capture and canonical atomic evidence binding are not
 relaxed. V1-equivalent independent AI review remains mandatory where required by

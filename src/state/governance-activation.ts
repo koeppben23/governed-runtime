@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { HostCallIdentity, HostCallIdentitySchema } from './host-identity.js';
 import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import { ReviewVerdict } from './evidence-primitives.js';
+import type { ActorInfo } from './evidence.js';
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 export const GovernanceActivationStatus = z.enum(['activating', 'active', 'ending', 'inactive']);
@@ -32,6 +33,18 @@ export const GovernanceDecisionActor = z
   .strict()
   .readonly();
 export type GovernanceDecisionActor = z.infer<typeof GovernanceDecisionActor>;
+
+/** Canonical projection of the resolved actor authority into a durable decision. */
+export function toGovernanceDecisionActor(actor: ActorInfo): GovernanceDecisionActor {
+  return {
+    actorId: actor.id,
+    actorEmail: actor.email,
+    actorDisplayName: actor.displayName ?? null,
+    actorSource: actor.source,
+    actorAssurance: actor.assurance,
+  };
+}
+
 export const GovernanceActivationRevision = z
   .object({
     schemaVersion: z.literal(2),

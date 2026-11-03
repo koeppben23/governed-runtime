@@ -26,7 +26,6 @@ import { ARCHITECTURE_COMMAND } from './architecture.js';
 import { ABORT_COMMAND } from './abort.js';
 import { ARCHIVE_COMMAND } from './archive.js';
 import { TASK_COMMAND } from './task.js';
-import { CHECK_COMMAND } from './check.js';
 import { EXPORT_COMMAND } from './export.js';
 import { WHY_COMMAND } from './why.js';
 import { FINISH_COMMAND } from './finish.js';
@@ -48,7 +47,6 @@ const COMMAND_BODIES: Record<string, string> = {
   'abort.md': ABORT_COMMAND,
   'archive.md': ARCHIVE_COMMAND,
   'task.md': TASK_COMMAND,
-  'check.md': CHECK_COMMAND,
   'export.md': EXPORT_COMMAND,
   'why.md': WHY_COMMAND,
   'finish.md': FINISH_COMMAND,

@@ -24,6 +24,7 @@ import { buildEnforcementError } from '../../blocked-result.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { readHostCallIdentity } from '../../../state/host-identity.js';
 import type {
+  ActorInfo,
   ReviewAttempt,
   ReviewDispatchRecord,
   ReviewObligation,
@@ -197,6 +198,90 @@ export function reopenAuditIntents(target: UnknownOutcomeTarget) {
         childSessionId: target.attempt.childSessionId,
         priorBlockedCode: UNKNOWN,
         settlement: 'later_user_turn+host_interrupt_idle',
+      },
+    },
+  ];
+}
+
+/** Capacity closures that an explicit native RecoverCapacity operation may release. */
+export const CAPACITY_RECOVERY_CODES: ReadonlySet<string> = new Set([
+  'REVIEWER_STEP_BUDGET_EXHAUSTED',
+  'REVIEWER_OUTPUT_TRUNCATED',
+]);
+
+export interface RecoverableCapacityTarget {
+  readonly lock: NonNullable<Assurance['capacityLock']>;
+  readonly obligation: ReviewObligation;
+  readonly attempt: ReviewAttempt & { readonly childSessionId: string };
+}
+
+/**
+ * The exact durable lineage behind a recoverable terminal capacity lock. Only
+ * the two host-capacity closures qualify; an unknown execution outcome keeps its
+ * own typed transport-settlement path. A live/authorized dispatch or bound
+ * attempt means execution may continue and is never released here.
+ */
+export function recoverableCapacityTarget(state: SessionState): RecoverableCapacityTarget | null {
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const lock = assurance.capacityLock;
+  if (!lock || !CAPACITY_RECOVERY_CODES.has(lock.code)) return null;
+  const obligation = assurance.obligations.find((item) => item.obligationId === lock.obligationId);
+  if (obligation?.status !== 'blocked' || obligation.blockedCode !== lock.code) return null;
+  const dispatches = assurance.dispatches.filter(
+    (item) => item.obligationId === obligation.obligationId,
+  );
+  if (dispatches.some((item) => item.dispatchStatus === 'authorized')) return null;
+  const attempts = assurance.attempts.filter(
+    (item) => item.obligationId === obligation.obligationId,
+  );
+  if (attempts.some((item) => item.status === 'bound')) return null;
+  const stale = attempts.filter((item) => item.status === 'stale');
+  const attempt = stale[0];
+  if (stale.length !== 1 || attempt?.childSessionId === undefined) return null;
+  return { lock, obligation, attempt: { ...attempt, childSessionId: attempt.childSessionId } };
+}
+
+/** Clear exactly one proven capacity lock. The obligation stays blocked for a
+ * fresh explicit review submission; no attempt or dispatch is rewritten. */
+export function releaseTerminalCapacityLock(
+  state: SessionState,
+  expected: RecoverableCapacityTarget,
+): SessionState {
+  const current = recoverableCapacityTarget(state);
+  if (
+    !current ||
+    current.lock.obligationId !== expected.lock.obligationId ||
+    current.lock.code !== expected.lock.code ||
+    current.attempt.attemptId !== expected.attempt.attemptId
+  )
+    throw buildEnforcementError(
+      'REVIEW_CAPACITY_RECOVERY_UNSAFE',
+      'The capacity lock or its terminal lineage changed; nothing was released.',
+    );
+  return {
+    ...state,
+    reviewAssurance: { ...ensureReviewAssurance(state.reviewAssurance), capacityLock: null },
+  };
+}
+
+export function capacityRecoveryAuditIntents(
+  target: RecoverableCapacityTarget,
+  operation: Readonly<Record<string, unknown>>,
+  actorInfo?: ActorInfo,
+) {
+  return (state: SessionState, occurredAt: string): readonly SemanticAuditIntent[] => [
+    {
+      phase: state.phase,
+      event: 'review:capacity_recovered',
+      occurredAt,
+      actor: 'machine',
+      ...(actorInfo === undefined ? {} : { actorInfo }),
+      detail: {
+        obligationId: target.obligation.obligationId,
+        attemptId: target.attempt.attemptId,
+        childSessionId: target.attempt.childSessionId,
+        priorBlockedCode: target.lock.code,
+        operation,
       },
     },
   ];

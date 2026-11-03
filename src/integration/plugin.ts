@@ -36,6 +36,7 @@ import { resolveGovernanceActivation } from '../adapters/governance-activation.j
 import { createNativeReviewerAuthority } from './plugin-native-review.js';
 import { createEventFence, consumeEvents } from './plugin-native-events.js';
 import { registerStartCommands } from './plugin-start-command.js';
+import { injectActiveMandates } from './plugin-mandates.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -597,6 +598,7 @@ async function registerNativeSessionHooks(
             'The ACTIVE catalogue was not present when this request snapshot was captured; retry the request.',
           );
         }
+        await injectActiveMandates(entry.runtime, entry.scope, event);
         if (event.agent === REVIEWER_SUBAGENT_TYPE) await reviewer.context(entry.scope, event);
         return true;
       }).then((active) => {

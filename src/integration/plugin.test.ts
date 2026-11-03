@@ -156,6 +156,37 @@ describe('native V2 plugin definition and lifecycle', () => {
     expect(logging.createPluginLogger).not.toHaveBeenCalled();
   });
 
+  it('injects phase-aware mandates only into verified ACTIVE non-reviewer context', async () => {
+    const active = await fixture();
+    const event = {
+      sessionID: active.sessionID,
+      agent: 'build',
+      system: [] as Array<{ type: string; text: string }>,
+      messages: [],
+      model: {},
+      tools: {},
+      options: {},
+    };
+    await active.host.request(event);
+    expect(event.system).toHaveLength(1);
+    expect(event.system[0]?.text).toContain('Universal FlowGuard mandates');
+    await active.host.request(event);
+    expect(event.system).toHaveLength(1);
+
+    const inactive = await fixture(false);
+    const inactiveEvent = {
+      sessionID: inactive.sessionID,
+      agent: 'build',
+      system: [] as Array<{ type: string; text: string }>,
+      messages: [],
+      model: {},
+      tools: {},
+      options: {},
+    };
+    await inactive.host.request(inactiveEvent);
+    expect(inactiveEvent.system).toEqual([]);
+  });
+
   it('compacts an absent workflow session without inventing governed context', async () => {
     const h = await fixture(false);
     const event = {

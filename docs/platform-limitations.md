@@ -252,7 +252,9 @@ The native V2 installer deliberately does **not** register mandates in
 `instructions[]`. It writes one default-export plugin directory and passive
 managed artifacts, leaving customer JSON/JSONC, instructions, models, variants
 and permissions byte-for-byte unchanged. It creates no activation or session
-state. See [native installation](./installation.md#native-v2-layout-and-fresh-install-boundary)
+state. The plugin itself injects phase-aware mandates only into verified ACTIVE
+non-reviewer requests; INACTIVE sessions receive none. See
+[native installation](./installation.md#native-v2-layout-and-fresh-install-boundary)
 and the [official V2 plugin contract](https://opencode.ai/v2/docs/build/plugins).
 
 Doctor reports file/import checks separately from native host load and ACTIVE

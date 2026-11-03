@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   commitGovernanceActivation,
+  endRootGovernance,
   governanceActivationKeys,
   resolveGovernanceActivation,
   listActiveGovernanceRoots,
@@ -573,6 +574,15 @@ describe('root Start under one session lock', () => {
       };
     },
   };
+  const endScope = {
+    sessionId,
+    prepare: async () => ({
+      sessionId,
+      directory: '/project',
+      worktreeRoot: '/project',
+      policyDigest,
+    }),
+  };
   type Port = GovernanceActivationWriter['authorize'];
   /** The native command port: Start mints a decision; completion re-presents the pending one. */
   const commandPort =
@@ -779,5 +789,83 @@ describe('root Start under one session lock', () => {
     await interrupted(corrupt);
     corrupt.values.set(governanceActivationKeys(sessionId).head, { invalid: true });
     expect(await startRootGovernance(writerFor(corrupt), scope)).toMatchObject({ kind: 'blocked' });
+  });
+
+  it('ends ACTIVE through ENDING and INACTIVE under one decision and resumes an interrupted End', async () => {
+    const fixture = createActivationStoreFixture();
+    const activated = await startRootGovernance(writerFor(fixture), scope);
+    if (activated.kind !== 'activated') throw new Error('Expected an ACTIVE fixture');
+    const endPort: Port = async (input, current) => {
+      if (input.action === 'begin_end') return authorized(randomUUID());
+      if (input.action === 'end' && current?.status === 'ending')
+        return authorized(current.decisionId, current.decisionSource, current.decisionActor);
+      return authorized(randomUUID());
+    };
+    const ended = await endRootGovernance(writerFor(fixture, endPort), endScope);
+    expect(ended).toMatchObject({
+      kind: 'ended',
+      resumed: false,
+      record: { status: 'inactive', generation: 1 },
+    });
+    if (ended.kind !== 'ended') throw new Error('Expected End');
+    expect(await resolveGovernanceActivation(fixture.store, sessionId)).toMatchObject({
+      kind: 'inactive',
+      record: { decisionId: ended.record.decisionId },
+    });
+
+    const interrupted = createActivationStoreFixture();
+    const active = await startRootGovernance(writerFor(interrupted), scope);
+    if (active.kind !== 'activated') throw new Error('Expected an ACTIVE fixture');
+    const {
+      schemaVersion: _schemaVersion,
+      revision: _revision,
+      status: _status,
+      decisionId: _decisionId,
+      decisionSource: _decisionSource,
+      decisionActor: _decisionActor,
+      previousDigest: _previousDigest,
+      ...activeScope
+    } = active.record;
+    const begun = await commitGovernanceActivation(writerFor(interrupted, endPort), {
+      ...activeScope,
+      action: 'begin_end',
+      expectedRevision: active.record.revision,
+    });
+    expect(begun).toMatchObject({ kind: 'committed', record: { status: 'ending' } });
+    const resumed = await endRootGovernance(writerFor(interrupted, endPort), endScope);
+    expect(resumed).toMatchObject({ kind: 'ended', resumed: true });
+  });
+
+  it('is idempotent after End and rejects a foreign End binding', async () => {
+    const fixture = createActivationStoreFixture();
+    const activated = await startRootGovernance(writerFor(fixture), scope);
+    if (activated.kind !== 'activated') throw new Error('Expected an ACTIVE fixture');
+    const endPort: Port = async (input, current) => {
+      if (input.action === 'begin_end') return authorized(randomUUID());
+      if (input.action === 'end' && current?.status === 'ending')
+        return authorized(current.decisionId, current.decisionSource, current.decisionActor);
+      return authorized(randomUUID());
+    };
+    const first = await endRootGovernance(writerFor(fixture, endPort), endScope);
+    if (first.kind !== 'ended') throw new Error('Expected End');
+    expect(await endRootGovernance(writerFor(fixture, endPort), endScope)).toMatchObject({
+      kind: 'already_inactive',
+      record: { decisionId: first.record.decisionId },
+    });
+
+    const foreign = createActivationStoreFixture();
+    const active = await startRootGovernance(writerFor(foreign), scope);
+    if (active.kind !== 'activated') throw new Error('Expected an ACTIVE fixture');
+    expect(
+      await endRootGovernance(writerFor(foreign, endPort), {
+        ...endScope,
+        prepare: async () => ({
+          sessionId,
+          directory: '/other',
+          worktreeRoot: '/other',
+          policyDigest,
+        }),
+      }),
+    ).toMatchObject({ kind: 'blocked' });
   });
 });

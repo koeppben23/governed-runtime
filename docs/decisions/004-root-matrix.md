@@ -10,12 +10,12 @@ The integration root zone (`src/integration/*.ts`) is the composition and
 host/runtime boundary. `integration-placement.test.ts` freezes its exact shape
 (counts updated 2026-11-03):
 
-- `root-composition`: 29 files (plugin lifecycle entrypoints and barrels)
+- `root-composition`: 33 files (plugin lifecycle entrypoints and barrels)
 - `root-host-runtime`: exactly 7 named files (`host-mutation-observation.ts`,
   `installed-commands.ts`, `opencode-governance-rpc.ts`, `opencode-governance.ts`, `opencode-host-adapter.ts`, `runtime-instance.ts`, `runtime-lease.ts`)
-- `root-authority`: 14 files (cross-context authorities such as
+- `root-authority`: 15 files (cross-context authorities such as
   `audit-outbox.ts` and `tool-names.ts`)
-- total: 50 root production files
+- total: 55 root production files
 
 The activation/scope change in #1190 adds `plugin-native-tools.ts` for native
 catalogue/executor/completion composition and `opencode-governance.ts` for exact
@@ -66,6 +66,12 @@ it introduces no alternate workflow or decision machine.
 WS3 decision commands add `plugin-decision-command.ts` as native composition.
 `workflow-decision-invocation.ts` replaces the unbound TTL intent authority with
 scoped, exact-subject decision operations; no second workflow machine is added.
+WS3 lifecycle commands add `plugin-governance-lifecycle-command.ts` and the pure
+`governance-end-preconditions.ts`; they reuse the canonical review-settlement and
+activation-journal authorities and add no parallel state machine.
+WS3 `/check` and mandate injection add `plugin-check-command.ts` and
+`plugin-mandates.ts`; both consume the existing command-scope and mandates
+renderer authorities.
 
 MUT4 (#1172) adds `plugin-mutation-reconciliation.ts` at the composition boundary
 to connect asynchronous host notifications and the synchronous pre-implement

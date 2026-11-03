@@ -202,8 +202,12 @@ audited as `review:obligation_reopened`; the historical attempt, dispatch and
 child stay verbatim. The existing re-arm mints one fresh attempt within the frozen
 budget, and only that superseding attempt may be released. If any proof fails, the
 obligation stays blocked. Caller text, idle events, timeouts and owner cleanup
-release nothing. Step-budget and output-limit locks still have no V2 release
-(RecoverCapacity, Finding 5).
+release nothing. A terminal step-budget or output-limit lock is released only by
+the explicit native `/recover-capacity` command, which requires the exact blocked
+obligation, stale attempt and `outcome_unknown` dispatch lineage, refuses an
+unknown execution outcome or any still-authorized/bound reviewer, and clears only
+the lock. The obligation remains blocked; a new explicit review command must mint
+a fresh review. `/end-governance` is the separate activation-closure operation.
 
 The native V2
 entrypoint registers native approval commands rather than the old command-origin
@@ -211,11 +215,12 @@ hook. Authorized autonomous activation does not itself authorize capacity
 recovery; an SDK/API/CLI callback proves neither that permission nor human consent.
 Operator decisions use the native command channel recorded as `host_command`
 (ADR-010 amendment 2026-11-03), never as a verified human. `/approve`,
-`/override-approve`, `/request-changes`, `/reject` and `/review-decision` execute
-the canonical decision rail directly; capacity recovery through that channel is
-not yet connected. The old V1 command-hook release path is not a V2
-human-provenance mechanism. No idle event, timeout or owner cleanup releases an
-unknown-outcome fence by itself.
+`/override-approve`, `/request-changes`, `/reject`, `/review-decision` execute the
+canonical decision rail directly; `/recover-capacity` releases only proven
+terminal capacity locks; `/end-governance` closes activation after safe workflow
+closure. The old V1 command-hook release path is not a V2 human-provenance
+mechanism. No idle event, timeout or owner cleanup releases an unknown-outcome
+fence by itself.
 
 ### Reviewer authority boundaries and reference suite
 

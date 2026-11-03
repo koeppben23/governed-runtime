@@ -20,7 +20,10 @@ import {
 } from './durable-dispatch.js';
 import {
   assertLaterUserTurn,
+  capacityRecoveryAuditIntents,
   proveChildSettled,
+  recoverableCapacityTarget,
+  releaseTerminalCapacityLock,
   reopenAuditIntents,
   reopenUnknownOutcome,
   unknownOutcomeTarget,
@@ -110,6 +113,82 @@ describe('unknown reviewer outcome settlement', () => {
     const { state } = await blockedByCode('REVIEWER_STEP_BUDGET_EXHAUSTED');
     expect(state.reviewAssurance?.capacityLock?.code).toBe('REVIEWER_STEP_BUDGET_EXHAUSTED');
     expect(unknownOutcomeTarget(state, 'plan')).toBeNull();
+  });
+
+  it('releases only the two exact terminal capacity closures and audits the proven lineage', async () => {
+    const { state, attemptId } = await blockedByCode('REVIEWER_STEP_BUDGET_EXHAUSTED');
+    const target = recoverableCapacityTarget(state);
+    expect(target).toMatchObject({
+      lock: { code: 'REVIEWER_STEP_BUDGET_EXHAUSTED' },
+      attempt: { attemptId, status: 'stale' },
+    });
+    const released = releaseTerminalCapacityLock(state, target!);
+    expect(released.reviewAssurance?.capacityLock).toBeNull();
+    expect(released.reviewAssurance?.obligations[0]).toMatchObject({
+      status: 'blocked',
+      blockedCode: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+    });
+    const [intent] = capacityRecoveryAuditIntents(target!, { source: 'host_command' })(
+      released,
+      NOW,
+    );
+    expect(intent).toMatchObject({
+      event: 'review:capacity_recovered',
+      detail: {
+        obligationId: target!.obligation.obligationId,
+        attemptId,
+        priorBlockedCode: 'REVIEWER_STEP_BUDGET_EXHAUSTED',
+        operation: { source: 'host_command' },
+      },
+    });
+    expect(recoverableCapacityTarget(released)).toBeNull();
+    expect(() => releaseTerminalCapacityLock(released, target!)).toThrow(
+      expect.objectContaining({ code: 'REVIEW_CAPACITY_RECOVERY_UNSAFE' }),
+    );
+  });
+
+  it('never releases an unknown outcome, foreign lock, authorized dispatch or bound attempt', async () => {
+    const unknown = await blockedByCode();
+    expect(recoverableCapacityTarget(unknown.state)).toBeNull();
+
+    const budget = await blockedByCode('REVIEWER_STEP_BUDGET_EXHAUSTED');
+    const target = recoverableCapacityTarget(budget.state)!;
+    const foreign = {
+      ...budget.state,
+      reviewAssurance: {
+        ...budget.state.reviewAssurance!,
+        capacityLock: {
+          ...budget.state.reviewAssurance!.capacityLock!,
+          code: 'REVIEWER_OUTPUT_TRUNCATED',
+        },
+      },
+    };
+    expect(recoverableCapacityTarget(foreign)).toBeNull();
+
+    const authorized = {
+      ...budget.state,
+      reviewAssurance: {
+        ...budget.state.reviewAssurance!,
+        dispatches: budget.state.reviewAssurance!.dispatches.map((dispatch) => ({
+          ...dispatch,
+          dispatchStatus: 'authorized' as const,
+        })),
+      },
+    };
+    expect(recoverableCapacityTarget(authorized)).toBeNull();
+
+    const bound = {
+      ...budget.state,
+      reviewAssurance: {
+        ...budget.state.reviewAssurance!,
+        attempts: budget.state.reviewAssurance!.attempts.map((attempt) => ({
+          ...attempt,
+          status: 'bound' as const,
+        })),
+      },
+    };
+    expect(recoverableCapacityTarget(bound)).toBeNull();
+    expect(target).not.toBeNull();
   });
 
   it('requires a user message after the failed release in the parent history', async () => {

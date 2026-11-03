@@ -105,7 +105,7 @@ describe('native V2 entrypoint', () => {
     expect(host.context.tool.transform).toHaveBeenCalledOnce();
     expect([...host.definitions.keys()]).toEqual(['flowguard_help']);
     expect(host.subscribe).toHaveBeenCalledOnce();
-    // The only native command is /start; it never records workflow decision intent.
+    // Native lifecycle commands are registered directly; no command-origin shim records intent.
     expect(host.context.command.transform).toHaveBeenCalledOnce();
     expect([...host.commands.keys()]).toEqual([
       'start',
@@ -114,6 +114,9 @@ describe('native V2 entrypoint', () => {
       'override-approve',
       'request-changes',
       'reject',
+      'recover-capacity',
+      'end-governance',
+      'check',
     ]);
     expect(h.createLogger).not.toHaveBeenCalled();
     expect(host.definitions.get('flowguard_help')).toMatchObject({
@@ -466,20 +469,28 @@ describe('native V2 entrypoint', () => {
     expect(host.prompt).not.toHaveBeenCalled();
   });
 
-  it('does not change parent model/variant, options, tools or context', async () => {
+  it('does not change parent model/variant, options or tools; adds only ACTIVE mandates', async () => {
     const host = await setup(['parent']);
     const request = {
       sessionID: 'parent',
       agent: 'build',
       model: { providerID: 'any-provider', id: 'any-model', variant: 'custom-native-effort' },
-      system: [],
+      system: [] as Array<{ type: string; text: string; metadata?: Record<string, unknown> }>,
       messages: [],
       tools: { shell: {} },
       options: { reasoningEffort: 'native' },
     };
     const before = structuredClone(request);
     await host.request(request);
-    expect(request).toEqual(before);
+    expect(request.model).toEqual(before.model);
+    expect(request.options).toEqual(before.options);
+    expect(request.tools).toEqual(before.tools);
+    expect(request.messages).toEqual(before.messages);
+    expect(request.system).toHaveLength(1);
+    expect(request.system[0]).toMatchObject({
+      type: 'text',
+      metadata: { source: 'flowguard-mandates', phase: 'TICKET' },
+    });
   });
 
   it('projects native successful tool output through canonical processing once', async () => {

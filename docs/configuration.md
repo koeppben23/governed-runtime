@@ -78,6 +78,47 @@ outbox. Audit-write failure is surfaced; reconciliation preserves the original
 decision rather than approving the subject again. Status-report failures after
 a confirmed decision do not undo the committed outcome.
 
+## Reviewer capacity recovery and EndGovernance
+
+`/recover-capacity` is a native operator command. It releases only the persisted
+capacity lock produced by a terminal `REVIEWER_STEP_BUDGET_EXHAUSTED` or
+`REVIEWER_OUTPUT_TRUNCATED` closure. The command verifies the exact blocked
+obligation, stale attempt and `outcome_unknown` dispatch, and refuses to release a
+lock when a reviewer dispatch is still authorized, an attempt is still bound, or
+the closure is `REVIEWER_EXECUTION_OUTCOME_UNKNOWN` (use the typed
+`reviewRecovery: "retry_transport"` path instead). The obligation remains blocked;
+a new explicit review command must mint the fresh review. The release and its
+audit intent commit in one review-assurance write, and the command reconciles the
+audit before reporting success.
+
+`/end-governance` is a native operator command, not `/finish` or `/abort`. It ends
+the root activation through the canonical `ACTIVE → ENDING → INACTIVE` journal
+under one new `host_command` decision. It requires a terminal workflow (or
+`READY`), no pending system work, no unresolved workflow error, no active capacity
+lock, no authorized reviewer dispatch or bound attempt, no unresolved host
+mutation episode, and no unreconciled audit operation. An interrupted `ENDING`
+revision is completed under its existing decision and actor. After the successful
+inactive commit, the command appends `governance:ended`; a failed audit is
+reported as durably INACTIVE with an unconfirmed End audit, and repeating the
+command reconciles it. Neither command proves verified human origin; both record
+the `host_command` channel and the canonically resolved actor.
+
+## ACTIVE-session mandates and `/check`
+
+While a session is verified ACTIVE, the native context hook injects the canonical
+phase-aware FlowGuard mandates into each non-reviewer model request. No mandate
+text is injected for INACTIVE/absent authority or into the frozen reviewer child
+context. The injected system part is marked `source: flowguard-mandates`; a
+request that already carries that source is not duplicated. Injection reads the
+current root workflow state and fails closed if that state disappears.
+
+`/check` is a native command. It installs the explicit `check` runtime scope for
+its synthetic check turn, clears rework continuation state, and clears the scope
+when that turn reaches idle. The same model/tool loop then uses the canonical
+`flowguard_status`, `flowguard_run_check` and implementation-review tools; the
+scope prevents unrelated workflow/host mutations between the check result and the
+next explicit command. The compatibility `/validate` template is unchanged.
+
 ## Config File Location
 
 ### Repository-specific risk surfaces

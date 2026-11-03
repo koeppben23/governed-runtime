@@ -92,6 +92,19 @@ async function receipts(p: NativeHostProbe, sessionID: string) {
   );
 }
 describe.skipIf(!LIVE)('native decision commands with component core review gates', () => {
+  it('runs the native /check command through the canonical check prompt', async () => {
+    const p = await open('solo');
+    const root = await p.session();
+    await activate(p, root.id);
+    const before = p.requests.length;
+    await p.client.session.command({ sessionID: root.id, name: 'check', text: '' });
+    expect(p.requests.length).toBeGreaterThan(before);
+    expect(
+      p.requests
+        .slice(before)
+        .some((request) => JSON.stringify(request.body).includes('flowguard_run_check')),
+    ).toBe(true);
+  }, 300_000);
   it.each(['approve', 'override-approve'] as const)(
     'drives real Start, ticket, independent native review and %s without seeded gate evidence',
     async (command) => {

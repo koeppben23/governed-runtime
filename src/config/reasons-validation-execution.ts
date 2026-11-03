@@ -22,4 +22,24 @@ export const REVIEW_EXECUTION_REASONS = [
       'To review again, re-run the originating FlowGuard command; it re-arms a fresh reviewer attempt on the same frozen obligation',
     ],
   },
+  {
+    code: 'REVIEW_CAPACITY_NOT_LOCKED',
+    category: 'state',
+    messageTemplate: 'No recoverable terminal reviewer capacity lock exists for this session.',
+    recoverySteps: [
+      'Run /status to inspect the current review and workflow state.',
+      'Use the typed reviewRecovery "retry_transport" path for an unknown reviewer execution outcome.',
+      'Do not invent a capacity lock or infer one from caller text.',
+    ],
+  },
+  {
+    code: 'REVIEW_CAPACITY_RECOVERY_UNSAFE',
+    category: 'state',
+    messageTemplate: 'The terminal reviewer capacity lock cannot be released safely: {reason}',
+    recoverySteps: [
+      'Keep the lock and the blocked obligation unchanged.',
+      'Inspect the durable reviewer dispatch, attempt and obligation lineage with /status.',
+      'Use reviewRecovery "retry_transport" for an unknown execution outcome, or EndGovernance after safe workflow closure.',
+    ],
+  },
 ] as const satisfies readonly BlockedReason[];

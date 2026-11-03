@@ -112,10 +112,14 @@ requirement is withdrawn for OpenCode instead of being simulated.
 native `start` command and covered by component tests; installed-host acceptance
 remains **NOT_VERIFIED**. Autonomous activation and native `host_command` Approve,
 OverrideApprove, RequestChanges, Reject and ReviewDecision now share their
-canonical lifecycle/decision and audit paths. RecoverCapacity and EndGovernance
-are not yet connected and stay blocked. Native decision operations bind the
-current subject and source rather than issuing a TTL permission for a later model
-call; activation supplies no gate approval.
+canonical lifecycle/decision and audit paths. Native `/recover-capacity` releases
+only proven terminal reviewer capacity closures; native `/end-governance` commits
+the canonical ENDING→INACTIVE journal after safe workflow closure and reconciles
+its audit. Installed-host acceptance remains open. Native decision operations bind
+the current subject and source rather than issuing a TTL permission for a later
+model call; activation supplies no gate approval or capacity release. Native
+`/check` owns its explicit command scope, and ACTIVE non-reviewer requests receive
+the canonical phase-aware mandates; INACTIVE sessions receive none.
 
 ## Decision
 

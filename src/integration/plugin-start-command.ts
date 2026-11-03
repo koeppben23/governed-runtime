@@ -19,10 +19,10 @@ import { resolveActorForPolicy } from '../adapters/actor-context.js';
 import { resolveSessionAuthority } from '../adapters/session-authority.js';
 import { freezePolicySnapshot, resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
 import { NATIVE_START_COMMAND } from '../shared/flowguard-identifiers.js';
-import type { ActorInfo } from '../state/evidence-identity.js';
-import type {
-  GovernanceDecisionActor,
-  GovernanceActivationRevision,
+import {
+  toGovernanceDecisionActor,
+  type GovernanceDecisionActor,
+  type GovernanceActivationRevision,
 } from '../state/governance-activation.js';
 import { POLICY_MODES, PolicyModeSchema, type PolicyMode } from '../state/policy-mode.js';
 import type { SessionState } from '../state/schema.js';
@@ -35,6 +35,8 @@ import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { hydrate, resolveHydratePolicy } from './tools/index.js';
 import { FlowGuardGovernance, type AutonomousStartRequest } from './opencode-governance-rpc.js';
 import { addDecisionCommands } from './plugin-decision-command.js';
+import { addGovernanceLifecycleCommands } from './plugin-governance-lifecycle-command.js';
+import { addCheckCommand } from './plugin-check-command.js';
 import type { ActiveGovernanceScope } from './opencode-governance.js';
 import {
   appendAuditEventAlreadyLocked,
@@ -60,7 +62,11 @@ type StartWorkflow = {
 export interface StartCommandDeps {
   readonly governance: Pick<
     OpenCodeGovernance,
-    'startRoot' | 'confirmActivationAudit' | 'assertScopeCurrent' | 'assertActivationAuditConfirmed'
+    | 'startRoot'
+    | 'confirmActivationAudit'
+    | 'endRoot'
+    | 'assertScopeCurrent'
+    | 'assertActivationAuditConfirmed'
   >;
   /** Publishes the productive catalogue for the now ACTIVE location. */
   readonly publish: () => Promise<void>;
@@ -99,6 +105,8 @@ function registerStartCommand(ctx: Plugin.Context, deps: StartCommandDeps): Prom
         }),
     });
     addDecisionCommands(ctx, deps, editor);
+    addGovernanceLifecycleCommands(ctx, deps, editor);
+    addCheckCommand(ctx, deps, editor);
   });
 }
 
@@ -231,7 +239,9 @@ async function authorizeAutonomousStart(
       : freezePolicySnapshot(resolved.policyResolution, new Date().toISOString(), hashText);
   if (snapshot.hash !== request.policyDigest)
     reject('Autonomous Start names a foreign policy digest.');
-  const actor = toDecisionActor(await resolveActorForPolicy(before.worktreeRoot, resolved.policy));
+  const actor = toGovernanceDecisionActor(
+    await resolveActorForPolicy(before.worktreeRoot, resolved.policy),
+  );
   if (!isAssuranceAtLeast(actor.actorAssurance, permission.minimumActorAssurance))
     reject('Autonomous Start actor assurance is below the configured minimum.');
   assertPendingActor(current, actor);
@@ -261,7 +271,7 @@ async function resolveStartActor(
     return current.decisionActor;
   return (
     authorizedActor ??
-    toDecisionActor(
+    toGovernanceDecisionActor(
       await resolveActorForPolicy(
         workflow.worktreeRoot,
         resolvePolicyFromSnapshot(workflow.state.policySnapshot),
@@ -536,14 +546,4 @@ function jsonHead(output: string): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function toDecisionActor(actor: ActorInfo): GovernanceDecisionActor {
-  return {
-    actorId: actor.id,
-    actorEmail: actor.email,
-    actorDisplayName: actor.displayName ?? null,
-    actorSource: actor.source,
-    actorAssurance: actor.assurance,
-  };
 }

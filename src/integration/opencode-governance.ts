@@ -28,6 +28,11 @@ import { hashText } from '../shared/hashing.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { OpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { buildEnforcementError } from './blocked-result.js';
+import {
+  endRootActivation,
+  type EndRootPrepare,
+  type EndRootResult,
+} from './opencode-governance-end.js';
 
 export interface ActiveGovernanceScope {
   readonly sessionId: string;
@@ -107,13 +112,11 @@ export class OpenCodeGovernance {
   }
 
   /** The host-observed root session an operator Start may bind; delegated children never start. */
-  private async startableRoot(sessionId: string): Promise<{ readonly directory: string }> {
+  private async rootSession(sessionId: string): Promise<{ readonly directory: string }> {
     validateSessionId(sessionId);
     const session = await this.host.getSession(sessionId);
     if (session.parentSessionId !== undefined)
-      throw this.error(
-        'A delegated child session cannot start governance; start its root session.',
-      );
+      throw this.error('A delegated child session cannot govern activation; use its root session.');
     return { directory: session.directory };
   }
 
@@ -186,7 +189,7 @@ export class OpenCodeGovernance {
       {
         sessionId,
         prepare: async (current) => {
-          const { directory } = await this.startableRoot(sessionId);
+          const { directory } = await this.rootSession(sessionId);
           const prepared = await prepare(current, directory);
           actor = prepared.actor;
           return { sessionId, directory, ...prepared.workflow };
@@ -195,6 +198,24 @@ export class OpenCodeGovernance {
     );
     if (result.kind === 'blocked') throw this.error(result.reason);
     return result;
+  }
+
+  /**
+   * Native command End: one new host_command decision spans ENDING and INACTIVE.
+   * `prepare` must prove safe closure and resolve the deciding actor on every
+   * attempt, including completion of an interrupted ENDING revision.
+   */
+  async endRoot(sessionId: string, prepare: EndRootPrepare): Promise<EndRootResult> {
+    return endRootActivation(
+      {
+        store: this.store,
+        withLock: (id, run) => this.withLock(id, run),
+        rootDirectory: async (id) => (await this.rootSession(id)).directory,
+        signal: this.signal,
+      },
+      sessionId,
+      prepare,
+    );
   }
 
   private async resolveUnenrolledChild(

@@ -28,6 +28,7 @@ import {
   TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
+import { CHECK_COMMAND } from './check.js';
 import { FLOWGUARD_TOOL_NAMES } from '../../integration/tool-names.js';
 
 const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
@@ -97,7 +98,6 @@ describe('command templates: agent pinning for review-orchestration commands', (
     'implement.md',
     'review.md',
     'architecture.md',
-    'check.md',
   ] as const;
 
   for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
@@ -150,7 +150,7 @@ describe('command templates: OpenCode frontmatter contract', () => {
 
 describe('check command: implementation review orchestration', () => {
   it('starts and submits mandatory review after checks enter IMPL_REVIEW', () => {
-    const body = COMMANDS['check.md'];
+    const body = CHECK_COMMAND;
     if (!body) throw new TypeError('missing check command template');
 
     expect(body).toContain('If its phase is `IMPL_REVIEW`');
@@ -164,7 +164,7 @@ describe('check command: implementation review orchestration', () => {
   });
 
   it('stops after baseline validation reaches IMPLEMENTATION', () => {
-    const body = COMMANDS['check.md'];
+    const body = CHECK_COMMAND;
     if (!body) throw new TypeError('missing check command template');
 
     expect(body).toContain('If its phase is `IMPLEMENTATION`');

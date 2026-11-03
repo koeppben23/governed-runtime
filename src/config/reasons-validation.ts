@@ -31,6 +31,16 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'GOVERNANCE_END_UNSAFE',
+    category: 'state',
+    messageTemplate: 'Governance cannot end safely: {message}',
+    recoverySteps: [
+      'Finish or abort the workflow before ending governance; workflow termination is not EndGovernance',
+      'Resolve pending system work, reviewer execution, mutation outcomes and unreconciled audit operations first',
+      'Use RecoverCapacity or the typed review transport settlement for a blocked reviewer capacity lock',
+    ],
+  },
+  {
     code: 'START_ARGUMENTS_INVALID',
     category: 'input',
     messageTemplate: 'Invalid /start arguments: {message}',

@@ -7,7 +7,7 @@ import {
 } from './installed-commands.js';
 import { COMMANDS } from '../templates/commands/index.js';
 import { TOOL_FLOWGUARD_ARCHIVE, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
-import { NATIVE_PLUGIN_COMMANDS } from '../shared/flowguard-identifiers.js';
+import { NATIVE_CATALOGUED_COMMANDS } from '../shared/flowguard-identifiers.js';
 
 describe('installed command catalogue', () => {
   it('has unique stable IDs, invocations, and filenames-per-ID', () => {
@@ -33,7 +33,6 @@ describe('installed command catalogue', () => {
     const affectedTemplates = [
       'task.md',
       'ticket.md',
-      'check.md',
       'validate.md',
       'abort.md',
       'archive.md',
@@ -122,7 +121,7 @@ describe('installed command catalogue', () => {
   it('keeps native command names aligned with the installer collision authority', () => {
     const native = INSTALLED_COMMANDS.filter((definition) => definition.templateFile === null);
     expect(native.map((definition) => definition.invocation.slice(1)).sort()).toEqual(
-      [...NATIVE_PLUGIN_COMMANDS].sort(),
+      [...NATIVE_CATALOGUED_COMMANDS].sort(),
     );
     for (const command of native) {
       expect(COMMANDS).not.toHaveProperty(`${command.invocation.slice(1)}.md`);

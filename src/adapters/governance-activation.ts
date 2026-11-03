@@ -373,6 +373,105 @@ async function commitLocked(
   }
 }
 
+/** The workflow scope a root End decision binds. */
+export interface GovernanceRootEnd {
+  readonly sessionId: string;
+  readonly directory: string;
+  readonly worktreeRoot: string;
+  readonly policyDigest: string;
+}
+
+export type GovernanceRootEndResult =
+  | {
+      readonly kind: 'ended';
+      readonly record: GovernanceActivationRevision;
+      /** True when an interrupted ENDING revision of the same decision was completed. */
+      readonly resumed: boolean;
+    }
+  | { readonly kind: 'already_inactive'; readonly record: GovernanceActivationRevision | null }
+  | AuthorityBlocked;
+
+/**
+ * End a root scope under one session lock: ACTIVE commits ENDING then INACTIVE
+ * under one new decision; an interrupted ENDING revision is completed under its
+ * existing decision and actor. The caller must revalidate safe closure and the
+ * exact scope in `prepare` on every attempt.
+ */
+export async function endRootGovernance(
+  writer: GovernanceActivationWriter,
+  input: {
+    readonly sessionId: string;
+    readonly prepare: (current: GovernanceActivationRevision) => Promise<GovernanceRootEnd>;
+  },
+): Promise<GovernanceRootEndResult> {
+  return writer.withLock(input.sessionId, async () => {
+    const journal = await readJournalForStart(writer.store, input.sessionId);
+    if ('kind' in journal) return journal;
+    const current = journal.history.at(-1) ?? null;
+    const settled = settledEnd(current);
+    if (settled !== null) return settled;
+    if (current === null) return { kind: 'already_inactive', record: null };
+    const request = await input.prepare(current);
+    if (request.sessionId !== input.sessionId || !rootBindingMatches(current, request))
+      return unavailable(
+        'End preparation changed the session or no longer matches the active worktree/policy binding.',
+      );
+    if (current.status === 'ending') return completeEnd(writer, current, request, current.revision);
+    const begun = await commitLocked(writer, {
+      ...request,
+      action: 'begin_end',
+      expectedRevision: journal.head?.revision ?? 0,
+      rootSessionId: request.sessionId,
+      activationId: current.activationId,
+      generation: current.generation,
+      parentDispatch: null,
+    });
+    if (begun.kind === 'blocked') return begun;
+    return completeEnd(writer, begun.record, request, begun.record.revision, false);
+  });
+}
+
+/** End outcomes that need no preparation or write; null means End may commit. */
+function settledEnd(current: GovernanceActivationRevision | null): GovernanceRootEndResult | null {
+  if (current === null) return { kind: 'already_inactive', record: null };
+  if (current.parentDispatch !== null)
+    return unavailable('A delegated child session cannot end root governance.');
+  if (current.status === 'inactive') return { kind: 'already_inactive', record: current };
+  if (current.status === 'activating')
+    return unavailable('Governance is still activating; complete Start first.');
+  return null;
+}
+
+async function completeEnd(
+  writer: GovernanceActivationWriter,
+  pending: GovernanceActivationRevision,
+  request: GovernanceRootEnd,
+  revision: number,
+  resumed = true,
+): Promise<GovernanceRootEndResult> {
+  if (!rootBindingMatches(pending, request))
+    return unavailable(
+      'The interrupted End is bound to another directory, worktree or frozen policy.',
+    );
+  const {
+    schemaVersion: _schemaVersion,
+    revision: _revision,
+    status: _status,
+    decisionId: _decisionId,
+    decisionSource: _decisionSource,
+    decisionActor: _decisionActor,
+    previousDigest: _previousDigest,
+    ...scope
+  } = pending;
+  const ended = await commitLocked(writer, {
+    ...scope,
+    action: 'end',
+    expectedRevision: revision,
+  });
+  if (ended.kind === 'blocked') return ended;
+  return { kind: 'ended', record: ended.record, resumed };
+}
+
 /** The workflow scope a root Start decision binds. */
 export interface GovernanceRootStart {
   readonly sessionId: string;
@@ -415,14 +514,14 @@ export async function startRootGovernance(
     const request = await input.prepare(current);
     if (request.sessionId !== input.sessionId)
       return unavailable('Start preparation changed its session.');
-    if (current?.status === 'active' && !rootStartBindingMatches(current, request))
+    if (current?.status === 'active' && !rootBindingMatches(current, request))
       return unavailable('The ACTIVE activation does not match the current workflow binding.');
     if (settled !== null) return settled;
     return commitPreparedStart(writer, current, journal.head?.revision ?? 0, request);
   });
 }
 
-function rootStartBindingMatches(
+function rootBindingMatches(
   current: GovernanceActivationRevision,
   request: GovernanceRootStart,
 ): boolean {
@@ -487,7 +586,7 @@ async function completeStart(
   revision: number,
   resumed = true,
 ): Promise<GovernanceRootStartResult> {
-  if (!rootStartBindingMatches(pending, request))
+  if (!rootBindingMatches(pending, request))
     return unavailable(
       'The interrupted activation is bound to another directory, worktree or frozen policy.',
     );

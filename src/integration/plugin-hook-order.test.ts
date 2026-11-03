@@ -267,7 +267,7 @@ describe('single-owner native hook composition', () => {
       'model.request',
     ]);
     expect([...host.toolHooks.keys()]).toEqual(['execute.before', 'execute.after']);
-    // The only native command is /start; it never records workflow decision intent.
+    // Native lifecycle commands are registered directly; no command-origin shim records intent.
     expect(host.context.command.transform).toHaveBeenCalledOnce();
     expect([...host.commands.keys()]).toEqual([
       'start',
@@ -276,6 +276,9 @@ describe('single-owner native hook composition', () => {
       'override-approve',
       'request-changes',
       'reject',
+      'recover-capacity',
+      'end-governance',
+      'check',
     ]);
   });
 });

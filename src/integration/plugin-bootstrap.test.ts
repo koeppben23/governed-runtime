@@ -269,7 +269,7 @@ describe('native V2 phase and integrity gates', () => {
 
   it('does not install a V1 command-origin shim or infer operator intent from tool arguments', async () => {
     const h = await fixture('PLAN');
-    // The only native command is /start; it never records workflow decision intent.
+    // Native lifecycle commands are registered directly; no command-origin shim records intent.
     expect(h.host.context.command.transform).toHaveBeenCalledOnce();
     expect([...h.host.commands.keys()]).toEqual([
       'start',
@@ -278,6 +278,9 @@ describe('native V2 phase and integrity gates', () => {
       'override-approve',
       'request-changes',
       'reject',
+      'recover-capacity',
+      'end-governance',
+      'check',
     ]);
     await expect(
       h.host.before(
